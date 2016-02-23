@@ -1,0 +1,2 @@
+class DemandManager(object):
+    pass
