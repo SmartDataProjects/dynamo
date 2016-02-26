@@ -1,0 +1,124 @@
+from common.dataformat import Dataset, Block, Site, IntegrityError
+
+class InventoryInterface(object):
+    """
+    Interface to local inventory database.
+    """
+
+    _singleton = None
+
+    class LockError(Exception):
+        pass
+
+    class Cache(object):
+        def __init__(self, obj):
+            self.obj = obj
+            self.stale = False
+
+        def update(self, **keywords):
+            for key, value in keywords.items():
+                setattr(self.obj, key, value)
+                
+            self.stale = False
+
+    def __init__(self):
+        # Allow multiple calls to acquire-release. No other process can acquire
+        # the lock until the depth in this process is 0.
+        self._lock_depth = 0
+
+        self._dataset_cache = {}
+        self._block_cache = {}
+        self._site_cache = {}
+
+    def acquire_lock(self):
+        if self._lock_depth == 0:
+            self._do_acquire_lock()
+
+        self._lock_depth += 1
+
+    def release_lock(self, force = False):
+        if self._lock_depth == 1 or force:
+            self._do_release_lock()
+
+        self._lock_depth -= 1
+
+    def make_snapshot(self, clear = False):
+        """
+        Make a snapshot of the current state of the persistent inventory. Flag clear = True
+        will "move" the data into the snapshot, rather than cloning it.
+        """
+
+        self.acquire_lock()
+        try:
+            self._do_make_snapshot(clear)
+        finally:
+            self.release_lock()
+
+    def prepare_new(self):
+        self.acquire_lock()
+        try:
+            self._do_prepare_new()
+        finally:
+            self.release_lock()
+
+    def load_data(self):
+        """
+        Return dictionaries {site_name: site}, {dataset_name: dataset} loaded from persistent storage
+        """
+
+        self.acquire_lock()
+        try:
+            site_list, dataset_list = self._do_load_data()
+        finally:
+            self.release_lock()
+
+        return site_list, dataset_list
+
+    def save_data(self, site_list, dataset_list):
+        """
+        Write information in the dictionaries into persistent storage
+        """
+
+        self.acquire_lock()
+        try:
+            self._do_save_data(site_list, dataset_list)
+        finally:
+            self.release_lock()
+
+
+if __name__ == '__main__':
+
+    from argparse import ArgumentParser
+    import common.interface.classes as classes
+
+    parser = ArgumentParser(description = 'Inventory interface')
+
+    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = 'Command to execute.')
+    parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'InventoryInterface class to be used.')
+
+    args = parser.parse_args()
+
+    command = args.command[0]
+    cmd_args = args.command[1:]
+
+    if args.class_name == '':
+        interface = classes.default_interface['inventory']()
+    else:
+        interface = getattr(classes, args.class_name)()
+
+    if command == 'snapshot':
+        if len(cmd_args) != 0 and cmd_args[0] == 'clear':
+            clear = True
+        else:
+            clear = False
+
+        interface.make_snapshot(clear = clear)
+
+    else:
+        sites, datasets = interface.load_data()
+
+        if command == 'datasets':
+            print datasets.keys()
+
+        elif command == 'sites':
+            print sites.keys()

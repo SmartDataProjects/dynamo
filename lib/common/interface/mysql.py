@@ -3,8 +3,9 @@ import time
 import socket
 import MySQLdb
 
-from common.interface.base import InventoryInterface
+from common.interface.inventory import InventoryInterface
 from common.dataformat import Dataset, Block, Site, DatasetReplica, BlockReplica
+import common.configuration as config
 
 class MySQLInterface(InventoryInterface):
     """Interface to MySQL."""
@@ -12,216 +13,198 @@ class MySQLInterface(InventoryInterface):
     class DatabaseError(Exception):
         pass
 
-    def __init__(self, **db_params):
+    def __init__(self):
         super(MySQLInterface, self).__init__()
-        self.connection = MySQLdb.connect(**db_params)
-        
-        self.dataset_ids = {}
-        self.block_ids = {}
-        self.site_ids = {}
+
+        self._db_params = {'host': config.mysql.host, 'user': config.mysql.user, 'passwd': config.mysql.passwd, 'db': config.mysql.db}
+        self.connection = MySQLdb.connect(**self._db_params)
 
     def _do_acquire_lock(self): #override
-        cursor = self.connection.cursor()
-
         while True:
-            # Single MySQL query (atomic) to "software-lock" the database
-            cursor.execute('UPDATE `system` SET `lock_host` = %s, `lock_process` = %s WHERE `lock_host` LIKE \'\' AND `lock_process` = 0', (socket.hostname(), os.getpid()))
-            # Did the update go through?
-            cursor.execute('SELECT `lock_host`, `lock_process` FROM `system`')
-            host, pid = cursor.fetchall()[0]
+            # Use the system table to "software-lock" the database
+            self._query('LOCK TABLES `system` WRITE')
+            self._query('UPDATE `system` SET `lock_host` = %s, `lock_process` = %s WHERE `lock_host` LIKE \'\' AND `lock_process` = 0', socket.gethostname(), os.getpid())
 
-            if host == socket.hostname() and pid == os.getpid():
+            # Did the update go through?
+            host, pid = self._query('SELECT `lock_host`, `lock_process` FROM `system`')[0]
+            self._query('UNLOCK TABLES')
+
+            if host == socket.gethostname() and pid == os.getpid():
                 # The database is locked.
                 break
+
+            if config.debug_level > 0:
+                print 'Failed to database. Waiting 30 seconds..'
 
             time.sleep(30)
 
     def _do_release_lock(self): #override
-        cursor = self.connection.cursor()
+        self._query('LOCK TABLES `system` WRITE')
+        self._query('UPDATE `system` SET `lock_host` = \'\', `lock_process` = 0 WHERE `lock_host` LIKE %s AND `lock_process` = %s', socket.gethostname(), os.getpid())
 
-        cursor.execute('UPDATE `system` SET `lock_host` = \'\', `lock_process` = 0 WHERE `lock_host` LIKE %s AND `lock_process` = %s', (socket.hostname(), os.getpid()))
         # Did the update go through?
-        cursor.execute('SELECT `lock_host`, `lock_process` FROM `system_data`')
-        host, pid = cursor.fetchall()[0]
+        host, pid = self._query('SELECT `lock_host`, `lock_process` FROM `system`')[0]
+        self._query('UNLOCK TABLES')
 
         if host != '' or pid != 0:
-            raise InventoryInterface.LockError('Failed to release lock from ' + socket.hostname() + ':' + str(os.getpid()))
+            raise InventoryInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
-    def _do_make_snapshot(self): #override
-        # To be implemented
-        pass
+    def _do_make_snapshot(self, clear): #override
+        db = self._db_params['db']
+        new_db = self._db_params['db'] + time.strftime('_%y%m%d%H%M%S')
 
-    def _do_prepare_new(self): #override
-        cursor = self.connection.cursor()
+        self._query('CREATE DATABASE `%s`' % new_db)
 
-        with open(os.path.dirname(os.path.realpath(__file__)) + '/mysql_prepare_new.sql') as queries:
-            query = ''
-            for line in queries:
-                line = line.strip()
-                if line == '':
-                    continue
+        tables = self._query('SHOW TABLES')
 
-                if line.endswith(';'):
-                    query += line[:-1]
-                    cursor.execute(query)
-                    query = ''
+        for table in tables:
+            self._query('CREATE TABLE `%s`.`%s` LIKE `%s`.`%s`' % (new_db, table, db, table))
+            if table != 'system':
+                self._query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (new_db, table, db, table))
 
-                else:
-                    query += line
+                if clear:
+                    self._query('DROP TABLE `%s`.`%s`' % (db, table))
+                    self._query('CREATE TABLE `%s`.`%s` LIKE `%s`.`%s`' % (db, table, new_db, table))
+       
+        self._query('INSERT INTO `%s`.`system` (`lock_host`,`lock_process`) VALUES (\'\',0)' % new_db)
 
-    def _get_known_dataset_names(self): #override
-        cursor = self.connection.cursor()
+    def _do_load_data(self): #override
+        site_list = {}
+        dataset_list = {}
 
-        cursor.execute('SELECT `id`, `name` FROM `datasets`')
-        names = []
-        for dataset_id, name in cursor:
-            names.append(name)
+        sites = self._query('SELECT `id`, `name`, `host`, `storage_type`, `backend`, `capacity`, `used_total` FROM `sites`')
+        
+        for site_id, name, host, storage_type, backend, capacity, used_total in sites:
+            site = Site(name, host = host, storage_type = Site.storage_type(storage_type), backend = backend, capacity = capacity, used_total = used_total)
+
+            site_list[name] = site
+
+            self._site_ids[site] = site_id
+
+        datasets = self._query('SELECT `id`, `name`, `size`, `num_files`, `is_open` FROM `datasets`')
+
+        for dataset_id, name, size, num_files, is_open in datasets:
+            dataset_list[name] = Dataset(name, size = size, num_files = num_files, is_open = is_open)
+
             self.dataset_ids[name] = dataset_id
 
-        return names
+        blocks = {}
+            
+        blocks = self._query('SELECT ds.`name`, bl.`id`, bl.`name`, bl.`size`, bl.`num_files`, bl.`is_open` FROM `blocks` AS bl INNER JOIN `datasets` AS ds ON ds.`id` = bl.`dataset_id`')
 
-    def _get_known_block_names(self): #override
-        cursor = self.connection.cursor()
+        for dsname, blid, name, size, num_files, is_open in blocks:
+            block = Block(name, size = size, num_files = num_files, is_open = is_open)
+            block.dataset = dataset_list[dsname]
 
-        cursor.execute('SELECT `id`, `name` FROM `blocks`')
-        names = []
-        for block_id, name in cursor:
-            names.append(name)
-            self.block_ids[name] = block_id
+            blocks[blid] = block
 
-        return names
+        dataset_replicas = self._query('SELECT ds.`name`, st.`name`, rp.`is_partial`, rp.`is_custodial` FROM `dataset_replicas` AS rp INNER JOIN `datasets` AS ds ON ds.`id` = rp.`dataset_id` INNER JOIN `sites` AS st ON st.`id` = rp.`site_id`')
 
-    def _get_known_site_names(self): #override
-        cursor = self.connection.cursor()
+        for dsname, sitename, is_partial, is_custodial in dataset_replicas:
+            dataset = dataset_list[dsname]
+            site = site_list[sitename]
 
-        cursor.execute('SELECT `id`, `name` FROM `sites`')
-        names = []
-        for site_id, name in cursor:
-            names.append(name)
-            self.site_ids[name] = site_id
+            rep = DatasetReplica(dataset, site, is_partial = is_partial, is_custodial = is_custodial)
 
-        return names
+            dataset.replicas.append(rep)
+            site.datasets.append(dataset)
 
-    def _do_create_dataset_info(self, dataset): #override
-        cursor = self.connection.cursor()
+        block_replicas = self._query('SELECT bl.`id`, st.`name`, rp.`is_custodial`, UNIX_TIMESTAMP(rp.`time_created`), UNIX_TIMESTAMP(rp.`time_updated`) FROM `block_replicas` AS rp INNER JOIN `blocks` AS bl ON bl.`id` = rp.`block_id` INNER JOIN `sites` AS st ON st.`id` = rp.`site_id`')
 
-        cursor.execute('INSERT INTO `datasets` (`name`, `size`, `num_files`, `is_open`) VALUES (%s, %s, %s, %s)', (dataset.name, dataset.size, dataset.num_files, dataset.is_open))
-        self.dataset_ids[dataset.name] = cursor.lastrowid
+        for blid, sitename, is_custodial, time_created, time_updated in block_replicas:
+            block = blocks[blid]
+            site = site_list[sitename]
 
-    def _do_update_dataset_info(self, dataset): #override
-        cursor = self.connection.cursor()
+            rep = BlockReplica(block, site, is_custodial = is_custodial, time_created = time_created, time_updated = time_updated)
 
-        cursor.execute('UPDATE `datasets` SET `size` = %s, `num_files` = %s, `is_open` = %s WHERE `id` = %s', (dataset.size, dataset.num_files, dataset.is_open, self.dataset_ids[dataset.name]))
+            block.replicas.append(rep)
+            site.blocks.append(block)
 
-    def _do_delete_dataset_info(self, name): #override
-        cursor = self.connection.cursor()
+        return site_list, dataset_list
 
-        cursor.execute('DELETE FROM `datasets` WHERE `id` = %s', self.dataset_ids[name])
+    def _do_save_data(self, site_list, dataset_list): #override
 
-    def _do_create_dataset_info_list(self, datasets): #override
-        sql = 'INSERT INTO `datasets` (`name`, `size`, `num_files`, `is_open`) VALUES %s'
-        sql += ' ON DUPLICATE KEY UPDATE `size` = VALUES(`size`), `num_files` = VALUES(`num_files`), `is_open` = VALUES(`is_open`)'
+        def make_insert_query(table, fields):
+            sql = 'INSERT INTO `' + table + '` (' + ','.join(['`{f}`'.format(f = f) for f in fields]) + ') VALUES %s'
+            sql += ' ON DUPLICATE KEY UPDATE ' + ','.join(['`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields])
+
+            return sql
+
+        # insert/update sites
+        sql = make_insert_query('sites', ['name', 'host', 'storage_type', 'backend', 'capacity', 'used_total'])
+
+        template = '(\'{name}\',\'{host}\',\'{storage_type}\',\'{backend}\',{capacity},{used_total})'
+        mapping = lambda s: {'name': s.name, 'host': s.host, 'storage_type': Site.storage_type(s.storage_type), 'backend': s.backend, 'capacity': s.capacity, 'used_total': s.used_total}
+
+        self._query_many(sql, template, mapping, site_list.values())
+
+        # insert/update datasets
+        sql = make_insert_query('datasets', ['name', 'size', 'num_files', 'is_open'])
+
         template = '(\'{name}\',{size},{num_files},{is_open})'
-        mapping = lambda d: {'name': d.name, 'size': d.size, 'num_files': d.num_files, 'is_open': 0 if d.is_open else 1}
-        self._query_many(sql, template, mapping, datasets)
+        mapping = lambda d: {'name': d.name, 'size': d.size, 'num_files': d.num_files, 'is_open': d.is_open}
 
-        for name, dataset_id in self._find_ids('datasets', datasets):
-            self.dataset_ids[name] = dataset_id
+        self._query_many(sql, template, mapping, dataset_list.values())
 
-    def _do_update_dataset_info_list(self, datasets): #override
-	self._do_create_dataset_info_list(datasets)
+        dataset_ids = dict(self._query('SELECT `name`, `id` FROM `datasets`'))
+        site_ids = dict(self._query('SELECT `name`, `id` FROM `sites`'))
 
-    def _do_delete_dataset_info_list(self, names): #override
-        sql = 'DELETE FROM `datasets` WHERE `id` IN (%s)'
-        template = '{id}'
-        mapping = lambda n: {'id': self.dataset_ids[n]}
-        self._query_many(sql, template, mapping, names)
+        for ds_name, dataset in dataset_list.items():
+            dataset_id = dataset_ids[ds_name]
 
-    def _do_create_block_info(self, block): #override
+            # insert/update dataset replicas
+            sql = make_insert_query('dataset_replicas', ['dataset_id', 'site_id', 'is_partial', 'is_custodial'])
+
+            template = '(%d,{site_id},{is_partial},{is_custodial})' % dataset_id
+            mapping = lambda r: {'site_id': site_ids[r.site.name], 'is_partial': r.is_partial, 'is_custodial': r.is_custodial}
+
+            self._query_many(sql, template, mapping, dataset.replicas)
+            
+            # deal with blocks only if dataset is partial on some site
+            if len(filter(lambda r: r.is_partial, dataset.replicas)) != 0:
+                continue
+            
+            # insert/update blocks
+            sql = make_insert_query('blocks', ['name', 'dataset_id', 'size', 'num_files', 'is_open'])
+
+            template = '(\'{name}\',%d,{size},{num_files},{is_open})' % dataset_id
+            mapping = lambda b: {'name': b.name, 'size': b.size, 'num_files': b.num_files, 'is_open': b.is_open}
+
+            self._query_many(sql, template, mapping, dataset.blocks)
+
+            block_ids = dict(self._query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id))
+
+            for block in dataset.blocks:
+                block_id = block_ids[block.name]
+
+                # insert/update block replicas
+                sql = make_insert_query('block_replicas', ['block_id', 'site_id', 'is_custodial', 'time_created', 'time_updated'])
+
+                template = '(%d,{site_id},{is_custodial},FROM_UNIXTIME({time_created}),FROM_UNIXTIME({time_updated}))' % block_id
+                mapping = lambda r: {'site_id': site_ids[r.site.name], 'is_custodial': r.is_custodial, 'time_created': r.time_created, 'time_updated': r.time_updated}
+    
+                self._query_many(sql, template, mapping, block.replicas)
+
+    def _query(self, sql, *args):
         cursor = self.connection.cursor()
 
-        cursor.execute('INSERT INTO `blocks` (`name`, `size`, `num_files`, `is_open`) VALUES (%s, %s, %s, %s)', (block.name, block.size, block.num_files, block.is_open))
-        self.block_ids[block.name] = cursor.lastrowid
+        if config.debug_level > 1:
+            print sql
 
-    def _do_update_block_info(self, block): #override
-        cursor = self.connection.cursor()
+        cursor.execute(sql, args)
 
-        cursor.execute('UPDATE `blocks` SET `size` = %s, `num_files` = %s, `is_open` = %s WHERE `id` = %s', (block.size, block.num_files, block.is_open, self.block_ids[block.name]))
+        result = cursor.fetchall()
 
-    def _do_delete_block_info(self, name): #override
-        cursor = self.connection.cursor()
+        if cursor.description is None:
+            # insert query
+            return cursor.lastrowid
 
-        cursor.execute('DELETE FROM `blocks` WHERE `id` = %s', self.block_ids[name])
+        elif len(result) != 0 and len(result[0]) == 1:
+            # single column requested
+            return [row[0] for row in result]
 
-    def _do_create_block_info_list(self, blocks): #override
-        sql = 'INSERT INTO `blocks` (`name`, `dataset_id`, `size`, `num_files`, `is_open`) VALUES %s'
-        sql += ' ON DUPLICATE KEY UPDATE `dataset_id` = VALUES(`dataset_id`), `size` = VALUES(`size`), `num_files` = VALUES(`num_files`), `is_open` = VALUES(`is_open`)'
-        template = '(\'{name}\',{dataset_id},{size},{num_files},{is_open})'
-        mapping = lambda b: {'name': b.name, 'dataset_id': self.dataset_ids[b.dataset.name], 'size': b.size, 'num_files': b.num_files, 'is_open': 0 if b.is_open else 1}
-
-        self._query_many(sql, template, mapping, blocks)
-
-        for name, block_id in self._find_ids('blocks', blocks):
-            self.block_ids[name] = block_id
-
-    def _do_update_block_info_list(self, blocks): #override
-        self._do_create_block_info_list(blocks)
-
-    def _do_delete_block_info_list(self, names): #override
-        sql = 'DELETE FROM `blocks` WHERE `id` IN (%s)'
-        template = '{id}'
-        mapping = lambda n: {'id': self.block_ids[n]}
-
-        self._query_many(sql, template, mapping, names)
-
-    def _do_create_site_info(self, site): #override
-        cursor = self.connection.cursor()
-
-        cursor.execute('INSERT INTO `sites` (`name`, `capacity`, `used_total`) VALUES (%s, %s, %s)', (site.name, site.capacity, site.used_total))
-        self.site_ids[site.name] = cursor.lastrowid
-
-    def _do_update_site_info(self, site): #override
-        cursor = self.connection.cursor()
-
-        cursor.execute('UPDATE `sites` SET `capacity` = %s, `used_total` = %s WHERE `id` = %s', (site.capacity, site.used_total, self.site_ids[site.name]))
-
-    def _do_delete_site_info(self, name): #override
-        cursor = self.connection.cursor()
-
-        cursor.execute('DELETE FROM `sites` WHERE `id` = %s', self.site_ids[name])
-
-    def _do_create_site_info_list(self, sites): #override
-        sql = 'INSERT INTO `sites` (`name`, `capacity`, `used_total`) VALUES %s'
-        sql += ' ON DUPLICATE KEY UPDATE `capacity` = VALUES(`capacity`), `used_total` = VALUES(`used_total`)'
-        template = '(\'{name}\',{capacity},{used_total})'
-        mapping = lambda s: {'name': s.name, 'capacity': s.capacity, 'used_total': s.used_total}
-
-        self._query_many(sql, template, mapping, sites)
-
-        for name, site_id in self._find_ids('sites', sites):
-            self.site_ids[name] = site_id
-
-    def _do_update_site_info_list(self, sites): #override
-        self._do_create_site_info_list(sites)
-
-    def _do_delete_site_info_list(self, names): #override
-        self._delete_all('sites', names)
-
-    def _do_place_dataset(self, dataset_replicas): #override
-        sql = 'INSERT INTO `dataset_replicas` (`dataset_id`, `site_id`, `is_partial`) VALUES %s'
-        template = '({dataset_id},{site_id},{is_partial})'
-        mapping = lambda r: {'dataset_id': self.dataset_ids[r.dataset.name], 'site_id': self.site_ids[r.site.name], 'is_partial': 1 if r.is_partial else 0}
-
-        self._query_many(sql, template, mapping, dataset_replicas)
-
-    def _do_place_block(self, block_replicas): #override
-        sql = 'INSERT INTO `block_replicas` (`block_id`, `site_id`) VALUES %s'
-        sql += ' ON DUPLICATE KEY UPDATE `block_id` = VALUES(`block_id`)' # dummy operation to ignore duplicates
-
-        template = '({block_id},{site_id})'
-        mapping = lambda r: {'block_id': self.block_ids[r.block.name], 'site_id': self.site_ids[r.site.name]}
-
-        self._query_many(sql, template, mapping, block_replicas)
+        else:
+            return list(result)
 
     def _query_many(self, sql, template, mapping, objects):
         cursor = self.connection.cursor()
@@ -238,20 +221,9 @@ class MySQLInterface(InventoryInterface):
                 cursor.execute(sql % values)
                 values = ''
 
+        if config.debug_level > 1:
+            print sql % values
+
         cursor.execute(sql % values)
 
         return cursor.fetchall()
-
-    def _delete_all(self, table, names):
-        sql = 'DELETE FROM `' + table + '` WHERE `name` IN (%s)'
-        template = '\'{name}\''
-        mapping = lambda n: {'name': n}
-
-        self._query_many(sql, template, mapping, names)
-
-    def _find_ids(self, table, objs):
-        sql = 'SELECT `name`, `id` FROM `' + table + '` WHERE `name` IN (%s)'
-        template = '\'{name}\''
-        mapping = lambda o: {'name': o.name}
-
-        return self._query_many(sql, template, mapping, objs)
