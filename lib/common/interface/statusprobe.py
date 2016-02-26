@@ -8,25 +8,31 @@ class StatusProbeInterface(object):
     def __init__(self):
         pass
 
-    def get_data(self, site = '', dataset = '/*/*/*'):
+    def get_data(self, site = '', group = '', dataset = '/*/*/*'):
 
         sites = self.get_site_list(site)
+        groups = self.get_group_list(group)
         datasets = self.get_dataset_list(dataset)
-        self.make_replica_links(sites, datasets)
+        self.make_replica_links(sites, groups, datasets)
 
-        return sites, datasets
+        return sites, groups, datasets
 
-    def get_site_list(self, name = ''):
+    def get_site_list(self, filt = ''):
         """Return a list of sites that match the wildcard name."""
 
         return {}
 
-    def get_dataset_list(self, name = '/*/*/*'):
+    def get_group_list(self, filt = ''):
+        """Return a list of groups that match the wildcard name."""
+
+        return {}
+
+    def get_dataset_list(self, filt = '/*/*/*'):
         """Return a list of datasets that match the wildcard name."""
 
         return {}
 
-    def make_replica_links(self, sites, datasets):
+    def make_replica_links(self, sites, groups, datasets):
         """Link the sites with datasets and blocks"""
         pass
 
@@ -52,7 +58,13 @@ if __name__ == '__main__':
         interface = getattr(classes, args.class_name)()
 
     if command == 'sites':
-        print interface.get_site_list(cmd_args[0]).keys()
+        if len(cmd_args) != 0:
+            print interface.get_site_list(cmd_args[0]).keys()
+        else:
+            print interface.get_site_list().keys()
 
     elif command == 'datasets':
-        print interface.get_dataset_list(cmd_args[0]).keys()
+        if len(cmd_args) != 0:
+            print interface.get_dataset_list(cmd_args[0]).keys()
+        else:
+            print interface.get_dataset_list().keys()

@@ -72,7 +72,7 @@ class Site(object):
         self.name = name
         self.host = host
         self.storage_type = storage_type
-        self.backend = ''
+        self.backend = backend
         self.capacity = capacity
         self.used_total = used_total
         self.datasets = []
@@ -82,10 +82,7 @@ class Site(object):
 class Group(object):
     """Represents a user group."""
 
-    cached_groups = {}
-
-    def __init__(self, name, group_id = 0):
-        self.group_id = group_id
+    def __init__(self, name):
         self.name = name
 
 
@@ -102,9 +99,10 @@ class DatasetReplica(object):
 class BlockReplica(object):
     """Represents a block replica."""
 
-    def __init__(self, block, site, is_custodial = False, time_created = 0, time_updated = 0):
+    def __init__(self, block, site, group = None, is_custodial = False, time_created = 0, time_updated = 0):
         self.block = block
         self.site = site
+        self.group = group
         self.is_custodial = is_custodial
         self.time_created = time_created
         self.time_updated = time_updated

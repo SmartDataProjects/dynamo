@@ -5,8 +5,6 @@ class InventoryInterface(object):
     Interface to local inventory database.
     """
 
-    _singleton = None
-
     class LockError(Exception):
         pass
 
@@ -20,6 +18,11 @@ class InventoryInterface(object):
                 setattr(self.obj, key, value)
                 
             self.stale = False
+
+
+    CLEAR_NONE = 0
+    CLEAR_REPLICAS = 1
+    CLEAR_ALL = 2
 
     def __init__(self):
         # Allow multiple calls to acquire-release. No other process can acquire
@@ -42,7 +45,7 @@ class InventoryInterface(object):
 
         self._lock_depth -= 1
 
-    def make_snapshot(self, clear = False):
+    def make_snapshot(self, clear = CLEAR_NONE):
         """
         Make a snapshot of the current state of the persistent inventory. Flag clear = True
         will "move" the data into the snapshot, rather than cloning it.
@@ -63,25 +66,29 @@ class InventoryInterface(object):
 
     def load_data(self):
         """
-        Return dictionaries {site_name: site}, {dataset_name: dataset} loaded from persistent storage
+        Return dictionaries {site_name: site}, {group name: group}, {dataset_name: dataset}
+        loaded from persistent storage.
         """
 
         self.acquire_lock()
         try:
-            site_list, dataset_list = self._do_load_data()
+            site_list, group_list, dataset_list = self._do_load_data()
         finally:
             self.release_lock()
 
-        return site_list, dataset_list
+        return site_list, group_list, dataset_list
 
-    def save_data(self, site_list, dataset_list):
+    def save_data(self, site_list, group_list, dataset_list):
         """
-        Write information in the dictionaries into persistent storage
+        Write information in the dictionaries into persistent storage.
+        Remove information of datasets and blocks with no replicas.
         """
 
         self.acquire_lock()
         try:
-            self._do_save_data(site_list, dataset_list)
+            self._do_save_data(site_list, group_list, dataset_list)
+            self._do_clean_block_info()
+            self._do_clean_dataset_info()
         finally:
             self.release_lock()
 
@@ -107,18 +114,23 @@ if __name__ == '__main__':
         interface = getattr(classes, args.class_name)()
 
     if command == 'snapshot':
-        if len(cmd_args) != 0 and cmd_args[0] == 'clear':
-            clear = True
-        else:
-            clear = False
+        clear = InventoryInterface.CLEAR_NONE
+        if len(cmd_args) > 1 and cmd_args[0] == 'clear':
+            if cmd_args[1] == 'replicas':
+                clear = InventoryInterface.CLEAR_REPLICAS
+            elif cmd_args[2] == 'all':
+                clear = InventoryInterface.CLEAR_ALL
 
         interface.make_snapshot(clear = clear)
 
     else:
-        sites, datasets = interface.load_data()
+        sites, groups, datasets = interface.load_data()
 
         if command == 'datasets':
             print datasets.keys()
+
+        elif command == 'groups':
+            print groups.keys()
 
         elif command == 'sites':
             print sites.keys()

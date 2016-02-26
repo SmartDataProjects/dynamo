@@ -1,4 +1,5 @@
 from common.interface.classes import default_interface
+from common.interface.inventory import InventoryInterface
 from common.dataformat import IntegrityError
 import common.configuration as config
 
@@ -10,6 +11,7 @@ class InventoryManager(object):
         self.data_source = data_source_cls()
 
         self.sites = {}
+        self.groups = {}
         self.datasets = {}
 
         if load_data:
@@ -19,9 +21,10 @@ class InventoryManager(object):
         self.inventory.acquire_lock()
 
         try:
-            sites, datasets = self.inventory.load_data()
+            sites, groups, datasets = self.inventory.load_data()
 
             self.sites = sites
+            self.groups = groups
             self.datasets = datasets
 
         finally:
@@ -34,20 +37,19 @@ class InventoryManager(object):
         self.inventory.acquire_lock()
 
         try:
-            # We start fresh and write all replica information in, instead of updating them.
-            # Site, dataset, and block information are kept.
-            self.inventory.make_snapshot()
+            # Make a snapshot (older snapshots cleaned by an independent daemon)
+            # All replica data will be erased but the static data (sites, groups, datasets, and blocks) remain
+            self.inventory.make_snapshot(clear = InventoryInterface.CLEAR_REPLICAS)
 
-            sites, datasets = self.data_source.get_data(site = site_filter, dataset = dataset_filter)
+            sites, groups, datasets = self.data_source.get_data(site = site_filter, dataset = dataset_filter)
 
             self.sites = sites
+            self.groups = groups
             self.datasets = datasets
 
-            # Update operation
-            # delete site info that is not in the persistent list (nothing happens)
-            # create new site info
-            # update existing site info (nothing happens)
-            self.inventory.save_data(sites, datasets)
+            # Save inventory data to persistent storage
+            # Datasets and groups with no replicas are removed
+            self.inventory.save_data(sites, groups, datasets)
 
         finally:
             # Lock is released even in case of unexpected errors
