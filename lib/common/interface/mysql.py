@@ -19,6 +19,8 @@ class MySQLInterface(InventoryInterface):
         self._db_params = {'host': config.mysql.host, 'user': config.mysql.user, 'passwd': config.mysql.passwd, 'db': config.mysql.db}
         self.connection = MySQLdb.connect(**self._db_params)
 
+        self.last_update = self._query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
+
     def _do_acquire_lock(self): #override
         while True:
             # Use the system table to "software-lock" the database
@@ -214,6 +216,9 @@ class MySQLInterface(InventoryInterface):
                 mapping = lambda r: {'site_id': site_ids[r.site.name], 'group_id': group_ids[r.group.name] if r.group else 0, 'is_custodial': r.is_custodial, 'time_created': r.time_created, 'time_updated': r.time_updated}
     
                 self._query_many(sql, template, mapping, block.replicas)
+
+        self._query('UPDATE `system` SET `last_update` = NOW()')
+        self.last_update = self._query('SELECT `last_update` FROM `system`')[0]
 
     def _do_clean_block_info(self): #override
         self._query('DELETE FROM `blocks` WHERE `id` NOT IN (SELECT DISTINCT(`block_id`) FROM `block_replicas`)')

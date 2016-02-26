@@ -33,6 +33,8 @@ class InventoryInterface(object):
         self._block_cache = {}
         self._site_cache = {}
 
+        self.last_update = 0
+
     def acquire_lock(self):
         if self._lock_depth == 0:
             self._do_acquire_lock()

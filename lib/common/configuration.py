@@ -13,3 +13,6 @@ phedex = Configuration()
 phedex.x509_key = '/tmp/x509up_u51268'
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'
 phedex.dbs_name = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
+
+inventory = Configuration()
+inventory.refresh_min = 3600
