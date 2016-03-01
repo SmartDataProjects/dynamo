@@ -16,3 +16,4 @@ phedex.dbs_name = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
 
 inventory = Configuration()
 inventory.refresh_min = 3600
+inventory.included_sites = ['T2_*', 'T1_*_Disk']

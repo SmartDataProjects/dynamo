@@ -10,9 +10,9 @@ class StatusProbeInterface(object):
 
     def get_data(self, site = '', group = '', dataset = '/*/*/*'):
 
-        sites = self.get_site_list(site)
-        groups = self.get_group_list(group)
-        datasets = self.get_dataset_list(dataset)
+        sites = self.get_site_list(filt = site)
+        groups = self.get_group_list(filt = group)
+        datasets = self.get_dataset_list(filt = dataset, site_filt = site)
         self.make_replica_links(sites, groups, datasets)
 
         return sites, groups, datasets
@@ -27,7 +27,7 @@ class StatusProbeInterface(object):
 
         return {}
 
-    def get_dataset_list(self, filt = '/*/*/*'):
+    def get_dataset_list(self, filt = '/*/*/*', site_filt = ''):
         """Return a list of datasets that match the wildcard name."""
 
         return {}

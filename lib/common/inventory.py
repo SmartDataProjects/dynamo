@@ -30,7 +30,7 @@ class InventoryManager(object):
         finally:
             self.inventory.release_lock()
 
-    def update(self, site_filter = '', dataset_filter = '/*/*/*'):
+    def update(self, dataset_filter = '/*/*/*'):
         """Query the dataSource and get updated information."""
 
         # Lock the inventory
@@ -41,7 +41,7 @@ class InventoryManager(object):
             # All replica data will be erased but the static data (sites, groups, datasets, and blocks) remain
             self.inventory.make_snapshot(clear = InventoryInterface.CLEAR_REPLICAS)
 
-            sites, groups, datasets = self.data_source.get_data(site = site_filter, dataset = dataset_filter)
+            sites, groups, datasets = self.data_source.get_data(site = config.inventory.included_sites, dataset = dataset_filter)
 
             self.sites = sites
             self.groups = groups
@@ -76,7 +76,6 @@ if __name__ == '__main__':
     parser.add_argument('--inventory', '-i', metavar = 'CLASS', dest = 'inventory_class', default = '', help = 'Inventory class to be used.')
     parser.add_argument('--status-probe', '-p', metavar = 'CLASS', dest = 'status_probe_class', default = '', help = 'Status probe class to be used.')
     parser.add_argument('--dataset', '-d', metavar = 'EXPR', dest = 'dataset', default = '/*/*/*', help = 'Limit operation to datasets matching the expression.')
-    parser.add_argument('--site', '-s', metavar = 'EXPR', dest = 'site', default = '', help = 'Limit operation to sites matching the expression.')
     parser.add_argument('--debug', '-v', metavar = 'LEVEL', dest = 'debug_level', type = int, default = 0, help = 'Limit operation to sites matching the expression.')
 
     args = parser.parse_args()
@@ -99,7 +98,7 @@ if __name__ == '__main__':
     manager = InventoryManager(load_data = False, inventory_cls = inventory_cls, data_source_cls = data_source_cls)
 
     if command == 'update':
-        manager.update(site_filter = args.site, dataset_filter = args.dataset)
+        manager.update(dataset_filter = args.dataset)
 
     elif command == 'list':
         manager.load()

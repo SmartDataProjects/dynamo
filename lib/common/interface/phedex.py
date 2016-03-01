@@ -3,6 +3,7 @@ import urllib
 import urllib2
 import httplib
 import json
+import collections
 
 from common.interface.transfer import TransferInterface
 from common.interface.statusprobe import StatusProbeInterface
@@ -66,6 +67,8 @@ class PhEDExInterface(TransferInterface, StatusProbeInterface):
     Interface to PhEDEx. Is a transfer and status probe interface at the same time.
     """
 
+    ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['site_name', 'group_name', 'is_custodial', 'time_created', 'time_updated'])
+
     def __init__(self):
         self.url_base = config.phedex.url_base
         self._opener = urllib2.build_opener(HTTPSGridAuthHandler())
@@ -73,11 +76,17 @@ class PhEDExInterface(TransferInterface, StatusProbeInterface):
         self._last_request_time = 0
         self._last_request_url = ''
 
+        # Due to the way PhEDEx is set up, we are required to see block replica information
+        # when fetching the list of datasets. Might as well cache it.
+        # Cache organized as {dataset: {block: replicas}}
+        self._block_replicas = {}
+
     def get_site_list(self, filt = ''): #override
-        if filt != '':
+        option = ''
+        if type(filt) is str and len(filt) != 0:
             option = 'node=' + filt
-        else:
-            option = ''
+        elif type(filt) is list:
+            option = '&' + '&'.join(['node=%s' % s for s in filt])
 
         source = self._make_request('nodes', option)
 
@@ -107,13 +116,16 @@ class PhEDExInterface(TransferInterface, StatusProbeInterface):
 
         return group_list
 
-    def get_dataset_list(self, filt = '/*/*/*'): #override
-        proto_source = self._make_request('data', 'level=block&create_since=0&dataset=' + filt)
-        # proto_source has data from multiple dbs instances
-        # [{'name': url, 'time_create': timestamp, 'dataset': []}, ..]
-        source = next(s for s in proto_source if s['name'] == config.phedex.dbs_name)['dataset']
+    def get_dataset_list(self, filt = '/*/*/*', site_filt = ''): #override
+        self._block_replicas = {}
 
-        proto_source = None # release some memory
+        sites = ''
+        if type(site_filt) is str and len(site_filt):
+            sites = '&node=' + site_filt
+        elif type(site_filt) is list:
+            sites = '&' + '&'.join(['node=%s' % s for s in site_filt])
+
+        source = self._make_request('blockreplicas', 'subscribed=y&show_dataset=y' + sites)
 
         dataset_list = {}
 
@@ -121,6 +133,8 @@ class PhEDExInterface(TransferInterface, StatusProbeInterface):
             name = dataset_entry['name']
 
             dataset = Dataset(name, is_open = (dataset_entry['is_open'] == 'y'))
+
+            self._block_replicas[dataset] = {}
 
             size_total = 0
             num_files_total = 0
@@ -135,6 +149,19 @@ class PhEDExInterface(TransferInterface, StatusProbeInterface):
                 size_total += block_entry['bytes']
                 num_files_total += block_entry['files']
 
+                self._block_replicas[dataset][block] = []
+
+                for replica_entry in block_entry['replica']:
+                    replica = PhEDExInterface.ProtoBlockReplica(
+                        site_name = replica_entry['node'],
+                        group_name = replica_entry['group'],
+                        is_custodial = (replica_entry['custodial'] == 'y'),
+                        time_created = replica_entry['time_create'],
+                        time_updated = replica_entry['time_update']
+                    )
+
+                    self._block_replicas[dataset][block].append(replica)
+
             dataset.size = size_total
             dataset.num_files = num_files_total
 
@@ -145,45 +172,31 @@ class PhEDExInterface(TransferInterface, StatusProbeInterface):
     def make_replica_links(self, sites, groups, datasets): #override
         # loop over datasets in memory and request block replica info
         for ds_name, dataset in datasets.items():
-            if config.debug_level > 1:
-                print 'fetching block replicas for', ds_name
-
             custodial_sites = []
             num_blocks = {}
 
-            source = self._make_request('blockreplicas', 'dataset=' + ds_name)
-
-            for block_entry in source:
-                block_fullname = block_entry['name']
-                block_name = block_fullname.replace(ds_name + '#', '')
-            
-                block = next(b for b in dataset.blocks if b.name == block_name)
-
-                for replica_entry in block_entry['replica']:
+            for block, replicas in self._block_replicas[dataset].items():
+                for proto_replica in replicas:
                     try:
-                        site = sites[replica_entry['node']]
+                        site = sites[proto_replica.site_name]
                     except KeyError:
-                        print 'Site', replica_entry['node'], 'for replica of block', block_fullname, 'not registered.'
+                        print 'Site', proto_replica.site_name, 'for replica of block', block.name, 'not registered.'
                         continue
 
-                    group_name = replica_entry['group']
-
-                    if group_name is not None:
+                    if proto_replica.group_name is not None:
                         try:
-                            group = groups[group_name]
+                            group = groups[proto_replica.group_name]
                         except KeyError:
-                            print 'Group', group_name, 'for replica of block', block_fullname, 'not registered.'
+                            print 'Group', proto_replica.group_name, 'for replica of block', block.name, 'not registered.'
                             continue
                     else:
                         group = None
 
-                    is_custodial = (replica_entry['custodial'] == 'y')
-
-                    replica = BlockReplica(block, site, group = group, is_custodial = is_custodial, time_created = replica_entry['time_create'], time_updated = replica_entry['time_update'])
+                    replica = BlockReplica(block, site, group = group, is_custodial = proto_replica.is_custodial, time_created = proto_replica.time_created, time_updated = proto_replica.time_updated)
 
                     block.replicas.append(replica)
 
-                    if is_custodial and site not in custodial_sites:
+                    if proto_replica.is_custodial and site not in custodial_sites:
                         custodial_sites.append(site)
 
                     try:
