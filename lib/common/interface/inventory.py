@@ -1,4 +1,8 @@
+import logging
+
 from common.dataformat import Dataset, Block, Site, IntegrityError
+
+logger = logging.getLogger(__name__)
 
 class InventoryInterface(object):
     """

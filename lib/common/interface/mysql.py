@@ -1,11 +1,14 @@
 import os
 import time
 import socket
+import logging
 import MySQLdb
 
 from common.interface.inventory import InventoryInterface
 from common.dataformat import Dataset, Block, Site, Group, DatasetReplica, BlockReplica
 import common.configuration as config
+
+logger = logging.getLogger(__name__)
 
 class MySQLInterface(InventoryInterface):
     """Interface to MySQL."""
@@ -35,8 +38,7 @@ class MySQLInterface(InventoryInterface):
                 # The database is locked.
                 break
 
-            if config.debug_level > 0:
-                print 'Failed to database. Waiting 30 seconds..'
+            logger.warning('Failed to database. Waiting 30 seconds..')
 
             time.sleep(30)
 
@@ -229,8 +231,7 @@ class MySQLInterface(InventoryInterface):
     def _query(self, sql, *args):
         cursor = self.connection.cursor()
 
-        if config.debug_level > 1:
-            print sql
+        logger.debug(sql)
 
         cursor.execute(sql, args)
 
@@ -262,8 +263,7 @@ class MySQLInterface(InventoryInterface):
                 cursor.execute(sql % values)
                 values = ''
 
-        if config.debug_level > 1:
-            print sql % values
+        logger.debug(sql % values)
 
         cursor.execute(sql % values)
 

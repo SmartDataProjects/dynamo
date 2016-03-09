@@ -3,12 +3,15 @@ import urllib
 import urllib2
 import httplib
 import json
+import logging
 import collections
 
 from common.interface.transfer import TransferInterface
 from common.interface.statusprobe import StatusProbeInterface
 from common.dataformat import Dataset, Block, Site, Group, DatasetReplica, BlockReplica
 import common.configuration as config
+
+logger = logging.getLogger(__name__)
 
 class HTTPSGridAuthHandler(urllib2.HTTPSHandler):
     """
@@ -125,7 +128,7 @@ class PhEDExInterface(TransferInterface, StatusProbeInterface):
         elif type(site_filt) is list:
             sites = '&' + '&'.join(['node=%s' % s for s in site_filt])
 
-        source = self._make_request('blockreplicas', 'subscribed=y&show_dataset=y' + sites)
+        source = self._make_request('blockreplicas', 'subscribed=y&show_dataset=y&dataset=' + filt + sites)
 
         dataset_list = {}
 
@@ -222,8 +225,7 @@ class PhEDExInterface(TransferInterface, StatusProbeInterface):
         if len(option) != 0:
             url += '?' + option
 
-        if config.debug_level > 0:
-            print url
+        logger.info(url)
 
         request = urllib2.Request(url)
 
@@ -238,8 +240,7 @@ class PhEDExInterface(TransferInterface, StatusProbeInterface):
 
         result = json.loads(response.read())['phedex']
 
-        if config.debug_level > 2:
-            print result
+        logger.debug(result)
 
         self._last_request = result['request_timestamp']
         self._last_request_url = result['request_url']

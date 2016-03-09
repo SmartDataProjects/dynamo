@@ -1,7 +1,9 @@
+import logging
+
 class Configuration(object):
     pass
 
-debug_level = 0
+logging.basicConfig(level = logging.INFO)
 
 mysql = Configuration()
 mysql.db = 'DDM_devel'
