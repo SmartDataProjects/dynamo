@@ -13,11 +13,13 @@ class ObjectError(Exception):
 class Dataset(object):
     """Represents a dataset."""
 
-    def __init__(self, name, size = -1, num_files = 0, is_open = False):
+    def __init__(self, name, size = -1, num_files = 0, is_open = False, is_valid = True):
         self.name = name
         self.size = size
         self.num_files = num_files
         self.is_open = is_open
+        self.is_valid = is_valid
+        self.last_accessed = 0
         self.blocks = []
         self.replicas = []
 
@@ -144,3 +146,12 @@ class BlockReplica(object):
         self.is_custodial = is_custodial
         self.time_created = time_created
         self.time_updated = time_updated
+
+
+class DatasetDemand(object):
+    """Represents information on dataset demand."""
+
+    def __init__(self, dataset, popularity_score = -1.):
+        self.dataset = dataset
+        self.popularity_score = popularity_score
+        self.locked_blocks = []

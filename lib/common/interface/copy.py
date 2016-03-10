@@ -1,6 +1,6 @@
-class TransferInterface(object):
+class CopyInterface(object):
     """
-    Interface to data transfer application.
+    Interface to data copy application.
     """
 
     def __init__(self):

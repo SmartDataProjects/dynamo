@@ -45,17 +45,21 @@ class InventoryManager(object):
             self.load()
 
     def load(self):
+        logger.info('Loading data from local persistent storage.')
+        
         self.inventory.acquire_lock()
 
         try:
             sites, groups, datasets = self.inventory.load_data()
 
-            self.sites = sites
-            self.groups = groups
-            self.datasets = datasets
+            self.sites = dict([(s.name, s) for s in sites])
+            self.groups = dict([(g.name, g) for g in groups])
+            self.datasets = dict([(d.name, d) for d in datasets])
 
         finally:
             self.inventory.release_lock()
+
+        logger.info('Data is loaded to memory.')
 
     def update(self, dataset_filter = '/*/*/*'):
         """Query the dataSource and get updated information."""
@@ -80,18 +84,41 @@ class InventoryManager(object):
 
             self.datasets = {}
 
+            dataset_names = []
             for site in site_list:
-                logger.info('Fetching info on datasets on %s.', site.name)
+                logger.info('Fetching info on datasets on %s (%d/%d).', site.name, site_list.index(site), len(site_list))
                 ds_name_list = self.replica_source.get_datasets_on_site(site, dataset_filter)
 
                 for ds_name in ds_name_list:
-                    if ds_name not in self.datasets:
-                        logger.info('Linking %s to sites and groups.', ds_name)
+                    if ds_name in self.datasets:
+                        continue
+                    # Making a query for each dataset was too slow - now collecting up to 100 datasets and making larger queries.
+#                    logger.info('Linking %s to sites and groups.', ds_name)
+#
+#                    dataset = self.dataset_source.get_dataset(ds_name)
+#                    self.replica_source.make_replica_links(dataset, self.sites, self.groups)
+#
+#                    self.datasets[ds_name] = dataset
 
-                        dataset = self.dataset_source.get_dataset(ds_name)
-                        self.replica_source.make_replica_links(dataset, self.sites, self.groups)
+                    if ds_name in dataset_names:
+                        continue
+                    
+                    dataset_names.append(ds_name)
 
-                        self.datasets[ds_name] = dataset
+                    if len(dataset_names) >= 100:
+                        datasets = self.dataset_source.get_dataset(dataset_names)
+                        self.replica_source.make_replica_links(datasets, self.sites, self.groups)
+
+                        for dataset in datasets:
+                            self.datasets[dataset.name] = dataset
+
+                        dataset_names = []
+
+            datasets = self.dataset_source.get_dataset(dataset_names)
+            self.replica_source.make_replica_links(datasets, self.sites, self.groups)
+
+            for dataset in datasets:
+                self.datasets[dataset.name] = dataset
 
             logger.info('Saving data.')
             # Save inventory data to persistent storage
@@ -163,7 +190,7 @@ class InventoryManager(object):
 if __name__ == '__main__':
 
     from argparse import ArgumentParser
-    from common.interface.classes import *
+    import common.interface.classes as classes
 
     parser = ArgumentParser(description = 'Inventory manager')
 
@@ -191,9 +218,9 @@ if __name__ == '__main__':
     for cls in ['inventory', 'site_source', 'dataset_source', 'replica_source']:
         clsname = getattr(args, cls + '_cls')
         if clsname == '':
-            kwd[cls + '_cls'] = default_interface[cls]
+            kwd[cls + '_cls'] = classes.default_interface[cls]
         else:
-            kwd[cls + '_cls'] = eval(clsname)
+            kwd[cls + '_cls'] = getattr(classes, clsname)
 
     manager = InventoryManager(load_data = False, **kwd)
 

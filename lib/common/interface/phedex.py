@@ -2,7 +2,7 @@ import json
 import logging
 import collections
 
-from common.interface.transfer import TransferInterface
+from common.interface.copy import CopyInterface
 from common.interface.deletion import DeletionInterface
 from common.interface.siteinfo import SiteInfoSourceInterface
 from common.interface.replicainfo import ReplicaInfoSourceInterface
@@ -13,7 +13,7 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-class PhEDExInterface(TransferInterface, DeletionInterface, SiteInfoSourceInterface, ReplicaInfoSourceInterface):
+class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface, ReplicaInfoSourceInterface):
     """
     Interface to PhEDEx using datasvc REST API.
     """
@@ -30,6 +30,12 @@ class PhEDExInterface(TransferInterface, DeletionInterface, SiteInfoSourceInterf
         # when fetching the list of datasets. Might as well cache it.
         # Cache organized as {site: {ds_name: [protoblocks]}}
         self._block_replicas = {}
+
+    def schedule_copy(self, dataset, origin, dest): #override (CopyInterface)
+        print 'Copy', dataset.name, 'from', origin.name, 'to', dest.name
+
+    def schedule_deletion(self, obj, site): #override (DeletionInterface)
+        print 'Delete', obj.name, 'from', site.name
 
     def get_site_list(self, filt = '*'): #override (SiteInfoSourceInterface)
         options = []

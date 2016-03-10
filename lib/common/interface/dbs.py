@@ -18,28 +18,58 @@ class DBSInterface(DatasetInfoSourceInterface):
         self._interface = RESTService(config.dbs.url_base)
 
     def get_dataset(self, name): # override
-        # no need to query the DBS for the information on the dataset itself for the moment (we might need to if we add more data to Dataset class)
-        dataset = Dataset(name)
+        ds_records = self._make_request('datasets', ['dataset=' + name, 'detail=True'])
+        if len(ds_records) == 0:
+            logger.warning('Dataset %s not found on record.', name)
+            return dataset
 
-        blocks = self._make_request('blocks', ['dataset=' + name, 'detail=True'])
+        block_records = self._make_request('blocks', ['dataset=' + name, 'detail=True'])
 
-        for entry in blocks:
-            block_name = entry['block_name'].replace(dataset.name + '#', '')
+        datasets = self._construct_from_lists(ds_records, block_records)
 
-            if entry['open_for_writing'] == 1:
-                is_open = True
-                dataset.is_open = True
-            else:
-                is_open = False
+        return datasets[0]
 
-            block = Block(block_name, dataset = dataset, size = entry['block_size'], num_files = entry['file_count'], is_open = is_open)
+    def get_datasets(self, names): # override
+        ds_records = self._make_request('datasets', ['dataset=%s' % name for name in names] + ['detail=True'])
+        if len(ds_records) == 0:
+            logger.warning('Dataset %s not found on record.', name)
+            return dataset
+
+        block_records = self._make_request('blocks', ['dataset=%s' % name for name in names] + ['detail=True'])
+
         
-            dataset.blocks.append(block)
 
-        dataset.size = sum([b.size for b in dataset.blocks])
-        dataset.num_files = sum([b.num_files for b in dataset.blocks])
+    def _construct_from_lists(self, ds_records, block_records):
+        datasets = []
 
-        return dataset
+        for ds_record in ds_records:
+            ds_name = ds_record['dataset']
+            dataset = Dataset(ds_name)
+            dataset.is_valid = (ds_record['dataset_access_type'] == 'VALID')
+    
+            for block_record in block_records:
+                if block_record['dataset'] != ds_name:
+                    continue
+
+                block_name = entry['block_name'].replace(dataset.name + '#', '')
+    
+                if entry['open_for_writing'] == 1:
+                    is_open = True
+                    dataset.is_open = True
+                else:
+                    is_open = False
+    
+                block = Block(block_name, dataset = dataset, size = entry['block_size'], num_files = entry['file_count'], is_open = is_open)
+            
+                dataset.blocks.append(block)
+    
+            dataset.size = sum([b.size for b in dataset.blocks])
+            dataset.num_files = sum([b.num_files for b in dataset.blocks])
+    
+            datasets.append(dataset)
+
+        return datasets
+
 
     def _make_request(self, resource, options = []):
         """

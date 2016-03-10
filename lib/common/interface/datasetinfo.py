@@ -8,11 +8,22 @@ class DatasetInfoSourceInterface(object):
 
     def get_dataset(self, name):
         """
-        Return a list of datasets that match the wildcard name.
-        site_filt can be a wildcard string or a list of sites.
+        Construct a dataset of the given name.
         """
 
         return None
+
+    def get_datasets(self, names):
+        """
+        Return a list of datasets from a list of names. Derived classes can implement a more
+        efficient algorithm.
+        """
+
+        result = []
+        for name in names:
+            result.append(self.get_dataset(name))
+
+        return result
 
 
 if __name__ == '__main__':

@@ -1,3 +1,4 @@
+import urllib
 import urllib2
 import httplib
 import logging
@@ -31,14 +32,20 @@ class RESTService(object):
         self.opener = urllib2.build_opener(HTTPSGridAuthHandler())
         self.url_base = url_base
 
-    def make_request(self, resource, options = []):
+    def make_request(self, resource, options = [], method = 'GET'):
         url = self.url_base + '/' + resource
-        if len(options) != 0:
+        if method == 'GET' and len(options) != 0:
             url += '?' + '&'.join(options)
 
         logger.info(url)
 
         request = urllib2.Request(url)
+
+        if method == 'POST' and len(options):
+            # expecting options to be a list of 2-tuples
+            data = urllib.urlencode(dict(options))
+            request.add_data(data)
+            print request.get_method()
 
         try:
             response = self.opener.open(request)
@@ -61,6 +68,7 @@ if __name__ == '__main__':
     parser.add_argument('url_base', metavar = 'URL', help = 'Request URL base.')
     parser.add_argument('resource', metavar = 'RES', help = 'Request resource.')
     parser.add_argument('options', metavar = 'EXPR', nargs = '+', default = [], help = 'Options after ? (chained with &).')
+    parser.add_argument('--post', '-P', action = 'store_true', dest = 'use_post', help = 'Use POST instead of GET request.')
 
     args = parser.parse_args()
 
@@ -68,4 +76,24 @@ if __name__ == '__main__':
     
     interface = RESTService(args.url_base)
 
-    print interface.make_request(args.resource, args.options)
+    if args.use_post:
+        options = []
+        for option in args.options:
+            key, eq, value = option.partition('=')
+            try:
+                opt = next(opt for opt in options if opt[0] == key)
+                if type(opt[1]) is list:
+                    opt[1].append(value)
+                else:
+                    options.remove(opt)
+                    options.append((key, [opt[1], value]))
+
+            except StopIteration:
+                options.append((key, value))
+
+        method = 'POST'
+    else:
+        options = args.options
+        method = 'GET'
+
+    print interface.make_request(args.resource, options, method = method)

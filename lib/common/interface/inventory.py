@@ -60,8 +60,7 @@ class InventoryInterface(object):
 
     def load_data(self):
         """
-        Return dictionaries {site_name: site}, {group name: group}, {dataset_name: dataset}
-        loaded from persistent storage.
+        Return lists loaded from persistent storage.
         """
 
         self.acquire_lock()

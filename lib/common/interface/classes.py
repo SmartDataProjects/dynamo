@@ -20,13 +20,20 @@ class Generator(object):
             Generator._singletons[self._cls] = obj
 
         return obj
+
+
+class DummyInterface(object):
+    def __init__(self):
+        pass
             
 
 default_interface = {
     'dataset_source': Generator(DBSInterface),
     'site_source': Generator(PhEDExInterface),
     'replica_source': Generator(PhEDExInterface),
-    'transfers': Generator(PhEDExInterface),
+    'copy': Generator(PhEDExInterface),
     'deletion': Generator(PhEDExInterface),
-    'inventory': Generator(MySQLInterface)
+    'inventory': Generator(MySQLInterface),
+    'popularity': Generator(DummyInterface),
+    'lock': Generator(DummyInterface)
 }

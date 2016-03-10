@@ -3,9 +3,44 @@
 from common.inventory import InventoryManager
 from common.transaction import TransactionManager
 from common.demand import DemandManager
+import common.interface.classes as classes
+from detox.policy import DeletionPolicyManager
+from detox.main import Detox
 
-from detox.detox import Detox
+import common.configuration as commonconfig
+import detox.configuration as detoxconfig
 
-detox = Detox(InventoryManager(), TransactionManager(), DemandManager())
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Detox')
+parser.add_argument('--inventory', '-i', metavar = 'CLASS', dest = 'inventory_cls', default = '', help = 'Inventory backend class.')
+parser.add_argument('--site-source', '-s', metavar = 'CLASS', dest = 'site_source_cls', default = '', help = 'SiteInfoSourceInterface class.')
+parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class.')
+parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class.')
+parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
+
+args = parser.parse_args()
+
+kwd = {}
+for cls in ['inventory', 'site_source', 'dataset_source', 'replica_source']:
+    clsname = getattr(args, cls + '_cls')
+    if clsname == '':
+        kwd[cls + '_cls'] = classes.default_interface[cls]
+    else:
+        kwd[cls + '_cls'] = getattr(classes, clsname)
+
+inventory_manager = InventoryManager(load_data = True, **kwd)
+
+transaction_manager = TransactionManager()
+
+demand_manager = DemandManager()
+
+policy_manager = DeletionPolicyManager()
+policy_manager.add_policy(detoxconfig.policy_stack)
+
+detox = Detox(inventory_manager, transaction_manager, demand_manager, policy_manager)
+
+if args.force_inventory_update:
+    commonconfig.inventory.refresh_min = 0
 
 detox.run()
