@@ -27,9 +27,13 @@ class Dataset(object):
         except StopIteration:
             return None
 
-    def find_replica(self, site_name):
+    def find_replica(self, site):
         try:
-            return next(r for r in self.replicas if r.site.name == site_name)
+            if type(site) is Site:
+                return next(r for r in self.replicas if r.site == site)
+            else:
+                return next(r for r in self.replicas if r.site.name == site)
+
         except StopIteration:
             return None
 
@@ -45,9 +49,13 @@ class Block(object):
         self.is_open = is_open
         self.replicas = []
 
-    def find_replica(self, site_name):
+    def find_replica(self, site):
         try:
-            return next(r for r in self.replicas if r.site.name == site)
+            if type(site) is Site:
+                return next(r for r in self.replicas if r.site == site)
+            else:
+                return next(r for r in self.replicas if r.site.name == site)
+
         except StopIteration:
             return None
 
