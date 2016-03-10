@@ -16,9 +16,26 @@ class ConsistencyError(Exception):
 class InventoryManager(object):
     """Bookkeeping class to bridge the communication between remote and local data sources."""
 
-    def __init__(self, load_data = True, inventory_cls = default_interface['inventory'], data_source_cls = default_interface['status_probe']):
-        self.inventory = inventory_cls()
-        self.data_source = data_source_cls()
+    def __init__(self, load_data = True, inventory_cls = None, site_source_cls = None, dataset_source_cls = None, replica_source_cls = None):
+        if inventory_cls:
+            self.inventory = inventory_cls()
+        else:
+            self.inventory = default_interface['inventory']()
+
+        if site_source_cls:
+            self.site_source = site_source_cls()
+        else:
+            self.site_source = default_interface['site_source']()
+
+        if dataset_source_cls:
+            self.dataset_source = dataset_source_cls()
+        else:
+            self.dataset_source = default_interface['dataset_source']()
+
+        if replica_source_cls:
+            self.replica_source = replica_source_cls()
+        else:
+            self.replica_source = default_interface['replica_source']()
 
         self.sites = {}
         self.groups = {}
@@ -54,17 +71,32 @@ class InventoryManager(object):
             # All replica data will be erased but the static data (sites, groups, datasets, and blocks) remain
             self.inventory.make_snapshot(clear = InventoryInterface.CLEAR_REPLICAS)
 
-            logger.info('Fetching info on sites, gruops, and datasets.')
-            sites, groups, datasets = self.data_source.get_data(site = config.inventory.included_sites, dataset = dataset_filter)
+            logger.info('Fetching info on sites.')
+            site_list = self.site_source.get_site_list(filt = config.inventory.included_sites)
+            self.sites = dict([(s.name, s) for s in site_list])
 
-            self.sites = sites
-            self.groups = groups
-            self.datasets = datasets
+            group_list = self.site_source.get_group_list(filt = config.inventory.included_groups)
+            self.groups = dict([(g.name, g) for g in group_list])
+
+            self.datasets = {}
+
+            for site in site_list:
+                logger.info('Fetching info on datasets on %s.', site.name)
+                ds_name_list = self.replica_source.get_datasets_on_site(site, dataset_filter)
+
+                for ds_name in ds_name_list:
+                    if ds_name not in self.datasets:
+                        logger.info('Linking %s to sites and groups.', ds_name)
+
+                        dataset = self.dataset_source.get_dataset(ds_name)
+                        self.replica_source.make_replica_links(dataset, self.sites, self.groups)
+
+                        self.datasets[ds_name] = dataset
 
             logger.info('Saving data.')
             # Save inventory data to persistent storage
             # Datasets and groups with no replicas are removed
-            self.inventory.save_data(sites, groups, datasets)
+            self.inventory.save_data(self.sites, self.groups, self.datasets)
 
         finally:
             # Lock is released even in case of unexpected errors
@@ -136,8 +168,10 @@ if __name__ == '__main__':
     parser = ArgumentParser(description = 'Inventory manager')
 
     parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = 'Command to execute.')
-    parser.add_argument('--inventory', '-i', metavar = 'CLASS', dest = 'inventory_class', default = '', help = 'Inventory class to be used.')
-    parser.add_argument('--status-probe', '-p', metavar = 'CLASS', dest = 'status_probe_class', default = '', help = 'Status probe class to be used.')
+    parser.add_argument('--inventory', '-i', metavar = 'CLASS', dest = 'inventory_cls', default = '', help = 'Inventory class to be used.')
+    parser.add_argument('--site-source', '-s', metavar = 'CLASS', dest = 'site_source_cls', default = '', help = 'SiteInfoSourceInterface class to be used.')
+    parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class to be used.')
+    parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class to be used.')
     parser.add_argument('--dataset', '-d', metavar = 'EXPR', dest = 'dataset', default = '/*/*/*', help = 'Limit operation to datasets matching the expression.')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
@@ -153,17 +187,15 @@ if __name__ == '__main__':
     command = args.command[0]
     cmd_args = args.command[1:]
 
-    if args.inventory_class == '':
-        inventory_cls = default_interface['inventory']
-    else:
-        inventory_cls = eval(args.inventory_class)
+    kwd = {}
+    for cls in ['inventory', 'site_source', 'dataset_source', 'replica_source']:
+        clsname = getattr(args, cls + '_cls')
+        if clsname == '':
+            kwd[cls + '_cls'] = default_interface[cls]
+        else:
+            kwd[cls + '_cls'] = eval(clsname)
 
-    if args.status_probe_class == '':
-        data_source_cls = default_interface['status_probe']
-    else:
-        data_source_cls = eval(args.status_probe_class)
-
-    manager = InventoryManager(load_data = False, inventory_cls = inventory_cls, data_source_cls = data_source_cls)
+    manager = InventoryManager(load_data = False, **kwd)
 
     if command == 'update':
         manager.update(dataset_filter = args.dataset)

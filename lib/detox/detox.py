@@ -3,9 +3,9 @@ import time
 import common.configuration as config
 
 class Detox(object):
-    def __init__(self, inventory, transaction, demand, policy):
+    def __init__(self, inventory, deletion, demand, policy):
         self.inventory_manager = inventory
-        self.transaction_manager = transaction
+        self.deletion_manager = deletion
         self.demand_manager = demand
         self.policy_manager = policy
 
@@ -27,7 +27,7 @@ class Detox(object):
 
                 to_delete = self.policy_manager.decision(repl, self.demand_manager.get_demand(dataset))
                 if to_delete:
-                    self.transaction_manager.delete(repl)
+                    self.deletion_manager.delete(repl)
                     self.inventory_manager.delete_datasetreplica(repl)
                     # replica is taken out of dataset -> no need to increment iR
 

@@ -1,5 +1,6 @@
 from common.interface.phedex import PhEDExInterface
 from common.interface.mysql import MySQLInterface
+from common.interface.dbs import DBSInterface
 
 class Generator(object):
     """
@@ -22,7 +23,9 @@ class Generator(object):
             
 
 default_interface = {
-    'status_probe': Generator(PhEDExInterface),
+    'dataset_source': Generator(DBSInterface),
+    'site_source': Generator(PhEDExInterface),
+    'replica_source': Generator(PhEDExInterface),
     'transfers': Generator(PhEDExInterface),
     'deletion': Generator(PhEDExInterface),
     'inventory': Generator(MySQLInterface)

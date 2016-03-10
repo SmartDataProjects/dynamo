@@ -184,7 +184,7 @@ class MySQLInterface(InventoryInterface):
             return sql
 
         def make_delete_query(table, key, pool):
-            sql = 'DELETE FROM `{table}` WHERE `{key}` NOT IN '
+            sql = 'DELETE FROM `{table}` WHERE `{key}` NOT IN '.format(table = table, key = key)
             if type(pool) is tuple:
                 sql += '(SELECT `%s` FROM `%s`)' % pool
             else:
@@ -271,7 +271,7 @@ class MySQLInterface(InventoryInterface):
         sql = make_delete_query('sites', 'id', [str(site_ids[name]) for name in site_list])
         self._query(sql)
 
-        sql = make_delete_query('gruops', 'id', [str(group_ids[name]) for name in group_list])
+        sql = make_delete_query('groups', 'id', [str(group_ids[name]) for name in group_list])
         self._query(sql)
 
         sql = make_delete_query('datasets', 'id', [str(dataset_ids[name]) for name in dataset_list])
