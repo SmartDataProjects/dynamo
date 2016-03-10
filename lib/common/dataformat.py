@@ -21,6 +21,18 @@ class Dataset(object):
         self.blocks = []
         self.replicas = []
 
+    def find_block(self, block_name):
+        try:
+            return next(b for b in self.blocks if b.name == block_name)
+        except StopIteration:
+            return None
+
+    def find_replica(self, site_name):
+        try:
+            return next(r for r in self.replicas if r.site.name == site_name)
+        except StopIteration:
+            return None
+
 
 class Block(object):
     """Represents a data block."""
@@ -32,6 +44,12 @@ class Block(object):
         self.num_files = num_files
         self.is_open = is_open
         self.replicas = []
+
+    def find_replica(self, site_name):
+        try:
+            return next(r for r in self.replicas if r.site.name == site)
+        except StopIteration:
+            return None
 
 
 class Site(object):
@@ -77,6 +95,18 @@ class Site(object):
         self.used_total = used_total
         self.datasets = []
         self.blocks = []
+
+    def find_dataset(self, ds_name):
+        try:
+            return next(d for d in self.datasets if d.name == ds_name)
+        except StopIteration:
+            return None
+
+    def find_block(self, block_name):
+        try:
+            return next(b for b in self.blocks if b.name == block_name)
+        except StopIteration:
+            return None
 
 
 class Group(object):
