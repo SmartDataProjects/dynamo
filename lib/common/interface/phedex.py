@@ -122,59 +122,64 @@ class PhEDExInterface(TransferInterface, StatusProbeInterface):
     def get_dataset_list(self, filt = '/*/*/*', site_filt = ''): #override
         self._block_replicas = {}
 
-        sites = ''
         if type(site_filt) is str and len(site_filt):
-            sites = '&node=' + site_filt
+            sites = [site_filt]
         elif type(site_filt) is list:
-            sites = '&' + '&'.join(['node=%s' % s for s in site_filt])
-
-        source = self._make_request('blockreplicas', 'subscribed=y&show_dataset=y&dataset=' + filt + sites)
+            if filt == '/*/*/*': # fetchall -> query site-by-site to avoid huge transmission
+                sites = site_filt
+            else:
+                sites = ['&node='.join(site_filt)]
+        else:
+            sites = ['*']
 
         dataset_list = {}
 
-        for dataset_entry in source:
-            name = dataset_entry['name']
+        for site in sites:
+            source = self._make_request('blockreplicas', 'subscribed=y&show_dataset=y&dataset=' + filt + '&node=' + site)
 
-            dataset = Dataset(name, is_open = (dataset_entry['is_open'] == 'y'))
+            logger.info('Got %d dataset info from site %s', len(source), site)
+    
+            for dataset_entry in source:
+                name = dataset_entry['name']
 
-            self._block_replicas[dataset] = {}
+                if name in dataset_list:
+                    dataset = dataset_list[name]
+                else:
+                    dataset = Dataset(name, is_open = (dataset_entry['is_open'] == 'y'))
+                    dataset_list[name] = dataset
+                    self._block_replicas[dataset] = {}
+    
+                for block_entry in dataset_entry['block']:
+                    block_name = block_entry['name'].replace(name + '#', '')
 
-            size_total = 0
-            num_files_total = 0
+                    block = dataset.find_block(block_name)
+                    if not block:
+                        block = Block(block_name, dataset = dataset, size = block_entry['bytes'], num_files = block_entry['files'], is_open = (block_entry['is_open'] == 'y'))
+                        dataset.blocks.append(block)
+                        self._block_replicas[dataset][block] = []
+    
+                    for replica_entry in block_entry['replica']:
+                        replica = PhEDExInterface.ProtoBlockReplica(
+                            site_name = replica_entry['node'],
+                            group_name = replica_entry['group'],
+                            is_custodial = (replica_entry['custodial'] == 'y'),
+                            time_created = replica_entry['time_create'],
+                            time_updated = replica_entry['time_update']
+                        )
+    
+                        self._block_replicas[dataset][block].append(replica)
 
-            for block_entry in dataset_entry['block']:
-                block_name = block_entry['name'].replace(name + '#', '')
-
-                block = Block(block_name, dataset = dataset, size = block_entry['bytes'], num_files = block_entry['files'], is_open = (block_entry['is_open'] == 'y'))
-                
-                dataset.blocks.append(block)
-
-                size_total += block_entry['bytes']
-                num_files_total += block_entry['files']
-
-                self._block_replicas[dataset][block] = []
-
-                for replica_entry in block_entry['replica']:
-                    replica = PhEDExInterface.ProtoBlockReplica(
-                        site_name = replica_entry['node'],
-                        group_name = replica_entry['group'],
-                        is_custodial = (replica_entry['custodial'] == 'y'),
-                        time_created = replica_entry['time_create'],
-                        time_updated = replica_entry['time_update']
-                    )
-
-                    self._block_replicas[dataset][block].append(replica)
-
-            dataset.size = size_total
-            dataset.num_files = num_files_total
-
-            dataset_list[name] = dataset
+        for dataset in dataset_list.values():
+            dataset.size = sum([b.size for b in dataset.blocks])
+            dataset.num_files = sum([b.num_files for b in dataset.blocks])
 
         return dataset_list
     
     def make_replica_links(self, sites, groups, datasets): #override
         # loop over datasets in memory and request block replica info
         for ds_name, dataset in datasets.items():
+            logger.info('Making replica links for dataset %s', ds_name)
+
             custodial_sites = []
             num_blocks = {}
 
@@ -238,8 +243,10 @@ class PhEDExInterface(TransferInterface, StatusProbeInterface):
         except urllib2.URLError, e:
             raise
 
-        result = json.loads(response.read())['phedex']
+        resp = response.read()
+        logger.info('PhEDEx returned a response of ' + str(len(resp)) + ' bytes.')
 
+        result = json.loads(resp)['phedex']
         logger.debug(result)
 
         self._last_request = result['request_timestamp']
