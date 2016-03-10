@@ -58,13 +58,6 @@ class InventoryInterface(object):
         finally:
             self.release_lock()
 
-    def prepare_new(self):
-        self.acquire_lock()
-        try:
-            self._do_prepare_new()
-        finally:
-            self.release_lock()
-
     def load_data(self):
         """
         Return dictionaries {site_name: site}, {group name: group}, {dataset_name: dataset}
@@ -90,6 +83,50 @@ class InventoryInterface(object):
             self._do_save_data(site_list, group_list, dataset_list)
             self._do_clean_block_info()
             self._do_clean_dataset_info()
+        finally:
+            self.release_lock()
+
+    def delete_dataset(self, dataset):
+        """
+        Delete dataset from persistent storage.
+        """
+
+        self.acquire_lock()
+        try:
+            self._do_delete_dataset(dataset)
+        finally:
+            self.release_lock()
+
+    def delete_block(self, block):
+        """
+        Delete block from persistent storage.
+        """
+
+        self.acquire_lock()
+        try:
+            self._do_delete_block(block)
+        finally:
+            self.release_lock()
+
+    def delete_datasetreplica(self, replica):
+        """
+        Delete dataset replica from persistent storage.
+        """
+
+        self.acquire_lock()
+        try:
+            self._do_delete_datasetreplica(replica)
+        finally:
+            self.release_lock()
+
+    def delete_blockreplica(self, replica):
+        """
+        Delete block replica from persistent storage.
+        """
+
+        self.acquire_lock()
+        try:
+            self._do_delete_blockreplica(replica)
         finally:
             self.release_lock()
 

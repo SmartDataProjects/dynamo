@@ -7,6 +7,12 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
+class ConsistencyError(Exception):
+    """Exception to be raised in case of data consistency problem."""
+    
+    pass
+
+
 class InventoryManager(object):
     """Bookkeeping class to bridge the communication between remote and local data sources."""
 
@@ -64,13 +70,61 @@ class InventoryManager(object):
             # Lock is released even in case of unexpected errors
             self.inventory.release_lock(force = True)
 
+    def delete_datasetreplica(self, replica):
+        """
+        Remove dataset replica info from memory and persistent record.
+        """
+
+        dataset = replica.dataset
+        site = replica.site
+
+        # Remove block replicas from the site.
+        # If no replica is left for the block, delete the block record.
+        iB = 0
+        while iB < len(dataset.blocks):
+            block = dataset.blocks[iB]
+
+            try:
+                site.blocks.remove(block)
+            except ValueError:
+                # this block was not at the site
+                pass
+
+            block_repl = block.find_replica(site)
+            if block_repl is None:
+                raise ConsistencyError('Block %s#%s is registered to %s but no replica object exists.' % (dataset.name, block.name, site.name))
+
+            block.replicas.remove(block_repl)
+            self.inventory.delete_blockreplica(block_repl)
+
+            if len(block.replicas) == 0:
+                dataset.blocks.remove(block)
+                self.inventory.delete_block(block)
+
+            else:
+                iB += 1
+
+        # Remove the dataset replica.
+        try:
+            site.datasets.remove(dataset)
+        except ValueError:
+            raise ConsistencyError('Dataset %s is registered to %s but site has no block info.' % (dataset.name, site.name))
+
+        dataset.replicas.remove(repl)
+        self.inventory.delete_datasetreplica(repl)
+
+        if len(dataset.replicas) == 0:
+            self.inventory.delete_dataset(dataset)
+
     def find_data(self):
         """Query the local DB for datasets/blocks."""
         pass
 
     def commit(self):
-        """Commit the updates into the local DB. Might not be necessary
-        if diff information is not needed."""
+        """
+        Commit the updates into the local DB. Might not be necessary
+        if diff information is not needed.
+        """
         pass
 
 

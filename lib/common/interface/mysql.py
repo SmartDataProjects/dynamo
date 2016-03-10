@@ -302,6 +302,18 @@ class MySQLInterface(InventoryInterface):
     def _do_clean_dataset_info(self): #override
         self._query('DELETE FROM `datasets` WHERE `id` NOT IN (SELECT DISTINCT(`dataset_id`) FROM `dataset_replicas`)')
 
+    def _do_delete_dataset(self, dataset): #override
+        self._query('DELETE FROM `datasets` WHERE `name` LIKE %s', dataset.name)
+
+    def _do_delete_block(self, block): #override
+        self._query('DELETE FROM `blocks` WHERE `name` LIKE %s', block.name)
+
+    def _do_delete_datasetreplica(self, replica): #override
+        self._query('DELETE FROM `dataset_replicas` WHERE `dataset_id` IN (SELECT `id` FROM `datasets` WHERE `name` LIKE %s) AND `site_id` IN (SELECT `id` FROM `sites` WHERE `name` LIKE %s)', replica.dataset.name, replica.site.name)
+
+    def _do_delete_blockreplica(self, replica): #override
+        self._query('DELETE FROM `block_replicas` WHERE `block_id` IN (SELECT `id` FROM `blocks` WHERE `name` LIKE %s) AND `site_id` IN (SELECT `id` FROM `sites` WHERE `name` LIKE %s)', replica.block.name, replica.site.name)
+
     def _query(self, sql, *args):
         cursor = self.connection.cursor()
 
