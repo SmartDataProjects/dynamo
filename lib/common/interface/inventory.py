@@ -1,4 +1,5 @@
 import logging
+import time
 
 from common.dataformat import Dataset, Block, Site, IntegrityError
 
@@ -12,18 +13,6 @@ class InventoryInterface(object):
     class LockError(Exception):
         pass
 
-    class Cache(object):
-        def __init__(self, obj):
-            self.obj = obj
-            self.stale = False
-
-        def update(self, **keywords):
-            for key, value in keywords.items():
-                setattr(self.obj, key, value)
-                
-            self.stale = False
-
-
     CLEAR_NONE = 0
     CLEAR_REPLICAS = 1
     CLEAR_ALL = 2
@@ -32,10 +21,6 @@ class InventoryInterface(object):
         # Allow multiple calls to acquire-release. No other process can acquire
         # the lock until the depth in this process is 0.
         self._lock_depth = 0
-
-        self._dataset_cache = {}
-        self._block_cache = {}
-        self._site_cache = {}
 
         self.last_update = 0
 
@@ -60,6 +45,16 @@ class InventoryInterface(object):
         self.acquire_lock()
         try:
             self._do_make_snapshot(clear)
+        finally:
+            self.release_lock()
+
+    def remove_snapshot(self, older_than = 0):
+        if older_than == 0:
+            older_than = time.time()
+
+        self.acquire_lock()
+        try:
+            self._do_remove_snapshot(older_than)
         finally:
             self.release_lock()
 
@@ -128,6 +123,10 @@ if __name__ == '__main__':
                 clear = InventoryInterface.CLEAR_ALL
 
         interface.make_snapshot(clear = clear)
+
+    elif command == 'clean':
+        timestamp = time.strptime(cmd_args[0], '%y%m%d%H%M%S')
+        interface.remove_snapshot(older_than = time.mktime(timestamp))
 
     else:
         sites, groups, datasets = interface.load_data()
