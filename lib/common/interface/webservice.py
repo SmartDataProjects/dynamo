@@ -1,6 +1,7 @@
 import urllib
 import urllib2
 import httplib
+import json
 import logging
 
 import common.configuration as config
@@ -32,7 +33,7 @@ class RESTService(object):
         self.opener = urllib2.build_opener(HTTPSGridAuthHandler())
         self.url_base = url_base
 
-    def make_request(self, resource, options = [], method = 'GET'):
+    def make_request(self, resource, options = [], method = 'GET', format = 'url'):
         url = self.url_base + '/' + resource
         if method == 'GET' and len(options) != 0:
             url += '?' + '&'.join(options)
@@ -42,10 +43,17 @@ class RESTService(object):
         request = urllib2.Request(url)
 
         if method == 'POST' and len(options):
-            # expecting options to be a list of 2-tuples
-            data = urllib.urlencode(dict(options))
+            if type(options) is list:
+                # if it's a list it should be a list of 2-tuples (should be a dict otherwise)
+                options = dict(options)
+            
+            if format == 'url':
+                data = urllib.urlencode(options)
+            elif format == 'json':
+                request.add_header('Content-type', 'application/json')
+                data = json.dumps(options)
+
             request.add_data(data)
-            print request.get_method()
 
         try:
             response = self.opener.open(request)

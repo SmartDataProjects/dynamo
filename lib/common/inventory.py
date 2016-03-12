@@ -87,38 +87,17 @@ class InventoryManager(object):
             dataset_names = []
             for site in site_list:
                 logger.info('Fetching info on datasets on %s (%d/%d).', site.name, site_list.index(site), len(site_list))
-                ds_name_list = self.replica_source.get_datasets_on_site(site, dataset_filter)
 
-                for ds_name in ds_name_list:
-                    if ds_name in self.datasets:
-                        continue
-                    # Making a query for each dataset was too slow - now collecting up to 100 datasets and making larger queries.
-#                    logger.info('Linking %s to sites and groups.', ds_name)
-#
-#                    dataset = self.dataset_source.get_dataset(ds_name)
-#                    self.replica_source.make_replica_links(dataset, self.sites, self.groups)
-#
-#                    self.datasets[ds_name] = dataset
+                for ds_name in self.replica_source.get_datasets_on_site(site, dataset_filter):
+                    if ds_name not in dataset_names:
+                        dataset_names.append(ds_name)
 
-                    if ds_name in dataset_names:
-                        continue
-                    
-                    dataset_names.append(ds_name)
+            datasets = []
+            if len(dataset_names) != 0: # should be true for any normal operation. Relevant when debugging
+                datasets = self.dataset_source.get_datasets(dataset_names)
+                self.replica_source.make_replica_links(datasets, self.sites, self.groups)
 
-                    if len(dataset_names) >= 100:
-                        datasets = self.dataset_source.get_dataset(dataset_names)
-                        self.replica_source.make_replica_links(datasets, self.sites, self.groups)
-
-                        for dataset in datasets:
-                            self.datasets[dataset.name] = dataset
-
-                        dataset_names = []
-
-            datasets = self.dataset_source.get_dataset(dataset_names)
-            self.replica_source.make_replica_links(datasets, self.sites, self.groups)
-
-            for dataset in datasets:
-                self.datasets[dataset.name] = dataset
+            self.datasets = dict([(d.name, d) for d in datasets])
 
             logger.info('Saving data.')
             # Save inventory data to persistent storage

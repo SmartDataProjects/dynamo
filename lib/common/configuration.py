@@ -23,4 +23,4 @@ dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
 inventory = Configuration()
 inventory.refresh_min = 7200
 inventory.included_sites = ['T2_*', 'T1_*_Disk']
-inventory.included_groups = ['AnalysisOps']
+inventory.included_groups = ['AnalysisOps', 'DataOps']

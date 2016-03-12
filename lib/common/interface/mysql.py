@@ -39,7 +39,7 @@ class MySQLInterface(InventoryInterface):
                 # The database is locked.
                 break
 
-            logger.warning('Failed to database. Waiting 30 seconds..')
+            logger.warning('Failed to lock database. Waiting 30 seconds..')
 
             time.sleep(30)
 

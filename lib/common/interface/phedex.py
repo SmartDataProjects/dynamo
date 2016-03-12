@@ -6,6 +6,7 @@ from common.interface.copy import CopyInterface
 from common.interface.deletion import DeletionInterface
 from common.interface.siteinfo import SiteInfoSourceInterface
 from common.interface.replicainfo import ReplicaInfoSourceInterface
+from common.interface.datasetinfo import DatasetInfoSourceInterface
 from common.interface.webservice import RESTService
 from common.dataformat import Dataset, Block, Site, Group, DatasetReplica, BlockReplica
 from common.misc import unicode2str
@@ -13,7 +14,7 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface, ReplicaInfoSourceInterface):
+class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface, ReplicaInfoSourceInterface, DatasetInfoSourceInterface):
     """
     Interface to PhEDEx using datasvc REST API.
     """
@@ -82,7 +83,7 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
 
         source = self._make_request('blockreplicas', ['subscribed=y', 'show_dataset=y', 'node=' + site.name] + options)
 
-        logger.info('Got %d dataset info from site %s', len(source), site)
+        logger.info('Got %d dataset info from site %s', len(source), site.name)
 
         for dataset_entry in source:
             ds_name = dataset_entry['name']
@@ -106,49 +107,65 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
 
         return ds_name_list
         
-    def make_replica_links(self, dataset, sites, groups): #override (ReplicaInfoSourceInterface)
+    def make_replica_links(self, datasets, sites, groups): #override (ReplicaInfoSourceInterface)
         # sites argument not used because cache is already site-aware
-        logger.info('Making replica links for dataset %s', dataset.name)
 
-        custodial_sites = []
-        num_blocks = {}
-
-        for site, ds_block_list in self._block_replicas.items():
-            if dataset.name not in ds_block_list:
-                continue
-
-            for protoreplica in ds_block_list[dataset.name]:
-                try:
-                    block = next(b for b in dataset.blocks if b.name == protoreplica.block_name)
-                except StopIteration:
-                    logger.warning('Replica interface found a block %s that is unknown to dataset %s', protoreplica.block_name, dataset.name)
+        for dataset in datasets:
+            logger.info('Making replica links for dataset %s', dataset.name)
+    
+            custodial_sites = []
+            num_blocks = {}
+    
+            for site, ds_block_list in self._block_replicas.items():
+                if dataset.name not in ds_block_list:
                     continue
-
-                if protoreplica.group_name is not None:
+    
+                for protoreplica in ds_block_list[dataset.name]:
                     try:
-                        group = groups[protoreplica.group_name]
-                    except KeyError:
-                        logger.warning('Group %s for replica of block %s not registered.', protoreplica.group_name, block.name)
+                        block = next(b for b in dataset.blocks if b.name == protoreplica.block_name)
+                    except StopIteration:
+                        logger.warning('Replica interface found a block %s that is unknown to dataset %s', protoreplica.block_name, dataset.name)
                         continue
-                else:
-                    group = None
-                
-                replica = BlockReplica(block, site, group = group, is_custodial = protoreplica.is_custodial, time_created = protoreplica.time_created, time_updated = protoreplica.time_updated)
+    
+                    if protoreplica.group_name is not None:
+                        try:
+                            group = groups[protoreplica.group_name]
+                        except KeyError:
+                            logger.warning('Group %s for replica of block %s not registered.', protoreplica.group_name, block.name)
+                            continue
+                    else:
+                        group = None
+                    
+                    replica = BlockReplica(block, site, group = group, is_custodial = protoreplica.is_custodial, time_created = protoreplica.time_created, time_updated = protoreplica.time_updated)
+    
+                    block.replicas.append(replica)
+    
+                    if protoreplica.is_custodial and site not in custodial_sites:
+                        custodial_sites.append(site)
+    
+                    try:
+                        num_blocks[site] += 1
+                    except KeyError:
+                        num_blocks[site] = 1
+    
+            for site, num in num_blocks.items():
+                replica = DatasetReplica(dataset, site, is_partial = (num != len(dataset.blocks)), is_custodial = (site in custodial_sites))
+    
+                dataset.replicas.append(replica)
 
-                block.replicas.append(replica)
+    def get_dataset(self, name): #override (DatasetInfoSourceInterface)
+        source = self._make_request('data', ['level=block', 'dataset=' + name])[0]['dataset'] # PhEDEx returns a dictionary for each DBS instance
 
-                if protoreplica.is_custodial and site not in custodial_sites:
-                    custodial_sites.append(site)
+        return self._construct_dataset(source[0])
 
-                try:
-                    num_blocks[site] += 1
-                except KeyError:
-                    num_blocks[site] = 1
+    def get_datasets(self, names):
+        source = self._make_request('data', ['level=block'] + [('dataset=' + name) for name in names])[0]['dataset']
 
-        for site, num in num_blocks.items():
-            replica = DatasetReplica(dataset, site, is_partial = (num != len(dataset.blocks)), is_custodial = (site in custodial_sites))
+        datasets = []
+        for ds_entry in source:
+            datasets.append(self._construct_dataset(ds_entry))
 
-            dataset.replicas.append(replica)
+        return datasets
             
     def _make_request(self, resource, options = []):
         """
@@ -171,6 +188,29 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
         
         # the only one item left in the results should be the result body
         return result.values()[0]
+
+    def _construct_dataset(self, ds_entry):
+        ds_name = ds_entry['name']
+        dataset = Dataset(ds_name)
+        dataset.is_valid = True # PhEDEx does not know about dataset validity (perhaps all datasets it knows are valid)
+        dataset.is_open = (ds_entry['is_open'] == 'y') # have seen cases where an obviously closed dataset is labeled open - need to check
+
+        for block_entry in ds_entry['block']:
+            block_name = block_entry['name'].replace(dataset.name + '#', '')
+
+            if block_entry['is_open'] == 'y':
+                is_open = True
+            else:
+                is_open = False
+
+            block = Block(block_name, dataset = dataset, size = block_entry['bytes'], num_files = block_entry['files'], is_open = is_open)
+        
+            dataset.blocks.append(block)
+
+        dataset.size = sum([b.size for b in dataset.blocks])
+        dataset.num_files = sum([b.num_files for b in dataset.blocks])
+
+        return dataset
 
 
 if __name__ == '__main__':

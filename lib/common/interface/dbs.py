@@ -23,60 +23,60 @@ class DBSInterface(DatasetInfoSourceInterface):
             logger.warning('Dataset %s not found on record.', name)
             return dataset
 
-        block_records = self._make_request('blocks', ['dataset=' + name, 'detail=True'])
+        block_records = self._make_request('blocksummaries', ['dataset=' + name, 'detail=True'])
 
-        datasets = self._construct_from_lists(ds_records, block_records)
+        dataset = self._construct_dataset(ds_records[0], block_records)
 
-        return datasets[0]
+        return dataset
 
     def get_datasets(self, names): # override
-        ds_records = self._make_request('datasets', ['dataset=%s' % name for name in names] + ['detail=True'])
-        if len(ds_records) == 0:
-            logger.warning('Dataset %s not found on record.', name)
-            return dataset
+        ds_records = self._make_request('datasetlist', {'dataset': ['%s' % name for name in names], 'detail': True}, method = 'POST', format = 'json')
 
-        block_records = self._make_request('blocks', ['dataset=%s' % name for name in names] + ['detail=True'])
+        # This is still way too slow - have to make one API call (O(1)s) for each dataset.
+        # We are actually only interested in the number of blocks in the dataset; DBS datasetlist does not give you that.
 
-        
-
-    def _construct_from_lists(self, ds_records, block_records):
         datasets = []
 
         for ds_record in ds_records:
-            ds_name = ds_record['dataset']
-            dataset = Dataset(ds_name)
-            dataset.is_valid = (ds_record['dataset_access_type'] == 'VALID')
-    
-            for block_record in block_records:
-                if block_record['dataset'] != ds_name:
-                    continue
-
-                block_name = entry['block_name'].replace(dataset.name + '#', '')
-    
-                if entry['open_for_writing'] == 1:
-                    is_open = True
-                    dataset.is_open = True
-                else:
-                    is_open = False
-    
-                block = Block(block_name, dataset = dataset, size = entry['block_size'], num_files = entry['file_count'], is_open = is_open)
+            block_records = self._make_request('blocksummaries', ['dataset=' + ds_record['dataset']] + ['detail=True'])
             
-                dataset.blocks.append(block)
-    
-            dataset.size = sum([b.size for b in dataset.blocks])
-            dataset.num_files = sum([b.num_files for b in dataset.blocks])
-    
+            dataset = self._construct_dataset(ds_record, block_records)
             datasets.append(dataset)
-
+        
         return datasets
 
+    def _construct_dataset(self, ds_record, block_records):
+        ds_name = ds_record['dataset']
+        dataset = Dataset(ds_name)
+        dataset.is_valid = (ds_record['dataset_access_type'] == 'VALID')
 
-    def _make_request(self, resource, options = []):
+        for block_record in block_records:
+            if block_record['dataset'] != ds_name:
+                continue
+
+            block_name = block_record['block_name'].replace(dataset.name + '#', '')
+
+            if block_record['open_for_writing'] == 1:
+                is_open = True
+                dataset.is_open = True
+            else:
+                is_open = False
+
+            block = Block(block_name, dataset = dataset, size = block_record['block_size'], num_files = block_record['file_count'], is_open = is_open)
+        
+            dataset.blocks.append(block)
+
+        dataset.size = sum([b.size for b in dataset.blocks])
+        dataset.num_files = sum([b.num_files for b in dataset.blocks])
+
+        return dataset
+
+    def _make_request(self, resource, options = [], method = 'GET', format = 'url'):
         """
         Make a single DBS request call. Returns a list of dictionaries.
         """
 
-        resp = self._interface.make_request(resource, options)
+        resp = self._interface.make_request(resource, options = options, method = method, format = format)
         logger.info('DBS returned a response of ' + str(len(resp)) + ' bytes.')
 
         result = json.loads(resp)
@@ -104,4 +104,15 @@ if __name__ == '__main__':
 
     interface = DBSInterface()
 
-    print interface._make_request(command, args.options)
+    if command == 'datasetlist':
+        # options: dataset=/A1/B1/C1,/A2/B2/C2,...
+        key, eq, values = args.options[0].partition('=')
+        datasets = values.split(',')
+        options = {'dataset': datasets}
+        if 'detail=True' in args.options:
+            options['detail'] = True
+
+        print interface._make_request(command, options, method = 'POST', format = 'json')
+
+    else:
+        print interface._make_request(command, args.options)

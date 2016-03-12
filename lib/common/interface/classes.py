@@ -28,7 +28,7 @@ class DummyInterface(object):
             
 
 default_interface = {
-    'dataset_source': Generator(DBSInterface),
+    'dataset_source': Generator(PhEDExInterface),
     'site_source': Generator(PhEDExInterface),
     'replica_source': Generator(PhEDExInterface),
     'copy': Generator(PhEDExInterface),
