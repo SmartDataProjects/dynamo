@@ -86,9 +86,9 @@ class InventoryManager(object):
 
             dataset_names = []
             for site in site_list:
-                logger.info('Fetching info on datasets on %s (%d/%d).', site.name, site_list.index(site), len(site_list))
+                logger.info('Fetching info on datasets from %s (%d/%d).', site.name, site_list.index(site), len(site_list))
 
-                for ds_name in self.replica_source.get_datasets_on_site(site, dataset_filter):
+                for ds_name in self.replica_source.get_datasets_on_site(site, group_list, dataset_filter):
                     if ds_name not in dataset_names:
                         dataset_names.append(ds_name)
 

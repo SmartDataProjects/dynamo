@@ -30,18 +30,23 @@ class DBSInterface(DatasetInfoSourceInterface):
         return dataset
 
     def get_datasets(self, names): # override
-        ds_records = self._make_request('datasetlist', {'dataset': ['%s' % name for name in names], 'detail': True}, method = 'POST', format = 'json')
-
-        # This is still way too slow - have to make one API call (O(1)s) for each dataset.
-        # We are actually only interested in the number of blocks in the dataset; DBS datasetlist does not give you that.
-
         datasets = []
 
-        for ds_record in ds_records:
-            block_records = self._make_request('blocksummaries', ['dataset=' + ds_record['dataset']] + ['detail=True'])
+        first = 0
+        while first < len(names):
+            # fetch data 1000 at a time
+            last = first + 1000
+            ds_records = self._make_request('datasetlist', {'dataset': ['%s' % name for name in names[first:last]], 'detail': True}, method = 'POST', format = 'json')            
+
+            # This is still way too slow - have to make one API call (O(1)s) for each dataset.
+            # We are actually only interested in the number of blocks in the dataset; DBS datasetlist does not give you that.
+            for ds_record in ds_records:
+                block_records = self._make_request('blocksummaries', ['dataset=' + ds_record['dataset']] + ['detail=True'])
             
-            dataset = self._construct_dataset(ds_record, block_records)
-            datasets.append(dataset)
+                dataset = self._construct_dataset(ds_record, block_records)
+                datasets.append(dataset)
+
+            first = last
         
         return datasets
 

@@ -346,6 +346,8 @@ class MySQLInterface(InventoryInterface):
     def _query_many(self, sql, template, mapping, objects):
         cursor = self.connection.cursor()
 
+        result = []
+
         values = ''
         for obj in objects:
             if values:
@@ -355,11 +357,15 @@ class MySQLInterface(InventoryInterface):
             values += template.format(**replacements)
             
             if len(values) > 1024 * 512:
+                logger.debug(sql % values)
                 cursor.execute(sql % values)
+                result += cursor.fetchall()
+
                 values = ''
 
-        logger.debug(sql % values)
+        if values:
+            logger.debug(sql % values)
+            cursor.execute(sql % values)
+            result += cursor.fetchall()
 
-        cursor.execute(sql % values)
-
-        return cursor.fetchall()
+        return result

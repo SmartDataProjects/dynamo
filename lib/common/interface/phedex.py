@@ -70,7 +70,7 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
 
         return group_list
 
-    def get_datasets_on_site(self, site, filt = '/*/*/*'): #override (ReplicaInfoSourceInterface)
+    def get_datasets_on_site(self, site, groups, filt = '/*/*/*'): #override (ReplicaInfoSourceInterface)
         options = []
         if type(filt) is str and len(filt) != 0:
             options = ['dataset=' + filt]
@@ -87,13 +87,14 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
 
         for dataset_entry in source:
             ds_name = dataset_entry['name']
+
+            block_replicas = []
             
-            ds_name_list.append(ds_name)
-
-            self._block_replicas[site][ds_name] = []
-
             for block_entry in dataset_entry['block']:
                 replica_entry = block_entry['replica'][0]
+
+                if replica_entry['group'] not in groups:
+                    continue
 
                 protoreplica = PhEDExInterface.ProtoBlockReplica(
                     block_name = block_entry['name'].replace(ds_name + '#', ''),
@@ -103,7 +104,11 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
                     time_updated = replica_entry['time_update']
                 )
 
-                self._block_replicas[site][ds_name].append(protoreplica)
+                block_replicas[site][ds_name].append(protoreplica)
+
+            if len(block_replicas) != 0:
+                ds_name_list.append(ds_name)
+                self._block_replicas[site][ds_name] = block_replicas
 
         return ds_name_list
         
@@ -158,12 +163,26 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
 
         return self._construct_dataset(source[0])
 
-    def get_datasets(self, names):
-        source = self._make_request('data', ['level=block'] + [('dataset=' + name) for name in names])[0]['dataset']
-
+    def get_datasets(self, names): #override (DatasetInfoSourceInterface)
         datasets = []
-        for ds_entry in source:
-            datasets.append(self._construct_dataset(ds_entry))
+
+        options = ['level=block']
+
+        def get():
+            source = self._make_request('data', options)[0]['dataset']
+
+            for ds_entry in source:
+                datasets.append(self._construct_dataset(ds_entry))
+
+            del options[1:] # keep only the first element (i.e. 'level=block')
+
+        ds_names = list(names)
+        while len(ds_names) != 0:
+            options.append('dataset=' + ds_names.pop())
+            if sum(map(len, options)) + len(options) - 1 >= 7600: # total string length (including &'s) is close to 8 kB
+                get()
+
+        get()
 
         return datasets
             
