@@ -42,7 +42,7 @@ class RESTService(object):
 
         request = urllib2.Request(url)
 
-        if method == 'POST' and len(options):
+        if method == 'POST' and len(options) != 0:
             if type(options) is list:
                 # if it's a list it should be a list of 2-tuples (should be a dict otherwise)
                 options = dict(options)

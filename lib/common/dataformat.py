@@ -13,11 +13,12 @@ class ObjectError(Exception):
 class Dataset(object):
     """Represents a dataset."""
 
-    def __init__(self, name, size = -1, num_files = 0, is_open = False, is_valid = True):
+    def __init__(self, name, size = -1, num_files = 0, is_open = False, on_tape = False, is_valid = True):
         self.name = name
         self.size = size
         self.num_files = num_files
         self.is_open = is_open
+        self.on_tape = on_tape
         self.is_valid = is_valid
         self.last_accessed = 0
         self.blocks = []

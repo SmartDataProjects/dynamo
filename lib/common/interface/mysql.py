@@ -124,12 +124,12 @@ class MySQLInterface(InventoryInterface):
         dataset_list = []
         dataset_map = {} # id -> site
 
-        datasets = self._query('SELECT `id`, `name`, `size`, `num_files`, `is_open` FROM `datasets`')
+        datasets = self._query('SELECT `id`, `name`, `size`, `num_files`, `is_open`, `on_tape` FROM `datasets`')
 
         logger.info('Loaded data for %d datasets.', len(datasets))
 
-        for dataset_id, name, size, num_files, is_open in datasets:
-            dataset = Dataset(name, size = size, num_files = num_files, is_open = is_open)
+        for dataset_id, name, size, num_files, is_open, on_tape in datasets:
+            dataset = Dataset(name, size = size, num_files = num_files, is_open = is_open, on_tape = on_tape)
             dataset_list.append(dataset)
 
             dataset_map[dataset_id] = dataset
@@ -224,10 +224,10 @@ class MySQLInterface(InventoryInterface):
         # insert/update datasets
         logger.info('Inserting/updating %d datasets.', len(dataset_list))
 
-        sql = make_insert_query('datasets', ['name', 'size', 'num_files', 'is_open'])
+        sql = make_insert_query('datasets', ['name', 'size', 'num_files', 'is_open', 'on_tape'])
 
-        template = '(\'{name}\',{size},{num_files},{is_open})'
-        mapping = lambda d: {'name': d.name, 'size': d.size, 'num_files': d.num_files, 'is_open': d.is_open}
+        template = '(\'{name}\',{size},{num_files},{is_open},{on_tape})'
+        mapping = lambda d: {'name': d.name, 'size': d.size, 'num_files': d.num_files, 'is_open': d.is_open, 'on_tape': d.on_tape}
 
         self._query_many(sql, template, mapping, dataset_list.values())
 
@@ -277,14 +277,17 @@ class MySQLInterface(InventoryInterface):
         # delete items not current
         logger.info('Cleaning up stale data.')
 
-        sql = make_delete_query('sites', 'id', [str(site_ids[name]) for name in site_list])
-        self._query(sql)
+        if len(site_list) != 0:
+            sql = make_delete_query('sites', 'id', [str(site_ids[name]) for name in site_list])
+            self._query(sql)
 
-        sql = make_delete_query('groups', 'id', [str(group_ids[name]) for name in group_list])
-        self._query(sql)
+        if len(group_list) != 0:
+            sql = make_delete_query('groups', 'id', [str(group_ids[name]) for name in group_list])
+            self._query(sql)
 
-        sql = make_delete_query('datasets', 'id', [str(dataset_ids[name]) for name in dataset_list])
-        self._query(sql)
+        if len(dataset_list) != 0:
+            sql = make_delete_query('datasets', 'id', [str(dataset_ids[name]) for name in dataset_list])
+            self._query(sql)
 
         sql = make_delete_query('dataset_replicas', 'dataset_id', ('id', 'datasets'))
         self._query(sql)

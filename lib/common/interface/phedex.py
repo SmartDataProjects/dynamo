@@ -71,6 +71,11 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
         return group_list
 
     def get_datasets_on_site(self, site, groups, filt = '/*/*/*'): #override (ReplicaInfoSourceInterface)
+        """
+        Use blockreplicas to fetch a full list of all block replicas on the site.
+        Cache block replica data to avoid making the call again.
+        """
+
         options = []
         if type(filt) is str and len(filt) != 0:
             options = ['dataset=' + filt]
@@ -78,6 +83,8 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
             options = ['dataset=%s' % s for s in filt]
 
         self._block_replicas[site] = {}
+
+        group_names = [g.name for g in groups]
 
         ds_name_list = []
 
@@ -93,7 +100,7 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
             for block_entry in dataset_entry['block']:
                 replica_entry = block_entry['replica'][0]
 
-                if replica_entry['group'] not in groups:
+                if replica_entry['group'] not in group_names:
                     continue
 
                 protoreplica = PhEDExInterface.ProtoBlockReplica(
@@ -104,7 +111,7 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
                     time_updated = replica_entry['time_update']
                 )
 
-                block_replicas[site][ds_name].append(protoreplica)
+                block_replicas.append(protoreplica)
 
             if len(block_replicas) != 0:
                 ds_name_list.append(ds_name)
@@ -160,15 +167,29 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
 
     def get_dataset(self, name): #override (DatasetInfoSourceInterface)
         source = self._make_request('data', ['level=block', 'dataset=' + name])[0]['dataset'] # PhEDEx returns a dictionary for each DBS instance
+        ds_entry = source[0]
 
-        return self._construct_dataset(source[0])
+        dataset = self._construct_dataset(source[0])
+
+        source = self._make_request('blockreplicasummary', ['create_since=0', 'node=T*MSS', 'custodial=y', 'complete=y', 'dataset=' + name])
+        blocks_on_tape = set(b['name'].replace(name + '#', '') for b in source)
+        dataset_blocks = set(b.name for b in dataset.blocks)
+        
+        dataset.on_tape = (blocks_on_tape == dataset_blocks)
 
     def get_datasets(self, names): #override (DatasetInfoSourceInterface)
+        """
+        Reduce the number of queries made for more efficient data processing. Called by
+        InventoryManager.
+        """
+
         datasets = []
 
+        # accumulate dataset=/A/B/C options and make a query once the length of the
+        # GET command reaches a threshold
         options = ['level=block']
 
-        def get():
+        def run_datasets_query():
             source = self._make_request('data', options)[0]['dataset']
 
             for ds_entry in source:
@@ -176,13 +197,43 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
 
             del options[1:] # keep only the first element (i.e. 'level=block')
 
-        ds_names = list(names)
-        while len(ds_names) != 0:
-            options.append('dataset=' + ds_names.pop())
-            if sum(map(len, options)) + len(options) - 1 >= 7600: # total string length (including &'s) is close to 8 kB
-                get()
+        for ds_name in names:
+            options.append('dataset=' + ds_name)
+            # if the total string length (including &'s) is close to 8 kB or this is the last name
+            if sum(map(len, options)) + len(options) - 1 >= 7600 or ds_name == names[-1]:
+                run_datasets_query()
 
-        get()
+        options = ['create_since=0', 'node=T*MSS', 'custodial=y', 'complete=y']
+        blocks_on_tape = {}
+
+        def run_ontape_query():
+            source = self._make_request('blockreplicasummary', options)
+
+            for block_entry in source:
+                name = block_entry['name']
+                ds_name = name[:name.find('#')]
+                block_name = name[name.find('#') + 1:]
+
+                try:
+                    blocks_on_tape[ds_name].append(block_name)
+                except KeyError:
+                    blocks_on_tape[ds_name] = [block_name]
+
+            del options[4:] # delete dataset=/A/B/C&dataset=/D/E/F&...
+
+        for ds_name in names:
+            options.append('dataset=' + ds_name)
+            # if the total string length (including &'s) is close to 8 kB or this is the last name
+            if sum(map(len, options)) + len(options) - 1 >= 7600 or ds_name == names[-1]:
+                run_ontape_query()
+
+        for dataset in datasets:
+            try:
+                on_tape = set(blocks_on_tape[dataset.name])
+            except KeyError:
+                continue
+
+            dataset.on_tape = (set(b.name for b in dataset.blocks) == on_tape)
 
         return datasets
             

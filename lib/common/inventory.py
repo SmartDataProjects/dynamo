@@ -91,6 +91,8 @@ class InventoryManager(object):
                 for ds_name in self.replica_source.get_datasets_on_site(site, group_list, dataset_filter):
                     if ds_name not in dataset_names:
                         dataset_names.append(ds_name)
+                
+            logger.debug('dataset_names: %s', ' '.join(dataset_names))
 
             datasets = []
             if len(dataset_names) != 0: # should be true for any normal operation. Relevant when debugging
