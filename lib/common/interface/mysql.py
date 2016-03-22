@@ -153,13 +153,13 @@ class MySQLInterface(InventoryInterface):
         logger.info('Linking datasets to sites.')
 
         # Link datasets to sites
-        dataset_replicas = self._query('SELECT `dataset_id`, `site_id`, `is_partial`, `is_custodial` FROM `dataset_replicas`')
+        dataset_replicas = self._query('SELECT `dataset_id`, `site_id`, `is_complete`, `is_partial`, `is_custodial` FROM `dataset_replicas`')
 
-        for dataset_id, site_id, is_partial, is_custodial in dataset_replicas:
+        for dataset_id, site_id, is_complete, is_partial, is_custodial in dataset_replicas:
             dataset = dataset_map[dataset_id]
             site = site_map[site_id]
 
-            rep = DatasetReplica(dataset, site, is_partial = is_partial, is_custodial = is_custodial)
+            rep = DatasetReplica(dataset, site, is_complete = is_complete, is_partial = is_partial, is_custodial = is_custodial)
 
             dataset.replicas.append(rep)
             site.datasets.append(dataset)
@@ -167,14 +167,14 @@ class MySQLInterface(InventoryInterface):
         logger.info('Linking blocks to sites.')
 
         # Link blocks to sites and groups
-        block_replicas = self._query('SELECT `block_id`, `site_id`, `group_id`, `is_custodial`, UNIX_TIMESTAMP(`time_created`), UNIX_TIMESTAMP(`time_updated`) FROM `block_replicas`')
+        block_replicas = self._query('SELECT `block_id`, `site_id`, `group_id`, `is_complete`, `is_custodial`, UNIX_TIMESTAMP(`time_created`), UNIX_TIMESTAMP(`time_updated`) FROM `block_replicas`')
 
-        for block_id, site_id, group_id, is_custodial, time_created, time_updated in block_replicas:
+        for block_id, site_id, group_id, is_complete, is_custodial, time_created, time_updated in block_replicas:
             block = block_map[block_id]
             site = site_map[site_id]
             group = group_map[group_id]
 
-            rep = BlockReplica(block, site, group = group, is_custodial = is_custodial, time_created = time_created, time_updated = time_updated)
+            rep = BlockReplica(block, site, group = group, is_complete = is_complete, is_custodial = is_custodial, time_created = time_created, time_updated = time_updated)
 
             block.replicas.append(rep)
             site.blocks.append(block)
@@ -242,10 +242,10 @@ class MySQLInterface(InventoryInterface):
             logger.info('Updating block and replica info for dataset %s.', ds_name)
 
             # insert/update dataset replicas
-            sql = make_insert_query('dataset_replicas', ['dataset_id', 'site_id', 'is_partial', 'is_custodial'])
+            sql = make_insert_query('dataset_replicas', ['dataset_id', 'site_id', 'is_complete', 'is_partial', 'is_custodial'])
 
-            template = '(%d,{site_id},{is_partial},{is_custodial})' % dataset_id
-            mapping = lambda r: {'site_id': site_ids[r.site.name], 'is_partial': r.is_partial, 'is_custodial': r.is_custodial}
+            template = '(%d,{site_id},{is_complete},{is_partial},{is_custodial})' % dataset_id
+            mapping = lambda r: {'site_id': site_ids[r.site.name], 'is_complete': r.is_complete, 'is_partial': r.is_partial, 'is_custodial': r.is_custodial}
 
             self._query_many(sql, template, mapping, dataset.replicas)
             
@@ -267,10 +267,10 @@ class MySQLInterface(InventoryInterface):
                 block_id = block_ids[block.name]
 
                 # insert/update block replicas
-                sql = make_insert_query('block_replicas', ['block_id', 'site_id', 'group_id', 'is_custodial', 'time_created', 'time_updated'])
+                sql = make_insert_query('block_replicas', ['block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'time_created', 'time_updated'])
 
-                template = '(%d,{site_id},{group_id},{is_custodial},FROM_UNIXTIME({time_created}),FROM_UNIXTIME({time_updated}))' % block_id
-                mapping = lambda r: {'site_id': site_ids[r.site.name], 'group_id': group_ids[r.group.name] if r.group else 0, 'is_custodial': r.is_custodial, 'time_created': r.time_created, 'time_updated': r.time_updated}
+                template = '(%d,{site_id},{group_id},{is_complete},{is_custodial},FROM_UNIXTIME({time_created}),FROM_UNIXTIME({time_updated}))' % block_id
+                mapping = lambda r: {'site_id': site_ids[r.site.name], 'group_id': group_ids[r.group.name] if r.group else 0, 'is_complete': r.is_complete, 'is_custodial': r.is_custodial, 'time_created': r.time_created, 'time_updated': r.time_updated}
     
                 self._query_many(sql, template, mapping, block.replicas)
 

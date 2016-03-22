@@ -119,6 +119,16 @@ class Site(object):
         except StopIteration:
             return None
 
+    def num_last_copy(self):
+        """
+        Number of datasets on this site that have no other replicas.
+        """
+
+        return sum([1 for d in self.datasets if len(d.replicas) == 1])
+
+    def last_copy_fraction(self):
+        return float(self.num_last_copy()) / float(len(self.datasets))
+
 
 class Group(object):
     """Represents a user group."""
@@ -130,20 +140,23 @@ class Group(object):
 class DatasetReplica(object):
     """Represents a dataset replica. Combines dataset and site information."""
 
-    def __init__(self, dataset, site, is_partial = False, is_custodial = False):
+    def __init__(self, dataset, site, is_complete = False, is_partial = False, is_custodial = False):
         self.dataset = dataset
         self.site = site
+        self.is_complete = is_complete # = complete subscription. Can still be partial
         self.is_partial = is_partial
         self.is_custodial = is_custodial
+        self.block_replicas = [] # can be empty for complete datasets
 
 
 class BlockReplica(object):
     """Represents a block replica."""
 
-    def __init__(self, block, site, group = None, is_custodial = False, time_created = 0, time_updated = 0):
+    def __init__(self, block, site, group = None, is_complete = False, is_custodial = False, time_created = 0, time_updated = 0):
         self.block = block
         self.site = site
         self.group = group
+        self.is_complete = is_complete
         self.is_custodial = is_custodial
         self.time_created = time_created
         self.time_updated = time_updated

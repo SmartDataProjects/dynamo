@@ -19,7 +19,7 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
     Interface to PhEDEx using datasvc REST API.
     """
 
-    ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'time_created', 'time_updated'])
+    ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'is_complete', 'time_created', 'time_updated'])
 
     def __init__(self):
         self._interface = RESTService(config.phedex.url_base)
@@ -107,6 +107,7 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
                     block_name = block_entry['name'].replace(ds_name + '#', ''),
                     group_name = replica_entry['group'],
                     is_custodial = (replica_entry['custodial'] == 'y'),
+                    is_complete = (replica_entry['complete'] == 'y'),
                     time_created = replica_entry['time_create'],
                     time_updated = replica_entry['time_update']
                 )
@@ -126,7 +127,7 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
             logger.info('Making replica links for dataset %s', dataset.name)
     
             custodial_sites = []
-            num_blocks = {}
+            replicas_on_site = {}
     
             for site, ds_block_list in self._block_replicas.items():
                 if dataset.name not in ds_block_list:
@@ -148,7 +149,15 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
                     else:
                         group = None
                     
-                    replica = BlockReplica(block, site, group = group, is_custodial = protoreplica.is_custodial, time_created = protoreplica.time_created, time_updated = protoreplica.time_updated)
+                    replica = BlockReplica(
+                        block,
+                        site,
+                        group = group,
+                        is_complete = protoreplica.is_complete,
+                        is_custodial = protoreplica.is_custodial,
+                        time_created = protoreplica.time_created,
+                        time_updated = protoreplica.time_updated
+                    )
     
                     block.replicas.append(replica)
     
@@ -156,12 +165,25 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
                         custodial_sites.append(site)
     
                     try:
-                        num_blocks[site] += 1
+                        replicas_on_site[site].append(replica)
                     except KeyError:
-                        num_blocks[site] = 1
+                        replicas_on_site[site] = [replica]
     
-            for site, num in num_blocks.items():
-                replica = DatasetReplica(dataset, site, is_partial = (num != len(dataset.blocks)), is_custodial = (site in custodial_sites))
+            for site, block_replicas in replicas_on_site.items():
+                replica = DatasetReplica(
+                    dataset,
+                    site,
+                    is_complete = False,
+                    is_partial = (len(block_replicas) != len(dataset.blocks)),
+                    is_custodial = (site in custodial_sites)
+                )
+
+                try:
+                    next(r for r in block_replicas if not r.is_complete)
+                except StopIteration: # no incomplete block replicas
+                    replica.is_complete = True
+                
+                replica.block_replicas = block_replicas
     
                 dataset.replicas.append(replica)
 
@@ -273,7 +295,13 @@ class PhEDExInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface,
             else:
                 is_open = False
 
-            block = Block(block_name, dataset = dataset, size = block_entry['bytes'], num_files = block_entry['files'], is_open = is_open)
+            block = Block(
+                block_name,
+                dataset = dataset,
+                size = block_entry['bytes'],
+                num_files = block_entry['files'],
+                is_open = is_open
+            )
         
             dataset.blocks.append(block)
 
