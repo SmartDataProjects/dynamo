@@ -129,6 +129,9 @@ class Site(object):
     def last_copy_fraction(self):
         return float(self.num_last_copy()) / float(len(self.datasets))
 
+    def occupancy(self):
+        return float(self.used_total) / float(self.capacity)
+
 
 class Group(object):
     """Represents a user group."""
@@ -146,7 +149,16 @@ class DatasetReplica(object):
         self.is_complete = is_complete # = complete subscription. Can still be partial
         self.is_partial = is_partial
         self.is_custodial = is_custodial
-        self.block_replicas = [] # can be empty for complete datasets
+        self.block_replicas = [] # can be empty for complete datasets if loaded from local inventory
+
+    def is_last_copy(self):
+        return len(self.dataset.replicas) == 1
+
+    def size(self):
+        if is_partial:
+            return sum([r.block.size for r in self.block_replicas])
+        else:
+            return self.dataset.size
 
 
 class BlockReplica(object):

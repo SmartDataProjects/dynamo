@@ -110,6 +110,16 @@ class InventoryManager(object):
             # Lock is released even in case of unexpected errors
             self.inventory.release_lock(force = True)
 
+    def delete_replica(self, replica):
+        """
+        Remove dataset or block replica from memory and persistent record.
+        """
+
+        if type(replica) is DatasetReplica:
+            self.delete_datasetreplica(replica)
+        elif type(replica) is BlockReplica:
+            self.delete_blockreplica(replica)
+
     def delete_datasetreplica(self, replica):
         """
         Remove dataset replica info from memory and persistent record.

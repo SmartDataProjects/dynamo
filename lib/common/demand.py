@@ -27,4 +27,4 @@ class DemandManager(object):
         pass
 
     def get_demand(self, dataset):
-        return DatasetDemand(dataset, 100.)
+        return DatasetDemand(dataset)
