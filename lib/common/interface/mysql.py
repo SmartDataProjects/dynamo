@@ -144,7 +144,7 @@ class MySQLInterface(InventoryInterface):
         for block_id, dataset_id, name, size, num_files, is_open in blocks:
             block = Block(name, size = size, num_files = num_files, is_open = is_open)
 
-            dataset = dataset_map[ds_name]
+            dataset = dataset_map[dataset_id]
             block.dataset = dataset
             dataset.blocks.append(block)
 

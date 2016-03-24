@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 
+import sys
+import logging
+
 from common.inventory import InventoryManager
 from common.transaction import TransactionManager
 from common.demand import DemandManager
 import common.interface.classes as classes
-from detox.policy import DeletionPolicyManager
+from detox.policies import make_stack
 from detox.main import Detox
 
-import common.configuration as commonconfig
-import detox.configuration as detoxconfig
+import common.configuration as config
 
 from argparse import ArgumentParser
 
@@ -18,9 +20,18 @@ parser.add_argument('--site-source', '-s', metavar = 'CLASS', dest = 'site_sourc
 parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class.')
 parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
-parser.add_argument('--strategy', '-g', metavar = 'STR', dest = 'strategy', default = 'TargetFraction', help = 'Deletion strategy (TargetFraction or Greedy)')
+parser.add_argument('--strategy', '-g', metavar = 'STR', dest = 'strategy', nargs = '+', default = ['TargetFraction'], help = 'Deletion strategy. Options are\n TargetFraction [threshold]\n DeletionList path')
+parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
 args = parser.parse_args()
+sys.argv = []
+
+if args.log_level:
+    try:
+        level = getattr(logging, args.log_level.upper())
+        logging.getLogger().setLevel(level)
+    except AttributeError:
+        logging.warning('Log level ' + args.log_level + ' not defined')
 
 kwd = {}
 for cls in ['inventory', 'site_source', 'dataset_source', 'replica_source']:
@@ -30,19 +41,25 @@ for cls in ['inventory', 'site_source', 'dataset_source', 'replica_source']:
     else:
         kwd[cls + '_cls'] = getattr(classes, clsname)
 
-inventory_manager = InventoryManager(load_data = True, **kwd)
+inventory_manager = InventoryManager(**kwd)
+inventory_manager.debug_mode = True
 
 transaction_manager = TransactionManager()
 
 demand_manager = DemandManager()
 
-policy_stack = detoxconfig.policy_stack(args.strategy)
+policy_stack = make_stack(args.strategy[0])
 
-# add force delete list here to the policy_stack
+if args.strategy[0] == 'TargetFraction':
+    if len(args.strategy) > 1:
+        policy_stack[0].threshold = float(args.strategy[1])
+
+elif args.strategy[0] == 'DeletionList':
+    policy_stack[-1].load_list(args.strategy[1])
 
 detox = Detox(inventory_manager, transaction_manager, demand_manager, policy_stack)
 
 if args.force_inventory_update:
-    commonconfig.inventory.refresh_min = 0
+    config.inventory.refresh_min = 0
 
 detox.run()

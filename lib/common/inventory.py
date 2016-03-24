@@ -2,7 +2,7 @@ import logging
 
 from common.interface.classes import default_interface
 from common.interface.inventory import InventoryInterface
-from common.dataformat import IntegrityError
+from common.dataformat import IntegrityError, DatasetReplica, BlockReplica
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ class ConsistencyError(Exception):
 class InventoryManager(object):
     """Bookkeeping class to bridge the communication between remote and local data sources."""
 
-    def __init__(self, load_data = True, inventory_cls = None, site_source_cls = None, dataset_source_cls = None, replica_source_cls = None):
+    def __init__(self, load_data = False, inventory_cls = None, site_source_cls = None, dataset_source_cls = None, replica_source_cls = None):
         if inventory_cls:
             self.inventory = inventory_cls()
         else:
@@ -129,11 +129,7 @@ class InventoryManager(object):
         site = replica.site
 
         # Remove block replicas from the site.
-        # If no replica is left for the block, delete the block record.
-        iB = 0
-        while iB < len(dataset.blocks):
-            block = dataset.blocks[iB]
-
+        for block in dataset.blocks:
             try:
                 site.blocks.remove(block)
             except ValueError:
@@ -147,24 +143,14 @@ class InventoryManager(object):
             block.replicas.remove(block_repl)
             self.inventory.delete_blockreplica(block_repl)
 
-            if len(block.replicas) == 0:
-                dataset.blocks.remove(block)
-                self.inventory.delete_block(block)
-
-            else:
-                iB += 1
-
         # Remove the dataset replica.
         try:
             site.datasets.remove(dataset)
         except ValueError:
             raise ConsistencyError('Dataset %s is registered to %s but site has no block info.' % (dataset.name, site.name))
 
-        dataset.replicas.remove(repl)
-        self.inventory.delete_datasetreplica(repl)
-
-        if len(dataset.replicas) == 0:
-            self.inventory.delete_dataset(dataset)
+        dataset.replicas.remove(replica)
+        self.inventory.delete_datasetreplica(replica)
 
     def find_data(self):
         """Query the local DB for datasets/blocks."""
@@ -213,7 +199,7 @@ if __name__ == '__main__':
         else:
             kwd[cls + '_cls'] = getattr(classes, clsname)
 
-    manager = InventoryManager(load_data = False, **kwd)
+    manager = InventoryManager(**kwd)
 
     if command == 'update':
         manager.update(dataset_filter = args.dataset)

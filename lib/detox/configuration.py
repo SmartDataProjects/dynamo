@@ -1,20 +1,9 @@
-import detox.policies as policies
+from common.configuration import paths, Configuration
 
-policy_stack = {
-    'TargetFraction': [
-        policies.keepTargetOccupancy,
-        policies.keepIncomplete,
-        policies.keepLocked,
-        policies.keepCustodial,
-        policies.keepDiskOnly,
-        policies.deletePartial,
-        policies.deleteOld,
-        policies.deleteUnpopular
-    ],
-    'Greedy': [
-        policies.keepIncomplete,
-        policies.keepLocked,
-        policies.keepCustodial,
-        policies.keepDiskOnly
-    ] # add actual deletion policies
-}
+keep_target = Configuration()
+keep_target.occupancy = 0.85
+
+delete_old = Configuration()
+delete_old.threshold = (1.5, 'y')
+
+log_path = paths.log_directory + '/detox_policy_log.txt'

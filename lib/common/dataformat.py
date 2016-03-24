@@ -155,7 +155,7 @@ class DatasetReplica(object):
         return len(self.dataset.replicas) == 1
 
     def size(self):
-        if is_partial:
+        if self.is_partial:
             return sum([r.block.size for r in self.block_replicas])
         else:
             return self.dataset.size

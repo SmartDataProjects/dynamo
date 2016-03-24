@@ -23,6 +23,7 @@ class InventoryInterface(object):
         self._lock_depth = 0
 
         self.last_update = 0
+        self.debug_mode = False
 
     def acquire_lock(self):
         if self._lock_depth == 0:
@@ -42,6 +43,10 @@ class InventoryInterface(object):
         will "move" the data into the snapshot, rather than cloning it.
         """
 
+        if self.debug_mode:
+            logger.debug('_do_make_snapshot(%d)', clear)
+            return
+
         self.acquire_lock()
         try:
             self._do_make_snapshot(clear)
@@ -51,6 +56,10 @@ class InventoryInterface(object):
     def remove_snapshot(self, older_than = 0):
         if older_than == 0:
             older_than = time.time()
+
+        if self.debug_mode:
+            logger.debug('_do_remove_snapshot(%f)', older_than)
+            return
 
         self.acquire_lock()
         try:
@@ -62,6 +71,9 @@ class InventoryInterface(object):
         """
         Return lists loaded from persistent storage.
         """
+
+        if self.debug_mode:
+            logger.debug('_do_load_data()')
 
         self.acquire_lock()
         try:
@@ -77,6 +89,12 @@ class InventoryInterface(object):
         Remove information of datasets and blocks with no replicas.
         """
 
+        if self.debug_mode:
+            logger.debug('_do_save_data()')
+            logger.debug('_do_clean_block_info()')
+            logger.debug('_do_clean_dataset_info()')
+            return
+
         self.acquire_lock()
         try:
             self._do_save_data(site_list, group_list, dataset_list)
@@ -90,6 +108,10 @@ class InventoryInterface(object):
         Delete dataset from persistent storage.
         """
 
+        if self.debug_mode:
+            logger.debug('_do_delete_dataset(%s)', dataset.name)
+            return
+
         self.acquire_lock()
         try:
             self._do_delete_dataset(dataset)
@@ -100,6 +122,10 @@ class InventoryInterface(object):
         """
         Delete block from persistent storage.
         """
+
+        if self.debug_mode:
+            logger.debug('_do_delete_block(%s)', block.name)
+            return
 
         self.acquire_lock()
         try:
@@ -112,6 +138,10 @@ class InventoryInterface(object):
         Delete dataset replica from persistent storage.
         """
 
+        if self.debug_mode:
+            logger.debug('_do_delete_datasetreplica(%s:%s)', replica.site.name, replica.dataset.name)
+            return
+
         self.acquire_lock()
         try:
             self._do_delete_datasetreplica(replica)
@@ -122,6 +152,9 @@ class InventoryInterface(object):
         """
         Delete block replica from persistent storage.
         """
+
+        if self.debug_mode:
+            logger.debug('_do_delete_blockreplica(%s:%s)', replica.site.name, replica.block.name)
 
         self.acquire_lock()
         try:
