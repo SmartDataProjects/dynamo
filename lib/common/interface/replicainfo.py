@@ -11,6 +11,9 @@ class ReplicaInfoSourceInterface(object):
 
         return []
 
-    def make_replica_links(self, datasets, sites, groups):
-        """Link the sites with datasets and blocks"""
+    def make_replica_links(self, sites, groups, datasets):
+        """
+        Link the sites with datasets and blocks.
+        Arguments are name->obj maps
+        """
         pass

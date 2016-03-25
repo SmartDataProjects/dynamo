@@ -6,23 +6,21 @@ class SiteInfoSourceInterface(object):
     def __init__(self):
         pass
 
-    def get_site_list(self, filt = '*'):
+    def get_site_list(self, sites, filt = '*'):
         """
-        Return a list of sites that match the wildcard name.
+        Fill the list of sites with sites that match the wildcard name.
         Arguments:
+          sites: the name->site dict to be filled. Information of the sites already in the list will be updated.
           filt: a wildcard string or a list of wildcard strings.
         """
 
-        return []
-
-    def get_group_list(self, filt = '*'):
+    def get_group_list(self, groups, filt = '*'):
         """
-        Return a list of groups that match the wildcard name.
+        Fill the list of groups with groups that match the wildcard name.
         Arguments:
+          groups: the name->group dict to be filled. Information of the groups already in the list will be updated.
           filt: a wildcard string or a list of wildcard strings.
         """
-
-        return []
 
 
 if __name__ == '__main__':
@@ -46,7 +44,10 @@ if __name__ == '__main__':
         interface = getattr(classes, args.class_name)()
 
     if command == 'list':
+        results = {}
         if len(cmd_args) != 0:
-            print interface.get_site_list(cmd_args[0]).keys()
+            interface.get_site_list(results, cmd_args[0])
         else:
-            print interface.get_site_list().keys()
+            interface.get_site_list(results)
+
+        print results.keys()

@@ -3,12 +3,12 @@ import collections
 
 logger = logging.getLogger(__name__)
 
+DEC_INDIFFERENT, DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(3)
+
 class Policy(object):
     """
     Base class for policies.
     """
-
-    DEC_KEEP, DEC_DELETE, DEC_KEEP_OVERRIDE = range(3)
 
     def __init__(self, name):
         """
@@ -19,10 +19,10 @@ class Policy(object):
 
     def decision(self, replica, demand_manager, records = None):
         """
-        Not intended for overrides. Decide if the policy applies to a given replica under the current demands. If applies, call case_match. If not, return DEC_KEEP.
+        Not intended for overrides. Decide if the policy applies to a given replica under the current demands. If applies, call case_match. If not, return DEC_INDIFFERENT.
         """
 
-        logger.debug('Testing whether %s applies to %s:%s', self.name, replica.site.name, replica.dataset.name)
+#        logger.debug('Testing whether %s applies to %s:%s', self.name, replica.site.name, replica.dataset.name)
         applies, reason = self.applies(replica, demand_manager)
 
         if applies:
@@ -34,7 +34,7 @@ class Policy(object):
             return dec
 
         else:
-            return Policy.DEC_KEEP
+            return DEC_INDIFFERENT
 
     def applies(self, replica, demand_manager):
         """
@@ -48,7 +48,7 @@ class Policy(object):
         Usually returns a fixed value; can be made dynamic if necessary. To be overridden by subclasses
         """
 
-        return Policy.DEC_KEEP
+        return DEC_INDIFFERENT
 
 
 class DeletePolicy(Policy):
@@ -57,16 +57,25 @@ class DeletePolicy(Policy):
     """
 
     def case_match(self, replica): # override
-        return Policy.DEC_DELETE
+        return DEC_DELETE
 
 
 class KeepPolicy(Policy):
     """
-    Base class for policies with case_match = DEC_KEEP_OVERRIDE.
+    Base class for policies with case_match = DEC_KEEP.
     """
 
     def case_match(self, replica): # override
-        return Policy.DEC_KEEP_OVERRIDE
+        return DEC_KEEP
+
+
+class ProtectPolicy(Policy):
+    """
+    Base class for policies with case_match = DEC_PROTECT.
+    """
+
+    def case_match(self, replica): # override
+        return DEC_PROTECT
 
 
 class PolicyHitRecords(object):
@@ -92,10 +101,12 @@ class PolicyHitRecords(object):
             output.write('\n')
 
         for policy, decision, reason in self.records:
-            if decision == Policy.DEC_DELETE:
+            if decision == DEC_DELETE:
                 decision_str = 'DELETE'
-            elif decision == Policy.DEC_KEEP_OVERRIDE:
-                decision_str = 'KEEP_OVERRIDE'
+            elif decision == DEC_KEEP:
+                decision_str = 'KEEP'
+            elif decision == DEC_PROTECT:
+                decision_str = 'PROTECT'
 
             line = '{policy}: {decision}'.format(policy = policy.name, decision = decision_str)
             if reason:
@@ -121,19 +132,23 @@ class PolicyManager(object):
     def decision(self, replica, demand):
         """
         Loop over the policies. Return DELETE if at least one policy hits, unless
-        there is a KEEP_OVERRIDE.
+        there is a PROTECT.
         """
         
-        result = Policy.DEC_KEEP
+        result = DEC_INDIFFERENT
 
         hit_records = PolicyHitRecords(replica)
 
         for policy in self._policies:
             dec = policy.decision(replica, demand, hit_records)
-            if dec == Policy.DEC_DELETE:
-                result = Policy.DEC_DELETE
 
-            elif dec == Policy.DEC_KEEP_OVERRIDE:
-                return Policy.DEC_KEEP, hit_records
+            if dec == DEC_DELETE and result == DEC_INDIFFERENT:
+                result = DEC_DELETE
+
+            elif dec == DEC_KEEP:
+                result = DEC_KEEP
+
+            elif dec == DEC_PROTECT:
+                return DEC_PROTECT, hit_records
 
         return result, hit_records

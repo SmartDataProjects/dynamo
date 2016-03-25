@@ -4,7 +4,11 @@ class DeletionInterface(object):
     """
 
     def __init__(self):
-        pass
+        self.debug_mode = False
 
-    def schedule_deletion(self, obj, site):
+    def schedule_deletion(self, replica):
+        """
+        Schedule a deletion of the dataset or block replica.
+        """
+
         pass

@@ -2,27 +2,27 @@ import time
 import re
 import fnmatch
 
-from detox.policy import DeletePolicy, KeepPolicy
+import detox.policy as policy
 import detox.configuration as detox_config
 
-class KeepIncomplete(KeepPolicy):
+class ProtectIncomplete(policy.ProtectPolicy):
     """
-    KEEP_OVERRIDE if the replica is not complete.
+    PROTECT if the replica is not complete.
     """
     
-    def __init__(self, name = 'KeepIncomplete'):
+    def __init__(self, name = 'ProtectIncomplete'):
         super(self.__class__, self).__init__(name)
 
     def applies(self, replica, demand_manager): # override
         return not replica.is_complete, 'Replica is not complete.'
 
 
-class KeepLocked(KeepPolicy):
+class ProtectLocked(policy.ProtectPolicy):
     """
-    KEEP_OVERRIDE if any block of the dataset is locked.
+    PROTECT if any block of the dataset is locked.
     """
 
-    def __init__(self, name = 'KeepLocked'):
+    def __init__(self, name = 'ProtectLocked'):
         super(self.__class__, self).__init__(name)
 
     def applies(self, replica, demand_manager): # override
@@ -35,36 +35,48 @@ class KeepLocked(KeepPolicy):
         return len(intersection) != 0, reason
 
 
-class KeepCustodial(KeepPolicy):
+class ProtectCustodial(policy.ProtectPolicy):
     """
-    KEEP_OVERRIDE if the replica is custodial.
+    PROTECT if the replica is custodial.
     """
 
-    def __init__(self, name = 'KeepCustodial'):
+    def __init__(self, name = 'ProtectCustodial'):
         super(self.__class__, self).__init__(name)
 
     def applies(self, replica, demand_manager): # override
         return replica.is_custodial, 'Replica is custodial.'
 
 
-class KeepDiskOnly(KeepPolicy):
+class ProtectDiskOnly(policy.ProtectPolicy):
     """
-    KEEP_OVERRIDE if the replica is the last copy and the dataset is not on tape. 
+    PROTECT if the dataset is not on tape. 
     """
 
-    def __init__(self, name = 'KeepDiskOnly'):
+    def __init__(self, name = 'ProtectDiskOnly'):
         super(self.__class__, self).__init__(name)
 
     def applies(self, replica, demand_manager): # override
-        return replica.is_last_copy() and not replica.dataset.on_tape, 'Replica is a last copy with no tape copy.'
+        return not replica.dataset.on_tape, 'Replica is a last copy with no tape copy.'
 
 
-class KeepTargetOccupancy(KeepPolicy):
+class ProtectMinimumCopies(policy.ProtectPolicy):
     """
-    KEEP_OVERRIDE if occupancy of the replica's site is less than a set target.
+    PROTECT if the dataset has only minimum number of replicas.
+    """
+    
+    def __init__(self, name = 'ProtectMinimumCopies'):
+        super(self.__class__, self).__init__(name)
+
+    def applies(self, replica, demand_manager): # override
+        return len(replica.dataset.replicas) <= demand_manager.get_demand(replica.dataset).required_copies
+
+
+class KeepTargetOccupancy(policy.KeepPolicy):
+    """
+    PROTECT if occupancy of the replica's site is less than a set target.
     """
 
-    def __init__(self, threshold, name = 'KeepTargetOccupancy'):
+    def __init__(self, threshold, name = 'ProtectTargetOccupancy'):
         super(self.__class__, self).__init__(name)
 
         self.threshold = threshold
@@ -73,7 +85,7 @@ class KeepTargetOccupancy(KeepPolicy):
         return replica.site.occupancy() < self.threshold, 'Site is underused.'
 
 
-class DeletePartial(DeletePolicy):
+class DeletePartial(policy.DeletePolicy):
     """
     DELETE if the replica is partial.
     """
@@ -85,7 +97,7 @@ class DeletePartial(DeletePolicy):
         return replica.is_partial, 'Replica is partial.'
 
 
-class DeleteOld(DeletePolicy):
+class DeleteOld(policy.DeletePolicy):
     """
     DELETE if the replica is older than a set time from now.
     """
@@ -110,33 +122,41 @@ class DeleteOld(DeletePolicy):
         return replica.dataset.last_accessed < time.time() - self.threshold, 'Replica is older than ' + self.threshold_text + '.'
 
 
-class DeleteUnpopular(DeletePolicy):
+class DeleteUnpopular(policy.DeletePolicy):
     """
-    DELETE if this is the least popular dataset at the site.
+    DELETE if this is less popular than a threshold or is the least popular dataset at the site.
     """
 
     def __init__(self, name = 'DeleteUnpopular'):
         super(self.__class__, self).__init__(name)
 
+        self.threshold = detox_config.delete_unpopular.threshold
+
     def applies(self, replica, demand_manager): # override
+        score = demand_manager.get_demand(replica.dataset).popularity_score
+
+        if score > self.threshold:
+            return True, 'Dataset is less popular than threshold.'
+
         max_site_score = max([demand_manager.get_demand(d).popularity_score for d in replica.site.datasets])
 
-        return demand_manager.get_demand(replica.dataset).popularity_score >= max_site_score, 'Dataset is the least popular on the site.'
+        return score >= max_site_score, 'Dataset is the least popular on the site.'
 
 
-class DeleteInList(DeletePolicy):
+class ActionList(policy.Policy):
     """
-    DELETE if the replica is in a list of deletions.
-    The list should have a site and a dataset (wildcard allowed for both) per row, separated by white spaces.
+    Take decision from a list of 
+    The list should have a decision, a site, and a dataset (wildcard allowed for both) per row, separated by white spaces.
     Any line that does not match the pattern
-      <site> <dataset>
+      (Keep|Delete) <site> <dataset>
     is ignored.
     """
 
-    def __init__(self, list_path = '', name = 'DeleteInList'):
+    def __init__(self, list_path = '', name = 'ActionList'):
         super(self.__class__, self).__init__(name)
 
-        self.deletion_list = []
+        self.patterns = [] # (site_pattern, dataset_pattern, action)
+        self.actions = {} # replica -> action
 
         if list_path:
             self.load_list(list_path)
@@ -144,25 +164,35 @@ class DeleteInList(DeletePolicy):
     def load_list(self, list_path):
         with open(list_path) as deletion_list:
             for line in deletion_list:
-                matches = re.match('\s*([A-Z0-9_*]+)\s+(/[\w*-]+/[\w*-]+/[\w*-]+)', line.strip())
+                matches = re.match('\s*(Keep|Delete)\s+([A-Za-z0-9_*]+)\s+(/[\w*-]+/[\w*-]+/[\w*-]+)', line.strip())
                 if not matches:
                     continue
 
-                site_pattern = matches.group(1)
-                dataset_pattern = matches.group(2)
+                action_str = matches.group(1)
+                site_pattern = matches.group(2)
+                dataset_pattern = matches.group(3)
 
-                self.deletion_list.append((site_pattern, dataset_pattern))
+                if action_str == 'Keep':
+                    action = policy.DEC_PROTECT
+                else:
+                    action = policy.DEC_DELETE
+
+                self.patterns.append((site_pattern, dataset_pattern, action))
 
     def applies(self, replica, demand_manager): # override
         """
-        Loop over deletion_list and return true if the replica site and dataset matches the pattern.
+        Loop over the patterns list and make an entry in self.actions if the pattern matches.
         """
 
-        for site_pattern, dataset_pattern in self.deletion_list:
+        for site_pattern, dataset_pattern, action in self.patterns:
             if fnmatch.fnmatch(replica.site.name, site_pattern) and fnmatch.fnmatch(replica.dataset.name, dataset_pattern):
+                self.actions[replica] = action
                 return True, 'Pattern match: site=%s, dataset=%s' % (site_pattern, dataset_pattern)
 
         return False, ''
+    
+    def case_match(self, replica): # override
+        return self.actions[replica]
 
 
 def make_stack(strategy):
@@ -173,18 +203,18 @@ def make_stack(strategy):
             KeepLocked(),
             KeepCustodial(),
             KeepDiskOnly(),
-            DeletePartial(),
+#            DeletePartial(),
             DeleteOld(*detox_config.delete_old.threshold),
 #            DeleteUnpopular()
         ]
 
-    elif strategy == 'DeletionList':
+    elif strategy == 'List':
         stack = [
             KeepIncomplete(),
             KeepLocked(),
             KeepCustodial(),
             KeepDiskOnly(),
-            DeleteInList()
+            ActionList()
         ]
 
     return stack

@@ -13,13 +13,18 @@ class ObjectError(Exception):
 class Dataset(object):
     """Represents a dataset."""
 
-    def __init__(self, name, size = -1, num_files = 0, is_open = False, on_tape = False, is_valid = True):
+    # enumerator for dataset type
+    TYPE_UNKNOWN, TYPE_DATA, TYPE_MC = range(3)
+
+    def __init__(self, name, size = -1, num_files = -1, is_open = True, is_valid = True, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, '')):
         self.name = name
         self.size = size
         self.num_files = num_files
         self.is_open = is_open
-        self.on_tape = on_tape
         self.is_valid = is_valid
+        self.on_tape = on_tape
+        self.data_type = data_type
+        self.software_version = software_version
         self.last_accessed = 0
         self.blocks = []
         self.replicas = []
@@ -177,7 +182,8 @@ class BlockReplica(object):
 class DatasetDemand(object):
     """Represents information on dataset demand."""
 
-    def __init__(self, dataset, popularity_score = -1.):
+    def __init__(self, dataset, required_copies = 1, popularity_score = -1.):
         self.dataset = dataset
         self.popularity_score = popularity_score
+        self.required_copies = required_copies
         self.locked_blocks = []

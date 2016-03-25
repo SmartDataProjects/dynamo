@@ -75,35 +75,38 @@ class InventoryManager(object):
             # All replica data will be erased but the static data (sites, groups, datasets, and blocks) remain
             self.inventory.make_snapshot(clear = InventoryInterface.CLEAR_REPLICAS)
 
+            logger.info('Loading existing data.')
+
+            self.load()
+
             logger.info('Fetching info on sites.')
-            site_list = self.site_source.get_site_list(filt = config.inventory.included_sites)
-            self.sites = dict([(s.name, s) for s in site_list])
+            self.site_source.get_site_list(self.sites, filt = config.inventory.included_sites)
 
-            group_list = self.site_source.get_group_list(filt = config.inventory.included_groups)
-            self.groups = dict([(g.name, g) for g in group_list])
+            logger.info('Fetching info on groups.')
+            self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
-            self.datasets = {}
-
+            # First construct a full list of dataset names we consider, then make a mass query to optimize speed
             dataset_names = []
-            for site in site_list:
-                logger.info('Fetching info on datasets from %s (%d/%d).', site.name, site_list.index(site), len(site_list))
+            site_count = 0
+            for site in self.sites.values():
+                site_count += 1
+                logger.info('Fetching info on datasets from %s (%d/%d).', site.name, site_count, len(self.sites))
 
                 for ds_name in self.replica_source.get_datasets_on_site(site, group_list, dataset_filter):
                     if ds_name not in dataset_names:
                         dataset_names.append(ds_name)
-                
-            logger.debug('dataset_names: %s', ' '.join(dataset_names))
 
-            datasets = []
+            if logger.getEffectiveLevel() == logging.DEBUG:
+                logger.debug('dataset_names: %s', ' '.join(dataset_names))
+
             if len(dataset_names) != 0: # should be true for any normal operation. Relevant when debugging
-                datasets = self.dataset_source.get_datasets(dataset_names)
-                self.replica_source.make_replica_links(datasets, self.sites, self.groups)
-
-            self.datasets = dict([(d.name, d) for d in datasets])
+                self.dataset_source.get_datasets(dataset_names, self.datasets)
+                self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
 
             logger.info('Saving data.')
             # Save inventory data to persistent storage
             # Datasets and groups with no replicas are removed
+            # Returns the list of newly inserted sites, groups, datasets
             self.inventory.save_data(self.sites, self.groups, self.datasets)
 
         finally:
@@ -134,7 +137,7 @@ class InventoryManager(object):
                 site.blocks.remove(block)
             except ValueError:
                 # this block was not at the site
-                pass
+                continue
 
             block_repl = block.find_replica(site)
             if block_repl is None:
@@ -171,7 +174,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Inventory manager')
 
-    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = 'Command to execute.')
+    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(update|list (datasets|sites))')
     parser.add_argument('--inventory', '-i', metavar = 'CLASS', dest = 'inventory_cls', default = '', help = 'Inventory class to be used.')
     parser.add_argument('--site-source', '-s', metavar = 'CLASS', dest = 'site_source_cls', default = '', help = 'SiteInfoSourceInterface class to be used.')
     parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class to be used.')

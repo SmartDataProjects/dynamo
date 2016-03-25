@@ -2,7 +2,7 @@ import json
 import logging
 
 from common.interface.datasetinfo import DatasetInfoSourceInterface
-from common.interface.webservice import RESTService
+from common.interface.webservice import RESTService, GET, POST
 from common.dataformat import Dataset, Block
 from common.misc import unicode2str
 import common.configuration as config
@@ -17,7 +17,7 @@ class DBSInterface(DatasetInfoSourceInterface):
     def __init__(self):
         self._interface = RESTService(config.dbs.url_base)
 
-    def get_dataset(self, name): # override
+    def get_dataset(self, name, datasets): # override
         ds_records = self._make_request('datasets', ['dataset=' + name, 'detail=True'])
         if len(ds_records) == 0:
             logger.warning('Dataset %s not found on record.', name)
@@ -25,35 +25,27 @@ class DBSInterface(DatasetInfoSourceInterface):
 
         block_records = self._make_request('blocksummaries', ['dataset=' + name, 'detail=True'])
 
-        dataset = self._construct_dataset(ds_records[0], block_records)
+        datasets[name] = self._construct_dataset(ds_records[0], block_records)
 
-        return dataset
-
-    def get_datasets(self, names): # override
-        datasets = []
-
+    def get_datasets(self, names, datasets): # override
         first = 0
         while first < len(names):
             # fetch data 1000 at a time
             last = first + 1000
-            ds_records = self._make_request('datasetlist', {'dataset': ['%s' % name for name in names[first:last]], 'detail': True}, method = 'POST', format = 'json')            
+            ds_records = self._make_request('datasetlist', {'dataset': names[first:last], 'detail': True}, method = POST, format = 'json')            
 
             # This is still way too slow - have to make one API call (O(1)s) for each dataset.
             # We are actually only interested in the number of blocks in the dataset; DBS datasetlist does not give you that.
             for ds_record in ds_records:
                 block_records = self._make_request('blocksummaries', ['dataset=' + ds_record['dataset']] + ['detail=True'])
             
-                dataset = self._construct_dataset(ds_record, block_records)
-                datasets.append(dataset)
+                datasets[name] = self._construct_dataset(ds_record, block_records)
 
             first = last
-        
-        return datasets
 
     def _construct_dataset(self, ds_record, block_records):
         ds_name = ds_record['dataset']
         dataset = Dataset(ds_name)
-        dataset.is_valid = (ds_record['dataset_access_type'] == 'VALID')
 
         for block_record in block_records:
             if block_record['dataset'] != ds_name:
@@ -76,7 +68,7 @@ class DBSInterface(DatasetInfoSourceInterface):
 
         return dataset
 
-    def _make_request(self, resource, options = [], method = 'GET', format = 'url'):
+    def _make_request(self, resource, options = [], method = GET, format = 'url'):
         """
         Make a single DBS request call. Returns a list of dictionaries.
         """
@@ -99,7 +91,7 @@ if __name__ == '__main__':
     parser = ArgumentParser(description = 'DBS Interface')
 
     parser.add_argument('command', metavar = 'COMMAND', help = 'Command to execute.')
-    parser.add_argument('options', metavar = 'EXPR', nargs = '+', default = [], help = 'Option string as passed to PhEDEx datasvc.')
+    parser.add_argument('options', metavar = 'EXPR', nargs = '*', default = [], help = 'Option string as passed to PhEDEx datasvc.')
 
     args = parser.parse_args()
     
@@ -117,7 +109,7 @@ if __name__ == '__main__':
         if 'detail=True' in args.options:
             options['detail'] = True
 
-        print interface._make_request(command, options, method = 'POST', format = 'json')
+        print interface._make_request(command, options, method = POST, format = 'json')
 
     else:
         print interface._make_request(command, args.options)

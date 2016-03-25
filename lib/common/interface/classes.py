@@ -1,4 +1,4 @@
-from common.interface.phedex import PhEDExInterface
+from common.interface.phedexdbs import PhEDExDBSInterface
 from common.interface.mysql import MySQLInterface
 from common.interface.dbs import DBSInterface
 
@@ -28,11 +28,11 @@ class DummyInterface(object):
             
 
 default_interface = {
-    'dataset_source': Generator(PhEDExInterface),
-    'site_source': Generator(PhEDExInterface),
-    'replica_source': Generator(PhEDExInterface),
-    'copy': Generator(PhEDExInterface),
-    'deletion': Generator(PhEDExInterface),
+    'dataset_source': Generator(PhEDExDBSInterface),
+    'site_source': Generator(PhEDExDBSInterface),
+    'replica_source': Generator(PhEDExDBSInterface),
+    'copy': Generator(PhEDExDBSInterface),
+    'deletion': Generator(PhEDExDBSInterface),
     'inventory': Generator(MySQLInterface),
     'popularity': Generator(DummyInterface),
     'lock': Generator(DummyInterface)

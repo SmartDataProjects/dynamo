@@ -1,8 +1,9 @@
 import time
 import logging
+import math
 
 import common.configuration as config
-from detox.policy import Policy, PolicyManager
+import detox.policy as policy
 import detox.configuration as detox_config
 
 logger = logging.getLogger(__name__)
@@ -13,7 +14,7 @@ class Detox(object):
         self.inventory_manager = inventory
         self.transaction_manager = transaction
         self.demand_manager = demand
-        self.policy_manager = PolicyManager(policies)
+        self.policy_manager = policy.PolicyManager(policies)
         self.policy_log_path = log_path
 
     def run(self):
@@ -38,30 +39,37 @@ class Detox(object):
         logger.info('Start deletion.')
 
         while True:
-            deletion_list = self.make_deletion_list(policy_log)
+            deletion_list, protection_list = self.make_deletion_protection_list(policy_log)
 
             logger.info('%d dataset replicas in deletion list', len(deletion_list))
-            logger.debug('[%s]', ', '.join(['%s:%s' % (r.site.name, r.dataset.name) for r in deletion_list]))
+            if logger.getEffectiveLevel() == logging.DEBUG:
+                logger.debug('Deletion list:')
+                for replica in deletion_list:
+                    logger.debug('%s %s', replica.site.name, replica.dataset.name)
 
             if len(deletion_list) == 0:
                 break
 
-            replica = self.select_replica(deletion_list)
+            replica = self.select_replica(deletion_list, protection_list)
             logger.info('Selected replica: %s %s', replica.site.name, replica.dataset.name)
 
             self.transaction_manager.delete(replica)
             self.inventory_manager.delete_replica(replica)
 
+            break # debugging
+
         policy_log.close()
 
         logger.info('Detox run finished at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
-    def make_deletion_list(self, policy_log = None):
+    def make_deletion_protection_list(self, policy_log = None):
         """
         Run each dataset / block replicas through deletion policies and make a list of replicas to delete.
+        Return the list of replicas that may be deleted and must be protected.
         """
 
         deletion_list = []
+        protection_list = []
 
         for dataset in self.inventory_manager.datasets.values():
             for replica in dataset.replicas:
@@ -69,35 +77,50 @@ class Detox(object):
                 if policy_log:
                     hit_records.write_records(policy_log)
 
-                if decision == Policy.DEC_DELETE:
+                if decision == policy.DEC_DELETE:
                     deletion_list.append(replica)
-                
-        return deletion_list
 
-    def select_replica(self, deletion_list):
+                elif decision == policy.DEC_PROTECT:
+                    protection_list.append(replica)
+                
+        return deletion_list, protection_list
+
+    def select_replica(self, deletion_list, protection_list):
         """
         Select one dataset replica to delete out of all deletion candidates.
-        Currently returning the largest replica on the most occupied site.
+        Currently returning the replica whose deletion balances the protected fraction between the sites the most.
         Ranking policy here may be made dynamic at some point.
         """
 
         if len(deletion_list) == 0:
             return None
+        
+        protected_fractions = {}
+        for replica in protection_list:
+            try:
+                protected_fractions[replica.site] += replica.size() / replica.site.capacity
+            except KeyError:
+                protected_fractions[replica.site] = replica.size() / replica.site.capacity
 
-        most_occupied_site = None
-        largest_replica_on_site = {}
+        for site in self.inventory_manager.sites.values():
+            if site not in protected_fractions: # highly unlikely
+                protected_fractions[site] = 0.
+
+        # Select the replica that minimizes the RMS of the protected fractions
+        minRMS2 = -1.
+        deletion_candidate = None
 
         for replica in deletion_list:
-            if most_occupied_site is None or replica.site.occupancy() > most_occupied_site.occupancy():
-                most_occupied_site = replica.site
+            sumf2 = sum([frac * frac for site, frac in protected_fractions.items() if site != replica.site])
+            sumf = sum([frac for site, frac in protected_fractions.items() if site != replica.site])
 
-            try:
-                max_size = largest_replica_on_site[replica.site][0]
-            except KeyError:
-                max_size = 0
+            sumf2 += math.pow(protected_fractions[replica.site] - replica.size() / replica.site.capacity, 2.)
+            sumf += protected_fractions[replica.site] - replica.size() / replica.site.capacity
 
-            size = replica.size()
-            if size >= max_size:
-                largest_replica_on_site[replica.site] = (size, replica)
+            rms2 = sumf2 / len(self.inventory_manager.sites) - math.pow(sumf / len(self.inventory_manager.sites), 2.)
 
-        return largest_replica_on_site[most_occupied_site][1]
+            if minRMS2 < 0. or rms2 < minRMS2:
+                minRMS2 = rms2
+                deletion_candidate = replica
+
+        return deletion_candidate

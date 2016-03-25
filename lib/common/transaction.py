@@ -18,8 +18,4 @@ class TransactionManager(object):
             self.deletion = default_interface['deletion']()
 
     def delete(self, replica):
-        if type(replica) is DatasetReplica:
-            self.deletion.schedule_deletion(replica.dataset, replica.site)
-
-        elif type(replica) is BlockReplica:
-            self.deletion.schedule_deletion(replica.block, replica.site)
+        self.deletion.schedule_deletion(replica)

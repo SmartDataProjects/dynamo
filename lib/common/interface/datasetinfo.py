@@ -6,24 +6,34 @@ class DatasetInfoSourceInterface(object):
     def __init__(self):
         pass
 
-    def get_dataset(self, name):
+    def get_dataset(self, name, datasets):
         """
         Construct a dataset of the given name.
+        Arguments
+         name: the name of the dataset
+         datasets: name->dataset dict of known datasets
         """
 
         return None
 
-    def get_datasets(self, names):
+    def get_datasets(self, names, datasets):
         """
         Return a list of datasets from a list of names. Derived classes can implement a more
         efficient algorithm.
+        Arguments
+         names: the names of the datasets
+         datasets: name->dataset dict of known datasets
         """
 
-        result = []
         for name in names:
-            result.append(self.get_dataset(name))
+            self.get_dataset(name)
 
-        return result
+    def set_dataset_details(self, datasets):
+        """
+        Set detailed information that may not be filled at get_dataset(s).
+        """
+
+        pass
 
 
 if __name__ == '__main__':

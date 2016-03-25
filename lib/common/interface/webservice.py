@@ -8,6 +8,8 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
+GET, POST = range(2) # enumerators
+
 class HTTPSGridAuthHandler(urllib2.HTTPSHandler):
 
     def __init__(self):
@@ -33,23 +35,53 @@ class RESTService(object):
         self.opener = urllib2.build_opener(HTTPSGridAuthHandler())
         self.url_base = url_base
 
-    def make_request(self, resource, options = [], method = 'GET', format = 'url'):
+    def make_request(self, resource, options = [], method = GET, format = 'url'):
         url = self.url_base + '/' + resource
-        if method == 'GET' and len(options) != 0:
+        if method == GET and len(options) != 0:
             url += '?' + '&'.join(options)
 
-        logger.info(url)
-
+        if logger.getEffectiveLevel() == logging.DEBUG:
+            logger.debug(url)
+        else:
+            logger.info(self.url_base + '/' + resource)
+        
         request = urllib2.Request(url)
 
-        if method == 'POST' and len(options) != 0:
+        if method == POST and len(options) != 0:
             if type(options) is list:
-                # if it's a list it should be a list of 2-tuples (should be a dict otherwise)
-                options = dict(options)
+                # convert key=value strings to (key, value) 2-tuples
+                optlist = []
+                for opt in options:
+                    if type(opt) is tuple:
+                        optlist.append(opt)
+
+                    elif type(opt) is str:
+                        key, eq, value = opt.partition('=')
+                        if eq == '=':
+                            optlist.append((key, value))
+
+                options = optlist
             
             if format == 'url':
+                # Options can be a dict or a list of 2-tuples. The latter case allows repeated keys (e.g. dataset=A&dataset=B)
                 data = urllib.urlencode(options)
+
             elif format == 'json':
+                # Options can be a dict or a list of 2-tuples. Repeated keys in the list case gets collapsed.
+                if type(options) is list:
+                    optdict = {}
+                    for key, value in options:
+                        if key in optdict:
+                            try:
+                                optdict[key].append(value)
+                            except AttributeError:
+                                current = optdict[key]
+                                optdict[key] = [current, value]
+                        else:
+                            optdict[key] = value
+    
+                    options = optdict
+
                 request.add_header('Content-type', 'application/json')
                 data = json.dumps(options)
 
@@ -85,23 +117,8 @@ if __name__ == '__main__':
     interface = RESTService(args.url_base)
 
     if args.use_post:
-        options = []
-        for option in args.options:
-            key, eq, value = option.partition('=')
-            try:
-                opt = next(opt for opt in options if opt[0] == key)
-                if type(opt[1]) is list:
-                    opt[1].append(value)
-                else:
-                    options.remove(opt)
-                    options.append((key, [opt[1], value]))
-
-            except StopIteration:
-                options.append((key, value))
-
-        method = 'POST'
+        method = POST
     else:
-        options = args.options
-        method = 'GET'
+        method = GET
 
-    print interface.make_request(args.resource, options, method = method)
+    print interface.make_request(args.resource, args.options, method = method)

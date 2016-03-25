@@ -35,7 +35,8 @@ class InventoryInterface(object):
         if self._lock_depth == 1 or force:
             self._do_release_lock()
 
-        self._lock_depth -= 1
+        if self._lock_depth > 0: # should always be the case if properly programmed
+            self._lock_depth -= 1
 
     def make_snapshot(self, clear = CLEAR_NONE):
         """
@@ -53,19 +54,40 @@ class InventoryInterface(object):
         finally:
             self.release_lock()
 
-    def remove_snapshot(self, older_than = 0):
+    def remove_snapshot(self, newer_than = 0, older_than = 0):
         if older_than == 0:
             older_than = time.time()
 
         if self.debug_mode:
-            logger.debug('_do_remove_snapshot(%f)', older_than)
+            logger.debug('_do_remove_snapshot(%f, %f)', newer_than, older_than)
             return
 
         self.acquire_lock()
         try:
-            self._do_remove_snapshot(older_than)
+            self._do_remove_snapshot(newer_than, older_than)
         finally:
             self.release_lock()
+
+    def list_snapshots(self):
+        """
+        List the timestamps of the inventory snapshots that is not the current.
+        """
+
+        return self._do_list_snapshots()
+
+    def switch_snapshot(self, timestamp):
+        """
+        Switch the data source to an existing snapshot.
+        """
+
+        if timestamp not in self.list_snapshots():
+            print 'Cannot switch to snapshot', timestamp
+            return
+
+        while self._lock_depth > 0:
+            self.release_lock()
+
+        self._do_switch_snapshot(timestamp)
 
     def load_data(self):
         """
@@ -83,10 +105,12 @@ class InventoryInterface(object):
 
         return site_list, group_list, dataset_list
 
-    def save_data(self, site_list, group_list, dataset_list):
+    def save_data(self, sites, groups, datasets):
         """
         Write information in the dictionaries into persistent storage.
         Remove information of datasets and blocks with no replicas.
+        Return newly inserted sites, groups, and datasets.
+        Arguments are name->obj maps.
         """
 
         if self.debug_mode:
@@ -97,9 +121,7 @@ class InventoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_data(site_list, group_list, dataset_list)
-            self._do_clean_block_info()
-            self._do_clean_dataset_info()
+            self._do_save_data(sites, groups, datasets)
         finally:
             self.release_lock()
 
@@ -155,6 +177,7 @@ class InventoryInterface(object):
 
         if self.debug_mode:
             logger.debug('_do_delete_blockreplica(%s:%s)', replica.site.name, replica.block.name)
+            return
 
         self.acquire_lock()
         try:
@@ -170,8 +193,9 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Inventory interface')
 
-    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = 'Command to execute.')
+    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(snapshot [clear (replicas|all)]|clean|list (datasets|groups|sites))')
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'InventoryInterface class to be used.')
+    parser.add_argument('--timestamp', '-t', metavar = 'YMDHMS', dest = 'timestamp', default = '', help = 'Timestamp of the snapshot to be loaded / cleaned. With command clean, prepend with "<" or ">" to remove all snapshots older or newer than the timestamp.')
 
     args = parser.parse_args()
 
@@ -188,23 +212,46 @@ if __name__ == '__main__':
         if len(cmd_args) > 1 and cmd_args[0] == 'clear':
             if cmd_args[1] == 'replicas':
                 clear = InventoryInterface.CLEAR_REPLICAS
-            elif cmd_args[2] == 'all':
+            elif cmd_args[1] == 'all':
                 clear = InventoryInterface.CLEAR_ALL
+
+        if args.timestamp:
+            interface.switch_snapshot(args.timestamp)
 
         interface.make_snapshot(clear = clear)
 
     elif command == 'clean':
-        timestamp = time.strptime(cmd_args[0], '%y%m%d%H%M%S')
-        interface.remove_snapshot(older_than = time.mktime(timestamp))
+        if not args.timestamp:
+            print 'Command clean requires --timestamp option.'
+            sys.exit(1)
 
-    else:
-        sites, groups, datasets = interface.load_data()
+        if args.timestamp.startswith('>'):
+            newer_than = time.mktime(time.strptime(args.timestamp[1:], '%y%m%d%H%M%S'))
+            older_than = time.time()
+        elif args.timestamp.startswith('<'):
+            newer_than = 0
+            older_than = time.mktime(time.strptime(args.timestamp[1:], '%y%m%d%H%M%S'))
+        else:
+            newer_than = time.mktime(time.strptime(args.timestamp, '%y%m%d%H%M%S'))
+            older_than = newer_than
 
-        if command == 'datasets':
-            print datasets.keys()
+        interface.remove_snapshot(newer_than = newer_than, older_than = older_than)
 
-        elif command == 'groups':
-            print groups.keys()
+    elif command == 'list':
+        if args.timestamp:
+            interface.switch_snapshot(args.timestamp)
 
-        elif command == 'sites':
-            print sites.keys()
+        if cmd_args[0] != 'snapshots':
+            sites, groups, datasets = interface.load_data()
+    
+            if cmd_args[0] == 'datasets':
+                print [d.name for d in datasets]
+    
+            elif cmd_args[0] == 'groups':
+                print [g.name for g in groups]
+    
+            elif cmd_args[0] == 'sites':
+                print [s.name for s in sites]
+
+        else:
+            print interface.list_snapshots()
