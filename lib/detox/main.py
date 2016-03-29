@@ -17,7 +17,7 @@ class Detox(object):
         self.policy_manager = policy.PolicyManager(policies)
         self.policy_log_path = log_path
 
-    def run(self):
+    def run(self, dynamic_deletion = True):
         """
         Main executable.
         """
@@ -50,13 +50,21 @@ class Detox(object):
             if len(deletion_list) == 0:
                 break
 
-            replica = self.select_replica(deletion_list, protection_list)
-            logger.info('Selected replica: %s %s', replica.site.name, replica.dataset.name)
+            if dynamic_deletion:
+                replica = self.select_replica(deletion_list, protection_list)
+                logger.info('Selected replica: %s %s', replica.site.name, replica.dataset.name)
 
-            self.transaction_manager.delete(replica)
-            self.inventory_manager.delete_replica(replica)
+                self.transaction_manager.delete(replica)
+                self.inventory_manager.delete_replica(replica)
 
-            break # debugging
+            else:
+                print ['%s:%s' % (r.site.name, r.dataset.name) for r in deletion_list]
+
+#                self.transaction_manager.delete_many(deletion_list)
+#                for replica in deletion_list:
+#                    self.inventory_manager.delete_replica(replica)
+
+                logger.info('Deleted %d replicas.', len(deletion_list))
 
         policy_log.close()
 

@@ -38,7 +38,10 @@ class RESTService(object):
     def make_request(self, resource, options = [], method = GET, format = 'url'):
         url = self.url_base + '/' + resource
         if method == GET and len(options) != 0:
-            url += '?' + '&'.join(options)
+            if type(options) is list:
+                url += '?' + '&'.join(options)
+            elif type(options) is str:
+                url += '?' + options
 
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug(url)

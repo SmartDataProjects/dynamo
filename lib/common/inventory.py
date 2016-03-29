@@ -61,7 +61,7 @@ class InventoryManager(object):
 
         logger.info('Data is loaded to memory.')
 
-    def update(self, dataset_filter = '/*/*/*'):
+    def update(self, dataset_filter = '/*/*/*', load_first = True, make_snapshot = True, clean_stale = True):
         """Query the dataSource and get updated information."""
 
         logger.info('Locking inventory.')
@@ -70,14 +70,15 @@ class InventoryManager(object):
         self.inventory.acquire_lock()
 
         try:
-            logger.info('Making a snapshot of inventory.')
-            # Make a snapshot (older snapshots cleaned by an independent daemon)
-            # All replica data will be erased but the static data (sites, groups, datasets, and blocks) remain
-            self.inventory.make_snapshot(clear = InventoryInterface.CLEAR_REPLICAS)
+            if make_snapshot:
+                logger.info('Making a snapshot of inventory.')
+                # Make a snapshot (older snapshots cleaned by an independent daemon)
+                # All replica data will be erased but the static data (sites, groups, datasets, and blocks) remain
+                self.inventory.make_snapshot(clear = InventoryInterface.CLEAR_REPLICAS)
 
-            logger.info('Loading existing data.')
-
-            self.load()
+            if load_first:
+                logger.info('Loading existing data.')
+                self.load()
 
             logger.info('Fetching info on sites.')
             self.site_source.get_site_list(self.sites, filt = config.inventory.included_sites)
@@ -85,21 +86,34 @@ class InventoryManager(object):
             logger.info('Fetching info on groups.')
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
-            # First construct a full list of dataset names we consider, then make a mass query to optimize speed
-            dataset_names = []
-            site_count = 0
-            for site in self.sites.values():
-                site_count += 1
-                logger.info('Fetching info on datasets from %s (%d/%d).', site.name, site_count, len(self.sites))
+            if dataset_filter == '/*/*/*':
+                # First construct a full list of dataset names we consider, then make a mass query to optimize speed
+                dataset_names = []
+                site_count = 0
+                for site in self.sites.values():
+                    site_count += 1
+                    logger.info('Fetching names of datasets on %s (%d/%d).', site.name, site_count, len(self.sites))
+    
+                    for ds_name in self.replica_source.get_dataset_names(sites = [site], groups = self.groups):
+                        if ds_name not in dataset_names:
+                            dataset_names.append(ds_name)
 
-                for ds_name in self.replica_source.get_datasets_on_site(site, group_list, dataset_filter):
-                    if ds_name not in dataset_names:
-                        dataset_names.append(ds_name)
+            else:
+                logger.info('Fetching names of datasets on all sites.')
+                dataset_names = self.replica_source.get_dataset_names(sites = self.sites.values(), groups = self.groups, filt = dataset_filter)
+
+            # Do not consider datasets loaded from the inventory but is not on any of the sites
+            loaded_datasets = self.datasets.keys()
+            for ds_name in loaded_datasets:
+                if ds_name not in dataset_names:
+                    self.datasets.pop(ds_name)
 
             if logger.getEffectiveLevel() == logging.DEBUG:
                 logger.debug('dataset_names: %s', ' '.join(dataset_names))
 
             if len(dataset_names) != 0: # should be true for any normal operation. Relevant when debugging
+                logger.info('Filling details of %d datasets.', len(self.datasets))
+
                 self.dataset_source.get_datasets(dataset_names, self.datasets)
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
 
@@ -107,7 +121,7 @@ class InventoryManager(object):
             # Save inventory data to persistent storage
             # Datasets and groups with no replicas are removed
             # Returns the list of newly inserted sites, groups, datasets
-            self.inventory.save_data(self.sites, self.groups, self.datasets)
+            self.inventory.save_data(self.sites, self.groups, self.datasets, clean_stale = clean_stale)
 
         finally:
             # Lock is released even in case of unexpected errors
@@ -180,6 +194,9 @@ if __name__ == '__main__':
     parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class to be used.')
     parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class to be used.')
     parser.add_argument('--dataset', '-d', metavar = 'EXPR', dest = 'dataset', default = '/*/*/*', help = 'Limit operation to datasets matching the expression.')
+    parser.add_argument('--no-load', '-L', action = 'store_true', dest = 'no_load',  help = 'Do not load the existing inventory when updating.')
+    parser.add_argument('--no-snapshot', '-S', action = 'store_true', dest = 'no_snapshot',  help = 'Do not make a snapshot of existing inventory when updating.')
+    parser.add_argument('--no-clean', '-C', action = 'store_true', dest = 'no_clean', help = 'Do not clean up inventory.')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
     args = parser.parse_args()
@@ -205,7 +222,7 @@ if __name__ == '__main__':
     manager = InventoryManager(**kwd)
 
     if command == 'update':
-        manager.update(dataset_filter = args.dataset)
+        manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot, clean_stale = not args.no_clean)
 
     elif command == 'list':
         manager.load()

@@ -1,7 +1,9 @@
 import json
 import logging
+import time
 import re
 import collections
+import pprint
 
 from common.interface.copy import CopyInterface
 from common.interface.deletion import DeletionInterface
@@ -32,7 +34,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
 
         # Due to the way PhEDEx is set up, we are required to see block replica information
         # when fetching the list of datasets. Might as well cache it.
-        # Cache organized as {site: {ds_name: [protoblocks]}}
+        # Cache organized as {dataset: {site: [ProtoBlockReplicas]}}
         self._block_replicas = {}
 
     def schedule_copy(self, dataset, origin, dest, comments = ''): #override (CopyInterface)
@@ -57,7 +59,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
             options['comments'] = comments
 
         if self.debug_mode:
-            logger.debug('subscribe: %s', str(options))
+            logger.debug('schedule_copy  subscribe: %s', str(options))
             return
 
 #        self._make_phedex_request('subscribe', options, method = POST)
@@ -82,7 +84,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
             options['comments'] = comments
 
         if self.debug_mode:
-            logger.debug('delete: %s', str(options))
+            logger.debug('schedule_deletion  delete: %s', str(options))
             return
 
 #        self._make_phedex_request('delete', options, method = POST)
@@ -94,6 +96,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         elif type(filt) is list:
             options = ['node=%s' % s for s in filt]
 
+        logger.info('get_site_list  Fetching the list of nodes from PhEDEx')
         source = self._make_phedex_request('nodes', options)
 
         for entry in source:
@@ -112,6 +115,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         elif type(filt) is list:
             options = ['group=%s' % s for s in filt]
 
+        logger.info('get_group_list  Fetching the list of groups from PhEDEx')
         source = self._make_phedex_request('groups', options)
         
         for entry in source:
@@ -119,74 +123,85 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
                 group = Group(entry['name'])
                 groups[entry['name']] = group
 
-    def get_datasets_on_site(self, site, groups, filt = '/*/*/*'): #override (ReplicaInfoSourceInterface)
+    def get_dataset_names(self, sites = None, groups = None, filt = '/*/*/*'): #override (ReplicaInfoSourceInterface)
         """
         Use blockreplicas to fetch a full list of all block replicas on the site.
         Cache block replica data to avoid making the call again.
         """
 
-        options = []
+        options = ['subscribed=y', 'show_dataset=y']
+        if sites is not None:
+            for site in sites:
+                options.append('node=' + site.name)
+
         if type(filt) is str and len(filt) != 0:
-            options = ['dataset=' + filt]
+            options += ['dataset=' + filt]
         elif type(filt) is list:
-            options = ['dataset=%s' % s for s in filt]
-
-        self._block_replicas[site] = {}
-
-        group_names = [g.name for g in groups]
+            options += ['dataset=%s' % s for s in filt]
 
         ds_name_list = []
 
-        source = self._make_phedex_request('blockreplicas', ['subscribed=y', 'show_dataset=y', 'node=' + site.name] + options)
+        source = self._make_phedex_request('blockreplicas', options)
 
-        logger.info('Got %d dataset info from site %s', len(source), site.name)
+        logger.info('get_dataset_names  Got %d dataset info', len(source))
 
         for dataset_entry in source:
             ds_name = dataset_entry['name']
 
-            block_replicas = []
-            
+            if ds_name not in self._block_replicas:
+                self._block_replicas[ds_name] = {}
+
+            has_block_replica = False
+
             for block_entry in dataset_entry['block']:
-                replica_entry = block_entry['replica'][0]
+                block_name = block_entry['name'].replace(ds_name + '#', '')
 
-                if replica_entry['group'] not in group_names:
-                    continue
+                for replica_entry in block_entry['replica']:
+                    if groups is not None and replica_entry['group'] not in groups:
+                        continue
 
-                protoreplica = PhEDExInterface.ProtoBlockReplica(
-                    block_name = block_entry['name'].replace(ds_name + '#', ''),
-                    group_name = replica_entry['group'],
-                    is_custodial = (replica_entry['custodial'] == 'y'),
-                    is_complete = (replica_entry['complete'] == 'y'),
-                    time_created = replica_entry['time_create'],
-                    time_updated = replica_entry['time_update']
-                )
+                    has_block_replica = True
 
-                block_replicas.append(protoreplica)
+                    site_name = replica_entry['node']
 
-            if len(block_replicas) != 0:
+                    protoreplica = PhEDExDBSInterface.ProtoBlockReplica(
+                        block_name = block_name,
+                        group_name = replica_entry['group'],
+                        is_custodial = (replica_entry['custodial'] == 'y'),
+                        is_complete = (replica_entry['complete'] == 'y'),
+                        time_created = replica_entry['time_create'],
+                        time_updated = replica_entry['time_update']
+                    )
+
+                    if site_name not in self._block_replicas[ds_name]:
+                        self._block_replicas[ds_name][site_name] = []
+    
+                    self._block_replicas[ds_name][site_name].append(protoreplica)
+                    
+            if has_block_replica:
                 ds_name_list.append(ds_name)
-                self._block_replicas[site][ds_name] = block_replicas
 
         return ds_name_list
         
-    def make_replica_links(self, datasets, sites, groups): #override (ReplicaInfoSourceInterface)
+    def make_replica_links(self, sites, groups, datasets): #override (ReplicaInfoSourceInterface)
         # sites argument not used because cache is already site-aware
 
         for dataset in datasets.values():
-            logger.info('Making replica links for dataset %s', dataset.name)
+            logger.info('make_replica_links  Making replica links for dataset %s', dataset.name)
     
             custodial_sites = []
             replicas_on_site = {}
     
-            for site, ds_block_list in self._block_replicas.items():
-                if dataset.name not in ds_block_list:
-                    continue
+            for site_name, ds_block_list in self._block_replicas[dataset.name].items():
+                site = sites[site_name]
     
-                for protoreplica in ds_block_list[dataset.name]:
+                for protoreplica in ds_block_list:
                     try:
                         block = next(b for b in dataset.blocks if b.name == protoreplica.block_name)
                     except StopIteration:
-                        logger.warning('Replica interface found a block %s that is unknown to dataset %s', protoreplica.block_name, dataset.name)
+                        if dataset.status == Dataset.STAT_VALID:
+                            logger.warning('Replica interface found a block %s that is unknown to dataset %s', protoreplica.block_name, dataset.name)
+
                         continue
     
                     if protoreplica.group_name is not None:
@@ -217,6 +232,9 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
                         replicas_on_site[site].append(replica)
                     except KeyError:
                         replicas_on_site[site] = [replica]
+
+            # remove cache
+            self._block_replicas.pop(dataset.name)
     
             for site, block_replicas in replicas_on_site.items():
                 replica = DatasetReplica(
@@ -248,22 +266,25 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
             dataset = Dataset(name)
             datasets[name] = dataset
 
-        # is_open is True by default
-        if dataset.is_open:
-            source = self._make_phedex_request('data', ['level=block', 'dataset=' + name])[0]['dataset'] # PhEDEx returns a dictionary for each DBS instance
-            ds_entry = source[0]
+        if dataset.status == Dataset.STAT_IGNORED:
+            return
 
-            self._set_dataset_constituent_info(dataset, ds_entry)
+        logger.info('get_dataset  Fetching data for %s', name)
+        source = self._make_phedex_request('data', ['level=block', 'dataset=' + name])[0]['dataset'] # PhEDEx returns a dictionary for each DBS instance
+        ds_entry = source[0]
+
+        self._set_dataset_constituent_info(dataset, ds_entry)
 
         # on_tape is False by default
         if not dataset.on_tape:
+            logger.info('get_dataset  %s is not known to be on tape. Checking for update.', name)
             source = self._make_phedex_request('blockreplicasummary', ['create_since=0', 'node=T*MSS', 'custodial=y', 'complete=y', 'dataset=' + name])
             blocks_on_tape = set(b['name'].replace(name + '#', '') for b in source)
             dataset_blocks = set(b.name for b in dataset.blocks)
         
             dataset.on_tape = (blocks_on_tape == dataset_blocks)
 
-        if dataset.software_version[0] = 0:
+        if dataset.software_version[0] == 0:
             self._set_dataset_software_info(dataset)
 
         if dataset.data_type == Dataset.TYPE_UNKNOWN:
@@ -294,21 +315,26 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
             if len(options) == 1:
                 return
 
+            logger.info('get_datasets::run_datasets_query  Fetching data for %d datasets.', len(options) - 1)
             source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
 
             for ds_entry in source:
-                self._set_dataset_constituent_info(datasets[ds_entry['name']], ds_entry)
+                dataset = datasets[ds_entry['name']]
+                self._set_dataset_constituent_info(dataset, ds_entry)
+
+                # remove datasets with no blocks
+                if len(dataset.blocks) == 0:
+                    logger.info('get_datasets::run_datasets_query  %s does not have any blocks and is removed.', ds_entry['name'])
+                    datasets.pop(ds_entry['name'])
 
             del options[1:] # keep only the first element (i.e. ('level', 'block'))
 
-        # Loop over open datasets
+        # Loop over datasets that are status UNKNOWN or PRODUCTION
         for dataset in datasets.values():
-            if not dataset.is_open:
-                continue
-
-            options.append(('dataset', dataset.name))
-            if len(options) >= 10001:
-                run_datasets_query()
+            if dataset.status == Dataset.STAT_UNKNOWN or dataset.status == Dataset.STAT_PRODUCTION:
+                options.append(('dataset', dataset.name))
+                if len(options) >= 10001:
+                    run_datasets_query()
 
         run_datasets_query()
 
@@ -323,6 +349,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
             if len(options) == 4:
                 return
 
+            logger.info('get_datasets::run_ontape_query  Checking whether %d datasets (%s, ...) are on tape', len(options) - 4, options[4][1])
             source = self._make_phedex_request('blockreplicasummary', options, method = POST)
 
             for block_entry in source:
@@ -339,7 +366,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
 
         # Loop over datasets not on tape
         for dataset in datasets.values():
-            if dataset.on_tape:
+            if dataset.on_tape or dataset.status == Dataset.STAT_IGNORED:
                 continue
 
             options.append(('dataset', dataset.name))
@@ -351,7 +378,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
 
         # Loop again and fill datasets
         for dataset in datasets.values():
-            if dataset.on_tape:
+            if dataset.on_tape or dataset.status == Dataset.STAT_IGNORED:
                 continue
 
             try:
@@ -364,23 +391,36 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
 
         # Loop over all datasets and fill other details if not set
         for dataset in datasets.values():
-            if dataset.software_version[0] = 0:
+            if dataset.status == Dataset.STAT_IGNORED:
+                continue
+
+            if dataset.software_version[0] == 0:
                 self._set_dataset_software_info(dataset)
 
             if dataset.data_type == Dataset.TYPE_UNKNOWN:
                 self._set_dataset_type(dataset)
 
+        # TODO detect dataset status change
+
     def _set_dataset_constituent_info(self, dataset, ds_entry):
         ds_name = ds_entry['name']
-        dataset.is_open = (ds_entry['is_open'] == 'y') # have seen cases where an obviously closed dataset is labeled open - need to check
+        dataset.is_open = (ds_entry['is_open'] == 'y') # useless flag - all datasets are flagged open
+
+        has_open_blocks = False
 
         for block_entry in ds_entry['block']:
             block_name = block_entry['name'].replace(dataset.name + '#', '')
 
-            if block_entry['is_open'] == 'y':
-                is_open = True
-            else:
-                is_open = False
+            is_open = False
+
+            if block_entry['is_open'] == 'y' and time.time() - block_entry['time_create'] > 48. * 3600.:
+                # Block is more than 48 hours old and is still open - PhEDEx can be wrong
+                logger.info('set_dataset_constituent_info  Double-checking with DBS if block %s#%s is open', dataset.name, block_name)
+                dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block_name, 'detail=True']) # %23 = '#'
+                if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
+                    # cannot get data from DBS, or DBS also says this block is open
+                    is_open = True
+                    has_open_blocks = True
 
             block = Block(
                 block_name,
@@ -395,11 +435,20 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         dataset.size = sum([b.size for b in dataset.blocks])
         dataset.num_files = sum([b.num_files for b in dataset.blocks])
 
+        # TODO this is not fully accurate
+        if has_open_blocks:
+            dataset.status = Dataset.STAT_PRODUCTION
+        else:
+            dataset.status = Dataset.STAT_VALID
+
     def _set_dataset_software_info(self, dataset):
-        versions = self._make_dbs_request('releaseversions', ['dataset=' + dataset.name])[0]['release_version']
+        logger.info('set_dataset_software_info  Fetching software version for %s', dataset.name)
+        result = self._make_dbs_request('releaseversions', ['dataset=' + dataset.name])
+        if len(result) == 0 or 'release_version' not in result[0]:
+            return
 
         # a dataset can have multiple versions; use the first one
-        version = versions[0]
+        version = result[0]['release_version'][0]
 
         matches = re.match('CMSSW_([0-9]+)_([0-9]+)_([0-9]+)(|_.*)', version)
         if matches:
@@ -413,21 +462,29 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
             dataset.software_version = (cycle, major, minor, suffix)
 
     def _set_dataset_type(self, dataset):
+        logger.info('set_dataset_type  Checking dataset status of %s', dataset.name)
         dbs_entry = self._make_dbs_request('datasets', ['dataset=' + dataset.name, 'detail=True', 'dataset_access_type=VALID'])
 
         if len(dbs_entry) != 0:
-            dataset.is_valid = True
+            dataset.status = Dataset.STAT_VALID
         else:
-            dataset.is_valid = False
+            logger.info('set_dataset_type  %s is not in VALID category. Checking INVALID.', dataset.name)
             dbs_entry = self._make_dbs_request('datasets', ['dataset=' + dataset.name, 'detail=True', 'dataset_access_type=INVALID'])
+            if len(dbs_entry) != 0:
+                dataset.status = Dataset.STAT_INVALID
+            else:
+                logger.info('set_dataset_type  %s is not in VALID or INVALID categories. Checking PRODUCTION.', dataset.name)
+                dbs_entry = self._make_dbs_request('datasets', ['dataset=' + dataset.name, 'detail=True', 'dataset_access_type=PRODUCTION'])
+                if len(dbs_entry) != 0:
+                    dataset.status = Dataset.STAT_PRODUCTION
+                else:
+                    logger.info('set_dataset_type  Status of %s is unknown.', dataset.name)
+                    return
 
-            if len(dbs_entry) == 0:
-                return
-
-        if dbs_entry['primary_ds_type'] == 'data':
+        if dbs_entry[0]['primary_ds_type'] == 'data':
             dataset.data_type = Dataset.TYPE_DATA
 
-        elif dbs_entry['primary_ds_type'] == 'mc':
+        elif dbs_entry[0]['primary_ds_type'] == 'mc':
             dataset.data_type = Dataset.TYPE_MC
             
     def _make_phedex_request(self, resource, options = [], method = GET, format = 'url'):
@@ -441,7 +498,8 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         result = json.loads(resp)['phedex']
         unicode2str(result)
 
-        logger.debug(result)
+        if logger.getEffectiveLevel() == logging.DEBUG:
+            logger.debug(pprint.pprint(result))
 
         self._last_request = result['request_timestamp']
         self._last_request_url = result['request_url']
@@ -463,7 +521,8 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         result = json.loads(resp)
         unicode2str(result)
 
-        logger.debug(result)
+        if logger.getEffectiveLevel() == logging.DEBUG:
+            logger.debug(pprint.pprint(result))
 
         return result
 
@@ -488,7 +547,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         files = {} # block -> list of files
 
         def run_data_query():
-            ds_entry = self._make_request('data', options, method = POST)[0]['dataset'][0]
+            ds_entry = self._make_phedex_request('data', options, method = POST)[0]['dataset'][0]
             if len(dataset_properties) == 0:
                 for key, value in ds_entry.items():
                     if key == 'name' or key == 'block':
@@ -513,9 +572,10 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
             options.append('block=' + dataset.name + '#' + block.name)
             block_properties[block.name] = {}
             files[block.name] = []
-#            if sum(map(len, options)) + len(options) - 1 >= 7600 or block == blocks[-1]:
-            if block == blocks[-1]:
+            if len(options) >= 10002:
                 run_data_query()
+
+        run_data_query()
 
         # we should consider using an actual xml tool
         xmlbase = '<data version="2.0"><dbs name="%s">{body}</dbs></data>' % config.dbs.url_base
@@ -550,14 +610,26 @@ if __name__ == '__main__':
     parser = ArgumentParser(description = 'PhEDEx interface')
 
     parser.add_argument('command', metavar = 'COMMAND', help = 'Command to execute.')
-    parser.add_argument('options', metavar = 'EXPR', nargs = '+', default = [], help = 'Option string as passed to PhEDEx datasvc.')
+    parser.add_argument('options', metavar = 'EXPR', nargs = '*', default = [], help = 'Option string as passed to PhEDEx datasvc.')
+    parser.add_argument('--method', '-m', dest = 'method', metavar = 'METHOD', default = 'GET', help = 'HTTP method.')
+    parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
     args = parser.parse_args()
 
-    logger.setLevel(logging.DEBUG)
-    
+    if args.log_level:
+        try:
+            level = getattr(logging, args.log_level.upper())
+            logging.getLogger().setLevel(level)
+        except AttributeError:
+            logging.warning('Log level ' + args.log_level + ' not defined')
+
     command = args.command
 
-    interface = PhEDExInterface()
+    interface = PhEDExDBSInterface()
 
-    print interface._make_request(command, args.options)
+    if args.method == 'POST':
+        method = POST
+    else:
+        method = GET
+
+    pprint.pprint(interface._make_phedex_request(command, args.options, method = method))

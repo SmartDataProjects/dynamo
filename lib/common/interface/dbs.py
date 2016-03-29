@@ -87,6 +87,7 @@ class DBSInterface(DatasetInfoSourceInterface):
 if __name__ == '__main__':
 
     from argparse import ArgumentParser
+    import pprint
 
     parser = ArgumentParser(description = 'DBS Interface')
 
@@ -95,11 +96,12 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     
-    logger.setLevel(logging.DEBUG)
-    
     command = args.command
 
     interface = DBSInterface()
+
+    method = GET
+    format = 'url'
 
     if command == 'datasetlist':
         # options: dataset=/A1/B1/C1,/A2/B2/C2,...
@@ -109,7 +111,10 @@ if __name__ == '__main__':
         if 'detail=True' in args.options:
             options['detail'] = True
 
-        print interface._make_request(command, options, method = POST, format = 'json')
+        method = POST
+        format = 'json'
 
     else:
-        print interface._make_request(command, args.options)
+        options = args.options
+
+    pprint.pprint(interface._make_request(command, options, method = method, format = format))

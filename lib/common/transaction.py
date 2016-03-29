@@ -19,3 +19,6 @@ class TransactionManager(object):
 
     def delete(self, replica):
         self.deletion.schedule_deletion(replica)
+
+    def delete_many(self, replica_list):
+        self.deletion.schedule_deletions(replica_list)

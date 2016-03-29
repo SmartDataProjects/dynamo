@@ -89,7 +89,7 @@ class InventoryInterface(object):
 
         self._do_switch_snapshot(timestamp)
 
-    def load_data(self):
+    def load_data(self, site_filt = '*', dataset_filt = '/*/*/*'):
         """
         Return lists loaded from persistent storage.
         """
@@ -99,29 +99,29 @@ class InventoryInterface(object):
 
         self.acquire_lock()
         try:
-            site_list, group_list, dataset_list = self._do_load_data()
+            site_list, group_list, dataset_list = self._do_load_data(site_filt, dataset_filt)
         finally:
             self.release_lock()
 
         return site_list, group_list, dataset_list
 
-    def save_data(self, sites, groups, datasets):
+    def save_data(self, sites, groups, datasets, clean_stale = True):
         """
         Write information in the dictionaries into persistent storage.
         Remove information of datasets and blocks with no replicas.
         Return newly inserted sites, groups, and datasets.
         Arguments are name->obj maps.
+        Optional argument clean_stale specifies if stale data (e.g. information
+        of nonexistent datasets) should be cleaned.
         """
 
         if self.debug_mode:
             logger.debug('_do_save_data()')
-            logger.debug('_do_clean_block_info()')
-            logger.debug('_do_clean_dataset_info()')
             return
 
         self.acquire_lock()
         try:
-            self._do_save_data(sites, groups, datasets)
+            self._do_save_data(sites, groups, datasets, clean_stale)
         finally:
             self.release_lock()
 
@@ -185,6 +185,50 @@ class InventoryInterface(object):
         finally:
             self.release_lock()
 
+    def close_block(self, block):
+        """
+        Set and save block.is_open = False
+        """
+
+        if type(block) is Block:
+            dataset_name = block.dataset.name
+            block_name = block.name
+        elif type(block) is str:
+            dataset_name, sep, block_name = block.partition('#')
+
+        if self.debug_mode:
+            logger.debug('_do_close_block(%s#%s)', dataset_name, block_name)
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_close_block(dataset_name, block_name)
+        finally:
+            self.release_lock()
+
+    def set_dataset_status(self, dataset, status):
+        """
+        Set and save dataset status
+        """
+
+        # convert status into a string
+        status_str = Dataset.status_name(status)
+
+        if type(dataset) is Dataset:
+            dataset_name = dataset.name
+        elif type(dataset) is str:
+            dataset_name = dataset
+
+        if self.debug_mode:
+            logger.debug('_do_set_dataset_status(%s, %s)', dataset.name, status_str)
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_set_dataset_status(dataset_name, status_str)
+        finally:
+            self.release_lock()
+
 
 if __name__ == '__main__':
 
@@ -222,10 +266,9 @@ if __name__ == '__main__':
 
     elif command == 'clean':
         if not args.timestamp:
-            print 'Command clean requires --timestamp option.'
-            sys.exit(1)
-
-        if args.timestamp.startswith('>'):
+            newer_than = 0
+            older_than = time.time()
+        elif args.timestamp.startswith('>'):
             newer_than = time.mktime(time.strptime(args.timestamp[1:], '%y%m%d%H%M%S'))
             older_than = time.time()
         elif args.timestamp.startswith('<'):
@@ -255,3 +298,53 @@ if __name__ == '__main__':
 
         else:
             print interface.list_snapshots()
+
+    elif command == 'show':
+        if args.timestamp:
+            interface.switch_snapshot(args.timestamp)
+
+        if cmd_args[0] == 'dataset':
+            sites, groups, datasets = interface.load_data(dataset_filt = cmd_args[1])
+
+            try:
+                dataset = next(d for d in datasets if d.name == cmd_args[1])
+            except StopIteration:
+                print 'No dataset %s found.' % cmd_args[1]
+                sys.exit(0)
+
+            print dataset
+
+        elif cmd_args[0] == 'block':
+            dataset_name, sep, block_name = cmd_args[1].partition('#')
+            sites, groups, datasets = interface.load_data(dataset_filt = dataset_name)
+
+            try:
+                dataset = next(d for d in datasets if d.name == dataset_name)
+            except StopIteration:
+                print 'No dataset %s found.' % dataset
+                sys.exit(0)
+
+            try:
+                block = next(b for b in dataset.blocks if b.name == block_name)
+            except StopIteration:
+                print 'No block %s found in dataset %s.' % (block_name, dataset.name)
+                sys.exit(0)
+
+            print block
+
+#        elif cmd_args[0] == 'site':
+#            sites, groups, datasets = interface.load_data(site_filt = cmd_args[1])
+#
+#            try:
+#                site = next(s for s in sites if s.name == cmd_args[1])
+#            except StopIteration:
+#                print 'No site %s found.' % cmd_args[1]
+#                sys.exit(0)
+#
+#            print site
+
+    elif command == 'close_block':
+        interface.close_block(cmd_args[0])
+
+    elif command == 'set_dataset_status':
+        interface.set_dataset_status(cmd_args[0], cmd_args[1])

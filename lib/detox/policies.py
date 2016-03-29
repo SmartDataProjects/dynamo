@@ -155,7 +155,8 @@ class ActionList(policy.Policy):
     def __init__(self, list_path = '', name = 'ActionList'):
         super(self.__class__, self).__init__(name)
 
-        self.patterns = [] # (site_pattern, dataset_pattern, action)
+        self.res = [] # (site_re, dataset_re, action)
+        self.patterns = [] # (site_pattern, dataset_pattern)
         self.actions = {} # replica -> action
 
         if list_path:
@@ -172,22 +173,26 @@ class ActionList(policy.Policy):
                 site_pattern = matches.group(2)
                 dataset_pattern = matches.group(3)
 
+                site_re = re.compile(fnmatch.translate(site_pattern))
+                dataset_re = re.compile(fnmatch.translate(dataset_pattern))
+
                 if action_str == 'Keep':
                     action = policy.DEC_PROTECT
                 else:
                     action = policy.DEC_DELETE
 
-                self.patterns.append((site_pattern, dataset_pattern, action))
+                self.res.append((site_re, dataset_re, action))
+                self.patterns.append((site_pattern, dataset_pattern))
 
     def applies(self, replica, demand_manager): # override
         """
         Loop over the patterns list and make an entry in self.actions if the pattern matches.
         """
 
-        for site_pattern, dataset_pattern, action in self.patterns:
-            if fnmatch.fnmatch(replica.site.name, site_pattern) and fnmatch.fnmatch(replica.dataset.name, dataset_pattern):
+        for iL, (site_re, dataset_re, action) in enumerate(self.res):
+            if site_re.match(replica.site.name) and dataset_re.match(replica.dataset.name):
                 self.actions[replica] = action
-                return True, 'Pattern match: site=%s, dataset=%s' % (site_pattern, dataset_pattern)
+                return True, 'Pattern match: site=%s, dataset=%s' % self.patterns[iL]
 
         return False, ''
     
@@ -199,10 +204,10 @@ def make_stack(strategy):
     if strategy == 'TargetFraction':
         stack = [
             KeepTargetOccupancy(detox_config.keep_target.occupancy),
-            KeepIncomplete(),
-            KeepLocked(),
-            KeepCustodial(),
-            KeepDiskOnly(),
+            ProtectIncomplete(),
+            ProtectLocked(),
+            ProtectCustodial(),
+            ProtectDiskOnly(),
 #            DeletePartial(),
             DeleteOld(*detox_config.delete_old.threshold),
 #            DeleteUnpopular()
@@ -210,10 +215,10 @@ def make_stack(strategy):
 
     elif strategy == 'List':
         stack = [
-            KeepIncomplete(),
-            KeepLocked(),
-            KeepCustodial(),
-            KeepDiskOnly(),
+            ProtectIncomplete(),
+            ProtectLocked(),
+            ProtectCustodial(),
+            ProtectDiskOnly(),
             ActionList()
         ]
 

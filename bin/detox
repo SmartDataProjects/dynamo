@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import sys
+import os
 import logging
 
 from common.inventory import InventoryManager
@@ -20,6 +21,7 @@ parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset
 parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--policy-stack', '-p', metavar = 'STACK', dest = 'stack', nargs = '+', default = ['TargetFraction'], help = 'Name of the policy stack. Options are\n TargetFraction [threshold]\n List <path> [<path> ..]\n <path>.py\n The python file should contain a list of Policies with the same name as the file.')
+parser.add_argument('--static-deletion', '-S', action = 'store_true', dest = 'static_deletion', help = 'Delete everything in the deletion list at once.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
 args = parser.parse_args()
@@ -51,7 +53,7 @@ demand_manager = DemandManager()
 if args.stack[0].endswith('.py'):
     execfile(args.stack[0])
 
-    policy_stack = args.stack[0][:-3]
+    policy_stack = eval(os.path.basename(args.stack[0])[:-3])
 
 else:
     from detox.policies import make_stack
@@ -74,4 +76,4 @@ detox = Detox(inventory_manager, transaction_manager, demand_manager, policy_sta
 if args.force_inventory_update:
     config.inventory.refresh_min = 0
 
-detox.run()
+detox.run(dynamic_deletion = not args.static_deletion)

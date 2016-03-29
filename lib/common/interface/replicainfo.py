@@ -6,8 +6,11 @@ class ReplicaInfoSourceInterface(object):
     def __init__(self):
         pass
 
-    def get_datasets_on_site(self, site, groups, filt = '/*/*/*'):
-        """Return a list of dataset names on the given site."""
+    def get_dataset_names(self, site = None, groups = None, filt = '/*/*/*'):
+        """
+        Return a list of dataset names on the given site.
+        Argument groups is a name->group dict.
+        """
 
         return []
 

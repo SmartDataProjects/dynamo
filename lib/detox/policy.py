@@ -3,7 +3,7 @@ import collections
 
 logger = logging.getLogger(__name__)
 
-DEC_INDIFFERENT, DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(3)
+DEC_INDIFFERENT, DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(4)
 
 class Policy(object):
     """
@@ -140,6 +140,9 @@ class PolicyManager(object):
         hit_records = PolicyHitRecords(replica)
 
         for policy in self._policies:
+            if logger.getEffectiveLevel() == logging.DEBUG:
+                logger.debug('Testing %s:%s against %s', replica.site.name, replica.dataset.name, policy.name)
+
             dec = policy.decision(replica, demand, hit_records)
 
             if dec == DEC_DELETE and result == DEC_INDIFFERENT:

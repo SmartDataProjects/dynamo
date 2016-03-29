@@ -13,21 +13,63 @@ class ObjectError(Exception):
 class Dataset(object):
     """Represents a dataset."""
 
-    # enumerator for dataset type
-    TYPE_UNKNOWN, TYPE_DATA, TYPE_MC = range(3)
+    # Enumerator for dataset type.
+    # Starting from 1 to play better with MySQL
+    TYPE_UNKNOWN, TYPE_DATA, TYPE_MC = range(1, 4)
+    STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, 8)
 
-    def __init__(self, name, size = -1, num_files = -1, is_open = True, is_valid = True, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, '')):
+    @staticmethod
+    def data_type_name(arg):
+        if type(arg) is int:
+            data_types = ['UNKNOWN', 'DATA', 'MC']
+            return dict([(eval('Dataset.TYPE_' + tp), tp) for tp in data_types])[arg]
+
+        else:
+            return arg
+
+    @staticmethod
+    def data_type_val(arg):
+        if type(arg) is str:
+            return eval('Dataset.TYPE_' + arg)
+
+        else:
+            return arg
+
+    @staticmethod
+    def status_name(arg):
+        if type(arg) is int:
+            statuses = ['UNKNOWN', 'DELETED', 'DEPRECATED', 'INVALID', 'PRODUCTION', 'VALID', 'IGNORED']
+            return dict([(eval('Dataset.STAT_' + tp), tp) for tp in statuses])[arg]
+
+        else:
+            return arg
+
+    @staticmethod
+    def status_val(arg):
+        if type(arg) is str:
+            return eval('Dataset.STAT_' + arg)
+
+        else:
+            return arg
+
+    def __init__(self, name, size = -1, num_files = -1, is_open = True, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, '')):
         self.name = name
         self.size = size
         self.num_files = num_files
         self.is_open = is_open
-        self.is_valid = is_valid
+        self.status = status
         self.on_tape = on_tape
         self.data_type = data_type
         self.software_version = software_version
         self.last_accessed = 0
         self.blocks = []
         self.replicas = []
+
+    def __str__(self):
+        replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
+
+        return 'Dataset %s (is_open=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, #blocks=%d, replicas=%s)' % \
+            (self.name, self.is_open, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), str(self.software_version), len(self.blocks), replica_sites)
 
     def find_block(self, block_name):
         try:
@@ -57,6 +99,10 @@ class Block(object):
         self.is_open = is_open
         self.replicas = []
 
+    def __str__(self):
+        replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
+        return 'Block %s#%s (size=%d, num_files=%d, is_open=%d, replicas=%s)' % (self.dataset.name, self.name, self.size, self.num_files, self.is_open, replica_sites)
+
     def find_replica(self, site):
         try:
             if type(site) is Site:
@@ -77,7 +123,7 @@ class Site(object):
     TYPE_UNKNOWN = 3
 
     @staticmethod
-    def storage_type(arg):
+    def storage_type_val(arg):
         if type(arg) is str:
             arg = arg.lower()
             if arg == 'disk':
@@ -89,7 +135,12 @@ class Site(object):
             elif arg == 'unknown':
                 return Site.TYPE_UNKNOWN
 
-        elif type(arg) is int:
+        else:
+            return arg
+
+    @staticmethod
+    def storage_type_name(arg):
+        if type(arg) is int:
             if arg == Site.TYPE_DISK:
                 return 'disk'
             elif arg == Site.TYPE_MSS:
@@ -100,7 +151,7 @@ class Site(object):
                 return 'unknown'
 
         else:
-            raise ObjectError('storage_type argument {arg} is invalid'.format(arg = arg))
+            return arg
 
     def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', capacity = 0, used_total = 0):
         self.name = name
@@ -108,7 +159,9 @@ class Site(object):
         self.storage_type = storage_type
         self.backend = backend
         self.capacity = capacity
+        self.group_quota = {}
         self.used_total = used_total
+        self.group_usage = {}
         self.datasets = []
         self.blocks = []
 
@@ -124,19 +177,39 @@ class Site(object):
         except StopIteration:
             return None
 
-    def num_last_copy(self):
-        """
-        Number of datasets on this site that have no other replicas.
-        """
+    def occupancy(self, groups = []):
+        if type(groups) is not list:
+            groups = [groups]
 
-        return sum([1 for d in self.datasets if len(d.replicas) == 1])
+        if len(groups) == 0:
+            return float(self.used_total) / float(self.capacity)
+        else:
+            numer = 0.
+            denom = 0.
+            for group in groups:
+                try:
+                    n = self.group_usage[group]
+                    d = self.group_quota[group]
+                except KeyError:
+                    continue
 
-    def last_copy_fraction(self):
-        return float(self.num_last_copy()) / float(len(self.datasets))
+                numer += n
+                denom += d
 
-    def occupancy(self):
-        return float(self.used_total) / float(self.capacity)
+            return numer / denom
 
+    def quota(self, groups):
+        if type(groups) is not list:
+            groups = [groups]
+
+        quota = 0.
+        for group in groups:
+            try:
+                quota += self.group_quota[group]
+            except KeyError:
+                pass
+
+        return quota
 
 class Group(object):
     """Represents a user group."""

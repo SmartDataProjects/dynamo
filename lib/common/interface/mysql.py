@@ -3,6 +3,7 @@ import time
 import re
 import socket
 import logging
+import fnmatch
 import MySQLdb
 
 from common.interface.inventory import InventoryInterface
@@ -103,7 +104,7 @@ class MySQLInterface(InventoryInterface):
 
         self._query('USE ' + snapshot_name)
 
-    def _do_load_data(self): #override
+    def _do_load_data(self, site_filt, dataset_filt): #override
 
         # Load sites
         site_list = []
@@ -114,7 +115,10 @@ class MySQLInterface(InventoryInterface):
         logger.info('Loaded data for %d sites.', len(sites))
         
         for site_id, name, host, storage_type, backend, capacity, used_total in sites:
-            site = Site(name, host = host, storage_type = Site.storage_type(storage_type), backend = backend, capacity = capacity, used_total = used_total)
+            if site_filt != '*' and not fnmatch.fnmatch(name, site_filt):
+                continue
+
+            site = Site(name, host = host, storage_type = Site.storage_type_val(storage_type), backend = backend, capacity = capacity, used_total = used_total)
             site_list.append(site)
 
             site_map[site_id] = site
@@ -147,21 +151,30 @@ class MySQLInterface(InventoryInterface):
         dataset_list = []
         dataset_map = {} # id -> site
 
-        datasets = self._query('SELECT `id`, `name`, `size`, `num_files`, `is_open`, `is_valid`, `on_tape`, `data_type`, `software_version_id` FROM `datasets`')
+        datasets = self._query('SELECT `id`, `name`, `size`, `num_files`, `is_open`, `status`+0, `on_tape`, `data_type`+0, `software_version_id` FROM `datasets`')
 
         logger.info('Loaded data for %d datasets.', len(datasets))
 
-        for dataset_id, name, size, num_files, is_open, is_valid, on_tape, data_type, software_version_id in datasets:
-            dataset = Dataset(name, size = size, num_files = num_files, is_open = is_open, is_valid = is_valid, on_tape = on_tape, data_type = data_type)
-            dataset.software_version = software_version_map[software_version_id]
+        for dataset_id, name, size, num_files, is_open, status, on_tape, data_type, software_version_id in datasets:
+            if dataset_filt != '/*/*/*' and not fnmatch.fnmatch(name, dataset_filt):
+                continue
+
+            dataset = Dataset(name, size = size, num_files = num_files, is_open = is_open, status = int(status), on_tape = on_tape, data_type = int(data_type))
+            if software_version_id != 0:
+                dataset.software_version = software_version_map[software_version_id]
+
             dataset_list.append(dataset)
 
             dataset_map[dataset_id] = dataset
 
         # Load blocks
         block_map = {} # id -> block
-            
-        blocks = self._query('SELECT `id`, `dataset_id`, `name`, `size`, `num_files`, `is_open` FROM `blocks`')
+
+        sql = 'SELECT `id`, `dataset_id`, `name`, `size`, `num_files`, `is_open` FROM `blocks`'
+        if dataset_filt != '/*/*/*':
+            sql += ' WHERE `dataset_id` IN (%s)' % (','.join(map(str, dataset_map.keys())))
+
+        blocks = self._query(sql)
 
         logger.info('Loaded data for %d blocks.', len(blocks))
 
@@ -177,7 +190,18 @@ class MySQLInterface(InventoryInterface):
         logger.info('Linking datasets to sites.')
 
         # Link datasets to sites
-        dataset_replicas = self._query('SELECT `dataset_id`, `site_id`, `is_complete`, `is_partial`, `is_custodial` FROM `dataset_replicas`')
+        sql = 'SELECT `dataset_id`, `site_id`, `is_complete`, `is_partial`, `is_custodial` FROM `dataset_replicas`'
+
+        conditions = []
+        if site_filt != '*':
+            conditions.append('`site_id` IN (%s)' % (','.join(map(str, site_map.keys()))))
+        if dataset_filt != '/*/*/*':
+            conditions.append('`dataset_id` IN (%s)' % (','.join(map(str, dataset_map.keys()))))
+
+        if len(conditions) != 0:
+            sql += ' WHERE ' + ' AND '.join(conditions)
+
+        dataset_replicas = self._query(sql)
 
         for dataset_id, site_id, is_complete, is_partial, is_custodial in dataset_replicas:
             dataset = dataset_map[dataset_id]
@@ -191,12 +215,26 @@ class MySQLInterface(InventoryInterface):
         logger.info('Linking blocks to sites.')
 
         # Link blocks to sites and groups
-        block_replicas = self._query('SELECT `block_id`, `site_id`, `group_id`, `is_complete`, `is_custodial`, UNIX_TIMESTAMP(`time_created`), UNIX_TIMESTAMP(`time_updated`) FROM `block_replicas`')
+        sql = 'SELECT `block_id`, `site_id`, `group_id`, `is_complete`, `is_custodial`, UNIX_TIMESTAMP(`time_created`), UNIX_TIMESTAMP(`time_updated`) FROM `block_replicas`'
+
+        conditions = []
+        if site_filt != '*':
+            conditions.append('`site_id` IN (%s)' % (','.join(map(str, site_map.keys()))))
+        if dataset_filt != '/*/*/*':
+            conditions.append('`block_id` IN (%s)' % (','.join(map(str, block_map.keys()))))
+
+        if len(conditions) != 0:
+            sql += ' WHERE ' + ' AND '.join(conditions)
+
+        block_replicas = self._query(sql)
 
         for block_id, site_id, group_id, is_complete, is_custodial, time_created, time_updated in block_replicas:
             block = block_map[block_id]
             site = site_map[site_id]
-            group = group_map[group_id]
+            if group_id == 0:
+                group = None
+            else:
+                group = group_map[group_id]
 
             rep = BlockReplica(block, site, group = group, is_complete = is_complete, is_custodial = is_custodial, time_created = time_created, time_updated = time_updated)
 
@@ -205,13 +243,14 @@ class MySQLInterface(InventoryInterface):
 
         # For datasets with all replicas complete and not partial, block replica data is not saved on disk
         for dataset in dataset_list:
-            if len(filter(lambda r: r.is_partial or not r.is_complete, dataset.replicas)) != 0:
-                # has at least one replica that is partial or not complete
-                continue
-
             for replica in dataset.replicas:
+                if replica.is_partial or not replica.is_complete:
+                    # block replicas of this dataset replica is taken care of above
+                    continue
+
                 for block in dataset.blocks:
-                    rep = BlockReplica(block, replica.site, group = replica.group, is_complete = True, is_custodial = replica.is_custodial)
+                    # TODO fix group = None
+                    rep = BlockReplica(block, replica.site, group = None, is_complete = True, is_custodial = replica.is_custodial)
                     block.replicas.append(rep)
                     replica.site.blocks.append(block)
 
@@ -220,7 +259,7 @@ class MySQLInterface(InventoryInterface):
         # Only the list of sites, groups, and datasets are returned
         return site_list, group_list, dataset_list
 
-    def _do_save_data(self, sites, groups, datasets): #override
+    def _do_save_data(self, sites, groups, datasets, clean_stale): #override
 
         def make_insert_query(table, fields):
             sql = 'INSERT INTO `{table}` ({fields}) VALUES %s'.format(table = table, fields = ','.join(['`%s`' % f for f in fields]))
@@ -228,19 +267,37 @@ class MySQLInterface(InventoryInterface):
 
             return sql
 
-        def make_delete_query(table, key, pool, not_in = True):
-            sql = 'DELETE FROM `{table}` WHERE `{key}`'.format(table = table, key = key)
-            if not_in:
-                sql += ' NOT IN '
+        def make_delete_query(table, key, pool, delete_match, *conds):
+            condition = '`%s`' % key
+            if delete_match:
+                condition += ' IN '
             else:
-                sql += ' IN '
+                condition += ' NOT IN '
 
             if type(pool) is tuple:
-                sql += '(SELECT `%s` FROM `%s`)' % pool
-            else:
-                sql += '(%s)' % (','.join(map(str, pool)))
+                if len(pool) == 2:
+                    condition += '(SELECT `%s` FROM `%s`)' % pool
+                elif len(pool) == 3:
+                    condition += '(SELECT `%s` FROM `%s` WHERE %s)' % pool
+
+            elif type(pool) is list:
+                condition += '(%s)' % (','.join(map(str, pool)))
+
+            conditions = [condition]
+
+            for cond in conds:
+                conditions.append(cond)
+
+            sql = 'DELETE FROM `%s` WHERE ' % table
+            sql += ' AND '.join(conditions)
             
             return sql
+
+        def make_delete_in_query(table, key, pool, *conds):
+            return make_delete_query(table, key, pool, True, *conds)
+
+        def make_delete_not_in_query(table, key, pool, *conds):
+            return make_delete_query(table, key, pool, False, *conds)
 
         # insert/update sites
         logger.info('Inserting/updating %d sites.', len(sites))
@@ -250,7 +307,7 @@ class MySQLInterface(InventoryInterface):
         sql = make_insert_query('sites', ['name', 'host', 'storage_type', 'backend', 'capacity', 'used_total'])
 
         template = '(\'{name}\',\'{host}\',\'{storage_type}\',\'{backend}\',{capacity},{used_total})'
-        mapping = lambda s: {'name': s.name, 'host': s.host, 'storage_type': Site.storage_type(s.storage_type), 'backend': s.backend, 'capacity': s.capacity, 'used_total': s.used_total}
+        mapping = lambda s: {'name': s.name, 'host': s.host, 'storage_type': Site.storage_type_name(s.storage_type), 'backend': s.backend, 'capacity': s.capacity, 'used_total': s.used_total}
 
         self._query_many(sql, template, mapping, sites.values())
 
@@ -278,7 +335,7 @@ class MySQLInterface(InventoryInterface):
 
         self._query_many(sql, template, mapping, version_list)
 
-        version_map = {} # tuple -> id
+        version_map = {(0, 0, 0, ''): 0} # tuple -> id
         versions = self._query('SELECT `id`, `cycle`, `major`, `minor`, `suffix` FROM `software_versions`')
 
         for version_id, cycle, major, minor, suffix in versions:
@@ -287,10 +344,10 @@ class MySQLInterface(InventoryInterface):
         # insert/update datasets
         logger.info('Inserting/updating %d datasets.', len(datasets))
 
-        sql = make_insert_query('datasets', ['name', 'size', 'num_files', 'is_open', 'is_valid', 'on_tape', 'data_type', 'software_version_id'])
+        sql = make_insert_query('datasets', ['name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id'])
 
-        template = '(\'{name}\',{size},{num_files},{is_open},{is_valid},{on_tape},{data_type},{software_version_id})'
-        mapping = lambda d: {'name': d.name, 'size': d.size, 'num_files': d.num_files, 'is_open': d.is_open, 'is_valid': d.is_valid, 'on_tape': d.on_tape, 'data_type': d.data_type, 'software_version_id': version_map[d.software_version]}
+        template = '(\'{name}\',{size},{num_files},{is_open},{status},{on_tape},{data_type},{software_version_id})'
+        mapping = lambda d: {'name': d.name, 'size': d.size, 'num_files': d.num_files, 'is_open': d.is_open, 'status': d.status, 'on_tape': d.on_tape, 'data_type': d.data_type, 'software_version_id': version_map[d.software_version]}
 
         self._query_many(sql, template, mapping, datasets.values())
 
@@ -299,84 +356,105 @@ class MySQLInterface(InventoryInterface):
         group_ids = dict(self._query('SELECT `name`, `id` FROM `groups`'))
         dataset_ids = dict(self._query('SELECT `name`, `id` FROM `datasets`'))
 
+        # insert/update dataset replicas
+        sql = make_insert_query('dataset_replicas', ['dataset_id', 'site_id', 'is_complete', 'is_partial', 'is_custodial'])
+
+        template = '({dataset_id},{site_id},{is_complete},{is_partial},{is_custodial})'
+        mapping = lambda r: {'dataset_id': dataset_ids[r.dataset.name], 'site_id': site_ids[r.site.name], 'is_complete': r.is_complete, 'is_partial': r.is_partial, 'is_custodial': r.is_custodial}
+
+        all_replicas = sum([d.replicas for d in datasets.values()], []) # second argument -> start with an empty array and add up
+
+        self._query_many(sql, template, mapping, all_replicas)
+
+        all_replicas = None # just to save some memory
+
+        # insert/update blocks for this dataset
+        sql = make_insert_query('blocks', ['name', 'dataset_id', 'size', 'num_files', 'is_open'])
+
+        template = '(\'{name}\',{dataset_id},{size},{num_files},{is_open})'
+        mapping = lambda b: {'name': b.name, 'dataset_id': dataset_ids[b.dataset.name], 'size': b.size, 'num_files': b.num_files, 'is_open': b.is_open}
+
+        all_blocks = sum([d.blocks for d in datasets.values()], [])
+
+        self._query_many(sql, template, mapping, all_blocks)
+
+        all_blocks = None
+
+        # insert/update block replicas for non-complete dataset replicas
+
+        block_replicas = []
+
         for dataset in datasets.values():
             dataset_id = dataset_ids[dataset.name]
 
-            logger.info('Updating block and replica info for dataset %s.', dataset.name)
+            if len([r for r in dataset.replicas if r.is_partial or not r.is_complete]) != 0:
+                logger.info('Not all replicas of %s is complete. Saving block info.', dataset.name)
+                block_ids = dict(self._query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id))
 
-            # insert/update dataset replicas
-            sql = make_insert_query('dataset_replicas', ['dataset_id', 'site_id', 'is_complete', 'is_partial', 'is_custodial'])
+            for replica in dataset.replicas:
+                site = replica.site
+                site_id = site_ids[site.name]
 
-            template = '(%d,{site_id},{is_complete},{is_partial},{is_custodial})' % dataset_id
-            mapping = lambda r: {'site_id': site_ids[r.site.name], 'is_complete': r.is_complete, 'is_partial': r.is_partial, 'is_custodial': r.is_custodial}
+                if not replica.is_partial and replica.is_complete:
+                    # this is a complete replica. Remove block replica for this dataset replica if required
+                    if clean_stale:
+                        sql = make_delete_in_query('block_replicas', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id), '`site_id` = %d' % site_id)
+                        self._query(sql)
 
-            self._query_many(sql, template, mapping, dataset.replicas)
+                    continue
 
-            # insert/update blocks for this dataset
-            sql = make_insert_query('blocks', ['name', 'dataset_id', 'size', 'num_files', 'is_open'])
+                # add the block replicas on this site to block_replicas together with SQL ID
+                for block in dataset.blocks:
+                    block_replicas += [(r, block_ids[block.name]) for r in block.replicas if r.site == site]
 
-            template = '(\'{name}\',%d,{size},{num_files},{is_open})' % dataset_id
-            mapping = lambda b: {'name': b.name, 'size': b.size, 'num_files': b.num_files, 'is_open': b.is_open}
+        sql = make_insert_query('block_replicas', ['block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'time_created', 'time_updated'])
 
-            self._query_many(sql, template, mapping, dataset.blocks)
+        template = '({block_id},{site_id},{group_id},{is_complete},{is_custodial},FROM_UNIXTIME({time_created}),FROM_UNIXTIME({time_updated}))'
+        mapping = lambda (r, bid): {'block_id': bid, 'site_id': site_ids[r.site.name], 'group_id': group_ids[r.group.name] if r.group else 0, 'is_complete': r.is_complete, 'is_custodial': r.is_custodial, 'time_created': r.time_created, 'time_updated': r.time_updated}
 
-            block_ids = dict(self._query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id))
-            
-            # will not save block replica data if all dataset replicas are complete and not partial
-            if len(filter(lambda r: r.is_partial or not r.is_complete, dataset.replicas)) == 0:
-                # delete block replica entries for these blocks
-                sql = make_delete_query('block_replicas', 'block_id', block_ids.values())
-                self._query(sql)
+        self._query_many(sql, template, mapping, block_replicas)
 
-                continue
+        # done inserting new / updated information
 
-            for block in dataset.blocks:
-                block_id = block_ids[block.name]
-
-                # insert/update block replicas
-                sql = make_insert_query('block_replicas', ['block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'time_created', 'time_updated'])
-
-                template = '(%d,{site_id},{group_id},{is_complete},{is_custodial},FROM_UNIXTIME({time_created}),FROM_UNIXTIME({time_updated}))' % block_id
-                mapping = lambda r: {'site_id': site_ids[r.site.name], 'group_id': group_ids[r.group.name] if r.group else 0, 'is_complete': r.is_complete, 'is_custodial': r.is_custodial, 'time_created': r.time_created, 'time_updated': r.time_updated}
+        if clean_stale:
+            logger.info('Cleaning up stale data.')
     
-                self._query_many(sql, template, mapping, block.replicas)
-
-        logger.info('Cleaning up stale data.')
-
-        if len(sites) != 0:
-            sql = make_delete_query('sites', 'id', [site_ids[site_name] for site_name in sites])
+            if len(sites) != 0:
+                sql = make_delete_not_in_query('sites', 'id', [site_ids[site_name] for site_name in sites])
+                self._query(sql)
+    
+            if len(groups) != 0:
+                sql = make_delete_not_in_query('groups', 'id', [group_ids[group_name] for group_name in groups])
+                self._query(sql)
+    
+            if len(datasets) != 0:
+                sql = make_delete_not_in_query('datasets', 'id', [dataset_ids[dataset_name] for dataset_name in datasets])
+                self._query(sql)
+    
+            sql = make_delete_not_in_query('dataset_replicas', 'dataset_id', ('id', 'datasets'))
+            self._query(sql)
+    
+            sql = make_delete_not_in_query('dataset_replicas', 'site_id', ('id', 'sites'))
+            self._query(sql)
+    
+            sql = make_delete_not_in_query('blocks', 'dataset_id', ('id', 'datasets'))
+            self._query(sql)
+    
+            sql = make_delete_not_in_query('block_replicas', 'block_id', ('id', 'blocks'))
+            self._query(sql)
+    
+            sql = make_delete_not_in_query('block_replicas', 'site_id', ('id', 'sites'))
             self._query(sql)
 
-        if len(group_list) != 0:
-            sql = make_delete_query('groups', 'id', [group_ids[group_name] for group_name in groups])
-            self._query(sql)
-
-        if len(dataset_list) != 0:
-            sql = make_delete_query('datasets', 'id', [dataset_ids[dataset_name] for dataset_name in datasets])
-            self._query(sql)
-
-        sql = make_delete_query('dataset_replicas', 'dataset_id', ('id', 'datasets'))
-        self._query(sql)
-
-        sql = make_delete_query('dataset_replicas', 'site_id', ('id', 'sites'))
-        self._query(sql)
-
-        sql = make_delete_query('blocks', 'dataset_id', ('id', 'datasets'))
-        self._query(sql)
-
-        sql = make_delete_query('block_replicas', 'block_id', ('id', 'blocks'))
-        self._query(sql)
-
-        sql = make_delete_query('block_replicas', 'site_id', ('id', 'sites'))
-        self._query(sql)
+#            sql = make_delete_not_in_query('datasets', 'id', '(SELECT DISTINCT(`dataset_id`) FROM `dataset_replicas`)')
+#            self._query(sql)
+#
+#            sql = make_delete_not_in_query('blocks', 'id', '(SELECT DISTINCT(`block_id`) FROM `block_replicas`)')
+#            self._query(sql)    
 
         # time stamp the inventory
         self._query('UPDATE `system` SET `last_update` = NOW()')
         self.last_update = self._query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
-
-        self._query('DELETE FROM `datasets` WHERE `id` NOT IN (SELECT DISTINCT(`dataset_id`) FROM `dataset_replicas`)')
-
-        self._query('DELETE FROM `blocks` WHERE `id` NOT IN (SELECT DISTINCT(`block_id`) FROM `block_replicas`)')
 
     def _do_delete_dataset(self, dataset): #override
         self._query('DELETE FROM `datasets` WHERE `name` LIKE %s', dataset.name)
@@ -389,6 +467,12 @@ class MySQLInterface(InventoryInterface):
 
     def _do_delete_blockreplica(self, replica): #override
         self._query('DELETE FROM `block_replicas` WHERE `block_id` IN (SELECT `id` FROM `blocks` WHERE `name` LIKE %s) AND `site_id` IN (SELECT `id` FROM `sites` WHERE `name` LIKE %s)', replica.block.name, replica.site.name)
+
+    def _do_close_block(self, dataset_name, block_name): #override
+        self._query('UPDATE `blocks` INNER JOIN `datasets` ON `datasets`.`id` = `blocks`.`dataset_id` SET `blocks`.`is_open` = 0 WHERE `datasets`.`name` LIKE %s AND `blocks`.`name` LIKE %s', dataset_name, block_name)
+
+    def _do_set_dataset_status(self, dataset_name, status_str): #override
+        self._query('UPDATE `datasets` SET `status` = %s WHERE `name` LIKE %s', status_str, dataset_name)
 
     def _query(self, sql, *args):
         cursor = self.connection.cursor()
@@ -425,7 +509,10 @@ class MySQLInterface(InventoryInterface):
             
             if len(values) > 1024 * 512:
                 logger.debug(sql % values)
-                cursor.execute(sql % values)
+                try:
+                    cursor.execute(sql % values)
+                except:
+                    print sql % values
                 result += cursor.fetchall()
 
                 values = ''
