@@ -27,7 +27,7 @@ phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'
 
 dbs = Configuration()
 dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
-dbs.deletion_chunk_size = 10 * 1024 * 1024 * 1024 * 1024 # 10 TB
+dbs.deletion_chunk_size = 10000000000000 # 10 TB
 
 inventory = Configuration()
 inventory.refresh_min = 720000

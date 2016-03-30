@@ -535,7 +535,8 @@ class MySQLInterface(InventoryInterface):
             replacements = mapping(obj)
             values += template.format(**replacements)
             
-            if len(values) > 1024 * 512:
+            # MySQL allows queries up to 1M characters
+            if len(values) > 800000:
                 logger.debug(sql % values)
                 try:
                     cursor.execute(sql % values)
