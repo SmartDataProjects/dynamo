@@ -115,6 +115,7 @@ class InventoryManager(object):
                 logger.info('Filling details of %d datasets.', len(self.datasets))
 
                 self.dataset_source.get_datasets(dataset_names, self.datasets)
+                self.replica_source.find_tape_copies(self.datasets)
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
 
             logger.info('Saving data.')

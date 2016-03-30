@@ -71,6 +71,19 @@ class ProtectMinimumCopies(policy.ProtectPolicy):
         return len(replica.dataset.replicas) <= demand_manager.get_demand(replica.dataset).required_copies
 
 
+class ProtectNotOwnedBy(policy.ProtectPolicy):
+    """
+    PROTECT if the replica is not fully owned by a group.
+    """
+    
+    def __init__(self, group_name, name = 'ProtectNotOnwedBy'):
+        super(self.__class__, self).__init__(name)
+        self.group_name = group_name
+
+    def applies(self, replica, demand_manager): # override
+        return replica.group is None or replica.group.name != self.group_name, 'Not all parts of replica is owned by ' + self.group_name
+
+
 class KeepTargetOccupancy(policy.KeepPolicy):
     """
     PROTECT if occupancy of the replica's site is less than a set target.
@@ -155,12 +168,24 @@ class ActionList(policy.Policy):
     def __init__(self, list_path = '', name = 'ActionList'):
         super(self.__class__, self).__init__(name)
 
-        self.res = [] # (site_re, dataset_re, action)
-        self.patterns = [] # (site_pattern, dataset_pattern)
+        self.res = [] # (action, site_re, dataset_re)
+        self.patterns = [] # (action_str, site_pattern, dataset_pattern)
         self.actions = {} # replica -> action
 
         if list_path:
             self.load_list(list_path)
+
+    def add_action(self, action_str, site_pattern, dataset_pattern):
+        site_re = re.compile(fnmatch.translate(site_pattern))
+        dataset_re = re.compile(fnmatch.translate(dataset_pattern))
+
+        if action_str == 'Keep':
+            action = policy.DEC_PROTECT
+        else:
+            action = policy.DEC_DELETE
+
+        self.res.append((action, site_re, dataset_re))
+        self.patterns.append((action_str, site_pattern, dataset_pattern))
 
     def load_list(self, list_path):
         with open(list_path) as deletion_list:
@@ -173,28 +198,23 @@ class ActionList(policy.Policy):
                 site_pattern = matches.group(2)
                 dataset_pattern = matches.group(3)
 
-                site_re = re.compile(fnmatch.translate(site_pattern))
-                dataset_re = re.compile(fnmatch.translate(dataset_pattern))
-
-                if action_str == 'Keep':
-                    action = policy.DEC_PROTECT
-                else:
-                    action = policy.DEC_DELETE
-
-                self.res.append((site_re, dataset_re, action))
-                self.patterns.append((site_pattern, dataset_pattern))
+                self.add_action(action_str, site_pattern, dataset_pattern)
 
     def applies(self, replica, demand_manager): # override
         """
         Loop over the patterns list and make an entry in self.actions if the pattern matches.
         """
 
-        for iL, (site_re, dataset_re, action) in enumerate(self.res):
+        matches = []
+        for iL, (action, site_re, dataset_re) in enumerate(self.res):
             if site_re.match(replica.site.name) and dataset_re.match(replica.dataset.name):
                 self.actions[replica] = action
-                return True, 'Pattern match: site=%s, dataset=%s' % self.patterns[iL]
+                matches.append(self.patterns[iL])
 
-        return False, ''
+        if len(matches) != 0:
+            return True, 'Pattern match: (action, site, dataset) = [%s]' % (','.join(['(%s, %s, %s)' % match for match in matches]))
+        else:
+            return False, ''
     
     def case_match(self, replica): # override
         return self.actions[replica]
@@ -206,8 +226,8 @@ def make_stack(strategy):
             KeepTargetOccupancy(detox_config.keep_target.occupancy),
             ProtectIncomplete(),
             ProtectLocked(),
-            ProtectCustodial(),
             ProtectDiskOnly(),
+            ProtectNotOwnedBy('AnalysisOps'),
 #            DeletePartial(),
             DeleteOld(*detox_config.delete_old.threshold),
 #            DeleteUnpopular()
@@ -217,8 +237,8 @@ def make_stack(strategy):
         stack = [
             ProtectIncomplete(),
             ProtectLocked(),
-            ProtectCustodial(),
             ProtectDiskOnly(),
+            ProtectNotOwnedBy('AnalysisOps'),
             ActionList()
         ]
 

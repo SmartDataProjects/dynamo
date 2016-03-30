@@ -2,6 +2,7 @@ import logging
 import time
 
 from common.dataformat import Dataset, Block, Site, IntegrityError
+import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,6 @@ class InventoryInterface(object):
         self._lock_depth = 0
 
         self.last_update = 0
-        self.debug_mode = False
 
     def acquire_lock(self):
         if self._lock_depth == 0:
@@ -44,7 +44,7 @@ class InventoryInterface(object):
         will "move" the data into the snapshot, rather than cloning it.
         """
 
-        if self.debug_mode:
+        if config.read_only:
             logger.debug('_do_make_snapshot(%d)', clear)
             return
 
@@ -58,7 +58,7 @@ class InventoryInterface(object):
         if older_than == 0:
             older_than = time.time()
 
-        if self.debug_mode:
+        if config.read_only:
             logger.debug('_do_remove_snapshot(%f, %f)', newer_than, older_than)
             return
 
@@ -94,8 +94,7 @@ class InventoryInterface(object):
         Return lists loaded from persistent storage.
         """
 
-        if self.debug_mode:
-            logger.debug('_do_load_data()')
+        logger.debug('_do_load_data()')
 
         self.acquire_lock()
         try:
@@ -115,7 +114,7 @@ class InventoryInterface(object):
         of nonexistent datasets) should be cleaned.
         """
 
-        if self.debug_mode:
+        if config.read_only:
             logger.debug('_do_save_data()')
             return
 
@@ -130,7 +129,7 @@ class InventoryInterface(object):
         Delete dataset from persistent storage.
         """
 
-        if self.debug_mode:
+        if config.read_only:
             logger.debug('_do_delete_dataset(%s)', dataset.name)
             return
 
@@ -145,7 +144,7 @@ class InventoryInterface(object):
         Delete block from persistent storage.
         """
 
-        if self.debug_mode:
+        if config.read_only:
             logger.debug('_do_delete_block(%s)', block.name)
             return
 
@@ -160,7 +159,7 @@ class InventoryInterface(object):
         Delete dataset replica from persistent storage.
         """
 
-        if self.debug_mode:
+        if config.read_only:
             logger.debug('_do_delete_datasetreplica(%s:%s)', replica.site.name, replica.dataset.name)
             return
 
@@ -175,7 +174,7 @@ class InventoryInterface(object):
         Delete block replica from persistent storage.
         """
 
-        if self.debug_mode:
+        if config.read_only:
             logger.debug('_do_delete_blockreplica(%s:%s)', replica.site.name, replica.block.name)
             return
 
@@ -196,7 +195,7 @@ class InventoryInterface(object):
         elif type(block) is str:
             dataset_name, sep, block_name = block.partition('#')
 
-        if self.debug_mode:
+        if config.read_only:
             logger.debug('_do_close_block(%s#%s)', dataset_name, block_name)
             return
 
@@ -219,7 +218,7 @@ class InventoryInterface(object):
         elif type(dataset) is str:
             dataset_name = dataset
 
-        if self.debug_mode:
+        if config.read_only:
             logger.debug('_do_set_dataset_status(%s, %s)', dataset.name, status_str)
             return
 
@@ -232,6 +231,7 @@ class InventoryInterface(object):
 
 if __name__ == '__main__':
 
+    import sys
     from argparse import ArgumentParser
     import common.interface.classes as classes
 

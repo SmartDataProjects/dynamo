@@ -221,13 +221,14 @@ class Group(object):
 class DatasetReplica(object):
     """Represents a dataset replica. Combines dataset and site information."""
 
-    def __init__(self, dataset, site, is_complete = False, is_partial = False, is_custodial = False):
+    def __init__(self, dataset, site, group = None, is_complete = False, is_partial = False, is_custodial = False):
         self.dataset = dataset
         self.site = site
+        self.group = group # None also if owned by multiple groups
         self.is_complete = is_complete # = complete subscription. Can still be partial
         self.is_partial = is_partial
         self.is_custodial = is_custodial
-        self.block_replicas = [] # can be empty for complete datasets if loaded from local inventory
+        self.block_replicas = []
 
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1

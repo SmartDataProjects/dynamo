@@ -3,7 +3,9 @@ import collections
 
 logger = logging.getLogger(__name__)
 
-DEC_INDIFFERENT, DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(4)
+DEC_NEUTRAL, DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(4)
+DECISIONS = range(4)
+DECISION_STR = {DEC_NEUTRAL: 'NEUTRAL', DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
 
 class Policy(object):
     """
@@ -19,10 +21,9 @@ class Policy(object):
 
     def decision(self, replica, demand_manager, records = None):
         """
-        Not intended for overrides. Decide if the policy applies to a given replica under the current demands. If applies, call case_match. If not, return DEC_INDIFFERENT.
+        Not intended for overrides. Decide if the policy applies to a given replica under the current demands. If applies, call case_match. If not, return DEC_NEUTRAL.
         """
 
-#        logger.debug('Testing whether %s applies to %s:%s', self.name, replica.site.name, replica.dataset.name)
         applies, reason = self.applies(replica, demand_manager)
 
         if applies:
@@ -34,7 +35,7 @@ class Policy(object):
             return dec
 
         else:
-            return DEC_INDIFFERENT
+            return DEC_NEUTRAL
 
     def applies(self, replica, demand_manager):
         """
@@ -48,7 +49,7 @@ class Policy(object):
         Usually returns a fixed value; can be made dynamic if necessary. To be overridden by subclasses
         """
 
-        return DEC_INDIFFERENT
+        return DEC_NEUTRAL
 
 
 class DeletePolicy(Policy):
@@ -88,6 +89,21 @@ class PolicyHitRecords(object):
     def __init__(self, replica):
         self.replica = replica
         self.records = []
+
+    def decision(self):
+        result = DEC_NEUTRAL
+
+        for record in self.records:
+            if record.decision == DEC_DELETE and result == DEC_NEUTRAL:
+                result = DEC_DELETE
+
+            elif record.decision == DEC_KEEP and (result == DEC_NEUTRAL or result == DEC_DELETE):
+                result = DEC_KEEP
+
+            elif record.decision == DEC_PROTECT:
+                result = DEC_PROTECT
+
+        return result
 
     def add_record(self, policy, decision, reason = ''):
         record = PolicyHitRecords.Record(policy, decision, reason)
@@ -135,23 +151,14 @@ class PolicyManager(object):
         there is a PROTECT.
         """
         
-        result = DEC_INDIFFERENT
+        result = DEC_NEUTRAL
 
         hit_records = PolicyHitRecords(replica)
 
         for policy in self._policies:
-            if logger.getEffectiveLevel() == logging.DEBUG:
-                logger.debug('Testing %s:%s against %s', replica.site.name, replica.dataset.name, policy.name)
+#            if logger.getEffectiveLevel() == logging.DEBUG:
+#                logger.debug('Testing %s:%s against %s', replica.site.name, replica.dataset.name, policy.name)
 
-            dec = policy.decision(replica, demand, hit_records)
+            policy.decision(replica, demand, hit_records)
 
-            if dec == DEC_DELETE and result == DEC_INDIFFERENT:
-                result = DEC_DELETE
-
-            elif dec == DEC_KEEP:
-                result = DEC_KEEP
-
-            elif dec == DEC_PROTECT:
-                return DEC_PROTECT, hit_records
-
-        return result, hit_records
+        return hit_records

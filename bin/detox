@@ -43,10 +43,8 @@ for cls in ['inventory', 'site_source', 'dataset_source', 'replica_source']:
         kwd[cls + '_cls'] = getattr(classes, clsname)
 
 inventory_manager = InventoryManager(**kwd)
-inventory_manager.inventory.debug_mode = True
 
 transaction_manager = TransactionManager()
-transaction_manager.deletion.debug_mode = True
 
 demand_manager = DemandManager()
 

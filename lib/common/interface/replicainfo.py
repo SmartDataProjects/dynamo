@@ -14,6 +14,12 @@ class ReplicaInfoSourceInterface(object):
 
         return []
 
+    def find_tape_copies(self, datasets):
+        """
+        Set on_tape properties of datasets with on_tape = False.
+        """
+        pass
+
     def make_replica_links(self, sites, groups, datasets):
         """
         Link the sites with datasets and blocks.

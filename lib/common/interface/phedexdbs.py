@@ -18,16 +18,24 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
+ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'is_complete', 'time_created', 'time_updated'])
+
+FileInfo = collections.namedtuple('File', ['name', 'bytes', 'checksum'])
+
 class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface, ReplicaInfoSourceInterface, DatasetInfoSourceInterface):
     """
     Interface to PhEDEx using datasvc REST API.
     """
 
-    ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'is_complete', 'time_created', 'time_updated'])
+    def __init__(self, phedex_url = config.phedex.url_base, dbs_url = config.dbs.url_base):
+        CopyInterface.__init__(self)
+        DeletionInterface.__init__(self)
+        SiteInfoSourceInterface.__init__(self)
+        ReplicaInfoSourceInterface.__init__(self)
+        DatasetInfoSourceInterface.__init__(self)
 
-    def __init__(self):
-        self._phedex_interface = RESTService(config.phedex.url_base)
-        self._dbs_interface = RESTService(config.dbs.url_base) # needed for detailed dataset info
+        self._phedex_interface = RESTService(phedex_url)
+        self._dbs_interface = RESTService(dbs_url) # needed for detailed dataset info
 
         self._last_request_time = 0
         self._last_request_url = ''
@@ -40,11 +48,11 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
     def schedule_copy(self, dataset, origin, dest, comments = ''): #override (CopyInterface)
         # origin argument is not used because of the way PhEDEx works
 
-        request_body = self._get_file_catalog(dataset)
+        catalogs = self._get_file_catalog(dataset)
 
         options = {
             'node': dest.name,
-            'data': request_body,
+            'data': self._form_catalog_xml(catalogs),
             'level': 'dataset',
             'priority': 'low',
             'move': 'n',
@@ -58,24 +66,24 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         if comments:
             options['comments'] = comments
 
-        if self.debug_mode:
+        if config.read_only:
             logger.debug('schedule_copy  subscribe: %s', str(options))
             return
 
-#        self._make_phedex_request('subscribe', options, method = POST)
+        self._make_phedex_request('subscribe', options, method = POST)
 
     def schedule_deletion(self, replica, comments = ''): #override (DeletionInterface)
         if type(replica) == DatasetReplica:
-            obj = replica.dataset
+            dataset = replica.dataset
 
         elif type(replica) == BlockReplica:
-            obj = replica.block
+            dataset = replica.block.dataset
 
-        request_body = self._get_file_catalog(obj)
+        catalogs = self._get_file_catalog(dataset)
 
         options = {
             'node': replica.site.name,
-            'data': request_body,
+            'data': self._form_catalog_xml(catalogs),
             'level': 'dataset',
             'rm_subscriptions': 'y'
         }
@@ -83,11 +91,68 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         if comments:
             options['comments'] = comments
 
-        if self.debug_mode:
+        if config.read_only:
             logger.debug('schedule_deletion  delete: %s', str(options))
             return
 
-#        self._make_phedex_request('delete', options, method = POST)
+        self._make_phedex_request('delete', options, method = POST)
+
+    def schedule_deletions(self, replica_list, comments = ''): #override (DeletionInterface)
+
+        all_datasets = list(set([r.dataset for r in replica_list]))
+        all_catalogs = self._get_file_catalog(all_datasets)
+
+        def run_deletion_request(site, catalogs):
+            options = {
+                'node': site.name,
+                'data': self._form_catalog_xml(catalogs),
+                'level': 'dataset',
+                'rm_subscriptions': 'y'
+            }
+
+            if comments:
+                options['comments'] = comments
+
+            if config.read_only:
+                logger.info('schedule_deletions  delete: %s', str(options))
+                return
+
+            # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
+            result = self._make_phedex_request('delete', options, method = POST)
+
+            if len(result) == 0:
+                logger.error('schedule_deletions  delete failed.')
+                return
+
+            request_id = int(result[0]['id']) # return value is a string
+
+            # TEMPORARY
+            with open('/local/yiiyama/deletion/request_ids.txt', 'a') as request_id_records:
+                request_id_records.write(site.name + ' ' + str(request_id) + '\n')
+
+            result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
+
+            if len(result) == 0:
+                logger.error('schedule_deletions  deletion approval failed.')
+                return
+
+        replicas_by_site = {}
+        for replica in replica_list:
+            try:
+                replicas_by_site[replica.site].append(replica)
+            except KeyError:
+                replicas_by_site[replica.site] = [replica]
+
+        for site, replica_list in replicas_by_site.items():
+            file_catalogs = {}
+            chunk_size = 0
+            for replica in replica_list:
+                file_catalogs[replica.dataset] = all_catalogs[replica.dataset]
+                chunk_size += replica.size()
+                if chunk_size >= config.dbs.deletion_chunk_size or replica == replica_list[-1]:
+                    run_deletion_request(site, file_catalogs)
+                    dataset_chunk = []
+                    chunk_size = 0
 
     def get_site_list(self, sites, filt = '*'): #override (SiteInfoSourceInterface)
         options = []
@@ -164,7 +229,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
 
                     site_name = replica_entry['node']
 
-                    protoreplica = PhEDExDBSInterface.ProtoBlockReplica(
+                    protoreplica = ProtoBlockReplica(
                         block_name = block_name,
                         group_name = replica_entry['group'],
                         is_custodial = (replica_entry['custodial'] == 'y'),
@@ -184,13 +249,14 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         return ds_name_list
         
     def make_replica_links(self, sites, groups, datasets): #override (ReplicaInfoSourceInterface)
-        # sites argument not used because cache is already site-aware
+        """
+        Loop over datasets and protoreplicas for the dataset.
+        Make a block replica out of each protoreplica.
+        Make a dataset replica for each dataset-site combination.
+        """
 
         for dataset in datasets.values():
             logger.info('make_replica_links  Making replica links for dataset %s', dataset.name)
-    
-            custodial_sites = []
-            replicas_on_site = {}
     
             for site_name, ds_block_list in self._block_replicas[dataset.name].items():
                 site = sites[site_name]
@@ -224,35 +290,44 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
                     )
     
                     block.replicas.append(replica)
-    
-                    if protoreplica.is_custodial and site not in custodial_sites:
-                        custodial_sites.append(site)
-    
-                    try:
-                        replicas_on_site[site].append(replica)
-                    except KeyError:
-                        replicas_on_site[site] = [replica]
+                    site.blocks.append(block)
 
-            # remove cache
+                    # now find the dataset replica
+                    dataset_replica = dataset.find_replica(site)
+                    if dataset_replica is None:
+                        # make one if not made yet
+                        dataset_replica = DatasetReplica(
+                            dataset,
+                            site,
+                            group = group,
+                            is_complete = True,
+                            is_partial = False,
+                            is_custodial = False
+                        )
+
+                        dataset.replicas.append(dataset_replica)
+                        site.datasets.append(dataset)
+
+                    # add the block replica to the list
+                    dataset_replica.block_replicas.append(replica)
+
+                    # if any block replica is not complete, dataset replica is not
+                    if not replica.is_complete:
+                        dataset_replica.is_complete = False
+
+                    # if any of the block replica is custodial, dataset replica is also
+                    if replica.is_custodial:
+                        dataset_replica.is_custodial = True
+
+                    # if any of the block replica has a different owner, dataset replica owner is None
+                    if replica.group != dataset_replica.group:
+                        dataset_replica.group = None
+
+            for replica in dataset.replicas:
+                replica.is_partial = (len(replica.block_replicas) != len(dataset.blocks))
+    
+            # remove cache to save memory
             self._block_replicas.pop(dataset.name)
-    
-            for site, block_replicas in replicas_on_site.items():
-                replica = DatasetReplica(
-                    dataset,
-                    site,
-                    is_complete = False,
-                    is_partial = (len(block_replicas) != len(dataset.blocks)),
-                    is_custodial = (site in custodial_sites)
-                )
-
-                try:
-                    next(r for r in block_replicas if not r.is_complete)
-                except StopIteration: # no incomplete block replicas
-                    replica.is_complete = True
-                
-                replica.block_replicas = block_replicas
-    
-                dataset.replicas.append(replica)
 
     def get_dataset(self, name, datasets): #override (DatasetInfoSourceInterface)
         """
@@ -274,15 +349,6 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         ds_entry = source[0]
 
         self._set_dataset_constituent_info(dataset, ds_entry)
-
-        # on_tape is False by default
-        if not dataset.on_tape:
-            logger.info('get_dataset  %s is not known to be on tape. Checking for update.', name)
-            source = self._make_phedex_request('blockreplicasummary', ['create_since=0', 'node=T*MSS', 'custodial=y', 'complete=y', 'dataset=' + name])
-            blocks_on_tape = set(b['name'].replace(name + '#', '') for b in source)
-            dataset_blocks = set(b.name for b in dataset.blocks)
-        
-            dataset.on_tape = (blocks_on_tape == dataset_blocks)
 
         if dataset.software_version[0] == 0:
             self._set_dataset_software_info(dataset)
@@ -338,6 +404,20 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
 
         run_datasets_query()
 
+        # Loop over all datasets and fill other details if not set
+        for dataset in datasets.values():
+            if dataset.status == Dataset.STAT_IGNORED:
+                continue
+
+            if dataset.software_version[0] == 0:
+                self._set_dataset_software_info(dataset)
+
+            if dataset.data_type == Dataset.TYPE_UNKNOWN:
+                self._set_dataset_type(dataset)
+
+        # TODO detect dataset status change
+
+    def find_tape_copies(self, datasets): #override (ReplicaInfoSourceInterface)
         # Use 'blockreplicasummary' query to check if all blocks of the dataset are on tape.
         # site=T*MSS -> tape
 
@@ -349,7 +429,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
             if len(options) == 4:
                 return
 
-            logger.info('get_datasets::run_ontape_query  Checking whether %d datasets (%s, ...) are on tape', len(options) - 4, options[4][1])
+            logger.info('find_tape_copies::run_ontape_query  Checking whether %d datasets (%s, ...) are on tape', len(options) - 4, options[4][1])
             source = self._make_phedex_request('blockreplicasummary', options, method = POST)
 
             for block_entry in source:
@@ -366,6 +446,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
 
         # Loop over datasets not on tape
         for dataset in datasets.values():
+            # on_tape is False by default
             if dataset.on_tape or dataset.status == Dataset.STAT_IGNORED:
                 continue
 
@@ -388,19 +469,6 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
 
             dataset_blocks = set(b.name for b in dataset.blocks)
             dataset.on_tape = (dataset_blocks == on_tape)
-
-        # Loop over all datasets and fill other details if not set
-        for dataset in datasets.values():
-            if dataset.status == Dataset.STAT_IGNORED:
-                continue
-
-            if dataset.software_version[0] == 0:
-                self._set_dataset_software_info(dataset)
-
-            if dataset.data_type == Dataset.TYPE_UNKNOWN:
-                self._set_dataset_type(dataset)
-
-        # TODO detect dataset status change
 
     def _set_dataset_constituent_info(self, dataset, ds_entry):
         ds_name = ds_entry['name']
@@ -495,11 +563,16 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         resp = self._phedex_interface.make_request(resource, options = options, method = method, format = format)
         logger.info('PhEDEx returned a response of ' + str(len(resp)) + ' bytes.')
 
-        result = json.loads(resp)['phedex']
+        try:
+            result = json.loads(resp)['phedex']
+        except KeyError:
+            logger.error(resp)
+            return
+
         unicode2str(result)
 
         if logger.getEffectiveLevel() == logging.DEBUG:
-            logger.debug(pprint.pprint(result))
+            logger.debug(pprint.pformat(result))
 
         self._last_request = result['request_timestamp']
         self._last_request_url = result['request_url']
@@ -522,7 +595,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         unicode2str(result)
 
         if logger.getEffectiveLevel() == logging.DEBUG:
-            logger.debug(pprint.pprint(result))
+            logger.debug(pprint.pformat(result))
 
         return result
 
@@ -534,83 +607,129 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
         """
 
         if type(obj) == Dataset:
-            dataset = obj
-            blocks = dataset.blocks
+            datasets = {obj.name: obj}
 
         elif type(obj) == Block:
-            dataset = obj.dataset
-            blocks = [obj]
+            datasets = {obj.dataset.name: obj.dataset}
 
-        options = ['level=file', 'dataset=' + dataset.name]
-        dataset_properties = {} # dict of properties
-        block_properties = {} # block -> dict of properties
-        files = {} # block -> list of files
+        elif type(obj) == list:
+            datasets = {}
+            for elem in obj:
+                if type(elem) == Dataset:
+                    datasets[elem.name] = elem
+                elif type(elem) == Block:
+                    datasets[elem.dataset.name] = elem.dataset
+
+        options = ['level=file']
+
+        file_catalogs = {} # dataset -> block -> list of files
 
         def run_data_query():
-            ds_entry = self._make_phedex_request('data', options, method = POST)[0]['dataset'][0]
-            if len(dataset_properties) == 0:
-                for key, value in ds_entry.items():
-                    if key == 'name' or key == 'block':
+            if len(options) == 1:
+                return
+
+            logger.info('Querying file data for %d datasets.', len(options) - 1)
+
+            ds_entries = self._make_phedex_request('data', options, method = POST)[0]['dataset']
+
+            for ds_entry in ds_entries:
+                ds_name = ds_entry['name']
+                dataset = datasets[ds_name]
+
+                catalog = dict([(b, []) for b in dataset.blocks])
+                file_catalogs[dataset] = catalog
+                
+                for block_entry in ds_entry['block']:
+                    block_name = block_entry['name'].replace(ds_name + '#', '')
+                    try:
+                        block = next(b for b in dataset.blocks if b.name == block_name)
+                    except StopIteration:
+                        logger.warning('Unknown block %s found in %s', block_name, dataset.name)
                         continue
+                    
+                    for file_entry in block_entry['file']:
+                        catalog[block].append(FileInfo(*tuple([file_entry[k] for k in ['lfn', 'size', 'checksum']])))
 
-                    dataset_properties[key.replace('_', '-')] = value # _ -> - for some reason..
+            del options[1:] # delete block names
 
-            for block_entry in ds_entry['block']:
-                block_name = block_entry['name'].replace(dataset.name + '#', '')
-                for key, value in block_entry.items():
-                    if key == 'name' or key == 'file':
-                        continue
-
-                    block_properties[block_name][key.replace('_', '-')] = value
-
-                for file_entry in block_entry['file']:
-                    files[block_name].append(tuple([file_entry[k] for k in ['lfn', 'size', 'checksum']]))
-
-            del options[2:] # delete block names
-
-        for block in blocks:
-            options.append('block=' + dataset.name + '#' + block.name)
-            block_properties[block.name] = {}
-            files[block.name] = []
-            if len(options) >= 10002:
+        for dataset_name in datasets.keys():
+            options.append('dataset=' + dataset_name)
+            if len(options) >= 1001:
                 run_data_query()
 
         run_data_query()
 
+        return file_catalogs
+
+    def _form_catalog_xml(self, file_catalogs, human_readable = False):
+
         # we should consider using an actual xml tool
-        xmlbase = '<data version="2.0"><dbs name="%s">{body}</dbs></data>' % config.dbs.url_base
+        if human_readable:
+            xml = '<data version="2.0">\n <dbs name="%s">\n' % config.dbs.url_base
+        else:
+            xml = '<data version="2.0"><dbs name="%s">' % config.dbs.url_base
 
-        body = '<dataset name="%s"' % dataset.name
-        for key, value in dataset_properties.items():
-            body += ' %s="%s"' % (key, value)
-        body += '>'
+        for dataset, catalogs in file_catalogs.items():
+            if human_readable:
+                xml += '  '
 
-        for block in blocks:
-            body += '<block name="%s#%s"' % (dataset.name, block.name)
-            for key, value in block_properties[block.name].items():
-                body += ' %s="%s"' % (key, value)
-            body += '>'
+            xml += '<dataset name="%s" is-open="%s" is-transient="%s">' % (dataset.name, 'y' if dataset.is_open else 'n', 'n')
 
-            for lfn, size, checksum in files[block.name]:
-                body += '<file name="%s" bytes="%d" checksum="%s"/>' % (lfn, size, checksum)
-            
-            body += '</block>'
+            if human_readable:
+                xml += '\n'
 
-        body += '</dataset>'
+            for block in dataset.blocks:
+                if human_readable:
+                    xml += '   '
+                
+                xml += '<block name="%s#%s" is-open="%s">' % (dataset.name, block.name, 'y' if block.is_open else 'n')
 
-        xml = xmlbase.format(body = body)
+                if human_readable:
+                    xml += '\n'
+
+                for lfn, size, checksum in catalogs[block]:
+                    if human_readable:
+                        xml += '    '
+
+                    xml += '<file name="%s" bytes="%d" checksum="%s"/>' % (lfn, size, checksum)
+
+                    if human_readable:
+                        xml += '\n'
+                
+                if human_readable:
+                    xml += '   '
+
+                xml += '</block>'
+
+                if human_readable:
+                    xml += '\n'
+
+            if human_readable:
+                xml += '  '
+
+            xml += '</dataset>'
+
+            if human_readable:
+                xml += '\n'
+
+        if human_readable:
+            xml += ' </dbs>\n</data>\n'
+        else:
+            xml += '</dbs></data>'
 
         return xml
 
 
 if __name__ == '__main__':
 
+    import sys
     from argparse import ArgumentParser
 
     parser = ArgumentParser(description = 'PhEDEx interface')
 
     parser.add_argument('command', metavar = 'COMMAND', help = 'Command to execute.')
     parser.add_argument('options', metavar = 'EXPR', nargs = '*', default = [], help = 'Option string as passed to PhEDEx datasvc.')
+    parser.add_argument('--url', '-u', dest = 'phedex_url', metavar = 'URL', default = config.phedex.url_base, help = 'PhEDEx URL base.')
     parser.add_argument('--method', '-m', dest = 'method', metavar = 'METHOD', default = 'GET', help = 'HTTP method.')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
@@ -625,11 +744,47 @@ if __name__ == '__main__':
 
     command = args.command
 
-    interface = PhEDExDBSInterface()
+    interface = PhEDExDBSInterface(phedex_url = args.phedex_url)
 
     if args.method == 'POST':
         method = POST
     else:
         method = GET
 
-    pprint.pprint(interface._make_phedex_request(command, args.options, method = method))
+    options = args.options
+
+    if command == 'delete' or command == 'subscribe':
+        method = POST
+
+        if args.phedex_url == config.phedex.url_base or 'prod' in args.phedex_url:
+            print 'Are you sure you want to run this command on a prod instance? [Y/n]'
+            response = sys.stdin.readline().strip()
+            if response != 'Y':
+                sys.exit(0)
+
+        if command == 'subscribe':
+            options = {
+                'node': args.options[0],
+                'level': 'dataset',
+                'priority': 'low',
+                'move': 'n',
+                'static': 'n',
+                'custodial': 'n',
+                'group': 'AnalysisOps',
+                'request_only': 'n',
+                'no_mail': 'n'
+            }
+
+        else:
+            options = {
+                'node': args.options[0],
+                'level': 'dataset',
+                'rm_subscriptions': 'y'
+            }
+            
+        options['data'] = '<>'
+
+    elif command == 'updaterequest':
+        method = POST
+
+    pprint.pprint(interface._make_phedex_request(command, options, method = method))

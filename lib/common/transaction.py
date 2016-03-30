@@ -17,8 +17,8 @@ class TransactionManager(object):
         else:
             self.deletion = default_interface['deletion']()
 
-    def delete(self, replica):
-        self.deletion.schedule_deletion(replica)
+    def delete(self, replica, comments = ''):
+        self.deletion.schedule_deletion(replica, comments = comments)
 
-    def delete_many(self, replica_list):
-        self.deletion.schedule_deletions(replica_list)
+    def delete_many(self, replica_list, comments = ''):
+        self.deletion.schedule_deletions(replica_list, comments = comments)

@@ -4,7 +4,7 @@ class DeletionInterface(object):
     """
 
     def __init__(self):
-        self.debug_mode = False
+        pass
 
     def schedule_deletion(self, replica):
         """

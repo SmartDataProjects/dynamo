@@ -67,15 +67,15 @@ class MySQLInterface(InventoryInterface):
 
         for table in tables:
             self._query('CREATE TABLE `%s`.`%s` LIKE `%s`.`%s`' % (new_db, table, db, table))
-            if table != 'system':
-                self._query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (new_db, table, db, table))
+            self._query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (new_db, table, db, table))
 
-                if clear == InventoryInterface.CLEAR_ALL or \
-                   (clear == InventoryInterface.CLEAR_REPLICAS and table in ['dataset_replicas', 'block_replicas']):
-                    self._query('DROP TABLE `%s`.`%s`' % (db, table))
-                    self._query('CREATE TABLE `%s`.`%s` LIKE `%s`.`%s`' % (db, table, new_db, table))
+            if clear == InventoryInterface.CLEAR_ALL or \
+               (clear == InventoryInterface.CLEAR_REPLICAS and table in ['dataset_replicas', 'block_replicas']):
+                self._query('DROP TABLE `%s`.`%s`' % (db, table))
+                self._query('CREATE TABLE `%s`.`%s` LIKE `%s`.`%s`' % (db, table, new_db, table))
        
-        self._query('INSERT INTO `%s`.`system` (`lock_host`,`lock_process`) VALUES (\'\',0)' % new_db)
+        last_update = self._query('SELECT `last_update` FROM `%s`.`system`' % db)[0]
+        self._query('UPDATE `%s`.`system` SET `lock_host` = \'\', `lock_process` = 0, `last_update` = \'%s\'' % (new_db, last_update))
 
     def _do_remove_snapshot(self, newer_than, older_than): #override
         snapshots = self._do_list_snapshots()
@@ -167,6 +167,9 @@ class MySQLInterface(InventoryInterface):
 
             dataset_map[dataset_id] = dataset
 
+        if len(dataset_map) == 0:
+            return site_list, group_list, dataset_list
+
         # Load blocks
         block_map = {} # id -> block
 
@@ -190,7 +193,7 @@ class MySQLInterface(InventoryInterface):
         logger.info('Linking datasets to sites.')
 
         # Link datasets to sites
-        sql = 'SELECT `dataset_id`, `site_id`, `is_complete`, `is_partial`, `is_custodial` FROM `dataset_replicas`'
+        sql = 'SELECT `dataset_id`, `site_id`, `group_id`, `is_complete`, `is_partial`, `is_custodial` FROM `dataset_replicas`'
 
         conditions = []
         if site_filt != '*':
@@ -203,11 +206,15 @@ class MySQLInterface(InventoryInterface):
 
         dataset_replicas = self._query(sql)
 
-        for dataset_id, site_id, is_complete, is_partial, is_custodial in dataset_replicas:
+        for dataset_id, site_id, group_id, is_complete, is_partial, is_custodial in dataset_replicas:
             dataset = dataset_map[dataset_id]
             site = site_map[site_id]
+            if group_id == 0:
+                group = None
+            else:
+                group = group_map[group_id]
 
-            rep = DatasetReplica(dataset, site, is_complete = is_complete, is_partial = is_partial, is_custodial = is_custodial)
+            rep = DatasetReplica(dataset, site, group = group, is_complete = is_complete, is_partial = is_partial, is_custodial = is_custodial)
 
             dataset.replicas.append(rep)
             site.datasets.append(dataset)
@@ -241,18 +248,24 @@ class MySQLInterface(InventoryInterface):
             block.replicas.append(rep)
             site.blocks.append(block)
 
+            dataset_replica = block.dataset.find_replica(site)
+            if dataset_replica:
+                dataset_replica.block_replicas.append(rep)
+            else:
+                logger.warning('Found a block replica %s:%s#%s without a corresponding dataset replica', site.name, block.dataset.name, block.name)
+
         # For datasets with all replicas complete and not partial, block replica data is not saved on disk
         for dataset in dataset_list:
             for replica in dataset.replicas:
-                if replica.is_partial or not replica.is_complete:
-                    # block replicas of this dataset replica is taken care of above
+                if len(replica.block_replicas) != 0:
+                    # block replicas of this dataset replica is already taken care of above
                     continue
 
                 for block in dataset.blocks:
-                    # TODO fix group = None
-                    rep = BlockReplica(block, replica.site, group = None, is_complete = True, is_custodial = replica.is_custodial)
+                    rep = BlockReplica(block, replica.site, group = replica.group, is_complete = True, is_custodial = replica.is_custodial)
                     block.replicas.append(rep)
                     replica.site.blocks.append(block)
+                    replica.block_replicas.append(rep)
 
         self.last_update = self._query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
 
@@ -357,12 +370,14 @@ class MySQLInterface(InventoryInterface):
         dataset_ids = dict(self._query('SELECT `name`, `id` FROM `datasets`'))
 
         # insert/update dataset replicas
-        sql = make_insert_query('dataset_replicas', ['dataset_id', 'site_id', 'is_complete', 'is_partial', 'is_custodial'])
-
-        template = '({dataset_id},{site_id},{is_complete},{is_partial},{is_custodial})'
-        mapping = lambda r: {'dataset_id': dataset_ids[r.dataset.name], 'site_id': site_ids[r.site.name], 'is_complete': r.is_complete, 'is_partial': r.is_partial, 'is_custodial': r.is_custodial}
-
         all_replicas = sum([d.replicas for d in datasets.values()], []) # second argument -> start with an empty array and add up
+
+        logger.info('Inserting/updating %d dataset replicas.', len(all_replicas))
+
+        sql = make_insert_query('dataset_replicas', ['dataset_id', 'site_id', 'group_id', 'is_complete', 'is_partial', 'is_custodial'])
+
+        template = '({dataset_id},{site_id},{group_id},{is_complete},{is_partial},{is_custodial})'
+        mapping = lambda r: {'dataset_id': dataset_ids[r.dataset.name], 'site_id': site_ids[r.site.name], 'group_id': group_ids[r.group.name] if r.group else 0, 'is_complete': r.is_complete, 'is_partial': r.is_partial, 'is_custodial': r.is_custodial}
 
         self._query_many(sql, template, mapping, all_replicas)
 
@@ -387,7 +402,20 @@ class MySQLInterface(InventoryInterface):
         for dataset in datasets.values():
             dataset_id = dataset_ids[dataset.name]
 
-            if len([r for r in dataset.replicas if r.is_partial or not r.is_complete]) != 0:
+            need_blocklevel = []
+            for replica in dataset.replicas:
+                # replica is not complete
+                if replica.is_partial or not replica.is_complete:
+                    need_blocklevel.append(replica)
+                    continue
+
+                # replica has multiple owners
+                for block_replica in replica.block_replicas:
+                    if block_replica.group != replica.group:
+                        need_blocklevel.append(replica)
+                        break
+
+            if len(need_blocklevel) != 0:
                 logger.info('Not all replicas of %s is complete. Saving block info.', dataset.name)
                 block_ids = dict(self._query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id))
 
@@ -395,7 +423,7 @@ class MySQLInterface(InventoryInterface):
                 site = replica.site
                 site_id = site_ids[site.name]
 
-                if not replica.is_partial and replica.is_complete:
+                if replica not in need_blocklevel:
                     # this is a complete replica. Remove block replica for this dataset replica if required
                     if clean_stale:
                         sql = make_delete_in_query('block_replicas', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id), '`site_id` = %d' % site_id)
