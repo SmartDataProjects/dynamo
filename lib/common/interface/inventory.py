@@ -89,7 +89,7 @@ class InventoryInterface(object):
 
         self._do_switch_snapshot(timestamp)
 
-    def load_data(self, site_filt = '*', dataset_filt = '/*/*/*'):
+    def load_data(self, site_filt = '*', dataset_filt = '/*/*/*', load_replicas = True):
         """
         Return lists loaded from persistent storage.
         """
@@ -98,7 +98,7 @@ class InventoryInterface(object):
 
         self.acquire_lock()
         try:
-            site_list, group_list, dataset_list = self._do_load_data(site_filt, dataset_filt)
+            site_list, group_list, dataset_list = self._do_load_data(site_filt, dataset_filt, load_replicas)
         finally:
             self.release_lock()
 
@@ -163,9 +163,20 @@ class InventoryInterface(object):
             logger.debug('_do_delete_datasetreplica(%s:%s)', replica.site.name, replica.dataset.name)
             return
 
+        self.delete_datasetreplicas([replica])
+
+    def delete_datasetreplicas(self, replica_list):
+        """
+        Delete a set of dataset replicas from persistent storage.
+        """
+
+        if config.read_only:
+            logger.debug('_do_delete_datasetreplicas(%d replicas)', len(replica_list))
+            return
+
         self.acquire_lock()
         try:
-            self._do_delete_datasetreplica(replica)
+            self._do_delete_datasetreplicas(replica_list)
         finally:
             self.release_lock()
 
@@ -178,9 +189,20 @@ class InventoryInterface(object):
             logger.debug('_do_delete_blockreplica(%s:%s)', replica.site.name, replica.block.name)
             return
 
+        self.delete_blockreplicas([replica])
+
+    def delete_blockreplicas(self, replica_list):
+        """
+        Delete a set of block replicas from persistent storage.
+        """
+
+        if config.read_only:
+            logger.debug('_do_delete_blockreplicas(%d replicas)', len(replica_list))
+            return
+
         self.acquire_lock()
         try:
-            self._do_delete_blockreplica(replica)
+            self._do_delete_blockreplicas(replica_list)
         finally:
             self.release_lock()
 

@@ -123,7 +123,7 @@ class Detox(object):
         except KeyError:
             all_deletions[replica.site] = [replica]
 
-        self.inventory_manager.delete_replica(replica)
+        self.inventory_manager.delete_datasetreplica(replica)
 
     def static_deletion(self, deletion_list, all_deletions):
         for replica in deletion_list:
@@ -132,12 +132,10 @@ class Detox(object):
             except KeyError:
                 all_deletions[replica.site] = [replica]
 
-            # TESTING
-            if replica.site.name != 'T2_US_MIT':
-                continue
-            # TESTING
-
-            self.inventory_manager.delete_replica(replica)
+#        self.inventory_manager.delete_replicas(deletion_list)
+        # TESTING
+        self.inventory_manager.delete_replicas([replica for replica in deletion_list if replica.site.name == 'T2_US_MIT'])
+        # TESTING
 
     def commit_deletions(self, all_deletions):
         for site, replica_list in all_deletions.items():
@@ -221,20 +219,14 @@ span.menuitem {
 
 span.PROTECT {
   color: purple;
-  text-decoration: underline;
-  cursor:pointer;
 }
 
 span.KEEP {
   color: blue;
-  text-decoration: underline;
-  cursor:pointer;
 }
 
 span.DELETE {
   color: red;
-  text-decoration: underline;
-  cursor:pointer;
 }
 
 span.NEUTRAL {
@@ -243,6 +235,10 @@ span.NEUTRAL {
 
 ul.collapsible {
   display: none;
+}
+
+li.vanishable {
+  display: list-item;
 }
   </style>
   <script type="text/javascript">
@@ -253,41 +249,89 @@ function toggleVisibility(id) {
   else
     list.style.display = "block";
 }
+function isCollapsible(obj) {
+  var iC = 0;
+  for (; iC != obj.classList.length; ++iC) {
+    if (obj.classList[iC] == "collapsible")
+      break;
+  }
+  return iC != obj.classList.length;
+}
+function isVanishable(obj) {
+  var iC = 0;
+  for (; iC != obj.classList.length; ++iC) {
+    if (obj.classList[iC] == "vanishable")
+      break;
+  }
+  return iC != obj.classList.length;
+}
+function isInList(obj, list) {
+  var iC = 0;
+  for (; iC != list.length; ++iC) {
+    if (list[iC] == obj)
+      break;
+  }
+  return iC != list.length;
+}
 function searchDataset(name) {
   if (name.length > 0 && name.length < 6)
     return;
 
-  var lists = document.getElementsByTagName("ul");
+  var listitems = document.getElementsByTagName("li");
+  var listitem;
+  var sublist;
+  var colon;
   var list;
-  var col;
-  var parent;
   var body = document.getElementsByTagName("body")[0];
-  for (var iL in lists) {
-    list = lists[iL];
+  var hits = [];
+  for (var iL = 0; iL != listitems.length; ++iL) {
+    listitem = listitems[iL];
+    sublist = null;
+    for (var iC = 0; iC != listitem.children.length; ++iC) {
+      if (listitem.children[iC].tagName == "UL")
+        sublist = listitem.children[iC];
+    }
+
     if (name == "") {
-      if (list.id == "maintable" || list.id == "global_space_usage" || list.id == "protection_summary")
-        list.style.display = "block";
-      else
-        list.style.display = "none";
+      listitem.style.display = "list-item";
+      if (sublist !== null && isCollapsible(sublist))
+        sublist.style.display = "none";
 
       continue;
     }
-    col = list.id.indexOf(":");
-    if (col != -1) {
-      if (list.id.slice(col + 1).search(name) == 0) {
-        parent = list;
-        while (parent != body) {
-          if (parent.tagName == "UL")
-            parent.style.display = "block";
-  
-          parent = parent.parentNode;
-        }
-        
-        continue;
-      }
-    }
 
-    list.style.display = "none";
+    if (sublist === null)
+      continue;
+
+    colon = sublist.id.indexOf(":");
+    if (sublist.id.slice(colon + 1).search(name) == 0) {
+      listitem.style.display = "list-item";
+      sublist.style.display = "block";
+      hits.push(listitem);
+    }
+  }
+
+  var protected = hits.slice(0);
+  for (var iL = 0; iL != hits.length; ++iL) {
+    listitem = hits[iL];
+    list = listitem.parentNode;
+
+    while (true) {
+      list.style.display = "block";
+      for (var iC = 0; iC != list.children.length; ++iC) {
+        if (list.children[iC] != listitem && !isInList(list.children[iC], protected) && isVanishable(list.children[iC]))
+          list.children[iC].style.display = "none";
+      }
+
+      protected.push(list.parentNode);
+
+      if (list.parentNode == body)
+        break;
+
+      listitem = list.parentNode;
+      listitem.style.display = "list-item";
+      list = listitem.parentNode;
+    }
   }
 }
   </script>
@@ -356,6 +400,10 @@ function searchDataset(name) {
 
                 decision_str = policy.DECISION_STR[decision]
                 keywords['decision'] = decision_str
+                if decision == policy.DEC_NEUTRAL:
+                    keywords['menuitem'] = ''
+                else:
+                    keywords['menuitem'] = ' menuitem'
 
                 # loop over replicas
                 for hit_records in site_records:
@@ -369,7 +417,7 @@ function searchDataset(name) {
                     used_space[decision] += replica_size
 
                     replica_html = []
-                    replica_html.append('<li><span onclick="toggleVisibility(\'{site}:{dataset}\')" class="{decision}">{dataset}</span> ({replica_size:.1f} GB)')
+                    replica_html.append('<li class="vanishable"><span onclick="toggleVisibility(\'{site}:{dataset}\')" class="{decision}{menuitem}">{dataset}</span> ({replica_size:.1f} GB)')
                     replica_html.append(' <ul id="{site}:{dataset}" class="collapsible">\n')
                     replica_html += ['  <li>{policy}:{decision} ({reason})</li>'.format(policy = record.policy.name, decision = policy.DECISION_STR[record.decision], reason = record.reason) for record in hit_records.records]
                     replica_html.append(' </ul>')
@@ -389,7 +437,7 @@ function searchDataset(name) {
 
                 # make html for the decision block
                 decision_html = []
-                decision_html.append('<li><span onclick="toggleVisibility(\'{site}:{decision}\')" class="menuitem">{decision}</span> ({used_space:.1f} TB)')
+                decision_html.append('<li class="vanishable"><span onclick="toggleVisibility(\'{site}:{decision}\')" class="menuitem">{decision}</span> ({used_space:.1f} TB)')
                 decision_html.append(' <ul id="{site}:{decision}" class="collapsible">')
                 for line in replica_htmls:
                     decision_html.append('  ' + line)
@@ -407,7 +455,7 @@ function searchDataset(name) {
 
             # make html for the site
             site_html = []
-            line = '<li><span onclick="toggleVisibility(\'{site}\')" class="menuitem">{site}</span>'
+            line = '<li class="vanishable"><span onclick="toggleVisibility(\'{site}\')" class="menuitem">{site}</span>'
             line += ' (<span class="NEUTRAL">N:{used_space_NEUTRAL:.1f}</span>, <span class="DELETE">D:{used_space_DELETE:.1f}</span>, <span class="KEEP">K:{used_space_KEEP:.1f}</span>, <span class="PROTECT">P:{used_space_PROTECT:.1f}</span> TB)\n'
             site_html.append(line)
             site_html.append(' <ul id="{site}" class="collapsible">')

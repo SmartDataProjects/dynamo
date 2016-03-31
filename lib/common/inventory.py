@@ -44,13 +44,19 @@ class InventoryManager(object):
         if load_data:
             self.load()
 
-    def load(self):
+    def load(self, load_replicas = True):
+        """
+        Load all information from local persistent storage to memory. The flag load_replicas
+        can be used to determine whether dataset/block-site links should also be loaded;
+        it is set to false when loading for an inventory update (link information is volatile).
+        """
+
         logger.info('Loading data from local persistent storage.')
         
         self.inventory.acquire_lock()
 
         try:
-            sites, groups, datasets = self.inventory.load_data()
+            sites, groups, datasets = self.inventory.load_data(load_replicas = load_replicas)
 
             self.sites = dict([(s.name, s) for s in sites])
             self.groups = dict([(g.name, g) for g in groups])
@@ -73,12 +79,12 @@ class InventoryManager(object):
             if make_snapshot:
                 logger.info('Making a snapshot of inventory.')
                 # Make a snapshot (older snapshots cleaned by an independent daemon)
-                # All replica data will be erased but the static data (sites, groups, datasets, and blocks) remain
+                # All replica data will be erased but the static data (sites, groups, software versions, datasets, and blocks) remain
                 self.inventory.make_snapshot(clear = InventoryInterface.CLEAR_REPLICAS)
 
             if load_first:
                 logger.info('Loading existing data.')
-                self.load()
+                self.load(load_replicas = False)
 
             logger.info('Fetching info on sites.')
             self.site_source.get_site_list(self.sites, filt = config.inventory.included_sites)
@@ -128,47 +134,25 @@ class InventoryManager(object):
             # Lock is released even in case of unexpected errors
             self.inventory.release_lock(force = True)
 
-    def delete_replica(self, replica):
-        """
-        Remove dataset or block replica from memory and persistent record.
-        """
-
-        if type(replica) is DatasetReplica:
-            self.delete_datasetreplica(replica)
-        elif type(replica) is BlockReplica:
-            self.delete_blockreplica(replica)
-
     def delete_datasetreplica(self, replica):
         """
         Remove dataset replica info from memory and persistent record.
         """
 
-        dataset = replica.dataset
-        site = replica.site
+        self.delete_datasetreplicas([replica])
 
-        # Remove block replicas from the site.
-        for block in dataset.blocks:
-            try:
-                site.blocks.remove(block)
-            except ValueError:
-                # this block was not at the site
-                continue
+    def delete_datasetreplicas(self, replica_list):
+        """
+        Remove multiple datasets in one shot for speed.
+        """
 
-            block_repl = block.find_replica(site)
-            if block_repl is None:
-                raise ConsistencyError('Block %s#%s is registered to %s but no replica object exists.' % (dataset.name, block.name, site.name))
+        block_replicas = sum([r.block_replicas for r in replica_list], []) # second argument -> start from an empty list
+        # TODO organize by site and make it faster
+        self.inventory.delete_blockreplicas(block_replicas)
+        self.inventory.delete_datasetreplicas(replica_list)
 
-            block.replicas.remove(block_repl)
-            self.inventory.delete_blockreplica(block_repl)
-
-        # Remove the dataset replica.
-        try:
-            site.datasets.remove(dataset)
-        except ValueError:
-            raise ConsistencyError('Dataset %s is registered to %s but site has no block info.' % (dataset.name, site.name))
-
-        dataset.replicas.remove(replica)
-        self.inventory.delete_datasetreplica(replica)
+        for replica in replica_list:
+            self._delete_datasetreplica_on_memory(replica)
 
     def find_data(self):
         """Query the local DB for datasets/blocks."""
@@ -181,6 +165,32 @@ class InventoryManager(object):
         """
         pass
 
+    def _delete_datasetreplica_on_memory(self, replica):
+        dataset = replica.dataset
+        site = replica.site
+
+        # Remove block replicas from the site
+        for block_replica in replica.block_replicas:
+            block = block_replica.block
+            try:
+                block.replicas.remove(block_replica)
+                site.blocks.remove(block)
+                site.used_total -= block.size
+                try:
+                    site.group_usage[block_replica.group] -= block.size
+                except:
+                    logger.error('Block %s#%s size was not accounted for group #s', dataset.name, block.name, group.name)
+            except ValueError:
+                logger.error('Site-block linking was corrupt. %s %s#%s', site.name, dataset.name, block.name)
+
+        # this replica will be removed from memory, so block_replicas has to disappear anyway, but to make sure
+        replica.block_replicas = []
+
+        try:
+            site.datasets.remove(dataset)
+            dataset.replicas.remove(replica)
+        except ValueError:
+            logger.error('Site-dataset linking was corrupt. %s %s', site.name, dataset.name)
 
 if __name__ == '__main__':
 
