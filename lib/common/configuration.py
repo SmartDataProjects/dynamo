@@ -30,6 +30,6 @@ dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
 dbs.deletion_chunk_size = 10000000000000 # 10 TB
 
 inventory = Configuration()
-inventory.refresh_min = 720000
+inventory.refresh_min = 21600 # 6 hours
 inventory.included_sites = ['T2_*', 'T1_*_Disk']
 inventory.included_groups = ['AnalysisOps', 'DataOps']

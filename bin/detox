@@ -23,6 +23,7 @@ parser.add_argument('--force-inventory-update', '-I', action = 'store_true', des
 parser.add_argument('--policy-stack', '-p', metavar = 'STACK', dest = 'stack', nargs = '+', default = ['TargetFraction'], help = 'Name of the policy stack. Options are\n TargetFraction [threshold]\n List <path> [<path> ..]\n <path>.py\n The python file should contain a list of Policies with the same name as the file.')
 parser.add_argument('--static-deletion', '-S', action = 'store_true', dest = 'static_deletion', help = 'Delete everything in the deletion list at once.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
+parser.add_argument('--dry-run', '-T', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -33,6 +34,9 @@ if args.log_level:
         logging.getLogger().setLevel(level)
     except AttributeError:
         logging.warning('Log level ' + args.log_level + ' not defined')
+
+if args.dry_run:
+    config.read_only = True
 
 kwd = {}
 for cls in ['inventory', 'site_source', 'dataset_source', 'replica_source']:
