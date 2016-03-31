@@ -93,16 +93,36 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
 
         if config.read_only:
             logger.debug('schedule_deletion  delete: %s', str(options))
-            return
+            return 0
 
-        self._make_phedex_request('delete', options, method = POST)
+        result = self._make_phedex_request('delete', options, method = POST)
+
+        if len(result) == 0:
+            logger.error('schedule_deletions  delete failed.')
+            return 0
+
+        request_id = int(result[0]['id']) # return value is a string
+
+        logger.warning('PhEDEx deletion request id: %d', request_id)
+        
+        result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': replica.site.name}, method = POST)
+
+        if len(result) == 0:
+            logger.error('schedule_deletions  deletion approval failed.')
+            return 0
+
+        return request_id
 
     def schedule_deletions(self, replica_list, comments = ''): #override (DeletionInterface)
 
         all_datasets = list(set([r.dataset for r in replica_list]))
         all_catalogs = self._get_file_catalog(all_datasets)
 
-        def run_deletion_request(site, catalogs):
+        request_mapping = {}
+
+        def run_deletion_request(site, replicas_to_delete):
+            catalogs = dict([(r.dataset, all_catalogs[r.dataset]) for r in replicas_to_delete])
+
             options = {
                 'node': site.name,
                 'data': self._form_catalog_xml(catalogs),
@@ -126,9 +146,9 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
 
             request_id = int(result[0]['id']) # return value is a string
 
-            # TEMPORARY
-            with open('/local/yiiyama/deletion/request_ids.txt', 'a') as request_id_records:
-                request_id_records.write(site.name + ' ' + str(request_id) + '\n')
+            logger.warning('PhEDEx deletion request id: %d', request_id)
+            
+            request_mapping[request_id] = replicas_to_delete
 
             result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
 
@@ -144,15 +164,17 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
                 replicas_by_site[replica.site] = [replica]
 
         for site, replica_list in replicas_by_site.items():
-            file_catalogs = {}
+            deletion_chunk = []
             chunk_size = 0
             for replica in replica_list:
-                file_catalogs[replica.dataset] = all_catalogs[replica.dataset]
+                deletion_chunk.append(replica)
                 chunk_size += replica.size()
                 if chunk_size >= config.dbs.deletion_chunk_size or replica == replica_list[-1]:
-                    run_deletion_request(site, file_catalogs)
-                    dataset_chunk = []
+                    run_deletion_request(site, deletion_chunk)
+                    deletion_chunk = []
                     chunk_size = 0
+
+        return request_mapping
 
     def get_site_list(self, sites, filt = '*'): #override (SiteInfoSourceInterface)
         options = []

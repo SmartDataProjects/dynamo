@@ -147,7 +147,7 @@ class InventoryManager(object):
         """
 
         block_replicas = sum([r.block_replicas for r in replica_list], []) # second argument -> start from an empty list
-        # TODO organize by site and make it faster
+
         self.inventory.delete_blockreplicas(block_replicas)
         self.inventory.delete_datasetreplicas(replica_list)
 
@@ -166,6 +166,11 @@ class InventoryManager(object):
         pass
 
     def _delete_datasetreplica_on_memory(self, replica):
+        """
+        Remove link from datasets and sites to the replica. Don't remove the replica-to-dataset/site link;
+        replica objects may be still being used in the program.
+        """
+
         dataset = replica.dataset
         site = replica.site
 
@@ -182,9 +187,6 @@ class InventoryManager(object):
                     logger.error('Block %s#%s size was not accounted for group #s', dataset.name, block.name, group.name)
             except ValueError:
                 logger.error('Site-block linking was corrupt. %s %s#%s', site.name, dataset.name, block.name)
-
-        # this replica will be removed from memory, so block_replicas has to disappear anyway, but to make sure
-        replica.block_replicas = []
 
         try:
             site.datasets.remove(dataset)

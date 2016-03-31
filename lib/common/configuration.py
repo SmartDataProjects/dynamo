@@ -21,13 +21,14 @@ mysql.db = 'DDM_devel'
 mysql.host = 'localhost'
 mysql.user = 'ddmdevel'
 mysql.passwd = 'intelroccs'
+mysql.max_query_len = 900000 # allows up to 1M characters; allowing 10% safety margin
 
 phedex = Configuration()
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'
 
 dbs = Configuration()
 dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
-dbs.deletion_chunk_size = 10000000000000 # 10 TB
+dbs.deletion_chunk_size = 40000000000000 # 40 TB
 
 inventory = Configuration()
 inventory.refresh_min = 21600 # 6 hours

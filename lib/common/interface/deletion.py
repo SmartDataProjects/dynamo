@@ -9,15 +9,21 @@ class DeletionInterface(object):
     def schedule_deletion(self, replica):
         """
         Schedule a deletion of the dataset or block replica.
+        Return the deletion ID (a number that allows the unique identification of the deletion.)
         """
 
-        pass
+        return 0
 
     def schedule_deletions(self, replica_list):
         """
         Schedule a deletion of multiple replicas. Subclasses should implement the most efficient way
         according to available features.
+        Returns a map of deletion IDs to the list of deleted replicas.
         """
 
+        deletion_mapping = {}
         for replica in replica_list:
-            self.schedule_deletion(replica)
+            deletion_id = self.schedule_deletion(replica)
+            deletion_mapping[deletion_id] = [replica]
+
+        return deletion_mapping

@@ -2,6 +2,7 @@ import time
 import logging
 import math
 import pprint
+import MySQLdb
 
 import common.configuration as config
 import detox.policy as policy
@@ -18,6 +19,15 @@ class Detox(object):
         self.policy_manager = policy.PolicyManager(policies)
         self.policy_log_path = log_path
         self.policy_html_path = html_path
+
+        db_params = {
+            'host': detox_config.history.host,
+            'user': detox_config.history.user,
+            'passwd': detox_config.history.passwd,
+            'db': detox_config.history.db
+        }
+
+        self._history = MySQLdb.connect(**db_params)
 
         self.deletion_message = 'DynaMO -- Automatic Cache Release Request. Summary at: http://t3serv001.mit.edu/~cmsprod/IntelROCCS/Detox/result/'
 
@@ -79,6 +89,7 @@ class Detox(object):
                 break
 
         logger.info('Committing deletion.')
+        # Will write an entry in the history DB
         self.commit_deletions(all_deletions)
 
         if policy_log:
@@ -132,21 +143,19 @@ class Detox(object):
             except KeyError:
                 all_deletions[replica.site] = [replica]
 
-#        self.inventory_manager.delete_replicas(deletion_list)
-        # TESTING
-        self.inventory_manager.delete_replicas([replica for replica in deletion_list if replica.site.name == 'T2_US_MIT'])
-        # TESTING
+        logger.info('Deleting %d dataset replica information from local inventory.', len(deletion_list))
+        self.inventory_manager.delete_datasetreplicas(deletion_list)
 
     def commit_deletions(self, all_deletions):
         for site, replica_list in all_deletions.items():
-            # TESTING
-            if site.name != 'T2_US_MIT':
-                continue
-            # TESTING
+            logger.info('Deleting %d replicas from %s.', len(replica_list), site.name)
 
-            self.transaction_manager.delete_many(replica_list, comments = self.deletion_message)
+            deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, comments = self.deletion_message)
+            # deletion_mapping .. {deletion_id: [replicas]}
 
-            logger.info('Deleted %d replicas from %s.', len(replica_list), site.name)
+            logger.info('Done deleting %d replicas from %s.', len(replica_list), site.name)
+
+            self.make_history_entries(site, deletion_mapping)
 
     def select_replica(self, deletion_list, protection_list):
         """
@@ -187,6 +196,9 @@ class Detox(object):
                 deletion_candidate = replica
 
         return deletion_candidate
+
+    def make_history_entries(self, site, deletion_mapping):
+        pass
 
     def write_policy_log(self, policy_log, iteration, all_records):
         policy_log.write('===== Begin iteration %d =====\n\n' % iteration)
