@@ -17,11 +17,13 @@ webservice = Configuration()
 webservice.x509_key = '/tmp/x509up_u5410'
 
 mysql = Configuration()
-mysql.db = 'DDM_devel'
-mysql.host = 'localhost'
-mysql.user = 'ddmdevel'
-mysql.passwd = 'intelroccs'
 mysql.max_query_len = 900000 # allows up to 1M characters; allowing 10% safety margin
+
+mysqlstore = Configuration()
+mysqlstore.db = 'DDM_devel'
+mysqlstore.host = 'localhost'
+mysqlstore.user = 'ddmdevel'
+mysqlstore.passwd = 'intelroccs'
 
 phedex = Configuration()
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'
