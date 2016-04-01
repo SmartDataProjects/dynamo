@@ -165,17 +165,6 @@ class InventoryManager(object):
         except ValueError:
             logger.error('Site-dataset linking was corrupt. %s %s', site.name, dataset.name)
 
-    def find_data(self):
-        """Query the local DB for datasets/blocks."""
-        pass
-
-    def commit(self):
-        """
-        Commit the updates into the local DB. Might not be necessary
-        if diff information is not needed.
-        """
-        pass
-
 
 if __name__ == '__main__':
 

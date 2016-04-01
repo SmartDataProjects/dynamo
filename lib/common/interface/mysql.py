@@ -5,6 +5,8 @@ Generic MySQL interface (for an interface).
 import MySQLdb
 import logging
 
+import common.configuration as config
+
 logger = logging.getLogger(__name__)
 
 class MySQL(object):
@@ -22,7 +24,7 @@ class MySQL(object):
 
         cursor = self._connection.cursor()
 
-        logger.debug(sql)
+        logger.debug(sql + ' % ' + str(args))
 
         cursor.execute(sql, args)
 
