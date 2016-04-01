@@ -382,7 +382,7 @@ class MySQLStore(InventoryInterface):
                     all_block_replicas += [(r, block_ids[block.name]) for r in block.replicas if r.site == site]
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'time_created', 'time_updated')
-        mapping = lambda (r, bid): (bid, site_ids[r.site.name], group_ids[r.group.name] if r.group else 0, r.is_complete, r.is_custodial, r.time_created, r.time_updated)
+        mapping = lambda (r, bid): (bid, site_ids[r.site.name], group_ids[r.group.name] if r.group else 0, r.is_complete, r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(int(r.time_created))), time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(int(r.time_updated))))
 
         self._mysql.insert_many('block_replicas', fields, mapping, all_block_replicas)
         all_block_replicas = None
