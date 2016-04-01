@@ -22,7 +22,7 @@ ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', '
 
 FileInfo = collections.namedtuple('File', ['name', 'bytes', 'checksum'])
 
-class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterface, ReplicaInfoSourceInterface, DatasetInfoSourceInterface):
+class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, ReplicaInfoSourceInterface, DatasetInfoSourceInterface):
     """
     Interface to PhEDEx using datasvc REST API.
     """
@@ -767,7 +767,7 @@ if __name__ == '__main__':
 
     command = args.command
 
-    interface = PhEDExDBSInterface(phedex_url = args.phedex_url)
+    interface = PhEDExDBS(phedex_url = args.phedex_url)
 
     if args.method == 'POST':
         method = POST

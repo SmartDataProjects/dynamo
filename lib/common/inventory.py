@@ -134,35 +134,7 @@ class InventoryManager(object):
             # Lock is released even in case of unexpected errors
             self.inventory.release_lock(force = True)
 
-    def delete_datasetreplica(self, replica):
-        """
-        Remove dataset replica info from memory and persistent record.
-        """
-
-        self.delete_datasetreplicas([replica])
-
-    def delete_datasetreplicas(self, replica_list):
-        """
-        Remove multiple datasets in one shot for speed.
-        """
-
-        self.inventory.delete_datasetreplicas(replica_list, delete_blockreplicas = True)
-
-        for replica in replica_list:
-            self._delete_datasetreplica_on_memory(replica)
-
-    def find_data(self):
-        """Query the local DB for datasets/blocks."""
-        pass
-
-    def commit(self):
-        """
-        Commit the updates into the local DB. Might not be necessary
-        if diff information is not needed.
-        """
-        pass
-
-    def _delete_datasetreplica_on_memory(self, replica):
+    def unlink_datasetreplica(self, replica):
         """
         Remove link from datasets and sites to the replica. Don't remove the replica-to-dataset/site link;
         replica objects may be still being used in the program.
@@ -178,10 +150,12 @@ class InventoryManager(object):
                 block.replicas.remove(block_replica)
                 site.blocks.remove(block)
                 site.used_total -= block.size
-                try:
-                    site.group_usage[block_replica.group] -= block.size
-                except:
-                    logger.error('Block %s#%s size was not accounted for group #s', dataset.name, block.name, group.name)
+                if block_replica.group:
+                    try:
+                        site.group_usage[block_replica.group] -= block.size
+                    except:
+                        logger.error('Block %s#%s size was not accounted for group #s', dataset.name, block.name, group.name)
+
             except ValueError:
                 logger.error('Site-block linking was corrupt. %s %s#%s', site.name, dataset.name, block.name)
 
@@ -190,6 +164,18 @@ class InventoryManager(object):
             dataset.replicas.remove(replica)
         except ValueError:
             logger.error('Site-dataset linking was corrupt. %s %s', site.name, dataset.name)
+
+    def find_data(self):
+        """Query the local DB for datasets/blocks."""
+        pass
+
+    def commit(self):
+        """
+        Commit the updates into the local DB. Might not be necessary
+        if diff information is not needed.
+        """
+        pass
+
 
 if __name__ == '__main__':
 

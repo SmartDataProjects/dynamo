@@ -12,14 +12,14 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-class MySQLInterface(InventoryInterface):
+class MySQLStore(InventoryInterface):
     """Interface to MySQL."""
 
     class DatabaseError(Exception):
         pass
 
     def __init__(self):
-        super(MySQLInterface, self).__init__()
+        super(self.__class__, self).__init__()
 
         self._db_params = {'host': config.mysql.host, 'user': config.mysql.user, 'passwd': config.mysql.passwd, 'db': config.mysql.db}
         self._current_db = self._db_params['db']

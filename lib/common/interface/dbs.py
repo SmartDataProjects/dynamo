@@ -9,12 +9,14 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-class DBSInterface(DatasetInfoSourceInterface):
+class DBS(DatasetInfoSourceInterface):
     """
     Interface to DBS using DBSReader REST API.
     """
     
     def __init__(self):
+        DatasetInfoSourceInterface.__init__(self)
+
         self._interface = RESTService(config.dbs.url_base)
 
     def get_dataset(self, name, datasets): # override
@@ -98,7 +100,7 @@ if __name__ == '__main__':
     
     command = args.command
 
-    interface = DBSInterface()
+    interface = DBS()
 
     method = GET
     format = 'url'
