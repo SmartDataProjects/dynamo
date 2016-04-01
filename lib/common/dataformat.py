@@ -30,7 +30,7 @@ class Dataset(object):
     @staticmethod
     def data_type_val(arg):
         if type(arg) is str:
-            return eval('Dataset.TYPE_' + arg)
+            return eval('Dataset.TYPE_' + arg.upper())
 
         else:
             return arg
@@ -47,7 +47,7 @@ class Dataset(object):
     @staticmethod
     def status_val(arg):
         if type(arg) is str:
-            return eval('Dataset.STAT_' + arg)
+            return eval('Dataset.STAT_' + arg.upper())
 
         else:
             return arg
@@ -62,6 +62,7 @@ class Dataset(object):
         self.data_type = data_type
         self.software_version = software_version
         self.last_accessed = 0
+        self.last_update = 0
         self.blocks = []
         self.replicas = []
 

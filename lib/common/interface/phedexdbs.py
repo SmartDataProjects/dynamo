@@ -368,16 +368,14 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             return
 
         logger.info('get_dataset  Fetching data for %s', name)
-        source = self._make_phedex_request('data', ['level=block', 'dataset=' + name])[0]['dataset'] # PhEDEx returns a dictionary for each DBS instance
-        ds_entry = source[0]
 
-        self._set_dataset_constituent_info(dataset, ds_entry)
+        self.set_dataset_constituent_info([dataset])
 
         if dataset.software_version[0] == 0:
             self._set_dataset_software_info(dataset)
 
         if dataset.data_type == Dataset.TYPE_UNKNOWN:
-            self._set_dataset_type(dataset)
+            self.set_dataset_details([dataset])
 
     def get_datasets(self, names, datasets): #override (DatasetInfoSourceInterface)
         """
@@ -397,35 +395,14 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
         # Use 'data' query for full lists of blocks (Possibly 'blockreplicas' already
         # has this information, to be verified) for open datasets.
 
-        options = [('level', 'block')]
+        production_datasets = [d for d in datasets.values() if d.status == Dataset.STAT_PRODUCTION or d.status == Dataset.STAT_UNKNOWN]
 
-        # Routine to fetch data and fill the datasets
-        def run_datasets_query():
-            if len(options) == 1:
-                return
+        for dataset in production_datasets:
+            if len(dataset.blocks) == 0:
+                logger.info('get_datasets::run_datasets_query  %s does not have any blocks and is removed.', ds_entry['name'])
+                datasets.pop(ds_entry['name'])
 
-            logger.info('get_datasets::run_datasets_query  Fetching data for %d datasets.', len(options) - 1)
-            source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
-
-            for ds_entry in source:
-                dataset = datasets[ds_entry['name']]
-                self._set_dataset_constituent_info(dataset, ds_entry)
-
-                # remove datasets with no blocks
-                if len(dataset.blocks) == 0:
-                    logger.info('get_datasets::run_datasets_query  %s does not have any blocks and is removed.', ds_entry['name'])
-                    datasets.pop(ds_entry['name'])
-
-            del options[1:] # keep only the first element (i.e. ('level', 'block'))
-
-        # Loop over datasets that are status UNKNOWN or PRODUCTION
-        for dataset in datasets.values():
-            if dataset.status == Dataset.STAT_UNKNOWN or dataset.status == Dataset.STAT_PRODUCTION:
-                options.append(('dataset', dataset.name))
-                if len(options) >= 10001:
-                    run_datasets_query()
-
-        run_datasets_query()
+        self.set_dataset_constituent_info(production_datasets)
 
         # Loop over all datasets and fill other details if not set
         for dataset in datasets.values():
@@ -436,9 +413,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
                 self._set_dataset_software_info(dataset)
 
             if dataset.data_type == Dataset.TYPE_UNKNOWN:
-                self._set_dataset_type(dataset)
-
-        # TODO detect dataset status change
+                self.set_dataset_details([dataset])
 
     def find_tape_copies(self, datasets): #override (ReplicaInfoSourceInterface)
         # Use 'blockreplicasummary' query to check if all blocks of the dataset are on tape.
@@ -493,44 +468,57 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             dataset_blocks = set(b.name for b in dataset.blocks)
             dataset.on_tape = (dataset_blocks == on_tape)
 
-    def _set_dataset_constituent_info(self, dataset, ds_entry):
-        ds_name = ds_entry['name']
-        dataset.is_open = (ds_entry['is_open'] == 'y') # useless flag - all datasets are flagged open
-
-        has_open_blocks = False
-
-        for block_entry in ds_entry['block']:
-            block_name = block_entry['name'].replace(dataset.name + '#', '')
-
-            is_open = False
-
-            if block_entry['is_open'] == 'y' and time.time() - block_entry['time_create'] > 48. * 3600.:
-                # Block is more than 48 hours old and is still open - PhEDEx can be wrong
-                logger.info('set_dataset_constituent_info  Double-checking with DBS if block %s#%s is open', dataset.name, block_name)
-                dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block_name, 'detail=True']) # %23 = '#'
-                if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
-                    # cannot get data from DBS, or DBS also says this block is open
-                    is_open = True
-                    has_open_blocks = True
-
-            block = Block(
-                block_name,
-                dataset = dataset,
-                size = block_entry['bytes'],
-                num_files = block_entry['files'],
-                is_open = is_open
-            )
+    def set_dataset_constituent_info(self, datasets): #override (DatasetInfoSourceInterface)
+        start = 0
+        while start < len(datasets):
+            for list_chunk in datasets[start:start + 10000]:
+                options = [('level', 'block')]
+                options += [('dataset', d.name) for d in list_chunk]
+    
+                logger.info('get_datasets::run_datasets_query  Fetching data for %d datasets.', len(options) - 1)
+                source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
         
-            dataset.blocks.append(block)
+                for ds_entry in source:
+                    dataset = next(d for d in list_chunk if d.name == ds_entry['name'])
+    
+                    dataset.is_open = (ds_entry['is_open'] == 'y') # useless flag - all datasets are flagged open
+            
+                    has_open_blocks = False
+            
+                    for block_entry in ds_entry['block']:
+                        block_name = block_entry['name'].replace(dataset.name + '#', '')
 
-        dataset.size = sum([b.size for b in dataset.blocks])
-        dataset.num_files = sum([b.num_files for b in dataset.blocks])
+                        block = dataset.find_block(block_name)
 
-        # TODO this is not fully accurate
-        if has_open_blocks:
-            dataset.status = Dataset.STAT_PRODUCTION
-        else:
-            dataset.status = Dataset.STAT_VALID
+                        if block is None:
+                            block = Block(
+                                block_name,
+                                dataset = dataset,
+                                size = block_entry['bytes'],
+                                num_files = block_entry['files'],
+                                is_open = False
+                            )
+                            dataset.blocks.append(block)
+            
+                        if block_entry['is_open'] == 'y' and time.time() - block_entry['time_create'] > 48. * 3600.:
+                            # Block is more than 48 hours old and is still open - PhEDEx can be wrong
+                            logger.info('set_dataset_constituent_info  Double-checking with DBS if block %s#%s is open', dataset.name, block_name)
+                            dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block_name, 'detail=True']) # %23 = '#'
+                            if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
+                                # cannot get data from DBS, or DBS also says this block is open
+                                block.is_open = True
+                                has_open_blocks = True
+            
+                    dataset.size = sum([b.size for b in dataset.blocks])
+                    dataset.num_files = sum([b.num_files for b in dataset.blocks])
+            
+                    # TODO this is not fully accurate
+                    if has_open_blocks:
+                        dataset.status = Dataset.STAT_PRODUCTION
+                    else:
+                        dataset.status = Dataset.STAT_VALID
+    
+            start += 10000
 
     def _set_dataset_software_info(self, dataset):
         logger.info('set_dataset_software_info  Fetching software version for %s', dataset.name)
@@ -552,31 +540,29 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
 
             dataset.software_version = (cycle, major, minor, suffix)
 
-    def _set_dataset_type(self, dataset):
-        logger.info('set_dataset_type  Checking dataset status of %s', dataset.name)
-        dbs_entry = self._make_dbs_request('datasets', ['dataset=' + dataset.name, 'detail=True', 'dataset_access_type=VALID'])
+    def set_dataset_details(self, datasets): #override (DatasetInfoSourceInterface)
+        logger.info('set_dataset_deatils  Checking status of %d datasets', len(datasets))
 
-        if len(dbs_entry) != 0:
-            dataset.status = Dataset.STAT_VALID
-        else:
-            logger.info('set_dataset_type  %s is not in VALID category. Checking INVALID.', dataset.name)
-            dbs_entry = self._make_dbs_request('datasets', ['dataset=' + dataset.name, 'detail=True', 'dataset_access_type=INVALID'])
-            if len(dbs_entry) != 0:
-                dataset.status = Dataset.STAT_INVALID
-            else:
-                logger.info('set_dataset_type  %s is not in VALID or INVALID categories. Checking PRODUCTION.', dataset.name)
-                dbs_entry = self._make_dbs_request('datasets', ['dataset=' + dataset.name, 'detail=True', 'dataset_access_type=PRODUCTION'])
-                if len(dbs_entry) != 0:
-                    dataset.status = Dataset.STAT_PRODUCTION
-                else:
-                    logger.info('set_dataset_type  Status of %s is unknown.', dataset.name)
-                    return
+        start = 0
+        while start < len(datasets):
+            dataset_list = datasets[start:start + 1000]
+            names = [d.name for d in dataset_list]
+    
+            dbs_entries = self._make_dbs_request('datasetlist', {'dataset': names, 'detail': True}, method = POST, format = 'json')
+    
+            for dataset in dataset_list:
+                try:
+                    dbs_entry = next(e for e in dbs_entries if e['dataset'] == dataset.name)
+                except StopIteration:
+                    logger.info('set_dataset_details  Status of %s is unknown.', dataset.name)
+                    dataset.status = Dataset.STAT_UNKNOWN
+                    continue
+    
+                dataset.status = Dataset.status_val(dbs_entry['dataset_access_type'])
+                dataset.data_type = Dataset.data_type_val(dbs_entry['primary_ds_type'])
+                dataset.last_update = dbs_entry['last_modification_date']
 
-        if dbs_entry[0]['primary_ds_type'] == 'data':
-            dataset.data_type = Dataset.TYPE_DATA
-
-        elif dbs_entry[0]['primary_ds_type'] == 'mc':
-            dataset.data_type = Dataset.TYPE_MC
+            start += 1000
             
     def _make_phedex_request(self, resource, options = [], method = GET, format = 'url'):
         """

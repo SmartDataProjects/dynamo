@@ -13,8 +13,7 @@ class DatasetInfoSourceInterface(object):
          name: the name of the dataset
          datasets: name->dataset dict of known datasets
         """
-
-        return None
+        pass
 
     def get_datasets(self, names, datasets):
         """
@@ -26,13 +25,18 @@ class DatasetInfoSourceInterface(object):
         """
 
         for name in names:
-            self.get_dataset(name)
+            self.get_dataset(name, datasets)
+
+    def set_dataset_constituent_info(self, datasets):
+        """
+        Find information on blocks that constitute the datasets
+        """
+        pass
 
     def set_dataset_details(self, datasets):
         """
-        Set detailed information that may not be filled at get_dataset(s).
+        Set detailed information, primarily those that may be updated.
         """
-
         pass
 
 

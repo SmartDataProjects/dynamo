@@ -107,11 +107,22 @@ if __name__ == '__main__':
 
     if command == 'datasetlist':
         # options: dataset=/A1/B1/C1,/A2/B2/C2,...
-        key, eq, values = args.options[0].partition('=')
-        datasets = values.split(',')
-        options = {'dataset': datasets}
-        if 'detail=True' in args.options:
-            options['detail'] = True
+        options = {}
+        for opt in args.options:
+            key, eq, values = opt.partition('=')
+            if key == 'dataset':
+                datasets = values.split(',')
+                options['dataset'] = datasets
+            else:
+                try:
+                    value = int(values)
+                except ValueError:
+                    try:
+                        value = bool(values)
+                    except ValueError:
+                        value = values
+
+                options[key] = value
 
         method = POST
         format = 'json'

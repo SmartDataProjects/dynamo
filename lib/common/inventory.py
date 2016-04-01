@@ -165,6 +165,20 @@ class InventoryManager(object):
         except ValueError:
             logger.error('Site-dataset linking was corrupt. %s %s', site.name, dataset.name)
 
+    def update_datasets(self):
+        """
+        Checks the information of existing datasets and save changes. Intended for an independent daemon process.
+        """
+
+        datasets = self.datasets.values()
+
+        last_updates = dict([(d, d.last_update) for d in datasets])
+
+        self.dataset_source.set_dataset_details(datasets)
+
+        updated_datasets = [d for d in datasets if d.last_update > last_updates[d]]
+
+        self.dataset_source.set_dataset_constituent_info(updated_datasets)
 
 if __name__ == '__main__':
 
