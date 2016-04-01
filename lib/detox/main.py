@@ -58,6 +58,9 @@ class Detox(object):
         if self.policy_html_path:
             html = self.open_html(self.policy_html_path)
 
+        # take a snapshot before starting deletion
+        self.inventory_manager.inventory.make_snapshot()
+
         all_deletions = {} # site -> list of replicas to delete on site
         iteration = 0
 
@@ -68,9 +71,11 @@ class Detox(object):
             deletion_list, protection_list = self.make_deletion_protection_list(records)
 
             if policy_log:
+                logger.info('Writing policy hit log text.')
                 self.write_policy_log(policy_log, iteration, records)
 
             if html:
+                logger.info('Writing policy hit log html.')
                 self.write_html_iteration(html, iteration, records)
 
             logger.info('%d dataset replicas in deletion list', len(deletion_list))
@@ -135,6 +140,7 @@ class Detox(object):
             all_deletions[replica.site] = [replica]
 
         self.inventory_manager.delete_datasetreplica(replica)
+        self.inventory_manager.inventory.set_last_update()
 
     def static_deletion(self, deletion_list, all_deletions):
         for replica in deletion_list:
@@ -145,9 +151,12 @@ class Detox(object):
 
         logger.info('Deleting %d dataset replica information from local inventory.', len(deletion_list))
         self.inventory_manager.delete_datasetreplicas(deletion_list)
+        self.inventory_manager.inventory.set_last_update()
 
     def commit_deletions(self, all_deletions):
-        for site, replica_list in all_deletions.items():
+        for site in sorted(all_deletions.keys(), key = lambda s: s.name):
+            replica_list = all_deletions[site]
+
             logger.info('Deleting %d replicas from %s.', len(replica_list), site.name)
 
             deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, comments = self.deletion_message)

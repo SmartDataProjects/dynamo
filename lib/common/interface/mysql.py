@@ -57,9 +57,9 @@ class MySQLInterface(InventoryInterface):
         if host != '' or pid != 0:
             raise InventoryInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
-    def _do_make_snapshot(self, clear): #override
+    def _do_make_snapshot(self, timestamp, clear): #override
         db = self._db_params['db']
-        new_db = self._db_params['db'] + time.strftime('_%y%m%d%H%M%S')
+        new_db = self._db_params['db'] + '_' + timetstamp
 
         self._query('CREATE DATABASE `%s`' % new_db)
 
@@ -104,7 +104,7 @@ class MySQLInterface(InventoryInterface):
 
         self._query('USE ' + snapshot_name)
 
-    def _do_timestamp(self, tm): #override
+    def _do_set_last_update(self, tm): #override
         self._query('UPDATE `system` SET `last_update` = FROM_UNIXTIME(%d)' % int(tm))
 
     def _do_load_data(self, site_filt, dataset_filt, load_replicas): #override

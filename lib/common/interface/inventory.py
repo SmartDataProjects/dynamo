@@ -38,7 +38,7 @@ class InventoryInterface(object):
         if self._lock_depth > 0: # should always be the case if properly programmed
             self._lock_depth -= 1
 
-    def timestamp(self, tm = time.time()):
+    def set_last_update(self, tm = time.time()):
         self.last_update = tm
 
         if config.read_only:
@@ -47,7 +47,7 @@ class InventoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_timestamp(tm)
+            self._do_set_last_update(tm)
         finally:
             self.release_lock()
 
@@ -57,13 +57,15 @@ class InventoryInterface(object):
         will "move" the data into the snapshot, rather than cloning it.
         """
 
+        timestamp = time.strftime('%y%m%d%H%M%S')
+
         if config.read_only:
-            logger.debug('_do_make_snapshot(%d)', clear)
+            logger.debug('_do_make_snapshot(%s, %d)', timestamp, clear)
             return
 
         self.acquire_lock()
         try:
-            self._do_make_snapshot(clear)
+            self._do_make_snapshot(timestamp, clear)
         finally:
             self.release_lock()
 

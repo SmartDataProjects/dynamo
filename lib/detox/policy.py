@@ -139,6 +139,9 @@ class PolicyManager(object):
     def __init__(self, policies):
         self._policies = policies
 
+    def num_policies(self):
+        return len(self._policies)
+
     def add_policy(self, policy):
         if type(policy) is list:
             self._policies += policy

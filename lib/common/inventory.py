@@ -146,10 +146,7 @@ class InventoryManager(object):
         Remove multiple datasets in one shot for speed.
         """
 
-        block_replicas = sum([r.block_replicas for r in replica_list], []) # second argument -> start from an empty list
-
-        self.inventory.delete_blockreplicas(block_replicas)
-        self.inventory.delete_datasetreplicas(replica_list)
+        self.inventory.delete_datasetreplicas(replica_list, delete_blockreplicas = True)
 
         for replica in replica_list:
             self._delete_datasetreplica_on_memory(replica)
