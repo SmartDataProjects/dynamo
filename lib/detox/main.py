@@ -48,7 +48,7 @@ class Detox(object):
 
         self.demand_manager.update(self.inventory_manager.inventory)
 
-        logger.info('Start deletion.')
+        logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_manager.num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
 
         policy_log = None
         if self.policy_log_path:

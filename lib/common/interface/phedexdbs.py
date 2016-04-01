@@ -92,6 +92,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
             options['comments'] = comments
 
         if config.read_only:
+            logger.info('schedule_deletion  delete %d datasets', len(catalogs))
             logger.debug('schedule_deletion  delete: %s', str(options))
             return 0
 
