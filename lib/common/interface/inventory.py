@@ -38,6 +38,19 @@ class InventoryInterface(object):
         if self._lock_depth > 0: # should always be the case if properly programmed
             self._lock_depth -= 1
 
+    def timestamp(self, tm = time.time()):
+        self.last_update = tm
+
+        if config.read_only:
+            logger.debug('_do_timestamp(%f)', tm)
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_timestamp(tm)
+        finally:
+            self.release_lock()
+
     def make_snapshot(self, clear = CLEAR_NONE):
         """
         Make a snapshot of the current state of the persistent inventory. Flag clear = True
@@ -154,29 +167,38 @@ class InventoryInterface(object):
         finally:
             self.release_lock()
 
-    def delete_datasetreplica(self, replica):
+    def delete_datasetreplica(self, replica, delete_blockreplicas = True):
         """
         Delete dataset replica from persistent storage.
+        If delete_blockreplicas is True, delete block replicas associated to this dataset replica too.
         """
 
         if config.read_only:
             logger.debug('_do_delete_datasetreplica(%s:%s)', replica.site.name, replica.dataset.name)
             return
 
-        self.delete_datasetreplicas([replica])
+        self.delete_datasetreplicas([replica], delete_blockreplicas = delete_blockreplicas)
 
-    def delete_datasetreplicas(self, replica_list):
+    def delete_datasetreplicas(self, replica_list, delete_blockreplicas = True):
         """
         Delete a set of dataset replicas from persistent storage.
+        If delete_blockreplicas is True, delete block replicas associated to the dataset replicas too.
         """
 
         if config.read_only:
             logger.debug('_do_delete_datasetreplicas(%d replicas)', len(replica_list))
             return
 
+        sites = list(set([r.site for r in replica_list]))
+        datasets_on_site = dict([(site, []) for site in sites])
+        
+        for replica in replica_list:
+            datasets_on_site[replica.site].append(replica.dataset)
+
         self.acquire_lock()
         try:
-            self._do_delete_datasetreplicas(replica_list)
+            for site in sites:
+                self._do_delete_datasetreplicas(site, datasets_on_site[site], delete_blockreplicas)
         finally:
             self.release_lock()
 

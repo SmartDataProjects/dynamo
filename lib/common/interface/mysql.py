@@ -104,6 +104,9 @@ class MySQLInterface(InventoryInterface):
 
         self._query('USE ' + snapshot_name)
 
+    def _do_timestamp(self, tm): #override
+        self._query('UPDATE `system` SET `last_update` = FROM_UNIXTIME(%d)' % int(tm))
+
     def _do_load_data(self, site_filt, dataset_filt, load_replicas): #override
 
         # Load sites
@@ -449,15 +452,20 @@ class MySQLInterface(InventoryInterface):
     def _do_delete_block(self, block): #override
         self._query('DELETE FROM `blocks` WHERE `name` LIKE %s', block.name)
 
-    def _do_delete_datasetreplicas(self, replica_list): #override
-        sql = 'DELETE FROM `dataset_replicas` AS replicas'
-        sql += ' INNER JOIN `sites` ON `sites`.`id` = replicas.`site_id`'
-        sql += ' INNER JOIN `datasets` ON `datasets`.`id` = replicas.`dataset_id`'
-        sql += ' WHERE (`sites`.`name`, `datasets`.`name`) IN ({combinations})'
-        
-        combinations = ','.join(['(\'%s\',\'%s\')' % (r.site.name, r.dataset.name) for r in replica_list])
+    def _do_delete_datasetreplicas(self, site, datasets, delete_blockreplicas): #override
+        site_id = self._query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        self._query(sql.format(combinations = combinations))
+        sql = 'SELECT `id` FROM `datasets` WHERE `name` IN ({names})'
+        names = ','.join(['\'%s\'' % dataset.name for d in datasets])
+        dataset_ids = self._query(sql.format(names = names))
+        dataset_ids_str = ','.join(map(str, dataset_ids))
+
+        sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` IN ({dataset_ids}) AND `site_id` = {site_id}'
+        self._query(sql.format(dataset_ids = dataset_ids_str, site_id = site_id))
+
+        if delete_blockreplicas:
+            sql = 'DELETE FROM `block_replicas` WHERE `site_id` = {site_id} AND `block_id` IN (SELECT `id` FROM `blocks` WHERE `dataset_id` IN ({dataset_ids}))'.format(site_id = site_id, dataset_ids = dataset_ids_str)
+            self._query(sql)
 
     def _do_delete_blockreplicas(self, replica_list): #override
         # Mass block replica deletion typically happens for a few sites and a few datasets.

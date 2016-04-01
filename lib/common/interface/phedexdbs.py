@@ -134,7 +134,7 @@ class PhEDExDBSInterface(CopyInterface, DeletionInterface, SiteInfoSourceInterfa
                 options['comments'] = comments
 
             if config.read_only:
-                logger.info('schedule_deletions  delete: %s', str(options))
+                logger.debug('schedule_deletions  delete: %s', str(options))
                 return
 
             # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
