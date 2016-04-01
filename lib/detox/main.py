@@ -2,9 +2,9 @@ import time
 import logging
 import math
 import pprint
-import MySQLdb
 
 import common.configuration as config
+from common.interface.mysql import MySQL
 import detox.policy as policy
 import detox.configuration as detox_config
 
@@ -27,7 +27,7 @@ class Detox(object):
             'db': detox_config.history.db
         }
 
-        self._history = MySQLdb.connect(**db_params)
+        self._history = MySQL(**db_params)
 
         self.deletion_message = 'DynaMO -- Automatic Cache Release Request. Summary at: http://t3serv001.mit.edu/~cmsprod/IntelROCCS/Detox/result/'
 
@@ -68,7 +68,7 @@ class Detox(object):
             iteration += 1
 
             records = []
-            deletion_list, protection_list = self.make_deletion_protection_list(records)
+            deletion_candidates, protection_list = self.make_deletion_protection_list(records)
 
             if policy_log:
                 logger.info('Writing policy hit log text.')
@@ -78,20 +78,33 @@ class Detox(object):
                 logger.info('Writing policy hit log html.')
                 self.write_html_iteration(html, iteration, records)
 
-            logger.info('%d dataset replicas in deletion list', len(deletion_list))
+            logger.info('%d dataset replicas in deletion list', len(deletion_candidates))
             if logger.getEffectiveLevel() == logging.DEBUG:
                 logger.debug('Deletion list:')
-                logger.debug(pprint.pformat(['%s:%s' % (r.site.name, r.dataset.name) for r in deletion_list]))
+                logger.debug(pprint.pformat(['%s:%s' % (r.site.name, r.dataset.name) for r in deletion_candidates]))
+
+            if dynamic_deletion:
+                replica = self.select_replica(deletion_candidates, protection_list)
+                if replica is None:
+                    deletion_list = []
+                else:
+                    logger.info('Selected replica: %s %s', replica.site.name, replica.dataset.name)
+                    deletion_list = [replica]
+
+            else:
+                deletion_list = deletion_candidates
+                self.static_deletion(deletion_list, all_deletions)
 
             if len(deletion_list) == 0:
                 break
 
-            if dynamic_deletion:
-                self.dynamic_deletion(deletion_list, protection_list, all_deletions)
+            try:
+                all_deletions[replica.site].append(replica)
+            except KeyError:
+                all_deletions[replica.site] = [replica]
 
-            else:
-                self.static_deletion(deletion_list, all_deletions)
-                break
+            for replica in deletion_list:
+                self.inventory_manager.unlink_datasetreplica(replica)
 
         logger.info('Committing deletion.')
         # Will write an entry in the history DB
@@ -110,7 +123,7 @@ class Detox(object):
         Return the list of replicas that may be deleted and must be protected.
         """
 
-        deletion_list = []
+        deletion_candidates = []
         protection_list = []
 
         for dataset in self.inventory_manager.datasets.values():
@@ -123,35 +136,12 @@ class Detox(object):
                 decision = hit_records.decision()
 
                 if decision == policy.DEC_DELETE:
-                    deletion_list.append(replica)
+                    deletion_candidates.append(replica)
 
                 elif decision == policy.DEC_PROTECT:
                     protection_list.append(replica)
                 
-        return deletion_list, protection_list
-
-    def dynamic_deletion(self, deletion_list, protection_list, all_deletions):
-        replica = self.select_replica(deletion_list, protection_list)
-        logger.info('Selected replica: %s %s', replica.site.name, replica.dataset.name)
-
-        try:
-            all_deletions[replica.site].append(replica)
-        except KeyError:
-            all_deletions[replica.site] = [replica]
-
-        self.inventory_manager.delete_datasetreplica(replica)
-        self.inventory_manager.inventory.set_last_update()
-
-    def static_deletion(self, deletion_list, all_deletions):
-        for replica in deletion_list:
-            try:
-                all_deletions[replica.site].append(replica)
-            except KeyError:
-                all_deletions[replica.site] = [replica]
-
-        logger.info('Deleting %d dataset replica information from local inventory.', len(deletion_list))
-        self.inventory_manager.delete_datasetreplicas(deletion_list)
-        self.inventory_manager.inventory.set_last_update()
+        return deletion_candidates, protection_list
 
     def commit_deletions(self, all_deletions):
         for site in sorted(all_deletions.keys(), key = lambda s: s.name):
@@ -160,20 +150,27 @@ class Detox(object):
             logger.info('Deleting %d replicas from %s.', len(replica_list), site.name)
 
             deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, comments = self.deletion_message)
-            # deletion_mapping .. {deletion_id: [replicas]}
+            # deletion_mapping .. {deletion_id: (complete, [replicas])}
+
+            for deletion_id, (completed, replicas) in deletion_mapping.items():
+                if completed:
+                    self.inventory_manager.inventory.delete_datasetreplicas(replicas)
+                    self.inventory_manager.inventory.set_last_update()
+
+                size = sum([r.size() for r in replicas])
+
+                self.make_history_entries(site, deletion_id, completed, [r.dataset for r in replicas], size)
 
             logger.info('Done deleting %d replicas from %s.', len(replica_list), site.name)
 
-            self.make_history_entries(site, deletion_mapping)
-
-    def select_replica(self, deletion_list, protection_list):
+    def select_replica(self, deletion_candidates, protection_list):
         """
         Select one dataset replica to delete out of all deletion candidates.
         Currently returning the replica whose deletion balances the protected fraction between the sites the most.
         Ranking policy here may be made dynamic at some point.
         """
 
-        if len(deletion_list) == 0:
+        if len(deletion_candidates) == 0:
             return None
         
         protected_fractions = {}
@@ -191,7 +188,7 @@ class Detox(object):
         minRMS2 = -1.
         deletion_candidate = None
 
-        for replica in deletion_list:
+        for replica in deletion_candidates:
             sumf2 = sum([frac * frac for site, frac in protected_fractions.items() if site != replica.site])
             sumf = sum([frac for site, frac in protected_fractions.items() if site != replica.site])
 
@@ -206,8 +203,19 @@ class Detox(object):
 
         return deletion_candidate
 
-    def make_history_entries(self, site, deletion_mapping):
-        pass
+    def make_history_entries(self, site, deletion_id, completed, datasets, size):
+        site_ids = self._history.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)
+        if len(site_ids) != 0:
+            site_id = site_ids[0]
+        else:
+            site_id = self._history.query('INSERT INTO `sites` (`name`) VALUES (%s)', site.name)
+
+        self._history.insert_many('datasets', ('name',), lambda d: (d.name,), datasets)
+        dataset_ids = dict(self._history.query('SELECT `name`, `id` FROM `datasets`'))
+
+        self._history.query('INSERT INTO deletion_history (`id`, `timestamp`, `completed`, `site`, `size`) VALUES (%s, NOW(), %s, %s, %s)', deletion_id, completed, site_id, size)
+
+        self._history.insert_many('deleted_replicas', ('deletion_id', 'dataset_id'), lambda d: (deletion_id, dataset_ids[d.name]), datasets)
 
     def write_policy_log(self, policy_log, iteration, all_records):
         policy_log.write('===== Begin iteration %d =====\n\n' % iteration)
