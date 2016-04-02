@@ -33,7 +33,6 @@ default_interface = {
     'replica_source': Generator(PhEDExDBS),
     'copy': Generator(PhEDExDBS),
     'deletion': Generator(PhEDExDBS),
-    'inventory': Generator(MySQLStore),
-    'popularity': Generator(DummyInterface),
+    'store': Generator(MySQLStore),
     'lock': Generator(DummyInterface)
 }

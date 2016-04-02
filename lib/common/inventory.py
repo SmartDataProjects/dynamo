@@ -1,7 +1,7 @@
 import logging
 
 from common.interface.classes import default_interface
-from common.interface.inventory import InventoryInterface
+from common.interface.store import LocalStoreInterface
 from common.dataformat import IntegrityError, DatasetReplica, BlockReplica
 import common.configuration as config
 
@@ -16,11 +16,11 @@ class ConsistencyError(Exception):
 class InventoryManager(object):
     """Bookkeeping class to bridge the communication between remote and local data sources."""
 
-    def __init__(self, load_data = False, inventory_cls = None, site_source_cls = None, dataset_source_cls = None, replica_source_cls = None):
-        if inventory_cls:
-            self.inventory = inventory_cls()
+    def __init__(self, load_data = False, store_cls = None, site_source_cls = None, dataset_source_cls = None, replica_source_cls = None):
+        if store_cls:
+            self.store = store_cls()
         else:
-            self.inventory = default_interface['inventory']()
+            self.store = default_interface['store']()
 
         if site_source_cls:
             self.site_source = site_source_cls()
@@ -53,17 +53,17 @@ class InventoryManager(object):
 
         logger.info('Loading data from local persistent storage.')
         
-        self.inventory.acquire_lock()
+        self.store.acquire_lock()
 
         try:
-            sites, groups, datasets = self.inventory.load_data(load_replicas = load_replicas)
+            sites, groups, datasets = self.store.load_data(load_replicas = load_replicas)
 
             self.sites = dict([(s.name, s) for s in sites])
             self.groups = dict([(g.name, g) for g in groups])
             self.datasets = dict([(d.name, d) for d in datasets])
 
         finally:
-            self.inventory.release_lock()
+            self.store.release_lock()
 
         logger.info('Data is loaded to memory.')
 
@@ -73,14 +73,14 @@ class InventoryManager(object):
         logger.info('Locking inventory.')
 
         # Lock the inventory
-        self.inventory.acquire_lock()
+        self.store.acquire_lock()
 
         try:
             if make_snapshot:
                 logger.info('Making a snapshot of inventory.')
                 # Make a snapshot (older snapshots cleaned by an independent daemon)
                 # All replica data will be erased but the static data (sites, groups, software versions, datasets, and blocks) remain
-                self.inventory.make_snapshot(clear = InventoryInterface.CLEAR_REPLICAS)
+                self.store.make_snapshot(clear = LocalStoreInterface.CLEAR_REPLICAS)
 
             if load_first:
                 logger.info('Loading existing data.')
@@ -125,14 +125,14 @@ class InventoryManager(object):
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
 
             logger.info('Saving data.')
+
             # Save inventory data to persistent storage
             # Datasets and groups with no replicas are removed
-            # Returns the list of newly inserted sites, groups, datasets
-            self.inventory.save_data(self.sites, self.groups, self.datasets, clean_stale = clean_stale)
+            self.store.save_data(self.sites.values(), self.groups.values(), self.datasets.values(), clean_stale = clean_stale)
 
         finally:
             # Lock is released even in case of unexpected errors
-            self.inventory.release_lock(force = True)
+            self.store.release_lock(force = True)
 
     def unlink_datasetreplica(self, replica):
         """
@@ -180,6 +180,9 @@ class InventoryManager(object):
 
         self.dataset_source.set_dataset_constituent_info(updated_datasets)
 
+        self.store.save_datasets(datasets)
+
+
 if __name__ == '__main__':
 
     from argparse import ArgumentParser
@@ -188,7 +191,7 @@ if __name__ == '__main__':
     parser = ArgumentParser(description = 'Inventory manager')
 
     parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(update|list (datasets|sites))')
-    parser.add_argument('--inventory', '-i', metavar = 'CLASS', dest = 'inventory_cls', default = '', help = 'Inventory class to be used.')
+    parser.add_argument('--store', '-i', metavar = 'CLASS', dest = 'store_cls', default = '', help = 'Store class to be used.')
     parser.add_argument('--site-source', '-s', metavar = 'CLASS', dest = 'site_source_cls', default = '', help = 'SiteInfoSourceInterface class to be used.')
     parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class to be used.')
     parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class to be used.')
@@ -211,7 +214,7 @@ if __name__ == '__main__':
     cmd_args = args.command[1:]
 
     kwd = {}
-    for cls in ['inventory', 'site_source', 'dataset_source', 'replica_source']:
+    for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
         clsname = getattr(args, cls + '_cls')
         if clsname == '':
             kwd[cls + '_cls'] = classes.default_interface[cls]
@@ -229,7 +232,7 @@ if __name__ == '__main__':
         target = cmd_args[0]
 
         if target == 'datasets':
-            print manager.inventory.datasets.keys()
+            print manager.store.datasets.keys()
 
         elif target == 'sites':
-            print manager.inventory.sites.keys()
+            print manager.store.sites.keys()

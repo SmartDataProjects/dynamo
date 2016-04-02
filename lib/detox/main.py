@@ -38,15 +38,15 @@ class Detox(object):
 
         logger.info('Detox run starting at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
-        if time.time() - self.inventory_manager.inventory.last_update > config.inventory.refresh_min:
-            logger.info('Inventory was last updated at %s. Reloading content from remote sources.', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.inventory_manager.inventory.last_update)))
+        if time.time() - self.inventory_manager.store.last_update > config.inventory.refresh_min:
+            logger.info('Inventory was last updated at %s. Reloading content from remote sources.', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.inventory_manager.store.last_update)))
             # inventory is stale -> update
             self.inventory_manager.update()
 
         else:
             self.inventory_manager.load()
 
-        self.demand_manager.update(self.inventory_manager.inventory)
+        self.demand_manager.update(self.inventory_manager.store)
 
         logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_manager.num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
 
@@ -59,7 +59,7 @@ class Detox(object):
             html = self.open_html(self.policy_html_path)
 
         # take a snapshot before starting deletion
-        self.inventory_manager.inventory.make_snapshot()
+        self.inventory_manager.store.make_snapshot()
 
         all_deletions = {} # site -> list of replicas to delete on site
         iteration = 0
@@ -154,8 +154,8 @@ class Detox(object):
 
             for deletion_id, (completed, replicas) in deletion_mapping.items():
                 if completed:
-                    self.inventory_manager.inventory.delete_datasetreplicas(replicas)
-                    self.inventory_manager.inventory.set_last_update()
+                    self.inventory_manager.store.delete_datasetreplicas(replicas)
+                    self.inventory_manager.store.set_last_update()
 
                 size = sum([r.size() for r in replicas])
 
@@ -543,7 +543,7 @@ if __name__ == '__main__':
             logging.warning('Log level ' + args.log_level + ' not defined')
     
     kwd = {}
-    for cls in ['inventory', 'site_source', 'dataset_source', 'replica_source']:
+    for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
         kwd[cls + '_cls'] = classes.default_interface[cls]
     
     inventory_manager = InventoryManager(**kwd)

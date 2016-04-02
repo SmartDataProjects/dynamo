@@ -5,14 +5,14 @@ import socket
 import logging
 import fnmatch
 
-from common.interface.inventory import InventoryInterface
+from common.interface.store import LocalStoreInterface
 from common.interface.mysql import MySQL
 from common.dataformat import Dataset, Block, Site, Group, DatasetReplica, BlockReplica
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-class MySQLStore(InventoryInterface):
+class MySQLStore(LocalStoreInterface):
     """Interface to MySQL."""
 
     class DatabaseError(Exception):
@@ -54,11 +54,11 @@ class MySQLStore(InventoryInterface):
         self._mysql.query('UNLOCK TABLES')
 
         if host != '' or pid != 0:
-            raise InventoryInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
+            raise LocalStoreInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
     def _do_make_snapshot(self, timestamp, clear): #override
         db = self._db_name
-        new_db = self._db_name + '_' + timetstamp
+        new_db = self._db_name + '_' + timestamp
 
         self._mysql.query('CREATE DATABASE `%s`' % new_db)
 
@@ -68,8 +68,8 @@ class MySQLStore(InventoryInterface):
             self._mysql.query('CREATE TABLE `%s`.`%s` LIKE `%s`.`%s`' % (new_db, table, db, table))
             self._mysql.query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (new_db, table, db, table))
 
-            if clear == InventoryInterface.CLEAR_ALL or \
-               (clear == InventoryInterface.CLEAR_REPLICAS and table in ['dataset_replicas', 'block_replicas']):
+            if clear == LocalStoreInterface.CLEAR_ALL or \
+               (clear == LocalStoreInterface.CLEAR_REPLICAS and table in ['dataset_replicas', 'block_replicas']):
                 self._mysql.query('DROP TABLE `%s`.`%s`' % (db, table))
                 self._mysql.query('CREATE TABLE `%s`.`%s` LIKE `%s`.`%s`' % (db, table, new_db, table))
        
@@ -79,22 +79,18 @@ class MySQLStore(InventoryInterface):
     def _do_remove_snapshot(self, newer_than, older_than): #override
         snapshots = self._do_list_snapshots()
 
-        print newer_than, older_than
-        
         for snapshot in snapshots:
-            tm = time.mktime(time.strptime(snapshot, '%y%m%d%H%M%S'))
-            if tm >= newer_than and tm <= older_than:
+            tm = int(time.mktime(time.strptime(snapshot, '%y%m%d%H%M%S')))
+            if (newer_than == older_than and tm == newer_than) or \
+                    (tm > newer_than and tm < older_than):
                 database = self._db_name + '_' + snapshot
                 logger.info('Dropping database ' + database)
                 self._mysql.query('DROP DATABASE ' + database)
 
     def _do_list_snapshots(self):
         databases = self._mysql.query('SHOW DATABASES')
-        databases.remove('information_schema')
-        databases.remove('mysql')
-        databases.remove(self._db_name)
 
-        snapshots = [db.replace(self._db_name + '_', '') for db in databases]
+        snapshots = [db.replace(self._db_name + '_', '') for db in databases if db.startswith(self._db_name + '_')]
 
         return sorted(snapshots, reverse = True)
 
@@ -105,9 +101,9 @@ class MySQLStore(InventoryInterface):
 
     def _do_set_last_update(self, tm): #override
         self._mysql.query('UPDATE `system` SET `last_update` = FROM_UNIXTIME(%d)' % int(tm))
+        self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
 
     def _do_load_data(self, site_filt, dataset_filt, load_replicas): #override
-
         # Load sites
         site_list = []
         site_map = {} # id -> site
@@ -276,28 +272,27 @@ class MySQLStore(InventoryInterface):
         # Only the list of sites, groups, and datasets are returned
         return site_list, group_list, dataset_list
 
-    def _do_save_data(self, sites, groups, datasets, clean_stale): #override
-
+    def _do_save_sites(self, sites): #override
         # insert/update sites
         logger.info('Inserting/updating %d sites.', len(sites))
-
-        last_id = self._mysql.query('SELECT MAX(`id`) FROM `sites`')
 
         fields = ('name', 'host', 'storage_type', 'backend', 'capacity', 'used_total')
         mapping = lambda s: (s.name, s.host, Site.storage_type_name(s.storage_type), s.backend, s.capacity, s.used_total)
 
-        self._mysql.insert_many('sites', fields, mapping, sites.values())
+        self._mysql.insert_many('sites', fields, mapping, sites)
 
+    def _do_save_groups(self, groups): #override
         # insert/update groups
         logger.info('Inserting/updating %d groups.', len(groups))
 
         last_id = self._mysql.query('SELECT MAX(`id`) FROM `groups`')
 
-        self._mysql.insert_many('groups', ('name',), lambda g: (g.name,), groups.values())
+        self._mysql.insert_many('groups', ('name',), lambda g: (g.name,), groups)
 
+    def _do_save_datasets(self, datasets): #override
         # insert/update software versions
         # first, make the list of unique software versions (excluding defualt (0,0,0,''))
-        version_list = list(set([d.software_version for d in datasets.values() if d.software_version[0] != 0]))
+        version_list = list(set([d.software_version for d in datasets if d.software_version[0] != 0]))
         logger.info('Inserting/updating %d software versions.', len(version_list))
 
         fields = ('cycle', 'major', 'minor', 'suffix')
@@ -316,15 +311,26 @@ class MySQLStore(InventoryInterface):
         fields = ('name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id')
         mapping = lambda d: (d.name, d.size, d.num_files, d.is_open, d.status, d.on_tape, d.data_type, version_map[d.software_version])
 
-        self._mysql.insert_many('datasets', fields, mapping, datasets.values())
+        self._mysql.insert_many('datasets', fields, mapping, datasets)
 
-        # make name -> id maps for use later
-        site_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `sites`'))
-        group_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `groups`'))
         dataset_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `datasets`'))
 
+        # insert/update blocks for this dataset
+        all_blocks = sum([d.blocks for d in datasets], [])
+
+        fields = ('name', 'dataset_id', 'size', 'num_files', 'is_open')
+        mapping = lambda b: (b.name, dataset_ids[b.dataset.name], b.size, b.num_files, b.is_open)
+
+        self._mysql.insert_many('blocks', fields, mapping, all_blocks)
+
+    def _do_save_replicas(self, datasets): #override
+        # make name -> id maps for use later
+        dataset_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `datasets`'))
+        site_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `sites`'))
+        group_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `groups`'))
+
         # insert/update dataset replicas
-        all_replicas = sum([d.replicas for d in datasets.values()], []) # second argument -> start with an empty array and add up
+        all_replicas = sum([d.replicas for d in datasets], []) # second argument -> start with an empty array and add up
 
         logger.info('Inserting/updating %d dataset replicas.', len(all_replicas))
 
@@ -334,19 +340,10 @@ class MySQLStore(InventoryInterface):
         self._mysql.insert_many('dataset_replicas', fields, mapping, all_replicas)
         all_replicas = None # just to save some memory
 
-        # insert/update blocks for this dataset
-        all_blocks = sum([d.blocks for d in datasets.values()], [])
-
-        fields = ('name', 'dataset_id', 'size', 'num_files', 'is_open')
-        mapping = lambda b: (b.name, dataset_ids[b.dataset.name], b.size, b.num_files, b.is_open)
-
-        self._mysql.insert_many('blocks', fields, mapping, all_blocks)
-        all_blocks = None
-
         # insert/update block replicas for non-complete dataset replicas
         all_block_replicas = []
 
-        for dataset in datasets.values():
+        for dataset in datasets:
             dataset_id = dataset_ids[dataset.name]
 
             need_blocklevel = []
@@ -385,39 +382,32 @@ class MySQLStore(InventoryInterface):
         mapping = lambda (r, bid): (bid, site_ids[r.site.name], group_ids[r.group.name] if r.group else 0, r.is_complete, r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(int(r.time_created))), time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(int(r.time_updated))))
 
         self._mysql.insert_many('block_replicas', fields, mapping, all_block_replicas)
-        all_block_replicas = None
 
-        # done inserting new / updated information
+    def _do_clean_stale_data(self, sites, groups, datasets): #override
+        logger.info('Cleaning up stale data.')
 
-        if clean_stale:
-            logger.info('Cleaning up stale data.')
-    
-            if len(sites) != 0:
-                self._mysql.delete_not_in('sites', 'id', [site_ids[site_name] for site_name in sites])
-    
-            if len(groups) != 0:
-                self._mysql.delete_not_in('groups', 'id', [group_ids[group_name] for group_name in groups])
-    
-            if len(datasets) != 0:
-                self._mysql.delete_not_in('datasets', 'id', [dataset_ids[dataset_name] for dataset_name in datasets])
-    
-            self._mysql.delete_not_in('dataset_replicas', 'dataset_id', ('id', 'datasets'))
-    
-            self._mysql.delete_not_in('dataset_replicas', 'site_id', ('id', 'sites'))
-    
-            self._mysql.delete_not_in('blocks', 'dataset_id', ('id', 'datasets'))
-    
-            self._mysql.delete_not_in('block_replicas', 'block_id', ('id', 'blocks'))
-    
-            self._mysql.delete_not_in('block_replicas', 'site_id', ('id', 'sites'))
+        if len(sites) != 0:
+            self._mysql.delete_not_in('sites', 'id', [site_ids[site.name] for site in sites])
 
-            self._mysql.delete_not_in('datasets', 'id', '(SELECT DISTINCT(`dataset_id`) FROM `dataset_replicas`)')
+        if len(groups) != 0:
+            self._mysql.delete_not_in('groups', 'id', [group_ids[group.name] for group in groups])
 
-            self._mysql.delete_not_in('blocks', 'id', '(SELECT DISTINCT(`block_id`) FROM `block_replicas`)')
+        if len(datasets) != 0:
+            self._mysql.delete_not_in('datasets', 'id', [dataset_ids[dataset.name] for dataset in datasets])
 
-        # time stamp the inventory
-        self._mysql.query('UPDATE `system` SET `last_update` = NOW()')
-        self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
+        self._mysql.delete_not_in('dataset_replicas', 'dataset_id', ('id', 'datasets'))
+
+        self._mysql.delete_not_in('dataset_replicas', 'site_id', ('id', 'sites'))
+
+        self._mysql.delete_not_in('blocks', 'dataset_id', ('id', 'datasets'))
+
+        self._mysql.delete_not_in('block_replicas', 'block_id', ('id', 'blocks'))
+
+        self._mysql.delete_not_in('block_replicas', 'site_id', ('id', 'sites'))
+
+        self._mysql.delete_not_in('datasets', 'id', '(SELECT DISTINCT(`dataset_id`) FROM `dataset_replicas`)')
+
+        self._mysql.delete_not_in('blocks', 'id', '(SELECT DISTINCT(`block_id`) FROM `block_replicas`)')
 
     def _do_delete_dataset(self, dataset): #override
         self._mysql.query('DELETE FROM `datasets` WHERE `name` LIKE %s', dataset.name)

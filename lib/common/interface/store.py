@@ -6,9 +6,9 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-class InventoryInterface(object):
+class LocalStoreInterface(object):
     """
-    Interface to local inventory database.
+    Interface to local inventory data store.
     """
 
     class LockError(Exception):
@@ -123,8 +123,7 @@ class InventoryInterface(object):
         """
         Write information in the dictionaries into persistent storage.
         Remove information of datasets and blocks with no replicas.
-        Return newly inserted sites, groups, and datasets.
-        Arguments are name->obj maps.
+        Arguments are list of objects.
         Optional argument clean_stale specifies if stale data (e.g. information
         of nonexistent datasets) should be cleaned.
         """
@@ -135,7 +134,66 @@ class InventoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_data(sites, groups, datasets, clean_stale)
+            self._do_save_sites(sites)
+            self._do_save_groups(groups)
+            self._do_save_datasets(datasets)
+            self._do_save_replicas(datasets)
+
+            if clean_stale:
+                self._do_clean_stale_data(sites, groups, datasets)
+
+            self.set_last_update()
+        finally:
+            self.release_lock()
+
+    def save_sites(self, sites):
+        """
+        Write information in the dictionaries into persistent storage.
+        Argument is a list of sites.
+        """
+
+        if config.read_only:
+            logger.debug('_do_save_sites()')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_sites(sites)
+            self.set_last_update()
+        finally:
+            self.release_lock()
+
+    def save_groups(self, groups):
+        """
+        Write information in the dictionaries into persistent storage.
+        Argument is a list of groups.
+        """
+
+        if config.read_only:
+            logger.debug('_do_save_groups()')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_groups(groups)
+            self.set_last_update()
+        finally:
+            self.release_lock()
+
+    def save_datasets(self, datasets):
+        """
+        Write information in the dictionaries into persistent storage.
+        Argument is a list of datasets.
+        """
+
+        if config.read_only:
+            logger.debug('_do_save_data()')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_datasets(datasets)
+            self.set_last_update()
         finally:
             self.release_lock()
 
@@ -281,10 +339,10 @@ if __name__ == '__main__':
     from argparse import ArgumentParser
     import common.interface.classes as classes
 
-    parser = ArgumentParser(description = 'Inventory interface')
+    parser = ArgumentParser(description = 'Local inventory store interface')
 
     parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(snapshot [clear (replicas|all)]|clean|list (datasets|groups|sites))')
-    parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'InventoryInterface class to be used.')
+    parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'LocalStoreInterface class to be used.')
     parser.add_argument('--timestamp', '-t', metavar = 'YMDHMS', dest = 'timestamp', default = '', help = 'Timestamp of the snapshot to be loaded / cleaned. With command clean, prepend with "<" or ">" to remove all snapshots older or newer than the timestamp.')
 
     args = parser.parse_args()
@@ -293,17 +351,17 @@ if __name__ == '__main__':
     cmd_args = args.command[1:]
 
     if args.class_name == '':
-        interface = classes.default_interface['inventory']()
+        interface = classes.default_interface['store']()
     else:
         interface = getattr(classes, args.class_name)()
 
     if command == 'snapshot':
-        clear = InventoryInterface.CLEAR_NONE
+        clear = LocalStoreInterface.CLEAR_NONE
         if len(cmd_args) > 1 and cmd_args[0] == 'clear':
             if cmd_args[1] == 'replicas':
-                clear = InventoryInterface.CLEAR_REPLICAS
+                clear = LocalStoreInterface.CLEAR_REPLICAS
             elif cmd_args[1] == 'all':
-                clear = InventoryInterface.CLEAR_ALL
+                clear = LocalStoreInterface.CLEAR_ALL
 
         if args.timestamp:
             interface.switch_snapshot(args.timestamp)
