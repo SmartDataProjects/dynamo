@@ -13,7 +13,6 @@ from common.interface.datasetinfo import DatasetInfoSourceInterface
 from common.interface.webservice import RESTService, GET, POST
 from common.dataformat import Dataset, Block, Site, Group, DatasetReplica, BlockReplica
 from common.misc import unicode2str
-import external.das.das_client as das_client
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -397,12 +396,12 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
 
         production_datasets = [d for d in datasets.values() if d.status == Dataset.STAT_PRODUCTION or d.status == Dataset.STAT_UNKNOWN]
 
+        self.set_dataset_constituent_info(production_datasets)
+
         for dataset in production_datasets:
             if len(dataset.blocks) == 0:
-                logger.info('get_datasets::run_datasets_query  %s does not have any blocks and is removed.', ds_entry['name'])
-                datasets.pop(ds_entry['name'])
-
-        self.set_dataset_constituent_info(production_datasets)
+                logger.info('get_datasets::run_datasets_query  %s does not have any blocks and is removed.', dataset.name)
+                datasets.pop(dataset.name)
 
         # Loop over all datasets and fill other details if not set
         for dataset in datasets.values():
@@ -743,6 +742,7 @@ if __name__ == '__main__':
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
     args = parser.parse_args()
+    sys.argv = []
 
     if args.log_level:
         try:
