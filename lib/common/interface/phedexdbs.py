@@ -188,7 +188,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
 
         for entry in source:
             if entry['name'] not in sites:
-                site = Site(entry['name'], host = entry['se'], storage_type = Site.storage_type(entry['kind']), backend = entry['technology'])
+                site = Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology'])
                 # temporary
                 site.capacity = 10000
                 site.used_total = 9000
@@ -470,54 +470,55 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
     def set_dataset_constituent_info(self, datasets): #override (DatasetInfoSourceInterface)
         start = 0
         while start < len(datasets):
-            for list_chunk in datasets[start:start + 10000]:
-                options = [('level', 'block')]
-                options += [('dataset', d.name) for d in list_chunk]
-    
-                logger.info('get_datasets::run_datasets_query  Fetching data for %d datasets.', len(options) - 1)
-                source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
-        
-                for ds_entry in source:
-                    dataset = next(d for d in list_chunk if d.name == ds_entry['name'])
-    
-                    dataset.is_open = (ds_entry['is_open'] == 'y') # useless flag - all datasets are flagged open
-            
-                    has_open_blocks = False
-            
-                    for block_entry in ds_entry['block']:
-                        block_name = block_entry['name'].replace(dataset.name + '#', '')
+            list_chunk = datasets[start:start + 10000]
 
-                        block = dataset.find_block(block_name)
-
-                        if block is None:
-                            block = Block(
-                                block_name,
-                                dataset = dataset,
-                                size = block_entry['bytes'],
-                                num_files = block_entry['files'],
-                                is_open = False
-                            )
-                            dataset.blocks.append(block)
-            
-                        if block_entry['is_open'] == 'y' and time.time() - block_entry['time_create'] > 48. * 3600.:
-                            # Block is more than 48 hours old and is still open - PhEDEx can be wrong
-                            logger.info('set_dataset_constituent_info  Double-checking with DBS if block %s#%s is open', dataset.name, block_name)
-                            dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block_name, 'detail=True']) # %23 = '#'
-                            if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
-                                # cannot get data from DBS, or DBS also says this block is open
-                                block.is_open = True
-                                has_open_blocks = True
-            
-                    dataset.size = sum([b.size for b in dataset.blocks])
-                    dataset.num_files = sum([b.num_files for b in dataset.blocks])
-            
-                    # TODO this is not fully accurate
-                    if has_open_blocks:
-                        dataset.status = Dataset.STAT_PRODUCTION
-                    else:
-                        dataset.status = Dataset.STAT_VALID
-    
             start += 10000
+
+            options = [('level', 'block')]
+            options += [('dataset', d.name) for d in list_chunk]
+
+            logger.info('get_datasets::run_datasets_query  Fetching data for %d datasets.', len(options) - 1)
+            source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
+    
+            for ds_entry in source:
+                dataset = next(d for d in list_chunk if d.name == ds_entry['name'])
+
+                dataset.is_open = (ds_entry['is_open'] == 'y') # useless flag - all datasets are flagged open
+        
+                has_open_blocks = False
+        
+                for block_entry in ds_entry['block']:
+                    block_name = block_entry['name'].replace(dataset.name + '#', '')
+
+                    block = dataset.find_block(block_name)
+
+                    if block is None:
+                        block = Block(
+                            block_name,
+                            dataset = dataset,
+                            size = block_entry['bytes'],
+                            num_files = block_entry['files'],
+                            is_open = False
+                        )
+                        dataset.blocks.append(block)
+        
+                    if block_entry['is_open'] == 'y' and time.time() - block_entry['time_create'] > 48. * 3600.:
+                        # Block is more than 48 hours old and is still open - PhEDEx can be wrong
+                        logger.info('set_dataset_constituent_info  Double-checking with DBS if block %s#%s is open', dataset.name, block_name)
+                        dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block_name, 'detail=True']) # %23 = '#'
+                        if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
+                            # cannot get data from DBS, or DBS also says this block is open
+                            block.is_open = True
+                            has_open_blocks = True
+        
+                dataset.size = sum([b.size for b in dataset.blocks])
+                dataset.num_files = sum([b.num_files for b in dataset.blocks])
+        
+                # TODO this is not fully accurate
+                if has_open_blocks:
+                    dataset.status = Dataset.STAT_PRODUCTION
+                else:
+                    dataset.status = Dataset.STAT_VALID
 
     def _set_dataset_software_info(self, dataset):
         logger.info('set_dataset_software_info  Fetching software version for %s', dataset.name)

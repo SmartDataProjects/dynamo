@@ -57,24 +57,27 @@ class MySQLStore(LocalStoreInterface):
             raise LocalStoreInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
     def _do_make_snapshot(self, timestamp, clear): #override
-        db = self._db_name
-        new_db = self._db_name + '_' + timestamp
+        snapshot_db = self._db_name + '_' + timestamp
 
-        self._mysql.query('CREATE DATABASE `%s`' % new_db)
+        self._mysql.query('CREATE DATABASE `{copy}`'.format(copy = snapshot_db))
 
         tables = self._mysql.query('SHOW TABLES')
 
         for table in tables:
-            self._mysql.query('CREATE TABLE `%s`.`%s` LIKE `%s`.`%s`' % (new_db, table, db, table))
-            self._mysql.query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (new_db, table, db, table))
+            self._mysql.query('CREATE TABLE `{copy}`.`{table}` LIKE `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self._db_name, table = table))
+
+            if table == 'system':
+                self._mysql.query('INSERT INTO `{copy}`.`system` (`last_update`) SELECT `last_update` FROM `{orig}`.`system`'.format(copy = snapshot_db, orig = self._db_name))
+                continue
+
+            else:
+                self._mysql.query('INSERT INTO `{copy}`.`{table}` SELECT * FROM `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self._db_name, table = table))
 
             if clear == LocalStoreInterface.CLEAR_ALL or \
                (clear == LocalStoreInterface.CLEAR_REPLICAS and table in ['dataset_replicas', 'block_replicas']):
-                self._mysql.query('DROP TABLE `%s`.`%s`' % (db, table))
-                self._mysql.query('CREATE TABLE `%s`.`%s` LIKE `%s`.`%s`' % (db, table, new_db, table))
-       
-        last_update = self._mysql.query('SELECT `last_update` FROM `%s`.`system`' % db)[0]
-        self._mysql.query('UPDATE `%s`.`system` SET `lock_host` = \'\', `lock_process` = 0, `last_update` = \'%s\'' % (new_db, last_update))
+                # drop the original table and copy back the format from the snapshot
+                self._mysql.query('DROP TABLE `{orig}`.`{table}`'.format(orig = self._db_name, table = table))
+                self._mysql.query('CREATE TABLE `{orig}`.`{table}` LIKE `{copy}`.`{table}`'.format(orig = self._db_name, copy = snapshot_db, table = table))
 
     def _do_remove_snapshot(self, newer_than, older_than): #override
         snapshots = self._do_list_snapshots()
@@ -94,7 +97,17 @@ class MySQLStore(LocalStoreInterface):
 
         return sorted(snapshots, reverse = True)
 
-    def _do_switch_snapshot(self, timestamp):
+    def _do_recover_from(self, timestamp): #override
+        snapshot_name = self._db_name + '_' + timestamp
+
+        tables = self._mysql.query('SHOW TABLES')
+
+        for table in tables:
+            self._mysql.query('DROP TABLE `%s`.`%s`' % (self._db_name, table))
+            self._mysql.query('CREATE TABLE `%s`.`%s` LIKE `%s`.`%s`' % (self._db_name, table, snapshot_name, table))
+            self._mysql.query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (self._db_name, table, snapshot_name, table))
+
+    def _do_switch_snapshot(self, timestamp): #override
         snapshot_name = self._db_name + '_' + timestamp
 
         self._mysql.query('USE ' + snapshot_name)
@@ -318,6 +331,8 @@ class MySQLStore(LocalStoreInterface):
         # insert/update blocks for this dataset
         all_blocks = sum([d.blocks for d in datasets], [])
 
+        logger.info('Inserting/updating %d blocks.', len(all_blocks))
+
         fields = ('name', 'dataset_id', 'size', 'num_files', 'is_open')
         mapping = lambda b: (b.name, dataset_ids[b.dataset.name], b.size, b.num_files, b.is_open)
 
@@ -368,9 +383,8 @@ class MySQLStore(LocalStoreInterface):
                 site_id = site_ids[site.name]
 
                 if replica not in need_blocklevel:
-                    # this is a complete replica. Remove block replica for this dataset replica if required
-                    if clean_stale:
-                        self._mysql.delete_in('block_replicas', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id), additional_conditions = ['`site_id` = %d' % site_id])
+                    # this is a complete replica. Remove block replica for this dataset replica.
+                    self._mysql.delete_in('block_replicas', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id), additional_conditions = ['`site_id` = %d' % site_id])
 
                     continue
 
@@ -385,6 +399,10 @@ class MySQLStore(LocalStoreInterface):
 
     def _do_clean_stale_data(self, sites, groups, datasets): #override
         logger.info('Cleaning up stale data.')
+
+        dataset_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `datasets`'))
+        site_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `sites`'))
+        group_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `groups`'))
 
         if len(sites) != 0:
             self._mysql.delete_not_in('sites', 'id', [site_ids[site.name] for site in sites])
@@ -404,10 +422,6 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.delete_not_in('block_replicas', 'block_id', ('id', 'blocks'))
 
         self._mysql.delete_not_in('block_replicas', 'site_id', ('id', 'sites'))
-
-        self._mysql.delete_not_in('datasets', 'id', '(SELECT DISTINCT(`dataset_id`) FROM `dataset_replicas`)')
-
-        self._mysql.delete_not_in('blocks', 'id', '(SELECT DISTINCT(`block_id`) FROM `block_replicas`)')
 
     def _do_delete_dataset(self, dataset): #override
         self._mysql.query('DELETE FROM `datasets` WHERE `name` LIKE %s', dataset.name)

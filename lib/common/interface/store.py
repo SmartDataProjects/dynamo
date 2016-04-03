@@ -90,12 +90,48 @@ class LocalStoreInterface(object):
 
         return self._do_list_snapshots()
 
-    def switch_snapshot(self, timestamp):
+    def recover_from(self, timestamp):
         """
-        Switch the data source to an existing snapshot.
+        Recover store contents from a snapshot (current content will be lost!)
+        timestamp can be 'last'.
         """
 
-        if timestamp not in self.list_snapshots():
+        timestamps = self.list_snapshots()
+
+        if len(timestamps) == 0:
+            print 'No snapshots taken.'
+            return
+
+        if timestamp == 'last':
+            timestamp = timestamps[0]
+            print 'Recovering inventory store from snapshot', timestamp
+            
+        elif timestamp not in timestamps:
+            print 'Cannot copy from snapshot', timestamp
+            return
+
+        while self._lock_depth > 0:
+            self.release_lock()
+
+        self._do_recover_from(timestamp)
+
+    def switch_snapshot(self, timestamp):
+        """
+        Switch to a specific snapshot.
+        timestamp can be 'last'.
+        """
+
+        timestamps = self.list_snapshots()
+
+        if len(timestamps) == 0:
+            print 'No snapshots taken.'
+            return
+
+        if timestamp == 'last':
+            timestamp = timestamps[0]
+            print 'Switching inventory store to snapshot', timestamp
+            
+        elif timestamp not in timestamps:
             print 'Cannot switch to snapshot', timestamp
             return
 
@@ -363,9 +399,6 @@ if __name__ == '__main__':
             elif cmd_args[1] == 'all':
                 clear = LocalStoreInterface.CLEAR_ALL
 
-        if args.timestamp:
-            interface.switch_snapshot(args.timestamp)
-
         interface.make_snapshot(clear = clear)
 
     elif command == 'clean':
@@ -383,6 +416,13 @@ if __name__ == '__main__':
             older_than = newer_than
 
         interface.remove_snapshot(newer_than = newer_than, older_than = older_than)
+
+    elif command == 'recover':
+        if not args.timestamp:
+            print 'Specify a timestamp (can be "last").'
+            sys.exit(1)
+
+        interface.recover_from(args.timestamp)
 
     elif command == 'list':
         if args.timestamp:

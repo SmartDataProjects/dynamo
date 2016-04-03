@@ -43,9 +43,6 @@ class Detox(object):
             # inventory is stale -> update
             self.inventory_manager.update()
 
-        else:
-            self.inventory_manager.load()
-
         self.demand_manager.update(self.inventory_manager.store)
 
         logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_manager.num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))

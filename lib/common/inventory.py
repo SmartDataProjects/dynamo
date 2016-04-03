@@ -1,4 +1,6 @@
 import logging
+import fnmatch
+import re
 
 from common.interface.classes import default_interface
 from common.interface.store import LocalStoreInterface
@@ -16,7 +18,7 @@ class ConsistencyError(Exception):
 class InventoryManager(object):
     """Bookkeeping class to bridge the communication between remote and local data sources."""
 
-    def __init__(self, load_data = False, store_cls = None, site_source_cls = None, dataset_source_cls = None, replica_source_cls = None):
+    def __init__(self, load_data = True, store_cls = None, site_source_cls = None, dataset_source_cls = None, replica_source_cls = None):
         if store_cls:
             self.store = store_cls()
         else:
@@ -52,6 +54,10 @@ class InventoryManager(object):
         """
 
         logger.info('Loading data from local persistent storage.')
+
+        self.sites = {}
+        self.groups = {}
+        self.datasets = {}
         
         self.store.acquire_lock()
 
@@ -82,9 +88,13 @@ class InventoryManager(object):
                 # All replica data will be erased but the static data (sites, groups, software versions, datasets, and blocks) remain
                 self.store.make_snapshot(clear = LocalStoreInterface.CLEAR_REPLICAS)
 
-            if load_first:
+            if load_first and len(self.sites) == 0:
                 logger.info('Loading existing data.')
                 self.load(load_replicas = False)
+
+            else:
+                logger.info('Unlinking replicas.')
+                self.unlink_all_replicas()
 
             logger.info('Fetching info on sites.')
             self.site_source.get_site_list(self.sites, filt = config.inventory.included_sites)
@@ -165,12 +175,21 @@ class InventoryManager(object):
         except ValueError:
             logger.error('Site-dataset linking was corrupt. %s %s', site.name, dataset.name)
 
-    def update_datasets(self):
+    def unlink_all_replicas(self):
+        for dataset in self.datasets.values():
+            for replica in list(dataset.replicas):
+                self.unlink_datasetreplica(replica)
+
+    def scan_datasets(self, dataset_filter = '/*/*/*'):
         """
         Checks the information of existing datasets and save changes. Intended for an independent daemon process.
         """
 
-        datasets = self.datasets.values()
+        if dataset_filter == '/*/*/*':
+            datasets = self.datasets.values()
+        else:
+            regex = re.compile(fnmatch.translate(dataset_filter))
+            datasets = [d for d in self.datasets.values() if regex.match(d.name)]
 
         last_updates = dict([(d, d.last_update) for d in datasets])
 
@@ -213,7 +232,8 @@ if __name__ == '__main__':
     command = args.command[0]
     cmd_args = args.command[1:]
 
-    kwd = {}
+    kwd = {'load_data': False} # not loading data by default to speed up update process
+
     for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
         clsname = getattr(args, cls + '_cls')
         if clsname == '':
@@ -225,6 +245,10 @@ if __name__ == '__main__':
 
     if command == 'update':
         manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot, clean_stale = not args.no_clean)
+
+    elif command == 'scan':
+        manager.load()
+        manager.scan_datasets(dataset_filter = args.dataset)
 
     elif command == 'list':
         manager.load()
