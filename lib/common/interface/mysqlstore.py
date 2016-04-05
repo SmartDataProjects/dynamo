@@ -162,15 +162,15 @@ class MySQLStore(LocalStoreInterface):
         dataset_list = []
         dataset_map = {} # id -> site
 
-        datasets = self._mysql.query('SELECT `id`, `name`, `size`, `num_files`, `is_open`, `status`+0, `on_tape`, `data_type`+0, `software_version_id` FROM `datasets`')
+        datasets = self._mysql.query('SELECT `id`, `name`, `size`, `num_files`, `is_open`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`) FROM `datasets`')
 
         logger.info('Loaded data for %d datasets.', len(datasets))
 
-        for dataset_id, name, size, num_files, is_open, status, on_tape, data_type, software_version_id in datasets:
+        for dataset_id, name, size, num_files, is_open, status, on_tape, data_type, software_version_id, last_update in datasets:
             if dataset_filt != '/*/*/*' and not fnmatch.fnmatch(name, dataset_filt):
                 continue
 
-            dataset = Dataset(name, size = size, num_files = num_files, is_open = is_open, status = int(status), on_tape = on_tape, data_type = int(data_type))
+            dataset = Dataset(name, size = size, num_files = num_files, is_open = is_open, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update)
             if software_version_id != 0:
                 dataset.software_version = software_version_map[software_version_id]
 
@@ -234,7 +234,7 @@ class MySQLStore(LocalStoreInterface):
             logger.info('Linking blocks to sites.')
     
             # Link blocks to sites and groups
-            sql = 'SELECT `block_id`, `site_id`, `group_id`, `is_complete`, `is_custodial`, UNIX_TIMESTAMP(`time_created`), UNIX_TIMESTAMP(`time_updated`) FROM `block_replicas`'
+            sql = 'SELECT `block_id`, `site_id`, `group_id`, `is_complete`, `is_custodial`, UNIX_TIMESTAMP(`time_created`), UNIX_TIMESTAMP(`last_update`) FROM `block_replicas`'
     
             conditions = []
             if site_filt != '*':
@@ -247,7 +247,7 @@ class MySQLStore(LocalStoreInterface):
     
             block_replicas = self._mysql.query(sql)
     
-            for block_id, site_id, group_id, is_complete, is_custodial, time_created, time_updated in block_replicas:
+            for block_id, site_id, group_id, is_complete, is_custodial, time_created, last_update in block_replicas:
                 block = block_map[block_id]
                 site = site_map[site_id]
                 if group_id == 0:
@@ -255,7 +255,7 @@ class MySQLStore(LocalStoreInterface):
                 else:
                     group = group_map[group_id]
     
-                rep = BlockReplica(block, site, group = group, is_complete = is_complete, is_custodial = is_custodial, time_created = time_created, time_updated = time_updated)
+                rep = BlockReplica(block, site, group = group, is_complete = is_complete, is_custodial = is_custodial, time_created = time_created, last_update = last_update)
     
                 block.replicas.append(rep)
                 site.blocks.append(block)
@@ -321,8 +321,8 @@ class MySQLStore(LocalStoreInterface):
         # insert/update datasets
         logger.info('Inserting/updating %d datasets.', len(datasets))
 
-        fields = ('name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id')
-        mapping = lambda d: (d.name, d.size, d.num_files, d.is_open, d.status, d.on_tape, d.data_type, version_map[d.software_version])
+        fields = ('name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
+        mapping = lambda d: (d.name, d.size, d.num_files, d.is_open, d.status, d.on_tape, d.data_type, version_map[d.software_version], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update)))
 
         self._mysql.insert_many('datasets', fields, mapping, datasets)
 
@@ -392,8 +392,8 @@ class MySQLStore(LocalStoreInterface):
                 for block in dataset.blocks:
                     all_block_replicas += [(r, block_ids[block.name]) for r in block.replicas if r.site == site]
 
-        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'time_created', 'time_updated')
-        mapping = lambda (r, bid): (bid, site_ids[r.site.name], group_ids[r.group.name] if r.group else 0, r.is_complete, r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(int(r.time_created))), time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(int(r.time_updated))))
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'time_created', 'last_update')
+        mapping = lambda (r, bid): (bid, site_ids[r.site.name], group_ids[r.group.name] if r.group else 0, r.is_complete, r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(r.time_created))), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(r.last_update))))
 
         self._mysql.insert_many('block_replicas', fields, mapping, all_block_replicas)
 

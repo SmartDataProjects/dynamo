@@ -129,10 +129,11 @@ class DeleteOld(policy.DeletePolicy):
         self.threshold_text = '%f%s' % (threshold, unit)
 
     def applies(self, replica, demand_manager): # override
-        if replica.dataset.last_accessed <= 0:
-            return False, ''
-
-        return replica.dataset.last_accessed < time.time() - self.threshold, 'Replica is older than ' + self.threshold_text + '.'
+        return False, ''
+#        if replica.dataset.last_accessed <= 0:
+#            return False, ''
+#
+#        return replica.dataset.last_accessed < time.time() - self.threshold, 'Replica is older than ' + self.threshold_text + '.'
 
 
 class DeleteUnpopular(policy.DeletePolicy):

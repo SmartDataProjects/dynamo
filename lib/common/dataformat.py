@@ -1,3 +1,5 @@
+import time
+
 class IntegrityError(Exception):
     """Exception to be raised when data integrity error occurs."""
 
@@ -52,7 +54,7 @@ class Dataset(object):
         else:
             return arg
 
-    def __init__(self, name, size = -1, num_files = -1, is_open = True, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, '')):
+    def __init__(self, name, size = -1, num_files = -1, is_open = True, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0):
         self.name = name
         self.size = size
         self.num_files = num_files
@@ -61,16 +63,16 @@ class Dataset(object):
         self.on_tape = on_tape
         self.data_type = data_type
         self.software_version = software_version
-        self.last_accessed = 0
-        self.last_update = 0
+        self.last_update = last_update
         self.blocks = []
         self.replicas = []
 
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset %s (is_open=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, #blocks=%d, replicas=%s)' % \
-            (self.name, self.is_open, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), str(self.software_version), len(self.blocks), replica_sites)
+        return 'Dataset %s (is_open=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, #blocks=%d, replicas=%s)' % \
+            (self.name, self.is_open, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
+            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), len(self.blocks), replica_sites)
 
     def find_block(self, block_name):
         try:
@@ -222,6 +224,9 @@ class Group(object):
 class DatasetReplica(object):
     """Represents a dataset replica. Combines dataset and site information."""
 
+    # access types
+    ACC_LOCAL, ACC_REMOTE = range(2)
+
     def __init__(self, dataset, site, group = None, is_complete = False, is_partial = False, is_custodial = False):
         self.dataset = dataset
         self.site = site
@@ -230,6 +235,7 @@ class DatasetReplica(object):
         self.is_partial = is_partial
         self.is_custodial = is_custodial
         self.block_replicas = []
+        self.accesses = tuple([[] for i in range(2)]) # tuple (size ACC_*) of list of timestamps
 
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1
@@ -244,14 +250,14 @@ class DatasetReplica(object):
 class BlockReplica(object):
     """Represents a block replica."""
 
-    def __init__(self, block, site, group = None, is_complete = False, is_custodial = False, time_created = 0, time_updated = 0):
+    def __init__(self, block, site, group = None, is_complete = False, is_custodial = False, time_created = 0, last_update = 0):
         self.block = block
         self.site = site
         self.group = group
         self.is_complete = is_complete
         self.is_custodial = is_custodial
         self.time_created = time_created
-        self.time_updated = time_updated
+        self.last_update = last_update
 
 
 class DatasetDemand(object):
