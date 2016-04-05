@@ -15,14 +15,14 @@ class Dataset(object):
 
     # Enumerator for dataset type.
     # Starting from 1 to play better with MySQL
-    TYPE_UNKNOWN, TYPE_DATA, TYPE_MC = range(1, 4)
+    TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, 10)
     STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, 8)
 
     @staticmethod
     def data_type_name(arg):
         if type(arg) is int:
-            data_types = ['UNKNOWN', 'DATA', 'MC']
-            return dict([(eval('Dataset.TYPE_' + tp), tp) for tp in data_types])[arg]
+            data_types = ['UNKNOWN', 'ALIGN', 'CALIB', 'COSMIC', 'DATA', 'LUMI', 'MC', 'RAW', 'TEST']
+            return data_types[arg]
 
         else:
             return arg
@@ -39,7 +39,7 @@ class Dataset(object):
     def status_name(arg):
         if type(arg) is int:
             statuses = ['UNKNOWN', 'DELETED', 'DEPRECATED', 'INVALID', 'PRODUCTION', 'VALID', 'IGNORED']
-            return dict([(eval('Dataset.STAT_' + tp), tp) for tp in statuses])[arg]
+            return statuses[arg]
 
         else:
             return arg
