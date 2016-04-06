@@ -24,7 +24,11 @@ class MySQL(object):
 
         cursor = self._connection.cursor()
 
-        logger.debug(sql + ' % ' + str(args))
+        if logger.getEffectiveLevel() == logging.DEBUG:
+            if len(args) == 0:
+                logger.debug(sql)
+            else:
+                logger.debug(sql + ' % ' + str(args))
 
         cursor.execute(sql, args)
 

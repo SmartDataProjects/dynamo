@@ -301,7 +301,7 @@ class MySQLStore(LocalStoreInterface):
                 replica.accesses[DatasetReplica.ACC_LOCAL].clear()
                 replica.accesses[DatasetReplica.ACC_REMOTE].clear()
 
-        accesses = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses` FROM `dataset_accesses` ORDER BY `dataset_id`, `site_id`, `date`')
+        accesses = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses`, `cputime` FROM `dataset_accesses` ORDER BY `dataset_id`, `site_id`, `date`')
 
         last_update = datetime.date.min
 
@@ -309,7 +309,7 @@ class MySQLStore(LocalStoreInterface):
         current_dataset_id = 0
         current_site_id = 0
         replica = None
-        for dataset_id, site_id, year, month, day, access_type, num_accesses in accesses:
+        for dataset_id, site_id, year, month, day, access_type, num_accesses, cputime in accesses:
             if dataset_id != current_dataset_id:
                 current_dataset_id = dataset_id
                 dataset = self._ids_to_datasets[dataset_id]
@@ -321,13 +321,12 @@ class MySQLStore(LocalStoreInterface):
                 replica = None
 
             if replica is None:
-                try:
-                    replica = next(r for r in dataset.replicas if r.site == site)
-                except StopIteration:
+                replica = dataset.find_replica(site)
+                if replica is None:
                     raise MySQLStore.DatabaseError('Unknown replica %s:%s in dataset_accesses table' % (site.name, dataset.name))
 
             date = datetime.date(year, month, day)
-            replica.accesses[int(access_type)][date] = num_accesses
+            replica.accesses[int(access_type)][date] = DatasetReplica.Access(num_accesses, cputime)
 
             if date > last_update:
                 last_update = date
@@ -498,18 +497,18 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query('CREATE TABLE `dataset_accesses_new` LIKE `dataset_accesses`')
 
-        fields = ('dataset_id', 'site_id', 'date', 'access_type', 'num_accesses')
+        fields = ('dataset_id', 'site_id', 'date', 'access_type', 'num_accesses', 'cputime')
 
         for acc, access_type in [(DatasetReplica.ACC_LOCAL, 'local'), (DatasetReplica.ACC_REMOTE, 'remote')]:
-            mapping = lambda (dataset_id, site_id, date, num): (dataset_id, site_id, date.strftime('%Y-%m-%d'), access_type, num)
+            mapping = lambda (dataset_id, site_id, date, access): (dataset_id, site_id, date.strftime('%Y-%m-%d'), access_type, access.num_accesses, access.cputime)
 
             # instead of inserting by datasets or by sites, collect all access information into a single list
             all_accesses = []
             for replica in all_replicas:
                 dataset_id = self._datasets_to_ids[replica.dataset]
                 site_id = self._sites_to_ids[replica.site]
-                for date, num_access in replica.accesses[acc].items():
-                    all_accesses.append((dataset_id, site_id, date, num_accesses))
+                for date, access in replica.accesses[acc].items():
+                    all_accesses.append((dataset_id, site_id, date, accesses))
 
             self._mysql.insert_many('dataset_accesses_new', fields, mapping, all_accesses)
 
@@ -575,14 +574,18 @@ class MySQLStore(LocalStoreInterface):
     def _set_dataset_ids(self, datasets):
         # reset id maps to the current content in the DB.
 
+        logger.debug('set_dataset_ids')
+
         self._datasets_to_ids = {}
         self._ids_to_datasets = {}
+
+        name_map = dict([d.name, d] for d in datasets)
 
         ids_source = self._mysql.query('SELECT `name`, `id` FROM `datasets`')
         for name, dataset_id in ids_source:
             try:
-                dataset = next(d for d in datasets if d.name == name)
-            except StopIteration:
+                dataset = name_map[name]
+            except KeyError:
                 continue
 
             self._datasets_to_ids[dataset] = dataset_id

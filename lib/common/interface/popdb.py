@@ -34,7 +34,7 @@ class PopDB(AccessHistoryInterface):
             if replica is None:
                 continue
 
-            replica.accesses[DatasetReplica.ACC_LOCAL][date] = int(ds_entry['NACC'])
+            replica.accesses[DatasetReplica.ACC_LOCAL][date] = DatasetReplica.Access(int(ds_entry['NACC']), float(ds_entry['TOTCPU']))
 
     def _make_request(self, resource, options = [], method = GET, format = 'url'):
         """

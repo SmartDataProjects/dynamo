@@ -228,6 +228,7 @@ class DatasetReplica(object):
 
     # access types
     ACC_LOCAL, ACC_REMOTE = range(2)
+    Access = collections.namedtuple('Access', ['num_accesses', 'cputime'])
 
     def __init__(self, dataset, site, group = None, is_complete = False, is_partial = False, is_custodial = False):
         self.dataset = dataset
@@ -237,7 +238,7 @@ class DatasetReplica(object):
         self.is_partial = is_partial
         self.is_custodial = is_custodial
         self.block_replicas = []
-        self.accesses = tuple([{} for i in range(2)]) # tuple (size ACC_*) of UTC date -> num_access
+        self.accesses = tuple([{} for i in range(2)]) # tuple (size ACC_*) of UTC date -> Accesses
 
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1
