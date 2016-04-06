@@ -155,9 +155,28 @@ class LocalStoreInterface(object):
 
         return site_list, group_list, dataset_list
 
+    def load_replica_accesses(self, sites, datasets):
+        """
+        Load dataset replica access data into the existing list of datasets (.replicas)
+        Return the last update time stamp.
+        """
+
+        logger.debug('_do_load_replica_accesses()')
+
+        self.acquire_lock()
+        try:
+            last_update = self._do_load_replica_accesses(sites, datasets)
+        finally:
+            self.release_lock()
+
+        return last_update
+
+    def load_locks(self, sites, groups, blocks):
+        pass
+
     def save_data(self, sites, groups, datasets, clean_stale = True):
         """
-        Write information in the dictionaries into persistent storage.
+        Write information in memory into persistent storage.
         Remove information of datasets and blocks with no replicas.
         Arguments are list of objects.
         Optional argument clean_stale specifies if stale data (e.g. information
@@ -173,7 +192,10 @@ class LocalStoreInterface(object):
             self._do_save_sites(sites)
             self._do_save_groups(groups)
             self._do_save_datasets(datasets)
-            self._do_save_replicas(datasets)
+
+            all_replicas = sum([d.replicas for d in datasets], []) # second argument -> start with an empty array and add up
+            self._do_save_replicas(all_replicas)
+            self._do_save_replica_accesses(all_replicas)
 
             if clean_stale:
                 self._do_clean_stale_data(sites, groups, datasets)
@@ -184,7 +206,7 @@ class LocalStoreInterface(object):
 
     def save_sites(self, sites):
         """
-        Write information in the dictionaries into persistent storage.
+        Write information in memory into persistent storage.
         Argument is a list of sites.
         """
 
@@ -201,7 +223,7 @@ class LocalStoreInterface(object):
 
     def save_groups(self, groups):
         """
-        Write information in the dictionaries into persistent storage.
+        Write information in memory into persistent storage.
         Argument is a list of groups.
         """
 
@@ -218,7 +240,7 @@ class LocalStoreInterface(object):
 
     def save_datasets(self, datasets):
         """
-        Write information in the dictionaries into persistent storage.
+        Write information in memory into persistent storage.
         Argument is a list of datasets.
         """
 
@@ -229,6 +251,40 @@ class LocalStoreInterface(object):
         self.acquire_lock()
         try:
             self._do_save_datasets(datasets)
+            self.set_last_update()
+        finally:
+            self.release_lock()
+
+    def save_replicas(self, replicas):
+        """
+        Write information in memory into persistent storage.
+        Argument is a list of dataset replicas.
+        """
+
+        if config.read_only:
+            logger.debug('_do_save_data()')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_replicas(replicas)
+            self.set_last_update()
+        finally:
+            self.release_lock()
+
+    def save_replica_accesses(self, replicas):
+        """
+        Write information in memory into persistent storage.
+        Argument is a list of dataset replicas.
+        """
+
+        if config.read_only:
+            logger.debug('_do_save_data()')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_replica_accesses(replicas)
             self.set_last_update()
         finally:
             self.release_lock()
@@ -377,7 +433,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Local inventory store interface')
 
-    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(snapshot [clear (replicas|all)]|clean|list (datasets|groups|sites))')
+    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(snapshot [clear (replicas|all)]|clean|recover|list (datasets|groups|sites))')
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'LocalStoreInterface class to be used.')
     parser.add_argument('--timestamp', '-t', metavar = 'YMDHMS', dest = 'timestamp', default = '', help = 'Timestamp of the snapshot to be loaded / cleaned. With command clean, prepend with "<" or ">" to remove all snapshots older or newer than the timestamp.')
 

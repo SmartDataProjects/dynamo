@@ -32,7 +32,17 @@ dbs = Configuration()
 dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
 dbs.deletion_chunk_size = 40000000000000 # 40 TB
 
+popdb = Configuration()
+popdb.url_base = 'https://cmsweb.cern.ch/popdb'
+
 inventory = Configuration()
 inventory.refresh_min = 21600 # 6 hours
 inventory.included_sites = ['T2_*', 'T1_*_Disk']
+inventory.excluded_sites = ['T2_CH_CERNBOX', 'T2_MY_UPM_BIRUNI']
 inventory.included_groups = ['AnalysisOps', 'DataOps']
+
+demand = Configuration()
+demand.access_history = Configuration()
+demand.access_history.increment = 24 * 3600 # 24 hours
+#demand.access_history.max_query_len = 7 * 24 * 3600 # maximum time interval to obtain records for; 7 days
+demand.access_history.max_query_len = 2 * 24 * 3600 # maximum time interval to obtain records for; 7 days

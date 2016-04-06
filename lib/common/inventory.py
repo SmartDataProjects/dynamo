@@ -98,6 +98,11 @@ class InventoryManager(object):
 
             logger.info('Fetching info on sites.')
             self.site_source.get_site_list(self.sites, filt = config.inventory.included_sites)
+            if len(config.inventory.excluded_sites) != 0:
+                site_names = self.sites.keys()
+                for site_name in site_names:
+                    if site_name in config.inventory.excluded_sites:
+                        self.sites.pop(site_name)
 
             logger.info('Fetching info on groups.')
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)

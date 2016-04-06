@@ -1,6 +1,7 @@
 from common.interface.phedexdbs import PhEDExDBS
 from common.interface.mysqlstore import MySQLStore
 from common.interface.dbs import DBS
+from common.interface.popdb import PopDB
 
 class Generator(object):
     """
@@ -34,5 +35,6 @@ default_interface = {
     'copy': Generator(PhEDExDBS),
     'deletion': Generator(PhEDExDBS),
     'store': Generator(MySQLStore),
-    'lock': Generator(DummyInterface)
+    'lock': Generator(DummyInterface),
+    'access_history': Generator(PopDB)
 }

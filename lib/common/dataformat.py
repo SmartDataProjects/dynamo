@@ -1,4 +1,5 @@
 import time
+import collections
 
 class IntegrityError(Exception):
     """Exception to be raised when data integrity error occurs."""
@@ -226,6 +227,7 @@ class DatasetReplica(object):
 
     # access types
     ACC_LOCAL, ACC_REMOTE = range(2)
+    Access = collections.namedtuple('Access', ['time_start', 'time_end', 'n'])
 
     def __init__(self, dataset, site, group = None, is_complete = False, is_partial = False, is_custodial = False):
         self.dataset = dataset
@@ -235,7 +237,7 @@ class DatasetReplica(object):
         self.is_partial = is_partial
         self.is_custodial = is_custodial
         self.block_replicas = []
-        self.accesses = tuple([[] for i in range(2)]) # tuple (size ACC_*) of list of timestamps
+        self.accesses = tuple([[] for i in range(2)]) # tuple (size ACC_*) of list of Accesses
 
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1
@@ -250,14 +252,12 @@ class DatasetReplica(object):
 class BlockReplica(object):
     """Represents a block replica."""
 
-    def __init__(self, block, site, group = None, is_complete = False, is_custodial = False, time_created = 0, last_update = 0):
+    def __init__(self, block, site, group = None, is_complete = False, is_custodial = False):
         self.block = block
         self.site = site
         self.group = group
         self.is_complete = is_complete
         self.is_custodial = is_custodial
-        self.time_created = time_created
-        self.last_update = last_update
 
 
 class DatasetDemand(object):

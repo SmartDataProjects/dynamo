@@ -17,7 +17,7 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'is_complete', 'time_created', 'last_update'])
+ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'is_complete'])
 
 FileInfo = collections.namedtuple('File', ['name', 'bytes', 'checksum'])
 
@@ -255,9 +255,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
                         block_name = block_name,
                         group_name = replica_entry['group'],
                         is_custodial = (replica_entry['custodial'] == 'y'),
-                        is_complete = (replica_entry['complete'] == 'y'),
-                        time_created = replica_entry['time_create'],
-                        last_update = replica_entry['time_update']
+                        is_complete = (replica_entry['complete'] == 'y')
                     )
 
                     if site_name not in self._block_replicas[ds_name]:
@@ -306,9 +304,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
                         site,
                         group = group,
                         is_complete = protoreplica.is_complete,
-                        is_custodial = protoreplica.is_custodial,
-                        time_created = protoreplica.time_created,
-                        last_update = protoreplica.last_update
+                        is_custodial = protoreplica.is_custodial
                     )
     
                     block.replicas.append(replica)
