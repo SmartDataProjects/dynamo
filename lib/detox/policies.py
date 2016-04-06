@@ -147,14 +147,15 @@ class DeleteUnpopular(policy.DeletePolicy):
         self.threshold = detox_config.delete_unpopular.threshold
 
     def applies(self, replica, demand_manager): # override
-        score = demand_manager.get_demand(replica.dataset).popularity_score
-
-        if score > self.threshold:
-            return True, 'Dataset is less popular than threshold.'
-
-        max_site_score = max([demand_manager.get_demand(d).popularity_score for d in replica.site.datasets])
-
-        return score >= max_site_score, 'Dataset is the least popular on the site.'
+        pass
+#        score = demand_manager.get_demand(replica.dataset).popularity_score
+#
+#        if score > self.threshold:
+#            return True, 'Dataset is less popular than threshold.'
+#
+#        max_site_score = max([demand_manager.get_demand(d).popularity_score for d in replica.site.datasets])
+#
+#        return score >= max_site_score, 'Dataset is the least popular on the site.'
 
 
 class ActionList(policy.Policy):

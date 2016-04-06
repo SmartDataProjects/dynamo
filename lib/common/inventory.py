@@ -163,7 +163,7 @@ class InventoryManager(object):
             block = block_replica.block
             try:
                 block.replicas.remove(block_replica)
-                site.blocks.remove(block)
+                site.block_replicas.remove(block_replica)
                 site.used_total -= block.size
                 if block_replica.group:
                     try:
@@ -175,7 +175,7 @@ class InventoryManager(object):
                 logger.error('Site-block linking was corrupt. %s %s#%s', site.name, dataset.name, block.name)
 
         try:
-            site.datasets.remove(dataset)
+            site.dataset_replicas.remove(replica)
             dataset.replicas.remove(replica)
         except ValueError:
             logger.error('Site-dataset linking was corrupt. %s %s', site.name, dataset.name)

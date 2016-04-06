@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+import datetime
 import pprint
 
 from common.dataformat import DatasetReplica
@@ -18,38 +19,22 @@ class PopDB(AccessHistoryInterface):
 
         self._popdb_interface = RESTService(url_base)
 
-    def set_access_history(self, site, time_start, time_end): #override
-        s = time.localtime(time_start) # timestamps passed to the function are already in UTC -> use localtime (at Greenwich)
-        e = time.localtime(time_end)
-
-        start_timestamp = time.mktime((s.tm_year, s.tm_mon, s.tm_mday, 0, 0, 0, s.tm_wday, s.tm_yday, s.tm_isdst))
-        end_timestamp = time.mktime((e.tm_year, e.tm_mon, e.tm_mday, 0, 0, 0, e.tm_wday, e.tm_yday, e.tm_isdst))
-
-        tstart = '%4d-%02d-%02d' % (s.tm_year, s.tm_mon, s.tm_mday)
-        tstop = '%4d-%02d-%02d' % (e.tm_year, e.tm_mon, e.tm_mday)
-
+    def set_access_history(self, site, date): #override
         if site.name.startswith('T1') and site.name.count('_') > 2:
             nameparts = site.name.split('_')
             sitename = '_'.join(nameparts[:3])
         else:
             sitename = site.name
 
-        print ['sitename=' + sitename, 'tstart=' + tstart, 'tstop=' + tstop]
-
-        result = self._make_request('popularity/DSStatInTimeWindow/', ['sitename=' + sitename, 'tstart=' + tstart, 'tstop=' + tstop])
+        datestr = date.strftime('%Y-%m-%d')
+        result = self._make_request('popularity/DSStatInTimeWindow/', ['sitename=' + sitename, 'tstart=' + datestr, 'tstop=' + datestr])
 
         for ds_entry in result:
-            dataset = site.find_dataset(ds_entry['COLLNAME'])
-            if dataset is None:
+            replica = site.find_dataset_replica(ds_entry['COLLNAME'])
+            if replica is None:
                 continue
 
-            replica = dataset.find_replica(site)
-
-            endtimes = [a.time_end for a in replica.accesses[DatasetReplica.ACC_LOCAL]]
-            if len(endtimes) != 0 and max(endtimes) >= start_timestamp:
-                continue
-
-            replica.accesses[DatasetReplica.ACC_LOCAL].append(DatasetReplica.Access(start_timestamp, end_timestamp, int(ds_entry['NACC'])))
+            replica.accesses[DatasetReplica.ACC_LOCAL][date] = int(ds_entry['NACC'])
 
     def _make_request(self, resource, options = [], method = GET, format = 'url'):
         """

@@ -44,7 +44,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
         # Cache organized as {dataset: {site: [ProtoBlockReplicas]}}
         self._block_replicas = {}
 
-    def schedule_copy(self, dataset, origin, dest, comments = ''): #override (CopyInterface)
+    def schedule_copy(self, dataset, dest, origin = None, comments = ''): #override (CopyInterface)
         # origin argument is not used because of the way PhEDEx works
 
         catalogs = self._get_file_catalog(dataset)
@@ -308,7 +308,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
                     )
     
                     block.replicas.append(replica)
-                    site.blocks.append(block)
+                    site.block_replicas.append(replica)
 
                     # now find the dataset replica
                     dataset_replica = dataset.find_replica(site)
@@ -324,7 +324,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
                         )
 
                         dataset.replicas.append(dataset_replica)
-                        site.datasets.append(dataset)
+                        site.dataset_replicas.append(dataset_replica)
 
                     # add the block replica to the list
                     dataset_replica.block_replicas.append(replica)

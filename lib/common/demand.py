@@ -1,4 +1,5 @@
 import time
+import datetime
 import logging
 
 from common.interface.classes import default_interface
@@ -28,7 +29,8 @@ class DemandManager(object):
         else:
             self.lock = default_interface['lock']()
 
-        self._last_access_update = 0
+        self._last_access_update = None
+        self._time_today = 0.
 
     def load(self, inventory):
         sites = inventory.sites.values()
@@ -39,21 +41,37 @@ class DemandManager(object):
         self.store.load_locks(sites, groups, datasets)
 
     def update(self, inventory):
-        if self._last_access_update == 0:
+        if self._last_access_update is None:
             logger.info('dataset access ')
             self.load(inventory)
 
-        now = time.mktime(time.gmtime())
+        now = time.time() # UNIX timestamp of now
+        utc = time.gmtime(now) # struct_time in UTC
+        utctoday = datetime.date(utc.tm_year, utc.tm_mon, utc.tm_mday)
+
+        start_date = max(self._last_access_update, utctoday - datetime.timedelta(config.demand.access_history.max_back_query))
+
+        utcnow = datetime.datetime(utc.tm_year, utc.tm_mon, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec)
+        utcmidnight = datetime.datetime(utc.tm_year, utc.tm_mon, utc.tm_mday)
+        self._time_today = (utcnow - utcmidnight).seconds # n seconds elapsed since UTC 00:00:00 today
 
         for site in inventory.sites.values():
-            time_start = max(self._last_access_update, now - config.demand.access_history.max_query_len) # do not go back more than max_query_len
-            while time_start < now - config.demand.access_history.increment:
-                self.access_history.set_access_history(site, time_start, time_start + config.demand.access_history.increment)
-                time_start += config.demand.access_history.increment
+            logger.info('Updating dataset access info at %s since %s', site.name, start_date.strftime('%Y-%m-%d'))
 
-        self._last_access_update = now - config.demand.access_history.increment
+            date = start_date
 
-        all_replicas = sum([d.replicas for d in inventory.datasets.values()], [])
+            while date <= utctoday: # get records up to today
+                self.access_history.set_access_history(site, date)
+                date += datetime.timedelta(1) # one day
+
+        self._last_access_update = utctoday - datetime.timedelta(1)
+
+        all_replicas = []
+        for dataset in inventory.datasets.values():
+            all_replicas += dataset.replicas
+
+        logger.info('Saving dataset access info for %d replicas.', len(all_replicas))
+
         self.store.save_replica_accesses(all_replicas)
 
     def get_demand(self, dataset):

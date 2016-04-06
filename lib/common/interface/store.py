@@ -279,7 +279,7 @@ class LocalStoreInterface(object):
         """
 
         if config.read_only:
-            logger.debug('_do_save_data()')
+            logger.debug('_do_save_replica_accesses()')
             return
 
         self.acquire_lock()

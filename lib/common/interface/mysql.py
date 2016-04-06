@@ -64,7 +64,7 @@ class MySQL(object):
 
         return result
 
-    def insert_many(self, table, fields, mapping, objects):
+    def insert_many(self, table, fields, mapping, objects, database = ''):
         """
         INSERT INTO table (fields) VALUES (mapping(objects)).
         Arguments:
@@ -76,6 +76,9 @@ class MySQL(object):
 
         if len(objects) == 0:
             return
+
+        if database != '':
+            table = '%s`.`%s' % (database, table) # no quotes on both ends to fit in `{table}` below
 
         sqlbase = 'INSERT INTO `{table}` ({fields}) VALUES %s'.format(table = table, fields = ','.join(['`%s`' % f for f in fields]))
         sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join(['`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields])
@@ -102,11 +105,10 @@ class MySQL(object):
             if len(values) > config.mysql.max_query_len or obj == objects[-1]:
                 logger.debug(sqlbase % values)
                 try:
-                    print sqlbase % values
                     cursor.execute(sqlbase % values)
                 except:
                     print 'There was an error executing the following statement:'
-                    print sqlbase % values
+                    print (sqlbase % values)[:10000]
 
                 values = ''
 

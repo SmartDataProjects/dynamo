@@ -1,4 +1,5 @@
 import time
+import datetime
 import collections
 
 class IntegrityError(Exception):
@@ -64,7 +65,7 @@ class Dataset(object):
         self.on_tape = on_tape
         self.data_type = data_type
         self.software_version = software_version
-        self.last_update = last_update
+        self.last_update = last_update # in UNIX time
         self.blocks = []
         self.replicas = []
 
@@ -166,18 +167,18 @@ class Site(object):
         self.group_quota = {}
         self.used_total = used_total
         self.group_usage = {}
-        self.datasets = []
-        self.blocks = []
+        self.dataset_replicas = []
+        self.block_replicas = []
 
-    def find_dataset(self, ds_name):
+    def find_dataset_replica(self, ds_name):
         try:
-            return next(d for d in self.datasets if d.name == ds_name)
+            return next(d for d in self.dataset_replicas if d.dataset.name == ds_name)
         except StopIteration:
             return None
 
-    def find_block(self, block_name):
+    def find_block_replica(self, block_name):
         try:
-            return next(b for b in self.blocks if b.name == block_name)
+            return next(b for b in self.block_replicas if b.block.name == block_name)
         except StopIteration:
             return None
 
@@ -227,7 +228,6 @@ class DatasetReplica(object):
 
     # access types
     ACC_LOCAL, ACC_REMOTE = range(2)
-    Access = collections.namedtuple('Access', ['time_start', 'time_end', 'n'])
 
     def __init__(self, dataset, site, group = None, is_complete = False, is_partial = False, is_custodial = False):
         self.dataset = dataset
@@ -237,7 +237,7 @@ class DatasetReplica(object):
         self.is_partial = is_partial
         self.is_custodial = is_custodial
         self.block_replicas = []
-        self.accesses = tuple([[] for i in range(2)]) # tuple (size ACC_*) of list of Accesses
+        self.accesses = tuple([{} for i in range(2)]) # tuple (size ACC_*) of UTC date -> num_access
 
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1

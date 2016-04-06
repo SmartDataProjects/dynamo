@@ -1,5 +1,6 @@
 import os
 import time
+import datetime
 import re
 import socket
 import logging
@@ -25,7 +26,7 @@ class MySQLStore(LocalStoreInterface):
 
         self._db_name = config.mysqlstore.db
 
-        self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
+        self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0] # MySQL displays last_update in local time, but returns the UTC timestamp
 
         self._datasets_to_ids = {} # cache dictionary object -> mysql id
         self._sites_to_ids = {} # cache dictionary object -> mysql id
@@ -233,7 +234,7 @@ class MySQLStore(LocalStoreInterface):
                 rep = DatasetReplica(dataset, site, group = group, is_complete = is_complete, is_partial = is_partial, is_custodial = is_custodial)
     
                 dataset.replicas.append(rep)
-                site.datasets.append(dataset)
+                site.dataset_replicas.append(rep)
     
             logger.info('Linking blocks to sites.')
     
@@ -262,7 +263,7 @@ class MySQLStore(LocalStoreInterface):
                 rep = BlockReplica(block, site, group = group, is_complete = is_complete, is_custodial = is_custodial)
     
                 block.replicas.append(rep)
-                site.blocks.append(block)
+                site.block_replicas.append(rep)
     
                 dataset_replica = block.dataset.find_replica(site)
                 if dataset_replica:
@@ -280,7 +281,7 @@ class MySQLStore(LocalStoreInterface):
                     for block in dataset.blocks:
                         rep = BlockReplica(block, replica.site, group = replica.group, is_complete = True, is_custodial = replica.is_custodial)
                         block.replicas.append(rep)
-                        replica.site.blocks.append(block)
+                        replica.site.block_replicas.append(rep)
                         replica.block_replicas.append(rep)
 
         # Finally set last_update
@@ -297,18 +298,18 @@ class MySQLStore(LocalStoreInterface):
 
         for dataset in datasets:
             for replica in dataset.replicas:
-                del replica.accesses[DatasetReplica.ACC_LOCAL][0:]
-                del replica.accesses[DatasetReplica.ACC_REMOTE][0:]
+                replica.accesses[DatasetReplica.ACC_LOCAL].clear()
+                replica.accesses[DatasetReplica.ACC_REMOTE].clear()
 
-        accesses = self._mysql.query('SELECT `dataset_id`, `site_id`, UNIX_TIMESTAMP(`time_start`), UNIX_TIMESTAMP(`time_end`), `access_type`+0, `num_accesses` FROM `dataset_accesses` ORDER BY `dataset_id`, `site_id`, `time_start`')
+        accesses = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses` FROM `dataset_accesses` ORDER BY `dataset_id`, `site_id`, `date`')
 
-        last_update = 0
+        last_update = datetime.date.min
 
         # little speedup by not repeating lookups for the same replica
         current_dataset_id = 0
         current_site_id = 0
         replica = None
-        for dataset_id, site_id, time_start, time_end, access_type, num_accesses in accesses:
+        for dataset_id, site_id, year, month, day, access_type, num_accesses in accesses:
             if dataset_id != current_dataset_id:
                 current_dataset_id = dataset_id
                 dataset = self._ids_to_datasets[dataset_id]
@@ -325,10 +326,11 @@ class MySQLStore(LocalStoreInterface):
                 except StopIteration:
                     raise MySQLStore.DatabaseError('Unknown replica %s:%s in dataset_accesses table' % (site.name, dataset.name))
 
-            replica.accesses[int(access_type)].append(DatasetReplica.Access(time_start, time_end, num_accesses))
+            date = datetime.date(year, month, day)
+            replica.accesses[int(access_type)][date] = num_accesses
 
-            if time_end > last_update:
-                last_update = time_end
+            if date > last_update:
+                last_update = date
 
         return last_update
 
@@ -373,6 +375,7 @@ class MySQLStore(LocalStoreInterface):
         logger.info('Inserting/updating %d datasets.', len(datasets))
 
         fields = ('name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
+        # MySQL expects the local time for last_update
         mapping = lambda d: (d.name, d.size, d.num_files, d.is_open, d.status, d.on_tape, d.data_type, version_map[d.software_version], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update)))
 
         self._mysql.insert_many('datasets', fields, mapping, datasets)
@@ -469,19 +472,20 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query('CREATE TABLE `dataset_accesses_new` LIKE `dataset_accesses`')
 
-        fields = ('dataset_id', 'site_id', 'time_start', 'time_end', 'access_type', 'num_accesses')
+        fields = ('dataset_id', 'site_id', 'date', 'access_type', 'num_accesses')
 
         for acc, access_type in [(DatasetReplica.ACC_LOCAL, 'local'), (DatasetReplica.ACC_REMOTE, 'remote')]:
-            mapping = lambda (d, s, a): (d, s, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(a.time_start)), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(a.time_end)), access_type, a.n)
-            
+            mapping = lambda (dataset_id, site_id, date, num): (dataset_id, site_id, date.strftime('%Y-%m-%d'), access_type, num)
+
+            # instead of inserting by datasets or by sites, collect all access information into a single list
             all_accesses = []
             for replica in all_replicas:
                 dataset_id = self._datasets_to_ids[replica.dataset]
                 site_id = self._sites_to_ids[replica.site]
-                for access in replica.accesses[acc]:
-                    all_accesses.append((dataset_id, site_id, access))
+                for date, num_access in replica.accesses[acc].items():
+                    all_accesses.append((dataset_id, site_id, date, num_accesses))
 
-            self._mysql.insert_many('dataset_accesses_new', fields, mapping, all_accesses)
+            self._mysql.insert_many('dataset_accesses_new', fields, mapping, all_accesses, database = 'dataset_accesses_new')
 
         self._mysql.query('RENAME TABLE `dataset_accesses` TO `dataset_accesses_old`')
         self._mysql.query('RENAME TABLE `dataset_accesses_new` TO `dataset_accesses`')

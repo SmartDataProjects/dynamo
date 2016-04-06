@@ -29,7 +29,7 @@ class Detox(object):
 
         self._history = MySQL(**db_params)
 
-        self.deletion_message = 'DynaMO -- Automatic Cache Release Request. Summary at: http://t3serv001.mit.edu/~cmsprod/IntelROCCS/Detox/result/'
+        self.deletion_message = 'DynaMO -- Automatic Cache Release Request.'
 
     def run(self, dynamic_deletion = True):
         """
@@ -43,7 +43,7 @@ class Detox(object):
             # inventory is stale -> update
             self.inventory_manager.update()
 
-        self.demand_manager.update(self.inventory_manager.store)
+#        self.demand_manager.update(self.inventory_manager)
 
         logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_manager.num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
 
@@ -54,9 +54,6 @@ class Detox(object):
         html = None
         if self.policy_html_path:
             html = self.open_html(self.policy_html_path)
-
-        # take a snapshot before starting deletion
-        self.inventory_manager.store.make_snapshot()
 
         all_deletions = {} # site -> list of replicas to delete on site
         iteration = 0

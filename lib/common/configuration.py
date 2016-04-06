@@ -44,5 +44,4 @@ inventory.included_groups = ['AnalysisOps', 'DataOps']
 demand = Configuration()
 demand.access_history = Configuration()
 demand.access_history.increment = 24 * 3600 # 24 hours
-#demand.access_history.max_query_len = 7 * 24 * 3600 # maximum time interval to obtain records for; 7 days
-demand.access_history.max_query_len = 2 * 24 * 3600 # maximum time interval to obtain records for; 7 days
+demand.access_history.max_back_query = 1 # maximum number of dates interval to obtain records for; 7 days
