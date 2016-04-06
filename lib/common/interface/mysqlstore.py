@@ -508,7 +508,7 @@ class MySQLStore(LocalStoreInterface):
                 dataset_id = self._datasets_to_ids[replica.dataset]
                 site_id = self._sites_to_ids[replica.site]
                 for date, access in replica.accesses[acc].items():
-                    all_accesses.append((dataset_id, site_id, date, accesses))
+                    all_accesses.append((dataset_id, site_id, date, access))
 
             self._mysql.insert_many('dataset_accesses_new', fields, mapping, all_accesses)
 
