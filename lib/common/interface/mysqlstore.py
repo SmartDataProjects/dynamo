@@ -372,25 +372,39 @@ class MySQLStore(LocalStoreInterface):
             version_map[(cycle, major, minor, suffix)] = version_id
 
         # insert/update datasets
+        # since the dataset list can be large, it is faster to recreate the entire table than to update and clean.
         logger.info('Inserting/updating %d datasets.', len(datasets))
+
+        self._mysql.query('CREATE TABLE `datasets_new` LIKE `datasets`')
 
         fields = ('name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
         # MySQL expects the local time for last_update
         mapping = lambda d: (d.name, d.size, d.num_files, d.is_open, d.status, d.on_tape, d.data_type, version_map[d.software_version], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update)))
 
-        self._mysql.insert_many('datasets', fields, mapping, datasets)
+        self._mysql.insert_many('datasets_new', fields, mapping, datasets, do_update = False)
+
+        self._mysql.query('RENAME TABLE `datasets` TO `datasets_old`')
+        self._mysql.query('RENAME TABLE `datasets_new` TO `datasets`')
+        self._mysql.query('DROP TABLE `datasets_old`')
 
         self._set_dataset_ids(datasets)
 
         # insert/update blocks for this dataset
+        # since the block list can be large, it is faster to recreate the entire table than to update and clean.
         all_blocks = sum([d.blocks for d in datasets], [])
 
         logger.info('Inserting/updating %d blocks.', len(all_blocks))
 
+        self._mysql.query('CREATE TABLE `blocks_new` LIKE `blocks`')
+
         fields = ('name', 'dataset_id', 'size', 'num_files', 'is_open')
         mapping = lambda b: (b.name, self._datasets_to_ids[b.dataset], b.size, b.num_files, b.is_open)
 
-        self._mysql.insert_many('blocks', fields, mapping, all_blocks)
+        self._mysql.insert_many('blocks_new', fields, mapping, all_blocks, do_update = False)
+
+        self._mysql.query('RENAME TABLE `blocks` TO `blocks_old`')
+        self._mysql.query('RENAME TABLE `blocks_new` TO `blocks`')
+        self._mysql.query('DROP TABLE `blocks_old`')
 
     def _do_save_replicas(self, all_replicas): #override
         # make name -> id maps for use later
@@ -404,10 +418,16 @@ class MySQLStore(LocalStoreInterface):
         # insert/update dataset replicas
         logger.info('Inserting/updating %d dataset replicas.', len(all_replicas))
 
+        self._mysql.query('CREATE TABLE `dataset_replicas_new` LIKE `dataset_replicas`')
+
         fields = ('dataset_id', 'site_id', 'group_id', 'is_complete', 'is_partial', 'is_custodial')
         mapping = lambda r: (self._datasets_to_ids[r.dataset], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_partial, r.is_custodial)
 
-        self._mysql.insert_many('dataset_replicas', fields, mapping, all_replicas)
+        self._mysql.insert_many('dataset_replicas_new', fields, mapping, all_replicas, do_update = False)
+
+        self._mysql.query('RENAME TABLE `dataset_replicas` TO `dataset_replicas_old`')
+        self._mysql.query('RENAME TABLE `dataset_replicas_new` TO `dataset_replicas`')
+        self._mysql.query('DROP TABLE `dataset_replicas_old`')
 
         # insert/update block replicas for non-complete dataset replicas
         all_block_replicas = []
@@ -456,10 +476,16 @@ class MySQLStore(LocalStoreInterface):
                 for block in dataset.blocks:
                     all_block_replicas += [(r, block_ids[block.name]) for r in block.replicas if r.site == site]
 
+        self._mysql.query('CREATE TABLE `block_replicas_new` LIKE `block_replicas`')
+
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
         mapping = lambda (r, bid): (bid, self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_custodial)
 
-        self._mysql.insert_many('block_replicas', fields, mapping, all_block_replicas)
+        self._mysql.insert_many('block_replicas_new', fields, mapping, all_block_replicas, do_update = False)
+
+        self._mysql.query('RENAME TABLE `block_replicas` TO `block_replicas_old`')
+        self._mysql.query('RENAME TABLE `block_replicas_new` TO `block_replicas`')
+        self._mysql.query('DROP TABLE `block_replicas_old`')
 
     def _do_save_replica_accesses(self, all_replicas): #override
         # since dataset_accesses table cannot be unique-indexed, will write the entire memory content
@@ -485,45 +511,11 @@ class MySQLStore(LocalStoreInterface):
                 for date, num_access in replica.accesses[acc].items():
                     all_accesses.append((dataset_id, site_id, date, num_accesses))
 
-            self._mysql.insert_many('dataset_accesses_new', fields, mapping, all_accesses, database = 'dataset_accesses_new')
+            self._mysql.insert_many('dataset_accesses_new', fields, mapping, all_accesses)
 
         self._mysql.query('RENAME TABLE `dataset_accesses` TO `dataset_accesses_old`')
         self._mysql.query('RENAME TABLE `dataset_accesses_new` TO `dataset_accesses`')
         self._mysql.query('DROP TABLE `dataset_accesses_old`')
-
-    def _do_clean_stale_data(self, sites, groups, datasets): #override
-        # TODO
-        # delete_not_in with list is dangerous - if the list length exceeds the threshold and
-        # deletion happens in batches, data will be lost.
-        # The only way to avoid the problem seems to be to write a new table each time you save..
-
-        logger.info('Cleaning up stale data.')
-
-        if len(self._datasets_to_ids) == 0:
-            self._set_dataset_ids(datasets)
-        if len(self._sites_to_ids) == 0:
-            self._set_site_ids(sites)
-        if len(self._groups_to_ids) == 0:
-            self._set_group_ids(groups)
-
-        if len(sites) != 0:
-            self._mysql.delete_not_in('sites', 'id', [self._sites_to_ids[site] for site in sites])
-
-        if len(groups) != 0:
-            self._mysql.delete_not_in('groups', 'id', [self._groups_to_ids[group] for group in groups])
-
-        if len(datasets) != 0:
-            self._mysql.delete_not_in('datasets', 'id', [self._datasets_to_ids[dataset] for dataset in datasets])
-
-        self._mysql.delete_not_in('dataset_replicas', 'dataset_id', ('id', 'datasets'))
-
-        self._mysql.delete_not_in('dataset_replicas', 'site_id', ('id', 'sites'))
-
-        self._mysql.delete_not_in('blocks', 'dataset_id', ('id', 'datasets'))
-
-        self._mysql.delete_not_in('block_replicas', 'block_id', ('id', 'blocks'))
-
-        self._mysql.delete_not_in('block_replicas', 'site_id', ('id', 'sites'))
 
     def _do_delete_dataset(self, dataset): #override
         self._mysql.query('DELETE FROM `datasets` WHERE `name` LIKE %s', dataset.name)

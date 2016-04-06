@@ -64,7 +64,7 @@ class MySQL(object):
 
         return result
 
-    def insert_many(self, table, fields, mapping, objects, database = ''):
+    def insert_many(self, table, fields, mapping, objects, do_update = True):
         """
         INSERT INTO table (fields) VALUES (mapping(objects)).
         Arguments:
@@ -77,11 +77,9 @@ class MySQL(object):
         if len(objects) == 0:
             return
 
-        if database != '':
-            table = '%s`.`%s' % (database, table) # no quotes on both ends to fit in `{table}` below
-
         sqlbase = 'INSERT INTO `{table}` ({fields}) VALUES %s'.format(table = table, fields = ','.join(['`%s`' % f for f in fields]))
-        sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join(['`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields])
+        if do_update:
+            sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join(['`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields])
 
         # determine which columns are string types
         templates = []

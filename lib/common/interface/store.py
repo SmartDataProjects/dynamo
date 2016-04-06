@@ -174,13 +174,11 @@ class LocalStoreInterface(object):
     def load_locks(self, sites, groups, blocks):
         pass
 
-    def save_data(self, sites, groups, datasets, clean_stale = True):
+    def save_data(self, sites, groups, datasets):
         """
         Write information in memory into persistent storage.
         Remove information of datasets and blocks with no replicas.
         Arguments are list of objects.
-        Optional argument clean_stale specifies if stale data (e.g. information
-        of nonexistent datasets) should be cleaned.
         """
 
         if config.read_only:
@@ -196,10 +194,6 @@ class LocalStoreInterface(object):
             all_replicas = sum([d.replicas for d in datasets], []) # second argument -> start with an empty array and add up
             self._do_save_replicas(all_replicas)
             self._do_save_replica_accesses(all_replicas)
-
-            if clean_stale:
-                self._do_clean_stale_data(sites, groups, datasets)
-
             self.set_last_update()
         finally:
             self.release_lock()

@@ -73,7 +73,7 @@ class InventoryManager(object):
 
         logger.info('Data is loaded to memory.')
 
-    def update(self, dataset_filter = '/*/*/*', load_first = True, make_snapshot = True, clean_stale = True):
+    def update(self, dataset_filter = '/*/*/*', load_first = True, make_snapshot = True):
         """Query the dataSource and get updated information."""
 
         logger.info('Locking inventory.')
@@ -143,7 +143,7 @@ class InventoryManager(object):
 
             # Save inventory data to persistent storage
             # Datasets and groups with no replicas are removed
-            self.store.save_data(self.sites.values(), self.groups.values(), self.datasets.values(), clean_stale = clean_stale)
+            self.store.save_data(self.sites.values(), self.groups.values(), self.datasets.values())
 
         finally:
             # Lock is released even in case of unexpected errors
@@ -222,7 +222,6 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', '-d', metavar = 'EXPR', dest = 'dataset', default = '/*/*/*', help = 'Limit operation to datasets matching the expression.')
     parser.add_argument('--no-load', '-L', action = 'store_true', dest = 'no_load',  help = 'Do not load the existing inventory when updating.')
     parser.add_argument('--no-snapshot', '-S', action = 'store_true', dest = 'no_snapshot',  help = 'Do not make a snapshot of existing inventory when updating.')
-    parser.add_argument('--no-clean', '-C', action = 'store_true', dest = 'no_clean', help = 'Do not clean up inventory.')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
     args = parser.parse_args()
@@ -249,7 +248,7 @@ if __name__ == '__main__':
     manager = InventoryManager(**kwd)
 
     if command == 'update':
-        manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot, clean_stale = not args.no_clean)
+        manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot)
 
     elif command == 'scan':
         manager.load()

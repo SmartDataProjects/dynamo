@@ -33,6 +33,8 @@ class DemandManager(object):
         self._time_today = 0.
 
     def load(self, inventory):
+        logger.info('Loading dataset access information.')
+
         sites = inventory.sites.values()
         groups = inventory.groups.values()
         datasets = inventory.datasets.values()
@@ -42,7 +44,6 @@ class DemandManager(object):
 
     def update(self, inventory):
         if self._last_access_update is None:
-            logger.info('dataset access ')
             self.load(inventory)
 
         now = time.time() # UNIX timestamp of now
