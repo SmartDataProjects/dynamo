@@ -30,7 +30,7 @@ class DemandManager(object):
             self.lock = default_interface['lock']()
 
         self._last_access_update = None
-        self._time_today = 0.
+        self.time_today = 0.
 
     def load(self, inventory):
         logger.info('Loading dataset access information.')
@@ -54,7 +54,7 @@ class DemandManager(object):
 
         utcnow = datetime.datetime(utc.tm_year, utc.tm_mon, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec)
         utcmidnight = datetime.datetime(utc.tm_year, utc.tm_mon, utc.tm_mday)
-        self._time_today = (utcnow - utcmidnight).seconds # n seconds elapsed since UTC 00:00:00 today
+        self.time_today = (utcnow - utcmidnight).seconds # n seconds elapsed since UTC 00:00:00 today
 
         for site in inventory.sites.values():
             logger.info('Updating dataset access info at %s since %s', site.name, start_date.strftime('%Y-%m-%d'))

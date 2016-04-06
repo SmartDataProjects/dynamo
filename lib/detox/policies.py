@@ -4,6 +4,7 @@ import fnmatch
 
 import detox.policy as policy
 import detox.configuration as detox_config
+import common.configuration as config
 
 class ProtectIncomplete(policy.ProtectPolicy):
     """
@@ -95,7 +96,8 @@ class KeepTargetOccupancy(policy.KeepPolicy):
         self.threshold = threshold
 
     def applies(self, replica, demand_manager): # override
-        return replica.site.occupancy() < self.threshold, 'Site is underused.'
+        # TODO this is probably too inefficient - think caching
+        return replica.site.storage_occupancy() < self.threshold, 'Site is underused.'
 
 
 class DeletePartial(policy.DeletePolicy):
@@ -225,7 +227,7 @@ class ActionList(policy.Policy):
 def make_stack(strategy):
     if strategy == 'TargetFraction':
         stack = [
-            KeepTargetOccupancy(detox_config.keep_target.occupancy),
+            KeepTargetOccupancy(config.target_site_occupancy),
             ProtectIncomplete(),
             ProtectLocked(),
             ProtectDiskOnly(),

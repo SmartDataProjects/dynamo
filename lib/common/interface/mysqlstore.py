@@ -128,15 +128,15 @@ class MySQLStore(LocalStoreInterface):
         # Load sites
         site_list = []
 
-        sites = self._mysql.query('SELECT `id`, `name`, `host`, `storage_type`, `backend`, `capacity`, `used_total` FROM `sites`')
+        sites = self._mysql.query('SELECT `id`, `name`, `host`, `storage_type`, `backend`, `storage`, `cpu` FROM `sites`')
 
         logger.info('Loaded data for %d sites.', len(sites))
         
-        for site_id, name, host, storage_type, backend, capacity, used_total in sites:
+        for site_id, name, host, storage_type, backend, storage, cpu in sites:
             if site_filt != '*' and not fnmatch.fnmatch(name, site_filt):
                 continue
 
-            site = Site(name, host = host, storage_type = Site.storage_type_val(storage_type), backend = backend, capacity = capacity, used_total = used_total)
+            site = Site(name, host = host, storage_type = Site.storage_type_val(storage_type), backend = backend, storage = storage, cpu = cpu)
             site_list.append(site)
 
         self._set_site_ids(site_list)
@@ -337,8 +337,8 @@ class MySQLStore(LocalStoreInterface):
         # insert/update sites
         logger.info('Inserting/updating %d sites.', len(sites))
 
-        fields = ('name', 'host', 'storage_type', 'backend', 'capacity', 'used_total')
-        mapping = lambda s: (s.name, s.host, Site.storage_type_name(s.storage_type), s.backend, s.capacity, s.used_total)
+        fields = ('name', 'host', 'storage_type', 'backend', 'storage', 'cpu')
+        mapping = lambda s: (s.name, s.host, Site.storage_type_name(s.storage_type), s.backend, s.storage, s.cpu)
 
         self._mysql.insert_many('sites', fields, mapping, sites)
 
@@ -472,8 +472,7 @@ class MySQLStore(LocalStoreInterface):
                     continue
 
                 # add the block replicas on this site to block_replicas together with SQL ID
-                for block in dataset.blocks:
-                    all_block_replicas += [(r, block_ids[block.name]) for r in block.replicas if r.site == site]
+                all_block_replicas += [(r, block_ids[r.block.name]) for r in replica.block_replicas]
 
         self._mysql.query('CREATE TABLE `block_replicas_new` LIKE `block_replicas`')
 
@@ -515,6 +514,41 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('RENAME TABLE `dataset_accesses` TO `dataset_accesses_old`')
         self._mysql.query('RENAME TABLE `dataset_accesses_new` TO `dataset_accesses`')
         self._mysql.query('DROP TABLE `dataset_accesses_old`')
+
+    def _do_add_dataset_replicas(self, replicas): #override
+        # make name -> id maps for use later
+        if len(self._datasets_to_ids) == 0 or len(self._sites_to_ids) == 0 or len(self._groups_to_ids) == 0:
+            raise RuntimeError('add_dataset_replicas cannot be called before initializing the id maps')
+
+        # insert/update dataset replicas
+        logger.info('Inserting/updating %d dataset replicas.', len(replicas))
+
+        fields = ('dataset_id', 'site_id', 'group_id', 'is_complete', 'is_partial', 'is_custodial')
+        mapping = lambda r: (self._datasets_to_ids[r.dataset], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_partial, r.is_custodial)
+
+        self._mysql.insert_many('dataset_replicas', fields, mapping, replicas)
+
+        # insert/update block replicas for non-complete dataset replicas
+        all_block_replicas = []
+
+        for replica in replicas:
+            dataset_id = self._datasets_to_ids[replica.dataset]
+            site_id = self._sites_to_ids[replica.site]
+            
+            if not replica.is_partial and replica.is_complete:
+                # this is a complete replica. Remove block replica for this dataset replica.
+                self._mysql.delete_in('block_replicas', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id), additional_conditions = ['`site_id` = %d' % site_id])
+                continue
+
+            block_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id))
+
+            # add the block replicas on this site to block_replicas together with SQL ID
+            all_block_replicas += [(r, block_ids[r.block.name]) for r in replica.block_replicas]
+
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
+        mapping = lambda (r, bid): (bid, self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_custodial)
+
+        self._mysql.insert_many('block_replicas', fields, mapping, all_block_replicas)
 
     def _do_delete_dataset(self, dataset): #override
         self._mysql.query('DELETE FROM `datasets` WHERE `name` LIKE %s', dataset.name)

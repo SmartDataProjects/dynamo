@@ -164,12 +164,6 @@ class InventoryManager(object):
             try:
                 block.replicas.remove(block_replica)
                 site.block_replicas.remove(block_replica)
-                site.used_total -= block.size
-                if block_replica.group:
-                    try:
-                        site.group_usage[block_replica.group] -= block.size
-                    except:
-                        logger.error('Block %s#%s size was not accounted for group #s', dataset.name, block.name, group.name)
 
             except ValueError:
                 logger.error('Site-block linking was corrupt. %s %s#%s', site.name, dataset.name, block.name)
@@ -184,6 +178,23 @@ class InventoryManager(object):
         for dataset in self.datasets.values():
             for replica in list(dataset.replicas):
                 self.unlink_datasetreplica(replica)
+
+    def add_dataset_to_site(self, dataset, site, group = None):
+        """
+        Create a new DatasetReplica object and return.
+        """
+
+        new_replica = DatasetReplica(dataset, site, group = group)
+
+        dataset.replicas.append(new_replica)
+        site.dataset_replicas.append(new_replica)
+
+        for block in dataset.blocks:
+            block_replica = BlockReplica(block, site, group = group)
+            new_replica.block_replicas.append(block_replica)
+            site.block_replicas.append(block_replica)
+
+        return new_replica
 
     def scan_datasets(self, dataset_filter = '/*/*/*'):
         """

@@ -8,6 +8,8 @@ logging.basicConfig(level = logging.INFO)
 
 read_only = False
 
+target_site_occupancy = 0.85
+
 paths = Configuration()
 paths.ddm_base = os.environ['DDM_BASE']
 paths.log_directory = paths.ddm_base + '/logs'
@@ -32,6 +34,9 @@ dbs = Configuration()
 dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
 dbs.deletion_chunk_size = 40000000000000 # 40 TB
 
+sitedb = Configuration()
+sitedb.url_base = 'https://cmsweb.cern.ch/sitedb/data/prod'
+
 popdb = Configuration()
 popdb.url_base = 'https://cmsweb.cern.ch/popdb'
 
@@ -44,4 +49,4 @@ inventory.included_groups = ['AnalysisOps', 'DataOps']
 demand = Configuration()
 demand.access_history = Configuration()
 demand.access_history.increment = 24 * 3600 # 24 hours
-demand.access_history.max_back_query = 1 # maximum number of dates interval to obtain records for; 7 days
+demand.access_history.max_back_query = 7 # maximum number of dates interval to obtain records for; 7 days

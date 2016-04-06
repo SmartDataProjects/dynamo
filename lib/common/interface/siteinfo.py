@@ -13,6 +13,7 @@ class SiteInfoSourceInterface(object):
           sites: the name->site dict to be filled. Information of the sites already in the list will be updated.
           filt: a wildcard string or a list of wildcard strings.
         """
+        pass
 
     def get_group_list(self, groups, filt = '*'):
         """
@@ -21,6 +22,7 @@ class SiteInfoSourceInterface(object):
           groups: the name->group dict to be filled. Information of the groups already in the list will be updated.
           filt: a wildcard string or a list of wildcard strings.
         """
+        pass
 
 
 if __name__ == '__main__':

@@ -69,7 +69,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             logger.debug('schedule_copy  subscribe: %s', str(options))
             return
 
-        self._make_phedex_request('subscribe', options, method = POST)
+#        self._make_phedex_request('subscribe', options, method = POST)
 
     def schedule_deletion(self, replica, comments = ''): #override (DeletionInterface)
         if type(replica) == DatasetReplica:
@@ -190,8 +190,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             if entry['name'] not in sites:
                 site = Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology'])
                 # temporary
-                site.capacity = 10000
-                site.used_total = 9000
+                site.storage = 10000
                 # temporary
                 sites[entry['name']] = site
 

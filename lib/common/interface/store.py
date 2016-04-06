@@ -283,6 +283,22 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
+    def add_dataset_replicas(self, replicas):
+        """
+        Insert a few replicas instead of saving the full list.
+        """
+
+        if config.read_only:
+            logger.debug('_do_add_dataset_replicas()')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_add_dataset_replicas(replicas)
+            self.set_last_update()
+        finally:
+            self.release_lock()
+
     def delete_dataset(self, dataset):
         """
         Delete dataset from persistent storage.

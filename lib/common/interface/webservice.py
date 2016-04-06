@@ -29,10 +29,14 @@ class RESTService(object):
     An interface to RESTful APIs (e.g. PhEDEx, DBS) with X509 authentication.
     make_request will take the REST "command" and a list of options as arguments.
     Options are chained together with '&' and appended to the url after '?'.
+    Return values are in JSON format.
     """
 
-    def __init__(self, url_base):
+    def __init__(self, url_base, headers = []):
         self.opener = urllib2.build_opener(HTTPSGridAuthHandler())
+        self.opener.addheaders.append(('Accept', 'application/json'))
+        self.opener.addheaders += headers
+
         self.url_base = url_base
 
     def make_request(self, resource, options = [], method = GET, format = 'url'):
@@ -110,7 +114,7 @@ if __name__ == '__main__':
 
     parser.add_argument('url_base', metavar = 'URL', help = 'Request URL base.')
     parser.add_argument('resource', metavar = 'RES', help = 'Request resource.')
-    parser.add_argument('options', metavar = 'EXPR', nargs = '+', default = [], help = 'Options after ? (chained with &).')
+    parser.add_argument('options', metavar = 'EXPR', nargs = '*', default = [], help = 'Options after ? (chained with &).')
     parser.add_argument('--post', '-P', action = 'store_true', dest = 'use_post', help = 'Use POST instead of GET request.')
 
     args = parser.parse_args()

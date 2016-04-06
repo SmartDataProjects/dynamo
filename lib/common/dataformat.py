@@ -158,17 +158,20 @@ class Site(object):
         else:
             return arg
 
-    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', capacity = 0, used_total = 0):
+    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0.):
         self.name = name
         self.host = host
         self.storage_type = storage_type
         self.backend = backend
-        self.capacity = capacity
+        self.storage = storage # in TB
+        self.cpu = cpu # in kHS06
         self.group_quota = {}
-        self.used_total = used_total
-        self.group_usage = {}
         self.dataset_replicas = []
         self.block_replicas = []
+
+    def __str__(self):
+        return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f)' % \
+            (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu)
 
     def find_dataset_replica(self, ds_name):
         try:
@@ -182,24 +185,25 @@ class Site(object):
         except StopIteration:
             return None
 
-    def occupancy(self, groups = []):
+    def group_usage(self, group):
+        return sum([r.block.size for r in self.block_replicas if r.group == group])
+
+    def storage_occupancy(self, groups = []):
         if type(groups) is not list:
             groups = [groups]
 
         if len(groups) == 0:
-            return float(self.used_total) / float(self.capacity)
+            return sum([r.block.size for r in self.block_replicas]) / sum(self.group_quota.values())
         else:
             numer = 0.
             denom = 0.
             for group in groups:
                 try:
-                    n = self.group_usage[group]
-                    d = self.group_quota[group]
+                    denom += self.group_quota[group]
                 except KeyError:
                     continue
 
-                numer += n
-                denom += d
+                numer += self.group_usage(group)
 
             return numer / denom
 

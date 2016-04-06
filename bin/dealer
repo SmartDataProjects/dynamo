@@ -8,7 +8,7 @@ from common.inventory import InventoryManager
 from common.transaction import TransactionManager
 from common.demand import DemandManager
 import common.interface.classes as classes
-from detox.main import Detox
+from dealer.main import Dealer
 
 import common.configuration as config
 
@@ -19,12 +19,10 @@ parser.add_argument('--store', '-i', metavar = 'CLASS', dest = 'store_cls', defa
 parser.add_argument('--site-source', '-s', metavar = 'CLASS', dest = 'site_source_cls', default = '', help = 'SiteInfoSourceInterface class.')
 parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class.')
 parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class.')
-parser.add_argument('--access-history', '-a', metavar = 'CLASS', dest = 'access_history_cls', default = '', help = 'AccessHistoryInterface class.')
+parser.add_argument('--access-history', '-a', metavar = 'CLASS', dest = 'access_history_cls', default = '', help = 'AccessHistoryInterface backend class.')
 parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', default = '', help = 'LockInterface class.')
-parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls', default = '', help = 'DeletionInterface class.')
+parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
-parser.add_argument('--policy-stack', '-p', metavar = 'STACK', dest = 'stack', nargs = '+', default = ['TargetFraction'], help = 'Name of the policy stack. Options are\n TargetFraction [threshold]\n List <path> [<path> ..]\n <path>.py\n The python file should contain a list of Policies with the same name as the file.')
-parser.add_argument('--static-deletion', '-S', action = 'store_true', dest = 'static_deletion', help = 'Delete everything in the deletion list at once.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 parser.add_argument('--dry-run', '-T', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests.')
 
@@ -52,7 +50,7 @@ for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
 inventory_manager = InventoryManager(**kwd)
 
 kwd = {}
-for cls in ['deletion']:
+for cls in ['copy']:
     clsname = getattr(args, cls + '_cls')
     if clsname == '':
         kwd[cls + '_cls'] = classes.default_interface[cls]
@@ -71,30 +69,9 @@ for cls in ['store', 'access_history', 'lock']:
 
 demand_manager = DemandManager(**kwd)
 
-if args.stack[0].endswith('.py'):
-    execfile(args.stack[0])
-
-    policy_stack = eval(os.path.basename(args.stack[0])[:-3])
-
-else:
-    from detox.policies import make_stack
-
-    stack = args.stack[0]
-    stack_args = args.stack[1:]
-
-    policy_stack = make_stack(args.stack[0])
-
-    if stack == 'TargetFraction':
-        if len(stack_args) > 0:
-            policy_stack[0].threshold = float(stack_args[0])
-    
-    elif stack == 'List':
-        for list_path in stack_args:
-            policy_stack[-1].load_list(list_path)
-
-detox = Detox(inventory_manager, transaction_manager, demand_manager, policy_stack)
+dealer = Dealer(inventory_manager, transaction_manager, demand_manager)
 
 if args.force_inventory_update:
     config.inventory.refresh_min = 0
 
-detox.run(dynamic_deletion = not args.static_deletion)
+dealer.run()

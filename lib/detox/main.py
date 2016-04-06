@@ -170,9 +170,9 @@ class Detox(object):
         protected_fractions = {}
         for replica in protection_list:
             try:
-                protected_fractions[replica.site] += replica.size() / replica.site.capacity
+                protected_fractions[replica.site] += replica.size() / replica.site.storage
             except KeyError:
-                protected_fractions[replica.site] = replica.size() / replica.site.capacity
+                protected_fractions[replica.site] = replica.size() / replica.site.storage
 
         for site in self.inventory_manager.sites.values():
             if site not in protected_fractions: # highly unlikely
@@ -186,8 +186,8 @@ class Detox(object):
             sumf2 = sum([frac * frac for site, frac in protected_fractions.items() if site != replica.site])
             sumf = sum([frac for site, frac in protected_fractions.items() if site != replica.site])
 
-            sumf2 += math.pow(protected_fractions[replica.site] - replica.size() / replica.site.capacity, 2.)
-            sumf += protected_fractions[replica.site] - replica.size() / replica.site.capacity
+            sumf2 += math.pow(protected_fractions[replica.site] - replica.size() / replica.site.storage, 2.)
+            sumf += protected_fractions[replica.site] - replica.size() / replica.site.storage
 
             rms2 = sumf2 / len(self.inventory_manager.sites) - math.pow(sumf / len(self.inventory_manager.sites), 2.)
 
