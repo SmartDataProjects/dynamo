@@ -165,7 +165,7 @@ class Site(object):
         self.backend = backend
         self.storage = storage # in TB
         self.cpu = cpu # in kHS06
-        self.group_quota = {}
+        self.group_quota = {} # in TB
         self.dataset_replicas = []
         self.block_replicas = []
 
@@ -193,7 +193,7 @@ class Site(object):
             groups = [groups]
 
         if len(groups) == 0:
-            return sum([r.block.size for r in self.block_replicas]) / sum(self.group_quota.values())
+            return sum([r.block.size for r in self.block_replicas]) * 1.e-12 / sum(self.group_quota.values())
         else:
             numer = 0.
             denom = 0.
@@ -203,7 +203,7 @@ class Site(object):
                 except KeyError:
                     continue
 
-                numer += self.group_usage(group)
+                numer += self.group_usage(group) * 1.e-12
 
             return numer / denom
 
@@ -230,8 +230,9 @@ class Group(object):
 class DatasetReplica(object):
     """Represents a dataset replica. Combines dataset and site information."""
 
-    # access types
-    ACC_LOCAL, ACC_REMOTE = range(2)
+    # Access types.
+    # Starting from 1 to play better with MySQL.
+    ACC_LOCAL, ACC_REMOTE = range(1, 3)
     Access = collections.namedtuple('Access', ['num_accesses', 'cputime'])
 
     def __init__(self, dataset, site, group = None, is_complete = False, is_partial = False, is_custodial = False):
@@ -242,7 +243,7 @@ class DatasetReplica(object):
         self.is_partial = is_partial
         self.is_custodial = is_custodial
         self.block_replicas = []
-        self.accesses = tuple([{} for i in range(2)]) # tuple (size ACC_*) of UTC date -> Accesses
+        self.accesses = dict([(i, {}) for i in range(1, 3)]) # UTC date -> Accesses
 
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1

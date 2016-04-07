@@ -141,6 +141,18 @@ class MySQLStore(LocalStoreInterface):
 
         self._set_site_ids(site_list)
 
+        mean_storage = sum([s.storage for s in site_list]) / len(filter(lambda s: s.storage != 0., site_list))
+        mean_cpu = sum([s.cpu for s in site_list]) / len(filter(lambda s: s.cpu != 0., site_list))
+
+        for site in site_list:
+            if site.storage == 0.:
+                logger.info('Setting storage for %s to mean %f', site.name, mean_storage)
+                site.storage = mean_storage
+
+            if site.cpu == 0.:
+                logger.info('Setting CPU for %s to mean %f', site.name, mean_cpu)
+                site.cpu = mean_cpu
+
         # Load groups
         group_list = []
 
@@ -153,6 +165,27 @@ class MySQLStore(LocalStoreInterface):
             group_list.append(group)
 
         self._set_group_ids(group_list)
+
+        # Load site quotas
+        quotas = self._mysql.query('SELECT `site_id`, `group_id`, `storage` FROM `quotas`')
+        for site_id, group_id, storage in quotas:
+            try:
+                site = self._ids_to_sites[site_id]
+            except KeyError:
+                continue
+
+            try:
+                group = self._ids_to_groups[group_id]
+            except KeyError:
+                continue
+
+            site.group_quota[group] = storage
+
+        for site in site_list:
+            for group in group_list:
+                if group not in site.group_quota:
+                    logger.info('Setting quota for %s on %s to %f', group.name, site.name, site.storage / len(group_list))
+                    site.group_quota[group] = site.storage / len(group_list)
 
         # Load software versions
         software_version_map = {} # id -> version

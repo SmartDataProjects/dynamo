@@ -29,10 +29,11 @@ mysqlstore.passwd = 'intelroccs'
 
 phedex = Configuration()
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'
+phedex.deletion_chunk_size = 40000000000000 # 40 TB
+phedex.subscription_chunk_size = 40000000000000 # 40 TB
 
 dbs = Configuration()
 dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
-dbs.deletion_chunk_size = 40000000000000 # 40 TB
 
 sitedb = Configuration()
 sitedb.url_base = 'https://cmsweb.cern.ch/sitedb/data/prod'
@@ -41,7 +42,7 @@ popdb = Configuration()
 popdb.url_base = 'https://cmsweb.cern.ch/popdb'
 
 inventory = Configuration()
-inventory.refresh_min = 21600 # 6 hours
+inventory.refresh_min = 216000 # 6 hours
 inventory.included_sites = ['T2_*', 'T1_*_Disk']
 inventory.excluded_sites = ['T2_CH_CERNBOX', 'T2_MY_UPM_BIRUNI']
 inventory.included_groups = ['AnalysisOps', 'DataOps']

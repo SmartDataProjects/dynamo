@@ -176,8 +176,13 @@ class InventoryManager(object):
 
     def unlink_all_replicas(self):
         for dataset in self.datasets.values():
-            for replica in list(dataset.replicas):
-                self.unlink_datasetreplica(replica)
+            dataset.replicas = []
+            for block in dataset.blocks:
+                block.replicas = []
+
+        for site in self.sites.values():
+            site.dataset_replicas = []
+            site.block_replicas = []
 
     def add_dataset_to_site(self, dataset, site, group = None):
         """
@@ -225,7 +230,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Inventory manager')
 
-    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(update|list (datasets|sites))')
+    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(update|scan|list (datasets|sites))')
     parser.add_argument('--store', '-i', metavar = 'CLASS', dest = 'store_cls', default = '', help = 'Store class to be used.')
     parser.add_argument('--site-source', '-s', metavar = 'CLASS', dest = 'site_source_cls', default = '', help = 'SiteInfoSourceInterface class to be used.')
     parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class to be used.')

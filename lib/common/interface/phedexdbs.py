@@ -44,13 +44,13 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
         # Cache organized as {dataset: {site: [ProtoBlockReplicas]}}
         self._block_replicas = {}
 
-    def schedule_copy(self, dataset, dest, origin = None, comments = ''): #override (CopyInterface)
+    def schedule_copy(self, dataset_replica, origin = None, comments = ''): #override (CopyInterface)
         # origin argument is not used because of the way PhEDEx works
 
-        catalogs = self._get_file_catalog(dataset)
+        catalogs = self._get_file_catalog(dataset_replica.dataset)
 
         options = {
-            'node': dest.name,
+            'node': dataset_replica.site.name,
             'data': self._form_catalog_xml(catalogs),
             'level': 'dataset',
             'priority': 'low',
@@ -70,6 +70,75 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             return
 
 #        self._make_phedex_request('subscribe', options, method = POST)
+
+    def schedule_copies(self, replica_origin_list, comments = ''): #override (CopyInterface)
+
+        all_datasets = list(set([r.dataset for r, o in replica_origin_list]))
+        all_catalogs = self._get_file_catalog(all_datasets)
+
+        request_mapping = {}
+
+        def run_subscription_request(site, replicas_to_subscribe):
+            catalogs = dict([(r.dataset, all_catalogs[r.dataset]) for r in replicas_to_subscribe])
+
+            options = {
+                'node': site.name,
+                'data': self._form_catalog_xml(catalogs),
+                'level': 'dataset',
+                'priority': 'low',
+                'move': 'n',
+                'static': 'n',
+                'custodial': 'n',
+                'group': 'AnalysisOps',
+                'request_only': 'n',
+                'no_mail': 'n'
+            }
+
+            if comments:
+                options['comments'] = comments
+
+            if config.read_only:
+                logger.debug('schedule_copies  subscribe: %s', str(options))
+                return
+
+            # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
+#            result = self._make_phedex_request('subscribe', options, method = POST)
+#
+#            if len(result) == 0:
+#                logger.error('schedule_copies  copy failed.')
+#                return
+#
+#            request_id = int(result[0]['id']) # return value is a string
+#
+#            logger.warning('PhEDEx subscription request id: %d', request_id)
+#            
+#            request_mapping[request_id] = replicas_to_subscribe
+#
+#            result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
+#
+#            if len(result) == 0:
+#                logger.error('schedule_copies  copy approval failed.')
+#                return
+
+        replicas_by_site = {}
+        for replica, origin in replica_origin_list:
+            try:
+                replicas_by_site[replica.site].append(replica)
+            except KeyError:
+                replicas_by_site[replica.site] = [replica]
+
+        for site, replica_list in replicas_by_site.items():
+            subscription_chunk = []
+            chunk_size = 0
+            for replica in replica_list:
+                subscription_chunk.append(replica)
+                chunk_size += replica.size()
+                if chunk_size >= config.phedex.subscription_chunk_size or replica == replica_list[-1]:
+                    run_subscription_request(site, subscription_chunk)
+                    subscription_chunk = []
+                    chunk_size = 0
+
+        return request_mapping
 
     def schedule_deletion(self, replica, comments = ''): #override (DeletionInterface)
         if type(replica) == DatasetReplica:
@@ -169,7 +238,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             for replica in replica_list:
                 deletion_chunk.append(replica)
                 chunk_size += replica.size()
-                if chunk_size >= config.dbs.deletion_chunk_size or replica == replica_list[-1]:
+                if chunk_size >= config.phedex.deletion_chunk_size or replica == replica_list[-1]:
                     run_deletion_request(site, deletion_chunk)
                     deletion_chunk = []
                     chunk_size = 0
@@ -189,9 +258,6 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
         for entry in source:
             if entry['name'] not in sites:
                 site = Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology'])
-                # temporary
-                site.storage = 10000
-                # temporary
                 sites[entry['name']] = site
 
     def get_group_list(self, groups, filt = '*'): #override (SiteInfoSourceInterface)

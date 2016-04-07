@@ -57,7 +57,7 @@ class ProtectDiskOnly(policy.ProtectPolicy):
         super(self.__class__, self).__init__(name)
 
     def applies(self, replica, demand_manager): # override
-        return not replica.dataset.on_tape, 'Replica is a last copy with no tape copy.'
+        return not replica.dataset.on_tape, 'Replica has no tape copy.'
 
 
 class ProtectMinimumCopies(policy.ProtectPolicy):
