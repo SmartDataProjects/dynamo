@@ -32,8 +32,7 @@ class Dealer(object):
             # inventory is stale -> update
             self.inventory_manager.update()
 
-        self.demand_manager.load(self.inventory_manager)
-#        self.demand_manager.update(self.inventory_manager)
+        self.demand_manager.update(self.inventory_manager)
 
         copy_list = self.determine_copies()
 

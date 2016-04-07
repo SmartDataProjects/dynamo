@@ -65,7 +65,7 @@ class DemandManager(object):
             self.load(inventory)
 
         for site in inventory.sites.values():
-            logger.info('Updating dataset access info at %s since %s', site.name, start_date.strftime('%Y-%m-%d'))
+            logger.info('Updating dataset access info at %s from %s to %s', site.name, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
 
             date = start_date
 
@@ -97,8 +97,8 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Demand manager')
 
-    parser.add_argument('command', metavar = 'COMMAND', help = '(update [access])')
-    parser.add_argument('options', metavar = 'EXPR', nargs = '*', default = [], help = '')
+    parser.add_argument('command', metavar = 'COMMAND', help = '(update [access start end])')
+    parser.add_argument('arguments', metavar = 'EXPR', nargs = '*', default = [], help = '')
     parser.add_argument('--store', '-i', metavar = 'CLASS', dest = 'store_cls', default = '', help = 'Store class to be used.')
     parser.add_argument('--access-history', '-a', metavar = 'CLASS', dest = 'access_history_cls', default = '', help = 'AccessHistory class to be used.')
     parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', default = '', help = 'Lock class to be used.')
@@ -128,9 +128,9 @@ if __name__ == '__main__':
     inventory = InventoryManager(load_data = True, store_cls = kwd['store_cls'])
 
     if args.command == 'update':
-        if len(args.options) != 0:
-            if args.options[0] == 'access':
-                start, end = args.options[1:3]
+        if len(args.arguments) != 0:
+            if args.arguments[0] == 'access':
+                start, end = args.arguments[1:3]
 
                 start_date = datetime.datetime.strptime(start, '%Y-%m-%d').date()
                 end_date = datetime.datetime.strptime(end, '%Y-%m-%d').date()

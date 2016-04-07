@@ -128,11 +128,11 @@ class MySQLStore(LocalStoreInterface):
         # Load sites
         site_list = []
 
-        sites = self._mysql.query('SELECT `id`, `name`, `host`, `storage_type`, `backend`, `storage`, `cpu` FROM `sites`')
+        sites = self._mysql.query('SELECT `name`, `host`, `storage_type`, `backend`, `storage`, `cpu` FROM `sites`')
 
         logger.info('Loaded data for %d sites.', len(sites))
         
-        for site_id, name, host, storage_type, backend, storage, cpu in sites:
+        for name, host, storage_type, backend, storage, cpu in sites:
             if site_filt != '*' and not fnmatch.fnmatch(name, site_filt):
                 continue
 
@@ -156,11 +156,11 @@ class MySQLStore(LocalStoreInterface):
         # Load groups
         group_list = []
 
-        groups = self._mysql.query('SELECT `id`, `name` FROM `groups`')
+        groups = self._mysql.query('SELECT `name` FROM `groups`')
 
         logger.info('Loaded data for %d groups.', len(groups))
 
-        for group_id, name in groups:
+        for name in groups:
             group = Group(name)
             group_list.append(group)
 
@@ -200,11 +200,11 @@ class MySQLStore(LocalStoreInterface):
         # Load datasets
         dataset_list = []
 
-        datasets = self._mysql.query('SELECT `id`, `name`, `size`, `num_files`, `is_open`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`) FROM `datasets`')
+        datasets = self._mysql.query('SELECT `name`, `size`, `num_files`, `is_open`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`) FROM `datasets`')
 
         logger.info('Loaded data for %d datasets.', len(datasets))
 
-        for dataset_id, name, size, num_files, is_open, status, on_tape, data_type, software_version_id, last_update in datasets:
+        for name, size, num_files, is_open, status, on_tape, data_type, software_version_id, last_update in datasets:
             if dataset_filt != '/*/*/*' and not fnmatch.fnmatch(name, dataset_filt):
                 continue
 
@@ -344,13 +344,21 @@ class MySQLStore(LocalStoreInterface):
         replica = None
         for dataset_id, site_id, year, month, day, access_type, num_accesses, cputime in accesses:
             if dataset_id != current_dataset_id:
+                try:
+                    dataset = self._ids_to_datasets[dataset_id]
+                except KeyError:
+                    continue
+
                 current_dataset_id = dataset_id
-                dataset = self._ids_to_datasets[dataset_id]
                 replica = None
             
             if site_id != current_site_id:
+                try:
+                    site = self._ids_to_sites[site_id]
+                except KeyError:
+                    continue
+
                 current_site_id = site_id
-                site = self._ids_to_sites[site_id]
                 replica = None
 
             if replica is None:
