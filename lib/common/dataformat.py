@@ -76,9 +76,13 @@ class Dataset(object):
             (self.name, self.is_open, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
             str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), len(self.blocks), replica_sites)
 
-    def find_block(self, block_name):
+    def find_block(self, block):
         try:
-            return next(b for b in self.blocks if b.name == block_name)
+            if type(block) is Block:
+                return next(b for b in self.blocks if b == block)
+            else:
+                return next(b for b in self.blocks if b.name == block_name)
+
         except StopIteration:
             return None
 
@@ -173,15 +177,23 @@ class Site(object):
         return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f)' % \
             (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu)
 
-    def find_dataset_replica(self, ds_name):
+    def find_dataset_replica(self, dataset):
         try:
-            return next(d for d in self.dataset_replicas if d.dataset.name == ds_name)
+            if type(dataset) is Dataset:
+                return next(d for d in self.dataset_replicas if d.dataset == dataset)
+            else:
+                return next(d for d in self.dataset_replicas if d.dataset.name == dataset)
+
         except StopIteration:
             return None
 
-    def find_block_replica(self, block_name):
+    def find_block_replica(self, block):
         try:
-            return next(b for b in self.block_replicas if b.block.name == block_name)
+            if type(block) is Block:
+                return next(b for b in self.block_replicas if b.block == block)
+            else:
+                return next(b for b in self.block_replicas if b.block.name == block)
+
         except StopIteration:
             return None
 
@@ -220,11 +232,15 @@ class Site(object):
 
         return quota
 
+
 class Group(object):
     """Represents a user group."""
 
     def __init__(self, name):
         self.name = name
+
+    def __str__(self):
+        return 'Group %s' % self.name
 
 
 class DatasetReplica(object):
@@ -245,6 +261,14 @@ class DatasetReplica(object):
         self.block_replicas = []
         self.accesses = dict([(i, {}) for i in range(1, 3)]) # UTC date -> Accesses
 
+    def __str__(self):
+        return 'DatasetReplica {site}:{dataset} (group={group}, is_complete={is_complete}, is_partial={is_partial}, is_custodial={is_custodial},' \
+            ' #block_replicas={num_block_replicas}, #accesses[LOCAL]={num_local_accesses}, #accesses[REMOTE]={num_remote_accesses})'.format(
+                site = self.site.name, dataset = self.dataset.name, group = self.group.name if self.group is not None else None, is_complete = self.is_complete,
+                is_partial = self.is_partial, is_custodial = self.is_custodial,
+                num_block_replicas = len(self.block_replicas), num_local_accesses = len(self.accesses[DatasetReplica.ACC_LOCAL]),
+                num_remote_accesses = len(self.accesses[DatasetReplica.ACC_REMOTE]))
+
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1
 
@@ -253,6 +277,16 @@ class DatasetReplica(object):
             return sum([r.block.size for r in self.block_replicas])
         else:
             return self.dataset.size
+
+    def find_block_replica(self, block):
+        try:
+            if type(block) is Block:
+                return next(b for b in self.block_replicas if b.block == block)
+            else:
+                return next(b for b in self.block_replicas if b.block.name == block)
+
+        except StopIteration:
+            return None
 
 
 class BlockReplica(object):
@@ -264,6 +298,10 @@ class BlockReplica(object):
         self.group = group
         self.is_complete = is_complete
         self.is_custodial = is_custodial
+
+    def __str__(self):
+        return 'BlockReplica {site}:{dataset}#{block} (group={group}, is_complete={is_complete}, is_custodial={is_custodial})'.format(
+            site = self.site.name, dataset = self.dataset.name, group = self.group.name if self.group is not None else None, is_complete = self.is_complete, is_custodial = self.is_custodial)
 
 
 class DatasetDemand(object):

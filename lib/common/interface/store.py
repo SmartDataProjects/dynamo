@@ -443,31 +443,30 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Local inventory store interface')
 
-    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(snapshot [clear (replicas|all)]|clean|recover|list (datasets|groups|sites))')
+    parser.add_argument('command', metavar = 'COMMAND', help = '(snapshot [clear (replicas|all)]|clean|recover|list (datasets|groups|sites))')
+    parser.add_argument('arguments', metavar = 'ARGS', nargs = '*', help = '')
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'LocalStoreInterface class to be used.')
     parser.add_argument('--timestamp', '-t', metavar = 'YMDHMS', dest = 'timestamp', default = '', help = 'Timestamp of the snapshot to be loaded / cleaned. With command clean, prepend with "<" or ">" to remove all snapshots older or newer than the timestamp.')
 
     args = parser.parse_args()
-
-    command = args.command[0]
-    cmd_args = args.command[1:]
+    sys.argv = []
 
     if args.class_name == '':
         interface = classes.default_interface['store']()
     else:
         interface = getattr(classes, args.class_name)()
 
-    if command == 'snapshot':
+    if args.command == 'snapshot':
         clear = LocalStoreInterface.CLEAR_NONE
-        if len(cmd_args) > 1 and cmd_args[0] == 'clear':
-            if cmd_args[1] == 'replicas':
+        if len(args.arguments) > 1 and args.arguments[0] == 'clear':
+            if args.arguments[1] == 'replicas':
                 clear = LocalStoreInterface.CLEAR_REPLICAS
-            elif cmd_args[1] == 'all':
+            elif args.arguments[1] == 'all':
                 clear = LocalStoreInterface.CLEAR_ALL
 
         interface.make_snapshot(clear = clear)
 
-    elif command == 'clean':
+    elif args.command == 'clean':
         if not args.timestamp:
             newer_than = 0
             older_than = time.time()
@@ -483,49 +482,49 @@ if __name__ == '__main__':
 
         interface.remove_snapshot(newer_than = newer_than, older_than = older_than)
 
-    elif command == 'recover':
+    elif args.command == 'recover':
         if not args.timestamp:
             print 'Specify a timestamp (can be "last").'
             sys.exit(1)
 
         interface.recover_from(args.timestamp)
 
-    elif command == 'list':
+    elif args.command == 'list':
         if args.timestamp:
             interface.switch_snapshot(args.timestamp)
 
-        if cmd_args[0] != 'snapshots':
+        if args.arguments[0] != 'snapshots':
             sites, groups, datasets = interface.load_data()
     
-            if cmd_args[0] == 'datasets':
+            if args.arguments[0] == 'datasets':
                 print [d.name for d in datasets]
     
-            elif cmd_args[0] == 'groups':
+            elif args.arguments[0] == 'groups':
                 print [g.name for g in groups]
     
-            elif cmd_args[0] == 'sites':
+            elif args.arguments[0] == 'sites':
                 print [s.name for s in sites]
 
         else:
             print interface.list_snapshots()
 
-    elif command == 'show':
+    elif args.command == 'show':
         if args.timestamp:
             interface.switch_snapshot(args.timestamp)
 
-        if cmd_args[0] == 'dataset':
-            sites, groups, datasets = interface.load_data(dataset_filt = cmd_args[1])
+        if args.arguments[0] == 'dataset':
+            sites, groups, datasets = interface.load_data(dataset_filt = args.arguments[1])
 
             try:
-                dataset = next(d for d in datasets if d.name == cmd_args[1])
+                dataset = next(d for d in datasets if d.name == args.arguments[1])
             except StopIteration:
-                print 'No dataset %s found.' % cmd_args[1]
+                print 'No dataset %s found.' % args.arguments[1]
                 sys.exit(0)
 
             print dataset
 
-        elif cmd_args[0] == 'block':
-            dataset_name, sep, block_name = cmd_args[1].partition('#')
+        elif args.arguments[0] == 'block':
+            dataset_name, sep, block_name = args.arguments[1].partition('#')
             sites, groups, datasets = interface.load_data(dataset_filt = dataset_name)
 
             try:
@@ -534,27 +533,56 @@ if __name__ == '__main__':
                 print 'No dataset %s found.' % dataset
                 sys.exit(0)
 
-            try:
-                block = next(b for b in dataset.blocks if b.name == block_name)
-            except StopIteration:
+            block = dataset.find_block(block_name)
+            if block is None:
                 print 'No block %s found in dataset %s.' % (block_name, dataset.name)
                 sys.exit(0)
 
             print block
 
-#        elif cmd_args[0] == 'site':
-#            sites, groups, datasets = interface.load_data(site_filt = cmd_args[1])
-#
-#            try:
-#                site = next(s for s in sites if s.name == cmd_args[1])
-#            except StopIteration:
-#                print 'No site %s found.' % cmd_args[1]
-#                sys.exit(0)
-#
-#            print site
+        elif args.arguments[0] == 'site':
+            sites, groups, datasets = interface.load_data(site_filt = args.arguments[1])
 
-    elif command == 'close_block':
-        interface.close_block(cmd_args[0])
+            try:
+                site = next(s for s in sites if s.name == args.arguments[1])
+            except StopIteration:
+                print 'No site %s found.' % args.arguments[1]
+                sys.exit(0)
 
-    elif command == 'set_dataset_status':
-        interface.set_dataset_status(cmd_args[0], cmd_args[1])
+            print site
+
+        elif args.arguments[0] == 'replica':
+            site_name, sep, obj_name = args.arguments[1].partition(':')
+            if '#' in obj_name:
+                dataset_name, sep, block_name = obj_name.partition('#')
+            else:
+                dataset_name = obj_name
+                block_name = ''
+
+            sites, groups, datasets = interface.load_data(site_filt = site_name, dataset_filt = dataset_name)
+            interface.load_replica_accesses(sites, datasets)
+            
+            try:
+                dataset = next(d for d in datasets if d.name == dataset_name)
+            except StopIteration:
+                print 'No dataset %s found.' % dataset
+                sys.exit(0)
+
+            replica = dataset.find_replica(site_name)
+            if replica is None:
+                print 'No replica %s found.' % args.arguments[1]
+                sys.exit(0)
+
+            if block_name != '':
+                replica = replica.find_block_replica(block_name)
+                if replica is None:
+                    print 'No replica %s found.' % args.arguments[1]
+                    sys.exit(0)
+
+            print replica
+
+    elif args.command == 'close_block':
+        interface.close_block(args.arguments[0])
+
+    elif args.command == 'set_dataset_status':
+        interface.set_dataset_status(args.arguments[0], args.arguments[1])

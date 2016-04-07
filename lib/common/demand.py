@@ -52,20 +52,26 @@ class DemandManager(object):
 
         start_date = max(self._last_access_update, utctoday - datetime.timedelta(config.demand.access_history.max_back_query))
 
+        self.update_access(inventory, start_date, utctoday)
+
+        self._last_access_update = utctoday - datetime.timedelta(1)
+
         utcnow = datetime.datetime(utc.tm_year, utc.tm_mon, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec)
         utcmidnight = datetime.datetime(utc.tm_year, utc.tm_mon, utc.tm_mday)
         self.time_today = (utcnow - utcmidnight).seconds # n seconds elapsed since UTC 00:00:00 today
+
+    def update_access(self, inventory, start_date, end_date):
+        if self._last_access_update is None:
+            self.load(inventory)
 
         for site in inventory.sites.values():
             logger.info('Updating dataset access info at %s since %s', site.name, start_date.strftime('%Y-%m-%d'))
 
             date = start_date
 
-            while date <= utctoday: # get records up to today
+            while date <= end_date: # get records up to end_date
                 self.access_history.set_access_history(site, date)
                 date += datetime.timedelta(1) # one day
-
-        self._last_access_update = utctoday - datetime.timedelta(1)
 
         all_replicas = []
         for dataset in inventory.datasets.values():
@@ -75,25 +81,31 @@ class DemandManager(object):
 
         self.store.save_replica_accesses(all_replicas)
 
+        if self._last_access_update < end_date:
+            self._last_access_update = end_date
+
     def get_demand(self, dataset):
         return DatasetDemand(dataset)
 
 
 if __name__ == '__main__':
 
+    import sys
     from argparse import ArgumentParser
     from common.inventory import InventoryManager
     import common.interface.classes as classes
 
     parser = ArgumentParser(description = 'Demand manager')
 
-    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(update)')
+    parser.add_argument('command', metavar = 'COMMAND', help = '(update [access])')
+    parser.add_argument('options', metavar = 'EXPR', nargs = '*', default = [], help = '')
     parser.add_argument('--store', '-i', metavar = 'CLASS', dest = 'store_cls', default = '', help = 'Store class to be used.')
     parser.add_argument('--access-history', '-a', metavar = 'CLASS', dest = 'access_history_cls', default = '', help = 'AccessHistory class to be used.')
     parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', default = '', help = 'Lock class to be used.')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
     args = parser.parse_args()
+    sys.argv = []
 
     if args.log_level:
         try:
@@ -101,9 +113,6 @@ if __name__ == '__main__':
             logging.getLogger().setLevel(level)
         except AttributeError:
             logging.warning('Log level ' + args.log_level + ' not defined')
-
-    command = args.command[0]
-    cmd_args = args.command[1:]
 
     kwd = {} # not loading data by default to speed up update process
 
@@ -118,5 +127,15 @@ if __name__ == '__main__':
 
     inventory = InventoryManager(load_data = True, store_cls = kwd['store_cls'])
 
-    if command == 'update':
-        manager.update(inventory)
+    if args.command == 'update':
+        if len(args.options) != 0:
+            if args.options[0] == 'access':
+                start, end = args.options[1:3]
+
+                start_date = datetime.datetime.strptime(start, '%Y-%m-%d').date()
+                end_date = datetime.datetime.strptime(end, '%Y-%m-%d').date()
+
+                manager.update_access(inventory, start_date, end_date)
+
+        else:
+            manager.update(inventory)

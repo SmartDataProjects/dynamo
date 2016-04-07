@@ -364,6 +364,8 @@ class MySQLStore(LocalStoreInterface):
             if date > last_update:
                 last_update = date
 
+        logger.info('Loaded %d replica access data.', len(accesses))
+
         return last_update
 
     def _do_save_sites(self, sites): #override
