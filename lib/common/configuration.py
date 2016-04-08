@@ -8,11 +8,19 @@ logging.basicConfig(level = logging.INFO)
 
 read_only = False
 
-target_site_occupancy = 0.85
+target_site_occupancy = 0.95
 
 paths = Configuration()
 paths.ddm_base = os.environ['DDM_BASE']
 paths.log_directory = paths.ddm_base + '/logs'
+
+history = Configuration()
+history.db_params = {
+    'host': 'localhost',
+    'user': 'ddmdevel',
+    'passwd': 'intelroccs',
+    'db': 'history'
+}
 
 webservice = Configuration()
 #webservice.x509_key = '/tmp/x509up_u51268'
@@ -22,10 +30,12 @@ mysql = Configuration()
 mysql.max_query_len = 900000 # allows up to 1M characters; allowing 10% safety margin
 
 mysqlstore = Configuration()
-mysqlstore.db = 'DDM_devel'
-mysqlstore.host = 'localhost'
-mysqlstore.user = 'ddmdevel'
-mysqlstore.passwd = 'intelroccs'
+mysqlstore.db_params = {
+    'host': 'localhost',
+    'user': 'ddmdevel',
+    'passwd': 'intelroccs',
+    'db': 'DDM_devel'
+}
 
 phedex = Configuration()
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'
@@ -44,7 +54,7 @@ popdb.url_base = 'https://cmsweb.cern.ch/popdb'
 inventory = Configuration()
 inventory.refresh_min = 216000 # 6 hours
 inventory.included_sites = ['T2_*', 'T1_*_Disk']
-inventory.excluded_sites = ['T2_CH_CERNBOX', 'T2_MY_UPM_BIRUNI']
+inventory.excluded_sites = ['T2_CH_CERNBOX', 'T2_MY_UPM_BIRUNI', 'T1_US_FNAL_New_Disk']
 inventory.included_groups = ['AnalysisOps', 'DataOps']
 
 demand = Configuration()

@@ -20,14 +20,7 @@ class Detox(object):
         self.policy_log_path = log_path
         self.policy_html_path = html_path
 
-        db_params = {
-            'host': detox_config.history.host,
-            'user': detox_config.history.user,
-            'passwd': detox_config.history.passwd,
-            'db': detox_config.history.db
-        }
-
-        self._history = MySQL(**db_params)
+        self._history = MySQL(**config.history.db_params)
 
         self.deletion_message = 'DynaMO -- Automatic Cache Release Request.'
 
@@ -43,7 +36,7 @@ class Detox(object):
             # inventory is stale -> update
             self.inventory_manager.update()
 
-#        self.demand_manager.update(self.inventory_manager)
+        self.demand_manager.update(self.inventory_manager)
 
         logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_manager.num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
 

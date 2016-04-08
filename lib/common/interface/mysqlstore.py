@@ -22,9 +22,9 @@ class MySQLStore(LocalStoreInterface):
     def __init__(self):
         super(self.__class__, self).__init__()
 
-        self._mysql = MySQL(config.mysqlstore.host, config.mysqlstore.user, config.mysqlstore.passwd, config.mysqlstore.db)
+        self._mysql = MySQL(**config.mysqlstore.db_params)
 
-        self._db_name = config.mysqlstore.db
+        self._db_name = config.mysqlstore.db_params['db']
 
         self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0] # MySQL displays last_update in local time, but returns the UTC timestamp
 
@@ -72,6 +72,8 @@ class MySQLStore(LocalStoreInterface):
         tables = self._mysql.query('SHOW TABLES')
 
         for table in tables:
+            print '  ' + table
+
             self._mysql.query('CREATE TABLE `{copy}`.`{table}` LIKE `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self._db_name, table = table))
 
             if table == 'system':
@@ -84,8 +86,10 @@ class MySQLStore(LocalStoreInterface):
             if clear == LocalStoreInterface.CLEAR_ALL or \
                (clear == LocalStoreInterface.CLEAR_REPLICAS and table in ['dataset_replicas', 'block_replicas']):
                 # drop the original table and copy back the format from the snapshot
-                self._mysql.query('DROP TABLE `{orig}`.`{table}`'.format(orig = self._db_name, table = table))
-                self._mysql.query('CREATE TABLE `{orig}`.`{table}` LIKE `{copy}`.`{table}`'.format(orig = self._db_name, copy = snapshot_db, table = table))
+                print '   TRUNCATE'
+                self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._db_name, table = table))
+
+        print ' Done.'
 
     def _do_remove_snapshot(self, newer_than, older_than): #override
         snapshots = self._do_list_snapshots()
@@ -417,11 +421,26 @@ class MySQLStore(LocalStoreInterface):
         # since the dataset list can be large, it is faster to recreate the entire table than to update and clean.
         logger.info('Inserting/updating %d datasets.', len(datasets))
 
+        if len(self._datasets_to_ids) == 0:
+            # load up the latest dataset ids
+            self._set_dataset_ids(datasets)
+
         self._mysql.query('CREATE TABLE `datasets_new` LIKE `datasets`')
 
-        fields = ('name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
+        fields = ('id', 'name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
         # MySQL expects the local time for last_update
-        mapping = lambda d: (d.name, d.size, d.num_files, d.is_open, d.status, d.on_tape, d.data_type, version_map[d.software_version], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update)))
+        mapping = lambda d: (
+            self._datasets_to_ids[d] if d in self._datasets_to_ids else 0, # use auto-increment for new datasets
+            d.name,
+            d.size,
+            d.num_files,
+            d.is_open,
+            d.status,
+            d.on_tape,
+            d.data_type,
+            version_map[d.software_version],
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update))
+        )
 
         self._mysql.insert_many('datasets_new', fields, mapping, datasets, do_update = False)
 
@@ -429,9 +448,10 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('RENAME TABLE `datasets_new` TO `datasets`')
         self._mysql.query('DROP TABLE `datasets_old`')
 
+        # reload the dataset ids
         self._set_dataset_ids(datasets)
 
-        # insert/update blocks for this dataset
+        # insert/update blocks
         # since the block list can be large, it is faster to recreate the entire table than to update and clean.
         all_blocks = sum([d.blocks for d in datasets], [])
 
@@ -447,6 +467,10 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('RENAME TABLE `blocks` TO `blocks_old`')
         self._mysql.query('RENAME TABLE `blocks_new` TO `blocks`')
         self._mysql.query('DROP TABLE `blocks_old`')
+
+        # at this point the block_ids may have changed
+        # truncate block_replicas table to avoid inconsistencies
+        self._mysql.query('TRUNCATE TABLE `block_replicas`')
 
     def _do_save_replicas(self, all_replicas): #override
         # make name -> id maps for use later

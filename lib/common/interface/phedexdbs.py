@@ -78,8 +78,8 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
 
         request_mapping = {}
 
-        def run_subscription_request(site, replicas_to_subscribe):
-            catalogs = dict([(r.dataset, all_catalogs[r.dataset]) for r in replicas_to_subscribe])
+        def run_subscription_request(site, ro_list):
+            catalogs = dict([(r.dataset, all_catalogs[r.dataset]) for r, o in ro_list])
 
             options = {
                 'node': site.name,
@@ -102,38 +102,36 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
                 return
 
             # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
-#            result = self._make_phedex_request('subscribe', options, method = POST)
-#
-#            if len(result) == 0:
-#                logger.error('schedule_copies  copy failed.')
-#                return
-#
-#            request_id = int(result[0]['id']) # return value is a string
-#
-#            logger.warning('PhEDEx subscription request id: %d', request_id)
-#            
-#            request_mapping[request_id] = replicas_to_subscribe
-#
+            result = self._make_phedex_request('subscribe', options, method = POST)
+
+            if len(result) == 0:
+                logger.error('schedule_copies  copy failed.')
+                return
+
+            request_id = int(result[0]['id']) # return value is a string
+
+            logger.warning('PhEDEx subscription request id: %d', request_id)
+            
+            request_mapping[request_id] = (True, ro_list)
+
 #            result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
 #
 #            if len(result) == 0:
 #                logger.error('schedule_copies  copy approval failed.')
 #                return
 
-        replicas_by_site = {}
+        replicas_by_site = collections.defaultdict(list)
         for replica, origin in replica_origin_list:
-            try:
-                replicas_by_site[replica.site].append(replica)
-            except KeyError:
-                replicas_by_site[replica.site] = [replica]
+            replicas_by_site[replica.site].append((replica, origin))
 
-        for site, replica_list in replicas_by_site.items():
+        for site, ro_list in replicas_by_site.items():
             subscription_chunk = []
             chunk_size = 0
-            for replica in replica_list:
-                subscription_chunk.append(replica)
+            for elem in ro_list:
+                replica, origin = elem
+                subscription_chunk.append((replica, origin))
                 chunk_size += replica.size()
-                if chunk_size >= config.phedex.subscription_chunk_size or replica == replica_list[-1]:
+                if chunk_size >= config.phedex.subscription_chunk_size or elem == ro_list[-1]:
                     run_subscription_request(site, subscription_chunk)
                     subscription_chunk = []
                     chunk_size = 0
@@ -215,15 +213,17 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
 
             request_id = int(result[0]['id']) # return value is a string
 
+            request_mapping[request_id] = (False, replicas_to_delete) # (completed, deleted_replicas)
+
             logger.warning('PhEDEx deletion request id: %d', request_id)
             
-            request_mapping[request_id] = replicas_to_delete
-
             result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
 
             if len(result) == 0:
                 logger.error('schedule_deletions  deletion approval failed.')
                 return
+
+            request_mapping[request_id] = (True, replicas_to_delete)
 
         replicas_by_site = {}
         for replica in replica_list:
