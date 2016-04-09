@@ -27,7 +27,7 @@ webservice = Configuration()
 webservice.x509_key = '/tmp/x509up_u5410'
 
 mysql = Configuration()
-mysql.max_query_len = 900000 # allows up to 1M characters; allowing 10% safety margin
+mysql.max_query_len = 500000 # allows up to 1M characters; allowing 50% safety margin
 
 mysqlstore = Configuration()
 mysqlstore.db_params = {

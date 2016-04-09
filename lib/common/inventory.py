@@ -139,6 +139,12 @@ class InventoryManager(object):
                 self.replica_source.find_tape_copies(self.datasets)
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
 
+            # Do not consider datasets with no replicas
+            loaded_datasets = self.datasets.items()
+            for ds_name, dataset in loaded_datasets:
+                if len(dataset.replicas) == 0:
+                    self.datasets.pop(ds_name)
+
             logger.info('Saving data.')
 
             # Save inventory data to persistent storage

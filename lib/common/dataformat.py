@@ -81,7 +81,7 @@ class Dataset(object):
             if type(block) is Block:
                 return next(b for b in self.blocks if b == block)
             else:
-                return next(b for b in self.blocks if b.name == block_name)
+                return next(b for b in self.blocks if b.name == block)
 
         except StopIteration:
             return None

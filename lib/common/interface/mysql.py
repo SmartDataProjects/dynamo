@@ -3,6 +3,7 @@ Generic MySQL interface (for an interface).
 """
 
 import MySQLdb
+import sys
 import logging
 
 import common.configuration as config
@@ -111,6 +112,7 @@ class MySQL(object):
                 except:
                     print 'There was an error executing the following statement:'
                     print (sqlbase % values)[:10000]
+                    print sys.exc_info()[1]
 
                 values = ''
 

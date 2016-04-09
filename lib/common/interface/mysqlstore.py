@@ -115,8 +115,7 @@ class MySQLStore(LocalStoreInterface):
         tables = self._mysql.query('SHOW TABLES')
 
         for table in tables:
-            self._mysql.query('DROP TABLE `%s`.`%s`' % (self._db_name, table))
-            self._mysql.query('CREATE TABLE `%s`.`%s` LIKE `%s`.`%s`' % (self._db_name, table, snapshot_name, table))
+            self._mysql.query('TRUNCATE TABLE `%s`.`%s`' % (self._db_name, table))
             self._mysql.query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (self._db_name, table, snapshot_name, table))
 
     def _do_switch_snapshot(self, timestamp): #override
@@ -427,10 +426,19 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query('CREATE TABLE `datasets_new` LIKE `datasets`')
 
+        # first insert known datasets
+        known_datasets = []
+        new_datasets = []
+        for dataset in datasets:
+            try:
+                known_datasets.append((dataset, self._datasets_to_ids[dataset]))
+            except KeyError:
+                new_datasets.append(dataset)
+
         fields = ('id', 'name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
         # MySQL expects the local time for last_update
-        mapping = lambda d: (
-            self._datasets_to_ids[d] if d in self._datasets_to_ids else 0, # use auto-increment for new datasets
+        mapping = lambda (d, i): (
+            i,
             d.name,
             d.size,
             d.num_files,
@@ -442,7 +450,23 @@ class MySQLStore(LocalStoreInterface):
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update))
         )
 
-        self._mysql.insert_many('datasets_new', fields, mapping, datasets, do_update = False)
+        self._mysql.insert_many('datasets_new', fields, mapping, known_datasets, do_update = False)
+
+        fields = ('name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
+        # MySQL expects the local time for last_update
+        mapping = lambda d: (
+            d.name,
+            d.size,
+            d.num_files,
+            d.is_open,
+            d.status,
+            d.on_tape,
+            d.data_type,
+            version_map[d.software_version],
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update))
+        )
+
+        self._mysql.insert_many('datasets_new', fields, mapping, new_datasets, do_update = False)
 
         self._mysql.query('RENAME TABLE `datasets` TO `datasets_old`')
         self._mysql.query('RENAME TABLE `datasets_new` TO `datasets`')
