@@ -42,7 +42,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
         # Due to the way PhEDEx is set up, we are required to see block replica information
         # when fetching the list of datasets. Might as well cache it.
         # Cache organized as {dataset: {site: [ProtoBlockReplicas]}}
-        self._block_replicas = {}
+        self._block_replicas = collections.defaultdict(lambda: collections.defaultdict(list))
 
     def schedule_copy(self, dataset_replica, origin = None, comments = ''): #override (CopyInterface)
         # origin argument is not used because of the way PhEDEx works
@@ -300,9 +300,6 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
         for dataset_entry in source:
             ds_name = dataset_entry['name']
 
-            if ds_name not in self._block_replicas:
-                self._block_replicas[ds_name] = {}
-
             has_block_replica = False
 
             for block_entry in dataset_entry['block']:
@@ -323,9 +320,6 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
                         is_complete = (replica_entry['complete'] == 'y')
                     )
 
-                    if site_name not in self._block_replicas[ds_name]:
-                        self._block_replicas[ds_name][site_name] = []
-    
                     self._block_replicas[ds_name][site_name].append(protoreplica)
                     
             if has_block_replica:
@@ -345,11 +339,26 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
     
             for site_name, ds_block_list in self._block_replicas[dataset.name].items():
                 site = sites[site_name]
+
+                # find the dataset replica
+                dataset_replica = dataset.find_replica(site)
+                if dataset_replica is None:
+                    # make one if not made yet
+                    dataset_replica = DatasetReplica(
+                        dataset,
+                        site,
+                        group = group,
+                        is_complete = True,
+                        is_partial = False,
+                        is_custodial = False
+                    )
+
+                    dataset.replicas.append(dataset_replica)
+                    site.dataset_replicas.append(dataset_replica)
     
                 for protoreplica in ds_block_list:
-                    try:
-                        block = next(b for b in dataset.blocks if b.name == protoreplica.block_name)
-                    except StopIteration:
+                    block = dataset.find_block(protoreplica.block_name)
+                    if block is None:
                         if dataset.status == Dataset.STAT_VALID:
                             logger.warning('Replica interface found a block %s that is unknown to dataset %s', protoreplica.block_name, dataset.name)
 
@@ -374,22 +383,6 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
     
                     block.replicas.append(replica)
                     site.block_replicas.append(replica)
-
-                    # now find the dataset replica
-                    dataset_replica = dataset.find_replica(site)
-                    if dataset_replica is None:
-                        # make one if not made yet
-                        dataset_replica = DatasetReplica(
-                            dataset,
-                            site,
-                            group = group,
-                            is_complete = True,
-                            is_partial = False,
-                            is_custodial = False
-                        )
-
-                        dataset.replicas.append(dataset_replica)
-                        site.dataset_replicas.append(dataset_replica)
 
                     # add the block replica to the list
                     dataset_replica.block_replicas.append(replica)
@@ -454,12 +447,17 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
 
         # Use 'data' query for full lists of blocks (Possibly 'blockreplicas' already
         # has this information, to be verified) for open datasets.
+        # Open datasets are defined as those in PRODUCTION or UNKNOWN statuses, or those
+        # with more block replicas than the known blocks
+        open_datasets = []
+        for dataset in datasets.values():
+            if dataset.status == Dataset.STAT_PRODUCTION or dataset.status == Dataset.STAT_UNKNOWN or \
+                    len(dataset.blocks) < max(len(replicas) for site, replicas in self._block_replicas[dataset.name].items()):
+                open_datasets.append(dataset)
 
-        production_datasets = [d for d in datasets.values() if d.status == Dataset.STAT_PRODUCTION or d.status == Dataset.STAT_UNKNOWN]
+        self.set_dataset_constituent_info(open_datasets)
 
-        self.set_dataset_constituent_info(production_datasets)
-
-        for dataset in production_datasets:
+        for dataset in open_datasets:
             if len(dataset.blocks) == 0:
                 logger.info('get_datasets::run_datasets_query  %s does not have any blocks and is removed.', dataset.name)
                 datasets.pop(dataset.name)
