@@ -131,6 +131,16 @@ class Detox(object):
         return deletion_candidates, protection_list
 
     def commit_deletions(self, all_deletions):
+        # first make sure the list of blocks is up-to-date
+        datasets = []
+        for site, replicas in all_deletions.items():
+            for replica in replicas:
+                if replica.dataset not in datasets:
+                    datasets.append(replica.dataset)
+
+        self.inventory_manager.dataset_source.set_dataset_constituent_info(datasets)
+
+        # now schedule deletion for each site
         for site in sorted(all_deletions.keys(), key = lambda s: s.name):
             replica_list = all_deletions[site]
 
