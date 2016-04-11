@@ -3,7 +3,7 @@ import datetime
 import collections
 import logging
 
-from common.dataformat import DatasetReplica
+from common.dataformat import Dataset, DatasetReplica
 from common.interface.mysql import MySQL
 import common.configuration as config
 import dealer.configuration as dealer_config
@@ -38,10 +38,10 @@ class Dealer(object):
 
         self.demand_manager.load(self.inventory_manager)
 
-#        utcnow = datetime.datetime.utcnow()
-#        utcmidnight = datetime.datetime(utcnow.year, utcnow.month, utcnow.day)
-#        if (utcnow - utcmidnight).seconds > self.demand_manager.time_today + dealer_config.demand_refresh_interval:
-#            self.demand_manager.update(self.inventory_manager)
+        utcnow = datetime.datetime.utcnow()
+        utcmidnight = datetime.datetime(utcnow.year, utcnow.month, utcnow.day)
+        if (utcnow - utcmidnight).seconds > self.demand_manager.time_today + dealer_config.demand_refresh_interval:
+            self.demand_manager.update(self.inventory_manager)
 
         copy_list = self.determine_copies()
 
@@ -83,10 +83,10 @@ class Dealer(object):
                 if replica.dataset.name.endswith('GEN-SIM-RAW'):
                     continue
 
-                accesses = replica.accesses[DatasetReplica.ACC_LOCAL]
-
-                if len(accesses) == 0:
+                if replica.dataset.status != Dataset.STAT_VALID:
                     continue
+
+                accesses = replica.accesses[DatasetReplica.ACC_LOCAL]
 
                 dataset_ncpu = 0.
                 for date in last_three_days:
@@ -105,10 +105,8 @@ class Dealer(object):
                     dataset_ncpu += ncpu
                     site_occupancy += ncpu / site.cpu
 
-                if dataset_ncpu == 0.:
-                    continue
-
-                logger.info('%s has time-normalized CPU usage of %f', replica.dataset.name, dataset_ncpu)
+                if dataset_ncpu != 0.:
+                    logger.info('%s has time-normalized CPU usage of %f', replica.dataset.name, dataset_ncpu)
 
                 dataset_cpus[replica.dataset].append((dataset_ncpu, site))
 
@@ -118,8 +116,7 @@ class Dealer(object):
 
             logger.info('%s occupancy: %f (CPU) %f (storage)', site.name, site_cpu_occupancies[site], site_storage[site])
 
-        site_cpu_occupancies_before = dict(site_cpu_occupancies)
-        site_storage_before = dict(site_storage)
+        busy_datasets = [] # (dataset, total_ncpu, total_site_capacity)
 
         for dataset, usage_list in dataset_cpus.items():
             total_ncpu = sum(n for n, site in usage_list)
@@ -134,40 +131,72 @@ class Dealer(object):
                 logger.warning('%s has too many replicas already. Not copying.', dataset.name)
                 continue
 
-            sorted_sites = sorted(site_cpu_occupancies.items(), key = lambda (s, o): o) #sorted from emptiest to busiest
+            busy_datasets.append((dataset, total_ncpu, total_site_capacity))
 
-            destination_site = None
-            for dest, occ in sorted_sites:
-                if occ == 0.:
-                    # this site had no activities - probably not active.
-                    continue
+        busy_datasets.sort(key = lambda (d, n, c): n / c, reverse = True)
 
-                if site_storage[dest] + dataset.size * 1.e-12 / dest.group_quota[group] > 1.:
-                    continue
+        site_cpu_occupancies_before = dict(site_cpu_occupancies)
+        site_storage_before = dict(site_storage)
+        copy_volumes = dict([(site, 0.) for site in self.inventory_manager.sites.values()])
 
-                if site_storage[dest] < config.target_site_occupancy and dest.find_dataset_replica(dataset) is None:
-                    destination_site = dest
+        for dataset, total_ncpu, total_site_capacity in busy_datasets:
+
+            global_stop = False
+
+            while total_ncpu / total_site_capacity > dealer_config.occupancy_fraction_threshold:
+                sorted_sites = sorted(site_cpu_occupancies.items(), key = lambda (s, o): o) #sorted from emptiest to busiest
+    
+                try:
+                    destination_site = next(dest for dest, occ in sorted_sites if \
+                        occ != 0. and \
+                        site_storage[dest] < config.target_site_occupancy and \
+                        site_storage[dest] + dataset.size * 1.e-12 / dest.group_quota[group] < 1. and \
+                        copy_volumes[dest] < dealer_config.max_copy_volume and \
+                        dest.find_dataset_replica(dataset) is None
+                    )
+                    # occ == 0 -> this site had no activities - probably not active.
+                    # site is not full
+                    # site will not be full
+                    # copy quota not reached yet
+                    # does not have the dataset replica yet
+
+                except StopIteration:
+                    logger.warning('%s has no copy destination.', dataset.name)
+                    break
+    
+                logger.info('Copying %s to %s', dataset.name, destination_site.name)
+    
+                origin_site = max(usage_list, key = lambda (n, site): n)[1] # busiest site for this dataset
+    
+                new_replica = self.inventory_manager.add_dataset_to_site(dataset, destination_site, group)
+                copy_list[destination_site].append((new_replica, origin_site))
+    
+                copy_volumes[destination_site] += dataset.size * 1.e-12
+    
+                # add the size of this replica to destination storage
+                site_storage[destination_site] += dataset.size * 1.e-12 / destination_site.group_quota[group]
+
+                # add the cpu capacity of the destination site to total
+                total_site_capacity += destination_site.cpu
+                
+                # add the cpu usage of this replica to destination occupancy
+                site_cpu_occupancies[destination_site] += total_ncpu / total_site_capacity
+
+                if len(dataset.replicas) > dealer_config.max_replicas:
+                    logger.warning('%s has reached the maximum number of replicas allowed.', dataset.name)
+                    break
+    
+                if min(site_storage.values()) > config.target_site_occupancy:
+                    logger.warning('All sites have exceeded target storage occupancy. No more copies will be made.')
+                    global_stop = True
+                    break
+    
+                if min(copy_volumes.values()) > dealer_config.max_copy_volume:
+                    logger.warning('All sites have exceeded copy volume target. No more copies will be made.')
+                    global_stop = True
                     break
 
-            if destination_site is None:
-                logger.warning('%s has no copy destination.', dataset.name)
-                continue
-
-            logger.info('Copying %s to %s', dataset.name, destination_site.name)
-
-            origin_site = max(usage_list, key = lambda (n, site): n)[1] # busiest site for this dataset
-
-            new_replica = self.inventory_manager.add_dataset_to_site(dataset, destination_site, group)
-            copy_list[destination_site].append((new_replica, origin_site))
-
-            # add the size of this replica to destination storage
-            site_storage[destination_site] += dataset.size * 1.e-12 / destination_site.group_quota[group]
-            
-            # add the cpu usage of this replica to destination occupancy
-            site_cpu_occupancies[destination_site] += total_ncpu / (total_site_capacity + destination_site.cpu)
-
-            if min(site_storage.values()) > config.target_site_occupancy:
-                logger.warning('All sites have exceeded target storage occupancy. No more copies will be made.')
+            if global_stop:
                 break
 
         self.write_html_summary(dataset_cpus, copy_list, site_cpu_occupancies_before, site_storage_before, site_storage)
@@ -175,7 +204,19 @@ class Dealer(object):
         return copy_list
 
     def commit_copies(self, copy_list):
+        # first make sure the list of blocks is up-to-date
+        datasets = []
         for site, replica_origins in copy_list.items():
+            for replica, origin in replica_origins:
+                if replica.dataset not in datasets:
+                    datasets.append(replica.dataset)
+
+        self.inventory_manager.dataset_source.set_dataset_constituent_info(datasets)
+
+        for site, replica_origins in copy_list.items():
+            if len(replica_origins) == 0:
+                continue
+
             copy_mapping = self.transaction_manager.copy.schedule_copies(replica_origins, comments = self.copy_message)
             # copy_mapping .. {operation_id: (complete, [(replica, origin)])}
     
@@ -393,7 +434,9 @@ function searchDataset(name) {
             site_copies = [r for r, origin in copy_list[site]]
             site_copies.sort(key = lambda r: r.size(), reverse = True)
 
-            text += '     <li class="vanishable"><span onclick="toggleVisibility(\'{site}:arriving\')" class="menuitem">Arriving</span>\n'.format(**keywords)
+            keywords['arrive_volume'] = sum(replica.size() * 1.e-9 for replica in site_copies)
+
+            text += '     <li class="vanishable"><span onclick="toggleVisibility(\'{site}:arriving\')" class="menuitem">Arriving</span> {arrive_volume:.2f}\n'.format(**keywords)
             text += '      <ul id="{site}:arriving" class="arrive-bullet collapsible">\n'.format(**keywords)
             
             for replica in site_copies:

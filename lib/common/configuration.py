@@ -52,7 +52,7 @@ popdb = Configuration()
 popdb.url_base = 'https://cmsweb.cern.ch/popdb'
 
 inventory = Configuration()
-inventory.refresh_min = 216000 # 6 hours
+inventory.refresh_min = 21600 # 6 hours
 inventory.included_sites = ['T2_*', 'T1_*_Disk']
 inventory.excluded_sites = ['T2_CH_CERNBOX', 'T2_MY_UPM_BIRUNI', 'T1_US_FNAL_New_Disk']
 inventory.included_groups = ['AnalysisOps', 'DataOps']

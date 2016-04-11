@@ -367,7 +367,8 @@ class MySQLStore(LocalStoreInterface):
             if replica is None:
                 replica = dataset.find_replica(site)
                 if replica is None:
-                    raise MySQLStore.DatabaseError('Unknown replica %s:%s in dataset_accesses table' % (site.name, dataset.name))
+                    # this dataset is not at the site any more
+                    continue
 
             date = datetime.date(year, month, day)
             replica.accesses[int(access_type)][date] = DatasetReplica.Access(num_accesses, cputime)
@@ -375,7 +376,7 @@ class MySQLStore(LocalStoreInterface):
             if date > last_update:
                 last_update = date
 
-        logger.info('Loaded %d replica access data.', len(accesses))
+        logger.info('Loaded %d replica access data. Last update on %s', len(accesses), last_update.strftime('%Y-%m-%d'))
 
         return last_update
 
@@ -577,9 +578,6 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('DROP TABLE `block_replicas_old`')
 
     def _do_save_replica_accesses(self, all_replicas): #override
-        # since dataset_accesses table cannot be unique-indexed, will write the entire memory content
-        # to a separate table and later rename.
-
         if len(self._datasets_to_ids) == 0:
             self._set_dataset_ids(list(set([r.dataset for r in all_replicas])))
         if len(self._sites_to_ids) == 0:

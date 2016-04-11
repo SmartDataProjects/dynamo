@@ -69,7 +69,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             logger.debug('schedule_copy  subscribe: %s', str(options))
             return
 
-#        self._make_phedex_request('subscribe', options, method = POST)
+        self._make_phedex_request('subscribe', options, method = POST)
 
     def schedule_copies(self, replica_origin_list, comments = ''): #override (CopyInterface)
 
@@ -113,12 +113,6 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             logger.warning('PhEDEx subscription request id: %d', request_id)
             
             request_mapping[request_id] = (True, ro_list)
-
-#            result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
-#
-#            if len(result) == 0:
-#                logger.error('schedule_copies  copy approval failed.')
-#                return
 
         replicas_by_site = collections.defaultdict(list)
         for replica, origin in replica_origin_list:
@@ -347,7 +341,6 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
                     dataset_replica = DatasetReplica(
                         dataset,
                         site,
-                        group = group,
                         is_complete = True,
                         is_partial = False,
                         is_custodial = False
@@ -386,6 +379,8 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
 
                     # add the block replica to the list
                     dataset_replica.block_replicas.append(replica)
+                    if dataset_replica.group is None:
+                        dataset_replica.group = group
 
                     # if any block replica is not complete, dataset replica is not
                     if not replica.is_complete:

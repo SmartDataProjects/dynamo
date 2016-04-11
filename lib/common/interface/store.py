@@ -193,7 +193,6 @@ class LocalStoreInterface(object):
 
             all_replicas = sum([d.replicas for d in datasets], []) # second argument -> start with an empty array and add up
             self._do_save_replicas(all_replicas)
-            self._do_save_replica_accesses(all_replicas)
             self.set_last_update()
         finally:
             self.release_lock()
