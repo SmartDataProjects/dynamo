@@ -51,6 +51,11 @@ sitedb.url_base = 'https://cmsweb.cern.ch/sitedb/data/prod'
 popdb = Configuration()
 popdb.url_base = 'https://cmsweb.cern.ch/popdb'
 
+globalqueue = Configuration()
+globalqueue.collector = 'vocms099.cern.ch:9620'
+globalqueue.schedd_constraint = 'CMSGWMS_Type =?= "crabschedd"'
+globalqueue.job_constraint = 'TaskType=?="ROOT" && !isUndefined(DESIRED_CMSDataset)'
+
 inventory = Configuration()
 inventory.refresh_min = 21600 # 6 hours
 inventory.included_sites = ['T2_*', 'T1_*_Disk']

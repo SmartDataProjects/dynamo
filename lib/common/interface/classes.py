@@ -2,6 +2,7 @@ from common.interface.phedexdbs import PhEDExDBS
 from common.interface.mysqlstore import MySQLStore
 from common.interface.dbs import DBS
 from common.interface.popdb import PopDB
+from common.interface.globalqueue import GlobalQueue
 
 class Generator(object):
     """
@@ -36,5 +37,6 @@ default_interface = {
     'deletion': Generator(PhEDExDBS),
     'store': Generator(MySQLStore),
     'lock': Generator(DummyInterface),
-    'access_history': Generator(PopDB)
+    'access_history': Generator(PopDB),
+    'job_queue': Generator(GlobalQueue)
 }

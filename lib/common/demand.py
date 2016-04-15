@@ -13,7 +13,7 @@ class DemandManager(object):
     Aggregate information from multiple sources and create a Demand object for a dataset.
     """
 
-    def __init__(self, store_cls = None, access_history_cls = None, lock_cls = None):
+    def __init__(self, store_cls = None, access_history_cls = None, job_queue_cls = None, lock_cls = None):
         if store_cls:
             self.store = store_cls()
         else:
@@ -23,6 +23,11 @@ class DemandManager(object):
             self.access_history = access_history_cls()
         else:
             self.access_history = default_interface['access_history']()
+
+        if job_queue_cls:
+            self.job_queue = job_queue_cls()
+        else:
+            self.job_queue = default_interface['job_queue']()
 
         if lock_cls:
             self.lock = lock_cls()
