@@ -1,6 +1,8 @@
 import os
 import logging
 
+import pconfiguration
+
 class Configuration(object):
     pass
 
@@ -15,27 +17,16 @@ paths.ddm_base = os.environ['DDM_BASE']
 paths.log_directory = paths.ddm_base + '/logs'
 
 history = Configuration()
-history.db_params = {
-    'host': 'localhost',
-    'user': 'ddmdevel',
-    'passwd': 'intelroccs',
-    'db': 'history'
-}
+history.db_params = pconfiguration.history_db
 
 webservice = Configuration()
-#webservice.x509_key = '/tmp/x509up_u51268'
-webservice.x509_key = '/tmp/x509up_u5410'
+webservice.x509_key = pconfiguration.x509_key
 
 mysql = Configuration()
 mysql.max_query_len = 500000 # allows up to 1M characters; allowing 50% safety margin
 
 mysqlstore = Configuration()
-mysqlstore.db_params = {
-    'host': 'localhost',
-    'user': 'ddmdevel',
-    'passwd': 'intelroccs',
-    'db': 'DDM_devel'
-}
+mysqlstore.db_params = pconfiguration.store_db
 
 phedex = Configuration()
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'
@@ -53,8 +44,6 @@ popdb.url_base = 'https://cmsweb.cern.ch/popdb'
 
 globalqueue = Configuration()
 globalqueue.collector = 'vocms099.cern.ch:9620'
-globalqueue.schedd_constraint = 'CMSGWMS_Type =?= "crabschedd"'
-globalqueue.job_constraint = 'TaskType=?="ROOT" && !isUndefined(DESIRED_CMSDataset)'
 
 inventory = Configuration()
 inventory.refresh_min = 21600 # 6 hours
