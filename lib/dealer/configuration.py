@@ -4,7 +4,9 @@ operating_group = 'AnalysisOps'
 
 demand_refresh_interval = 7200. # update demand if demand manager time_today is more than 7200 seconds ago
 
+popularity_threshold = 0.5
 occupancy_fraction_threshold = 0.1 # (CPU hour) / (time normalisation (s)) / (site CPU capacity (kHS06))
+reference_cpu_per_file = 0.5
 
 max_copy_volume = 6. # Maximum volume to be copied per site in TB
 

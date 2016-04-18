@@ -83,7 +83,12 @@ class Dealer(object):
                 if replica.dataset.name.endswith('GEN-SIM-RAW'):
                     continue
 
+                # skip non-complete datasets
                 if replica.dataset.status != Dataset.STAT_VALID:
+                    continue
+
+                # skip datasets size > 10 TB
+                if replica.dataset.size * 1.e-12 > 10.:
                     continue
 
                 accesses = replica.accesses[DatasetReplica.ACC_LOCAL]
@@ -116,34 +121,38 @@ class Dealer(object):
 
             logger.info('%s occupancy: %f (CPU) %f (storage)', site.name, site_cpu_occupancies[site], site_storage[site])
 
-        busy_datasets = [] # (dataset, total_ncpu, total_site_capacity)
+        popular_datasets = [] # (dataset, total_ncpu, total_site_capacity)
 
         for dataset, usage_list in dataset_cpus.items():
             total_ncpu = sum(n for n, site in usage_list)
+
+            if total_ncpu / dataset.num_files < dealer_config.popularity_threshold:
+                continue
+
             total_site_capacity = sum(site.cpu for n, site in usage_list)
 
             if total_ncpu / total_site_capacity < dealer_config.occupancy_fraction_threshold:
                 continue
 
-            logger.info('%s is busy.', dataset.name)
+            logger.info('%s is popular and needs more resource.', dataset.name)
 
             if len(dataset.replicas) > dealer_config.max_replicas:
                 logger.warning('%s has too many replicas already. Not copying.', dataset.name)
                 continue
 
-            busy_datasets.append((dataset, total_ncpu, total_site_capacity))
+            popular_datasets.append((dataset, total_ncpu, total_site_capacity))
 
-        busy_datasets.sort(key = lambda (d, n, c): n / c, reverse = True)
+        popular_datasets.sort(key = lambda (d, n, c): n / d.num_files, reverse = True)
 
         site_cpu_occupancies_before = dict(site_cpu_occupancies)
         site_storage_before = dict(site_storage)
         copy_volumes = dict([(site, 0.) for site in self.inventory_manager.sites.values()])
 
-        for dataset, total_ncpu, total_site_capacity in busy_datasets:
+        for dataset, total_ncpu, total_site_capacity in popular_datasets:
 
             global_stop = False
 
-            while total_ncpu / total_site_capacity > dealer_config.occupancy_fraction_threshold:
+            while total_ncpu / dataset.num_files > len(dataset.replicas) * dealer_config.reference_cpu_per_file:
                 sorted_sites = sorted(site_cpu_occupancies.items(), key = lambda (s, o): o) #sorted from emptiest to busiest
     
                 try:
@@ -263,7 +272,7 @@ span.menuitem {
   cursor:pointer;
 }
 
-span.busy {
+span.popular {
   color: red;
 }
 
@@ -422,7 +431,7 @@ function searchDataset(name) {
                 text += '       <li id="{site}:{dataset}" class="vanishable">'.format(**keywords)
 
                 if ncpu / site.cpu > dealer_config.occupancy_fraction_threshold:
-                    text += '<span class="busy">{dataset} ({occ:.2f})</span>'.format(**keywords)
+                    text += '<span class="popular">{dataset} ({occ:.2f})</span>'.format(**keywords)
                 else:
                     text += '{dataset} ({occ:.2f})'.format(**keywords)
 
