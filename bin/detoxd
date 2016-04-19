@@ -1,0 +1,42 @@
+#!/bin/bash
+# --------------------------------------------------------------------------------------------------
+# Process to run detox periodically.
+#
+# v1.0                                                                       Y.Iiyama (Apr 19, 2016)
+# --------------------------------------------------------------------------------------------------
+# initialize environment variables
+source /usr/local/dynamo/etc/profile.d/init.sh
+
+while [ 1 ]
+do
+
+  # make sure the log directory exists
+  mkdir -p $DYNAMO_LOGDIR
+
+  # generate specific log file
+  TAG=`date "+%s"`
+  LOG=$DYNAMO_LOGDIR/detox-${TAG}.log
+  touch $LOG
+
+  if [ $(du -mc $DYNAMO_LOGDIR/detox-* | awk '/total/ {print $1}') -gt 10000 ] # logs exceeding 10 GB
+  then
+    find $DYNAMO_LOGDIR -name detox-* -mtime 1 -delete
+  fi
+
+  # ten loops over the process with one logfile (keep it small)
+  for LOOP in `echo 0 1 2 3 4 5 6 7 8 9`
+  do
+    echo " "                                                         >> $LOG
+    echo "=========================================================" >> $LOG
+    echo " "                                                         >> $LOG
+    echo $(date)": detox loop $LOOP started -- $TAG"                 >> $LOG
+    echo " "                                                         >> $LOG
+    echo "=========================================================" >> $LOG
+    stdbuf -o0 -e0 $DETOX_BASE/bin/detox                             >> $LOG 2>&1
+
+    sleep $((3600*$DETOX_CYCLE_HOURS))
+  done
+
+done
+
+exit 0

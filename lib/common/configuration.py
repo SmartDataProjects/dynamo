@@ -14,8 +14,7 @@ read_only = False
 target_site_occupancy = 0.95
 
 paths = Configuration()
-paths.ddm_base = os.environ['DDM_BASE']
-paths.log_directory = paths.ddm_base + '/logs'
+paths.base = os.environ['DYNAMO_BASE']
 
 history = Configuration()
 history.db_params = pconfiguration.history_db
