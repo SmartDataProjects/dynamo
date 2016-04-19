@@ -1,7 +1,8 @@
 import os
 import logging
 
-import pconfiguration
+# should use a smarter solution here
+import common.pconfiguration as pconfiguration
 
 class Configuration(object):
     pass
