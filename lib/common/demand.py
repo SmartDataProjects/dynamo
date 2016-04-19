@@ -35,7 +35,7 @@ class DemandManager(object):
             self.lock = default_interface['lock']()
 
         self.last_accesses_update = None
-        self.last_request_update = None
+        self.last_requests_update = None
         self.time_today = 0.
 
     def load(self, inventory):
@@ -46,7 +46,7 @@ class DemandManager(object):
         datasets = inventory.datasets.values()
 
         self.last_accesses_update = self.store.load_replica_accesses(sites, datasets)
-        self.last_request_update = self.store.load_dataset_requests(datasets)
+        self.last_requests_update = self.store.load_dataset_requests(datasets)
         self.store.load_locks(sites, groups, datasets)
 
     def update(self, inventory):
@@ -181,11 +181,11 @@ if __name__ == '__main__':
                 if arg == 'accesses':
                     icmd += 1
 
-                    start, end = args.command[icmd:icmd + 1]
+                    start, end = args.command[icmd:icmd + 2]
                     icmd += 2
 
                     if start == 'last':
-                        start_date = manager.last_access_update
+                        start_date = manager.last_accesses_update
                     else:
                         start_date = datetime.datetime.strptime(start, '%Y-%m-%d').date()                        
 
@@ -199,11 +199,11 @@ if __name__ == '__main__':
                 elif arg == 'requests':
                     icmd += 1
 
-                    start, end = args.arguments[icmd:icmd + 1]
+                    start, end = args.command[icmd:icmd + 2]
                     icmd += 2
 
                     if start == 'last':
-                        start_datetime = manager.last_request_update
+                        start_datetime = manager.last_requests_update
                     else:
                         start_datetime = datetime.datetime.strptime(start, '%Y-%m-%d')
 

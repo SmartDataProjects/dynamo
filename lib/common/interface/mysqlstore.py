@@ -8,7 +8,7 @@ import fnmatch
 
 from common.interface.store import LocalStoreInterface
 from common.interface.mysql import MySQL
-from common.dataformat import Dataset, Block, Site, Group, DatasetReplica, BlockReplica
+from common.dataformat import Dataset, Block, Site, Group, DatasetReplica, BlockReplica, DatasetRequest
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
