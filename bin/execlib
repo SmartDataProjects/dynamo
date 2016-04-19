@@ -1,0 +1,15 @@
+#!/bin/bash
+# --------------------------------------------------------------------------------------------------
+# Wrapper to execute various libraries directly.
+#
+# v1.0                                                                       Y.Iiyama (Apr 19, 2016)
+# --------------------------------------------------------------------------------------------------
+
+# initialize environment variables
+source /usr/local/dynamo/etc/profile.d/init.sh
+
+LIB=$1
+shift
+ARGS="$@"
+
+python $DYNAMO_BASE/lib/$LIB $ARGS
