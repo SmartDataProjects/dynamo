@@ -26,7 +26,7 @@ parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', defaul
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
-parser.add_argument('--dry-run', '-T', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests.')
+parser.add_argument('--dry-run', '-T', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual copy requests, do not save anything to local storage.')
 parser.add_argument('--repeat', '-n', metavar = 'CYCLES SLEEP', dest = 'repeat', type = int, nargs = 2, default = [1, 0], help = 'Repeat execution for CYCLES times with SLEEP hour interval.')
 
 args = parser.parse_args()

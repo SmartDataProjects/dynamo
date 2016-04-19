@@ -43,7 +43,7 @@ popdb = Configuration()
 popdb.url_base = 'https://cmsweb.cern.ch/popdb'
 
 globalqueue = Configuration()
-globalqueue.collector = 'vocms099.cern.ch:9620'
+globalqueue.collector = 'cmsgwms-collector-global.cern.ch:9620'
 
 inventory = Configuration()
 inventory.refresh_min = 21600 # 6 hours
