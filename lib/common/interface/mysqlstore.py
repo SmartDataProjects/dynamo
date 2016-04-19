@@ -604,6 +604,32 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('RENAME TABLE `dataset_accesses_new` TO `dataset_accesses`')
         self._mysql.query('DROP TABLE `dataset_accesses_old`')
 
+    def _do_save_dataset_requests(self, datasets): #override
+        if len(self._datasets_to_ids) == 0:
+            raise RuntimeError('save_dataset_requests cannot be called before initializing the id maps')
+
+        all_requests = []
+        for dataset in datasets:
+            for request in dataset.requests:
+                all_requests.append((dataset, request))
+
+        # insert/update dataset replicas
+        logger.info('Inserting/updating %d dataset requests.', len(all_requests))
+
+        fields = ('id', 'dataset_id', 'queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued')
+        mapping = lambda (d, r): (
+            r.job_id,
+            self._datasets_to_ids[d],
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.queue_time)),
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.completion_time)),
+            r.nodes_total,
+            r.nodes_done,
+            r.nodes_failed,
+            r.nodes_queued
+        )
+
+        self._mysql.insert_many('dataset_requests', fields, mapping, all_requests)
+
     def _do_add_dataset_replicas(self, replicas): #override
         # make name -> id maps for use later
         if len(self._datasets_to_ids) == 0 or len(self._sites_to_ids) == 0 or len(self._groups_to_ids) == 0:

@@ -68,6 +68,7 @@ class Dataset(object):
         self.last_update = last_update # in UNIX time
         self.blocks = []
         self.replicas = []
+        self.requests = []
 
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
@@ -312,3 +313,6 @@ class DatasetDemand(object):
         self.popularity_score = popularity_score
         self.required_copies = required_copies
         self.locked_blocks = []
+
+
+DatasetRequest = collections.namedtuple('DatasetRequest', ['job_id', 'queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued'])

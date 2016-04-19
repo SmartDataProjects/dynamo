@@ -282,6 +282,23 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
+    def save_dataset_requests(self, datasets):
+        """
+        Write information in memory into persistent storage.
+        Argument is a list of datasets with request information.
+        """
+
+        if config.read_only:
+            logger.debug('_do_save_dataset_requests()')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_dataset_requests(datasets)
+            self.set_last_update()
+        finally:
+            self.release_lock()
+
     def add_dataset_replicas(self, replicas):
         """
         Insert a few replicas instead of saving the full list.

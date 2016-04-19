@@ -34,7 +34,7 @@ class DemandManager(object):
         else:
             self.lock = default_interface['lock']()
 
-        self._last_access_update = None
+        self._last_accesses_update = None
         self.time_today = 0.
 
     def load(self, inventory):
@@ -44,29 +44,34 @@ class DemandManager(object):
         groups = inventory.groups.values()
         datasets = inventory.datasets.values()
 
-        self._last_access_update = self.store.load_replica_accesses(sites, datasets)
+        self._last_accesses_update = self.store.load_replica_accesses(sites, datasets)
         self.store.load_locks(sites, groups, datasets)
 
     def update(self, inventory):
-        if self._last_access_update is None:
+        if self._last_accesses_update is None:
             self.load(inventory)
 
-        now = time.time() # UNIX timestamp of now
-        utc = time.gmtime(now) # struct_time in UTC
-        utctoday = datetime.date(utc.tm_year, utc.tm_mon, utc.tm_mday)
+        utcnow = datetime.utcnow()
 
-        start_date = max(self._last_access_update, utctoday - datetime.timedelta(config.demand.access_history.max_back_query))
+        utctoday = utcnow.date()
 
-        self.update_access(inventory, start_date, utctoday)
+        start_date = max(self._last_accesses_update, utctoday - datetime.timedelta(config.demand.access_history.max_back_query))
 
-        self._last_access_update = utctoday - datetime.timedelta(1)
+        self.update_accesses(inventory, start_date, utctoday)
+        self._last_accesses_update = utctoday - datetime.timedelta(1)
 
-        utcnow = datetime.datetime(utc.tm_year, utc.tm_mon, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec)
-        utcmidnight = datetime.datetime(utc.tm_year, utc.tm_mon, utc.tm_mday)
+        self.update_requests(inventory, datetime.datetime(start_date.year, start_date.month, start_date.day), utcnow)
+
+        utcmidnight = utcnow.replace(hour = 0, minute = 0, second = 0)
         self.time_today = (utcnow - utcmidnight).seconds # n seconds elapsed since UTC 00:00:00 today
 
-    def update_access(self, inventory, start_date, end_date):
-        if self._last_access_update is None:
+    def update_accesses(self, inventory, start_date, end_date):
+        """
+        Query the access history interface and collect all dataset accesses that happened between
+        start date and end date. Save information in the inventory store.
+        """
+
+        if self._last_accesses_update is None:
             self.load(inventory)
 
         for site in inventory.sites.values():
@@ -86,8 +91,37 @@ class DemandManager(object):
 
         self.store.save_replica_accesses(all_replicas)
 
-        if self._last_access_update < end_date:
-            self._last_access_update = end_date
+        if self._last_accesses_update < end_date:
+            self._last_accesses_update = end_date
+
+    def update_requests(self, inventory, start_datetime, end_datetime):
+        """
+        Query the job queue interface and collect all job information between start datetime and
+        end datetime. Save information in the inventory store.
+        """
+
+        # must convert UTC datetime to UNIX timestamps
+        # not the best implementation here but gets the job done
+        utc_to_local = datetime.datetime.now() - datetime.datetime.utcnow()
+        start_timestamp = time.mktime((start_datetime + utc_to_local).timetuple())
+        end_timestamp = time.mktime((end_datetime + utc_to_local).timetuple())
+        
+        requests = self.job_queue.get_dataset_requests(start_time = start_timestamp, end_time = end_timestamp)
+
+        requested_datasets = []
+
+        for dataset_name, request in requests:
+            try:
+                dataset = inventory.datasets[dataset_name]
+            except KeyError:
+                continue
+
+            dataset.requests.append(request)
+
+            if dataset not in requested_datasets:
+                requested_datasets.append(dataset)
+
+        self.store.save_dataset_requests(requested_datasets)
 
     def get_demand(self, dataset):
         return DatasetDemand(dataset)
@@ -134,13 +168,21 @@ if __name__ == '__main__':
 
     if args.command == 'update':
         if len(args.arguments) != 0:
-            if args.arguments[0] == 'access':
+            if args.arguments[0] == 'accesses':
                 start, end = args.arguments[1:3]
 
                 start_date = datetime.datetime.strptime(start, '%Y-%m-%d').date()
                 end_date = datetime.datetime.strptime(end, '%Y-%m-%d').date()
 
-                manager.update_access(inventory, start_date, end_date)
+                manager.update_accesses(inventory, start_date, end_date)
+
+            elif args.arguments[0] == 'requests':
+                start, end = args.arguments[1:3]
+
+                start_datetime = datetime.datetime.strptime(start, '%Y-%m-%d')
+                end_datetime = datetime.datetime.strptime(end, '%Y-%m-%d')
+
+                manager.update_requests(inventory, start_datetime, end_datetime)
 
         else:
             manager.update(inventory)
