@@ -236,7 +236,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Inventory manager')
 
-    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(update|scan|list (datasets|sites))')
+    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(update|scan|list (datasets|sites)) [commands]')
     parser.add_argument('--store', '-i', metavar = 'CLASS', dest = 'store_cls', default = '', help = 'Store class to be used.')
     parser.add_argument('--site-source', '-s', metavar = 'CLASS', dest = 'site_source_cls', default = '', help = 'SiteInfoSourceInterface class to be used.')
     parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class to be used.')
@@ -255,9 +255,6 @@ if __name__ == '__main__':
         except AttributeError:
             logging.warning('Log level ' + args.log_level + ' not defined')
 
-    command = args.command[0]
-    cmd_args = args.command[1:]
-
     kwd = {'load_data': False} # not loading data by default to speed up update process
 
     for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
@@ -269,20 +266,26 @@ if __name__ == '__main__':
 
     manager = InventoryManager(**kwd)
 
-    if command == 'update':
-        manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot)
-
-    elif command == 'scan':
-        manager.load()
-        manager.scan_datasets(dataset_filter = args.dataset)
-
-    elif command == 'list':
-        manager.load()
-
-        target = cmd_args[0]
-
-        if target == 'datasets':
-            print manager.store.datasets.keys()
-
-        elif target == 'sites':
-            print manager.store.sites.keys()
+    icmd = 0
+    while icmd != len(args.command):
+        command = args.command[icmd]
+        icmd += 1
+    
+        if command == 'update':
+            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot)
+    
+        elif command == 'scan':
+            manager.load()
+            manager.scan_datasets(dataset_filter = args.dataset)
+    
+        elif command == 'list':
+            manager.load()
+    
+            target = args.command[icmd]
+            icmd += 1
+    
+            if target == 'datasets':
+                print manager.store.datasets.keys()
+    
+            elif target == 'sites':
+                print manager.store.sites.keys()
