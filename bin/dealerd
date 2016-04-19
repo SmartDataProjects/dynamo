@@ -1,6 +1,6 @@
 #!/bin/bash
 # --------------------------------------------------------------------------------------------------
-# Process to run detox periodically.
+# Process to run dealer periodically.
 #
 # v1.0                                                                       Y.Iiyama (Apr 19, 2016)
 # --------------------------------------------------------------------------------------------------
@@ -13,18 +13,17 @@ do
 
   # make sure the log directory exists
   mkdir -p $DYNAMO_LOGDIR
-
+  
   # generate specific log file
   TAG=`date "+%s"`
-  LOG=$DYNAMO_LOGDIR/detox-${TAG}.log
-  touch $LOG
-
-  if [ $(du -mc $DYNAMO_LOGDIR/detox-* | awk '/total/ {print $1}') -gt 10000 ] # logs exceeding 10 GB
+  LOG=$DYNAMO_LOGDIR/dealer-${TAG}.log
+  
+  if [ $(du -mc $DYNAMO_LOGDIR/dealer-* | awk '/total/ {print $1}') -gt 10000 ] # logs exceeding 10 GB
   then
-    find $DYNAMO_LOGDIR -name detox-* -mtime 1 -delete
+    find $DYNAMO_LOGDIR -name dealer-* -mtime 1 -delete
   fi
-
-  $DYNAMO_BASE/bin/detox --log-level INFO --log-file $LOG --repeat 10 $DYNAMO_DETOX_INTERVAL
+  
+  $DYNAMO_BASE/bin/dealer --log-level INFO --log-file $LOG --repeat 10 $DYNAMO_DEALER_INTERVAL
 
 done
 

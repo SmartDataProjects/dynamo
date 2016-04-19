@@ -3,6 +3,7 @@
 import sys
 import os
 import logging
+import time
 
 from common.inventory import InventoryManager
 from common.transaction import TransactionManager
@@ -24,17 +25,24 @@ parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', defaul
 parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
+parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-T', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests.')
+parser.add_argument('--repeat', '-n', metavar = 'CYCLES SLEEP', dest = 'repeat', type = int, nargs = 2, default = [1, 0], help = 'Repeat execution for CYCLES times with SLEEP hour interval.')
 
 args = parser.parse_args()
 sys.argv = []
 
+log_level = logging.INFO
 if args.log_level:
     try:
-        level = getattr(logging, args.log_level.upper())
-        logging.getLogger().setLevel(level)
+        log_level = getattr(logging, args.log_level.upper())
     except AttributeError:
         logging.warning('Log level ' + args.log_level + ' not defined')
+
+if args.log_file:
+    logging.basicConfig(filename = args.log_file, filemode = 'w', level = log_level)
+else:
+    logging.basicConfig(level = log_level)
 
 if args.dry_run:
     config.read_only = True
@@ -74,4 +82,8 @@ dealer = Dealer(inventory_manager, transaction_manager, demand_manager)
 if args.force_inventory_update:
     config.inventory.refresh_min = 0
 
-dealer.run()
+for nrun in range(args.repeat[0]):
+    dealer.run()
+
+    if args.repeat[1] > 0:
+        time.sleep(args.repeat[1] * 3600)

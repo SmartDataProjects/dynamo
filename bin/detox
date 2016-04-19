@@ -26,17 +26,24 @@ parser.add_argument('--force-inventory-update', '-I', action = 'store_true', des
 parser.add_argument('--policy-stack', '-p', metavar = 'STACK', dest = 'stack', nargs = '+', default = ['TargetFraction'], help = 'Name of the policy stack. Options are\n TargetFraction [threshold]\n List <path> [<path> ..]\n <path>.py\n The python file should contain a list of Policies with the same name as the file.')
 parser.add_argument('--static-deletion', '-S', action = 'store_true', dest = 'static_deletion', help = 'Delete everything in the deletion list at once.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
+parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-T', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests.')
+parser.add_argument('--repeat', '-n', metavar = 'CYCLES SLEEP', dest = 'repeat', type = int, nargs = 2, default = [1, 0], help = 'Repeat execution for CYCLES times with SLEEP hour interval.')
 
 args = parser.parse_args()
 sys.argv = []
 
+log_level = logging.INFO
 if args.log_level:
     try:
-        level = getattr(logging, args.log_level.upper())
-        logging.getLogger().setLevel(level)
+        log_level = getattr(logging, args.log_level.upper())
     except AttributeError:
         logging.warning('Log level ' + args.log_level + ' not defined')
+
+if args.log_file:
+    logging.basicConfig(filename = args.log_file, filemode = 'w', level = log_level)
+else:
+    logging.basicConfig(level = log_level)
 
 if args.dry_run:
     config.read_only = True
@@ -97,4 +104,8 @@ detox = Detox(inventory_manager, transaction_manager, demand_manager, policy_sta
 if args.force_inventory_update:
     config.inventory.refresh_min = 0
 
-detox.run(dynamic_deletion = not args.static_deletion)
+for nrun in range(args.repeat[0]):
+    detox.run(dynamic_deletion = not args.static_deletion)
+
+    if args.repeat[1] > 0:
+        time.sleep(args.repeat[1] * 3600)
