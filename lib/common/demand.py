@@ -34,7 +34,8 @@ class DemandManager(object):
         else:
             self.lock = default_interface['lock']()
 
-        self._last_accesses_update = None
+        self.last_accesses_update = None
+        self.last_request_update = None
         self.time_today = 0.
 
     def load(self, inventory):
@@ -44,21 +45,22 @@ class DemandManager(object):
         groups = inventory.groups.values()
         datasets = inventory.datasets.values()
 
-        self._last_accesses_update = self.store.load_replica_accesses(sites, datasets)
+        self.last_accesses_update = self.store.load_replica_accesses(sites, datasets)
+        self.last_request_update = self.store.load_dataset_requests(datasets)
         self.store.load_locks(sites, groups, datasets)
 
     def update(self, inventory):
-        if self._last_accesses_update is None:
+        if self.last_accesses_update is None:
             self.load(inventory)
 
         utcnow = datetime.utcnow()
 
         utctoday = utcnow.date()
 
-        start_date = max(self._last_accesses_update, utctoday - datetime.timedelta(config.demand.access_history.max_back_query))
+        start_date = max(self.last_accesses_update, utctoday - datetime.timedelta(config.demand.access_history.max_back_query))
 
         self.update_accesses(inventory, start_date, utctoday)
-        self._last_accesses_update = utctoday - datetime.timedelta(1)
+        self.last_accesses_update = utctoday - datetime.timedelta(1)
 
         self.update_requests(inventory, datetime.datetime(start_date.year, start_date.month, start_date.day), utcnow)
 
@@ -71,7 +73,7 @@ class DemandManager(object):
         start date and end date. Save information in the inventory store.
         """
 
-        if self._last_accesses_update is None:
+        if self.last_accesses_update is None:
             self.load(inventory)
 
         for site in inventory.sites.values():
@@ -91,8 +93,8 @@ class DemandManager(object):
 
         self.store.save_replica_accesses(all_replicas)
 
-        if self._last_accesses_update < end_date:
-            self._last_accesses_update = end_date
+        if self.last_accesses_update < end_date:
+            self.last_accesses_update = end_date
 
     def update_requests(self, inventory, start_datetime, end_datetime):
         """
@@ -136,8 +138,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Demand manager')
 
-    parser.add_argument('command', metavar = 'COMMAND', help = '(update [access start end])')
-    parser.add_argument('arguments', metavar = 'EXPR', nargs = '*', default = [], help = '')
+    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(update [access start end]) [commands]')
     parser.add_argument('--store', '-i', metavar = 'CLASS', dest = 'store_cls', default = '', help = 'Store class to be used.')
     parser.add_argument('--access-history', '-a', metavar = 'CLASS', dest = 'access_history_cls', default = '', help = 'AccessHistory class to be used.')
     parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', default = '', help = 'Lock class to be used.')
@@ -166,23 +167,53 @@ if __name__ == '__main__':
 
     inventory = InventoryManager(load_data = True, store_cls = kwd['store_cls'])
 
-    if args.command == 'update':
-        if len(args.arguments) != 0:
-            if args.arguments[0] == 'accesses':
-                start, end = args.arguments[1:3]
+    icmd = 0
+    while icmd != len(args.command):
+        command = args.command[icmd]
+        icmd += 1
 
-                start_date = datetime.datetime.strptime(start, '%Y-%m-%d').date()
-                end_date = datetime.datetime.strptime(end, '%Y-%m-%d').date()
+        if command == 'update':
+            if len(args.command[icmd:]) != 0:
+                arg = args.command[icmd]
 
-                manager.update_accesses(inventory, start_date, end_date)
+                manager.load(inventory)
 
-            elif args.arguments[0] == 'requests':
-                start, end = args.arguments[1:3]
+                if arg == 'accesses':
+                    icmd += 1
 
-                start_datetime = datetime.datetime.strptime(start, '%Y-%m-%d')
-                end_datetime = datetime.datetime.strptime(end, '%Y-%m-%d')
+                    start, end = args.command[icmd:icmd + 1]
+                    icmd += 2
 
-                manager.update_requests(inventory, start_datetime, end_datetime)
+                    if start == 'last':
+                        start_date = manager.last_access_update
+                    else:
+                        start_date = datetime.datetime.strptime(start, '%Y-%m-%d').date()                        
 
-        else:
-            manager.update(inventory)
+                    if end == 'now':
+                        end_date = datetime.date.today()
+                    else:
+                        end_date = datetime.datetime.strptime(end, '%Y-%m-%d').date()
+    
+                    manager.update_accesses(inventory, start_date, end_date)
+    
+                elif arg == 'requests':
+                    icmd += 1
+
+                    start, end = args.arguments[icmd:icmd + 1]
+                    icmd += 2
+
+                    if start == 'last':
+                        start_datetime = manager.last_request_update
+                    else:
+                        start_datetime = datetime.datetime.strptime(start, '%Y-%m-%d')
+
+                    if end == 'now':
+                        end_datetime = datetime.datetime.utcnow()
+                    else:
+                        end_datetime = datetime.datetime.strptime(end, '%Y-%m-%d')
+    
+                    manager.update_requests(inventory, start_datetime, end_datetime)
+    
+            else:
+                manager.update(inventory)
+                icmd += 1

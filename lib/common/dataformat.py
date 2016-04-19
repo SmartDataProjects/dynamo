@@ -316,3 +316,4 @@ class DatasetDemand(object):
 
 
 DatasetRequest = collections.namedtuple('DatasetRequest', ['job_id', 'queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued'])
+# queue_time & completion_time are unix timestamps in memory

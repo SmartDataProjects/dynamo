@@ -171,6 +171,22 @@ class LocalStoreInterface(object):
 
         return last_update
 
+    def load_dataset_requests(self, datasets):
+        """
+        Load requests to datasets.
+        """
+
+        logger.debug('_do_load_dataset_requests()')
+
+        self.acquire_lock()
+        try:
+            last_update = self._do_load_dataset_requests(datasets)
+        finally:
+            self.release_lock()
+
+        return last_update
+
+
     def load_locks(self, sites, groups, blocks):
         pass
 

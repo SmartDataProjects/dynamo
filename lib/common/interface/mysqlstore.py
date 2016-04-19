@@ -376,7 +376,50 @@ class MySQLStore(LocalStoreInterface):
             if date > last_update:
                 last_update = date
 
-        logger.info('Loaded %d replica access data. Last update on %s', len(accesses), last_update.strftime('%Y-%m-%d'))
+        logger.info('Loaded %d replica access data. Last update on %s UTC', len(accesses), last_update.strftime('%Y-%m-%d'))
+
+        return last_update
+
+    def _do_load_dataset_requests(self, datasets): #override
+        if len(self._datasets_to_ids) == 0:
+            self._set_dataset_ids(datasets)
+
+        for dataset in datasets:
+            dataset.requests = []
+
+        requests = self._mysql.query('SELECT `id`, `dataset_id`, UNIX_TIMESTAMP(`queue_time`), UNIX_TIMESTAMP(`completion_time`), `nodes_total`, `nodes_done`, `nodes_failed`, `nodes_queued` FROM `dataset_requests` ORDER BY `dataset_id`, `queue_time`')
+
+        last_update = datetime.datetime.min
+
+        # little speedup by not repeating lookups for the same dataset
+        current_dataset_id = 0
+        for job_id, dataset_id, queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued  in requests:
+            if dataset_id != current_dataset_id:
+                try:
+                    dataset = self._ids_to_datasets[dataset_id]
+                except KeyError:
+                    continue
+
+                current_dataset_id = dataset_id
+
+            request = DatasetRequest(
+                job_id = job_id,
+                queue_time = queue_time,
+                completion_time = completion_time,
+                nodes_total = nodes_total,
+                nodes_done = nodes_done,
+                nodes_failed = nodes_failed,
+                nodes_queued = nodes_queued
+            )
+
+            dataset.requests.append(request)
+
+            update = datetime.datetime.utcfromtimestamp(completion_time)
+
+            if update > last_update:
+                last_update = update
+
+        logger.info('Loaded %d dataset request data. Last update on %s UTC', len(requests), last_update.strftime('%Y-%m-%d %H:%M:%S'))
 
         return last_update
 
@@ -598,7 +641,7 @@ class MySQLStore(LocalStoreInterface):
                 for date, access in replica.accesses[acc].items():
                     all_accesses.append((dataset_id, site_id, date, access))
 
-            self._mysql.insert_many('dataset_accesses_new', fields, mapping, all_accesses)
+            self._mysql.insert_many('dataset_accesses_new', fields, mapping, all_accesses, do_update = False)
 
         self._mysql.query('RENAME TABLE `dataset_accesses` TO `dataset_accesses_old`')
         self._mysql.query('RENAME TABLE `dataset_accesses_new` TO `dataset_accesses`')
@@ -613,8 +656,7 @@ class MySQLStore(LocalStoreInterface):
             for request in dataset.requests:
                 all_requests.append((dataset, request))
 
-        # insert/update dataset replicas
-        logger.info('Inserting/updating %d dataset requests.', len(all_requests))
+        self._mysql.query('CREATE TABLE `dataset_requests_new` LIKE `dataset_requests`')
 
         fields = ('id', 'dataset_id', 'queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued')
         mapping = lambda (d, r): (
@@ -628,7 +670,11 @@ class MySQLStore(LocalStoreInterface):
             r.nodes_queued
         )
 
-        self._mysql.insert_many('dataset_requests', fields, mapping, all_requests)
+        self._mysql.insert_many('dataset_requests_new', fields, mapping, all_requests, do_update = False)
+
+        self._mysql.query('RENAME TABLE `dataset_requests` TO `dataset_requests_old`')
+        self._mysql.query('RENAME TABLE `dataset_requests_new` TO `dataset_requests`')
+        self._mysql.query('DROP TABLE `dataset_requests_old`')
 
     def _do_add_dataset_replicas(self, replicas): #override
         # make name -> id maps for use later
