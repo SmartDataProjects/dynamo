@@ -53,13 +53,13 @@ class DemandManager(object):
         if self.last_accesses_update is None:
             self.load(inventory)
 
-        utcnow = datetime.utcnow()
+        utcnow = datetime.datetime.utcnow()
 
         utctoday = utcnow.date()
 
         start_date = max(self.last_accesses_update, utctoday - datetime.timedelta(config.demand.access_history.max_back_query))
 
-        self.update_accesses(inventory, start_date, utctoday)
+#        self.update_accesses(inventory, start_date, utctoday)
         self.last_accesses_update = utctoday - datetime.timedelta(1)
 
         self.update_requests(inventory, datetime.datetime(start_date.year, start_date.month, start_date.day), utcnow)
@@ -118,12 +118,13 @@ class DemandManager(object):
             except KeyError:
                 continue
 
-            dataset.requests.append(request)
+            try:
+                req = next(req for req in dataset.requests if req.job_id == request.job_id)
+                req.update(request)
+            except StopIteration:
+                dataset.requests.append(request)
 
-            if dataset not in requested_datasets:
-                requested_datasets.append(dataset)
-
-        self.store.save_dataset_requests(requested_datasets)
+        self.store.save_dataset_requests(inventory.datasets.values())
 
     def get_demand(self, dataset):
         return DatasetDemand(dataset)

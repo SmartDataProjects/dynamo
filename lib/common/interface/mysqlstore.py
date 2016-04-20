@@ -337,7 +337,9 @@ class MySQLStore(LocalStoreInterface):
                 replica.accesses[DatasetReplica.ACC_LOCAL].clear()
                 replica.accesses[DatasetReplica.ACC_REMOTE].clear()
 
-        accesses = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses`, `cputime` FROM `dataset_accesses` ORDER BY `dataset_id`, `site_id`, `date`')
+        # pick up all accesses that are less than 1 year old
+        # old accesses will be removed automatically next time the access information is saved from memory
+        accesses = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses`, `cputime` FROM `dataset_accesses` WHERE `date` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY `dataset_id`, `site_id`, `date`')
 
         last_update = datetime.date.min
 
@@ -387,7 +389,9 @@ class MySQLStore(LocalStoreInterface):
         for dataset in datasets:
             dataset.requests = []
 
-        requests = self._mysql.query('SELECT `id`, `dataset_id`, UNIX_TIMESTAMP(`queue_time`), UNIX_TIMESTAMP(`completion_time`), `nodes_total`, `nodes_done`, `nodes_failed`, `nodes_queued` FROM `dataset_requests` ORDER BY `dataset_id`, `queue_time`')
+        # pick up requests that are less than 1 year old
+        # old requests will be removed automatically next time the access information is saved from memory
+        requests = self._mysql.query('SELECT `id`, `dataset_id`, UNIX_TIMESTAMP(`queue_time`), UNIX_TIMESTAMP(`completion_time`), `nodes_total`, `nodes_done`, `nodes_failed`, `nodes_queued` FROM `dataset_requests` WHERE `queue_time` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY `dataset_id`, `queue_time`')
 
         last_update = datetime.datetime.min
 
@@ -663,7 +667,7 @@ class MySQLStore(LocalStoreInterface):
             r.job_id,
             self._datasets_to_ids[d],
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.queue_time)),
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.completion_time)),
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.completion_time)) if r.completion_time > 0 else '0000-00-00 00:00:00',
             r.nodes_total,
             r.nodes_done,
             r.nodes_failed,

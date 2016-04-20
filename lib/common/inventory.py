@@ -212,6 +212,9 @@ class InventoryManager(object):
         Checks the information of existing datasets and save changes. Intended for an independent daemon process.
         """
 
+        if len(self.datasets) == 0:
+            self.load()
+
         if dataset_filter == '/*/*/*':
             datasets = self.datasets.values()
         else:
@@ -275,17 +278,17 @@ if __name__ == '__main__':
             manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot)
     
         elif command == 'scan':
-            manager.load()
             manager.scan_datasets(dataset_filter = args.dataset)
     
         elif command == 'list':
-            manager.load()
+            if len(manager.datasets) == 0:
+                manager.load()
     
             target = args.command[icmd]
             icmd += 1
     
             if target == 'datasets':
-                print manager.store.datasets.keys()
+                print manager.datasets.keys()
     
             elif target == 'sites':
-                print manager.store.sites.keys()
+                print manager.sites.keys()

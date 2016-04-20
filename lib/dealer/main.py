@@ -60,7 +60,9 @@ class Dealer(object):
         #6. Datasets whose global occupancy fractions are increasing are placed in the list of copy candidates.
         """
 
-        copy_list = collections.defaultdict(list) # site -> [(new_replica, origin)]
+        sites = self.inventory_manager.sites.values()
+
+        copy_list = dict([(site, []) for site in sites]) # site -> [(new_replica, origin)]
 
         now = time.time() # UNIX timestamp of now
         utc = time.gmtime(now) # struct_time in UTC
@@ -73,7 +75,7 @@ class Dealer(object):
         site_cpu_occupancies = {}
         site_storage = {}
 
-        for site in self.inventory_manager.sites.values():
+        for site in sites:
             logger.info('Inspecting replicas at %s', site.name)
 
             site_occupancy = 0.
@@ -149,7 +151,7 @@ class Dealer(object):
 
         site_cpu_occupancies_before = dict(site_cpu_occupancies)
         site_storage_before = dict(site_storage)
-        copy_volumes = dict([(site, 0.) for site in self.inventory_manager.sites.values()])
+        copy_volumes = dict([(site, 0.) for site in sites])
 
         for dataset, total_ncpu, total_site_capacity in popular_datasets:
 
@@ -223,7 +225,9 @@ class Dealer(object):
         3. Copy datasets with number of requests > available replicas to empty sites.
         """
         
-        copy_list = collections.defaultdict(list) # site -> [(new_replica, origin)]
+        sites = self.inventory_manager.sites.values()
+        
+        copy_list = dict([(site, []) for site in sites]) # site -> [(new_replica, origin)]
 
         group = self.inventory_manager.groups[dealer_config.operating_group]
 
@@ -238,7 +242,7 @@ class Dealer(object):
         # time-weighted dataset popularity
         dataset_weights = {}
         # time-weighted, cpu-normalized number of running jobs at sites
-        site_nfiles = collections.defaultdict(float)
+        site_nfiles = dict([(site, 0.) for site in sites])
 
         for dataset in self.inventory_manager.datasets.values():
             if dataset.status != Dataset.STAT_VALID:
@@ -272,25 +276,27 @@ class Dealer(object):
 
                 total_cpu = sum([r.site.cpu for r in dataset.replicas])
                 for replica in dataset.replicas:
-                    site_nfiles[replica.site] += dataset_weight * dataset.num_files * replica.site.cpu / total_cpu
+                    # w * N * (site cpu / total cpu); normalized by site cpu
+                    site_nfiles[replica.site] += dataset_weight * dataset.num_files / total_cpu
 
         site_nfiles_before = dict(site_nfiles)
         
-        site_storage = dict([(site, site.storage_occupancy(group)) for site in self.inventory_manager.sites.values()])
+        site_storage = dict([(site, site.storage_occupancy(group)) for site in sites])
         site_storage_before = dict(site_storage)
 
-        copy_volumes = dict([(site, 0.) for site in self.inventory_manager.sites.values()])
+        copy_volumes = dict([(site, 0.) for site in sites])
 
-        # now go through datasets sorted by weights
-        for dataset, weight in sorted(dataset_weights.items(), key = lambda (d, w): w, reverse = True):
+        # now go through datasets sorted by weight / #replicas
+        for dataset, weight in sorted(dataset_weights.items(), key = lambda (d, w): w / len(d.replicas), reverse = True):
 
             global_stop = False
 
-            while weight > len(dataset.replicas):
-                sorted_sites = sorted(site_nfiles.items(), key = lambda (s, n): n / s.cpu) #sorted from emptiest to busiest
+            while weight > len(dataset.replicas) * 1.5:
+                sorted_sites = sorted(site_nfiles.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
 
                 try:
                     destination_site = next(dest for dest, njob in sorted_sites if \
+                        not dest.name.startswith('T1_') and \
                         site_storage[dest] < config.target_site_occupancy and \
                         site_storage[dest] + dataset.size * 1.e-12 / dest.group_quota[group] < 1. and \
                         copy_volumes[dest] < dealer_config.max_copy_volume and \
@@ -303,7 +309,11 @@ class Dealer(object):
 
                 logger.info('Copying %s to %s', dataset.name, destination_site.name)
 
-                origin_site = max(dataset.replicas, key = lambda r: site_nfiles[r.site]).site # busiest site for this dataset
+                try:
+                    origin_site = max(dataset.replicas, key = lambda r: site_nfiles[r.site]).site # busiest site for this dataset
+                except ValueError:
+                    # dataset has 0 replicas
+                    origin_site = None
     
                 new_replica = self.inventory_manager.add_dataset_to_site(dataset, destination_site, group)
                 copy_list[destination_site].append((new_replica, origin_site))
@@ -319,9 +329,9 @@ class Dealer(object):
 
                 for replica in dataset.replicas:
                     if replica != new_replica:
-                        site_nfiles[replica.site] -= weight * dataset.num_files * replica.site.cpu / total_cpu_before
+                        site_nfiles[replica.site] -= weight * dataset.num_files / total_cpu_before
 
-                    site_nfiles[replica.site] += weight * dataset.num_files * replica.site.cpu / total_cpu
+                    site_nfiles[replica.site] += weight * dataset.num_files / total_cpu
 
                 if len(dataset.replicas) > dealer_config.max_replicas:
                     logger.warning('%s has reached the maximum number of replicas allowed.', dataset.name)
@@ -340,9 +350,9 @@ class Dealer(object):
             if global_stop:
                 break
 
-            self.write_summary_by_requests(dataset_weights, copy_list, site_nfiles_before, site_nfiles, site_storage_before, site_storage)
+        self.write_summary_by_requests(dataset_weights, copy_list, site_nfiles_before, site_storage_before, site_storage)
 
-            return copy_list
+        return copy_list
 
     def commit_copies(self, copy_list):
         # first make sure the list of blocks is up-to-date
@@ -757,6 +767,11 @@ function searchDataset(name) {
 
         html.write(text)
 
+        dataset_copies = collections.defaultdict(list)
+        for site, replica_origins in copy_list.items():
+            for replica, origin in replica_origins:
+                dataset_copies[replica.dataset].append(replica)
+
         keywords = {}
 
         for site_name in sorted(self.inventory_manager.sites.keys()):
@@ -768,13 +783,16 @@ function searchDataset(name) {
             keywords['storage_after'] = storage_after[site] * 100.
 
             text = '   <li><span onclick="toggleVisibility(\'{site}\')" class="menuitem">{site}</span>'.format(**keywords)
-            text += ' (CPU: {site_cpu:.2f}, Storage: {storage_before:.2f}% -> {storage_after:.2f}%)\n'.format(**keywords)
+            text += ' (Norm. Files: {site_nfiles:.2f}, Storage: {storage_before:.2f}% -> {storage_after:.2f}%)\n'.format(**keywords)
             text += '    <ul id="{site}" class="collapsible">\n'.format(**keywords)
+
+            site_copies = [r for r, origin in copy_list[site]]
+            site_copies.sort(key = lambda r: r.size(), reverse = True)
 
             site_replicas = []
             for dataset, weight in dataset_weights.items():
                 for replica in dataset.replicas:
-                    if replica.site == site:
+                    if replica.site == site and replica not in site_copies:
                         total_cpu = sum(r.site.cpu for r in dataset.replicas)
                         site_replicas.append((dataset, weight, total_cpu))
                         break
@@ -787,22 +805,19 @@ function searchDataset(name) {
             for dataset, weight, total_cpu in site_replicas:
                 keywords['dataset'] = dataset.name
                 keywords['weight'] = weight
-                keywords['total_cpu'] = dataset.num_files * site_cpu / total_cpu
+                keywords['num_files'] = dataset.num_files * site.cpu / total_cpu
 
                 text += '       <li id="{site}:{dataset}" class="vanishable">'.format(**keywords)
 
-                if ncpu / site.cpu > dealer_config.occupancy_fraction_threshold:
-                    text += '<span class="popular">{dataset} ({weight:.2f}, {total_cpu:.2f})</span>'.format(**keywords)
+                if weight > len(dataset.replicas) - len(dataset_copies[dataset]):
+                    text += '<span class="popular">{dataset} ({weight:.2f}, {num_files:.2f})</span>'.format(**keywords)
                 else:
-                    text += '{dataset} ({weight:.2f}, {total_cpu:.2f})'.format(**keywords)
+                    text += '{dataset} ({weight:.2f}, {num_files:.2f})'.format(**keywords)
 
                 text += '</li>\n'
 
             text += '      </ul>\n' # closing Existing list
             text += '     </li>\n' # item Existing
-
-            site_copies = [r for r, origin in copy_list[site]]
-            site_copies.sort(key = lambda r: r.size(), reverse = True)
 
             keywords['arrive_volume'] = sum(replica.size() * 1.e-9 for replica in site_copies)
 

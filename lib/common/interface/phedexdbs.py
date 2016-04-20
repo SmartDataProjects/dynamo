@@ -328,9 +328,9 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
         Make a dataset replica for each dataset-site combination.
         """
 
+        logger.info('make_replica_links  Making replica links for %d datasets', len(datasets))
+
         for dataset in datasets.values():
-            logger.info('make_replica_links  Making replica links for dataset %s', dataset.name)
-    
             for site_name, ds_block_list in self._block_replicas[dataset.name].items():
                 site = sites[site_name]
 
