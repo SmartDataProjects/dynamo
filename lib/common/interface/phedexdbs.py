@@ -256,7 +256,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
         if len(request) == 0:
             return False
 
-        req_type = request[0]{'type'}
+        req_type = request[0]['type']
 
         if req_type == 'delete':
             return True
@@ -271,7 +271,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             for ds_entry in request[0]['data']['dbs']['dataset']:
                 dataset_names.append(ds_entry['name'])
 
-            subscriptions = self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['dataset=%d' % n for n in dataset_names])
+            subscriptions = self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in dataset_names])
 
             for subscription in subscriptions:
                 if subscription['subscription'][0]['percent_bytes'] != 100.:

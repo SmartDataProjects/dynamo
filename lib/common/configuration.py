@@ -16,8 +16,8 @@ target_site_occupancy = 0.95
 paths = Configuration()
 paths.base = os.environ['DYNAMO_BASE']
 
-history = Configuration()
-history.db_params = pconfiguration.history_db
+mysqlhistory = Configuration()
+mysqlhistory.db_params = pconfiguration.history_db
 
 webservice = Configuration()
 webservice.x509_key = pconfiguration.x509_key

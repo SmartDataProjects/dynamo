@@ -1,5 +1,10 @@
+import os
+import socket
+
 from common.interface.history import TransactionHistoryInterface
+from common.interface.mysql import MySQL
 from common.dataformat import HistoryRecord
+import common.configuration as config
 
 class MySQLHistory(TransactionHistoryInterface):
     """
@@ -84,13 +89,13 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('deleted_replicas', ('deletion_id', 'dataset_id'), lambda d: (deletion_id, dataset_ids[d.name]), datasets)
 
     def _do_update_copy_entry(self, copy_record): #override
-        self._mysql.query('UPDATE `copy_history` SET `approved` = %s, completion_time = FROM_UNIXTIME(%d) WHERE `id` = %d', copy_record.approved, copy_record.completion_time, copy_record.operation_id)
+        self._mysql.query('UPDATE `copy_history` SET `approved` = %s, completion_time = FROM_UNIXTIME(%s) WHERE `id` = %s', copy_record.approved, copy_record.completion_time, copy_record.operation_id)
         
     def _do_update_deletion_entry(self, deletion_record): #override
-        self._mysql.query('UPDATE `deletion_history` SET `approved` = %s, completion_time = FROM_UNIXTIME(%d) WHERE `id` = %d', deletion_record.approved, deletion_record.completion_time, deletion_record.operation_id)
+        self._mysql.query('UPDATE `deletion_history` SET `approved` = %s, completion_time = FROM_UNIXTIME(%s) WHERE `id` = %s', deletion_record.approved, deletion_record.completion_time, deletion_record.operation_id)
 
     def _do_get_incomplete_copies(self): #override
-        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, s.`size` FROM `copy_history` AS h INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`completion_time` LIKE \'0000-00-00 00:00:00\'')
+        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size` FROM `copy_history` AS h INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`completion_time` LIKE \'0000-00-00 00:00:00\'')
         
         id_to_record = {}
         for eid, timestamp, approved, site_name, size in history_entries:
@@ -112,7 +117,7 @@ class MySQLHistory(TransactionHistoryInterface):
         return id_to_record.values()
 
     def _do_get_incomplete_deletions(self): #override
-        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, s.`size` FROM `deletion_history` AS h INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`completion_time` LIKE \'0000-00-00 00:00:00\'')
+        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size` FROM `deletion_history` AS h INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`completion_time` LIKE \'0000-00-00 00:00:00\'')
         
         id_to_record = {}
         for eid, timestamp, approved, site_name, size in history_entries:
