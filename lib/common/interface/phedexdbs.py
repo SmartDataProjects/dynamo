@@ -69,7 +69,13 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             logger.debug('schedule_copy  subscribe: %s', str(options))
             return
 
-        self._make_phedex_request('subscribe', options, method = POST)
+        result = self._make_phedex_request('subscribe', options, method = POST)
+
+        if len(result) == 0:
+            logger.error('schedule_copy failed.')
+            return 0
+
+        return int(result[0]['id'])
 
     def schedule_copies(self, replica_origin_list, comments = ''): #override (CopyInterface)
 
@@ -238,6 +244,44 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
                     chunk_size = 0
 
         return request_mapping
+
+    def check_completion(self, request_id): #override (CopyInterface, DeletionInterface)
+        """
+        1. Use requestlist command to determine the request type.
+        2. PhEDEx cannot track deletion progress -> return True
+        3. For transfers, use subscription command. Return true if all datasets are at 100%.
+        """
+
+        request = self._make_phedex_request('requestlist', 'request=%d' % request_id)
+        if len(request) == 0:
+            return False
+
+        req_type = request[0]{'type'}
+
+        if req_type == 'delete':
+            return True
+
+        elif req_type == 'xfer':
+            request = self._make_phedex_request('transferrequests', 'request=%d' % request_id)
+            if len(request) == 0:
+                return False
+
+            site_name = request[0]['destinations']['node'][0]['name']
+            dataset_names = []
+            for ds_entry in request[0]['data']['dbs']['dataset']:
+                dataset_names.append(ds_entry['name'])
+
+            subscriptions = self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['dataset=%d' % n for n in dataset_names])
+
+            for subscription in subscriptions:
+                if subscription['subscription'][0]['percent_bytes'] != 100.:
+                    return False
+                
+            return True
+
+        else:
+            # unknown request type
+            return False
 
     def get_site_list(self, sites, filt = '*'): #override (SiteInfoSourceInterface)
         options = []

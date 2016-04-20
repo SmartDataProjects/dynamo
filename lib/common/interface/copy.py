@@ -10,13 +10,28 @@ class CopyInterface(object):
         """
         Schedule and execute a copy operation. Argument origin can be None for copy interfaces
         that do not require the origin to be specified.
+        Returns the operation id.
         """
-        pass
+
+        return 0
 
     def schedule_copies(self, replica_origin_list, comments = ''):
         """
         Schedule mass copies. Subclasses can implement efficient algorithms.
+        Returns {operation id: (approved, [(replica, origin)])}
         """
 
+        request_mapping = {}
         for replica, origin in replica_origin_list:
-            self.schedule_copy(replica, origin, comments)
+            operation_id = self.schedule_copy(replica, origin, comments)
+            request_mapping[operation_id] = (True, [(replica, origin)])
+
+        return request_mapping
+
+    def check_completion(self, operation_id):
+        """
+        Checks the completion of the copy specified by the operation id.
+        Returns true if completed.
+        """
+
+        return False

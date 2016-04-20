@@ -18,12 +18,20 @@ class DeletionInterface(object):
         """
         Schedule a deletion of multiple replicas. Subclasses should implement the most efficient way
         according to available features.
-        Returns a map of deletion IDs to the list of deleted replicas.
+        Returns {operation id: (approved, [replicas])}
         """
 
         deletion_mapping = {}
         for replica in replica_list:
             deletion_id = self.schedule_deletion(replica)
-            deletion_mapping[deletion_id] = [replica]
+            deletion_mapping[deletion_id] = (True, [replica])
 
         return deletion_mapping
+
+    def check_completion(self, operation_id):
+        """
+        Checks the completion of the deletion specified by the operation id.
+        Returns true if completed.
+        """
+
+        return False
