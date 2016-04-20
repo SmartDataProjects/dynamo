@@ -618,7 +618,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
 
             start += 1000
             
-    def _make_phedex_request(self, resource, options = [], method = GET, format = 'url'):
+    def _make_phedex_request(self, resource, options = [], method = GET, format = 'url', raw_output = False):
         """
         Make a single PhEDEx request call. Returns a list of dictionaries from the body of the query result.
         """
@@ -634,11 +634,14 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
 
         unicode2str(result)
 
+        self._last_request = result['request_timestamp']
+        self._last_request_url = result['request_url']
+
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug(pprint.pformat(result))
 
-        self._last_request = result['request_timestamp']
-        self._last_request_url = result['request_url']
+        if raw_output:
+            return result
 
         for metadata in ['request_timestamp', 'instance', 'request_url', 'request_version', 'request_call', 'call_time', 'request_date']:
             result.pop(metadata)
@@ -795,6 +798,7 @@ if __name__ == '__main__':
     parser.add_argument('--url', '-u', dest = 'phedex_url', metavar = 'URL', default = config.phedex.url_base, help = 'PhEDEx URL base.')
     parser.add_argument('--method', '-m', dest = 'method', metavar = 'METHOD', default = 'GET', help = 'HTTP method.')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
+    parser.add_argument('--raw', '-A', dest = 'raw_output', action = 'store_true', help = 'Print RAW PhEDEx response.')
 
     args = parser.parse_args()
     sys.argv = []
@@ -851,4 +855,4 @@ if __name__ == '__main__':
     elif command == 'updaterequest':
         method = POST
 
-    pprint.pprint(interface._make_phedex_request(command, options, method = method))
+    pprint.pprint(interface._make_phedex_request(command, options, method = method, raw_output = args.raw_output))
