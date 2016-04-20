@@ -77,7 +77,7 @@ for cls in ['store', 'access_history', 'lock']:
 
 demand_manager = DemandManager(**kwd)
 
-history_manager = classes.default_interface['history']
+history_manager = classes.default_interface['history']()
 
 dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history_manager)
 

@@ -79,7 +79,7 @@ for cls in ['store', 'access_history', 'lock']:
 
 demand_manager = DemandManager(**kwd)
 
-history_manager = classes.default_interface['history']
+history_manager = classes.default_interface['history']()
 
 if args.stack[0].endswith('.py'):
     execfile(args.stack[0])
