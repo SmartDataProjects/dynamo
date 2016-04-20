@@ -22,7 +22,7 @@ class Detox(object):
 
         self._history = MySQL(**config.history.db_params)
 
-        self.deletion_message = 'DynaMO -- Automatic Cache Release Request.'
+        self.deletion_message = 'Dynamo -- Automatic Cache Release Request.'
 
     def run(self, dynamic_deletion = True):
         """

@@ -50,7 +50,7 @@ class DemandManager(object):
         self.store.load_locks(sites, groups, datasets)
 
     def update(self, inventory):
-        if self.last_accesses_update is None:
+        if self.last_accesses_update is None or self.last_requests_update is None:
             self.load(inventory)
 
         utcnow = datetime.datetime.utcnow()

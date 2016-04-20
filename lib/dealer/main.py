@@ -17,7 +17,7 @@ class Dealer(object):
         self.transaction_manager = transaction
         self.demand_manager = demand
 
-        self.copy_message = 'DynaMO -- Automatic Replication Request.'
+        self.copy_message = 'Dynamo -- Automatic Replication Request.'
 
         self._history = MySQL(**config.history.db_params)
 
@@ -35,13 +35,6 @@ class Dealer(object):
             logger.info('Inventory was last updated at %s. Reloading content from remote sources.', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.inventory_manager.store.last_update)))
             # inventory is stale -> update
             self.inventory_manager.update()
-
-        self.demand_manager.load(self.inventory_manager)
-
-#        utcnow = datetime.datetime.utcnow()
-#        utcmidnight = datetime.datetime(utcnow.year, utcnow.month, utcnow.day)
-#        if (utcnow - utcmidnight).seconds > self.demand_manager.time_today + dealer_config.demand_refresh_interval:
-#            self.demand_manager.update_accesses(self.inventory_manager)
 
         self.demand_manager.update(self.inventory_manager)
 
