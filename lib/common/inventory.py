@@ -62,7 +62,14 @@ class InventoryManager(object):
         self.store.acquire_lock()
 
         try:
-            sites, groups, datasets = self.store.load_data(load_replicas = load_replicas)
+            site_names = self.store.get_site_list(site_filt = config.inventory.included_sites)
+            for name in config.inventory.excluded_sites:
+                try:
+                    site_names.remove(name)
+                except ValueError:
+                    continue
+
+            sites, groups, datasets = self.store.load_data(site_filt = site_names, load_replicas = load_replicas)
 
             self.sites = dict([(s.name, s) for s in sites])
             self.groups = dict([(g.name, g) for g in groups])

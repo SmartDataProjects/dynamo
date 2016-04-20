@@ -127,6 +127,27 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('UPDATE `system` SET `last_update` = FROM_UNIXTIME(%d)' % int(tm))
         self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
 
+    def _do_get_site_list(self, site_filt): #override
+        # Load sites
+        site_names = []
+
+        names = self._mysql.query('SELECT `name` FROM `sites`')
+
+        if type(site_filt) is str:
+            site_filt = [site_filt]
+        
+        for name in names:
+            for filt in site_filt:
+                if fnmatch.fnmatch(name, filt):
+                    break
+            else:
+                # no match
+                continue
+
+            site_names.append(name)
+
+        return site_names
+
     def _do_load_data(self, site_filt, dataset_filt, load_replicas): #override
         # Load sites
         site_list = []
@@ -136,8 +157,13 @@ class MySQLStore(LocalStoreInterface):
         logger.info('Loaded data for %d sites.', len(sites))
         
         for name, host, storage_type, backend, storage, cpu in sites:
-            if site_filt != '*' and not fnmatch.fnmatch(name, site_filt):
-                continue
+            if type(site_filt) is str:
+                if site_filt != '*' and not fnmatch.fnmatch(name, site_filt):
+                    continue
+
+            elif type(site_filt) is list:
+                if name not in site_filt:
+                    continue
 
             site = Site(name, host = host, storage_type = Site.storage_type_val(storage_type), backend = backend, storage = storage, cpu = cpu)
             site_list.append(site)

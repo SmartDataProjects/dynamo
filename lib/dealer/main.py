@@ -163,9 +163,10 @@ class Dealer(object):
                 try:
                     destination_site = next(dest for dest, occ in sorted_sites if \
                         occ != 0. and \
+                        dest.name not in dealer_config.excluded_destinations and \
                         site_storage[dest] < config.target_site_occupancy and \
                         site_storage[dest] + dataset.size * 1.e-12 / dest.group_quota[group] < 1. and \
-                        copy_volumes[dest] < dealer_config.max_copy_volume and \
+                        copy_volumes[dest] < dealer_config.max_copy_per_site and \
                         dest.find_dataset_replica(dataset) is None
                     )
                     # occ == 0 -> this site had no activities - probably not active.
@@ -205,8 +206,13 @@ class Dealer(object):
                     global_stop = True
                     break
     
-                if min(copy_volumes.values()) > dealer_config.max_copy_volume:
+                if min(copy_volumes.values()) > dealer_config.max_copy_per_site:
                     logger.warning('All sites have exceeded copy volume target. No more copies will be made.')
+                    global_stop = True
+                    break
+
+                if sum(copy_volumes.values()) > dealer_config.max_copy_total:
+                    logger.warning('Total copy volume has exceeded the limit. No more copies will be made.')
                     global_stop = True
                     break
 
@@ -296,10 +302,10 @@ class Dealer(object):
 
                 try:
                     destination_site = next(dest for dest, njob in sorted_sites if \
-                        not dest.name.startswith('T1_') and \
+                        dest.name not in dealer_config.excluded_destinations and \
                         site_storage[dest] < config.target_site_occupancy and \
                         site_storage[dest] + dataset.size * 1.e-12 / dest.group_quota[group] < 1. and \
-                        copy_volumes[dest] < dealer_config.max_copy_volume and \
+                        copy_volumes[dest] < dealer_config.max_copy_per_site and \
                         dest.find_dataset_replica(dataset) is None
                     )
 
@@ -342,8 +348,13 @@ class Dealer(object):
                     global_stop = True
                     break
     
-                if min(copy_volumes.values()) > dealer_config.max_copy_volume:
+                if min(copy_volumes.values()) > dealer_config.max_copy_per_site:
                     logger.warning('All sites have exceeded copy volume target. No more copies will be made.')
+                    global_stop = True
+                    break
+
+                if sum(copy_volumes.values()) > dealer_config.max_copy_total:
+                    logger.warning('Total copy volume has exceeded the limit. No more copies will be made.')
                     global_stop = True
                     break
 
@@ -778,12 +789,15 @@ function searchDataset(name) {
             site = self.inventory_manager.sites[site_name]
 
             keywords['site'] = site.name
-            keywords['site_nfiles'] = nfiles_before[site] / site.cpu
+            keywords['site_nfiles'] = nfiles_before[site]
             keywords['storage_before'] = storage_before[site] * 100.
             keywords['storage_after'] = storage_after[site] * 100.
 
             text = '   <li><span onclick="toggleVisibility(\'{site}\')" class="menuitem">{site}</span>'.format(**keywords)
-            text += ' (Norm. Files: {site_nfiles:.2f}, Storage: {storage_before:.2f}% -> {storage_after:.2f}%)\n'.format(**keywords)
+            if abs(storage_before[site] - storage_after[site]) < 1.e-6:
+                text += ' (Activity: {site_nfiles:.2f}, Storage: {storage_before:.2f}%)\n'.format(**keywords)
+            else:
+                text += ' (Activity: {site_nfiles:.2f}, Storage: {storage_before:.2f}% -> {storage_after:.2f}%)\n'.format(**keywords)
             text += '    <ul id="{site}" class="collapsible">\n'.format(**keywords)
 
             site_copies = [r for r, origin in copy_list[site]]
@@ -805,14 +819,14 @@ function searchDataset(name) {
             for dataset, weight, total_cpu in site_replicas:
                 keywords['dataset'] = dataset.name
                 keywords['weight'] = weight
-                keywords['num_files'] = dataset.num_files * site.cpu / total_cpu
+                keywords['num_replicas'] = len(dataset.replicas) - len(dataset_copies[dataset])
 
                 text += '       <li id="{site}:{dataset}" class="vanishable">'.format(**keywords)
 
-                if weight > len(dataset.replicas) - len(dataset_copies[dataset]):
-                    text += '<span class="popular">{dataset} ({weight:.2f}, {num_files:.2f})</span>'.format(**keywords)
+                if weight > keywords['num_replicas']:
+                    text += '<span class="popular">{dataset} ({weight:.2f}, {num_replicas})</span>'.format(**keywords)
                 else:
-                    text += '{dataset} ({weight:.2f}, {num_files:.2f})'.format(**keywords)
+                    text += '{dataset} ({weight:.2f}, {num_replicas})'.format(**keywords)
 
                 text += '</li>\n'
 

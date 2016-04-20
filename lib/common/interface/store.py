@@ -140,9 +140,25 @@ class LocalStoreInterface(object):
 
         self._do_switch_snapshot(timestamp)
 
+    def get_site_list(self, site_filt = '*'):
+        """
+        Return a list of site names. Argument site_filt can be a wildcard string or a list of wildcards.
+        """
+
+        logger.debug('_do_get_site_list()')
+        
+        self.acquire_lock()
+        try:
+            site_names = self._do_get_site_list(site_filt)
+        finally:
+            self.release_lock()
+
+        return site_names
+
     def load_data(self, site_filt = '*', dataset_filt = '/*/*/*', load_replicas = True):
         """
-        Return lists loaded from persistent storage.
+        Return lists loaded from persistent storage. Argument site_filt can be a wildcard string or a list
+        of exact site names.
         """
 
         logger.debug('_do_load_data()')
@@ -185,7 +201,6 @@ class LocalStoreInterface(object):
             self.release_lock()
 
         return last_update
-
 
     def load_locks(self, sites, groups, blocks):
         pass
