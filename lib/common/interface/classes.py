@@ -3,6 +3,7 @@ from common.interface.mysqlstore import MySQLStore
 from common.interface.dbs import DBS
 from common.interface.popdb import PopDB
 from common.interface.globalqueue import GlobalQueue
+from common.interface.mysqlhistory import MySQLHistory
 
 class Generator(object):
     """
@@ -38,5 +39,6 @@ default_interface = {
     'store': Generator(MySQLStore),
     'lock': Generator(DummyInterface),
     'access_history': Generator(PopDB),
-    'job_queue': Generator(GlobalQueue)
+    'job_queue': Generator(GlobalQueue),
+    'history': Generator(MySQLHistory)
 }

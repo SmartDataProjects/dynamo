@@ -77,7 +77,9 @@ for cls in ['store', 'access_history', 'lock']:
 
 demand_manager = DemandManager(**kwd)
 
-dealer = Dealer(inventory_manager, transaction_manager, demand_manager)
+history_manager = classes.default_interface['history']
+
+dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history_manager)
 
 if args.force_inventory_update:
     config.inventory.refresh_min = 0

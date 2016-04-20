@@ -4,7 +4,6 @@ import collections
 import logging
 
 from common.dataformat import Dataset, DatasetReplica
-from common.interface.mysql import MySQL
 import common.configuration as config
 import dealer.configuration as dealer_config
 
@@ -12,14 +11,13 @@ logger = logging.getLogger(__name__)
 
 class Dealer(object):
 
-    def __init__(self, inventory, transaction, demand):
+    def __init__(self, inventory, transaction, demand, history):
         self.inventory_manager = inventory
         self.transaction_manager = transaction
         self.demand_manager = demand
+        self.history_manager = history
 
         self.copy_message = 'Dynamo -- Automatic Replication Request.'
-
-        self._history = MySQL(**config.history.db_params)
 
     def run(self):
         """
@@ -373,36 +371,17 @@ class Dealer(object):
                 continue
 
             copy_mapping = self.transaction_manager.copy.schedule_copies(replica_origins, comments = self.copy_message)
-            # copy_mapping .. {operation_id: (complete, [(replica, origin)])}
+            # copy_mapping .. {operation_id: (approved, [(replica, origin)])}
     
-            for operation_id, (completed, list_chunk) in copy_mapping.items():
+            for operation_id, (approved, list_chunk) in copy_mapping.items():
                 replicas = [r for r, o in list_chunk]
-                if completed:
+                if approved:
                     self.inventory_manager.store.add_dataset_replicas(replicas)
                     self.inventory_manager.store.set_last_update()
     
                 size = sum([r.size() for r in replicas])
 
-                self.make_history_entries(site, operation_id, completed, list_chunk, size)
-
-    def make_history_entries(self, site, operation_id, completed, ro_list, size):
-        if config.read_only:
-            logger.info('dealer.make_history_entries')
-            return
-
-        self._history.insert_many('sites', ('name',), lambda (r, o): (o.name,), ro_list)
-        self._history.insert_many('sites', ('name',), lambda s: (s.name,), [site])
-
-        site_ids = dict(self._history.query('SELECT `name`, `id` FROM `sites`'))
-
-        dataset_names = list(set(r.dataset.name for r, o in ro_list))
-        
-        self._history.insert_many('datasets', ('name',), lambda name: (name,), dataset_names)
-        dataset_ids = dict(self._history.query('SELECT `name`, `id` FROM `datasets`'))
-
-        self._history.query('INSERT INTO copy_history (`id`, `timestamp`, `completed`, `site_id`, `size`) VALUES (%s, NOW(), %s, %s, %s)', operation_id, completed, site_ids[site.name], size)
-
-        self._history.insert_many('copied_replicas', ('copy_id', 'dataset_id', 'origin_site_id'), lambda (r, o): (operation_id, dataset_ids[r.dataset.name], site_ids[o.name]), ro_list)
+                self.history_manager.make_copy_entry(site, operation_id, approved, [(r.dataset, o) for r, o in list_chunk], size)
 
     def write_summary_by_accesses(self, dataset_cpus, copy_list, cpu_before, storage_before, storage_after):
         html = open(dealer_config.summary_html, 'w')

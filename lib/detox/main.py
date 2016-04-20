@@ -4,7 +4,6 @@ import math
 import pprint
 
 import common.configuration as config
-from common.interface.mysql import MySQL
 import detox.policy as policy
 import detox.configuration as detox_config
 
@@ -12,15 +11,15 @@ logger = logging.getLogger(__name__)
 
 class Detox(object):
 
-    def __init__(self, inventory, transaction, demand, policies, log_path = detox_config.log_path, html_path = detox_config.html_path):
+    def __init__(self, inventory, transaction, demand, history, policies, log_path = detox_config.log_path, html_path = detox_config.html_path):
         self.inventory_manager = inventory
         self.transaction_manager = transaction
         self.demand_manager = demand
+        self.history_manager = history
+
         self.policy_manager = policy.PolicyManager(policies)
         self.policy_log_path = log_path
         self.policy_html_path = html_path
-
-        self._history = MySQL(**config.history.db_params)
 
         self.deletion_message = 'Dynamo -- Automatic Cache Release Request.'
 
@@ -147,16 +146,16 @@ class Detox(object):
             logger.info('Deleting %d replicas from %s.', len(replica_list), site.name)
 
             deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, comments = self.deletion_message)
-            # deletion_mapping .. {deletion_id: (complete, [replicas])}
+            # deletion_mapping .. {deletion_id: (approved, [replicas])}
 
-            for deletion_id, (completed, replicas) in deletion_mapping.items():
-                if completed:
+            for deletion_id, (approved, replicas) in deletion_mapping.items():
+                if approved:
                     self.inventory_manager.store.delete_datasetreplicas(replicas)
                     self.inventory_manager.store.set_last_update()
 
                 size = sum([r.size() for r in replicas])
 
-                self.make_history_entries(site, deletion_id, completed, [r.dataset for r in replicas], size)
+                self.history_manager.make_deletion_entry(site, deletion_id, approved, [r.dataset for r in replicas], size)
 
             logger.info('Done deleting %d replicas from %s.', len(replica_list), site.name)
 
@@ -199,20 +198,6 @@ class Detox(object):
                 deletion_candidate = replica
 
         return deletion_candidate
-
-    def make_history_entries(self, site, deletion_id, completed, datasets, size):
-        site_ids = self._history.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)
-        if len(site_ids) != 0:
-            site_id = site_ids[0]
-        else:
-            site_id = self._history.query('INSERT INTO `sites` (`name`) VALUES (%s)', site.name)
-
-        self._history.insert_many('datasets', ('name',), lambda d: (d.name,), datasets)
-        dataset_ids = dict(self._history.query('SELECT `name`, `id` FROM `datasets`'))
-
-        self._history.query('INSERT INTO deletion_history (`id`, `timestamp`, `completed`, `site`, `size`) VALUES (%s, NOW(), %s, %s, %s)', deletion_id, completed, site_id, size)
-
-        self._history.insert_many('deleted_replicas', ('deletion_id', 'dataset_id'), lambda d: (deletion_id, dataset_ids[d.name]), datasets)
 
     def write_policy_log(self, policy_log, iteration, all_records):
         policy_log.write('===== Begin iteration %d =====\n\n' % iteration)
