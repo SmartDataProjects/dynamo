@@ -773,7 +773,6 @@ function searchDataset(name) {
   <div>
   Search dataset: <input type="text" size="100" onkeyup="searchDataset(this.value)" onpaste="searchDataset(this.value)" onchange="searchDataset(this.value)">
   </div>
-  <ul>
 '''
 
         html.write(text)
@@ -783,33 +782,35 @@ function searchDataset(name) {
             for replica, origin in replica_origins:
                 dataset_copies[replica.dataset].append(replica)
 
+        destination_sites = sorted([site.name for site in copy_list.keys() if len(copy_list[site]) != 0])
+
         keywords = {}
 
-        for site_name in sorted(self.inventory_manager.sites.keys()):
+        html.write('  <h2>Copy destinations</h2>\n')
+        html.write('  <ul>\n')
+
+        for site_name in destination_sites:
             site = self.inventory_manager.sites[site_name]
+
+            site_copies = [r for r, origin in copy_list[site]]
+            site_copies.sort(key = lambda r: r.size(), reverse = True)
 
             keywords['site'] = site.name
             keywords['site_nfiles'] = nfiles_before[site]
             keywords['storage_before'] = storage_before[site] * 100.
             keywords['storage_after'] = storage_after[site] * 100.
+            keywords['arrive_volume'] = sum(replica.size() * 1.e-9 for replica in site_copies)
 
             text = '   <li><span onclick="toggleVisibility(\'{site}\')" class="menuitem">{site}</span>'.format(**keywords)
-            if abs(storage_before[site] - storage_after[site]) < 1.e-6:
-                text += ' (Activity: {site_nfiles:.2f}, Storage: {storage_before:.2f}%)\n'.format(**keywords)
-            else:
-                text += ' (Activity: {site_nfiles:.2f}, Storage: {storage_before:.2f}% -> {storage_after:.2f}%)\n'.format(**keywords)
+            text += ' (Activity: {site_nfiles:.2f}, Storage: {storage_before:.2f}% -> {storage_after:.2f}%, {arrive_volume:.2f} GB)\n'.format(**keywords)
             text += '    <ul id="{site}" class="collapsible">\n'.format(**keywords)
-
-            site_copies = [r for r, origin in copy_list[site]]
-            site_copies.sort(key = lambda r: r.size(), reverse = True)
 
             site_replicas = []
             for dataset, weight in dataset_weights.items():
-                for replica in dataset.replicas:
-                    if replica.site == site and replica not in site_copies:
-                        total_cpu = sum(r.site.cpu for r in dataset.replicas)
-                        site_replicas.append((dataset, weight, total_cpu))
-                        break
+                replica = dataset.find_replica(site)
+                if replica is not None and replica not in site_copies:
+                    total_cpu = sum(r.site.cpu for r in dataset.replicas)
+                    site_replicas.append((dataset, weight, total_cpu))
 
             site_replicas.sort(key = lambda (dataset, weight, total_cpu): weight, reverse = True)
 
@@ -823,7 +824,7 @@ function searchDataset(name) {
 
                 text += '       <li id="{site}:{dataset}" class="vanishable">'.format(**keywords)
 
-                if weight > keywords['num_replicas']:
+                if weight > keywords['num_replicas'] * 1.5:
                     text += '<span class="popular">{dataset} ({weight:.2f}, {num_replicas})</span>'.format(**keywords)
                 else:
                     text += '{dataset} ({weight:.2f}, {num_replicas})'.format(**keywords)
@@ -832,8 +833,6 @@ function searchDataset(name) {
 
             text += '      </ul>\n' # closing Existing list
             text += '     </li>\n' # item Existing
-
-            keywords['arrive_volume'] = sum(replica.size() * 1.e-9 for replica in site_copies)
 
             text += '     <li class="vanishable"><span onclick="toggleVisibility(\'{site}:arriving\')" class="menuitem">Arriving</span> {arrive_volume:.2f}\n'.format(**keywords)
             text += '      <ul id="{site}:arriving" class="arrive-bullet collapsible">\n'.format(**keywords)
@@ -847,6 +846,58 @@ function searchDataset(name) {
             text += '     </li>\n' # item Arriving
 
             text += '    </ul>\n' # site list (Existing / Arriving)
+            text += '   </li>\n' # closes site
+            
+            html.write(text)
+
+        html.write('  </ul>\n')
+        
+        html.write('  <h2>Other sites</h2>\n')
+        html.write('  <ul>\n')
+
+        for site_name in sorted(self.inventory_manager.sites.keys()):
+            if site_name in destination_sites:
+                continue
+
+            site = self.inventory_manager.sites[site_name]
+
+            keywords['site'] = site.name
+            keywords['site_nfiles'] = nfiles_before[site]
+            keywords['storage_before'] = storage_before[site] * 100.
+
+            text = '   <li><span onclick="toggleVisibility(\'{site}\')" class="menuitem">{site}</span>'.format(**keywords)
+            text += ' (Activity: {site_nfiles:.2f}, Storage: {storage_before:.2f}%)\n'.format(**keywords)
+            text += '    <ul id="{site}" class="collapsible">\n'.format(**keywords)
+
+            site_replicas = []
+            for dataset, weight in dataset_weights.items():
+                replica = dataset.find_replica(site)
+                if replica is not None and replica.site == site:
+                    total_cpu = sum(r.site.cpu for r in dataset.replicas)
+                    site_replicas.append((dataset, weight, total_cpu))
+
+            site_replicas.sort(key = lambda (dataset, weight, total_cpu): weight, reverse = True)
+
+            text += '     <li class="vanishable"><span onclick="toggleVisibility(\'{site}:existing\')" class="menuitem">Existing</span>\n'.format(**keywords)
+            text += '      <ul id="{site}:existing" class="collapsible">\n'.format(**keywords)
+
+            for dataset, weight, total_cpu in site_replicas:
+                keywords['dataset'] = dataset.name
+                keywords['weight'] = weight
+                keywords['num_replicas'] = len(dataset.replicas) - len(dataset_copies[dataset])
+
+                text += '       <li id="{site}:{dataset}" class="vanishable">'.format(**keywords)
+
+                if weight > keywords['num_replicas'] * 1.5:
+                    text += '<span class="popular">{dataset} ({weight:.2f}, {num_replicas})</span>'.format(**keywords)
+                else:
+                    text += '{dataset} ({weight:.2f}, {num_replicas})'.format(**keywords)
+
+                text += '</li>\n'
+
+            text += '      </ul>\n' # closing Existing list
+            text += '     </li>\n' # item Existing
+            text += '    </ul>\n' # site list
             text += '   </li>\n' # closes site
             
             html.write(text)
