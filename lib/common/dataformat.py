@@ -335,3 +335,22 @@ class DatasetRequest(object):
         self.nodes_done = other.nodes_done
         self.nodes_failed = other.nodes_failed
         self.nodes_queued = other.nodes_queued
+
+class HistoryRecord(object):
+    """Represents a transaction history record."""
+
+    # operation types
+    OP_COPY, OP_DELETE = range(2)
+
+    CopiedReplica = collections.namedtuple('CopiedReplica', ['dataset_name', 'origin_site_name'])
+    DeletedReplica = collections.namedtuple('DeletedReplica', ['dataset_name'])
+
+    def __init__(self, operation_type, operation_id, site_name, timestamp = 0, approved = False, size = 0, completion_time = 0):
+        self.operation_type = operation_type
+        self.operation_id = operation_id
+        self.site_name = site_name
+        self.timestamp = timestamp
+        self.approved = bool(approved)
+        self.size = size
+        self.completion_time = completion_time
+        self.replicas = []

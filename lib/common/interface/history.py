@@ -46,3 +46,54 @@ class TransactionHistoryInterface(object):
             self._do_make_deletion_entry(site, operation_id, approved, datasets, size)
         finally:
             self.release_lock()
+
+    def update_copy_entry(self, copy_record):
+        """
+        Update copy entry from the argument. Only certain fields (approved, completion_time) are updatable.
+        """
+
+        if config.read_only:
+            logger.info('update_copy_entry')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_update_copy_entry(copy_record)
+        finally:
+            self.release_lock()
+
+    def update_deletion_entry(self, deletion_record):
+        """
+        Update deletion entry from the argument. Only certain fields (approved, completion_time) are updatable.
+        """
+
+        if config.read_only:
+            logger.info('update_deletion_entry')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_update_deletion_entry(deletion_record)
+        finally:
+            self.release_lock()
+
+    def get_incomplete_copies(self):
+        self.acquire_lock()
+        try:
+            # list of HistoryRecords
+            copies = self._do_get_incomplete_copies()
+        finally:
+            self.release_lock()
+
+        return copies
+
+    def get_incomplete_deletions(self):
+        self.acquire_lock()
+        try:
+            # list of HistoryRecords
+            deletions = self._do_get_incomplete_deletions()
+        finally:
+            self.release_lock()
+
+        return deletions
+
