@@ -1,4 +1,5 @@
 0 3 * * * /usr/local/dynamo/bin/execlib common/inventory.py update scan > /var/log/dynamo/inventory.log 2>&1
 0 5 * * * /usr/local/dynamo/bin/execlib common/demand.py update accesses last now update requests last now > /var/log/dynamo/demand.log 2>&1
 0 1 * * * /usr/local/dynamo/bin/execlib common/interface/store.py clean --timestamp "<`/bin/date -d "1 week ago" +\%y\%m\%d\%H\%M\%S`" > /var/log/dynamo/store.log 2>&1
-10 * * * * /usr/local/dynamo/bin/execlib common/interface/history.py update > /var/log/dynamo/history.log 2>&1
+15 * * * * /usr/local/dynamo/bin/execlib common/interface/history.py update > /var/log/dynamo/history.log 2>&1
+45 * * * * /usr/local/dynamo/bin/execlib common/interface/history.py update > /var/log/dynamo/history.log 2>&1
