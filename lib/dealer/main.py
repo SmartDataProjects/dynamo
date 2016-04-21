@@ -288,7 +288,7 @@ class Dealer(object):
 
             global_stop = False
 
-            while weight > len(dataset.replicas) * 1.5:
+            while weight > len(dataset.replicas) * dealer_config.request_to_replica_threshold:
                 sorted_sites = sorted(site_nfiles.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
 
                 try:
@@ -796,7 +796,7 @@ function searchDataset(name) {
 
                 text += '       <li id="{site}:{dataset}" class="vanishable">'.format(**keywords)
 
-                if weight > keywords['num_replicas'] * 1.5:
+                if weight > keywords['num_replicas'] * dealer_config.request_to_replica_threshold:
                     text += '<span class="popular">{dataset} ({weight:.2f}, {num_replicas})</span>'.format(**keywords)
                 else:
                     text += '{dataset} ({weight:.2f}, {num_replicas})'.format(**keywords)
@@ -860,7 +860,7 @@ function searchDataset(name) {
 
                 text += '       <li id="{site}:{dataset}" class="vanishable">'.format(**keywords)
 
-                if weight > keywords['num_replicas'] * 1.5:
+                if weight > keywords['num_replicas'] * dealer_config.request_to_replica_threshold:
                     text += '<span class="popular">{dataset} ({weight:.2f}, {num_replicas})</span>'.format(**keywords)
                 else:
                     text += '{dataset} ({weight:.2f}, {num_replicas})'.format(**keywords)

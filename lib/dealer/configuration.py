@@ -8,6 +8,8 @@ popularity_threshold = 0.5
 occupancy_fraction_threshold = 0.1 # (CPU hour) / (time normalisation (s)) / (site CPU capacity (kHS06))
 reference_cpu_per_file = 0.5
 
+request_to_replica_threshold = 2. # (weighted number of requests) / (number of replicas) above which replication happens
+
 max_copy_per_site = 6. # Maximum volume to be copied per site in TB
 max_copy_total = 100.
 
