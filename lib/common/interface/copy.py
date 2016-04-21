@@ -35,3 +35,11 @@ class CopyInterface(object):
         """
 
         return False
+
+    def copy_status(self, operation_id):
+        """
+        Returns the completion status specified by the operation id as a
+        {dataset: (total, copied)} dictionary.
+        """
+
+        return {}
