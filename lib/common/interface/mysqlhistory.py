@@ -137,3 +137,14 @@ class MySQLHistory(TransactionHistoryInterface):
             record.replicas.append(HistoryRecord.DeletedReplica(dataset_name = id_to_dataset[dataset_id]))
 
         return id_to_record.values()
+
+    def _do_get_site_name(self, operation_id): #override
+        result = self._mysql.query('SELECT s.name FROM `sites` AS s INNER JOIN `copy_history` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s', operation_id)
+        if len(result) != 0:
+            return result[0]
+
+        result = self._mysql.query('SELECT s.name FROM `sites` AS s INNER JOIN `deletion_history` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s', operation_id)
+        if len(result) != 0:
+            return result[0]
+
+        return ''

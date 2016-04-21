@@ -97,6 +97,15 @@ class TransactionHistoryInterface(object):
 
         return deletions
 
+    def get_site_name(self, operation_id):
+        self.acquire_lock()
+        try:
+            site_name = self._do_get_site_name(operation_id)
+        finally:
+            self.release_lock()
+
+        return site_name
+
 
 if __name__ == '__main__':
 
@@ -107,7 +116,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Local inventory store interface')
 
-    parser.add_argument('command', metavar = 'COMMAND', help = '(update)')
+    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(update|check {copy|deletion} <operation_id>)')
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'TransactionHistoryInterface class to be used.')
     parser.add_argument('--copy-class', '-p', metavar = 'CLASS', dest = 'copy_class_name', default = '', help = 'CopyInterface class to be used.')
     parser.add_argument('--deletion-class', '-d', metavar = 'CLASS', dest = 'deletion_class_name', default = '', help = 'DeletionInterface class to be used.')
@@ -120,34 +129,60 @@ if __name__ == '__main__':
     else:
         interface = getattr(classes, args.class_name)()
 
-    if args.command == 'update':
+    if args.copy_class_name == '':
+        copy_interface = classes.default_interface['copy']()
+    else:
+        copy_interface = getattr(classes, args.copy_class_name)()
 
-        if args.copy_class_name == '':
-            copy_interface = classes.default_interface['copy']()
-        else:
-            copy_interface = getattr(classes, args.copy_class_name)()
+    if args.deletion_class_name == '':
+        deletion_interface = classes.default_interface['deletion']()
+    else:
+        deletion_interface = getattr(classes, args.deletion_class_name)()
 
-        if args.deletion_class_name == '':
-            deletion_interface = classes.default_interface['deletion']()
-        else:
-            deletion_interface = getattr(classes, args.deletion_class_name)()
-        
-        incomplete_copies = interface.get_incomplete_copies()
-        
-        for record in incomplete_copies:
-            completed = copy_interface.check_completion(record.operation_id)
-            if completed:
-                logger.info('Copy %d to %s has completed.', record.operation_id, record.site_name)
-        
-                record.completion_time = time.time()
-                interface.update_copy_entry(record)
-        
-        incomplete_deletions = interface.get_incomplete_deletions()
-        
-        for record in incomplete_deletions:
-            completed = copy_interface.check_completion(record.operation_id)
-            if completed:
-                logger.info('Deletion %d at %s has completed.', record.operation_id, record.site_name)
-        
-                record.completion_time = time.time()
-                interface.update_deletion_entry(record)
+    icmd = 0
+    while icmd != len(args.command):
+        command = args.command[icmd]
+        icmd += 1
+
+        if command == 'update':
+            incomplete_copies = interface.get_incomplete_copies()
+            
+            for record in incomplete_copies:
+                completed = copy_interface.check_completion(record.operation_id)
+                if completed:
+                    logger.info('Copy %d to %s has completed.', record.operation_id, record.site_name)
+            
+                    record.completion_time = time.time()
+                    interface.update_copy_entry(record)
+            
+            incomplete_deletions = interface.get_incomplete_deletions()
+            
+            for record in incomplete_deletions:
+                completed = copy_interface.check_completion(record.operation_id)
+                if completed:
+                    logger.info('Deletion %d at %s has completed.', record.operation_id, record.site_name)
+            
+                    record.completion_time = time.time()
+                    interface.update_deletion_entry(record)
+    
+        elif command == 'check':
+            operation = args.command[icmd]
+            icmd += 1
+
+            operation_id = int(args.command[icmd])
+            icmd += 1
+
+            print 'Site: ' + interface.get_site_name(operation_id)
+
+            if operation == 'copy':
+                status = copy_interface.copy_status(operation_id)
+
+                total = 0.
+                done = 0.
+                for dataset in sorted(status.keys()):
+                    print '{dataset} ({total:.2f} GB): {percentage:.2f}%'.format(dataset = dataset, total = status[dataset][0] * 1.e-9, percentage = status[dataset][1] / status[dataset][0] * 100.)
+                    total += status[dataset][0]
+                    done += status[dataset][1]
+
+                print '----------------------------'
+                print 'Transfer {percentage:.2f}% complete'.format(percentage = done / total * 100.)
