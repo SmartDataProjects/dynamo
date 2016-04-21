@@ -4,7 +4,7 @@ import re
 
 from common.interface.classes import default_interface
 from common.interface.store import LocalStoreInterface
-from common.dataformat import IntegrityError, DatasetReplica, BlockReplica
+from common.dataformat import IntegrityError, Dataset, DatasetReplica, BlockReplica
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -223,10 +223,10 @@ class InventoryManager(object):
             self.load()
 
         if dataset_filter == '/*/*/*':
-            datasets = self.datasets.values()
+            datasets = [dataset for d in self.datasets.values() if d.status != Dataset.STAT_IGNORED]
         else:
             regex = re.compile(fnmatch.translate(dataset_filter))
-            datasets = [d for d in self.datasets.values() if regex.match(d.name)]
+            datasets = [d for d in self.datasets.values() if regex.match(d.name) and d.status != Dataset.STAT_IGNORED]
 
         last_updates = dict([(d, d.last_update) for d in datasets])
 

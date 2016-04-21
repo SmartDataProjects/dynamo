@@ -283,6 +283,25 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             # unknown request type
             return False
 
+    def copy_status(self, request_id): #override (CopyInterface)
+        request = self._make_phedex_request('transferrequests', 'request=%d' % request_id)
+        if len(request) == 0:
+            return {}
+
+        site_name = request[0]['destinations']['node'][0]['name']
+        dataset_names = []
+        for ds_entry in request[0]['data']['dbs']['dataset']:
+            dataset_names.append(ds_entry['name'])
+
+        subscriptions = self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in dataset_names])
+
+        status = {}
+        for subscription in subscriptions:
+            cont = subscription['subscription'][0]
+            status[subscription['name']] = (cont['node_bytes'], cont['node_bytes'] * cont['percent_bytes'] / 100.)
+            
+        return status
+
     def get_site_list(self, sites, filt = '*'): #override (SiteInfoSourceInterface)
         options = []
         if type(filt) is str and len(filt) != 0:
@@ -490,6 +509,9 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
         # with more block replicas than the known blocks
         open_datasets = []
         for dataset in datasets.values():
+            if dataset.status == Dataset.STAT_IGNORED:
+                continue
+
             if dataset.status == Dataset.STAT_PRODUCTION or dataset.status == Dataset.STAT_UNKNOWN or \
                     len(dataset.blocks) < max(len(replicas) for site, replicas in self._block_replicas[dataset.name].items()):
                 open_datasets.append(dataset)
