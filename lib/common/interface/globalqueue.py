@@ -82,7 +82,7 @@ if __name__ == '__main__':
     parser.add_argument('--end-time', '-e', dest = 'end_time', metavar = 'TIME', type = int, default = 0, help = 'UNIX timestamp of end of the query range.')
     parser.add_argument('--dataset', '-d', dest = 'dataset', metavar = 'NAME', default = '', help = 'Dataset name.')
     parser.add_argument('--status', '-t', dest = 'status', metavar = 'STATUS', type = int, default = 0, help = 'Job status.')
-    parser.add_argument('--raw', '-R', dest = 'raw', action = 'store_true', help = 'Print raw output.')
+    parser.add_argument('--attributes', '-a', dest = 'attributes', metavar = 'ATTR1 [ATTR2 [..]]', nargs = '+', default = None, help = 'Triggers "raw" output with specified attributes.')
 
     args = parser.parse_args()
 
@@ -90,8 +90,8 @@ if __name__ == '__main__':
     
     interface = GlobalQueue(args.collector)
 
-    if args.raw:
-        ads = interface.htcondor.find_jobs(constraint = interface._form_job_constraint(args.dataset, args.status, args.start_time, args.end_time))
+    if args.attributes is not None:
+        ads = interface.htcondor.find_jobs(constraint = interface._form_job_constraint(args.dataset, args.status, args.start_time, args.end_time), attributes = args.attributes)
 
         print '['
         for ad in ads:
