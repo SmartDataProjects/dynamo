@@ -97,3 +97,57 @@ class TransactionHistoryInterface(object):
 
         return deletions
 
+
+if __name__ == '__main__':
+
+    import sys
+    import time
+    from argparse import ArgumentParser
+    import common.interface.classes as classes
+
+    parser = ArgumentParser(description = 'Local inventory store interface')
+
+    parser.add_argument('command', metavar = 'COMMAND', help = '(update)')
+    parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'TransactionHistoryInterface class to be used.')
+    parser.add_argument('--copy-class', '-p', metavar = 'CLASS', dest = 'copy_class_name', default = '', help = 'CopyInterface class to be used.')
+    parser.add_argument('--deletion-class', '-d', metavar = 'CLASS', dest = 'deletion_class_name', default = '', help = 'DeletionInterface class to be used.')
+
+    args = parser.parse_args()
+    sys.argv = []
+
+    if args.class_name == '':
+        interface = classes.default_interface['history']()
+    else:
+        interface = getattr(classes, args.class_name)()
+
+    if args.command == 'update':
+
+        if args.copy_class_name == '':
+            copy_interface = classes.default_interface['copy']()
+        else:
+            copy_interface = getattr(classes, args.copy_class_name)()
+
+        if args.deletion_class_name == '':
+            deletion_interface = classes.default_interface['deletion']()
+        else:
+            deletion_interface = getattr(classes, args.deletion_class_name)()
+        
+        incomplete_copies = interface.get_incomplete_copies()
+        
+        for record in incomplete_copies:
+            completed = copy_interface.check_completion(record.operation_id)
+            if completed:
+                logger.info('Copy %d to %s has completed.', record.operation_id, record.site_name)
+        
+                record.completion_time = time.time()
+                interface.update_copy_entry(record)
+        
+        incomplete_deletions = interface.get_incomplete_deletions()
+        
+        for record in incomplete_deletions:
+            completed = copy_interface.check_completion(record.operation_id)
+            if completed:
+                logger.info('Deletion %d at %s has completed.', record.operation_id, record.site_name)
+        
+                record.completion_time = time.time()
+                interface.update_deletion_entry(record)
