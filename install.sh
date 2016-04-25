@@ -4,3 +4,5 @@ DYNAMO_BASE=_DYNAMO_BASE_
 
 cp $DYNAMO_BASE/sysv/detoxd /etc/init.d/
 cp $DYNAMO_BASE/sysv/dealerd /etc/init.d/
+
+crontab $DYNAMO_BASE/etc/crontab

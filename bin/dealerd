@@ -5,8 +5,11 @@
 # v1.0                                                                       Y.Iiyama (Apr 19, 2016)
 # --------------------------------------------------------------------------------------------------
 
-# initialize environment variables
-source /usr/local/dynamo/etc/profile.d/init.sh
+if [ -z "$DYNAMO_BASE" ]
+then
+  echo "Dynamo environment is not set."
+  exit 1
+fi
 
 while [ 1 ]
 do
