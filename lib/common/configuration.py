@@ -15,9 +15,9 @@ paths.base = os.environ['DYNAMO_BASE']
 
 mysqlhistory = Configuration()
 mysqlhistory.db_params = {
-    config_file = '/etc/my.cnf',
-    config_group = 'mysql-dynamo',
-    db = 'dynamohistory'
+    'config_file': '/etc/my.cnf',
+    'config_group': 'mysql-dynamo',
+    'db': 'dynamohistory'
 }
 
 webservice = Configuration()
@@ -28,9 +28,9 @@ mysql.max_query_len = 500000 # allows up to 1M characters; allowing 50% safety m
 
 mysqlstore = Configuration()
 mysqlstore.db_params = {
-    config_file = '/etc/my.cnf',
-    config_group = 'mysql-dynamo',
-    db = 'dynamo'
+    'config_file': '/etc/my.cnf',
+    'config_group': 'mysql-dynamo',
+    'db': 'dynamo'
 }
 
 phedex = Configuration()
