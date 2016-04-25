@@ -36,12 +36,23 @@ class Dealer(object):
 
         self.demand_manager.update(self.inventory_manager)
 
-#        copy_list = self.determine_copies_by_accesses()
-        copy_list = self.determine_copies_by_requests()
+        incomplete_copies = self.history_manager.get_incomplete_copies()
+        copy_volumes = collections.defaultdict(float)
+        for operation in incomplete_copies:
+            site = self.inventory_manager.sites[operation.site_name]
+            status = self.transaction_manager.copy.copy_status(operation.operation_id)
+            for dataset_name, (total, copied) in status.items():
+                if total == 0.:
+                    copy_volumes[site] += self.inventory_manager.datasets[dataset_name].size * 1.e-12
+                else:
+                    copy_volumes[site] += (total - copied) * 1.e-12
+
+#        copy_list = self.determine_copies_by_accesses(copy_volumes)
+        copy_list = self.determine_copies_by_requests(copy_volumes)
 
         self.commit_copies(copy_list)
 
-    def determine_copies_by_accesses(self):
+    def determine_copies_by_accesses(self, copy_volumes):
         """
         Simplest algorithm:
         1. Compute time- and slot- normalized CPU hour (site occupancy fraction) for each dataset replica.
@@ -142,7 +153,6 @@ class Dealer(object):
 
         site_cpu_occupancies_before = dict(site_cpu_occupancies)
         site_storage_before = dict(site_storage)
-        copy_volumes = dict([(site, 0.) for site in sites])
 
         for dataset, total_ncpu, total_site_capacity in popular_datasets:
 
@@ -214,7 +224,7 @@ class Dealer(object):
 
         return copy_list
 
-    def determine_copies_by_requests(self):
+    def determine_copies_by_requests(self, copy_volumes):
         """
         Algorithm:
         1. Compute a time-weighted sum of number of requests for the last three days.
@@ -280,8 +290,6 @@ class Dealer(object):
         
         site_storage = dict([(site, site.storage_occupancy(group)) for site in sites])
         site_storage_before = dict(site_storage)
-
-        copy_volumes = dict([(site, 0.) for site in sites])
 
         # now go through datasets sorted by weight / #replicas
         for dataset, weight in sorted(dataset_weights.items(), key = lambda (d, w): w / len(d.replicas), reverse = True):
