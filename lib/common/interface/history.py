@@ -120,9 +120,17 @@ if __name__ == '__main__':
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'TransactionHistoryInterface class to be used.')
     parser.add_argument('--copy-class', '-p', metavar = 'CLASS', dest = 'copy_class_name', default = '', help = 'CopyInterface class to be used.')
     parser.add_argument('--deletion-class', '-d', metavar = 'CLASS', dest = 'deletion_class_name', default = '', help = 'DeletionInterface class to be used.')
+    parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
     args = parser.parse_args()
     sys.argv = []
+
+    if args.log_level:
+        try:
+            level = getattr(logging, args.log_level.upper())
+            logging.getLogger().setLevel(level)
+        except AttributeError:
+            logging.warning('Log level ' + args.log_level + ' not defined')
 
     if args.class_name == '':
         interface = classes.default_interface['history']()
@@ -169,20 +177,36 @@ if __name__ == '__main__':
             operation = args.command[icmd]
             icmd += 1
 
-            operation_id = int(args.command[icmd])
-            icmd += 1
+            try:
+                operation_ids = [int(args.command[icmd])]
+                icmd += 1
+            except:
+                operations = interface.get_incomplete_copies()
+                operation_ids = [op.operation_id for op in operations]
 
-            print 'Site: ' + interface.get_site_name(operation_id)
+            for operation_id in operation_ids:
+                print 'ID: %d' % operation_id
+                print 'Site: ' + interface.get_site_name(operation_id)
+    
+                if operation == 'copy':
+                    status = copy_interface.copy_status(operation_id)
+    
+                    total = 0.
+                    done = 0.
+                    for dataset in sorted(status.keys()):
+                        st = status[dataset]
+                        if st[0] == 0.: # why??
+                            print '{dataset} (0 GB)'.format(dataset = dataset)
+                        else:
+                            print '{dataset} ({total:.2f} GB): {percentage:.2f}%'.format(dataset = dataset, total = st[0] * 1.e-9, percentage = st[1] / st[0] * 100.)
 
-            if operation == 'copy':
-                status = copy_interface.copy_status(operation_id)
+                        total += st[0]
+                        done += st[1]
+    
+                    print '----------------------------'
+                    if total == 0.: # why??
+                        print 'Transfer NAN% complete'
+                    else:
+                        print 'Transfer {percentage:.2f}% complete'.format(percentage = done / total * 100.)
 
-                total = 0.
-                done = 0.
-                for dataset in sorted(status.keys()):
-                    print '{dataset} ({total:.2f} GB): {percentage:.2f}%'.format(dataset = dataset, total = status[dataset][0] * 1.e-9, percentage = status[dataset][1] / status[dataset][0] * 100.)
-                    total += status[dataset][0]
-                    done += status[dataset][1]
-
-                print '----------------------------'
-                print 'Transfer {percentage:.2f}% complete'.format(percentage = done / total * 100.)
+                    print ''
