@@ -1,0 +1,7 @@
+#!/bin/bash
+
+DYNAMO_BASE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
+
+sed -i "s/_DYNAMO_BASE_/$DYNAMO_BASE/" $DYNAMO_BASE/sysv/detoxd
+sed -i "s/_DYNAMO_BASE_/$DYNAMO_BASE/" $DYNAMO_BASE/sysv/dealerd
+sed -i "s/_DYNAMO_BASE_/$DYNAMO_BASE/" $DYNAMO_BASE/install.sh
