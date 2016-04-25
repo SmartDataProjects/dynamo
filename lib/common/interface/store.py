@@ -490,7 +490,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Local inventory store interface')
 
-    parser.add_argument('command', metavar = 'COMMAND', help = '(snapshot [clear (replicas|all)]|clean|recover|list (datasets|groups|sites))')
+    parser.add_argument('command', metavar = 'COMMAND', help = '(snapshot [clear (replicas|all)]|clean|recover|list (datasets|groups|sites)|show (dataset|block|site|replica) <name>)')
     parser.add_argument('arguments', metavar = 'ARGS', nargs = '*', help = '')
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'LocalStoreInterface class to be used.')
     parser.add_argument('--timestamp', '-t', metavar = 'YMDHMS', dest = 'timestamp', default = '', help = 'Timestamp of the snapshot to be loaded / cleaned. With command clean, prepend with "<" or ">" to remove all snapshots older or newer than the timestamp.')
