@@ -1,9 +1,6 @@
 import os
 import logging
 
-# should use a smarter solution here
-import common.pconfiguration as pconfiguration
-
 class Configuration(object):
     pass
 
@@ -17,16 +14,24 @@ paths = Configuration()
 paths.base = os.environ['DYNAMO_BASE']
 
 mysqlhistory = Configuration()
-mysqlhistory.db_params = pconfiguration.history_db
+mysqlhistory.db_params = {
+    config_file = '/etc/my.cnf',
+    config_group = 'mysql-dynamo',
+    db = 'dynamohistory'
+}
 
 webservice = Configuration()
-webservice.x509_key = pconfiguration.x509_key
+webservice.x509_key = os.environ['X509_USER_PROXY']
 
 mysql = Configuration()
 mysql.max_query_len = 500000 # allows up to 1M characters; allowing 50% safety margin
 
 mysqlstore = Configuration()
-mysqlstore.db_params = pconfiguration.store_db
+mysqlstore.db_params = {
+    config_file = '/etc/my.cnf',
+    config_group = 'mysql-dynamo',
+    db = 'dynamo'
+}
 
 phedex = Configuration()
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'

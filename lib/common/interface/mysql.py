@@ -12,8 +12,11 @@ logger = logging.getLogger(__name__)
 
 class MySQL(object):
     
-    def __init__(self, host, user, passwd, db):
-        self._connection = MySQLdb.connect(host = host, user = user, passwd = passwd, db = db)
+    def __init__(self, host = '', user = '', passwd = '', config_file = '', config_group = '', db = ''):
+        if default_file:
+            self._connection = MySQLdb.connect(read_default_file = default_file, read_default_group = config_group, db = db)
+        else:
+            self._connection = MySQLdb.connect(host = host, user = user, passwd = passwd, db = db)
 
     def query(self, sql, *args):
         """
