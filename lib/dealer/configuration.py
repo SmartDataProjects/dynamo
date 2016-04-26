@@ -38,4 +38,4 @@ excluded_destinations = [
     'T2_US_Vanderbilt'
 ]
 
-summary_html = '/var/www/html/dealer/copy_decisions.html'
+summary_html = '/home/cmsprod/public_html/dynamo/dealer/copy_decisions.html'
