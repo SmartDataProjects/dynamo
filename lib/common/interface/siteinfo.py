@@ -15,6 +15,14 @@ class SiteInfoSourceInterface(object):
         """
         pass
 
+    def get_site_status(self, sites):
+        """
+        Set site status.
+        Arguments:
+          sites: name->site dict to be updated.
+        """
+        pass
+
     def get_group_list(self, groups, filt = '*'):
         """
         Fill the list of groups with groups that match the wildcard name.

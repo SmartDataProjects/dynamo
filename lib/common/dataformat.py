@@ -127,10 +127,8 @@ class Block(object):
 class Site(object):
     """Represents an SE."""
 
-    TYPE_DISK = 0
-    TYPE_MSS = 1
-    TYPE_BUFFER = 2
-    TYPE_UNKNOWN = 3
+    TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(4)
+    STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(4)
 
     @staticmethod
     def storage_type_val(arg):
@@ -163,20 +161,52 @@ class Site(object):
         else:
             return arg
 
-    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0.):
+    @staticmethod
+    def status_val(arg):
+        if type(arg) is str:
+            arg = arg.lower()
+            if arg == 'ready':
+                return Site.STAT_READY
+            elif arg == 'waitroom':
+                return Site.STAT_WAITROOM
+            elif arg == 'morgue':
+                return Site.STAT_MORGUE
+            elif arg == 'unknown':
+                return Site.STAT_UNKNOWN
+
+        else:
+            return arg
+
+    @staticmethod
+    def status_name(arg):
+        if type(arg) is int:
+            if arg == Site.STAT_READY:
+                return 'ready'
+            elif arg == Site.STAT_WAITROOM:
+                return 'waitroom'
+            elif arg == Site.STAT_MORGUE:
+                return 'morgue'
+            elif arg == Site.STAT_UNKNOWN:
+                return 'unknown'
+
+        else:
+            return arg
+
+    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN):
         self.name = name
         self.host = host
         self.storage_type = storage_type
         self.backend = backend
         self.storage = storage # in TB
         self.cpu = cpu # in kHS06
+        self.status = status
         self.group_quota = {} # in TB
         self.dataset_replicas = []
         self.block_replicas = []
 
     def __str__(self):
-        return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f)' % \
-            (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu)
+        return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s)' % \
+            (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu, Site.status_name(self.status))
 
     def find_dataset_replica(self, dataset):
         try:

@@ -21,12 +21,12 @@ ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', '
 
 FileInfo = collections.namedtuple('File', ['name', 'bytes', 'checksum'])
 
-class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, ReplicaInfoSourceInterface, DatasetInfoSourceInterface):
+class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, ReplicaInfoSourceInterface, DatasetInfoSourceInterface):
     """
     Interface to PhEDEx using datasvc REST API.
     """
 
-    def __init__(self, phedex_url = config.phedex.url_base, dbs_url = config.dbs.url_base):
+    def __init__(self, phedex_url = config.phedex.url_base, dbs_url = config.dbs.url_base, ssb_url = config.ssb.url_base):
         CopyInterface.__init__(self)
         DeletionInterface.__init__(self)
         SiteInfoSourceInterface.__init__(self)
@@ -35,6 +35,7 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
 
         self._phedex_interface = RESTService(phedex_url)
         self._dbs_interface = RESTService(dbs_url) # needed for detailed dataset info
+        self._ssb_interface = RESTService(ssb_url) # needed for site status
 
         self._last_request_time = 0
         self._last_request_url = ''
@@ -316,6 +317,27 @@ class PhEDExDBS(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Repli
             if entry['name'] not in sites:
                 site = Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology'])
                 sites[entry['name']] = site
+
+    def get_site_status(self, sites): #override (SiteInfoSourceInterface)
+        for site in sites.values():
+            site.status = Site.STAT_UNKNOWN
+
+        # get list of sites in waiting room (153) and morgue (199)
+        for colid, stat in [(153, Site.STAT_WAITROOM), (199, Site.STAT_MORGUE)]:
+            result = self._ssb_interface.make_request('getplotdata', 'columnid=%d&time=2184&dateFrom=&dateTo=&sites=all&clouds=undefined&batch=1' % colid)
+            try:
+                source = json.loads(result)['csvdata']
+            except KeyError:
+                logger.error('SSB parse error')
+                return
+    
+            for entry in result:
+                if entry['Status'] == 'in':
+                    site = sites[entry['VOName']]
+                    site.status = stat
+
+                elif site.status == Site.STAT_UNKNOWN:
+                    site.status = Site.STAT_READY
 
     def get_group_list(self, groups, filt = '*'): #override (SiteInfoSourceInterface)
         options = []
@@ -878,7 +900,7 @@ if __name__ == '__main__':
 
     command = args.command
 
-    interface = PhEDExDBS(phedex_url = args.phedex_url)
+    interface = PhEDExDBSSSB(phedex_url = args.phedex_url)
 
     if args.method == 'POST':
         method = POST

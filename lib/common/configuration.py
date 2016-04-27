@@ -41,6 +41,9 @@ phedex.subscription_chunk_size = 40000000000000 # 40 TB
 dbs = Configuration()
 dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
 
+ssb = Configuration()
+ssb.url_base = 'https://dashb-ssb.cern.ch/dashboard/request.py'
+
 sitedb = Configuration()
 sitedb.url_base = 'https://cmsweb.cern.ch/sitedb/data/prod'
 
