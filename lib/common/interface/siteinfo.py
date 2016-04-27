@@ -15,7 +15,7 @@ class SiteInfoSourceInterface(object):
         """
         pass
 
-    def get_site_status(self, sites):
+    def set_site_status(self, sites):
         """
         Set site status.
         Arguments:

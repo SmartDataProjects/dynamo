@@ -36,6 +36,7 @@ class Detox(object):
             self.inventory_manager.update()
 
         self.demand_manager.update(self.inventory_manager)
+        self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
         logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_manager.num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
 

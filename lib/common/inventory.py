@@ -105,6 +105,7 @@ class InventoryManager(object):
 
             logger.info('Fetching info on sites.')
             self.site_source.get_site_list(self.sites, filt = config.inventory.included_sites)
+            self.site_source.set_site_status(self.sites)
             if len(config.inventory.excluded_sites) != 0:
                 site_names = self.sites.keys()
                 for site_name in site_names:

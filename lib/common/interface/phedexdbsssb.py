@@ -318,7 +318,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 site = Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology'])
                 sites[entry['name']] = site
 
-    def get_site_status(self, sites): #override (SiteInfoSourceInterface)
+    def set_site_status(self, sites): #override (SiteInfoSourceInterface)
         for site in sites.values():
             site.status = Site.STAT_UNKNOWN
 
@@ -332,10 +332,13 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 return
     
             for entry in result:
-                if entry['Status'] == 'in':
+                try:
                     site = sites[entry['VOName']]
-                    site.status = stat
+                except KeyError:
+                    continue
 
+                if entry['Status'] == 'in':
+                    site.status = stat
                 elif site.status == Site.STAT_UNKNOWN:
                     site.status = Site.STAT_READY
 

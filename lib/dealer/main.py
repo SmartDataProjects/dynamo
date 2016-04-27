@@ -3,7 +3,7 @@ import datetime
 import collections
 import logging
 
-from common.dataformat import Dataset, DatasetReplica
+from common.dataformat import Dataset, DatasetReplica, Site
 import common.configuration as config
 import dealer.configuration as dealer_config
 
@@ -35,6 +35,7 @@ class Dealer(object):
             self.inventory_manager.update()
 
         self.demand_manager.update(self.inventory_manager)
+        self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
         incomplete_copies = self.history_manager.get_incomplete_copies()
         copy_volumes = collections.defaultdict(float)
@@ -51,6 +52,8 @@ class Dealer(object):
         copy_list = self.determine_copies_by_requests(copy_volumes)
 
         self.commit_copies(copy_list)
+
+        logger.info('Finished dealer run at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
     def determine_copies_by_accesses(self, copy_volumes):
         """
@@ -163,14 +166,14 @@ class Dealer(object):
     
                 try:
                     destination_site = next(dest for dest, occ in sorted_sites if \
-                        occ != 0. and \
+                        dest.status == Site.STAT_READY and \
                         dest.name not in dealer_config.excluded_destinations and \
                         site_storage[dest] < config.target_site_occupancy and \
                         site_storage[dest] + dataset.size * 1.e-12 / dest.group_quota[group] < 1. and \
                         copy_volumes[dest] < dealer_config.max_copy_per_site and \
                         dest.find_dataset_replica(dataset) is None
                     )
-                    # occ == 0 -> this site had no activities - probably not active.
+                    # site is ready
                     # site is not full
                     # site will not be full
                     # copy quota not reached yet
@@ -301,6 +304,7 @@ class Dealer(object):
 
                 try:
                     destination_site = next(dest for dest, njob in sorted_sites if \
+                        dest.status == Site.STAT_READY and \
                         dest.name not in dealer_config.excluded_destinations and \
                         site_storage[dest] < config.target_site_occupancy and \
                         site_storage[dest] + dataset.size * 1.e-12 / dest.group_quota[group] < 1. and \

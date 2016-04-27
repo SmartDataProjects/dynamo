@@ -152,11 +152,11 @@ class MySQLStore(LocalStoreInterface):
         # Load sites
         site_list = []
 
-        sites = self._mysql.query('SELECT `name`, `host`, `storage_type`, `backend`, `storage`, `cpu` FROM `sites`')
+        sites = self._mysql.query('SELECT `name`, `host`, `storage_type`, `backend`, `storage`, `cpu`, `status` FROM `sites`')
 
         logger.info('Loaded data for %d sites.', len(sites))
         
-        for name, host, storage_type, backend, storage, cpu in sites:
+        for name, host, storage_type, backend, storage, cpu, status in sites:
             if type(site_filt) is str:
                 if site_filt != '*' and not fnmatch.fnmatch(name, site_filt):
                     continue
@@ -165,7 +165,7 @@ class MySQLStore(LocalStoreInterface):
                 if name not in site_filt:
                     continue
 
-            site = Site(name, host = host, storage_type = Site.storage_type_val(storage_type), backend = backend, storage = storage, cpu = cpu)
+            site = Site(name, host = host, storage_type = Site.storage_type_val(storage_type), backend = backend, storage = storage, cpu = cpu, status = status)
             site_list.append(site)
 
         self._set_site_ids(site_list)
@@ -457,8 +457,8 @@ class MySQLStore(LocalStoreInterface):
         # insert/update sites
         logger.info('Inserting/updating %d sites.', len(sites))
 
-        fields = ('name', 'host', 'storage_type', 'backend', 'storage', 'cpu')
-        mapping = lambda s: (s.name, s.host, Site.storage_type_name(s.storage_type), s.backend, s.storage, s.cpu)
+        fields = ('name', 'host', 'storage_type', 'backend', 'storage', 'cpu', 'status')
+        mapping = lambda s: (s.name, s.host, Site.storage_type_name(s.storage_type), s.backend, s.storage, s.cpu, s.status)
 
         self._mysql.insert_many('sites', fields, mapping, sites)
 

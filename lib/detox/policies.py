@@ -5,6 +5,7 @@ import fnmatch
 import detox.policy as policy
 import detox.configuration as detox_config
 import common.configuration as config
+from common.dataformat import Site
 
 class ProtectIncomplete(policy.ProtectPolicy):
     """
@@ -58,6 +59,18 @@ class ProtectDiskOnly(policy.ProtectPolicy):
 
     def applies(self, replica, demand_manager): # override
         return not replica.dataset.on_tape, 'Replica has no tape copy.'
+
+
+class ProtectNonReadySite(policy.ProtectPolicy):
+    """
+    PROTECT if the site is not ready.
+    """
+
+    def __init__(self, name = 'ProtectNonReadySite'):
+        super(self.__class__, self).__init__(name)
+
+    def applies(self, replica, demand_manager): # override
+        return replica.site.status != Site.STAT_READY
 
 
 class ProtectMinimumCopies(policy.ProtectPolicy):
