@@ -29,6 +29,9 @@ do
   echo "Start 10 loops; log file $LOG" >> $LOG
   $DYNAMO_BASE/bin/dealer --log-level INFO --log-file $LOG --repeat 10 $DYNAMO_DEALER_INTERVAL
 
+  # take a deep breath
+  sleep 5
+
 done
 
 exit 0

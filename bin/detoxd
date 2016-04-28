@@ -29,6 +29,9 @@ do
 
   $DYNAMO_BASE/bin/detox --log-level INFO --log-file $LOG --repeat 10 $DYNAMO_DETOX_INTERVAL
 
+  # take a deep breath
+  sleep 5
+
 done
 
 exit 0
