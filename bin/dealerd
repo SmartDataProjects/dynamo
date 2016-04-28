@@ -5,6 +5,8 @@
 # v1.0                                                                       Y.Iiyama (Apr 19, 2016)
 # --------------------------------------------------------------------------------------------------
 
+RUNS_PER_CYCLE=10
+
 if [ -z "$DYNAMO_BASE" ]
 then
   echo "Dynamo environment is not set."
@@ -26,8 +28,8 @@ do
     find $DYNAMO_LOGDIR -name dealer-* -mtime 1 -delete
   fi
 
-  echo "Start 10 loops; log file $LOG" >> $LOG
-  $DYNAMO_BASE/bin/dealer --log-level INFO --log-file $LOG --repeat 10 $DYNAMO_DEALER_INTERVAL
+  echo "Start $RUNS_PER_CYCLE loops; log file $LOG" >> $LOG
+  $DYNAMO_BASE/bin/dealer --log-level INFO --log-file $LOG --repeat $RUNS_PER_CYCLE $DYNAMO_DEALER_INTERVAL 2>>$LOG
 
   # take a deep breath
   sleep 5
