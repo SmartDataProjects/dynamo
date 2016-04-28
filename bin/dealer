@@ -34,7 +34,7 @@ if args.log_level:
         logging.warning('Log level ' + args.log_level + ' not defined')
 
 if args.log_file:
-    logging.basicConfig(filename = args.log_file, filemode = 'w', level = log_level)
+    logging.basicConfig(filename = args.log_file, filemode = 'a', level = log_level)
 else:
     logging.basicConfig(level = log_level)
 
