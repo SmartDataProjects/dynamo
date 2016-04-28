@@ -25,7 +25,8 @@ do
   then
     find $DYNAMO_LOGDIR -name dealer-* -mtime 1 -delete
   fi
-  
+
+  echo "Start 10 loops; log file $LOG" >> $LOG
   $DYNAMO_BASE/bin/dealer --log-level INFO --log-file $LOG --repeat 10 $DYNAMO_DEALER_INTERVAL
 
 done
