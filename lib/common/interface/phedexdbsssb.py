@@ -333,7 +333,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 logger.error('SSB parse error')
                 return
     
-            for entry in result:
+            for entry in source:
                 try:
                     site = sites[entry['VOName']]
                 except KeyError:

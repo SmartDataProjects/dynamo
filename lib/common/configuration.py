@@ -22,6 +22,7 @@ mysqlhistory.db_params = {
 
 webservice = Configuration()
 webservice.x509_key = os.environ['X509_USER_PROXY']
+webservice.num_attempts = 5
 
 mysql = Configuration()
 mysql.max_query_len = 500000 # allows up to 1M characters; allowing 50% safety margin
@@ -42,7 +43,7 @@ dbs = Configuration()
 dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
 
 ssb = Configuration()
-ssb.url_base = 'https://dashb-ssb.cern.ch/dashboard/request.py'
+ssb.url_base = 'http://dashb-ssb.cern.ch/dashboard/request.py'
 
 sitedb = Configuration()
 sitedb.url_base = 'https://cmsweb.cern.ch/sitedb/data/prod'

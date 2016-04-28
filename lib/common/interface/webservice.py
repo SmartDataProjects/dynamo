@@ -33,7 +33,11 @@ class RESTService(object):
     """
 
     def __init__(self, url_base, headers = []):
-        self.opener = urllib2.build_opener(HTTPSGridAuthHandler())
+        if url_base.startswith('https:'):
+            self.opener = urllib2.build_opener(HTTPSGridAuthHandler())
+        else:
+            self.opener = urllib2.build_opener(urllib2.HTTPHandler())
+
         self.opener.addheaders.append(('Accept', 'application/json'))
         self.opener.addheaders += headers
 
@@ -94,20 +98,30 @@ class RESTService(object):
 
             request.add_data(data)
 
-        try:
-            response = self.opener.open(request)
+        attempts = 0
+        while attempts != config.webservice.num_attempts:
+            attempts += 1
 
-        except urllib2.HTTPError, e:
-            raise
+            try:
+                response = self.opener.open(request)
+                break
+    
+            except urllib2.HTTPError, e:
+                raise
+    
+            except urllib2.URLError, e:
+                if '[Errno 110]' in e.reason: # timed out
+                    continue
 
-        except urllib2.URLError, e:
-            raise
+        else: # exhausted allowed attempts
+            raise RuntimeError('webservice too many attempts')
 
         return response.read()
 
 
 if __name__ == '__main__':
 
+    import sys
     from argparse import ArgumentParser
 
     parser = ArgumentParser(description = 'REST interface')
@@ -116,11 +130,18 @@ if __name__ == '__main__':
     parser.add_argument('resource', metavar = 'RES', help = 'Request resource.')
     parser.add_argument('options', metavar = 'EXPR', nargs = '*', default = [], help = 'Options after ? (chained with &).')
     parser.add_argument('--post', '-P', action = 'store_true', dest = 'use_post', help = 'Use POST instead of GET request.')
+    parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
     args = parser.parse_args()
+    sys.argv = []
 
-    logger.setLevel(logging.DEBUG)
-    
+    if args.log_level:
+        try:
+            level = getattr(logging, args.log_level.upper())
+            logging.getLogger().setLevel(level)
+        except AttributeError:
+            logging.warning('Log level ' + args.log_level + ' not defined')
+
     interface = RESTService(args.url_base)
 
     if args.use_post:
