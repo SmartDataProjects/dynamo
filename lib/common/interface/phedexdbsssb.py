@@ -45,10 +45,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # Cache organized as {dataset: {site: [ProtoBlockReplicas]}}
         self._block_replicas = collections.defaultdict(lambda: collections.defaultdict(list))
 
-    def schedule_copy(self, dataset_replica, origin = None, comments = ''): #override (CopyInterface)
+    def schedule_copy(self, dataset_replica, origin = None, comments = '', catalogs = None): #override (CopyInterface)
         # origin argument is not used because of the way PhEDEx works
 
-        catalogs = self._get_file_catalog(dataset_replica.dataset)
+        if catalogs is None:
+            catalogs = self._get_file_catalog(dataset_replica.dataset)
 
         options = {
             'node': dataset_replica.site.name,
@@ -139,14 +140,15 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         return request_mapping
 
-    def schedule_deletion(self, replica, comments = ''): #override (DeletionInterface)
+    def schedule_deletion(self, replica, comments = '', catalogs = None): #override (DeletionInterface)
         if type(replica) == DatasetReplica:
             dataset = replica.dataset
 
         elif type(replica) == BlockReplica:
             dataset = replica.block.dataset
 
-        catalogs = self._get_file_catalog(dataset)
+        if catalogs is None:
+            catalogs = self._get_file_catalog(dataset)
 
         options = {
             'node': replica.site.name,
@@ -756,7 +758,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         return result
 
-    def _get_file_catalog(self, obj):
+    def _get_file_catalog(self, obj, known_blocks_only = True):
         """
         Get the catalog of files for a given dataset / block. Used in subscribe() and delete().
         For delete() we might not have the full set of files at a given site - should we be
@@ -793,16 +795,21 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 ds_name = ds_entry['name']
                 dataset = datasets[ds_name]
 
-                catalog = dict([(b, []) for b in dataset.blocks])
+                catalog = collections.defaultdict(list)
                 file_catalogs[dataset] = catalog
                 
                 for block_entry in ds_entry['block']:
                     block_name = block_entry['name'].replace(ds_name + '#', '')
-                    try:
-                        block = next(b for b in dataset.blocks if b.name == block_name)
-                    except StopIteration:
-                        logger.warning('Unknown block %s found in %s', block_name, dataset.name)
-                        continue
+
+                    if known_blocks_only:
+                        try:
+                            block = next(b for b in dataset.blocks if b.name == block_name)
+                        except StopIteration:
+                            logger.warning('Unknown block %s found in %s', block_name, dataset.name)
+                            continue
+
+                    else:
+                        block = Block(block_name, is_open = (block_entry['is_open'] == 'y'))
                     
                     for file_entry in block_entry['file']:
                         catalog[block].append(FileInfo(*tuple([file_entry[k] for k in ['lfn', 'size', 'checksum']])))
@@ -835,7 +842,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             if human_readable:
                 xml += '\n'
 
-            for block in dataset.blocks:
+            for block, filelist in catalogs.items():
                 if human_readable:
                     xml += '   '
                 
@@ -844,11 +851,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 if human_readable:
                     xml += '\n'
 
-                for lfn, size, checksum in catalogs[block]:
+                for fileinfo in filelist:
                     if human_readable:
                         xml += '    '
 
-                    xml += '<file name="%s" bytes="%d" checksum="%s"/>' % (lfn, size, checksum)
+                    xml += '<file name="%s" bytes="%d" checksum="%s"/>' % fileinfo
 
                     if human_readable:
                         xml += '\n'
@@ -921,29 +928,31 @@ if __name__ == '__main__':
             if response != 'Y':
                 sys.exit(0)
 
-        if command == 'subscribe':
-            options = {
-                'node': args.options[0],
-                'level': 'dataset',
-                'priority': 'low',
-                'move': 'n',
-                'static': 'n',
-                'custodial': 'n',
-                'group': 'AnalysisOps',
-                'request_only': 'n',
-                'no_mail': 'n'
-            }
+        if len(args.options) < 3 or \
+                not re.match('T[0-3]_.*', args.options[0]) or \
+                not re.match('/[^/]+/[^/]+/[^/]+', args.options[1]):
+            print 'Arguments: site dataset comment'
+            sys.exit(1)
 
-        else:
-            options = {
-                'node': args.options[0],
-                'level': 'dataset',
-                'rm_subscriptions': 'y'
-            }
-            
-        options['data'] = '<>'
+        comments = ' '.join(args.options[2:])
 
-    elif command == 'updaterequest':
+        site = Site(args.options[0])
+        dataset = Dataset(args.options[1])
+        dataset_replica = DatasetReplica(dataset, site)
+
+        catalogs = interface._get_file_catalog(dataset, known_blocks_only = False)
+
+        if command == 'delete':
+            operation_id = interface.schedule_deletion(dataset_replica, comments = comments, catalogs = catalogs)
+
+        elif command == 'subscribe':
+            operation_id = interface.schedule_copy(dataset_replica, comments = comments, catalogs = catalogs)
+
+        print 'Request ID:', operation_id
+
+        sys.exit(0)
+
+    elif command == 'updaterequest' or command == 'updatesubscription':
         method = POST
 
     pprint.pprint(interface._make_phedex_request(command, options, method = method, raw_output = args.raw_output))
