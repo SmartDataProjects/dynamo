@@ -12,15 +12,12 @@
 # Source function library.
 . /etc/rc.d/init.d/functions
 
-# Source dynamo environment
-. _DYNAMO_BASE_/etc/profile.d/init.sh
-
 # This will prevent initlog from swallowing up a pass-phrase prompt if
 # mod_ssl needs a pass-phrase from the user.
 INITLOG_ARGS=""
 
-PROG=detoxd
-TARGET=$(which $PROG)
+PROG=dynamo-detoxd
+TARGET=_DYNAMO_BASE_/bin/detoxd
 
 # Path to the running script, server binary, and short-form for messages.
 PIDFILE=${PIDFILE-/var/run/detoxd.pid}
