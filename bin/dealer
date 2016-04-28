@@ -5,14 +5,6 @@ import os
 import logging
 import time
 
-from common.inventory import InventoryManager
-from common.transaction import TransactionManager
-from common.demand import DemandManager
-import common.interface.classes as classes
-from dealer.main import Dealer
-
-import common.configuration as config
-
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Detox')
@@ -32,6 +24,8 @@ parser.add_argument('--repeat', '-n', metavar = 'CYCLES SLEEP', dest = 'repeat',
 args = parser.parse_args()
 sys.argv = []
 
+# Need to setup logging before loading other modules
+
 log_level = logging.INFO
 if args.log_level:
     try:
@@ -43,6 +37,14 @@ if args.log_file:
     logging.basicConfig(filename = args.log_file, filemode = 'w', level = log_level)
 else:
     logging.basicConfig(level = log_level)
+
+from common.inventory import InventoryManager
+from common.transaction import TransactionManager
+from common.demand import DemandManager
+import common.interface.classes as classes
+from dealer.main import Dealer
+
+import common.configuration as config
 
 if args.dry_run:
     config.read_only = True
