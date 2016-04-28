@@ -31,7 +31,7 @@ class DeletionInterface(object):
     def check_completion(self, operation_id):
         """
         Checks the completion of the deletion specified by the operation id.
-        Returns true if completed.
+        Returns the completion time stamp or 0 if not completed.
         """
 
-        return False
+        return 0

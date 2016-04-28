@@ -156,21 +156,21 @@ if __name__ == '__main__':
             incomplete_copies = interface.get_incomplete_copies()
             
             for record in incomplete_copies:
-                completed = copy_interface.check_completion(record.operation_id)
-                if completed:
+                completion_time = copy_interface.check_completion(record.operation_id)
+                if completion_time != 0:
                     logger.info('Copy %d to %s has completed.', record.operation_id, record.site_name)
             
-                    record.completion_time = time.time()
+                    record.completion_time = completion_time
                     interface.update_copy_entry(record)
             
             incomplete_deletions = interface.get_incomplete_deletions()
             
             for record in incomplete_deletions:
-                completed = copy_interface.check_completion(record.operation_id)
-                if completed:
+                completion_time = deletion_interface.check_completion(record.operation_id)
+                if completion_time != 0:
                     logger.info('Deletion %d at %s has completed.', record.operation_id, record.site_name)
             
-                    record.completion_time = time.time()
+                    record.completion_time = completion_time
                     interface.update_deletion_entry(record)
     
         elif command == 'check':

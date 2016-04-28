@@ -31,10 +31,10 @@ class CopyInterface(object):
     def check_completion(self, operation_id):
         """
         Checks the completion of the copy specified by the operation id.
-        Returns true if completed.
+        Returns the completion timestamp or 0.
         """
 
-        return False
+        return 0
 
     def copy_status(self, operation_id):
         """

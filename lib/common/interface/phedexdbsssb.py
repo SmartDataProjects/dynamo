@@ -256,18 +256,22 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         """
 
         request = self._make_phedex_request('requestlist', 'request=%d' % request_id)
-        if len(request) == 0:
-            return False
+        if len(request) == 0: # something wrong
+            return 0
 
         req_type = request[0]['type']
 
         if req_type == 'delete':
-            return True
+            request = self._make_phedex_request('deletions', 'request=%d' % request_id)
+            if len(request) == 0: # deletion completed, info lost from PhEDEx, unfortunately
+                return time.time()
+            else:
+                return 0
 
         elif req_type == 'xfer':
             request = self._make_phedex_request('transferrequests', 'request=%d' % request_id)
-            if len(request) == 0:
-                return False
+            if len(request) == 0: # something wrong
+                return 0
 
             site_name = request[0]['destinations']['node'][0]['name']
             dataset_names = []
@@ -278,13 +282,26 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             for subscription in subscriptions:
                 if subscription['subscription'][0]['percent_bytes'] != 100.:
-                    return False
-                
-            return True
+                    return 0
+
+            # Copy is done. Find the latest block replica that arrived.
+            options = ['subscribed=y', 'show_dataset=y', 'node=%s' % site_name]
+            options += ['dataset=%s' % d for d in dataset_names]
+
+            blockreplicas = self._make_phedex_request('blockreplicas', options)
+
+            last_update = 0
+            for dataset_entry in blockreplicas:
+                for block_entry in dataset_entry['block']:
+                    time_update = block_entry['replica'][0]['time_update']
+                    if time_update > last_update:
+                        last_update = time_update
+               
+            return last_update
 
         else:
             # unknown request type
-            return False
+            return 0
 
     def copy_status(self, request_id): #override (CopyInterface)
         request = self._make_phedex_request('transferrequests', 'request=%d' % request_id)
