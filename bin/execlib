@@ -6,7 +6,8 @@
 # --------------------------------------------------------------------------------------------------
 
 # initialize environment variables
-source _DYNAMO_BASE_/etc/profile.d/init.sh
+export DYNAMO_BASE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
+source $DYNAMO_BASE/etc/profile.d/init.sh
 
 LIB=$1
 shift
