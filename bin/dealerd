@@ -21,7 +21,7 @@ do
   TAG=`date "+%s"`
   LOG=$DYNAMO_LOGDIR/dealer-${TAG}.log
   
-  if [ $(du -mc $DYNAMO_LOGDIR/dealer-* | awk '/total/ {print $1}') -gt 10000 ] # logs exceeding 10 GB
+  if [ $(du -mc $DYNAMO_LOGDIR/dealer-* 2>/dev/null | awk '/total/ {print $1}') -gt 10000 ] # logs exceeding 10 GB
   then
     find $DYNAMO_LOGDIR -name dealer-* -mtime 1 -delete
   fi
