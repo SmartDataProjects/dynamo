@@ -64,3 +64,14 @@ demand = Configuration()
 demand.access_history = Configuration()
 demand.access_history.increment = 24 * 3600 # 24 hours
 demand.access_history.max_back_query = 7 # maximum number of dates interval to obtain records for; 7 days
+demand.required_copies_def = [
+    lambda d: 3 if d.name.endswith('MINIAOD') or d.name.endswith('MINIAODSIM') else -1,
+    lambda d: 2 if d.name.endswith('AOD') or d.name.endswith('AODSIM') else -1
+]
+# give weight of bin[1] to now - bin[0]
+demand.weight_time_bins = [
+    (3600 * 24 * 7, 0.1),
+    (3600 * 24 * 3, 0.5),
+    (3600 * 24, 0.7),
+    (3600 * 12, 1.)
+]

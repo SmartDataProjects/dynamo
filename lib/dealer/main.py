@@ -241,53 +241,17 @@ class Dealer(object):
 
         group = self.inventory_manager.groups[dealer_config.operating_group]
 
-        now = time.time()
-        time_bins = []
-        # will make this configurable
-        time_bins.append((now - 3600 * 24 * 7, 0.1))
-        time_bins.append((now - 3600 * 24 * 3, 0.5))
-        time_bins.append((now - 3600 * 24, 0.7))
-        time_bins.append((now - 3600 * 12, 1.))
-
-        # time-weighted dataset popularity
-        dataset_weights = {}
-        # time-weighted, cpu-normalized number of running jobs at sites
+        # request-weighted, cpu-normalized number of running jobs at sites
         site_nfiles = dict([(site, 0.) for site in sites])
 
         for dataset in self.inventory_manager.datasets.values():
-            if dataset.status != Dataset.STAT_VALID:
-                continue
+            demand = self.demand_manager.dataset_demands[dataset]
 
-            if dataset.size * 1.e-12 > 10.:
-                continue
-
-            if len(dataset.replicas) > dealer_config.max_replicas:
-                continue
-
-            dataset_weight = 0.
-
-            for request in dataset.requests:
-                if request.queue_time <= time_bins[0][0]:
-                    # this request is too old to consider
-                    continue
-
-                for ibin in range(len(time_bins) - 1):
-                    if request.queue_time < time_bins[ibin + 1][0]:
-                        weight = time_bins[ibin][1]
-                        break
-                else:
-                    # in the last bin
-                    weight = time_bins[-1][1]
-
-                dataset_weight += weight
-
-            if dataset_weight > 0.:
-                dataset_weights[dataset] = dataset_weight
-
+            if demand.request_weight > 0.:
                 total_cpu = sum([r.site.cpu for r in dataset.replicas])
                 for replica in dataset.replicas:
                     # w * N * (site cpu / total cpu); normalized by site cpu
-                    site_nfiles[replica.site] += dataset_weight * dataset.num_files / total_cpu
+                    site_nfiles[replica.site] += demand.request_weight * dataset.num_files / total_cpu
 
         site_nfiles_before = dict(site_nfiles)
         
@@ -295,11 +259,17 @@ class Dealer(object):
         site_storage_before = dict(site_storage)
 
         # now go through datasets sorted by weight / #replicas
-        for dataset, weight in sorted(dataset_weights.items(), key = lambda (d, w): w / len(d.replicas), reverse = True):
+        for dataset, demand in sorted(self.demand_manager.dataset_demands.items(), key = lambda (ds, dm): dm.request_weight / len(ds.replicas), reverse = True):
+
+            if dataset.size * 1.e-12 > 10.:
+                continue
+
+            if len(dataset.replicas) > dealer_config.max_replicas:
+                continue
 
             global_stop = False
 
-            while weight > len(dataset.replicas) * dealer_config.request_to_replica_threshold:
+            while demand.request_weight / len(dataset.replicas) > dealer_config.request_to_replica_threshold:
                 sorted_sites = sorted(site_nfiles.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
 
                 try:
@@ -338,9 +308,9 @@ class Dealer(object):
 
                 for replica in dataset.replicas:
                     if replica != new_replica:
-                        site_nfiles[replica.site] -= weight * dataset.num_files / total_cpu_before
+                        site_nfiles[replica.site] -= demand.request_weight * dataset.num_files / total_cpu_before
 
-                    site_nfiles[replica.site] += weight * dataset.num_files / total_cpu
+                    site_nfiles[replica.site] += demand.request_weight * dataset.num_files / total_cpu
 
                 if len(dataset.replicas) > dealer_config.max_replicas:
                     logger.warning('%s has reached the maximum number of replicas allowed.', dataset.name)
@@ -364,7 +334,7 @@ class Dealer(object):
             if global_stop:
                 break
 
-        self.write_summary_by_requests(dataset_weights, copy_list, site_nfiles_before, site_storage_before, site_storage)
+        self.write_summary_by_requests(copy_list, site_nfiles_before, site_storage_before, site_storage)
 
         return copy_list
 
@@ -618,7 +588,7 @@ function searchDataset(name) {
 
         html.close()
 
-    def write_summary_by_requests(self, dataset_weights, copy_list, nfiles_before, storage_before, storage_after):
+    def write_summary_by_requests(self, copy_list, nfiles_before, storage_before, storage_after):
         html = open(dealer_config.summary_html, 'w')
 
         text = '''<html>
@@ -790,11 +760,11 @@ function searchDataset(name) {
             text += '    <ul id="{site}" class="collapsible">\n'.format(**keywords)
 
             site_replicas = []
-            for dataset, weight in dataset_weights.items():
-                replica = dataset.find_replica(site)
-                if replica is not None and replica not in site_copies:
+            for replica in site.dataset_replicas:
+                if replica not in site_copies:
+                    dataset = replica.dataset
                     total_cpu = sum(r.site.cpu for r in dataset.replicas)
-                    site_replicas.append((dataset, weight, total_cpu))
+                    site_replicas.append((dataset, self.demand_manager.dataset_demands[dataset].request_weight, total_cpu))
 
             site_replicas.sort(key = lambda (dataset, weight, total_cpu): weight, reverse = True)
 
@@ -854,11 +824,10 @@ function searchDataset(name) {
             text += '    <ul id="{site}" class="collapsible">\n'.format(**keywords)
 
             site_replicas = []
-            for dataset, weight in dataset_weights.items():
-                replica = dataset.find_replica(site)
-                if replica is not None and replica.site == site:
-                    total_cpu = sum(r.site.cpu for r in dataset.replicas)
-                    site_replicas.append((dataset, weight, total_cpu))
+            for replica in site.dataset_replicas:
+                dataset = replica.dataset
+                total_cpu = sum(r.site.cpu for r in dataset.replicas)
+                site_replicas.append((dataset, self.demand_manager.dataset_demands[dataset].request_weight, total_cpu))
 
             site_replicas.sort(key = lambda (dataset, weight, total_cpu): weight, reverse = True)
 

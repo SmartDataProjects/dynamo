@@ -3,7 +3,7 @@ import datetime
 import logging
 
 from common.interface.classes import default_interface
-from common.dataformat import DatasetDemand
+from common.dataformat import Dataset, DatasetDemand
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,8 @@ class DemandManager(object):
         self.last_requests_update = None
         self.time_today = 0.
 
+        self.dataset_demands = {}
+
     def load(self, inventory):
         logger.info('Loading dataset access information.')
 
@@ -48,6 +50,8 @@ class DemandManager(object):
         self.last_accesses_update = self.store.load_replica_accesses(sites, datasets)
         self.last_requests_update = self.store.load_dataset_requests(datasets)
         self.store.load_locks(sites, groups, datasets)
+
+        self.setup_demands(inventory)
 
     def update(self, inventory, accesses = True, requests = True):
         if self.last_accesses_update is None or self.last_requests_update is None:
@@ -65,6 +69,8 @@ class DemandManager(object):
 
         if requests:
             self.update_requests(inventory, datetime.datetime(start_date.year, start_date.month, start_date.day), utcnow)
+
+        self.setup_demands(inventory)
 
         utcmidnight = utcnow.replace(hour = 0, minute = 0, second = 0)
         self.time_today = (utcnow - utcmidnight).seconds # n seconds elapsed since UTC 00:00:00 today
@@ -128,8 +134,45 @@ class DemandManager(object):
 
         self.store.save_dataset_requests(inventory.datasets.values())
 
-    def get_demand(self, dataset):
-        return DatasetDemand(dataset)
+    def setup_demands(self, inventory):
+        self.dataset_demands = {}
+        now = time.time()
+        
+        time_bins = [(now - b[0], b[1]) for b in config.demand.weight_time_bins]
+
+        for dataset in inventory.datasets.values():
+            demand = DatasetDemand(required_copies = 1)
+
+            self.dataset_demands[dataset] = demand
+
+            # set the required number of copies using special rules
+            for rule in config.demand.required_copies_def:
+                r = rule(dataset)
+                if r >= 0:
+                    demand.required_copies = r
+                    break
+
+            if dataset.status != Dataset.STAT_VALID:
+                continue
+
+            request_weight = 0.
+
+            for request in dataset.requests:
+                if request.queue_time <= time_bins[0][0]:
+                    # this request is too old to consider
+                    continue
+
+                for ibin in range(len(time_bins) - 1):
+                    if request.queue_time < time_bins[ibin + 1][0]:
+                        weight = time_bins[ibin][1]
+                        break
+                else:
+                    # in the last bin
+                    weight = time_bins[-1][1]
+
+                request_weight += weight
+
+            demand.request_weight = request_weight
 
 
 if __name__ == '__main__':

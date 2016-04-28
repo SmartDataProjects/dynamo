@@ -66,6 +66,8 @@ class Dataset(object):
         self.data_type = data_type
         self.software_version = software_version
         self.last_update = last_update # in UNIX time
+
+        # "transient" members
         self.blocks = []
         self.replicas = []
         self.requests = []
@@ -338,10 +340,9 @@ class BlockReplica(object):
 class DatasetDemand(object):
     """Represents information on dataset demand."""
 
-    def __init__(self, dataset, required_copies = 1, popularity_score = -1.):
-        self.dataset = dataset
-        self.popularity_score = popularity_score
+    def __init__(self, required_copies = 1, request_weight = -1.):
         self.required_copies = required_copies
+        self.request_weight = request_weight
         self.locked_blocks = []
 
 
