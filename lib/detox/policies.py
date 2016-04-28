@@ -1,4 +1,5 @@
 import time
+import datetime
 import re
 import fnmatch
 
@@ -100,7 +101,7 @@ class ProtectNotOwnedBy(policy.ProtectPolicy):
 
 class KeepTargetOccupancy(policy.KeepPolicy):
     """
-    PROTECT if occupancy of the replica's site is less than a set target.
+    KEEP if occupancy of the replica's site is less than a set target.
     """
 
     def __init__(self, threshold, name = 'ProtectTargetOccupancy'):
@@ -127,28 +128,41 @@ class DeletePartial(policy.DeletePolicy):
 
 class DeleteOld(policy.DeletePolicy):
     """
-    DELETE if the replica is older than a set time from now.
+    DELETE if the replica is not accessed for more than a set time.
     """
 
     def __init__(self, threshold, unit, name = 'DeleteOld'):
         super(self.__class__, self).__init__(name)
 
-        self.threshold = threshold
         if unit == 'y':
-            self.threshold *= 365.
+            threshold *= 365.
         if unit == 'y' or unit == 'd':
-            self.threshold *= 24.
+            threshold *= 24.
         if unit == 'y' or unit == 'd' or unit == 'h':
-            self.threshold *= 3600.
+            threshold *= 3600.
 
         self.threshold_text = '%f%s' % (threshold, unit)
+        self.cutoff = time.time() - threshold
 
     def applies(self, replica, demand_manager): # override
-        return False, ''
-#        if replica.dataset.last_accessed <= 0:
-#            return False, ''
-#
-#        return replica.dataset.last_accessed < time.time() - self.threshold, 'Replica is older than ' + self.threshold_text + '.'
+        if replica.dataset.last_update > cutoff:
+            return False, ''
+
+        if len(replica.accesses) == 0:
+            return True, 'No access recorded for the replica.'
+
+        utc_to_local = datetime.datetime.now() - datetime.datetime.utcnow()
+
+        last_access = 0
+        for acc_type, record in replica.accesses.items(): # remote and local
+            acc_date = max(record.keys()) # datetime.date object set to UTC
+            acc_datetime = datetime.datetime(acc_date.year, acc_date.month, acc_date.day)
+            acc_timestamp = time.mktime((acc_datetime + utc_to_local).timetuple())
+
+            if acc_timestamp > last_access:
+                last_access = acc_timestamp
+            
+        return last_access < cutoff, 'Last access is older than ' + self.threshold_text + '.'
 
 
 class DeleteUnpopular(policy.DeletePolicy):
@@ -162,15 +176,14 @@ class DeleteUnpopular(policy.DeletePolicy):
         self.threshold = detox_config.delete_unpopular.threshold
 
     def applies(self, replica, demand_manager): # override
-        pass
-#        score = demand_manager.get_demand(replica.dataset).popularity_score
-#
-#        if score > self.threshold:
-#            return True, 'Dataset is less popular than threshold.'
-#
-#        max_site_score = max([demand_manager.get_demand(d).popularity_score for d in replica.site.datasets])
-#
-#        return score >= max_site_score, 'Dataset is the least popular on the site.'
+        score = demand_manager.dataset_demands[replica.dataset].request_weight
+        if score == 0.:
+            return True, 'Dataset has 0 request weight.'
+
+        if score <= min(demand_manager.dataset_demands[r.dataset].request_weight for r in replica.site.dataset_replicas):
+            return True, 'Dataset is the least popular at site.'
+        else:
+            return False, ''
 
 
 class ActionList(policy.Policy):
