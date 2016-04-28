@@ -127,8 +127,8 @@ class Block(object):
 class Site(object):
     """Represents an SE."""
 
-    TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(4)
-    STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(4)
+    TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, 5)
+    STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, 5)
 
     @staticmethod
     def storage_type_val(arg):
