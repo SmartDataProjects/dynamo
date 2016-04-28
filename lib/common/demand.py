@@ -49,7 +49,7 @@ class DemandManager(object):
         self.last_requests_update = self.store.load_dataset_requests(datasets)
         self.store.load_locks(sites, groups, datasets)
 
-    def update(self, inventory):
+    def update(self, inventory, accesses = True, requests = True):
         if self.last_accesses_update is None or self.last_requests_update is None:
             self.load(inventory)
 
@@ -59,10 +59,12 @@ class DemandManager(object):
 
         start_date = max(self.last_accesses_update, utctoday - datetime.timedelta(config.demand.access_history.max_back_query))
 
-#        self.update_accesses(inventory, start_date, utctoday)
-        self.last_accesses_update = utctoday - datetime.timedelta(1)
+        if accesses:
+            self.update_accesses(inventory, start_date, utctoday)
+            self.last_accesses_update = utctoday - datetime.timedelta(1)
 
-        self.update_requests(inventory, datetime.datetime(start_date.year, start_date.month, start_date.day), utcnow)
+        if requests:
+            self.update_requests(inventory, datetime.datetime(start_date.year, start_date.month, start_date.day), utcnow)
 
         utcmidnight = utcnow.replace(hour = 0, minute = 0, second = 0)
         self.time_today = (utcnow - utcmidnight).seconds # n seconds elapsed since UTC 00:00:00 today

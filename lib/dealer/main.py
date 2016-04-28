@@ -34,7 +34,7 @@ class Dealer(object):
             # inventory is stale -> update
             self.inventory_manager.update()
 
-        self.demand_manager.update(self.inventory_manager)
+        self.demand_manager.update(self.inventory_manager, accesses = False, requests = True)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
         incomplete_copies = self.history_manager.get_incomplete_copies()
