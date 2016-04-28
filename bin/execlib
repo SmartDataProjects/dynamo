@@ -6,7 +6,7 @@
 # --------------------------------------------------------------------------------------------------
 
 # initialize environment variables
-source /usr/local/dynamo/etc/profile.d/init.sh
+source _DYNAMO_BASE_/etc/profile.d/init.sh
 
 LIB=$1
 shift
