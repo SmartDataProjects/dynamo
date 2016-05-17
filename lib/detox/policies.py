@@ -188,7 +188,7 @@ class DeleteUnpopular(policy.DeletePolicy):
 
 class ActionList(policy.Policy):
     """
-    Take decision from a list of 
+    Take decision from a list of policies.
     The list should have a decision, a site, and a dataset (wildcard allowed for both) per row, separated by white spaces.
     Any line that does not match the pattern
       (Keep|Delete) <site> <dataset>
@@ -230,6 +230,10 @@ class ActionList(policy.Policy):
 
                 self.add_action(action_str, site_pattern, dataset_pattern)
 
+    def load_lists(self, list_paths):
+        for list_path in list_paths:
+            self.load_list(list_path)
+
     def applies(self, replica, demand_manager): # override
         """
         Loop over the patterns list and make an entry in self.actions if the pattern matches.
@@ -251,6 +255,8 @@ class ActionList(policy.Policy):
 
 
 def make_stack(strategy):
+    # return a *function* that returns the selected stack
+
     if strategy == 'TargetFraction':
         stack = [
             KeepTargetOccupancy(config.target_site_occupancy),
@@ -258,10 +264,13 @@ def make_stack(strategy):
             ProtectLocked(),
             ProtectDiskOnly(),
             ProtectNotOwnedBy('AnalysisOps'),
-#            DeletePartial(),
+            DeletePartial(),
             DeleteOld(*detox_config.delete_old.threshold),
 #            DeleteUnpopular()
         ]
+
+        # stackgen(0.92) -> TargetFraction stack with threshold 92%
+        stackgen = lambda *arg: stack[0].threshold = arg[0]
 
     elif strategy == 'List':
         stack = [
@@ -272,4 +281,7 @@ def make_stack(strategy):
             ActionList()
         ]
 
-    return stack
+        # stackgen([files]) -> List stack with files loaded into ActionList
+        stackgen = lambda *arg: stack[-1].load_lists(arg[0]) if type(arg[0]) is list else stack[-1].load_list(arg[0])
+
+    return stackgen

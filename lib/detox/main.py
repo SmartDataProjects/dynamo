@@ -2,6 +2,7 @@ import time
 import logging
 import math
 import pprint
+import collections
 
 import common.configuration as config
 import detox.policy as policy
@@ -11,24 +12,37 @@ logger = logging.getLogger(__name__)
 
 class Detox(object):
 
-    def __init__(self, inventory, transaction, demand, history, policies, log_path = detox_config.log_path, html_path = detox_config.html_path):
+    def __init__(self, inventory, transaction, demand, history, log_path = detox_config.log_path, html_path = detox_config.html_path):
         self.inventory_manager = inventory
         self.transaction_manager = transaction
         self.demand_manager = demand
         self.history_manager = history
 
-        self.policy_manager = policy.PolicyManager(policies)
+        self.policy_managers = {} # group -> PolicyManager
         self.policy_log_path = log_path
         self.policy_html_path = html_path
 
         self.deletion_message = 'Dynamo -- Automatic Cache Release Request.'
 
-    def run(self, dynamic_deletion = True):
+    def set_policies(self, policy_stack, group_name = ''): # empty group name -> default
+        if group_name:
+            group = self.inventory_manager.groups[group_name]
+        else:
+            group = None
+
+        self.policy_managers[group] = policy.PolicyManager(policy_stack)
+
+    def run(self, group_name = '', dynamic_deletion = True):
         """
         Main executable.
         """
 
-        logger.info('Detox run starting at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
+        if group_name:
+            group = self.inventory_manager.groups[group_name]
+            logger.info('Detox run for %s starting at %s', group_name, time.strftime('%Y-%m-%d %H:%M:%S'))
+        else:
+            group = None
+            logger.info('Detox run starting at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
         if time.time() - self.inventory_manager.store.last_update > config.inventory.refresh_min:
             logger.info('Inventory was last updated at %s. Reloading content from remote sources.', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.inventory_manager.store.last_update)))
@@ -38,8 +52,6 @@ class Detox(object):
         self.demand_manager.update(self.inventory_manager)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
-        logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_manager.num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
-
         policy_log = None
         if self.policy_log_path:
             policy_log = open(self.policy_log_path, 'w')
@@ -48,14 +60,16 @@ class Detox(object):
         if self.policy_html_path:
             html = self.open_html(self.policy_html_path)
 
-        all_deletions = {} # site -> list of replicas to delete on site
+        all_deletions = collections.defaultdict(list) # site -> list of replicas to delete on site
         iteration = 0
+
+        logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_managers[group].num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
 
         while True:
             iteration += 1
 
             records = []
-            deletion_candidates, protection_list = self.make_deletion_protection_list(records)
+            deletion_candidates, protection_list = self.make_deletion_protection_list(group, records)
 
             if policy_log:
                 logger.info('Writing policy hit log text.')
@@ -80,19 +94,14 @@ class Detox(object):
 
             else:
                 deletion_list = deletion_candidates
-                self.static_deletion(deletion_list, all_deletions)
 
             if len(deletion_list) == 0:
                 break
 
-            try:
-                all_deletions[replica.site].append(replica)
-            except KeyError:
-                all_deletions[replica.site] = [replica]
-
             for replica in deletion_list:
+                all_deletions[replica.site].append(replica)
                 self.inventory_manager.unlink_datasetreplica(replica)
-
+    
         logger.info('Committing deletion.')
         # Will write an entry in the history DB
         self.commit_deletions(all_deletions)
@@ -104,10 +113,10 @@ class Detox(object):
 
         logger.info('Detox run finished at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
-    def make_deletion_protection_list(self, records = None):
+    def make_deletion_protection_list(self, group, records = None):
         """
         Run each dataset / block replicas through deletion policies and make a list of replicas to delete.
-        Return the list of replicas that may be deleted and must be protected.
+        Return the list of replicas that may be deleted (deletion_candidates) or must be protected (protection_list).
         """
 
         deletion_candidates = []
@@ -115,7 +124,7 @@ class Detox(object):
 
         for dataset in self.inventory_manager.datasets.values():
             for replica in dataset.replicas:
-                hit_records = self.policy_manager.decision(replica, self.demand_manager)
+                hit_records = self.policy_managers[group].decision(replica, self.demand_manager)
 
                 if records is not None:
                     records.append(hit_records)
@@ -163,26 +172,27 @@ class Detox(object):
     def select_replica(self, deletion_candidates, protection_list):
         """
         Select one dataset replica to delete out of all deletion candidates.
-        Currently returning the replica whose deletion balances the protected fraction between the sites the most.
+        Currently returning the smallest replica on the site with the highest protected fraction.
         Ranking policy here may be made dynamic at some point.
         """
 
         if len(deletion_candidates) == 0:
             return None
-        
-        protected_fractions = {}
-        for replica in protection_list:
-            try:
-                protected_fractions[replica.site] += replica.size() / replica.site.storage
-            except KeyError:
-                protected_fractions[replica.site] = replica.size() / replica.site.storage
 
-        for site in self.inventory_manager.sites.values():
-            if site not in protected_fractions: # highly unlikely
-                protected_fractions[site] = 0.
+        protection_by_site = collections.defaultdict(list)
+        for replica in protection_list:
+            protection_by_site[replica.site].append(replica)
+
+        target_site = max(protection_by_site, key = lambda site: sum(replica.size() / site.quota()))
+        max_fraction = 0.
+        target_site = None
+        for site in protection_by_site:
+            replica_list = protection_by_site[site]
+            fraction = sum(replica_list)
+
+
 
         # Select the replica that minimizes the RMS of the protected fractions
-        minRMS2 = -1.
         deletion_candidate = None
 
         for replica in deletion_candidates:
@@ -535,10 +545,13 @@ if __name__ == '__main__':
     
     demand_manager = DemandManager()
 
+    detox = Detox(inventory_manager, transaction_manager, demand_manager)
+
     action_list = ActionList()
     action_list.add_action('Delete', site_pattern, dataset_pattern)
 
-    detox = Detox(inventory_manager, transaction_manager, demand_manager, [action_list])
+    detox.set_policies(action_list)
+
     if not args.commit:
         config.read_only = True
 
