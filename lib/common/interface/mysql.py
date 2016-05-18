@@ -113,9 +113,10 @@ class MySQL(object):
                 try:
                     cursor.execute(sqlbase % values)
                 except:
-                    print 'There was an error executing the following statement:'
-                    print (sqlbase % values)[:10000]
-                    print sys.exc_info()[1]
+                    logger.error('There was an error executing the following statement:')
+                    logger.error((sqlbase % values)[:10000])
+                    logger.error(sys.exc_info()[1])
+                    raise
 
                 values = ''
 

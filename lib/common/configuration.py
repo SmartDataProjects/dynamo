@@ -25,7 +25,7 @@ webservice.x509_key = os.environ['X509_USER_PROXY']
 webservice.num_attempts = 5
 
 mysql = Configuration()
-mysql.max_query_len = 500000 # allows up to 1M characters; allowing 50% safety margin
+mysql.max_query_len = 100000 # allows up to 1M characters; allowing 90% safety margin
 
 mysqlstore = Configuration()
 mysqlstore.db_params = {
