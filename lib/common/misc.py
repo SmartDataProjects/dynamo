@@ -46,7 +46,7 @@ def parallel_exec(target, arguments):
         if type(args) is not tuple:
             args = (args,)
 
-        thread = threading.Thread(target = dbs_check, args = args)
+        thread = threading.Thread(target = target, args = args)
         thread.start()
         threads.append(thread)
 
