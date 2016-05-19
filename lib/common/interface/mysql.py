@@ -109,7 +109,9 @@ class MySQL(object):
             
             # MySQL allows queries up to 1M characters
             if len(values) > config.mysql.max_query_len or obj == objects[-1]:
-                logger.debug(sqlbase % values)
+                if logger.getEffectiveLevel() == logging.DEBUG:
+                    logger.debug(sqlbase % values)
+
                 try:
                     cursor.execute(sqlbase % values)
                 except:
