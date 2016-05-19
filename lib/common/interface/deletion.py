@@ -28,10 +28,10 @@ class DeletionInterface(object):
 
         return deletion_mapping
 
-    def check_completion(self, operation_id):
+    def deletion_status(self, operation_id):
         """
-        Checks the completion of the deletion specified by the operation id.
-        Returns the completion time stamp or 0 if not completed.
+        Returns the completion status specified by the operation id as a
+        {dataset: (last_update, total, deleted)} dictionary.
         """
 
-        return 0
+        return {}

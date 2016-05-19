@@ -1,10 +1,13 @@
 import os
 import socket
+import logging
 
 from common.interface.history import TransactionHistoryInterface
 from common.interface.mysql import MySQL
 from common.dataformat import HistoryRecord
 import common.configuration as config
+
+logger = logging.getLogger(__name__)
 
 class MySQLHistory(TransactionHistoryInterface):
     """
@@ -89,22 +92,22 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('deleted_replicas', ('deletion_id', 'dataset_id'), lambda d: (deletion_id, dataset_ids[d.name]), datasets)
 
     def _do_update_copy_entry(self, copy_record): #override
-        self._mysql.query('UPDATE `copy_history` SET `approved` = %s, completion_time = FROM_UNIXTIME(%s) WHERE `id` = %s', copy_record.approved, copy_record.completion_time, copy_record.operation_id)
+        self._mysql.query('UPDATE `copy_history` SET `approved` = %s, `size_copied` = %s, `last_update` = FROM_UNIXTIME(%s) WHERE `id` = %s', copy_record.approved, copy_record.done, copy_record.last_update, copy_record.operation_id)
         
     def _do_update_deletion_entry(self, deletion_record): #override
-        self._mysql.query('UPDATE `deletion_history` SET `approved` = %s, completion_time = FROM_UNIXTIME(%s) WHERE `id` = %s', deletion_record.approved, deletion_record.completion_time, deletion_record.operation_id)
+        self._mysql.query('UPDATE `deletion_history` SET `approved` = %s, `size_deleted` = %s, `last_update` = FROM_UNIXTIME(%s) WHERE `id` = %s', deletion_record.approved, deletion_record.done, deletion_record.last_update, deletion_record.operation_id)
 
     def _do_get_incomplete_copies(self): #override
-        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size` FROM `copy_history` AS h INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`completion_time` LIKE \'0000-00-00 00:00:00\'')
+        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_copied` FROM `copy_history` AS h INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`size` != h.`size_copied`')
         
         id_to_record = {}
-        for eid, timestamp, approved, site_name, size in history_entries:
-            id_to_record[eid] = HistoryRecord(HistoryRecord.OP_COPY, eid, site_name, timestamp = timestamp, approved = approved, size = size)
+        for eid, timestamp, approved, site_name, size, size_copied in history_entries:
+            id_to_record[eid] = HistoryRecord(HistoryRecord.OP_COPY, eid, site_name, timestamp = timestamp, approved = approved, size = size, done = size_copied)
 
         id_to_dataset = dict(self._mysql.query('SELECT `id`, `name` FROM `datasets`'))
         id_to_site = dict(self._mysql.query('SELECT `id`, `name` FROM `sites`'))
 
-        replicas = self._mysql.query('SELECT `copy_id`, `dataset_id`, `origin_site_id` FROM `copied_replicas` AS c INNER JOIN `copy_history` AS h ON h.`id` = c.`copy_id` WHERE h.`completion_time` LIKE \'0000-00-00 00:00:00\' ORDER BY `copy_id`')
+        replicas = self._mysql.select_many('copied_replicas', ('copy_id', 'dataset_id', 'origin_site_id'), 'copy_id', ['%d' % i for i in id_to_record.keys()])
 
         current_copy_id = 0
         for copy_id, dataset_id, origin_site_id in replicas:
@@ -117,16 +120,16 @@ class MySQLHistory(TransactionHistoryInterface):
         return id_to_record.values()
 
     def _do_get_incomplete_deletions(self): #override
-        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size` FROM `deletion_history` AS h INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`completion_time` LIKE \'0000-00-00 00:00:00\'')
+        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_deleted` FROM `deletion_history` AS h INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`size` != h.`size_deleted`')
         
         id_to_record = {}
-        for eid, timestamp, approved, site_name, size in history_entries:
-            id_to_record[eid] = HistoryRecord(HistoryRecord.OP_DELETE, eid, site_name, timestamp = timestamp, approved = approved, size = size)
+        for eid, timestamp, approved, site_name, size, size_deleted in history_entries:
+            id_to_record[eid] = HistoryRecord(HistoryRecord.OP_DELETE, eid, site_name, timestamp = timestamp, approved = approved, size = size, done = size_deleted)
 
         id_to_dataset = dict(self._mysql.query('SELECT `id`, `name` FROM `datasets`'))
         id_to_site = dict(self._mysql.query('SELECT `id`, `name` FROM `sites`'))
 
-        replicas = self._mysql.query('SELECT `deletion_id`, `dataset_id` FROM `deleted_replicas` AS c INNER JOIN `deletion_history` AS h ON h.`id` = c.`deletion_id` WHERE h.`completion_time` LIKE \'0000-00-00 00:00:00\' ORDER BY `deletion_id`')
+        replicas = self._mysql.select_many('deleted_replicas', ('deletion_id', 'dataset_id'), 'deletion_id', ['%d' % i for i in id_to_record.keys()])
 
         current_deletion_id = 0
         for deletion_id, dataset_id in replicas:

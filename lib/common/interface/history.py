@@ -1,4 +1,5 @@
 import logging
+import time
 
 import common.configuration as config
 
@@ -49,7 +50,7 @@ class TransactionHistoryInterface(object):
 
     def update_copy_entry(self, copy_record):
         """
-        Update copy entry from the argument. Only certain fields (approved, completion_time) are updatable.
+        Update copy entry from the argument. Only certain fields (approved, last_update) are updatable.
         """
 
         if config.read_only:
@@ -64,7 +65,7 @@ class TransactionHistoryInterface(object):
 
     def update_deletion_entry(self, deletion_record):
         """
-        Update deletion entry from the argument. Only certain fields (approved, completion_time) are updatable.
+        Update deletion entry from the argument. Only certain fields (approved, last_update) are updatable.
         """
 
         if config.read_only:
@@ -156,21 +157,27 @@ if __name__ == '__main__':
             incomplete_copies = interface.get_incomplete_copies()
             
             for record in incomplete_copies:
-                completion_time = copy_interface.check_completion(record.operation_id)
-                if completion_time != 0:
-                    logger.info('Copy %d to %s has completed.', record.operation_id, record.site_name)
+                updates = copy_interface.copy_status(record.operation_id)
+
+                last_update = max([last_update for last_update, total, copied in updates.values()])
+                if last_update > record.last_update:
+                    logger.info('Updating record for copy %d to %s.', record.operation_id, record.site_name)
             
-                    record.completion_time = completion_time
+                    record.last_update = last_update
+                    record.done = sum(copied for last_update, total, copied in updates.values())
                     interface.update_copy_entry(record)
             
             incomplete_deletions = interface.get_incomplete_deletions()
             
             for record in incomplete_deletions:
-                completion_time = deletion_interface.check_completion(record.operation_id)
-                if completion_time != 0:
-                    logger.info('Deletion %d at %s has completed.', record.operation_id, record.site_name)
+                updates = deletion_interface.deletion_status(record.operation_id)
+
+                last_update = max([last_update for last_update, total, deleted in updates.values()])
+                if last_update > record.last_update:
+                    logger.info('Updating record for deletion %d at %s.', record.operation_id, record.site_name)
             
-                    record.completion_time = completion_time
+                    record.last_update = last_update
+                    record.done = sum(deleted for last_update, total, deleted in updates.values())
                     interface.update_deletion_entry(record)
     
         elif command == 'check':
@@ -193,20 +200,23 @@ if __name__ == '__main__':
     
                     total = 0.
                     done = 0.
+                    latest_update = 0
                     for dataset in sorted(status.keys()):
-                        st = status[dataset]
-                        if st[0] == 0.: # why??
-                            print '{dataset} (0 GB)'.format(dataset = dataset)
+                        size, copied, last_update = status[dataset]
+                        if size == 0: # why??
+                            print '{dataset} (0 GB) [{update}]'.format(dataset = dataset, update = time.ctime(last_update))
                         else:
-                            print '{dataset} ({total:.2f} GB): {percentage:.2f}%'.format(dataset = dataset, total = st[0] * 1.e-9, percentage = st[1] / st[0] * 100.)
+                            print '{dataset} ({total:.2f} GB): {percentage:.2f}% [{update}]'.format(dataset = dataset, total = size * 1.e-9, percentage = float(copied) / size * 100., update = time.ctime(last_update))
 
-                        total += st[0]
-                        done += st[1]
+                        total += size
+                        done += copied
+                        if last_update > latest_update:
+                            latest_update = last_update
     
                     print '----------------------------'
-                    if total == 0.: # why??
+                    if total == 0: # why??
                         print 'Transfer NAN% complete'
                     else:
-                        print 'Transfer {percentage:.2f}% complete'.format(percentage = done / total * 100.)
+                        print 'Transfer {percentage:.2f}% complete [{update}]'.format(percentage = done / total * 100., update = time.ctime(latest_update))
 
                     print ''

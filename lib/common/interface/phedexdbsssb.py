@@ -248,61 +248,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         return request_mapping
 
-    def check_completion(self, request_id): #override (CopyInterface, DeletionInterface)
-        """
-        1. Use requestlist command to determine the request type.
-        2. PhEDEx cannot track deletion progress -> return True
-        3. For transfers, use subscription command. Return true if all datasets are at 100%.
-        """
-
-        request = self._make_phedex_request('requestlist', 'request=%d' % request_id)
-        if len(request) == 0: # something wrong
-            return 0
-
-        req_type = request[0]['type']
-
-        if req_type == 'delete':
-            request = self._make_phedex_request('deletions', 'request=%d' % request_id)
-            if len(request) == 0: # deletion completed, info lost from PhEDEx, unfortunately
-                return time.time()
-            else:
-                return 0
-
-        elif req_type == 'xfer':
-            request = self._make_phedex_request('transferrequests', 'request=%d' % request_id)
-            if len(request) == 0: # something wrong
-                return 0
-
-            site_name = request[0]['destinations']['node'][0]['name']
-            dataset_names = []
-            for ds_entry in request[0]['data']['dbs']['dataset']:
-                dataset_names.append(ds_entry['name'])
-
-            subscriptions = self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in dataset_names])
-
-            for subscription in subscriptions:
-                if subscription['subscription'][0]['percent_bytes'] != 100.:
-                    return 0
-
-            # Copy is done. Find the latest block replica that arrived.
-            options = ['subscribed=y', 'show_dataset=y', 'node=%s' % site_name]
-            options += ['dataset=%s' % d for d in dataset_names]
-
-            blockreplicas = self._make_phedex_request('blockreplicas', options)
-
-            last_update = 0
-            for dataset_entry in blockreplicas:
-                for block_entry in dataset_entry['block']:
-                    time_update = block_entry['replica'][0]['time_update']
-                    if time_update > last_update:
-                        last_update = time_update
-               
-            return last_update
-
-        else:
-            # unknown request type
-            return 0
-
     def copy_status(self, request_id): #override (CopyInterface)
         request = self._make_phedex_request('transferrequests', 'request=%d' % request_id)
         if len(request) == 0:
@@ -318,7 +263,22 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         status = {}
         for subscription in subscriptions:
             cont = subscription['subscription'][0]
-            status[subscription['name']] = (cont['node_bytes'], cont['node_bytes'] * cont['percent_bytes'] / 100.)
+            status[subscription['name']] = (subscription['bytes'], cont['node_bytes'], cont['time_update'])
+            
+        return status
+
+    def deletion_status(self, request_id): #override (DeletionInterface)
+        request = self._make_phedex_request('deleterequests', 'request=%d' % request_id)
+        if len(request) == 0:
+            return {}
+
+        node_info = request[0]['nodes']['node'][0]
+        site_name = node_info['name']
+        last_update = node_info['decided_by']['time_decided']
+
+        status = {}
+        for ds_entry in request[0]['data']['dbs']['dataset']:
+            status[ds_entry['name']] = (ds_entry['bytes'], ds_entry['bytes'], last_update)
             
         return status
 

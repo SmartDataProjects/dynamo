@@ -28,18 +28,10 @@ class CopyInterface(object):
 
         return request_mapping
 
-    def check_completion(self, operation_id):
-        """
-        Checks the completion of the copy specified by the operation id.
-        Returns the completion timestamp or 0.
-        """
-
-        return 0
-
     def copy_status(self, operation_id):
         """
         Returns the completion status specified by the operation id as a
-        {dataset: (total, copied)} dictionary.
+        {dataset: (last_update, total, copied)} dictionary.
         """
 
         return {}
