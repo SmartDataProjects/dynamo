@@ -347,6 +347,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         lock = threading.Lock()
 
         def exec_get(sites, groups, ds_filt):
+            if len(sites) == 1:
+                logger.info('Fetching names of datasets on %s.', sites[0].name)
+            else:
+                logger.info('Fetching names of datasets from %d sites.', len(sites))
+
             block_replicas = collections.defaultdict(lambda: collections.defaultdict(list))
 
             options = ['subscribed=y', 'show_dataset=y']
@@ -381,7 +386,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             lock.acquire()
 
             for ds_name, ds_replicas in block_replicas.items():
-                dataset_names.append(ds_name)
+                if ds_name not in dataset_names:
+                    dataset_names.append(ds_name)
+
                 for site_name, replicas in ds_replicas.items():
                     self._block_replicas[ds_name][site_name] += replicas
 

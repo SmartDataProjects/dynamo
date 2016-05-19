@@ -115,20 +115,10 @@ class InventoryManager(object):
             logger.info('Fetching info on groups.')
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
+            # First construct a full list of dataset names we consider, then make a mass query to optimize speed
             if dataset_filter == '/*/*/*':
-                # First construct a full list of dataset names we consider, then make a mass query to optimize speed
-                dataset_names = []
-                site_count = 0
-                for site in self.sites.values():
-                    site_count += 1
-                    logger.info('Fetching names of datasets on %s (%d/%d).', site.name, site_count, len(self.sites))
-    
-                    for ds_name in self.replica_source.get_dataset_names(sites = [site], groups = self.groups):
-                        if ds_name not in dataset_names:
-                            dataset_names.append(ds_name)
-
+                dataset_names = self.replica_source.get_dataset_names(sites = self.sites.values(), groups = self.groups)
             else:
-                logger.info('Fetching names of datasets on all sites.')
                 dataset_names = self.replica_source.get_dataset_names(sites = self.sites.values(), groups = self.groups, filt = dataset_filter)
 
             # Do not consider datasets loaded from the inventory but is not on any of the sites
