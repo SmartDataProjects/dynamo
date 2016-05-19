@@ -654,7 +654,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset.num_files = sum([b.num_files for b in dataset.blocks])
 
                 lock.acquire()
-                all_open_blocks += open_blocks
+                all_open_blocks.extend(open_blocks) # += doesn't work because it's an assignment!
                 lock.release()
 
         # set_constituent can take 10000 datasets at once
