@@ -34,16 +34,19 @@ def unicode2str(container):
             elif type(elem) is dict or type(elem) is list:
                 unicode2str(elem)
 
-def parallel_exec(target, items, arguments = tuple()):
+def parallel_exec(target, arguments):
     """
-    Execute target(*arguments) on items in up to config.num_threads parallel threads.
-    Target should take an element of the items as the last argument.
+    Execute target(*args) in up to config.num_threads parallel threads,
+    for each entry args of arguments list.
     """
 
     threads = []
-    while len(items) != 0:
-        item = items.pop()
-        thread = threading.Thread(target = dbs_check, args = arguments + (item,))
+    while len(arguments) != 0:
+        args = arguments.pop()
+        if type(args) is not tuple:
+            args = (args,)
+
+        thread = threading.Thread(target = dbs_check, args = args)
         thread.start()
         threads.append(thread)
 

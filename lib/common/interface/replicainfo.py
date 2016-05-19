@@ -6,7 +6,7 @@ class ReplicaInfoSourceInterface(object):
     def __init__(self):
         pass
 
-    def get_dataset_names(self, site = None, groups = None, filt = '/*/*/*'):
+    def get_dataset_names(self, sites = [], groups = [], filt = '/*/*/*'):
         """
         Return a list of dataset names on the given site.
         Argument groups is a name->group dict.

@@ -337,57 +337,64 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 group = Group(entry['name'])
                 groups[entry['name']] = group
 
-    def get_dataset_names(self, sites = None, groups = None, filt = '/*/*/*'): #override (ReplicaInfoSourceInterface)
+    def get_dataset_names(self, sites = [], groups = [], filt = '/*/*/*'): #override (ReplicaInfoSourceInterface)
         """
         Use blockreplicas to fetch a full list of all block replicas on the site.
         Cache block replica data to avoid making the call again.
         """
 
-        options = ['subscribed=y', 'show_dataset=y']
-        if sites is not None:
+        dataset_names = []
+        lock = threading.Lock()
+
+        def exec_get(sites, groups, ds_filt):
+            block_replicas = collections.defaultdict(lambda: collections.defaultdict(list))
+
+            options = ['subscribed=y', 'show_dataset=y']
             for site in sites:
                 options.append('node=' + site.name)
 
-        if type(filt) is str and len(filt) != 0:
-            options += ['dataset=' + filt]
-        elif type(filt) is list:
-            options += ['dataset=%s' % s for s in filt]
+            options += ['dataset=%s' % ds_filt]
 
-        ds_name_list = []
+            source = self._make_phedex_request('blockreplicas', options)
 
-        source = self._make_phedex_request('blockreplicas', options)
+            for dataset_entry in source:
+                ds_name = dataset_entry['name']
+    
+                for block_entry in dataset_entry['block']:
+                    block_name = block_entry['name'].replace(ds_name + '#', '')
+    
+                    for replica_entry in block_entry['replica']:
+                        if len(groups) != 0 and replica_entry['group'] not in groups:
+                            continue
+   
+                        site_name = replica_entry['node']
+    
+                        protoreplica = ProtoBlockReplica(
+                            block_name = block_name,
+                            group_name = replica_entry['group'],
+                            is_custodial = (replica_entry['custodial'] == 'y'),
+                            is_complete = (replica_entry['complete'] == 'y')
+                        )
 
-        logger.info('get_dataset_names  Got %d dataset info', len(source))
+                        block_replicas[ds_name][site_name].append(protoreplica)
 
-        for dataset_entry in source:
-            ds_name = dataset_entry['name']
+            lock.acquire()
 
-            has_block_replica = False
+            for ds_name, ds_replicas in block_replicas.items():
+                dataset_names.append(ds_name)
+                for site_name, replicas in ds_replicas.items():
+                    self._block_replicas[ds_name][site_name] += replicas
 
-            for block_entry in dataset_entry['block']:
-                block_name = block_entry['name'].replace(ds_name + '#', '')
+            lock.release()
 
-                for replica_entry in block_entry['replica']:
-                    if groups is not None and replica_entry['group'] not in groups:
-                        continue
 
-                    has_block_replica = True
+        if filt == '/*/*/*' or filt == '' or filt == '*':
+            items = [([site], groups, filt) for site in sites]
+            parallel_exec(exec_get, items)
+        else:
+            exec_get(sites, groups, filt)
 
-                    site_name = replica_entry['node']
-
-                    protoreplica = ProtoBlockReplica(
-                        block_name = block_name,
-                        group_name = replica_entry['group'],
-                        is_custodial = (replica_entry['custodial'] == 'y'),
-                        is_complete = (replica_entry['complete'] == 'y')
-                    )
-
-                    self._block_replicas[ds_name][site_name].append(protoreplica)
-                    
-            if has_block_replica:
-                ds_name_list.append(ds_name)
-
-        return ds_name_list
+        return dataset_names
         
     def make_replica_links(self, sites, groups, datasets): #override (ReplicaInfoSourceInterface)
         """
