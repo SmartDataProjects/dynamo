@@ -596,22 +596,21 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         Need to process 10000 at a time due to PhEDEx limitations.
         """
 
-        open_blocks = []
+        all_open_blocks = []
+        
+        lock = threading.Lock()
 
-        start = 0
-        while start < len(datasets):
-            list_chunk = datasets[start:start + 10000]
-
-            start += 10000
-
+        def set_constituent(list_chunk)
             options = [('level', 'block')]
             options += [('dataset', d.name) for d in list_chunk]
 
-            logger.info('get_datasets::run_datasets_query  Fetching data for %d datasets.', len(options) - 1)
             source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
+
+            open_blocks = []
     
             for ds_entry in source:
                 dataset = next(d for d in list_chunk if d.name == ds_entry['name'])
+                list_chunk.remove(dataset)
 
                 dataset.is_open = (ds_entry['is_open'] == 'y') # useless flag - all datasets are flagged open
        
@@ -638,6 +637,20 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset.size = sum([b.size for b in dataset.blocks])
                 dataset.num_files = sum([b.num_files for b in dataset.blocks])
 
+                lock.acquire()
+                all_open_blocks += open_blocks
+                lock.release()
+
+        chunk_size = 10000
+        dataset_chunks = []
+
+        start = 0
+        while start < len(datasets):
+            dataset_chunks.append(datasets[start:start + 10000])
+            start += 10000
+
+        parallel_exec(set_constituent, dataset_chunks)
+
         def dbs_check(block):
             dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block_name, 'detail=True']) # %23 = '#'
             if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
@@ -646,7 +659,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 # TODO this is not fully accurate
                 block.dataset.status = Dataset.STAT_PRODUCTION
             
-        parallel_exec(dbs_check, open_blocks)
+        parallel_exec(dbs_check, all_open_blocks)
 
     def set_dataset_details(self, datasets): #override (DatasetInfoSourceInterface)
         logger.info('set_dataset_deatils  Checking status of %d datasets', len(datasets))
