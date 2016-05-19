@@ -394,7 +394,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             lock.release()
 
-
         if filt == '/*/*/*' or filt == '' or filt == '*':
             items = [([site], groups, filt) for site in sites]
             parallel_exec(exec_get, items)
@@ -529,7 +528,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 continue
 
             if dataset.status == Dataset.STAT_PRODUCTION or dataset.status == Dataset.STAT_UNKNOWN or \
-                    len(dataset.blocks) < max(len(replicas) for site, replicas in self._block_replicas[dataset.name].items()):
+                    len(dataset.blocks) < max(len(replicas) for replicas in self._block_replicas[dataset.name].values()):
                 open_datasets.append(dataset)
 
         self.set_dataset_constituent_info(open_datasets)
@@ -548,28 +547,35 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # Use 'blockreplicasummary' query to check if all blocks of the dataset are on tape.
         # site=T*MSS -> tape
 
-        options = [('create_since', '0'), ('node', 'T*MSS'), ('custodial', 'y'), ('complete', 'y')]
         blocks_on_tape = {}
+        lock = threading.Lock()
 
         # Routine to fetch data and fill the list of blocks on tape
-        def run_ontape_query():
-            if len(options) == 4:
-                return
+        def run_ontape_query(dataset_list):
+            options = [('create_since', '0'), ('node', 'T*MSS'), ('custodial', 'y'), ('complete', 'y')]
+            options += [('dataset', dataset.name) for dataset in dataset_list]
 
             logger.info('find_tape_copies::run_ontape_query  Checking whether %d datasets (%s, ...) are on tape', len(options) - 4, options[4][1])
             source = self._make_phedex_request('blockreplicasummary', options, method = POST)
+
+            on_tape = collections.defaultdict(list)
 
             for block_entry in source:
                 name = block_entry['name']
                 ds_name = name[:name.find('#')]
                 block_name = name[name.find('#') + 1:]
 
-                try:
-                    blocks_on_tape[ds_name].append(block_name)
-                except KeyError:
-                    blocks_on_tape[ds_name] = [block_name]
+                on_tape[ds_name].append(block_name)
 
-            del options[4:] # delete dataset specifications
+            lock.acquire()
+
+            for ds_name, blocks in on_tape.items():
+                blocks_on_tape[ds_name] += blocks
+
+            lock.release()
+
+        chunk_size = 10000
+        dataset_chunks = [[]]
 
         # Loop over datasets not on tape
         for dataset in datasets.values():
@@ -577,12 +583,14 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             if dataset.on_tape or dataset.status == Dataset.STAT_IGNORED:
                 continue
 
-            options.append(('dataset', dataset.name))
+            dataset_chunks[-1].append(dataset)
+            if len(dataset_chunks[-1]) == chunk_size:
+                dataset_chunks.append([])
 
-            if len(options) >= 10004:
-                run_ontape_query()
+        if len(dataset_chunks[-1]) == 0:
+            dataset_chunks.pop()
 
-        run_ontape_query()
+        parallel_exec(run_ontape_query, dataset_chunks)
 
         # Loop again and fill datasets
         for dataset in datasets.values():
@@ -607,7 +615,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         
         lock = threading.Lock()
 
-        # function to set dataset constituents
+        # routine to set dataset constituents
         def set_constituent(list_chunk):
             options = [('level', 'block')]
             options += [('dataset', d.name) for d in list_chunk]
@@ -661,7 +669,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # run set_constituent for all chunks in parallel
         parallel_exec(set_constituent, dataset_chunks)
 
-        # function to fetch block info from DBS
+        # routine to fetch block info from DBS
         def dbs_check(block):
             dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block_name, 'detail=True']) # %23 = '#'
             if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
@@ -676,7 +684,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     def set_dataset_details(self, datasets): #override (DatasetInfoSourceInterface)
         logger.info('set_dataset_deatils  Checking status of %d datasets', len(datasets))
 
-        # function to set status and type (run in parallel)
+        # routine to set status and type (run in parallel)
         def set_status_type(dataset_list):
             names = [d.name for d in dataset_list]
     
@@ -709,7 +717,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         parallel_exec(set_status_type, dataset_chunks)
       
-        # function to set release verions
+        # routine to set release verions
         def set_release_version(dataset):
             logger.info('set_dataset_software_info  Fetching software version for %s', dataset.name)
 
