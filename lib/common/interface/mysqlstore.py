@@ -72,8 +72,6 @@ class MySQLStore(LocalStoreInterface):
         tables = self._mysql.query('SHOW TABLES')
 
         for table in tables:
-            print '  ' + table
-
             self._mysql.query('CREATE TABLE `{copy}`.`{table}` LIKE `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self._db_name, table = table))
 
             if table == 'system':
@@ -86,10 +84,7 @@ class MySQLStore(LocalStoreInterface):
             if clear == LocalStoreInterface.CLEAR_ALL or \
                (clear == LocalStoreInterface.CLEAR_REPLICAS and table in ['dataset_replicas', 'block_replicas']):
                 # drop the original table and copy back the format from the snapshot
-                print '   TRUNCATE'
                 self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._db_name, table = table))
-
-        print ' Done.'
 
     def _do_remove_snapshot(self, newer_than, older_than): #override
         snapshots = self._do_list_snapshots()
