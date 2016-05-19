@@ -53,7 +53,10 @@ class MySQL(object):
         result = []
 
         def execute(pool_expr):
-            condition = '`%s` IN ' % key
+            if '(' in key:
+                condition = '%s IN ' % key
+            else:
+                condition = '`%s` IN ' % key
             condition += pool_expr
 
             conditions = [condition] + additional_conditions

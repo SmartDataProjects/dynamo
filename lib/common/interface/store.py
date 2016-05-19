@@ -221,9 +221,7 @@ class LocalStoreInterface(object):
             self._do_save_sites(sites)
             self._do_save_groups(groups)
             self._do_save_datasets(datasets)
-
-            all_replicas = sum([d.replicas for d in datasets], []) # second argument -> start with an empty array and add up
-            self._do_save_replicas(all_replicas)
+            self._do_save_replicas(sites, groups, datasets)
             self.set_last_update()
         finally:
             self.release_lock()
@@ -275,23 +273,6 @@ class LocalStoreInterface(object):
         self.acquire_lock()
         try:
             self._do_save_datasets(datasets)
-            self.set_last_update()
-        finally:
-            self.release_lock()
-
-    def save_replicas(self, replicas):
-        """
-        Write information in memory into persistent storage.
-        Argument is a list of dataset replicas.
-        """
-
-        if config.read_only:
-            logger.debug('_do_save_data()')
-            return
-
-        self.acquire_lock()
-        try:
-            self._do_save_replicas(replicas)
             self.set_last_update()
         finally:
             self.release_lock()
