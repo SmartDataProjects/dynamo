@@ -601,7 +601,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         lock = threading.Lock()
 
         # function to set dataset constituents
-        def set_constituent(list_chunk)
+        def set_constituent(list_chunk):
             options = [('level', 'block')]
             options += [('dataset', d.name) for d in list_chunk]
 
