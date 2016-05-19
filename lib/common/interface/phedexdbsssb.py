@@ -600,6 +600,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         
         lock = threading.Lock()
 
+        # function to set dataset constituents
         def set_constituent(list_chunk)
             options = [('level', 'block')]
             options += [('dataset', d.name) for d in list_chunk]
@@ -641,16 +642,19 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 all_open_blocks += open_blocks
                 lock.release()
 
+        # set_constituent can take 10000 datasets at once
         chunk_size = 10000
         dataset_chunks = []
 
         start = 0
         while start < len(datasets):
-            dataset_chunks.append(datasets[start:start + 10000])
-            start += 10000
+            dataset_chunks.append(datasets[start:start + chunk_size])
+            start += chunk_size
 
+        # run set_constituent for all chunks in parallel
         parallel_exec(set_constituent, dataset_chunks)
 
+        # function to fetch block info from DBS
         def dbs_check(block):
             dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block_name, 'detail=True']) # %23 = '#'
             if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
@@ -658,17 +662,15 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 block.is_open = True
                 # TODO this is not fully accurate
                 block.dataset.status = Dataset.STAT_PRODUCTION
-            
+
+        # run dbs_check in parallel on all open blocks
         parallel_exec(dbs_check, all_open_blocks)
 
     def set_dataset_details(self, datasets): #override (DatasetInfoSourceInterface)
         logger.info('set_dataset_deatils  Checking status of %d datasets', len(datasets))
 
-        use_datasetlist = [d for d in datasets if d.status != Dataset.STAT_VALID or d.data_type == Dataset.TYPE_UNKNOWN]
-
-        start = 0
-        while start < len(use_datasetlist):
-            dataset_list = use_datasetlist[start:start + 1000]
+        # function to set status and type (run in parallel)
+        def set_status_type(dataset_list):
             names = [d.name for d in dataset_list]
     
             dbs_entries = self._make_dbs_request('datasetlist', {'dataset': names, 'detail': True}, method = POST, format = 'json')
@@ -676,6 +678,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             for dataset in dataset_list:
                 try:
                     dbs_entry = next(e for e in dbs_entries if e['dataset'] == dataset.name)
+                    dbs_entries.remove(dbs_entry)
                 except StopIteration:
                     logger.info('set_dataset_details  Status of %s is unknown.', dataset.name)
                     dataset.status = Dataset.STAT_UNKNOWN
@@ -685,10 +688,21 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset.data_type = Dataset.data_type_val(dbs_entry['primary_ds_type'])
                 dataset.last_update = dbs_entry['last_modification_date']
 
-            start += 1000
+        # datasets that need status / type update
+        use_datasetlist = [d for d in datasets if d.status != Dataset.STAT_VALID or d.data_type == Dataset.TYPE_UNKNOWN]
 
-        use_releaseversions = [d for d in datasets if d.software_version[0] == 0]
+        # set_status_type can work on up to 1000 datasets
+        chunk_size = 1000
+        dataset_chunks = []
 
+        start = 0
+        while start < len(use_datasetlist):
+            dataset_chunks.append(use_datasetlist[start:start + chunk_size])
+            start += chunk_size
+
+        parallel_exec(set_status_type, dataset_chunks)
+      
+        # function to set release verions
         def set_release_version(dataset):
             logger.info('set_dataset_software_info  Fetching software version for %s', dataset.name)
 
@@ -710,6 +724,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                 dataset.software_version = (cycle, major, minor, suffix)
 
+        # datasets that need release version update
+        use_releaseversions = [d for d in datasets if d.software_version[0] == 0]
+
+        # set_release_version works on single datasets
         parallel_exec(set_release_version, use_releaseversions)
             
     def _make_phedex_request(self, resource, options = [], method = GET, format = 'url', raw_output = False):
