@@ -131,7 +131,7 @@ class InventoryManager(object):
                 logger.debug('dataset_names: %s', ' '.join(dataset_names))
 
             if len(dataset_names) != 0: # should be true for any normal operation. Relevant when debugging
-                logger.info('Filling details of %d datasets.', len(self.datasets))
+                logger.info('Constructing %d dataset objects.', len(self.datasets))
 
                 self.dataset_source.get_datasets(dataset_names, self.datasets)
                 self.replica_source.find_tape_copies(self.datasets)
