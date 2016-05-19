@@ -4,6 +4,7 @@ import time
 import re
 import collections
 import pprint
+import threading
 
 from common.interface.copy import CopyInterface
 from common.interface.deletion import DeletionInterface
@@ -12,7 +13,7 @@ from common.interface.replicainfo import ReplicaInfoSourceInterface
 from common.interface.datasetinfo import DatasetInfoSourceInterface
 from common.interface.webservice import RESTService, GET, POST
 from common.dataformat import Dataset, Block, Site, Group, DatasetReplica, BlockReplica
-from common.misc import unicode2str
+from common.misc import unicode2str, parallel_exec
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -486,10 +487,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         self.set_dataset_constituent_info([dataset])
 
-        if dataset.software_version[0] == 0:
-            self._set_dataset_software_info(dataset)
-
-        if dataset.data_type == Dataset.TYPE_UNKNOWN:
+        if dataset.data_type == Dataset.TYPE_UNKNOWN or dataset.software_version[0] == 0:
             self.set_dataset_details([dataset])
 
     def get_datasets(self, names, datasets): #override (DatasetInfoSourceInterface)
@@ -528,15 +526,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 datasets.pop(dataset.name)
 
         # Loop over all datasets and fill other details if not set
-        for dataset in datasets.values():
-            if dataset.status == Dataset.STAT_IGNORED:
-                continue
+        need_update = [d for d in datasets.values() if d.status != Dataset.STAT_IGNORED and (d.data_type == Dataset.TYPE_UNKNOWN or d.software_version[0] == 0)]
 
-            if dataset.software_version[0] == 0:
-                self._set_dataset_software_info(dataset)
-
-            if dataset.data_type == Dataset.TYPE_UNKNOWN:
-                self.set_dataset_details([dataset])
+        self.set_dataset_details(need_update)
 
     def find_tape_copies(self, datasets): #override (ReplicaInfoSourceInterface)
         # Use 'blockreplicasummary' query to check if all blocks of the dataset are on tape.
@@ -592,6 +584,13 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             dataset.on_tape = (dataset_blocks == on_tape)
 
     def set_dataset_constituent_info(self, datasets): #override (DatasetInfoSourceInterface)
+        """
+        Query phedex "data" interface. If a block appears open, confirm with DBS.
+        Need to process 10000 at a time due to PhEDEx limitations.
+        """
+
+        open_blocks = []
+
         start = 0
         while start < len(datasets):
             list_chunk = datasets[start:start + 10000]
@@ -608,9 +607,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset = next(d for d in list_chunk if d.name == ds_entry['name'])
 
                 dataset.is_open = (ds_entry['is_open'] == 'y') # useless flag - all datasets are flagged open
-        
-                has_open_blocks = False
-        
+       
                 for block_entry in ds_entry['block']:
                     block_name = block_entry['name'].replace(dataset.name + '#', '')
 
@@ -628,48 +625,30 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         
                     if block_entry['is_open'] == 'y' and time.time() - block_entry['time_create'] > 48. * 3600.:
                         # Block is more than 48 hours old and is still open - PhEDEx can be wrong
-                        logger.info('set_dataset_constituent_info  Double-checking with DBS if block %s#%s is open', dataset.name, block_name)
-                        dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block_name, 'detail=True']) # %23 = '#'
-                        if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
-                            # cannot get data from DBS, or DBS also says this block is open
-                            block.is_open = True
-                            has_open_blocks = True
-        
+                        open_blocks.append(block)
+
+                dataset.status = Dataset.STAT_VALID # default set to valid - changed later
                 dataset.size = sum([b.size for b in dataset.blocks])
                 dataset.num_files = sum([b.num_files for b in dataset.blocks])
-        
+
+        def dbs_check(block):
+            dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block_name, 'detail=True']) # %23 = '#'
+            if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
+                # cannot get data from DBS, or DBS also says this block is open
+                block.is_open = True
                 # TODO this is not fully accurate
-                if has_open_blocks:
-                    dataset.status = Dataset.STAT_PRODUCTION
-                else:
-                    dataset.status = Dataset.STAT_VALID
-
-    def _set_dataset_software_info(self, dataset):
-        logger.info('set_dataset_software_info  Fetching software version for %s', dataset.name)
-        result = self._make_dbs_request('releaseversions', ['dataset=' + dataset.name])
-        if len(result) == 0 or 'release_version' not in result[0]:
-            return
-
-        # a dataset can have multiple versions; use the first one
-        version = result[0]['release_version'][0]
-
-        matches = re.match('CMSSW_([0-9]+)_([0-9]+)_([0-9]+)(|_.*)', version)
-        if matches:
-            cycle, major, minor = map(int, [matches.group(i) for i in range(1, 4)])
-
-            if matches.group(4):
-                suffix = matches.group(4)[1:]
-            else:
-                suffix = ''
-
-            dataset.software_version = (cycle, major, minor, suffix)
+                block.dataset.status = Dataset.STAT_PRODUCTION
+            
+        parallel_exec(dbs_check, open_blocks)
 
     def set_dataset_details(self, datasets): #override (DatasetInfoSourceInterface)
         logger.info('set_dataset_deatils  Checking status of %d datasets', len(datasets))
 
+        use_datasetlist = [d for d in datasets if d.status != Dataset.STAT_VALID or d.data_type == Dataset.TYPE_UNKNOWN]
+
         start = 0
-        while start < len(datasets):
-            dataset_list = datasets[start:start + 1000]
+        while start < len(use_datasetlist):
+            dataset_list = use_datasetlist[start:start + 1000]
             names = [d.name for d in dataset_list]
     
             dbs_entries = self._make_dbs_request('datasetlist', {'dataset': names, 'detail': True}, method = POST, format = 'json')
@@ -687,6 +666,31 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset.last_update = dbs_entry['last_modification_date']
 
             start += 1000
+
+        use_releaseversions = [d for d in datasets if d.software_version[0] == 0]
+
+        def set_release_version(dataset):
+            logger.info('set_dataset_software_info  Fetching software version for %s', dataset.name)
+
+            result = self._make_dbs_request('releaseversions', ['dataset=' + dataset.name])
+            if len(result) == 0 or 'release_version' not in result[0]:
+                return
+    
+            # a dataset can have multiple versions; use the first one
+            version = result[0]['release_version'][0]
+    
+            matches = re.match('CMSSW_([0-9]+)_([0-9]+)_([0-9]+)(|_.*)', version)
+            if matches:
+                cycle, major, minor = map(int, [matches.group(i) for i in range(1, 4)])
+    
+                if matches.group(4):
+                    suffix = matches.group(4)[1:]
+                else:
+                    suffix = ''
+    
+                dataset.software_version = (cycle, major, minor, suffix)
+
+        parallel_exec(set_release_version, use_releaseversions)
             
     def _make_phedex_request(self, resource, options = [], method = GET, format = 'url', raw_output = False):
         """

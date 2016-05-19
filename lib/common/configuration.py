@@ -10,6 +10,8 @@ read_only = False
 
 target_site_occupancy = 0.95
 
+num_threads = 8
+
 paths = Configuration()
 paths.base = os.environ['DYNAMO_BASE']
 
