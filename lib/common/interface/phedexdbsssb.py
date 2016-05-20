@@ -547,7 +547,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # Use 'blockreplicasummary' query to check if all blocks of the dataset are on tape.
         # site=T*MSS -> tape
 
-        blocks_on_tape = {}
+        blocks_on_tape = collections.defaultdict(list)
         lock = threading.Lock()
 
         # Routine to fetch data and fill the list of blocks on tape
@@ -570,7 +570,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             lock.acquire()
 
             for ds_name, blocks in on_tape.items():
-                blocks_on_tape[ds_name] += blocks
+                blocks_on_tape[ds_name].extend(blocks)
 
             lock.release()
 
