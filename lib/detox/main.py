@@ -18,30 +18,25 @@ class Detox(object):
         self.demand_manager = demand
         self.history_manager = history
 
-        self.policy_managers = {} # group -> PolicyManager
+        self.policy_managers = {} # {partition: PolicyManager}
+        self.quotas = {} # {partition: {site: quota}}
         self.policy_log_path = log_path
         self.policy_html_path = html_path
 
         self.deletion_message = 'Dynamo -- Automatic Cache Release Request.'
 
-    def set_policies(self, policy_stack, group_name = ''): # empty group name -> default
-        if group_name:
-            group = self.inventory_manager.groups[group_name]
-        else:
-            group = None
+    def set_policies(self, policy_stack, quotas, partition = ''): # empty partition name -> default
+        self.policy_managers[partition] = policy.PolicyManager(policy_stack)
+        self.quotas[partition] = quotas
 
-        self.policy_managers[group] = policy.PolicyManager(policy_stack)
-
-    def run(self, group_name = '', dynamic_deletion = True):
+    def run(self, partition = '', dynamic_deletion = True):
         """
         Main executable.
         """
 
-        if group_name:
-            group = self.inventory_manager.groups[group_name]
-            logger.info('Detox run for %s starting at %s', group_name, time.strftime('%Y-%m-%d %H:%M:%S'))
+        if partition:
+            logger.info('Detox run for %s starting at %s', partition, time.strftime('%Y-%m-%d %H:%M:%S'))
         else:
-            group = None
             logger.info('Detox run starting at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
         if time.time() - self.inventory_manager.store.last_update > config.inventory.refresh_min:
@@ -56,36 +51,30 @@ class Detox(object):
         if self.policy_log_path:
             policy_log = open(self.policy_log_path, 'w')
 
-        html = None
-        if self.policy_html_path:
-            html = self.open_html(self.policy_html_path)
-
         all_deletions = collections.defaultdict(list) # site -> list of replicas to delete on site
         iteration = 0
 
-        logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_managers[group].num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
+        logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_managers[partiton].num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
+
+        protection_list = []
 
         while True:
             iteration += 1
 
             records = []
-            deletion_candidates, protection_list = self.make_deletion_protection_list(group, records)
+            candidates = self.find_candidates(partition, protection_list, records)
 
             if policy_log:
                 logger.info('Writing policy hit log text.')
                 self.write_policy_log(policy_log, iteration, records)
 
-            if html:
-                logger.info('Writing policy hit log html.')
-                self.write_html_iteration(html, iteration, records)
-
-            logger.info('%d dataset replicas in deletion list', len(deletion_candidates))
+            logger.info('%d dataset replicas in deletion list', len(candidates))
             if logger.getEffectiveLevel() == logging.DEBUG:
                 logger.debug('Deletion list:')
-                logger.debug(pprint.pformat(['%s:%s' % (r.site.name, r.dataset.name) for r in deletion_candidates]))
+                logger.debug(pprint.pformat(['%s:%s' % (r.site.name, r.dataset.name) for r in candidates]))
 
             if dynamic_deletion:
-                replica = self.select_replica(deletion_candidates, protection_list)
+                replica = self.select_replica(partition, candidates, protection_list)
                 if replica is None:
                     deletion_list = []
                 else:
@@ -93,7 +82,7 @@ class Detox(object):
                     deletion_list = [replica]
 
             else:
-                deletion_list = deletion_candidates
+                deletion_list = candidates
 
             if len(deletion_list) == 0:
                 break
@@ -109,22 +98,22 @@ class Detox(object):
         if policy_log:
             policy_log.close()
 
-        self.close_html(html)
-
         logger.info('Detox run finished at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
-    def make_deletion_protection_list(self, group, records = None):
+    def find_candidates(self, partition, protection_list, records = None):
         """
         Run each dataset / block replicas through deletion policies and make a list of replicas to delete.
         Return the list of replicas that may be deleted (deletion_candidates) or must be protected (protection_list).
         """
 
-        deletion_candidates = []
-        protection_list = []
+        candidates = []
 
         for dataset in self.inventory_manager.datasets.values():
             for replica in dataset.replicas:
-                hit_records = self.policy_managers[group].decision(replica, self.demand_manager)
+                if replica in protection_list:
+                    continue
+
+                hit_records = self.policy_managers[partition].decision(replica, self.demand_manager)
 
                 if records is not None:
                     records.append(hit_records)
@@ -132,12 +121,12 @@ class Detox(object):
                 decision = hit_records.decision()
 
                 if decision == policy.DEC_DELETE:
-                    deletion_candidates.append(replica)
+                    candidates.append(replica)
 
                 elif decision == policy.DEC_PROTECT:
                     protection_list.append(replica)
                 
-        return deletion_candidates, protection_list
+        return candidates
 
     def commit_deletions(self, all_deletions):
         # first make sure the list of blocks is up-to-date
@@ -169,7 +158,7 @@ class Detox(object):
 
             logger.info('Done deleting %d replicas from %s.', len(replica_list), site.name)
 
-    def select_replica(self, deletion_candidates, protection_list):
+    def select_replica(self, partition, deletion_candidates, protection_list):
         """
         Select one dataset replica to delete out of all deletion candidates.
         Currently returning the smallest replica on the site with the highest protected fraction.
@@ -183,32 +172,11 @@ class Detox(object):
         for replica in protection_list:
             protection_by_site[replica.site].append(replica)
 
-        target_site = max(protection_by_site, key = lambda site: sum(replica.size() / site.quota()))
-        max_fraction = 0.
-        target_site = None
-        for site in protection_by_site:
-            replica_list = protection_by_site[site]
-            fraction = sum(replica_list)
+        # find the site with the highest protected fraction
+        target_site = max(protection_by_site.keys(), key = lambda site: sum(replica.size() for replica in protection_by_site[site]) / self.quotas[partition][site])
 
-
-
-        # Select the replica that minimizes the RMS of the protected fractions
-        deletion_candidate = None
-
-        for replica in deletion_candidates:
-            sumf2 = sum([frac * frac for site, frac in protected_fractions.items() if site != replica.site])
-            sumf = sum([frac for site, frac in protected_fractions.items() if site != replica.site])
-
-            sumf2 += math.pow(protected_fractions[replica.site] - replica.size() / replica.site.storage, 2.)
-            sumf += protected_fractions[replica.site] - replica.size() / replica.site.storage
-
-            rms2 = sumf2 / len(self.inventory_manager.sites) - math.pow(sumf / len(self.inventory_manager.sites), 2.)
-
-            if minRMS2 < 0. or rms2 < minRMS2:
-                minRMS2 = rms2
-                deletion_candidate = replica
-
-        return deletion_candidate
+        # return the smallest replica on the target site
+        return min(protection_by_site[target_site], key = lambda replica: replica.size())
 
     def write_policy_log(self, policy_log, iteration, all_records):
         policy_log.write('===== Begin iteration %d =====\n\n' % iteration)

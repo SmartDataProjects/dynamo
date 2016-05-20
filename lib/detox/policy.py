@@ -110,7 +110,7 @@ class PolicyHitRecords(object):
         self.records.append(record)
 
     def write_records(self, output):
-        output.write('Policy hits for replica {site} {dataset}:'.format(site = self.replica.site.name, dataset = self.replica.dataset.name))
+        output.write('{site} {dataset}:'.format(site = self.replica.site.name, dataset = self.replica.dataset.name))
         if len(self.records) == 0:
             output.write(' None\n')
         else:

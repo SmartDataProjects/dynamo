@@ -84,12 +84,12 @@ history_manager = classes.default_interface['history']()
 
 detox = Detox(inventory_manager, transaction_manager, demand_manager, history_manager)
 
-group_names = []
+partitions = []
 
 for stack_spec in args.stacks:
-    group_name, stack_name = stack_spec.split(':')
+    partition, stack_name = stack_spec.split(':')
 
-    group_names.append(group_name)
+    partitions.append(partition)
 
     if stack_name.endswith('.py'):
     # argument is a python file that defines a list of stacks
@@ -109,14 +109,17 @@ for stack_spec in args.stacks:
 
         policy_stack = make_stack(stack_name)(*args)
 
-    detox.set_policies(policy_stack, group_name = group_name)
+    # currently partition = group
+    quotas = dict([(site, site.quota(inventory_manager.groups[partition])) for site in inventory_manager.sites.values()])
+
+    detox.set_policies(policy_stack, quotas, partition = partition)
 
 if args.force_inventory_update:
     config.inventory.refresh_min = 0
 
 for nrun in range(args.repeat[0]):
-    for group_name in group_names:
-        detox.run(group_name = group_name, dynamic_deletion = not args.static_deletion)
+    for partition in partitions:
+        detox.run(partition = partition, dynamic_deletion = not args.static_deletion)
 
     if args.repeat[1] > 0:
         time.sleep(args.repeat[1] * 3600)
