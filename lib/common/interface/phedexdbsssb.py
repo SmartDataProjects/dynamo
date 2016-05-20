@@ -527,9 +527,17 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             if dataset.status == Dataset.STAT_IGNORED:
                 continue
 
-            if dataset.status == Dataset.STAT_PRODUCTION or dataset.status == Dataset.STAT_UNKNOWN or \
-                    len(dataset.blocks) < max(len(replicas) for replicas in self._block_replicas[dataset.name].values()):
+            # if the dataset is flagged open or unknown
+            if dataset.status == Dataset.STAT_PRODUCTION or dataset.status == Dataset.STAT_UNKNOWN:
                 open_datasets.append(dataset)
+                continue
+
+            # if there is a protoreplica with a block name not known to the dataset
+            all_protoreplicas = sum(self._block_replicas[dataset.name].values(), [])
+            for protoreplica in all_protoreplicas:
+                if not dataset.find_block(protoreplica.block_name):
+                    open_datasets.append(dataset)
+                    break
 
         self.set_dataset_constituent_info(open_datasets)
 
