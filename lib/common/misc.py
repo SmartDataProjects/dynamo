@@ -51,11 +51,15 @@ def parallel_exec(target, arguments):
         threads.append(thread)
 
         while len(threads) >= config.num_threads:
-            for thread in threads:
-                if not thread.is_alive():
+            iL = 0
+            while iL < len(threads):
+                thread = threads[iL]
+                if thread.is_alive():
+                    iL += 1
+                else:
                     thread.join()
-                    threads.remove(thread)
-                    break
+                    threads.pop(iL)
+
             else:
                 time.sleep(1)
 
