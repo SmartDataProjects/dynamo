@@ -71,9 +71,9 @@ class InventoryManager(object):
 
             sites, groups, datasets = self.store.load_data(site_filt = site_names, load_replicas = load_replicas)
 
-            self.sites = dict([(s.name, s) for s in sites])
-            self.groups = dict([(g.name, g) for g in groups])
-            self.datasets = dict([(d.name, d) for d in datasets])
+            self.sites = dict((s.name, s) for s in sites)
+            self.groups = dict((g.name, g) for g in groups)
+            self.datasets = dict((d.name, d) for d in datasets)
 
         finally:
             self.store.release_lock()
@@ -122,8 +122,8 @@ class InventoryManager(object):
                 dataset_names = self.replica_source.get_dataset_names(sites = self.sites.values(), groups = self.groups, filt = dataset_filter)
 
             # Do not consider datasets loaded from the inventory but is not on any of the sites
-            loaded_datasets = self.datasets.keys()
-            for ds_name in loaded_datasets:
+            loaded_names = self.datasets.keys()
+            for ds_name in loaded_names:
                 if ds_name not in dataset_names:
                     self.datasets.pop(ds_name)
 
@@ -138,10 +138,10 @@ class InventoryManager(object):
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
 
             # Do not consider datasets with no replicas
-            loaded_datasets = self.datasets.items()
-            for ds_name, dataset in loaded_datasets:
+            datasets = self.datasets.values()
+            for dataset in datasets:
                 if len(dataset.replicas) == 0:
-                    self.datasets.pop(ds_name)
+                    self.datasets.pop(dataset.name)
 
             logger.info('Saving data.')
 
