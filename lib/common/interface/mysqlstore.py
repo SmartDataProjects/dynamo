@@ -495,14 +495,16 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query('CREATE TABLE `datasets_new` LIKE `datasets`')
 
-        # first insert known datasets
+        # separate the datasets into new and known (have id in table)
         known_datasets = []
         new_datasets = []
         for dataset in datasets:
             try:
-                known_datasets.append((dataset, self._datasets_to_ids[dataset]))
+                dataset_id = self._datasets_to_ids[dataset]
             except KeyError:
                 new_datasets.append(dataset)
+            else:
+                known_datasets.append((dataset, dataset_id))
 
         fields = ('id', 'name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
         # MySQL expects the local time for last_update
@@ -520,6 +522,8 @@ class MySQLStore(LocalStoreInterface):
         )
         
         self._mysql.insert_many('datasets_new', fields, mapping, known_datasets, do_update = False)
+
+        known_datasets = None
 
         fields = ('name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
         # MySQL expects the local time for last_update
@@ -543,6 +547,8 @@ class MySQLStore(LocalStoreInterface):
 
         # reload the dataset ids
         self._set_dataset_ids(new_datasets, update = True)
+
+        new_datasets = None
 
         # insert/update blocks
         all_blocks = []

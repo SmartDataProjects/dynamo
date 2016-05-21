@@ -288,7 +288,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         status = {}
         for subscription in subscriptions:
             cont = subscription['subscription'][0]
-            status[subscription['name']] = (subscription['bytes'], cont['node_bytes'], cont['time_update'])
+            status[(site_name, subscription['name'])] = (subscription['bytes'], cont['node_bytes'], cont['time_update'])
             
         return status
 
@@ -571,7 +571,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         for dataset in open_datasets:
             if len(dataset.blocks) == 0:
-                logger.info('get_datasets::run_datasets_query  %s does not have any blocks and is removed.', dataset.name)
+                logger.info('get_datasets %s does not have any blocks and is removed.', dataset.name)
                 datasets.pop(dataset.name)
 
         # Loop over all datasets and fill other details if not set
