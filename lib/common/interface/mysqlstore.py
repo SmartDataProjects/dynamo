@@ -518,7 +518,7 @@ class MySQLStore(LocalStoreInterface):
             version_map[d.software_version],
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update))
         )
-
+        
         self._mysql.insert_many('datasets_new', fields, mapping, known_datasets, do_update = False)
 
         fields = ('name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
@@ -542,11 +542,12 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('DROP TABLE `datasets_old`')
 
         # reload the dataset ids
-        self._set_dataset_ids(datasets)
+        self._set_dataset_ids(new_datasets, update = True)
 
         # insert/update blocks
-        # since the block list can be large, it is faster to recreate the entire table than to update and clean.
-        all_blocks = sum([d.blocks for d in datasets], [])
+        all_blocks = []
+        for dataset in datasets:
+            all_blocks.extend(dataset.blocks)
 
         logger.info('Inserting/updating %d blocks.', len(all_blocks))
 
@@ -556,6 +557,8 @@ class MySQLStore(LocalStoreInterface):
         mapping = lambda b: (b.name, self._datasets_to_ids[b.dataset], b.size, b.num_files, b.is_open)
 
         self._mysql.insert_many('blocks_new', fields, mapping, all_blocks, do_update = False)
+
+        all_blocks = None
 
         self._mysql.query('RENAME TABLE `blocks` TO `blocks_old`')
         self._mysql.query('RENAME TABLE `blocks_new` TO `blocks`')
@@ -582,7 +585,10 @@ class MySQLStore(LocalStoreInterface):
         fields = ('dataset_id', 'site_id', 'group_id', 'is_complete', 'is_partial', 'is_custodial')
         mapping = lambda r: (self._datasets_to_ids[r.dataset], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_partial, r.is_custodial)
 
-        all_replicas = sum([d.replicas for d in datasets], [])
+        all_replicas = []
+        for dataset in datasets:
+            all_replicas.extend(dataset.replicas)
+
         self._mysql.insert_many('dataset_replicas_new', fields, mapping, all_replicas, do_update = False)
 
         all_replicas = None
@@ -610,13 +616,13 @@ class MySQLStore(LocalStoreInterface):
                     # looped through all
                     continue
 
-                blockreps_to_write += [(dataset_id, r) for r in replica.block_replicas]
+                blockreps_to_write.extend([(dataset_id, r) for r in replica.block_replicas])
 
         logger.info('Saving %d block replica info.', len(blockreps_to_write))
 
         block_to_id = {}
 
-        block_data = self._mysql.select_many('blocks', ('dataset_id', 'name', 'id'), '(`dataset_id`, `name`)', ['(%d,%s)' % (did, r.block.name) for did, r in blockreps_to_write])
+        block_data = self._mysql.select_many('blocks', ('dataset_id', 'name', 'id'), ('dataset_id', 'name'), ['(%d,%s)' % (did, r.block.name) for did, r in blockreps_to_write])
 
         for dataset_id, block_name, block_id in block_data:
             dataset = self._ids_to_datasets[dataset_id]
@@ -719,7 +725,7 @@ class MySQLStore(LocalStoreInterface):
             block_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id))
 
             # add the block replicas on this site to block_replicas together with SQL ID
-            all_block_replicas += [(r, block_ids[r.block.name]) for r in replica.block_replicas]
+            all_block_replicas.extend([(r, block_ids[r.block.name]) for r in replica.block_replicas])
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
         mapping = lambda (r, bid): (bid, self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_custodial)
@@ -781,22 +787,19 @@ class MySQLStore(LocalStoreInterface):
     def _do_set_dataset_status(self, dataset_name, status_str): #override
         self._mysql.query('UPDATE `datasets` SET `status` = %s WHERE `name` LIKE %s', status_str, dataset_name)
 
-    def _set_dataset_ids(self, datasets):
+    def _set_dataset_ids(self, datasets, update = False):
         # reset id maps to the current content in the DB.
 
         logger.debug('set_dataset_ids')
 
-        self._datasets_to_ids = {}
-        self._ids_to_datasets = {}
+        if not update:
+            self._datasets_to_ids = {}
+            self._ids_to_datasets = {}
 
-        name_map = dict([d.name, d] for d in datasets)
+        name_to_id = dict(self._mysql.query('SELECT `name`, `id` FROM `datasets`'))
 
-        ids_source = self._mysql.query('SELECT `name`, `id` FROM `datasets`')
-        for name, dataset_id in ids_source:
-            try:
-                dataset = name_map[name]
-            except KeyError:
-                continue
+        for dataset in datasets:
+            dataset_id = name_to_id[dataset.name]
 
             self._datasets_to_ids[dataset] = dataset_id
             self._ids_to_datasets[dataset_id] = dataset
