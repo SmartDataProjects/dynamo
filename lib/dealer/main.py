@@ -42,7 +42,7 @@ class Dealer(object):
         for operation in incomplete_copies:
             site = self.inventory_manager.sites[operation.site_name]
             status = self.transaction_manager.copy.copy_status(operation.operation_id)
-            for dataset_name, (total, copied) in status.items():
+            for (site_name, dataset_name), (total, copied) in status.items():
                 if total == 0.:
                     copy_volumes[site] += self.inventory_manager.datasets[dataset_name].size * 1.e-12
                 else:
