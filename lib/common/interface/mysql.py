@@ -53,14 +53,13 @@ class MySQL(object):
         result = []
 
         def execute(pool_expr):
-            if '(' in key:
-                condition = '%s IN ' % key
+            if type(key) is tuple:
+                condition = '(' + ','.join('`%s`' % k for k in key) + ') IN '
             else:
                 condition = '`%s` IN ' % key
+
             condition += pool_expr
 
-            conditions = [condition] + additional_conditions
-    
             if type(fields) is str:
                 fields_str = '`%s`' % fields
             else:
