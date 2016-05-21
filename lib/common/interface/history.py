@@ -1,6 +1,7 @@
 import logging
 import time
 
+from common.dataformat import HistoryRecord
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,36 @@ class TransactionHistoryInterface(object):
         if self._lock_depth > 0: # should always be the case if properly programmed
             self._lock_depth -= 1
 
+    def new_copy_run(self, partition, is_test = False):
+        """
+        Set up a new copy/deletion run for the partition.
+        """
+
+        if config.read_only:
+            logger.info('new_run')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_new_run(HistoryRecord.OP_COPY, partition, is_test)
+        finally:
+            self.release_lock()
+
+    def new_deletion_run(self, partition, is_test = False):
+        """
+        Set up a new copy/deletion run for the partition.
+        """
+
+        if config.read_only:
+            logger.info('new_run')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_new_run(HistoryRecord.OP_DELETE, partition, is_test)
+        finally:
+            self.release_lock()
+
     def make_copy_entry(self, site, operation_id, approved, ro_list, size):
         if config.read_only:
             logger.info('make_copy_entry')
@@ -37,14 +68,14 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def make_deletion_entry(self, site, operation_id, approved, datasets, size):
+    def make_deletion_entry(self, run_number, site, operation_id, approved, datasets, size):
         if config.read_only:
             logger.info('make_deletion_entry')
             return
 
         self.acquire_lock()
         try:
-            self._do_make_deletion_entry(site, operation_id, approved, datasets, size)
+            self._do_make_deletion_entry(run_number, site, operation_id, approved, datasets, size)
         finally:
             self.release_lock()
 
@@ -75,6 +106,22 @@ class TransactionHistoryInterface(object):
         self.acquire_lock()
         try:
             self._do_update_deletion_entry(deletion_record)
+        finally:
+            self.release_lock()
+
+    def save_deletion_decisions(self, run_number, deletions, protections, inventory):
+        """
+        Make replica snapshots for updated replicas, and save the decision for all replicas.
+        Arguments deletions and protections are lists of dataset replicas.
+        """
+
+        if config.read_only:
+            logger.info('save_deletion_decisions')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_deletion_decisions(run_number, deletions, protections, inventory)
         finally:
             self.release_lock()
 
