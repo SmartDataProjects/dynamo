@@ -610,7 +610,7 @@ class MySQLStore(LocalStoreInterface):
             dataset_id = self._datasets_to_ids[dataset]
 
             for replica in dataset.replicas:
-                # replica is not complete
+                # replica is complete
                 if not replica.is_partial and replica.is_complete:
                     continue
 
@@ -628,13 +628,15 @@ class MySQLStore(LocalStoreInterface):
 
         block_to_id = {}
 
-        block_data = self._mysql.select_many('blocks', ('dataset_id', 'name', 'id'), ('dataset_id', 'name'), ['(%d,%s)' % (did, r.block.name) for did, r in blockreps_to_write])
+        block_data = self._mysql.select_many('blocks', ('dataset_id', 'name', 'id'), ('dataset_id', 'name'), ['(%d,\'%s\')' % (did, r.block.name) for did, r in blockreps_to_write])
 
         for dataset_id, block_name, block_id in block_data:
             dataset = self._ids_to_datasets[dataset_id]
             block = dataset.find_block(block_name)
 
             block_to_id[block] = block_id
+
+        block_data = None
 
         self._mysql.query('CREATE TABLE `block_replicas_new` LIKE `block_replicas`')
 
