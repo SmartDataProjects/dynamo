@@ -29,7 +29,7 @@ class Detox(object):
         self.policy_managers[partition] = policy.PolicyManager(policy_stack)
         self.quotas[partition] = quotas
 
-    def run(self, partition = '', dynamic_deletion = True):
+    def run(self, partition = '', dynamic_deletion = True, is_test = False):
         """
         Main executable.
         """
@@ -93,12 +93,12 @@ class Detox(object):
                 self.inventory_manager.unlink_datasetreplica(replica)
 
         # fetch the copy/deletion run number
-        run_number = self.history.new_deletion_run(partition)
+        run_number = self.history.new_deletion_run(partition, is_test = is_test)
 
         self.history.save_deletion_decisions(run_number, all_deletions, protection_list, self.inventory_manager)
 
         logger.info('Committing deletion.')
-        self.commit_deletions(run_number, all_deletions)
+        self.commit_deletions(run_number, all_deletions, is_test)
 
         if policy_log:
             policy_log.close()
@@ -133,7 +133,7 @@ class Detox(object):
                 
         return candidates
 
-    def commit_deletions(self, run_number, all_deletions):
+    def commit_deletions(self, run_number, all_deletions, is_test):
         # first make sure the list of blocks is up-to-date
         datasets = list(set(r.dataset for r in all_deletions))
         self.inventory_manager.dataset_source.set_dataset_constituent_info(datasets)
@@ -146,11 +146,11 @@ class Detox(object):
 
             logger.info('Deleting %d replicas from %s.', len(replica_list), site.name)
 
-            deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, comments = self.deletion_message)
+            deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, comments = self.deletion_message, is_test = is_test)
             # deletion_mapping .. {deletion_id: (approved, [replicas])}
 
             for deletion_id, (approved, replicas) in deletion_mapping.items():
-                if approved:
+                if approved and not is_test:
                     self.inventory_manager.store.delete_datasetreplicas(replicas)
                     self.inventory_manager.store.set_last_update()
 

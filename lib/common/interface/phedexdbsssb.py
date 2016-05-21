@@ -46,7 +46,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # Cache organized as {dataset: {site: [ProtoBlockReplicas]}}
         self._block_replicas = collections.defaultdict(lambda: collections.defaultdict(list))
 
-    def schedule_copy(self, dataset_replica, origin = None, comments = '', catalogs = None): #override (CopyInterface)
+    def schedule_copy(self, dataset_replica, origin = None, comments = '', is_test = False, catalogs = None): #override (CopyInterface)
         # origin argument is not used because of the way PhEDEx works
 
         if catalogs is None:
@@ -72,15 +72,19 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             logger.debug('schedule_copy  subscribe: %s', str(options))
             return
 
-        result = self._make_phedex_request('subscribe', options, method = POST)
+        if is_test:
+            return -1
 
-        if len(result) == 0:
-            logger.error('schedule_copy failed.')
-            return 0
+        else:
+            result = self._make_phedex_request('subscribe', options, method = POST)
+    
+            if len(result) == 0:
+                logger.error('schedule_copy failed.')
+                return 0
+    
+            return int(result[0]['id'])
 
-        return int(result[0]['id'])
-
-    def schedule_copies(self, replica_origin_list, comments = ''): #override (CopyInterface)
+    def schedule_copies(self, replica_origin_list, comments = '', is_test = False): #override (CopyInterface)
 
         all_datasets = list(set([r.dataset for r, o in replica_origin_list]))
         all_catalogs = self._get_file_catalog(all_datasets)
@@ -110,18 +114,26 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 logger.debug('schedule_copies  subscribe: %s', str(options))
                 return
 
-            # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
-            result = self._make_phedex_request('subscribe', options, method = POST)
+            if is_test:
+                request_id = -1
+                while request_id in request_mapping:
+                    request_id -= 1
 
-            if len(result) == 0:
-                logger.error('schedule_copies  copy failed.')
-                return
+                request_mapping[request_id] = (True, ro_list)
 
-            request_id = int(result[0]['id']) # return value is a string
-
-            logger.warning('PhEDEx subscription request id: %d', request_id)
-            
-            request_mapping[request_id] = (True, ro_list)
+            else:
+                # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
+                result = self._make_phedex_request('subscribe', options, method = POST)
+    
+                if len(result) == 0:
+                    logger.error('schedule_copies  copy failed.')
+                    return
+    
+                request_id = int(result[0]['id']) # return value is a string
+    
+                logger.warning('PhEDEx subscription request id: %d', request_id)
+                
+                request_mapping[request_id] = (True, ro_list)
 
         replicas_by_site = collections.defaultdict(list)
         for replica, origin in replica_origin_list:
@@ -141,7 +153,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         return request_mapping
 
-    def schedule_deletion(self, replica, comments = '', catalogs = None): #override (DeletionInterface)
+    def schedule_deletion(self, replica, comments = '', is_test = False, catalogs = None): #override (DeletionInterface)
         if type(replica) == DatasetReplica:
             dataset = replica.dataset
 
@@ -166,25 +178,29 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             logger.debug('schedule_deletion  delete: %s', str(options))
             return 0
 
-        result = self._make_phedex_request('delete', options, method = POST)
+        if is_test:
+            return -1
 
-        if len(result) == 0:
-            logger.error('schedule_deletions  delete failed.')
-            return 0
+        else:
+            result = self._make_phedex_request('delete', options, method = POST)
 
-        request_id = int(result[0]['id']) # return value is a string
+            if len(result) == 0:
+                logger.error('schedule_deletions  delete failed.')
+                return 0
 
-        logger.warning('PhEDEx deletion request id: %d', request_id)
+            request_id = int(result[0]['id']) # return value is a string
+
+            logger.warning('PhEDEx deletion request id: %d', request_id)
         
-        result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': replica.site.name}, method = POST)
+            result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': replica.site.name}, method = POST)
 
-        if len(result) == 0:
-            logger.error('schedule_deletions  deletion approval failed.')
-            return 0
+            if len(result) == 0:
+                logger.error('schedule_deletions  deletion approval failed.')
+                return 0
 
-        return request_id
+            return request_id
 
-    def schedule_deletions(self, replica_list, comments = ''): #override (DeletionInterface)
+    def schedule_deletions(self, replica_list, comments = '', is_test = False): #override (DeletionInterface)
 
         all_datasets = list(set([r.dataset for r in replica_list]))
         all_catalogs = self._get_file_catalog(all_datasets)
@@ -208,26 +224,34 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 logger.debug('schedule_deletions  delete: %s', str(options))
                 return
 
-            # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
-            result = self._make_phedex_request('delete', options, method = POST)
+            if is_test:
+                request_id = -1
+                while request_id in request_mapping:
+                    request_id -= 1
 
-            if len(result) == 0:
-                logger.error('schedule_deletions  delete failed.')
-                return
+                request_mapping[request_id] = (True, replicas_to_delete)
 
-            request_id = int(result[0]['id']) # return value is a string
-
-            request_mapping[request_id] = (False, replicas_to_delete) # (completed, deleted_replicas)
-
-            logger.warning('PhEDEx deletion request id: %d', request_id)
-            
-            result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
-
-            if len(result) == 0:
-                logger.error('schedule_deletions  deletion approval failed.')
-                return
-
-            request_mapping[request_id] = (True, replicas_to_delete)
+            else:
+                # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
+                result = self._make_phedex_request('delete', options, method = POST)
+    
+                if len(result) == 0:
+                    logger.error('schedule_deletions  delete failed.')
+                    return
+    
+                request_id = int(result[0]['id']) # return value is a string
+    
+                request_mapping[request_id] = (False, replicas_to_delete) # (completed, deleted_replicas)
+    
+                logger.warning('PhEDEx deletion request id: %d', request_id)
+                
+                result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
+    
+                if len(result) == 0:
+                    logger.error('schedule_deletions  deletion approval failed.')
+                    return
+    
+                request_mapping[request_id] = (True, replicas_to_delete)
 
         replicas_by_site = {}
         for replica in replica_list:
@@ -343,7 +367,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         Cache block replica data to avoid making the call again.
         """
 
-        dataset_names = []
+        dataset_names = set()
         lock = threading.Lock()
 
         def exec_get(sites, groups, ds_filt):
@@ -358,7 +382,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             for site in sites:
                 options.append('node=' + site.name)
 
-            options += ['dataset=%s' % ds_filt]
+            options.append('dataset=%s' % ds_filt)
 
             source = self._make_phedex_request('blockreplicas', options)
 
@@ -386,8 +410,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             lock.acquire()
 
             for ds_name, ds_replicas in block_replicas.items():
-                if ds_name not in dataset_names:
-                    dataset_names.append(ds_name)
+                dataset_names.add(ds_name)
 
                 for site_name, replicas in ds_replicas.items():
                     self._block_replicas[ds_name][site_name] += replicas
@@ -400,7 +423,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         else:
             exec_get(sites, groups, filt)
 
-        return dataset_names
+        return list(dataset_names)
         
     def make_replica_links(self, sites, groups, datasets): #override (ReplicaInfoSourceInterface)
         """
@@ -533,11 +556,16 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 continue
 
             # if there is a protoreplica with a block name not known to the dataset
-            all_protoreplicas = sum(self._block_replicas[dataset.name].values(), [])
-            for protoreplica in all_protoreplicas:
-                if not dataset.find_block(protoreplica.block_name):
-                    open_datasets.append(dataset)
-                    break
+            for site, replicas in self._block_replicas[dataset.name].items():
+                for protoreplica in replicas:
+                    if not dataset.find_block(protoreplica.block_name):
+                        open_datasets.append(dataset)
+                        break
+                else:
+                    # loop completes -> all protoreplicas were known
+                    continue
+
+                break
 
         self.set_dataset_constituent_info(open_datasets)
 
@@ -561,7 +589,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # Routine to fetch data and fill the list of blocks on tape
         def run_ontape_query(dataset_list):
             options = [('create_since', '0'), ('node', 'T*MSS'), ('custodial', 'y'), ('complete', 'y')]
-            options += [('dataset', dataset.name) for dataset in dataset_list]
+            options.extend([('dataset', dataset.name) for dataset in dataset_list])
 
             logger.info('find_tape_copies::run_ontape_query  Checking whether %d datasets (%s, ...) are on tape', len(options) - 4, options[4][1])
             source = self._make_phedex_request('blockreplicasummary', options, method = POST)
@@ -626,7 +654,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # routine to set dataset constituents
         def set_constituent(list_chunk):
             options = [('level', 'block')]
-            options += [('dataset', d.name) for d in list_chunk]
+            options.extend([('dataset', d.name) for d in list_chunk])
 
             source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
 

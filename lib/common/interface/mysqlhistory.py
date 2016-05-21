@@ -181,6 +181,21 @@ class MySQLHistory(TransactionHistoryInterface):
 
         return ''
 
+    def _do_get_next_test_id(self): #override
+        copy_result = self._mysql.query('SELECT MIN(`id`) FROM `copy_requests`')[0]
+        if copy_result == None:
+            copy_result = 0
+
+        deletion_result = self._mysql.query('SELECT MIN(`id`) FROM `deletion_requests`')[0]
+        if deletion_result == None:
+            deletion_result = 0
+
+        test_id = min(copy_result, deletion_result)
+        if test_id >= 0:
+            return -1
+        else:
+            return test_id
+
     def _get_site_id_map(self):
         return dict(self._mysql.query('SELECT `name`, `id` FROM `sites`'))
 

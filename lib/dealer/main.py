@@ -19,7 +19,7 @@ class Dealer(object):
 
         self.copy_message = 'Dynamo -- Automatic Replication Request.'
 
-    def run(self, partition = ''):
+    def run(self, partition = '', is_test = False):
         """
         1. Update the inventory if necessary.
         2. Update popularity.
@@ -56,7 +56,7 @@ class Dealer(object):
         self.history.save_copy_decisions(run_number, copy_list, self.inventory)
 
         logger.info('Committing copies')
-        self.commit_copies(run_number, copy_list)
+        self.commit_copies(run_number, copy_list, is_test)
 
         logger.info('Finished dealer run at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
@@ -343,7 +343,7 @@ class Dealer(object):
 
         return copy_list
 
-    def commit_copies(self, run_number, copy_list):
+    def commit_copies(self, run_number, copy_list, is_test):
         # first make sure the list of blocks is up-to-date
         datasets = []
         for site, replica_origins in copy_list.items():
@@ -357,18 +357,18 @@ class Dealer(object):
             if len(replica_origins) == 0:
                 continue
 
-            copy_mapping = self.transaction_manager.copy.schedule_copies(replica_origins, comments = self.copy_message)
+            copy_mapping = self.transaction_manager.copy.schedule_copies(replica_origins, comments = self.copy_message, is_test = is_test)
             # copy_mapping .. {operation_id: (approved, [(replica, origin)])}
     
             for operation_id, (approved, list_chunk) in copy_mapping.items():
                 replicas = [r for r, o in list_chunk]
-                if approved:
+                if approved and not is_test:
                     self.inventory_manager.store.add_dataset_replicas(replicas)
                     self.inventory_manager.store.set_last_update()
     
                 size = sum([r.size() for r in replicas])
 
-                self.history.make_copy_entry(run_number, site, operation_id, approved, [(r.dataset, o) for r, o in list_chunk], size)
+                self.history.make_copy_entry(run_number, site, operation_id, approved, [(r.dataset, o) for r, o in list_chunk], size, is_test = is_test)
 
     def write_summary_by_accesses(self, dataset_cpus, copy_list, cpu_before, storage_before, storage_after):
         html = open(dealer_config.summary_html, 'w')

@@ -64,6 +64,9 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
+            if operation_id < 0:
+                operation_id = self.get_next_test_id()
+
             self._do_make_copy_entry(run_number, site, operation_id, approved, ro_list, size)
         finally:
             self.release_lock()
@@ -75,6 +78,9 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
+            if operation_id < 0:
+                operation_id = self.get_next_test_id()
+
             self._do_make_deletion_entry(run_number, site, operation_id, approved, datasets, size)
         finally:
             self.release_lock()
@@ -169,6 +175,15 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
         return site_name
+
+    def get_next_test_id(self):
+        self.acquire_lock()
+        try:
+            test_id = self._do_get_next_test_id()
+        finally:
+            self.release_lock()
+
+        return test_id
 
 
 if __name__ == '__main__':
