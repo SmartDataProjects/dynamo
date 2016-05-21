@@ -49,30 +49,52 @@ class MySQL(object):
         else:
             return list(result)
 
-    def select_many(self, table, fields, key, pool):
+    def select_many(self, table, fields, key, pool, additional_conditions = []):
         result = []
 
+        if type(fields) is str:
+            fields_str = '`%s`' % fields
+        else:
+            fields_str = ','.join('`%s`' % f for f in fields)
+
+        if type(key) is tuple:
+            key_str = '(' + ','.join('`%s`' % k for k in key) + ')'
+        else:
+            key_str = '`%s`' % key
+
+        sqlbase = 'SELECT {fields} FROM `{table}` WHERE '.format(fields = fields_str, table = table)
+        for add in additional_conditions:
+            sqlbase += add + ' AND '
+        sqlbase += '{key} IN '.format(key = key_str)
+
         def execute(pool_expr):
-            if type(key) is tuple:
-                condition = '(' + ','.join('`%s`' % k for k in key) + ') IN '
-            else:
-                condition = '`%s` IN ' % key
-
-            condition += pool_expr
-
-            if type(fields) is str:
-                fields_str = '`%s`' % fields
-            else:
-                fields_str = ','.join(['`%s`' % f for f in fields])
-
-            sql = 'SELECT %s FROM `%s` WHERE ' % (fields_str, table)
-            sql += ' AND '.join(conditions)
-            
-            result += self.query(sql)
+            result.extend(self.query(sqlbase + pool_expr))
 
         self._execute_in_batches(execute, pool)
 
         return result
+
+    def delete_many(self, table, key, pool, additional_conditions = [], delete_match = True):
+        if type(key) is tuple:
+            key_str = '(' + ','.join('`%s`' % k for k in key) + ')'
+        else:
+            key_str = '`%s`' % key
+
+        sqlbase = 'DELETE FROM `{table}` WHERE '.format(table = table)
+        for add in additional_conditions:
+            sqlbase += add + ' AND '
+        sqlbase += '{key} {match} '.format(key = key_str, match = 'IN' if delete_match else 'OUT')
+
+        def execute(pool_expr):
+            self.query(sqlbase + pool_expr)
+
+        self._execute_in_batches(execute, pool)
+
+    def delete_in(self, table, key, pool, additional_conditions = []):
+        self.delete_many(table, key, pool, additional_conditions = additional_conditions, delete_match = True)
+
+    def delete_not_in(self, table, key, pool, additional_conditions = []):
+        self.delete_many(table, key, pool, additional_conditions = additional_conditions, delete_match = False)
 
     def insert_many(self, table, fields, mapping, objects, do_update = True):
         """
@@ -126,31 +148,6 @@ class MySQL(object):
 
             else:
                 values += ','
-
-    def delete_many(self, table, key, pool, additional_conditions = [], delete_match = True):
-        def execute(pool_expr):
-            condition = '`%s`' % key
-            if delete_match:
-                condition += ' IN '
-            else:
-                condition += ' NOT IN '
-
-            condition += pool_expr
-
-            conditions = [condition] + additional_conditions
-    
-            sql = 'DELETE FROM `%s` WHERE ' % table
-            sql += ' AND '.join(conditions)
-            
-            self.query(sql)
-
-        self._execute_in_batches(execute, pool)
-
-    def delete_in(self, table, key, pool, additional_conditions = []):
-        self.delete_many(table, key, pool, additional_conditions = additional_conditions, delete_match = True)
-
-    def delete_not_in(self, table, key, pool, additional_conditions = []):
-        self.delete_many(table, key, pool, additional_conditions = additional_conditions, delete_match = False)
 
     def _execute_in_batches(self, execute, pool):
         """
