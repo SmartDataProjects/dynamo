@@ -33,15 +33,8 @@ class RESTService(object):
     """
 
     def __init__(self, url_base, headers = []):
-        if url_base.startswith('https:'):
-            self.opener = urllib2.build_opener(HTTPSGridAuthHandler())
-        else:
-            self.opener = urllib2.build_opener(urllib2.HTTPHandler())
-
-        self.opener.addheaders.append(('Accept', 'application/json'))
-        self.opener.addheaders += headers
-
         self.url_base = url_base
+        self.headers = list(headers)
 
     def make_request(self, resource, options = [], method = GET, format = 'url'):
         url = self.url_base + '/' + resource
@@ -103,7 +96,15 @@ class RESTService(object):
             attempts += 1
 
             try:
-                response = self.opener.open(request)
+                if self.url_base.startswith('https:'):
+                    opener = urllib2.build_opener(HTTPSGridAuthHandler())
+                else:
+                    opener = urllib2.build_opener(urllib2.HTTPHandler())
+
+                opener.addheaders.append(('Accept', 'application/json'))
+                opener.addheaders.extend(self.headers)
+
+                response = opener.open(request)
                 break
     
             except urllib2.HTTPError, e:
