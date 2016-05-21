@@ -14,6 +14,7 @@ num_threads = 32
 
 paths = Configuration()
 paths.base = os.environ['DYNAMO_BASE']
+paths.data = os.environ['DYNAMO_DATADIR']
 
 mysqlhistory = Configuration()
 mysqlhistory.db_params = {
