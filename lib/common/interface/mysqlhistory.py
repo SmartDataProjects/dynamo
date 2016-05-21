@@ -90,7 +90,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        dataset_ids = self._mysql.select_many('datasets', ('id',), ('name',), [d.name for d in datasets])
+        dataset_ids = self._mysql.select_many('datasets', ('id',), 'name', [d.name for d in datasets])
 
         self._mysql.query('INSERT INTO `deletion_requests` (`id`, `run_id`, `timestamp`, `approved`, `site`, `size`) VALUES (%s, %s, NOW(), %s, %s, %s)', deletion_id, run_number, approved, site_id, size)
 
