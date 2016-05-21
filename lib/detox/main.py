@@ -16,7 +16,7 @@ class Detox(object):
         self.inventory_manager = inventory
         self.transaction_manager = transaction
         self.demand_manager = demand
-        self.history_manager = history
+        self.history = history
 
         self.policy_managers = {} # {partition: PolicyManager}
         self.quotas = {} # {partition: {site: quota}}
@@ -51,7 +51,7 @@ class Detox(object):
         if self.policy_log_path:
             policy_log = open(self.policy_log_path, 'w')
 
-        all_deletions = collections.defaultdict(list) # site -> list of replicas to delete on site
+        all_deletions = []
         iteration = 0
 
         logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_managers[partiton].num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
@@ -87,13 +87,18 @@ class Detox(object):
             if len(deletion_list) == 0:
                 break
 
+            all_deletions.extend(deletion_list)
+
             for replica in deletion_list:
-                all_deletions[replica.site].append(replica)
                 self.inventory_manager.unlink_datasetreplica(replica)
-    
+
+        # fetch the copy/deletion run number
+        run_number = self.history.new_deletion_run(partition)
+
+        self.history.save_deletion_decisions(run_number, all_deletions, protection_list, self.inventory_manager)
+
         logger.info('Committing deletion.')
-        # Will write an entry in the history DB
-        self.commit_deletions(all_deletions)
+        self.commit_deletions(run_number, all_deletions)
 
         if policy_log:
             policy_log.close()
@@ -128,19 +133,16 @@ class Detox(object):
                 
         return candidates
 
-    def commit_deletions(self, all_deletions):
+    def commit_deletions(self, run_number, all_deletions):
         # first make sure the list of blocks is up-to-date
-        datasets = []
-        for site, replicas in all_deletions.items():
-            for replica in replicas:
-                if replica.dataset not in datasets:
-                    datasets.append(replica.dataset)
-
+        datasets = list(set(r.dataset for r in all_deletions))
         self.inventory_manager.dataset_source.set_dataset_constituent_info(datasets)
 
+        sites = set(r.site for r in all_deletions)
+
         # now schedule deletion for each site
-        for site in sorted(all_deletions.keys(), key = lambda s: s.name):
-            replica_list = all_deletions[site]
+        for site in sorted(sites):
+            replica_list = [r for r in all_deletions if r.site == site]
 
             logger.info('Deleting %d replicas from %s.', len(replica_list), site.name)
 
@@ -154,7 +156,7 @@ class Detox(object):
 
                 size = sum([r.size() for r in replicas])
 
-                self.history_manager.make_deletion_entry(site, deletion_id, approved, [r.dataset for r in replicas], size)
+                self.history.make_deletion_entry(run_number, site, deletion_id, approved, [r.dataset for r in replicas], size)
 
             logger.info('Done deleting %d replicas from %s.', len(replica_list), site.name)
 
@@ -513,7 +515,9 @@ if __name__ == '__main__':
     
     demand_manager = DemandManager()
 
-    detox = Detox(inventory_manager, transaction_manager, demand_manager)
+    history = classes.default_interface['history']()
+
+    detox = Detox(inventory_manager, transaction_manager, demand_manager, history)
 
     action_list = ActionList()
     action_list.add_action('Delete', site_pattern, dataset_pattern)

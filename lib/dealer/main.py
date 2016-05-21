@@ -15,11 +15,11 @@ class Dealer(object):
         self.inventory_manager = inventory
         self.transaction_manager = transaction
         self.demand_manager = demand
-        self.history_manager = history
+        self.history = history
 
         self.copy_message = 'Dynamo -- Automatic Replication Request.'
 
-    def run(self):
+    def run(self, partition = ''):
         """
         1. Update the inventory if necessary.
         2. Update popularity.
@@ -37,7 +37,7 @@ class Dealer(object):
         self.demand_manager.update(self.inventory_manager, accesses = False, requests = True)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
-        incomplete_copies = self.history_manager.get_incomplete_copies()
+        incomplete_copies = self.history.get_incomplete_copies()
         copy_volumes = collections.defaultdict(float)
         for operation in incomplete_copies:
             site = self.inventory_manager.sites[operation.site_name]
@@ -51,7 +51,12 @@ class Dealer(object):
 #        copy_list = self.determine_copies_by_accesses(copy_volumes)
         copy_list = self.determine_copies_by_requests(copy_volumes)
 
-        self.commit_copies(copy_list)
+        run_number = self.history.new_copy_run(partition)
+
+        self.history.save_copy_decisions(run_number, copy_list, self.inventory)
+
+        logger.info('Committing copies')
+        self.commit_copies(run_number, copy_list)
 
         logger.info('Finished dealer run at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
@@ -338,7 +343,7 @@ class Dealer(object):
 
         return copy_list
 
-    def commit_copies(self, copy_list):
+    def commit_copies(self, run_number, copy_list):
         # first make sure the list of blocks is up-to-date
         datasets = []
         for site, replica_origins in copy_list.items():
@@ -363,7 +368,7 @@ class Dealer(object):
     
                 size = sum([r.size() for r in replicas])
 
-                self.history_manager.make_copy_entry(site, operation_id, approved, [(r.dataset, o) for r, o in list_chunk], size)
+                self.history.make_copy_entry(run_number, site, operation_id, approved, [(r.dataset, o) for r, o in list_chunk], size)
 
     def write_summary_by_accesses(self, dataset_cpus, copy_list, cpu_before, storage_before, storage_after):
         html = open(dealer_config.summary_html, 'w')

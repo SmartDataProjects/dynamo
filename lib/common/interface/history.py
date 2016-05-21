@@ -57,14 +57,14 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def make_copy_entry(self, site, operation_id, approved, ro_list, size):
+    def make_copy_entry(self, run_number, site, operation_id, approved, ro_list, size):
         if config.read_only:
             logger.info('make_copy_entry')
             return
 
         self.acquire_lock()
         try:
-            self._do_make_copy_entry(site, operation_id, approved, ro_list, size)
+            self._do_make_copy_entry(run_number, site, operation_id, approved, ro_list, size)
         finally:
             self.release_lock()
 
@@ -109,8 +109,24 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
+    def save_copy_decisions(self, run_number, copies, inventory):
+        """
+        Insert new sites and datasets.
+        """
+
+        if config.read_only:
+            logger.info('save_deletion_decisions')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_copy_decisions(run_number, copies, inventory)
+        finally:
+            self.release_lock()
+        
     def save_deletion_decisions(self, run_number, deletions, protections, inventory):
         """
+        Insert new sites and datasets.
         Make replica snapshots for updated replicas, and save the decision for all replicas.
         Arguments deletions and protections are lists of dataset replicas.
         """

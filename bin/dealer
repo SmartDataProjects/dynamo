@@ -79,15 +79,15 @@ for cls in ['store', 'access_history', 'lock']:
 
 demand_manager = DemandManager(**kwd)
 
-history_manager = classes.default_interface['history']()
+history = classes.default_interface['history']()
 
-dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history_manager)
+dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history)
 
 if args.force_inventory_update:
     config.inventory.refresh_min = 0
 
 for nrun in range(args.repeat[0]):
-    dealer.run()
+    dealer.run('AnalysisOps')
 
     if args.repeat[1] > 0:
         time.sleep(args.repeat[1] * 3600)
