@@ -1,0 +1,72 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import time
+import rrdtool
+import selinux
+
+import common.configuration as config
+import common.interface.classes as classes
+
+rrd_dir = config.path.data + '/track_transfers'
+interval = 1800
+
+try:
+    os.makedirs(rrd_dir)
+except:
+    pass
+
+request_ids = []
+
+try:
+    source_path = sys.argv[1]
+    with open(source_path) as source:
+        for line in source:
+            request_ids.append(int(line.strip()))
+
+except:
+    history = classes.default_interface['history']()
+
+    records = history.get_incomplete_copies()
+
+    for record in records:
+        request_ids.append(record.operation_id)
+
+copy = classes.default_interface['copy']()
+
+timestamp = int(time.time()) / interval * interval
+
+for request_id in request_ids:
+    status = copy.copy_status(request_id)
+
+    for (site, dataset), (last_update, total, copied) in status.items():
+        rrd_file = rrd_dir + '/' + site + dataset.replace('/', '+') + '.rrd'
+
+        if not os.path.exists(rrd_file):
+            # RRD does not exist yet
+            start = (int(time.time()) / interval - 1) * interval
+            rrdtool.create(rrd_file, '--start', str(start), '--step', str(interval),
+                'DS:copied:GAUGE:%d:0:U' % (interval * 2),
+                'DS:total:GAUGE:%d:0:U' % (interval * 2),
+                'RRA:LAST:0:1:%d' % (3600 / interval * 24 * 7))
+
+            # data source
+            #  DS:<name>:<type>:<heartbeat>:<min>:<max>
+            #  type = GAUGE: quantity that has a value at each time point
+            #  heartbeat: "maximum number of seconds that may pass between two updates of this data source before the value of the data source is assumed to be *UNKNOWN*"
+            #  min/max = U: unknown
+            # round robin archive (RRA)
+            #  RRA:<type>:<xff>:<nsteps>:<nrows>
+            #  type = LAST: just use the last value, no averaging etc.
+            #  xff: fraction of <nsteps> that can have UNKNOWN as the value
+            #  nsteps: number of steps used for calculation
+            #  nrows: number of records to keep
+
+            # change selinux context of the RRD so that it can be read by a apache-invoked PHP script
+            selinux.chcon(rrd_file, 'unconfined_u:object_r:httpd_var_run_t:s0')
+
+        try:
+            rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
+        except:
+            pass
