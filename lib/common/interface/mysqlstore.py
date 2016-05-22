@@ -641,7 +641,7 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('CREATE TABLE `block_replicas_new` LIKE `block_replicas`')
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
-        mapping = lambda r: (block_to_id[r.block], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_custodial)
+        mapping = lambda (did, r): (block_to_id[r.block], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_custodial)
 
         self._mysql.insert_many('block_replicas_new', fields, mapping, blockreps_to_write, do_update = False)
 
