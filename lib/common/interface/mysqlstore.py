@@ -610,19 +610,20 @@ class MySQLStore(LocalStoreInterface):
             dataset_id = self._datasets_to_ids[dataset]
 
             for replica in dataset.replicas:
-                # replica is complete
-                if not replica.is_partial and replica.is_complete:
-                    continue
+                save_block_replicas = False
+
+                # replica is incomplete
+                if replica.is_partial or not replica.is_complete:
+                    save_block_replicas = True
 
                 # replica has multiple owners
                 for block_replica in replica.block_replicas:
                     if block_replica.group != replica.group:
+                        save_block_replicas = True
                         break
-                else:
-                    # looped through all
-                    continue
 
-                blockreps_to_write.extend([(dataset_id, r) for r in replica.block_replicas])
+                if save_block_replicas:
+                    blockreps_to_write.extend([(dataset_id, r) for r in replica.block_replicas])
 
         logger.info('Saving %d block replica info.', len(blockreps_to_write))
 
