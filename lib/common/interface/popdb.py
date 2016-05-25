@@ -19,7 +19,7 @@ class PopDB(AccessHistoryInterface):
 
         self._popdb_interface = RESTService(url_base)
 
-    def set_access_history(self, site, date): #override
+    def get_local_accesses(self, site, date): #override
         if site.name.startswith('T1') and site.name.count('_') > 2:
             nameparts = site.name.split('_')
             sitename = '_'.join(nameparts[:3])
@@ -29,12 +29,13 @@ class PopDB(AccessHistoryInterface):
         datestr = date.strftime('%Y-%m-%d')
         result = self._make_request('popularity/DSStatInTimeWindow/', ['sitename=' + sitename, 'tstart=' + datestr, 'tstop=' + datestr])
 
-        for ds_entry in result:
-            replica = site.find_dataset_replica(ds_entry['COLLNAME'])
-            if replica is None:
-                continue
+        accesses = []
 
-            replica.accesses[DatasetReplica.ACC_LOCAL][date] = DatasetReplica.Access(int(ds_entry['NACC']), float(ds_entry['TOTCPU']))
+        for ds_entry in result:
+            access = DatasetReplica.Access(int(ds_entry['NACC']), float(ds_entry['TOTCPU']))
+            accesses.append((ds_entry['COLLNAME'], access))
+
+        return accesses
 
     def _make_request(self, resource, options = [], method = GET, format = 'url'):
         """

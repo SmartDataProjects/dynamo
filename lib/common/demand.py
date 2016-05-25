@@ -1,10 +1,12 @@
 import time
 import datetime
 import logging
+import collections
 
 from common.interface.classes import default_interface
-from common.dataformat import Dataset, DatasetDemand
+from common.dataformat import Dataset, DatasetDemand, DatasetReplica
 import common.configuration as config
+from common.misc import parallel_exec
 
 logger = logging.getLogger(__name__)
 
@@ -84,18 +86,34 @@ class DemandManager(object):
         if self.last_accesses_update is None:
             self.load(inventory)
 
+        logger.info('Updating dataset access info from %s to %s', start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+
+        sitesdates = []
+
         for site in inventory.sites.values():
-            logger.info('Updating dataset access info at %s from %s to %s', site.name, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-
             date = start_date
-
             while date <= end_date: # get records up to end_date
-                self.access_history.set_access_history(site, date)
+                sitesdates.append((site, date))
                 date += datetime.timedelta(1) # one day
+
+        local_accesses = collections.defaultdict(list)
+
+        def exec_get(site, date):
+            local_accesses[(site, date)].extend(self.access_history.get_local_accesses(site, date))
+
+        parallel_exec(exec_get, sitesdates)
+
+        for (site, date), access_list in local_accesses.items():
+            for dataset_name, access in access_list:
+                replica = site.find_dataset_replica(dataset_name)
+                if replica is None:
+                    continue
+
+                replica.accesses[DatasetReplica.ACC_LOCAL][date] = access
 
         all_replicas = []
         for dataset in inventory.datasets.values():
-            all_replicas += dataset.replicas
+            all_replicas.extend(dataset.replicas)
 
         logger.info('Saving dataset access info for %d replicas.', len(all_replicas))
 
