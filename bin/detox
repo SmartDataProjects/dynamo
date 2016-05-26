@@ -101,14 +101,14 @@ for stack_spec in args.stacks:
         if '(' in stack_name:
             name_with_args = stack_name
             stack_name = name_with_args[:name_with_args.find('(')]
-            args = eval(name_with_args[name_with_args.find('(') + 1:]) # evaluate the entire "(arg)" as python code
-            if type(args) is not tuple:
-                args = (args,)
+            stack_args = eval(name_with_args[name_with_args.find('('):]) # evaluate the entire "(arg)" as python code
+            if type(stack_args) is not tuple:
+                stack_args = (stack_args,)
 
         else:
-            args = tuple()
+            stack_args = tuple()
 
-        policy_stack = make_stack(stack_name)(*args)
+        policy_stack = make_stack(stack_name)(*stack_args)
 
     # currently partition = group
     quotas = dict([(site, site.quota(inventory_manager.groups[partition])) for site in inventory_manager.sites.values()])

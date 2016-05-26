@@ -145,7 +145,7 @@ class DeleteOld(policy.DeletePolicy):
         self.cutoff = time.time() - threshold
 
     def applies(self, replica, demand_manager): # override
-        if replica.dataset.last_update > cutoff:
+        if replica.dataset.last_update > self.cutoff:
             return False, ''
 
         if len(replica.accesses) == 0:
@@ -258,35 +258,39 @@ def make_stack(strategy):
     # return a *function* that returns the selected stack
 
     if strategy == 'TargetFraction':
-        stack = [
-            KeepTargetOccupancy(config.target_site_occupancy),
-            ProtectIncomplete(),
-            ProtectLocked(),
-            ProtectDiskOnly(),
-            ProtectNotOwnedBy('AnalysisOps'),
-            DeletePartial(),
-            DeleteOld(*detox_config.delete_old.threshold),
-#            DeleteUnpopular()
-        ]
-
         # stackgen(0.92) -> TargetFraction stack with threshold 92%
         def stackgen(*arg):
-            stack[0].threshold = arg[0]
+            stack = [
+                KeepTargetOccupancy(config.target_site_occupancy),
+                ProtectIncomplete(),
+                ProtectDiskOnly(),
+                ProtectNotOwnedBy('AnalysisOps'),
+                DeletePartial(),
+                DeleteOld(*detox_config.delete_old.threshold),
+    #            DeleteUnpopular()
+            ]
+
+            if len(arg) != 0:
+                stack[0].threshold = arg[0]
+            
+            return stack
 
     elif strategy == 'List':
-        stack = [
-            ProtectIncomplete(),
-            ProtectLocked(),
-            ProtectDiskOnly(),
-            ProtectNotOwnedBy('AnalysisOps'),
-            ActionList()
-        ]
-
         # stackgen([files]) -> List stack with files loaded into ActionList
         def stackgen(*arg):
+            stack = [
+                ProtectIncomplete(),
+                ProtectLocked(),
+                ProtectDiskOnly(),
+                ProtectNotOwnedBy('AnalysisOps'),
+                ActionList()
+            ]
+
             if type(arg[0]) is list:
                 stack[-1].load_lists(arg[0])
             else:
                 stack[-1].load_list(arg[0])
+
+            return stack
 
     return stackgen

@@ -65,53 +65,26 @@ class MySQLStore(LocalStoreInterface):
             raise LocalStoreInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
     def _do_make_snapshot(self, timestamp, clear): #override
-        snapshot_db = self._db_name + '_' + timestamp
+        self._mysql.make_snapshot(timestamp)
 
-        self._mysql.query('CREATE DATABASE `{copy}`'.format(copy = snapshot_db))
-
-        tables = self._mysql.query('SHOW TABLES')
+        tables = []
+        if clear == LocalStoreInterface.CLEAR_ALL:
+            tables = self._mysql.query('SHOW TABLES')
+        elif clear == LocalStoreInterface.CLEAR_REPLICAS:
+            tables = ['dataset_replicas', 'block_replicas']
 
         for table in tables:
-            self._mysql.query('CREATE TABLE `{copy}`.`{table}` LIKE `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self._db_name, table = table))
-
-            if table == 'system':
-                self._mysql.query('INSERT INTO `{copy}`.`system` (`last_update`) SELECT `last_update` FROM `{orig}`.`system`'.format(copy = snapshot_db, orig = self._db_name))
-                continue
-
-            else:
-                self._mysql.query('INSERT INTO `{copy}`.`{table}` SELECT * FROM `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self._db_name, table = table))
-
-            if clear == LocalStoreInterface.CLEAR_ALL or \
-               (clear == LocalStoreInterface.CLEAR_REPLICAS and table in ['dataset_replicas', 'block_replicas']):
-                # drop the original table and copy back the format from the snapshot
-                self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._db_name, table = table))
+            # drop the original table and copy back the format from the snapshot
+            self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._mysql.db_name, table = table))
 
     def _do_remove_snapshot(self, newer_than, older_than): #override
-        snapshots = self._do_list_snapshots()
-
-        for snapshot in snapshots:
-            tm = int(time.mktime(time.strptime(snapshot, '%y%m%d%H%M%S')))
-            if (newer_than == older_than and tm == newer_than) or \
-                    (tm > newer_than and tm < older_than):
-                database = self._db_name + '_' + snapshot
-                logger.info('Dropping database ' + database)
-                self._mysql.query('DROP DATABASE ' + database)
+        self._mysql.remove_snapshot(newer_than, older_than)
 
     def _do_list_snapshots(self):
-        databases = self._mysql.query('SHOW DATABASES')
-
-        snapshots = [db.replace(self._db_name + '_', '') for db in databases if db.startswith(self._db_name + '_')]
-
-        return sorted(snapshots, reverse = True)
+        return self._mysql.list_snapshots()
 
     def _do_recover_from(self, timestamp): #override
-        snapshot_name = self._db_name + '_' + timestamp
-
-        tables = self._mysql.query('SHOW TABLES')
-
-        for table in tables:
-            self._mysql.query('TRUNCATE TABLE `%s`.`%s`' % (self._db_name, table))
-            self._mysql.query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (self._db_name, table, snapshot_name, table))
+        self._mysql.recover_from(timestamp)
 
     def _do_switch_snapshot(self, timestamp): #override
         snapshot_name = self._db_name + '_' + timestamp
@@ -808,7 +781,10 @@ class MySQLStore(LocalStoreInterface):
         name_to_id = dict(self._mysql.query('SELECT `name`, `id` FROM `datasets`'))
 
         for dataset in datasets:
-            dataset_id = name_to_id[dataset.name]
+            try:
+                dataset_id = name_to_id[dataset.name]
+            except KeyError:
+                continue
 
             self._datasets_to_ids[dataset] = dataset_id
             self._ids_to_datasets[dataset_id] = dataset
@@ -819,11 +795,12 @@ class MySQLStore(LocalStoreInterface):
         self._sites_to_ids = {}
         self._ids_to_sites = {}
 
-        ids_source = self._mysql.query('SELECT `name`, `id` FROM `sites`')
-        for name, site_id in ids_source:
+        name_to_id = dict(self._mysql.query('SELECT `name`, `id` FROM `sites`'))
+
+        for site in sites:
             try:
-                site = next(d for d in sites if d.name == name)
-            except StopIteration:
+                site_id = name_to_id[site.name]
+            except KeyError:
                 continue
 
             self._sites_to_ids[site] = site_id

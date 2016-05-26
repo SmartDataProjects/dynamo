@@ -44,6 +44,52 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
+    def remove_snapshot(self, newer_than = 0, older_than = 0):
+        if older_than == 0:
+            older_than = time.time()
+
+        if config.read_only:
+            logger.debug('_do_remove_snapshot(%f, %f)', newer_than, older_than)
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_remove_snapshot(newer_than, older_than)
+        finally:
+            self.release_lock()
+
+    def list_snapshots(self):
+        """
+        List the timestamps of the snapshots that is not the current.
+        """
+
+        return self._do_list_snapshots()
+
+    def recover_from(self, timestamp):
+        """
+        Recover records from a snapshot (current content will be lost!)
+        timestamp can be 'last'.
+        """
+
+        timestamps = self.list_snapshots()
+
+        if len(timestamps) == 0:
+            print 'No snapshots taken.'
+            return
+
+        if timestamp == 'last':
+            timestamp = timestamps[0]
+            print 'Recovering history records from snapshot', timestamp
+            
+        elif timestamp not in timestamps:
+            print 'Cannot copy from snapshot', timestamp
+            return
+
+        while self._lock_depth > 0:
+            self.release_lock()
+
+        self._do_recover_from(timestamp)
+
     def new_copy_run(self, partition, is_test = False):
         """
         Set up a new copy/deletion run for the partition.
@@ -55,9 +101,11 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_new_run(HistoryRecord.OP_COPY, partition, is_test)
+            run_number = self._do_new_run(HistoryRecord.OP_COPY, partition, is_test)
         finally:
             self.release_lock()
+
+        return run_number
 
     def new_deletion_run(self, partition, is_test = False):
         """
@@ -70,9 +118,11 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_new_run(HistoryRecord.OP_DELETE, partition, is_test)
+            run_number = self._do_new_run(HistoryRecord.OP_DELETE, partition, is_test)
         finally:
             self.release_lock()
+
+        return run_number
 
     def make_copy_entry(self, run_number, site, operation_id, approved, ro_list, size):
         if config.read_only:
@@ -141,7 +191,7 @@ class TransactionHistoryInterface(object):
             logger.info('save_sites')
             return
 
-        self.aquire_lock()
+        self.acquire_lock()
         try:
             self._do_save_sites(inventory)
         finally:
@@ -156,7 +206,7 @@ class TransactionHistoryInterface(object):
             logger.info('save_datasets')
             return
 
-        self.aquire_lock()
+        self.acquire_lock()
         try:
             self._do_save_datasets(inventory)
         finally:
@@ -171,7 +221,7 @@ class TransactionHistoryInterface(object):
             logger.info('save_quotas')
             return
 
-        self.aquire_lock()
+        self.acquire_lock()
         try:
             self._do_save_quotas(run_number, quotas, inventory)
         finally:
@@ -360,4 +410,10 @@ if __name__ == '__main__':
                     print ''
 
         elif command == 'snapshot':
-            
+            interface.make_snapshot()
+
+        elif command == 'recover':
+            timestamp = args.command[icmd]
+            icmd += 1
+
+            interface.recover_from(timestamp)

@@ -20,7 +20,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._mysql = MySQL(**config.mysqlhistory.db_params)
 
-        self._db_name = config.mysqlstore.db_params['db']
+        self._db_name = config.mysqlhistory.db_params['db']
 
         self._site_id_map = {}
         self._dataset_id_map = {}
@@ -54,20 +54,17 @@ class MySQLHistory(TransactionHistoryInterface):
         if host != '' or pid != 0:
             raise LocalStoreInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
-    def _do_make_snapshot(self, timestamp):
-        snapshot_db = self._db_name + '_' + timestamp
+    def _do_make_snapshot(self, timestamp): #override
+        self._mysql.make_snapshot(timestamp)
 
-        self._mysql.query('CREATE DATABASE `{copy}`'.format(copy = snapshot_db))
+    def _do_remove_snapshot(self, newer_than, older_than): #override
+        self._mysql.remove_snapshot(newer_than, older_than)
 
-        tables = self._mysql.query('SHOW TABLES')
+    def _do_list_snapshots(self): #override
+        return self._mysql.list_snapshots()
 
-        for table in tables:
-            self._mysql.query('CREATE TABLE `{copy}`.`{table}` LIKE `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self._db_name, table = table))
-
-            if table == 'lock':
-                self._mysql.query('INSERT INTO `{copy}`.`lock` (`lock_host`) VALUES (\'\')'.format(copy = snapshot_db))
-            else:
-                self._mysql.query('INSERT INTO `{copy}`.`{table}` SELECT * FROM `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self._db_name, table = table))
+    def _do_recover_from(self, timestamp): #override
+        self._mysql.recover_from(timestamp)
 
     def _do_new_run(self, operation, partition, is_test): #override
         part_ids = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
@@ -124,7 +121,7 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_update_deletion_entry(self, deletion_record): #override
         self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, `size_deleted` = %s, `last_update` = FROM_UNIXTIME(%s) WHERE `id` = %s', deletion_record.approved, deletion_record.done, deletion_record.last_update, deletion_record.operation_id)
 
-    def _do_save_sites(self, inventory, quotas): #override
+    def _do_save_sites(self, inventory): #override
         if len(self._site_id_map) == 0:
             self._make_site_id_map()
 
@@ -169,7 +166,7 @@ class MySQLHistory(TransactionHistoryInterface):
             checked_sites = []
 
             # find outdated quotas
-            result = self._mysql_query('SELECT s.`id`, s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE q.`partition_id` = %s AND q.`run_id` < %s ORDER BY q.`run_id` DESC', partition_id, run_number)
+            result = self._mysql.query('SELECT s.`id`, s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE q.`partition_id` = %s AND q.`run_id` < %s ORDER BY q.`run_id` DESC', partition_id, run_number)
 
             for site_id, site_name, quota in result:
                 if site_id in checked_sites:

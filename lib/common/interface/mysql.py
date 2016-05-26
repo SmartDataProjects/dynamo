@@ -5,6 +5,7 @@ Generic MySQL interface (for an interface).
 import MySQLdb
 import sys
 import logging
+import time
 
 import common.configuration as config
 
@@ -17,6 +18,8 @@ class MySQL(object):
             self._connection = MySQLdb.connect(read_default_file = config_file, read_default_group = config_group, db = db)
         else:
             self._connection = MySQLdb.connect(host = host, user = user, passwd = passwd, db = db)
+
+        self.db_name = db
 
     def query(self, sql, *args):
         """
@@ -148,6 +151,45 @@ class MySQL(object):
 
             else:
                 values += ','
+
+    def make_snapshot(self, timestamp):
+        snapshot_db = self.db_name + '_' + timestamp
+
+        self.query('CREATE DATABASE `{copy}`'.format(copy = snapshot_db))
+
+        tables = self.query('SHOW TABLES')
+
+        for table in tables:
+            self.query('CREATE TABLE `{copy}`.`{table}` LIKE `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name, table = table))
+
+            self._mysql.query('INSERT INTO `{copy}`.`{table}` SELECT * FROM `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name, table = table))
+
+    def remove_snapshot(self, newer_than, older_than):
+        snapshots = self.list_snapshots()
+
+        for snapshot in snapshots:
+            tm = int(time.mktime(time.strptime(snapshot, '%y%m%d%H%M%S')))
+            if (newer_than == older_than and tm == newer_than) or \
+                    (tm > newer_than and tm < older_than):
+                database = self.db_name + '_' + snapshot
+                logger.info('Dropping database ' + database)
+                self.query('DROP DATABASE ' + database)
+
+    def list_snapshots(self):
+        databases = self.query('SHOW DATABASES')
+
+        snapshots = [db.replace(self.db_name + '_', '') for db in databases if db.startswith(self.db_name + '_')]
+
+        return sorted(snapshots, reverse = True)
+
+    def recover_from(self, timestamp):
+        snapshot_name = self.db_name + '_' + timestamp
+
+        tables = self.query('SHOW TABLES')
+
+        for table in tables:
+            self.query('TRUNCATE TABLE `%s`.`%s`' % (self.db_name, table))
+            self.query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (self.db_name, table, snapshot_name, table))
 
     def _execute_in_batches(self, execute, pool):
         """

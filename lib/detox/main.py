@@ -48,7 +48,7 @@ class Detox(object):
         all_deletions = []
         iteration = 0
 
-        logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_managers[partiton].num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
+        logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_managers[partition].num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
 
         protection_list = []
 
@@ -57,10 +57,6 @@ class Detox(object):
 
             records = []
             candidates = self.find_candidates(partition, protection_list, records)
-
-            if policy_log:
-                logger.info('Writing policy hit log text.')
-                self.write_policy_log(policy_log, iteration, records)
 
             logger.info('%d dataset replicas in deletion list', len(candidates))
             if logger.getEffectiveLevel() == logging.DEBUG:
@@ -99,9 +95,6 @@ class Detox(object):
 
         logger.info('Committing deletion.')
         self.commit_deletions(run_number, all_deletions, is_test)
-
-        if policy_log:
-            policy_log.close()
 
         logger.info('Detox run finished at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
