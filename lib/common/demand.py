@@ -66,12 +66,11 @@ class DemandManager(object):
         start_date = max(self.last_accesses_update, utctoday - datetime.timedelta(config.demand.access_history.max_back_query))
 
         if accesses:
-#            self.update_accesses(inventory, start_date, utctoday)
+            self.update_accesses(inventory, start_date, utctoday)
             self.last_accesses_update = utctoday - datetime.timedelta(1)
 
         if requests:
-            pass
-#            self.update_requests(inventory, datetime.datetime(start_date.year, start_date.month, start_date.day), utcnow)
+            self.update_requests(inventory, datetime.datetime(start_date.year, start_date.month, start_date.day), utcnow)
 
         self.setup_demands(inventory)
 
