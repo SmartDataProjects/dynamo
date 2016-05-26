@@ -481,7 +481,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     )
     
                     block.replicas.append(replica)
-                    site.block_replicas.append(replica)
+                    site.add_block_replica(replica, adjust_cache = False) # not resetting cache to speed up
 
                     # add the block replica to the list
                     dataset_replica.block_replicas.append(replica)
@@ -505,6 +505,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
             # remove cache to save memory
             self._block_replicas.pop(dataset.name)
+
+        for site in sites.values():
+            for group in groups.values():
+                site.reset_group_usage_cache(group)
 
     def get_dataset(self, name, datasets): #override (DatasetInfoSourceInterface)
         """

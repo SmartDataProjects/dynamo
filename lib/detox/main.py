@@ -48,10 +48,12 @@ class Detox(object):
         self.demand_manager.update(self.inventory_manager)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
-        logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_managers[partition].num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
+        policy_manager = self.policy_managers[partition]
 
         # fetch the copy/deletion run number
         run_number = self.history.new_deletion_run(partition, is_test = is_test)
+
+        logger.info('Preparing deletion run %d', run_number)
 
         # update site and dataset lists
         self.history.save_sites(self.inventory_manager)
@@ -62,15 +64,22 @@ class Detox(object):
         self.history.save_quotas(run_number, self.quotas, self.inventory_manager)
 
         deletion_list = []
-        protection_list = []
+        protection_list = set()
         deciding_records = {} # {replica: deciding_record} record can be None
         iteration = 0
+
+        all_replicas = {}
+        for dataset in self.inventory_manager.datasets.values():
+            for replica in dataset.replicas:
+                all_replicas[replica] = policy.PolicyHitRecords(replica)
+
+        logger.info('Start deletion. Evaluating %d policies against %d replicas.', policy_manager.num_policies(), len(all_replicas))
 
         while True:
             iteration += 1
 
             # find_candidates returns {replica: record}
-            candidates = self.find_candidates(partition, protection_list, deciding_records)
+            candidates = self.find_candidates(policy_manager, all_replicas, protection_list, deciding_records)
 
             logger.info('Iteration %d', iteration)
             logger.info(' %d dataset replicas in deletion candidates', len(candidates))
@@ -96,6 +105,15 @@ class Detox(object):
             if len(iter_deletion) == 0:
                 break
 
+            # we will not consider protected replicas
+            if iteration == 1:
+                for replica in protection_list:
+                    all_replicas.pop(replica)
+
+            # we will not consider deleted replicas
+            for replica in iter_deletion:
+                all_replicas.pop(replica)
+
             deletion_list.extend(iter_deletion)
 
             # take out replicas from inventory
@@ -111,33 +129,23 @@ class Detox(object):
         logger.info('Detox run finished at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
     @timer
-    def find_candidates(self, partition, protection_list, deciding_records):
+    def find_candidates(self, policy_manager, all_replicas, protection_list, deciding_records):
         """
         Run each dataset / block replicas through deletion policies and make a list of replicas to delete.
         Return the list of replicas that may be deleted (deletion_candidates) or must be protected (protection_list).
         """
 
-        policy_manager = self.policy_managers[partition]
-
         def run_policies(replica, hit_records):
             policy_manager.decision(replica, self.demand_manager, hit_records = hit_records)
 
-        all_replicas = []
-        for dataset in self.inventory_manager.datasets.values():
-            for replica in dataset.replicas:
-                if replica in protection_list:
-                    continue
-
-                all_replicas.append((replica, policy.PolicyHitRecords(replica)))
-
-        parallel_exec(run_policies, all_replicas, clean_input = False)
+        parallel_exec(run_policies, all_replicas.items(), clean_input = False, print_progress = True)
 
         candidates = {} # {replica: record}
 
-        for replica, hit_records in all_replicas:
-            hit_records.write_records(sys.stdout)
-
+        for replica, hit_records in all_replicas.items():
             record = hit_records.deciding_record()
+            hit_records.records = []
+
             if record is None:
                 deciding_records[replica] = None
                 continue
@@ -145,7 +153,7 @@ class Detox(object):
             if record.decision == policy.DEC_DELETE:
                 candidates[replica] = record
             elif record.decision == policy.DEC_PROTECT:
-                protection_list.append(replica)
+                protection_list.add(replica)
                 deciding_records[replica] = record
             elif record.decision == policy.DEC_KEEP:
                 deciding_records[replica] = record

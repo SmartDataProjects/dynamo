@@ -49,19 +49,26 @@ def unicode2str(container):
             elif type(elem) is dict or type(elem) is list:
                 unicode2str(elem)
 
-def parallel_exec(target, arguments, clean_input = True):
+def parallel_exec(target, arguments, clean_input = True, print_progress = False):
     """
     Execute target(*args) in up to config.num_threads parallel threads,
     for each entry args of arguments list.
     """
+
+    ntotal = len(arguments)
 
     threads = []
     iarg = 0
     while iarg != len(arguments):
         if clean_input:
             args = arguments.pop()
+            if print_progress and (ntotal - len(arguments)) % (ntotal / 20) == 0:
+                logging.info('Processed %f%% of input.', 100. * (ntotal - len(arguments)) / ntotal)
         else:
             args = arguments[iarg]
+            if print_progress and iarg % (ntotal / 20) == 0:
+                logging.info('Processed %f%% of input.', 100. * iarg / ntotal)
+
             iarg += 1
 
         if type(args) is not tuple:
@@ -81,7 +88,7 @@ def parallel_exec(target, arguments, clean_input = True):
                     thread.join()
                     threads.pop(iL)
 
-            else:
+            if len(threads) >= config.num_threads:
                 time.sleep(1)
 
     for thread in threads:

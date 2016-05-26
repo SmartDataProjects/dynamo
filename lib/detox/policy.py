@@ -13,12 +13,13 @@ class Policy(object):
     Base class for policies.
     """
 
-    def __init__(self, name):
+    def __init__(self, name, static):
         """
-        Base class for deletion policies.
+        static: constant. Static policies are only evaluated once per run.
         """
 
         self.name = name
+        self.static = static
 
     def decision(self, replica, demand_manager, records = None):
         """
@@ -162,9 +163,6 @@ class PolicyManager(object):
             hit_records = PolicyHitRecords(replica)
 
         for policy in self._policies:
-#            if logger.getEffectiveLevel() == logging.DEBUG:
-#                logger.debug('Testing %s:%s against %s', replica.site.name, replica.dataset.name, policy.name)
-
             policy.decision(replica, demand, hit_records)
 
         return hit_records

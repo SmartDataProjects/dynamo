@@ -64,6 +64,8 @@ class MySQLStore(LocalStoreInterface):
 
     def _do_make_snapshot(self, timestamp, clear): #override
         self._mysql.make_snapshot(timestamp)
+        
+        self._mysql.query('UPDATE `system` SET `lock_host` = \'\', `lock_process` = 0')
 
         tables = []
         if clear == LocalStoreInterface.CLEAR_ALL:
@@ -160,6 +162,11 @@ class MySQLStore(LocalStoreInterface):
             group_list.append(group)
 
         self._set_group_ids(group_list)
+
+        # reset cached group usage at sites
+        for site in site_list:
+            for group in group_list:
+                site.reset_group_usage_cache(group)
 
         # Load site quotas
         quotas = self._mysql.query('SELECT `site_id`, `group_id`, `storage` FROM `quotas`')
@@ -291,7 +298,7 @@ class MySQLStore(LocalStoreInterface):
                 rep = BlockReplica(block, site, group = group, is_complete = is_complete, is_custodial = is_custodial)
     
                 block.replicas.append(rep)
-                site.block_replicas.append(rep)
+                site.add_block_replica(rep, adjust_cache = False)
     
                 dataset_replica = block.dataset.find_replica(site)
                 if dataset_replica:
@@ -309,7 +316,7 @@ class MySQLStore(LocalStoreInterface):
                     for block in dataset.blocks:
                         rep = BlockReplica(block, replica.site, group = replica.group, is_complete = True, is_custodial = replica.is_custodial)
                         block.replicas.append(rep)
-                        replica.site.block_replicas.append(rep)
+                        replica.site.add_block_replica(rep, adjust_cache = False)
                         replica.block_replicas.append(rep)
 
         # Finally set last_update
@@ -330,7 +337,7 @@ class MySQLStore(LocalStoreInterface):
                 replica.accesses[DatasetReplica.ACC_REMOTE].clear()
 
         # pick up all accesses that are less than 1 year old
-        # old accesses will be removed automatically next time the access information is saved from memory
+        # old accesses will eb removed automatically next time the access information is saved from memory
         accesses = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses`, `cputime` FROM `dataset_accesses` WHERE `date` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY `dataset_id`, `site_id`, `date`')
 
         last_update = datetime.date.min

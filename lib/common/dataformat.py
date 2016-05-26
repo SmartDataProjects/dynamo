@@ -204,7 +204,8 @@ class Site(object):
         self.status = status
         self.group_quota = {} # in TB
         self.dataset_replicas = []
-        self.block_replicas = []
+        self._block_replicas = []
+        self._occupancy = {} # cached sum of block replica sizes
 
     def __str__(self):
         return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s)' % \
@@ -223,22 +224,48 @@ class Site(object):
     def find_block_replica(self, block):
         try:
             if type(block) is Block:
-                return next(b for b in self.block_replicas if b.block == block)
+                return next(b for b in self._block_replicas if b.block == block)
             else:
-                return next(b for b in self.block_replicas if b.block.name == block)
+                return next(b for b in self._block_replicas if b.block.name == block)
 
         except StopIteration:
             return None
 
+    def add_block_replica(self, replica, adjust_cache = True):
+        self._block_replicas.append(replica)
+        if adjust_cache:
+            if self._occupancy[replica.group] != -1:
+                self._occupancy[replica.group] += replica.block.size
+
+    def remove_block_replica(self, replica, adjust_cache = True):
+        self._block_replicas.remove(replica)
+        if adjust_cache:
+            if self._occupancy[replica.group] != -1:
+                self._occupancy[replica.group] -= replica.block.size
+
+    def clear_block_replicas(self):
+        self._block_replicas = []
+        for group in self._occupancy.keys():
+            self._occupancy[group] = -1
+
+    def reset_group_usage_cache(self, group):
+        self._occupancy[group] = -1
+
     def group_usage(self, group):
-        return sum([r.block.size for r in self.block_replicas if r.group == group])
+        occupancy = self._occupancy[group]
+
+        if occupancy == -1:
+            occupancy = sum([r.block.size for r in self._block_replicas if r.group == group])
+            self._occupancy[group] = occupancy
+
+        return occupancy
 
     def storage_occupancy(self, groups = []):
         if type(groups) is not list:
             groups = [groups]
 
         if len(groups) == 0:
-            return sum([r.block.size for r in self.block_replicas]) * 1.e-12 / sum(self.group_quota.values())
+            return sum(self.group_usage(g) for g in self._occupancy.keys()) * 1.e-12 / sum(self.group_quota.values())
         else:
             numer = 0.
             denom = 0.

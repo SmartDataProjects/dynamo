@@ -263,10 +263,10 @@ def make_stack(strategy):
         # stackgen(0.92) -> TargetFraction stack with threshold 92%
         def stackgen(*arg):
             stack = [
-#                KeepTargetOccupancy(config.target_site_occupancy),
+                KeepTargetOccupancy(config.target_site_occupancy),
                 ProtectIncomplete(),
                 ProtectDiskOnly(),
-#                ProtectNotOwnedBy('AnalysisOps'),
+                ProtectNotOwnedBy('AnalysisOps'),
                 DeletePartial(),
                 DeleteOld(*detox_config.delete_old.threshold),
     #            DeleteUnpopular()

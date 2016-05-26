@@ -167,7 +167,7 @@ class InventoryManager(object):
             block = block_replica.block
             try:
                 block.replicas.remove(block_replica)
-                site.block_replicas.remove(block_replica)
+                site.remove_block_replica(block_replica)
 
             except ValueError:
                 logger.error('Site-block linking was corrupt. %s %s#%s', site.name, dataset.name, block.name)
@@ -186,7 +186,7 @@ class InventoryManager(object):
 
         for site in self.sites.values():
             site.dataset_replicas = []
-            site.block_replicas = []
+            site.clear_block_replicas()
 
     def add_dataset_to_site(self, dataset, site, group = None):
         """
@@ -201,7 +201,7 @@ class InventoryManager(object):
         for block in dataset.blocks:
             block_replica = BlockReplica(block, site, group = group)
             new_replica.block_replicas.append(block_replica)
-            site.block_replicas.append(block_replica)
+            site.add_block_replica(block_replica)
 
         return new_replica
 
