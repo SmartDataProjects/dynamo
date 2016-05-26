@@ -162,7 +162,7 @@ class MySQL(object):
         for table in tables:
             self.query('CREATE TABLE `{copy}`.`{table}` LIKE `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name, table = table))
 
-            self._mysql.query('INSERT INTO `{copy}`.`{table}` SELECT * FROM `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name, table = table))
+            self.query('INSERT INTO `{copy}`.`{table}` SELECT * FROM `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name, table = table))
 
     def remove_snapshot(self, newer_than, older_than):
         snapshots = self.list_snapshots()

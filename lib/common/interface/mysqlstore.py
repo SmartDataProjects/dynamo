@@ -417,7 +417,8 @@ class MySQLStore(LocalStoreInterface):
             if update > last_update:
                 last_update = update
 
-        logger.info('Loaded %d dataset request data. Last update on %s UTC', len(requests), last_update.strftime('%Y-%m-%d %H:%M:%S'))
+        if last_update > datetime.datetime.min:
+            logger.info('Loaded %d dataset request data. Last update on %s UTC', len(requests), last_update.strftime('%Y-%m-%d %H:%M:%S'))
 
         return last_update
 

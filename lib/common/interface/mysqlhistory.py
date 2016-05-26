@@ -297,7 +297,7 @@ class MySQLHistory(TransactionHistoryInterface):
         indices_to_replicas = {}
         for dataset in inventory.datasets.values():
             dataset_id = self._dataset_id_map[dataset.name]
-            for replica in dataset.replica:
+            for replica in dataset.replicas:
                 index = (self._site_id_map[replica.site.name], dataset_id)
                 indices_to_replicas[index] = replica
 
@@ -348,7 +348,7 @@ class MySQLHistory(TransactionHistoryInterface):
         replicas_to_update = {} # index -> replica
         last_id = 0
 
-        for snapshot_id, site_id, dataset_id, size in self._mysql.query('SELECT `id`, `site_id`, `dataset_id`, `size` FROM `replica_snapshots` WHERE `run` < %s ORDER BY `run` DESC', run_number):
+        for snapshot_id, site_id, dataset_id, size in self._mysql.query('SELECT `id`, `site_id`, `dataset_id`, `size` FROM `replica_snapshots` WHERE `run_id` < %s ORDER BY `run_id` DESC', run_number):
             if last_id == 0:
                 last_id = snapshot_id
 
@@ -388,7 +388,7 @@ class MySQLHistory(TransactionHistoryInterface):
     
             self._mysql.insert_many('replica_snapshots', fields, mapping, replicas_to_update.items())
     
-            for snapshot_id, site_id, dataset_id in self._mysql.query('SELECT `id`, `site_id`, `dataset_id` FROM `replica_snapshots` WHERE `run` = %s', run_number):
+            for snapshot_id, site_id, dataset_id in self._mysql.query('SELECT `id`, `site_id`, `dataset_id` FROM `replica_snapshots` WHERE `run_id` = %s', run_number):
                 replica = replicas_to_update[(site_id, dataset_id)]
                 snapshot_ids[replica] = snapshot_id
 
