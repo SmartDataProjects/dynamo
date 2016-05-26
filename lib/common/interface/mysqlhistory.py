@@ -166,7 +166,7 @@ class MySQLHistory(TransactionHistoryInterface):
             checked_sites = []
 
             # find outdated quotas
-            result = self._mysql.query('SELECT s.`id`, s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE q.`partition_id` = %s AND q.`run_id` < %s ORDER BY q.`run_id` DESC', partition_id, run_number)
+            result = self._mysql.query('SELECT s.`id`, s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE q.`partition_id` = %s AND q.`run_id` <= %s ORDER BY q.`run_id` DESC', partition_id, run_number)
 
             for site_id, site_name, quota in result:
                 if site_id in checked_sites:
@@ -348,7 +348,7 @@ class MySQLHistory(TransactionHistoryInterface):
         replicas_to_update = {} # index -> replica
         last_id = 0
 
-        for snapshot_id, site_id, dataset_id, size in self._mysql.query('SELECT `id`, `site_id`, `dataset_id`, `size` FROM `replica_snapshots` WHERE `run_id` < %s ORDER BY `run_id` DESC', run_number):
+        for snapshot_id, site_id, dataset_id, size in self._mysql.query('SELECT `id`, `site_id`, `dataset_id`, `size` FROM `replica_snapshots` WHERE `run_id` <= %s ORDER BY `run_id` DESC', run_number):
             if last_id == 0:
                 last_id = snapshot_id
 
