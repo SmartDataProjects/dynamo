@@ -1,7 +1,22 @@
 import threading
 import time
+import logging
+from functools import wraps
 
 import common.configuration as config
+
+def timer(function):
+    @wraps(function)
+    def function_timer(*args, **kwargs):
+        t0 = time.time()
+        result = function(*args, **kwargs)
+        t1 = time.time()
+        if config.show_time_profile:
+            logging.info('Wall-clock time for executing %s: %.1fs', function.func_name, t1 - t0)
+
+        return result
+
+    return function_timer
 
 def unicode2str(container):
     """
@@ -34,15 +49,21 @@ def unicode2str(container):
             elif type(elem) is dict or type(elem) is list:
                 unicode2str(elem)
 
-def parallel_exec(target, arguments):
+def parallel_exec(target, arguments, clean_input = True):
     """
     Execute target(*args) in up to config.num_threads parallel threads,
     for each entry args of arguments list.
     """
 
     threads = []
-    while len(arguments) != 0:
-        args = arguments.pop()
+    iarg = 0
+    while iarg != len(arguments):
+        if clean_input:
+            args = arguments.pop()
+        else:
+            args = arguments[iarg]
+            iarg += 1
+
         if type(args) is not tuple:
             args = (args,)
 

@@ -120,7 +120,7 @@ if args.force_inventory_update:
 
 for nrun in range(args.repeat[0]):
     for partition in partitions:
-        detox.run(partition = partition, dynamic_deletion = not args.static_deletion, is_test = args.test_run)
+        detox.run(partition = partition, iterative_deletion = not args.static_deletion, is_test = args.test_run)
 
     if args.repeat[1] > 0:
         time.sleep(args.repeat[1] * 3600)

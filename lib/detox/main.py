@@ -3,10 +3,13 @@ import logging
 import math
 import pprint
 import collections
+import random
+import sys
 
 import common.configuration as config
 import detox.policy as policy
 import detox.configuration as detox_config
+from common.misc import timer, parallel_exec
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ class Detox(object):
         self.policy_managers[partition] = policy.PolicyManager(policy_stack)
         self.quotas[partition] = quotas
 
-    def run(self, partition = '', dynamic_deletion = True, is_test = False):
+    def run(self, partition = '', iterative_deletion = True, is_test = False):
         """
         Main executable.
         """
@@ -45,43 +48,7 @@ class Detox(object):
         self.demand_manager.update(self.inventory_manager)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
-        all_deletions = []
-        iteration = 0
-
         logger.info('Start deletion. Evaluating %d policies against %d replicas.', self.policy_managers[partition].num_policies(), sum([len(d.replicas) for d in self.inventory_manager.datasets.values()]))
-
-        protection_list = []
-
-        while True:
-            iteration += 1
-            time_start = time.time()
-
-            records = []
-            candidates = self.find_candidates(partition, protection_list, records)
-
-            logger.info('Iteration %d (%.1f s): %d dataset replicas in deletion list', iteration, time.time() - time_start, len(candidates))
-            if logger.getEffectiveLevel() == logging.DEBUG:
-                logger.debug('Deletion list:')
-                logger.debug(pprint.pformat(['%s:%s' % (r.site.name, r.dataset.name) for r in candidates]))
-
-            if dynamic_deletion:
-                replica = self.select_replica(partition, candidates, protection_list)
-                if replica is None:
-                    deletion_list = []
-                else:
-                    logger.info('Selected replica: %s %s', replica.site.name, replica.dataset.name)
-                    deletion_list = [replica]
-
-            else:
-                deletion_list = candidates
-
-            if len(deletion_list) == 0:
-                break
-
-            all_deletions.extend(deletion_list)
-
-            for replica in deletion_list:
-                self.inventory_manager.unlink_datasetreplica(replica)
 
         # fetch the copy/deletion run number
         run_number = self.history.new_deletion_run(partition, is_test = is_test)
@@ -89,17 +56,62 @@ class Detox(object):
         # update site and dataset lists
         self.history.save_sites(self.inventory_manager)
         self.history.save_datasets(self.inventory_manager)
+        # take a snapshot of current replicas
+        self.history.save_replicas(run_number, self.inventory_manager)
         # take snapshots of quotas if updated
         self.history.save_quotas(run_number, self.quotas, self.inventory_manager)
+
+        deletion_list = []
+        protection_list = []
+        deciding_records = {} # {replica: deciding_record} record can be None
+        iteration = 0
+
+        while True:
+            iteration += 1
+
+            # find_candidates returns {replica: record}
+            candidates = self.find_candidates(partition, protection_list, deciding_records)
+
+            logger.info('Iteration %d', iteration)
+            logger.info(' %d dataset replicas in deletion candidates', len(candidates))
+            logger.info(' %d dataset replicas in protection list', len(protection_list))
+
+            if logger.getEffectiveLevel() == logging.DEBUG:
+                logger.debug('Deletion list:')
+                logger.debug(pprint.pformat(['%s:%s' % (rep.site.name, rep.dataset.name) for rep in candidates.keys()]))
+
+            if iterative_deletion:
+                replica = self.select_replica(partition, candidates, protection_list)
+                if replica is None:
+                    iter_deletion = []
+                else:
+                    logger.info('Selected replica: %s %s', replica.site.name, replica.dataset.name)
+                    deciding_records[replica] = candidates[replica]
+                    iter_deletion = [replica]
+
+            else:
+                deciding_records.update(candidates)
+                iter_deletion = candidates.keys()
+
+            if len(iter_deletion) == 0:
+                break
+
+            deletion_list.extend(iter_deletion)
+
+            # take out replicas from inventory
+            for replica in iter_deletion:
+                self.inventory_manager.unlink_datasetreplica(replica)
+
         # save replica snapshots and all deletion decisions
-        self.history.save_deletion_decisions(run_number, all_deletions, protection_list, self.inventory_manager)
+        self.history.save_deletion_decisions(run_number, deciding_records)
 
         logger.info('Committing deletion.')
-        self.commit_deletions(run_number, all_deletions, is_test)
+        self.commit_deletions(run_number, deletion_list, is_test)
 
         logger.info('Detox run finished at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
-    def find_candidates(self, partition, protection_list, records = None):
+    @timer
+    def find_candidates(self, partition, protection_list, deciding_records):
         """
         Run each dataset / block replicas through deletion policies and make a list of replicas to delete.
         Return the list of replicas that may be deleted (deletion_candidates) or must be protected (protection_list).
@@ -110,53 +122,46 @@ class Detox(object):
         def run_policies(replica, hit_records):
             policy_manager.decision(replica, self.demand_manager, hit_records = hit_records)
 
-        candidates = []
-
-        threads = []
-
+        all_replicas = []
         for dataset in self.inventory_manager.datasets.values():
             for replica in dataset.replicas:
                 if replica in protection_list:
                     continue
 
-                hit_records = policy.PolicyHitRecords(replica)
-                thread = threading.Thread(target = run_policies, args = (replica, hit_records))
-                thread.start()
-                threads.append((thread, hit_records))
+                all_replicas.append((replica, policy.PolicyHitRecords(replica)))
 
-                if len(threads) >= config.num_threads:
-                    iL = 0
-                    while iL < len(threads):
-                        thread, hit_records = threads[iL]
-                        if thread.is_alive():
-                            iL += 1
-                            continue
+        parallel_exec(run_policies, all_replicas, clean_input = False)
 
-                        thread.join()
-                        threads.pop(iL)
+        candidates = {} # {replica: record}
 
-                        if records is not None:
-                            records.append(hit_records)
+        for replica, hit_records in all_replicas:
+            hit_records.write_records(sys.stdout)
 
-                        decision = hit_records.decision()
+            record = hit_records.deciding_record()
+            if record is None:
+                deciding_records[replica] = None
+                continue
 
-                        if decision == policy.DEC_DELETE:
-                            candidates.append(replica)
-                        elif decision == policy.DEC_PROTECT:
-                            protection_list.append(replica)
+            if record.decision == policy.DEC_DELETE:
+                candidates[replica] = record
+            elif record.decision == policy.DEC_PROTECT:
+                protection_list.append(replica)
+                deciding_records[replica] = record
+            elif record.decision == policy.DEC_KEEP:
+                deciding_records[replica] = record
                 
         return candidates
 
-    def commit_deletions(self, run_number, all_deletions, is_test):
+    def commit_deletions(self, run_number, deletion_list, is_test):
         # first make sure the list of blocks is up-to-date
-        datasets = list(set(r.dataset for r in all_deletions))
+        datasets = list(set(r.dataset for r in deletion_list))
         self.inventory_manager.dataset_source.set_dataset_constituent_info(datasets)
 
-        sites = set(r.site for r in all_deletions)
+        sites = set(r.site for r in deletion_list)
 
         # now schedule deletion for each site
         for site in sorted(sites):
-            replica_list = [r for r in all_deletions if r.site == site]
+            replica_list = [r for r in deletion_list if r.site == site]
 
             logger.info('Deleting %d replicas from %s.', len(replica_list), site.name)
 
@@ -184,15 +189,23 @@ class Detox(object):
         if len(deletion_candidates) == 0:
             return None
 
-        protection_by_site = collections.defaultdict(list)
-        for replica in protection_list:
-            protection_by_site[replica.site].append(replica)
+        candidate_sites = list(set(rep.site for rep in deletion_candidates.keys()))
 
-        # find the site with the highest protected fraction
-        target_site = max(protection_by_site.keys(), key = lambda site: sum(replica.size() for replica in protection_by_site[site]) / self.quotas[partition][site])
+        if len(protection_list) != 0:
+            protection_by_site = collections.defaultdict(list)
+            for replica in protection_list:
+                protection_by_site[replica.site].append(replica)
 
+            # find the site with the highest protected fraction
+            target_site = max(candidate_sites, key = lambda site: sum(replica.size() for replica in protection_by_site[site]) / self.quotas[partition][site])
+        else:
+            target_site = random.choice(candidate_sites)
+
+        candidates_on_site = [rep for rep in deletion_candidates.keys() if rep.site == target_site]
+        
         # return the smallest replica on the target site
-        return min(protection_by_site[target_site], key = lambda replica: replica.size())
+        return min(candidates_on_site, key = lambda replica: replica.size())
+
 
 if __name__ == '__main__':
 
@@ -256,4 +269,4 @@ if __name__ == '__main__':
     if args.dry_run:
         config.read_only = True
 
-    detox.run(partition = args.partition, dynamic_deletion = False, is_test = not args.production_run)
+    detox.run(partition = args.partition, iterative_deletion = False, is_test = not args.production_run)

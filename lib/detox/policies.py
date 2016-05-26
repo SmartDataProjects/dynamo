@@ -142,31 +142,29 @@ class DeleteOld(policy.DeletePolicy):
             threshold *= 3600.
 
         self.threshold_text = '%f%s' % (threshold, unit)
-        self.cutoff = time.time() - threshold
+        cutoff_timestamp = time.time() - threshold
+        cutoff_datetime = datetime.datetime.utcfromtimestamp(cutoff_timestamp)
+        self.cutoff = cutoff_datetime.date()
 
     def applies(self, replica, demand_manager): # override
-        if replica.dataset.last_update > self.cutoff:
+        # the dataset was updated after the cutoff -> don't delete
+        if datetime.datetime.utcfromtimestamp(replica.dataset.last_update).date() > self.cutoff:
             return False, ''
 
+        # no accesses recorded ever -> delete
         if len(replica.accesses) == 0:
             return True, 'No access recorded for the replica.'
 
-        utc_to_local = datetime.datetime.now() - datetime.datetime.utcnow()
-
-        last_access = 0
-        for acc_type, record in replica.accesses.items(): # remote and local
-            if len(record) == 0:
+        for acc_type, records in replica.accesses.items(): # remote and local
+            if len(records) == 0:
                 continue
 
-            acc_date = max(record.keys()) # datetime.date object set to UTC
+            last_acc_date = max(records.keys()) # datetime.date object set to UTC
 
-            acc_datetime = datetime.datetime(acc_date.year, acc_date.month, acc_date.day)
-            acc_timestamp = time.mktime((acc_datetime + utc_to_local).timetuple())
-
-            if acc_timestamp > last_access:
-                last_access = acc_timestamp
+            if last_acc_date > self.cutoff:
+                return False, ''
             
-        return last_access < self.cutoff, 'Last access is older than ' + self.threshold_text + '.'
+        return True, 'Last access is older than ' + self.threshold_text + '.'
 
 
 class DeleteUnpopular(policy.DeletePolicy):
@@ -265,10 +263,10 @@ def make_stack(strategy):
         # stackgen(0.92) -> TargetFraction stack with threshold 92%
         def stackgen(*arg):
             stack = [
-                KeepTargetOccupancy(config.target_site_occupancy),
+#                KeepTargetOccupancy(config.target_site_occupancy),
                 ProtectIncomplete(),
                 ProtectDiskOnly(),
-                ProtectNotOwnedBy('AnalysisOps'),
+#                ProtectNotOwnedBy('AnalysisOps'),
                 DeletePartial(),
                 DeleteOld(*detox_config.delete_old.threshold),
     #            DeleteUnpopular()

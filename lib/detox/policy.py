@@ -3,6 +3,7 @@ import collections
 
 logger = logging.getLogger(__name__)
 
+# do not change order - used by history records
 DEC_NEUTRAL, DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(4)
 DECISIONS = range(4)
 DECISION_STR = {DEC_NEUTRAL: 'NEUTRAL', DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
@@ -90,45 +91,46 @@ class PolicyHitRecords(object):
         self.replica = replica
         self.records = []
 
-    def decision(self):
-        result = DEC_NEUTRAL
+    def deciding_record(self):
+        record = None
 
-        for record in self.records:
-            if record.decision == DEC_DELETE and result == DEC_NEUTRAL:
-                result = DEC_DELETE
+        for rec in self.records:
+            if rec.decision == DEC_PROTECT:
+                return rec
 
-            elif record.decision == DEC_KEEP and (result == DEC_NEUTRAL or result == DEC_DELETE):
-                result = DEC_KEEP
+            if record is None:
+                record = rec
 
-            elif record.decision == DEC_PROTECT:
-                result = DEC_PROTECT
+            elif rec.decision == DEC_DELETE and record.decision == DEC_NEUTRAL:
+                record = rec
 
-        return result
+            elif rec.decision == DEC_KEEP and record.decision in (DEC_NEUTRAL, DEC_DELETE):
+                record = rec
+
+        return record
 
     def add_record(self, policy, decision, reason = ''):
         record = PolicyHitRecords.Record(policy, decision, reason)
         self.records.append(record)
 
     def write_records(self, output):
-        output.write('{site} {dataset}:'.format(site = self.replica.site.name, dataset = self.replica.dataset.name))
+        output.write('{site} {dataset}:\n'.format(site = self.replica.site.name, dataset = self.replica.dataset.name))
         if len(self.records) == 0:
             output.write(' None\n')
         else:
-            output.write('\n')
-
-        for policy, decision, reason in self.records:
-            if decision == DEC_DELETE:
-                decision_str = 'DELETE'
-            elif decision == DEC_KEEP:
-                decision_str = 'KEEP'
-            elif decision == DEC_PROTECT:
-                decision_str = 'PROTECT'
-
-            line = '{policy}: {decision}'.format(policy = policy.name, decision = decision_str)
-            if reason:
-                line += ' (%s)' % reason
-
-            output.write(' ' + line + '\n')
+            for policy, decision, reason in self.records:
+                if decision == DEC_DELETE:
+                    decision_str = 'DELETE'
+                elif decision == DEC_KEEP:
+                    decision_str = 'KEEP'
+                elif decision == DEC_PROTECT:
+                    decision_str = 'PROTECT'
+    
+                line = ' {policy}: {decision}'.format(policy = policy.name, decision = decision_str)
+                if reason:
+                    line += ' (%s)' % reason
+    
+                output.write(line + '\n')
 
 
 class PolicyManager(object):

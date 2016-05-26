@@ -24,8 +24,6 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql = MySQL(**config.mysqlstore.db_params)
 
-        self._db_name = config.mysqlstore.db_params['db']
-
         self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0] # MySQL displays last_update in local time, but returns the UTC timestamp
 
         self._datasets_to_ids = {} # cache dictionary object -> mysql id
@@ -87,7 +85,7 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.recover_from(timestamp)
 
     def _do_switch_snapshot(self, timestamp): #override
-        snapshot_name = self._db_name + '_' + timestamp
+        snapshot_name = self._mysql.db_name + '_' + timestamp
 
         self._mysql.query('USE ' + snapshot_name)
 

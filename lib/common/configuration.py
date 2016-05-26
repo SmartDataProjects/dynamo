@@ -12,6 +12,8 @@ target_site_occupancy = 0.95
 
 num_threads = 32
 
+show_time_profile = True
+
 paths = Configuration()
 paths.base = os.environ['DYNAMO_BASE']
 paths.data = os.environ['DYNAMO_DATADIR']

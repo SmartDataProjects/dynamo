@@ -227,7 +227,22 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def save_copy_decisions(self, run_number, copies, inventory):
+    def save_replicas(self, run_number, inventory):
+        """
+        Update replica snapshots.
+        """
+
+        if config.read_only:
+            logger.info('save_replicas')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_replicas(run_number, inventory)
+        finally:
+            self.release_lock()
+
+    def save_copy_decisions(self, run_number, copies):
         """
         """
 
@@ -237,14 +252,14 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_copy_decisions(run_number, copies, inventory)
+            self._do_save_copy_decisions(run_number, copies)
         finally:
             self.release_lock()
       
-    def save_deletion_decisions(self, run_number, deletions, protections, inventory):
+    def save_deletion_decisions(self, run_number, records):
         """
         Make replica snapshots for updated replicas, and save the decision for all replicas.
-        Arguments deletions and protections are lists of dataset replicas.
+        Arguments records is {replica: deciding_policy_record}.
         """
 
         if config.read_only:
@@ -253,7 +268,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_deletion_decisions(run_number, deletions, protections, inventory)
+            self._do_save_deletion_decisions(run_number, records)
         finally:
             self.release_lock()
 

@@ -86,7 +86,7 @@ class MySQL(object):
         sqlbase = 'DELETE FROM `{table}` WHERE '.format(table = table)
         for add in additional_conditions:
             sqlbase += add + ' AND '
-        sqlbase += '{key} {match} '.format(key = key_str, match = 'IN' if delete_match else 'OUT')
+        sqlbase += '{key} {match} '.format(key = key_str, match = 'IN' if delete_match else 'NOT IN')
 
         def execute(pool_expr):
             self.query(sqlbase + pool_expr)
