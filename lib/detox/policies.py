@@ -155,14 +155,18 @@ class DeleteOld(policy.DeletePolicy):
 
         last_access = 0
         for acc_type, record in replica.accesses.items(): # remote and local
+            if len(record) == 0:
+                continue
+
             acc_date = max(record.keys()) # datetime.date object set to UTC
+
             acc_datetime = datetime.datetime(acc_date.year, acc_date.month, acc_date.day)
             acc_timestamp = time.mktime((acc_datetime + utc_to_local).timetuple())
 
             if acc_timestamp > last_access:
                 last_access = acc_timestamp
             
-        return last_access < cutoff, 'Last access is older than ' + self.threshold_text + '.'
+        return last_access < self.cutoff, 'Last access is older than ' + self.threshold_text + '.'
 
 
 class DeleteUnpopular(policy.DeletePolicy):
