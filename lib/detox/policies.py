@@ -14,7 +14,7 @@ class ProtectIncomplete(policy.ProtectPolicy):
     """
     
     def __init__(self, name = 'ProtectIncomplete'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = True)
 
     def applies(self, replica, demand_manager): # override
         return not replica.is_complete, 'Replica is not complete.'
@@ -26,7 +26,7 @@ class ProtectLocked(policy.ProtectPolicy):
     """
 
     def __init__(self, name = 'ProtectLocked'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = True)
 
     def applies(self, replica, demand_manager): # override
         all_blocks = set([b.name for b in replica.dataset.blocks])
@@ -44,7 +44,7 @@ class ProtectCustodial(policy.ProtectPolicy):
     """
 
     def __init__(self, name = 'ProtectCustodial'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = True)
 
     def applies(self, replica, demand_manager): # override
         return replica.is_custodial, 'Replica is custodial.'
@@ -56,7 +56,7 @@ class ProtectDiskOnly(policy.ProtectPolicy):
     """
 
     def __init__(self, name = 'ProtectDiskOnly'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = True)
 
     def applies(self, replica, demand_manager): # override
         return not replica.dataset.on_tape, 'Replica has no tape copy.'
@@ -68,7 +68,7 @@ class ProtectNonReadySite(policy.ProtectPolicy):
     """
 
     def __init__(self, name = 'ProtectNonReadySite'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = True)
 
     def applies(self, replica, demand_manager): # override
         return replica.site.status != Site.STAT_READY
@@ -80,7 +80,7 @@ class ProtectMinimumCopies(policy.ProtectPolicy):
     """
     
     def __init__(self, name = 'ProtectMinimumCopies'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = False)
 
     def applies(self, replica, demand_manager): # override
         return len(replica.dataset.replicas) <= demand_manager.get_demand(replica.dataset).required_copies
@@ -92,7 +92,7 @@ class ProtectNotOwnedBy(policy.ProtectPolicy):
     """
     
     def __init__(self, group_name, name = 'ProtectNotOnwedBy'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = True)
         self.group_name = group_name
 
     def applies(self, replica, demand_manager): # override
@@ -105,7 +105,7 @@ class KeepTargetOccupancy(policy.KeepPolicy):
     """
 
     def __init__(self, threshold, name = 'ProtectTargetOccupancy'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = False)
 
         self.threshold = threshold
 
@@ -120,7 +120,7 @@ class DeletePartial(policy.DeletePolicy):
     """
 
     def __init__(self, name = 'DeletePartial'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = True)
 
     def applies(self, replica, demand_manager): # override
         return replica.is_partial, 'Replica is partial.'
@@ -132,7 +132,7 @@ class DeleteOld(policy.DeletePolicy):
     """
 
     def __init__(self, threshold, unit, name = 'DeleteOld'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = True)
 
         if unit == 'y':
             threshold *= 365.
@@ -173,7 +173,7 @@ class DeleteUnpopular(policy.DeletePolicy):
     """
 
     def __init__(self, name = 'DeleteUnpopular'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = False)
 
         self.threshold = detox_config.delete_unpopular.threshold
 
@@ -198,7 +198,7 @@ class ActionList(policy.Policy):
     """
 
     def __init__(self, list_path = '', name = 'ActionList'):
-        super(self.__class__, self).__init__(name)
+        super(self.__class__, self).__init__(name, static = True)
 
         self.res = [] # (action, site_re, dataset_re)
         self.patterns = [] # (action_str, site_pattern, dataset_pattern)

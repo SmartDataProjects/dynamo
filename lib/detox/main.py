@@ -21,13 +21,13 @@ class Detox(object):
         self.demand_manager = demand
         self.history = history
 
-        self.policy_managers = {} # {partition: PolicyManager}
+        self.policy_stacks = {} # {partition: [policy]}
         self.quotas = {} # {partition: {site: quota}}
 
         self.deletion_message = 'Dynamo -- Automatic Cache Release Request.'
 
     def set_policies(self, policy_stack, quotas, partition = ''): # empty partition name -> default
-        self.policy_managers[partition] = policy.PolicyManager(policy_stack)
+        self.policy_stacks[partition] = policy_stack
         self.quotas[partition] = quotas
 
     def run(self, partition = '', iterative_deletion = True, is_test = False):
@@ -48,7 +48,7 @@ class Detox(object):
         self.demand_manager.update(self.inventory_manager)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
-        policy_manager = self.policy_managers[partition]
+        policy_stack = self.policy_stacks[partition]
 
         # fetch the copy/deletion run number
         run_number = self.history.new_deletion_run(partition, is_test = is_test)
@@ -68,18 +68,26 @@ class Detox(object):
         deciding_records = {} # {replica: deciding_record} record can be None
         iteration = 0
 
-        all_replicas = {}
+        evaluations = {}
         for dataset in self.inventory_manager.datasets.values():
             for replica in dataset.replicas:
-                all_replicas[replica] = policy.PolicyHitRecords(replica)
+                evaluations[replica] = policy.Evaluations(replica, policy_stack)
 
-        logger.info('Start deletion. Evaluating %d policies against %d replicas.', policy_manager.num_policies(), len(all_replicas))
+        logger.info('Start deletion. Evaluating %d policies against %d replicas.', len(policy_stack), len(evaluations))
 
         while True:
             iteration += 1
 
+            iter_protection = set()
+
             # find_candidates returns {replica: record}
-            candidates = self.find_candidates(policy_manager, all_replicas, protection_list, deciding_records)
+            candidates = self.find_candidates(evaluations, iter_protection, deciding_records)
+
+            # we will not consider protected replicas for the rest of the run
+            for replica in iter_protection:
+                evaluations.pop(replica)
+
+            protection_list.update(iter_protection)
 
             logger.info('Iteration %d', iteration)
             logger.info(' %d dataset replicas in deletion candidates', len(candidates))
@@ -90,7 +98,7 @@ class Detox(object):
                 logger.debug(pprint.pformat(['%s:%s' % (rep.site.name, rep.dataset.name) for rep in candidates.keys()]))
 
             if iterative_deletion:
-                replica = self.select_replica(partition, candidates, protection_list)
+                replica = self.select_replica(partition, candidates, iter_protection)
                 if replica is None:
                     iter_deletion = []
                 else:
@@ -105,14 +113,9 @@ class Detox(object):
             if len(iter_deletion) == 0:
                 break
 
-            # we will not consider protected replicas
-            if iteration == 1:
-                for replica in protection_list:
-                    all_replicas.pop(replica)
-
             # we will not consider deleted replicas
             for replica in iter_deletion:
-                all_replicas.pop(replica)
+                evaluations.pop(replica)
 
             deletion_list.extend(iter_deletion)
 
@@ -129,22 +132,21 @@ class Detox(object):
         logger.info('Detox run finished at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
     @timer
-    def find_candidates(self, policy_manager, all_replicas, protection_list, deciding_records):
+    def find_candidates(self, evaluations, protection_list, deciding_records):
         """
         Run each dataset / block replicas through deletion policies and make a list of replicas to delete.
         Return the list of replicas that may be deleted (deletion_candidates) or must be protected (protection_list).
         """
 
-        def run_policies(replica, hit_records):
-            policy_manager.decision(replica, self.demand_manager, hit_records = hit_records)
+        def run_policies(evaluation):
+            evaluation.run(self.demand_manager)
 
-        parallel_exec(run_policies, all_replicas.items(), clean_input = False, print_progress = True)
+        parallel_exec(run_policies, evaluations.values(), print_progress = True)
 
         candidates = {} # {replica: record}
 
-        for replica, hit_records in all_replicas.items():
-            record = hit_records.deciding_record()
-            hit_records.records = []
+        for replica, evaluation in evaluations.items():
+            record = evaluation.deciding_record()
 
             if record is None:
                 deciding_records[replica] = None

@@ -55,18 +55,20 @@ def parallel_exec(target, arguments, clean_input = True, print_progress = False)
     for each entry args of arguments list.
     """
 
-    ntotal = len(arguments)
+    if print_progress:
+        ntotal = len(arguments)
+        interval = max(ntotal / 20, 1)
 
     threads = []
     iarg = 0
     while iarg != len(arguments):
         if clean_input:
             args = arguments.pop()
-            if print_progress and (ntotal - len(arguments)) % (ntotal / 20) == 0:
+            if print_progress and (ntotal - len(arguments)) % interval == 0:
                 logging.info('Processed %f%% of input.', 100. * (ntotal - len(arguments)) / ntotal)
         else:
             args = arguments[iarg]
-            if print_progress and iarg % (ntotal / 20) == 0:
+            if print_progress and iarg % interval == 0:
                 logging.info('Processed %f%% of input.', 100. * iarg / ntotal)
 
             iarg += 1

@@ -21,7 +21,7 @@ class Policy(object):
         self.name = name
         self.static = static
 
-    def decision(self, replica, demand_manager, records = None):
+    def decision(self, replica, demand_manager):
         """
         Not intended for overrides. Decide if the policy applies to a given replica under the current demands. If applies, call case_match. If not, return DEC_NEUTRAL.
         """
@@ -30,14 +30,10 @@ class Policy(object):
 
         if applies:
             dec = self.case_match(replica)
-
-            if records:
-                records.add_record(self, dec, reason = reason)
-
-            return dec
+            return dec, reason
 
         else:
-            return DEC_NEUTRAL
+            return DEC_NEUTRAL, ''
 
     def applies(self, replica, demand_manager):
         """
@@ -81,21 +77,38 @@ class ProtectPolicy(Policy):
         return DEC_PROTECT
 
 
-class PolicyHitRecords(object):
+class Evaluations(object):
     """
-    Helper class to record policy decisions on each replica.
+    Stores the policy hit records for a given replica.
     """
 
-    Record = collections.namedtuple('Record', ['policy', 'decision', 'reason'])
+    class PolicyRecord(object):
+        def __init__(self):
+            self.evaluated = False
+            self.decision = DEC_NEUTRAL
+            self.reason = ''
 
-    def __init__(self, replica):
+
+    def __init__(self, replica, policy_stack):
         self.replica = replica
         self.records = []
+        for policy in policy_stack:
+            self.records.append((policy, Evaluations.PolicyRecord()))
+
+    def run(self, demand):
+        for policy, record in self.records:
+            if record.evaluated:
+                continue
+
+            decision, reason = policy.decision(self.replica, demand)
+            record.evaluated = policy.static
+            record.decision = decision
+            record.reason = reason
 
     def deciding_record(self):
         record = None
 
-        for rec in self.records:
+        for policy, rec in self.records:
             if rec.decision == DEC_PROTECT:
                 return rec
 
@@ -110,59 +123,21 @@ class PolicyHitRecords(object):
 
         return record
 
-    def add_record(self, policy, decision, reason = ''):
-        record = PolicyHitRecords.Record(policy, decision, reason)
-        self.records.append(record)
-
     def write_records(self, output):
         output.write('{site} {dataset}:\n'.format(site = self.replica.site.name, dataset = self.replica.dataset.name))
         if len(self.records) == 0:
             output.write(' None\n')
         else:
-            for policy, decision, reason in self.records:
-                if decision == DEC_DELETE:
+            for policy, record in self.records:
+                if record.decision == DEC_DELETE:
                     decision_str = 'DELETE'
-                elif decision == DEC_KEEP:
+                elif record.decision == DEC_KEEP:
                     decision_str = 'KEEP'
-                elif decision == DEC_PROTECT:
+                elif record.decision == DEC_PROTECT:
                     decision_str = 'PROTECT'
     
                 line = ' {policy}: {decision}'.format(policy = policy.name, decision = decision_str)
-                if reason:
-                    line += ' (%s)' % reason
+                if record.reason:
+                    line += ' (%s)' % record.reason
     
                 output.write(line + '\n')
-
-
-class PolicyManager(object):
-    """
-    Holds a stack of deletion policies and make a collective decision on a replica.
-    """
-
-    def __init__(self, policies):
-        self._policies = policies
-
-    def num_policies(self):
-        return len(self._policies)
-
-    def add_policy(self, policy):
-        if type(policy) is list:
-            self._policies += policy
-        else:
-            self._policies.append(policy)
-
-    def decision(self, replica, demand, hit_records = None):
-        """
-        Loop over the policies. Return DELETE if at least one policy hits, unless
-        there is a PROTECT.
-        """
-        
-        result = DEC_NEUTRAL
-
-        if hit_records is None:
-            hit_records = PolicyHitRecords(replica)
-
-        for policy in self._policies:
-            policy.decision(replica, demand, hit_records)
-
-        return hit_records
