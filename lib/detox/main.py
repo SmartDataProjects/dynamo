@@ -98,13 +98,11 @@ class Detox(object):
                 logger.debug(pprint.pformat(['%s:%s' % (rep.site.name, rep.dataset.name) for rep in candidates.keys()]))
 
             if iterative_deletion:
-                replica = self.select_replica(partition, candidates, iter_protection)
-                if replica is None:
-                    iter_deletion = []
-                else:
+                iter_deletion = self.select_replicas(partition, candidates, iter_protection)
+
+                for replica in iter_deletion:
                     logger.info('Selected replica: %s %s', replica.site.name, replica.dataset.name)
                     deciding_records[replica] = candidates[replica]
-                    iter_deletion = [replica]
 
             else:
                 deciding_records.update(candidates)
@@ -189,7 +187,7 @@ class Detox(object):
 
             logger.info('Done deleting %d replicas from %s.', len(replica_list), site.name)
 
-    def select_replica(self, partition, deletion_candidates, protection_list):
+    def select_replicas(self, partition, deletion_candidates, protection_list):
         """
         Select one dataset replica to delete out of all deletion candidates.
         Currently returning the smallest replica on the site with the highest protected fraction.
@@ -197,7 +195,7 @@ class Detox(object):
         """
 
         if len(deletion_candidates) == 0:
-            return None
+            return []
 
         candidate_sites = list(set(rep.site for rep in deletion_candidates.keys()))
 
@@ -211,10 +209,10 @@ class Detox(object):
         else:
             target_site = random.choice(candidate_sites)
 
-        candidates_on_site = [rep for rep in deletion_candidates.keys() if rep.site == target_site]
+        candidates_on_site = sorted([rep for rep in deletion_candidates.keys() if rep.site == target_site], key = lambda r: r.size())
         
         # return the smallest replica on the target site
-        return min(candidates_on_site, key = lambda replica: replica.size())
+        return candidates_on_site[:detox_config.deletion_per_iteration]
 
 
 if __name__ == '__main__':
