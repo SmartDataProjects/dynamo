@@ -499,6 +499,11 @@ class MySQLStore(LocalStoreInterface):
 
         known_datasets = None
 
+        # at this point we should drop records that make reference to datasets that are not in the store any more
+        self._mysql.delete_not_in('dataset_replicas', 'dataset_id', ('id', 'datasets_new'))
+        self._mysql.delete_not_in('dataset_accesses', 'dataset_id', ('id', 'datasets_new'))
+        self._mysql.delete_not_in('dataset_requests', 'dataset_id', ('id', 'datasets_new'))
+
         fields = ('name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
         # MySQL expects the local time for last_update
         mapping = lambda d: (
