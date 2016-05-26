@@ -54,11 +54,12 @@ class Detox(object):
 
         while True:
             iteration += 1
+            time_start = time.time()
 
             records = []
             candidates = self.find_candidates(partition, protection_list, records)
 
-            logger.info('%d dataset replicas in deletion list', len(candidates))
+            logger.info('Iteration %d (%.1f s): %d dataset replicas in deletion list', iteration, time.time() - time_start, len(candidates))
             if logger.getEffectiveLevel() == logging.DEBUG:
                 logger.debug('Deletion list:')
                 logger.debug(pprint.pformat(['%s:%s' % (r.site.name, r.dataset.name) for r in candidates]))
@@ -104,25 +105,45 @@ class Detox(object):
         Return the list of replicas that may be deleted (deletion_candidates) or must be protected (protection_list).
         """
 
+        policy_manager = self.policy_managers[partition]
+
+        def run_policies(replica, hit_records):
+            policy_manager.decision(replica, self.demand_manager, hit_records = hit_records)
+
         candidates = []
+
+        threads = []
 
         for dataset in self.inventory_manager.datasets.values():
             for replica in dataset.replicas:
                 if replica in protection_list:
                     continue
 
-                hit_records = self.policy_managers[partition].decision(replica, self.demand_manager)
+                hit_records = policy.PolicyHitRecords(replica)
+                thread = threading.Thread(target = run_policies, args = (replica, hit_records))
+                thread.start()
+                threads.append((thread, hit_records))
 
-                if records is not None:
-                    records.append(hit_records)
+                if len(threads) >= config.num_threads:
+                    iL = 0
+                    while iL < len(threads):
+                        thread, hit_records = threads[iL]
+                        if thread.is_alive():
+                            iL += 1
+                            continue
 
-                decision = hit_records.decision()
+                        thread.join()
+                        threads.pop(iL)
 
-                if decision == policy.DEC_DELETE:
-                    candidates.append(replica)
+                        if records is not None:
+                            records.append(hit_records)
 
-                elif decision == policy.DEC_PROTECT:
-                    protection_list.append(replica)
+                        decision = hit_records.decision()
+
+                        if decision == policy.DEC_DELETE:
+                            candidates.append(replica)
+                        elif decision == policy.DEC_PROTECT:
+                            protection_list.append(replica)
                 
         return candidates
 

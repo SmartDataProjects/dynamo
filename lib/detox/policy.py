@@ -148,7 +148,7 @@ class PolicyManager(object):
         else:
             self._policies.append(policy)
 
-    def decision(self, replica, demand):
+    def decision(self, replica, demand, hit_records = None):
         """
         Loop over the policies. Return DELETE if at least one policy hits, unless
         there is a PROTECT.
@@ -156,7 +156,8 @@ class PolicyManager(object):
         
         result = DEC_NEUTRAL
 
-        hit_records = PolicyHitRecords(replica)
+        if hit_records is None:
+            hit_records = PolicyHitRecords(replica)
 
         for policy in self._policies:
 #            if logger.getEffectiveLevel() == logging.DEBUG:
