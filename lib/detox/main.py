@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class Detox(object):
 
-    def __init__(self, inventory, transaction, demand, history, log_path = detox_config.log_path, html_path = detox_config.html_path):
+    def __init__(self, inventory, transaction, demand, history):
         self.inventory_manager = inventory
         self.transaction_manager = transaction
         self.demand_manager = demand
@@ -20,8 +20,6 @@ class Detox(object):
 
         self.policy_managers = {} # {partition: PolicyManager}
         self.quotas = {} # {partition: {site: quota}}
-        self.policy_log_path = log_path
-        self.policy_html_path = html_path
 
         self.deletion_message = 'Dynamo -- Automatic Cache Release Request.'
 
@@ -46,10 +44,6 @@ class Detox(object):
 
         self.demand_manager.update(self.inventory_manager)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
-
-        policy_log = None
-        if self.policy_log_path:
-            policy_log = open(self.policy_log_path, 'w')
 
         all_deletions = []
         iteration = 0
@@ -95,6 +89,12 @@ class Detox(object):
         # fetch the copy/deletion run number
         run_number = self.history.new_deletion_run(partition, is_test = is_test)
 
+        # update site and dataset lists
+        self.history.save_sites(self.inventory_manager)
+        self.history.save_datasets(self.inventory_manager)
+        # take snapshots of quotas if updated
+        self.history.save_quotas(run_number, self.quotas, self.inventory_manager)
+        # save replica snapshots and all deletion decisions
         self.history.save_deletion_decisions(run_number, all_deletions, protection_list, self.inventory_manager)
 
         logger.info('Committing deletion.')
@@ -180,302 +180,6 @@ class Detox(object):
         # return the smallest replica on the target site
         return min(protection_by_site[target_site], key = lambda replica: replica.size())
 
-    def write_policy_log(self, policy_log, iteration, all_records):
-        policy_log.write('===== Begin iteration %d =====\n\n' % iteration)
-
-        for site in sorted(self.inventory_manager.sites.values(), key = lambda s: s.name):
-            site_records = filter(lambda record: record.replica.site == site, all_records)
-
-            for record in sorted(site_records, key = lambda rec: rec.replica.dataset.name):
-                record.write_records(policy_log)
-
-        policy_log.write('\n===== End iteration %d =====\n\n' % iteration)
-
-    def open_html(self, path):
-        html = open(path, 'w')
-
-        text = '''<html>
-<html>
- <head>
-  <title>Detox policy hit records</title>
-  <style>
-body {
-  font-family: Monospace;
-  font-size: 120%;
-}
-
-span.menuitem {
-  text-decoration: underline;
-  cursor:pointer;
-}
-
-span.PROTECT {
-  color: purple;
-}
-
-span.KEEP {
-  color: blue;
-}
-
-span.DELETE {
-  color: red;
-}
-
-span.NEUTRAL {
-  color: black;
-}
-
-ul.collapsible {
-  display: none;
-}
-
-li.vanishable {
-  display: list-item;
-}
-  </style>
-  <script type="text/javascript">
-function toggleVisibility(id) {
-  list = document.getElementById(id);
-  if (list.style.display == "block")
-    list.style.display = "none";
-  else
-    list.style.display = "block";
-}
-function isCollapsible(obj) {
-  var iC = 0;
-  for (; iC != obj.classList.length; ++iC) {
-    if (obj.classList[iC] == "collapsible")
-      break;
-  }
-  return iC != obj.classList.length;
-}
-function isVanishable(obj) {
-  var iC = 0;
-  for (; iC != obj.classList.length; ++iC) {
-    if (obj.classList[iC] == "vanishable")
-      break;
-  }
-  return iC != obj.classList.length;
-}
-function isInList(obj, list) {
-  var iC = 0;
-  for (; iC != list.length; ++iC) {
-    if (list[iC] == obj)
-      break;
-  }
-  return iC != list.length;
-}
-function searchDataset(name) {
-  if (name.length > 0 && name.length < 6)
-    return;
-
-  var listitems = document.getElementsByTagName("li");
-  var listitem;
-  var sublist;
-  var colon;
-  var list;
-  var body = document.getElementsByTagName("body")[0];
-  var hits = [];
-  for (var iL = 0; iL != listitems.length; ++iL) {
-    listitem = listitems[iL];
-    sublist = null;
-    for (var iC = 0; iC != listitem.children.length; ++iC) {
-      if (listitem.children[iC].tagName == "UL")
-        sublist = listitem.children[iC];
-    }
-
-    if (name == "") {
-      listitem.style.display = "list-item";
-      if (sublist !== null && isCollapsible(sublist))
-        sublist.style.display = "none";
-
-      continue;
-    }
-
-    if (sublist === null)
-      continue;
-
-    colon = sublist.id.indexOf(":");
-    if (sublist.id.slice(colon + 1).search(name) == 0) {
-      listitem.style.display = "list-item";
-      sublist.style.display = "block";
-      hits.push(listitem);
-    }
-  }
-
-  var protected = hits.slice(0);
-  for (var iL = 0; iL != hits.length; ++iL) {
-    listitem = hits[iL];
-    list = listitem.parentNode;
-
-    while (true) {
-      list.style.display = "block";
-      for (var iC = 0; iC != list.children.length; ++iC) {
-        if (list.children[iC] != listitem && !isInList(list.children[iC], protected) && isVanishable(list.children[iC]))
-          list.children[iC].style.display = "none";
-      }
-
-      protected.push(list.parentNode);
-
-      if (list.parentNode == body)
-        break;
-
-      listitem = list.parentNode;
-      listitem.style.display = "list-item";
-      list = listitem.parentNode;
-    }
-  }
-}
-  </script>
- </head>
- <body>
-  <div>
-  Search dataset: <input type="text" size="100" onkeyup="searchDataset(this.value)" onpaste="searchDataset(this.value)" onchange="searchDataset(this.value)">
-  </div>
-'''  
-
-        html.write(text)
-        return html
-
-    def close_html(self, html):
-        if not html:
-            return
-
-        text = '''
- </body>
-</html>
-'''
-
-        html.write(text)
-        html.close()
-
-    def write_html_iteration(self, html, iteration, all_records):
-        """
-        Write an html block for the specific iteration. Loop over sites, decisions, datasets, policies.
-        <ul>
-         <li>site
-          <ul>
-           <li>decision
-            <ul>
-             <li>dataset
-              <ul>
-               <li>policy</li>
-              </ul>
-             </li>
-            </ul>
-           </li>
-          </ul>
-         </li>
-        """
-
-        GB = 1000. * 1000. * 1000.
-        TB = GB * 1000.
-
-        html_lines = []
-        keywords = {}
-        global_space = dict((dec, 0) for dec in policy.DECISIONS)
-        policy_protection_size = {} # policy -> total size of protected data
-
-        # loop over sites (sorted by name)
-        for site in sorted(self.inventory_manager.sites.values(), key = lambda s: s.name):
-            decision_htmls = []
-            used_space = dict((dec, 0) for dec in policy.DECISIONS)
-
-            keywords['site'] = site.name
-
-            # loop over decisions
-            for decision in policy.DECISIONS:
-                site_records = filter(lambda hit_records: hit_records.replica.site == site and hit_records.decision() == decision, all_records)
-                site_records.sort(key = lambda hit_records: hit_records.replica.dataset.name)
-
-                replica_htmls = []
-
-                decision_str = policy.DECISION_STR[decision]
-                keywords['decision'] = decision_str
-                if decision == policy.DEC_NEUTRAL:
-                    keywords['menuitem'] = ''
-                else:
-                    keywords['menuitem'] = ' menuitem'
-
-                # loop over replicas
-                for hit_records in site_records:
-                    replica = hit_records.replica
-                    dataset = replica.dataset
-                    replica_size = replica.size()
-
-                    keywords['dataset'] = dataset.name
-                    keywords['replica_size'] = replica_size / GB
-
-                    used_space[decision] += replica_size
-
-                    replica_html = []
-                    replica_html.append('<li class="vanishable"><span onclick="toggleVisibility(\'{site}:{dataset}\')" class="{decision}{menuitem}">{dataset}</span> ({replica_size:.1f} GB)')
-                    replica_html.append(' <ul id="{site}:{dataset}" class="collapsible">\n')
-                    replica_html += ['  <li>{policy}:{decision} ({reason})</li>'.format(policy = record.policy.name, decision = policy.DECISION_STR[record.decision], reason = record.reason) for record in hit_records.records]
-                    replica_html.append(' </ul>')
-                    replica_html.append('</li>')
-
-                    replica_htmls += map(lambda l: l.format(**keywords), replica_html)
-
-                    # add the replica size to protection tally
-                    for record in hit_records.records:
-                        if record.decision == policy.DEC_PROTECT:
-                            try:
-                                policy_protection_size[record.policy] += replica_size
-                            except KeyError:
-                                policy_protection_size[record.policy] = replica_size
-
-                keywords['used_space'] = used_space[decision] / TB
-
-                # make html for the decision block
-                decision_html = []
-                decision_html.append('<li class="vanishable"><span onclick="toggleVisibility(\'{site}:{decision}\')" class="menuitem">{decision}</span> ({used_space:.1f} TB)')
-                decision_html.append(' <ul id="{site}:{decision}" class="collapsible">')
-                for line in replica_htmls:
-                    decision_html.append('  ' + line)
-                decision_html.append(' </ul>')
-                decision_html.append('</li>')
-
-                decision_htmls += map(lambda l: l.format(**keywords), decision_html)
-
-            # site storage
-            for dec in policy.DECISIONS:
-                decision_str = policy.DECISION_STR[dec]
-                keywords['used_space_' + decision_str] = used_space[dec] / TB
-
-                global_space[dec] += used_space[dec]
-
-            # make html for the site
-            site_html = []
-            line = '<li class="vanishable"><span onclick="toggleVisibility(\'{site}\')" class="menuitem">{site}</span>'
-            line += ' (<span class="NEUTRAL">N:{used_space_NEUTRAL:.1f}</span>, <span class="DELETE">D:{used_space_DELETE:.1f}</span>, <span class="KEEP">K:{used_space_KEEP:.1f}</span>, <span class="PROTECT">P:{used_space_PROTECT:.1f}</span> TB)\n'
-            site_html.append(line)
-            site_html.append(' <ul id="{site}" class="collapsible">')
-            for line in decision_htmls:
-                site_html.append('  ' + line)
-            site_html.append(' </ul>')
-            site_html.append('</li>')
-
-            html_lines += map(lambda l: l.format(**keywords), site_html)
-
-        html.write('  <h2>Iteration %d</h2>\n' % iteration)
-        html.write('  <ul id="maintable">\n')
-        for line in html_lines:
-            html.write('    ' + line + '\n')
-        html.write('  </ul>\n')
-        html.write('  <h3>Global space usage</h3>\n')
-        html.write('  <ul id="global_space_usage">\n')
-        for dec in policy.DECISIONS:
-            html.write('   <li>%s: %.1f TB</li>\n' % (policy.DECISION_STR[dec], global_space[dec] / TB))
-        html.write('  </ul>\n')
-        html.write('  <h3>Protected sizes by each policy</h3>\n')
-        html.write('  <ul id="protection_summary">\n')
-        for pol, size in sorted(policy_protection_size.items(), key = lambda (pol, size): size, reverse = True):
-            html.write('   <li>%s: %.1f TB</li>\n' % (pol.name, size / TB))
-        html.write('  </ul>\n')
-        html.write('  <hr>\n')
-
-
 if __name__ == '__main__':
 
     import sys
@@ -490,7 +194,9 @@ if __name__ == '__main__':
     parser = ArgumentParser(description = 'Use detox')
 
     parser.add_argument('replica', metavar = 'SITE:DATASET', help = 'Replica to delete.')
-    parser.add_argument('--commit', '-C', action = 'store_true', dest = 'commit',  help = 'Actually make deletion.')
+    parser.add_argument('--partition', '-p', metavar = 'PARTITION', dest = 'partition', default = 'AnalysisOps', help = 'Partition to delete from.')
+    parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run',  help = 'Dry run (no write / delete at all)')
+    parser.add_argument('--production-run', '-P', action = 'store_true', dest = 'production_run', help = 'This is not a test.')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
     args = parser.parse_args()
@@ -522,9 +228,18 @@ if __name__ == '__main__':
     action_list = ActionList()
     action_list.add_action('Delete', site_pattern, dataset_pattern)
 
-    detox.set_policies(action_list)
+    # at the moment partitions are set by groups
+    quotas = {}
+    for group in inventory_manager.groups.values():
+        group_quotas = {}
+        for site in inventory_manager.sites.values():
+            group_quotas[site] = site.quota(group)
 
-    if not args.commit:
+        quotas[group.name] = group_quotas
+
+    detox.set_policies(action_list, quotas)
+
+    if args.dry_run:
         config.read_only = True
 
-    detox.run(dynamic_deletion = False)
+    detox.run(partition = args.partition, dynamic_deletion = False, is_test = not args.production_run)

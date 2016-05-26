@@ -182,23 +182,24 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             return -1
 
         else:
-            result = self._make_phedex_request('delete', options, method = POST)
-
-            if len(result) == 0:
-                logger.error('schedule_deletions  delete failed.')
-                return 0
-
-            request_id = int(result[0]['id']) # return value is a string
-
-            logger.warning('PhEDEx deletion request id: %d', request_id)
-        
-            result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': replica.site.name}, method = POST)
-
-            if len(result) == 0:
-                logger.error('schedule_deletions  deletion approval failed.')
-                return 0
-
-            return request_id
+            return -1
+#            result = self._make_phedex_request('delete', options, method = POST)
+#
+#            if len(result) == 0:
+#                logger.error('schedule_deletions  delete failed.')
+#                return 0
+#
+#            request_id = int(result[0]['id']) # return value is a string
+#
+#            logger.warning('PhEDEx deletion request id: %d', request_id)
+#        
+#            result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': replica.site.name}, method = POST)
+#
+#            if len(result) == 0:
+#                logger.error('schedule_deletions  deletion approval failed.')
+#                return 0
+#
+#            return request_id
 
     def schedule_deletions(self, replica_list, comments = '', is_test = False): #override (DeletionInterface)
 
@@ -232,26 +233,27 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 request_mapping[request_id] = (True, replicas_to_delete)
 
             else:
-                # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
-                result = self._make_phedex_request('delete', options, method = POST)
-    
-                if len(result) == 0:
-                    logger.error('schedule_deletions  delete failed.')
-                    return
-    
-                request_id = int(result[0]['id']) # return value is a string
-    
-                request_mapping[request_id] = (False, replicas_to_delete) # (completed, deleted_replicas)
-    
-                logger.warning('PhEDEx deletion request id: %d', request_id)
-                
-                result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
-    
-                if len(result) == 0:
-                    logger.error('schedule_deletions  deletion approval failed.')
-                    return
-    
-                request_mapping[request_id] = (True, replicas_to_delete)
+                pass
+#                # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
+#                result = self._make_phedex_request('delete', options, method = POST)
+#    
+#                if len(result) == 0:
+#                    logger.error('schedule_deletions  delete failed.')
+#                    return
+#    
+#                request_id = int(result[0]['id']) # return value is a string
+#    
+#                request_mapping[request_id] = (False, replicas_to_delete) # (completed, deleted_replicas)
+#    
+#                logger.warning('PhEDEx deletion request id: %d', request_id)
+#                
+#                result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
+#    
+#                if len(result) == 0:
+#                    logger.error('schedule_deletions  deletion approval failed.')
+#                    return
+#    
+#                request_mapping[request_id] = (True, replicas_to_delete)
 
         replicas_by_site = {}
         for replica in replica_list:

@@ -27,6 +27,23 @@ class TransactionHistoryInterface(object):
         if self._lock_depth > 0: # should always be the case if properly programmed
             self._lock_depth -= 1
 
+    def make_snapshot(self):
+        """
+        Make a snapshot of the current state of the persistent records.
+        """
+
+        timestamp = time.strftime('%y%m%d%H%M%S')
+
+        if config.read_only:
+            logger.debug('_do_make_snapshot(%s, %d)', timestamp)
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_make_snapshot(timestamp)
+        finally:
+            self.release_lock()
+
     def new_copy_run(self, partition, is_test = False):
         """
         Set up a new copy/deletion run for the partition.
@@ -115,13 +132,57 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def save_copy_decisions(self, run_number, copies, inventory):
+    def save_sites(self, inventory):
         """
-        Insert new sites and datasets.
+        Save sites that are in the inventory but not in the history records.
         """
 
         if config.read_only:
-            logger.info('save_deletion_decisions')
+            logger.info('save_sites')
+            return
+
+        self.aquire_lock()
+        try:
+            self._do_save_sites(inventory)
+        finally:
+            self.release_lock()
+
+    def save_datasets(self, inventory):
+        """
+        Save datasets that are in the inventory but not in the history records.
+        """
+
+        if config.read_only:
+            logger.info('save_datasets')
+            return
+
+        self.aquire_lock()
+        try:
+            self._do_save_datasets(inventory)
+        finally:
+            self.release_lock()
+
+    def save_quotas(self, run_number, quotas, inventory):
+        """
+        Update quota snapshots.
+        """
+
+        if config.read_only:
+            logger.info('save_quotas')
+            return
+
+        self.aquire_lock()
+        try:
+            self._do_save_quotas(run_number, quotas, inventory)
+        finally:
+            self.release_lock()
+
+    def save_copy_decisions(self, run_number, copies, inventory):
+        """
+        """
+
+        if config.read_only:
+            logger.info('save_copy_decisions')
             return
 
         self.acquire_lock()
@@ -129,10 +190,9 @@ class TransactionHistoryInterface(object):
             self._do_save_copy_decisions(run_number, copies, inventory)
         finally:
             self.release_lock()
-        
+      
     def save_deletion_decisions(self, run_number, deletions, protections, inventory):
         """
-        Insert new sites and datasets.
         Make replica snapshots for updated replicas, and save the decision for all replicas.
         Arguments deletions and protections are lists of dataset replicas.
         """
@@ -298,3 +358,6 @@ if __name__ == '__main__':
                         print 'Transfer {percentage:.2f}% complete [{update}]'.format(percentage = done / total * 100., update = time.ctime(latest_update))
 
                     print ''
+
+        elif command == 'snapshot':
+            

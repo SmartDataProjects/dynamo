@@ -270,7 +270,8 @@ def make_stack(strategy):
         ]
 
         # stackgen(0.92) -> TargetFraction stack with threshold 92%
-        stackgen = lambda *arg: stack[0].threshold = arg[0]
+        def stackgen(*arg):
+            stack[0].threshold = arg[0]
 
     elif strategy == 'List':
         stack = [
@@ -282,6 +283,10 @@ def make_stack(strategy):
         ]
 
         # stackgen([files]) -> List stack with files loaded into ActionList
-        stackgen = lambda *arg: stack[-1].load_lists(arg[0]) if type(arg[0]) is list else stack[-1].load_list(arg[0])
+        def stackgen(*arg):
+            if type(arg[0]) is list:
+                stack[-1].load_lists(arg[0])
+            else:
+                stack[-1].load_list(arg[0])
 
     return stackgen
