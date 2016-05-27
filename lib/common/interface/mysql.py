@@ -37,7 +37,15 @@ class MySQL(object):
             else:
                 logger.debug(sql + ' % ' + str(args))
 
-        cursor.execute(sql, args)
+        for attempt in range(10):
+            try:
+                cursor.execute(sql, args)
+                break
+            except MySQLdb.OperationalError:
+                pass
+
+        else: # 10 failures
+            raise MySQLdb.MySQLError('Too many failed attempts')
 
         result = cursor.fetchall()
 
