@@ -75,7 +75,7 @@ class MySQLStore(LocalStoreInterface):
 
         for table in tables:
             # drop the original table and copy back the format from the snapshot
-            self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._mysql.db_name, table = table))
+            self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._mysql.db_name(), table = table))
 
     def _do_remove_snapshot(self, newer_than, older_than): #override
         self._mysql.remove_snapshot(newer_than, older_than)
@@ -87,7 +87,7 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.recover_from(timestamp)
 
     def _do_switch_snapshot(self, timestamp): #override
-        snapshot_name = self._mysql.db_name + '_' + timestamp
+        snapshot_name = self._mysql.db_name() + '_' + timestamp
 
         self._mysql.query('USE ' + snapshot_name)
 

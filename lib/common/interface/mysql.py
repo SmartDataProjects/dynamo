@@ -15,11 +15,14 @@ class MySQL(object):
     
     def __init__(self, host = '', user = '', passwd = '', config_file = '', config_group = '', db = ''):
         if config_file:
-            self._connection = MySQLdb.connect(read_default_file = config_file, read_default_group = config_group, db = db)
+            self._connection_parameters = {'read_default_file': config_file, 'read_default_group': config_group, 'db': db}
         else:
-            self._connection = MySQLdb.connect(host = host, user = user, passwd = passwd, db = db)
+            self._connection_parameters = {'host': host, 'user': user, 'passwd': passwd, 'db': db}
 
-        self.db_name = db
+        self._connection = MySQLdb.connect(**self._connection_parameters)
+
+    def db_name(self):
+        return self._connection_parameters['db']
 
     def query(self, sql, *args):
         """
@@ -37,15 +40,24 @@ class MySQL(object):
             else:
                 logger.debug(sql + ' % ' + str(args))
 
-        for attempt in range(10):
-            try:
-                cursor.execute(sql, args)
-                break
-            except MySQLdb.OperationalError:
-                pass
+        try:
+            for attempt in range(10):
+                try:
+                    cursor.execute(sql, args)
+                    break
+                except MySQLdb.OperationalError:
+                    # reconnect to server
+                    self._connection = MySQLdb.connect(**self._connection_parameters)
+                    cursor = self._connection.cursor()
+    
+            else: # 10 failures
+                raise MySQLdb.MySQLError('Too many OperationalErrors')
 
-        else: # 10 failures
-            raise MySQLdb.MySQLError('Too many failed attempts')
+        except:
+            logger.error('There was an error executing the following statement:')
+            logger.error(sql[:10000])
+            logger.error(sys.exc_info()[1])
+            raise
 
         result = cursor.fetchall()
 
@@ -147,13 +159,7 @@ class MySQL(object):
                 if logger.getEffectiveLevel() == logging.DEBUG:
                     logger.debug(sqlbase % values)
 
-                try:
-                    cursor.execute(sqlbase % values)
-                except:
-                    logger.error('There was an error executing the following statement:')
-                    logger.error((sqlbase % values)[:10000])
-                    logger.error(sys.exc_info()[1])
-                    raise
+                self.query(sqlbase, values)
 
                 values = ''
 
@@ -161,16 +167,16 @@ class MySQL(object):
                 values += ','
 
     def make_snapshot(self, timestamp):
-        snapshot_db = self.db_name + '_' + timestamp
+        snapshot_db = self.db_name() + '_' + timestamp
 
         self.query('CREATE DATABASE `{copy}`'.format(copy = snapshot_db))
 
         tables = self.query('SHOW TABLES')
 
         for table in tables:
-            self.query('CREATE TABLE `{copy}`.`{table}` LIKE `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name, table = table))
+            self.query('CREATE TABLE `{copy}`.`{table}` LIKE `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name(), table = table))
 
-            self.query('INSERT INTO `{copy}`.`{table}` SELECT * FROM `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name, table = table))
+            self.query('INSERT INTO `{copy}`.`{table}` SELECT * FROM `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name(), table = table))
 
     def remove_snapshot(self, newer_than, older_than):
         snapshots = self.list_snapshots()
@@ -179,25 +185,25 @@ class MySQL(object):
             tm = int(time.mktime(time.strptime(snapshot, '%y%m%d%H%M%S')))
             if (newer_than == older_than and tm == newer_than) or \
                     (tm > newer_than and tm < older_than):
-                database = self.db_name + '_' + snapshot
+                database = self.db_name() + '_' + snapshot
                 logger.info('Dropping database ' + database)
                 self.query('DROP DATABASE ' + database)
 
     def list_snapshots(self):
         databases = self.query('SHOW DATABASES')
 
-        snapshots = [db.replace(self.db_name + '_', '') for db in databases if db.startswith(self.db_name + '_')]
+        snapshots = [db.replace(self.db_name() + '_', '') for db in databases if db.startswith(self.db_name() + '_')]
 
         return sorted(snapshots, reverse = True)
 
     def recover_from(self, timestamp):
-        snapshot_name = self.db_name + '_' + timestamp
+        snapshot_name = self.db_name() + '_' + timestamp
 
         tables = self.query('SHOW TABLES')
 
         for table in tables:
-            self.query('TRUNCATE TABLE `%s`.`%s`' % (self.db_name, table))
-            self.query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (self.db_name, table, snapshot_name, table))
+            self.query('TRUNCATE TABLE `%s`.`%s`' % (self.db_name(), table))
+            self.query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (self.db_name(), table, snapshot_name, table))
 
     def _execute_in_batches(self, execute, pool):
         """
