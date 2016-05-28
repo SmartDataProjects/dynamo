@@ -330,13 +330,32 @@ class DatasetReplica(object):
                 num_remote_accesses = len(self.accesses[DatasetReplica.ACC_REMOTE]))
 
     def is_last_copy(self):
-        return len(self.dataset.replicas) == 1
+        return len(self.dataset.replicas) == 1 and self.dataset.replicas[0] == self
 
     def size(self):
         if self.is_partial:
             return sum([r.block.size for r in self.block_replicas])
         else:
             return self.dataset.size
+
+    def effective_owner(self):
+        if self.group:
+            return self.group
+
+        if len(self.block_replicas) == 0:
+            return None
+
+        # simple majority
+        counts = collections.defaultdict(int)
+        for br in self.block_replicas:
+            counts[br] += 1
+
+        order = sorted(counts.items(), key = lambda (g, c): c, reverse = True)
+        if order[0][1] > order[1][1]:
+            return order[0][0]
+        else:
+            # if tied, find alphanumerically first group
+            return min([g for g, c in order if c == order[0][1]], key = lambda g: g.name)
 
     def find_block_replica(self, block):
         try:

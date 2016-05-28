@@ -159,7 +159,7 @@ class MySQL(object):
                 if logger.getEffectiveLevel() == logging.DEBUG:
                     logger.debug(sqlbase % values)
 
-                self.query(sqlbase, values)
+                self.query(sqlbase % values)
 
                 values = ''
 

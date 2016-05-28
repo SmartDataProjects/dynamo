@@ -26,9 +26,10 @@ class Detox(object):
 
         self.deletion_message = 'Dynamo -- Automatic Cache Release Request.'
 
-    def set_policies(self, policy_stack, quotas, partition = ''): # empty partition name -> default
+    def set_policies(self, policy_stack, quotas, partitioner = None, partition = ''): # empty partition name -> default
         self.policy_stacks[partition] = policy_stack
         self.quotas[partition] = quotas
+        self.partitioners[partition] = partitioner
 
     def run(self, partition = '', iterative_deletion = True, is_test = False):
         """
@@ -48,8 +49,6 @@ class Detox(object):
         self.demand_manager.update(self.inventory_manager)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
-        policy_stack = self.policy_stacks[partition]
-
         # fetch the copy/deletion run number
         run_number = self.history.new_deletion_run(partition, is_test = is_test)
 
@@ -68,12 +67,18 @@ class Detox(object):
         deciding_records = {} # {replica: deciding_record} record can be None
         iteration = 0
 
+        policy_stack = self.policy_stacks[partition]
+        partitioner = self.partitioners[partition]
+
         evaluations = {}
         for dataset in self.inventory_manager.datasets.values():
             for replica in dataset.replicas:
-                evaluations[replica] = policy.Evaluations(replica, policy_stack)
+                if partitioner is None or partitioner(replica):
+                    evaluations[replica] = policy.Evaluations(replica, policy_stack)
 
         logger.info('Start deletion. Evaluating %d policies against %d replicas.', len(policy_stack), len(evaluations))
+
+        return
 
         while True:
             iteration += 1
