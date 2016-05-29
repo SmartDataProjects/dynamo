@@ -7,6 +7,7 @@
     <link href="css/inventory.css" rel="stylesheet">
     <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
     <script type="text/javascript" src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+    <script type="text/javascript" src="http://spin.js.org/spin.min.js"></script>
     <script type="text/javascript" src="js/utils.js"></script>
     <script type="text/javascript" src="js/inventory.js"></script>
     <script type="text/javascript">
@@ -20,29 +21,28 @@
       <h1 id="pageTitle">Dynamo site and dataset statistics</h1>
     </header>
     <main id="main">
-      <div id="viewSelection">
+      <section id="viewSelection">
         <div id="selections">
           <div id="dataSelection">
             <div class="menuTitle">
               Show:
             </div>
-            <div id="dataTypeCont">
-              <div style="height:40px;">
-                <select id="dataType" name="dataType" onchange="limitOptions();">
-                  <option value="size">Total size</option>
-                  <option value="replication">Average replication</option>
-                </select>
-              </div>
-              <div style="height:40px;margin-left:10px;">for each</div>
-              <div style="height:40px;">
-                <select id="categories" name="categories" onchange="limitOptions();">
-                  <option value="campaigns">Campaign</option>
-                  <option value="dataTiers">Data tier</option>
-                  <option value="datasets">Dataset</option>
-                  <option value="sites">Site</option>
-                  <option value="groups">Group</option>
-                </select>
-              </div>
+            <div style="height:30px;">
+              <select id="dataType" name="dataType">
+                <option value="size">Total size</option>
+                <option value="replication">Average replication</option>
+                <option value="usage">Site usage</option>
+              </select>
+            </div>
+            <div style="height:30px;margin-left:10px;">for each</div>
+            <div style="height:30px;">
+              <select id="categories" name="categories">
+                <option value="campaigns">Campaign</option>
+                <option value="dataTiers">Data tier</option>
+                <option value="datasets">Dataset</option>
+                <option value="sites">Site</option>
+                <option value="groups">Group</option>
+              </select>
             </div>
           </div>
           <div id="constraints">
@@ -57,11 +57,11 @@
               <div class="constraintType">Group</div>
             </div>
             <div id="constraintsRight">
-              <div class="constraintInput"> = <input type="text" id="campaign" name="campaign"></div>
-              <div class="constraintInput"> = <input type="text" id="dataTier" name="dataTier"></div>
-              <div class="constraintInput"> = <input type="text" id="dataset" name="dataset"></div>
-              <div class="constraintInput"> = <input type="text" id="site" name="site"></div>
-              <div class="constraintInput"> = <input type="text" id="group" name="group"></div>
+              <div class="constraintInput"> = <input class="constraint" type="text" id="campaign" name="campaign"></div>
+              <div class="constraintInput"> = <input class="constraint" type="text" id="dataTier" name="dataTier"></div>
+              <div class="constraintInput"> = <input class="constraint" type="text" id="dataset" name="dataset"></div>
+              <div class="constraintInput"> = <input class="constraint" type="text" id="site" name="site"></div>
+              <div> = <select class="constraint" style="vertical-align:text-top;" id="group" name="group" multiple="multiple"></select></div>
             </div>
           </div>
         </div>
@@ -69,7 +69,7 @@
           <input type="button" id="commitSelection" value="Show" onclick="loadData();">
           <input type="button" id="getData" value="JSON" onclick="getData();">
         </div>
-      </div>
+      </section>
       <section id="graphSection">
         <div id="graphCont">
           <svg id="graph">
@@ -80,7 +80,6 @@
           </svg>
         </div>
       </section>
-      <hr>
       <section id="tableSection">
         <table id="textData">
           <tr class="header">

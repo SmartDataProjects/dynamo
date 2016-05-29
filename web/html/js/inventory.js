@@ -1,0 +1,460 @@
+var colors = [
+   '#d5ff00',
+   '#00ff00',
+   '#0000ff',
+   '#ff0000',
+   '#01fffe',
+   '#ffa6fe',
+   '#ffdb66',
+   '#006401',
+   '#010067',
+   '#95003a',
+   '#007db5',
+   '#ff00f6',
+   '#ffeee8',
+   '#774d00',
+   '#90fb92',
+   '#0076ff',
+   '#ff937e',
+   '#6a826c',
+   '#ff029d',
+   '#fe8900',
+   '#7a4782',
+   '#7e2dd2',
+   '#85a900',
+   '#ff0056',
+   '#a42400',
+   '#00ae7e',
+   '#683d3b',
+   '#bdc6ff',
+   '#263400',
+   '#bdd393',
+   '#00b917',
+   '#9e008e',
+   '#001544',
+   '#c28c9f',
+   '#ff74a3',
+   '#01d0ff',
+   '#004754',
+   '#e56ffe',
+   '#788231',
+   '#0e4ca1',
+   '#91d0cb',
+   '#be9970',
+   '#968ae8',
+   '#bb8800',
+   '#43002c',
+   '#deff74',
+   '#00ffc6',
+   '#ffe502',
+   '#620e00',
+   '#008f9c',
+   '#98ff52',
+   '#7544b1',
+   '#b500ff',
+   '#00ff78',
+   '#ff6e41',
+   '#005f39',
+   '#6b6882',
+   '#5fad4e',
+   '#a75740',
+   '#a5ffd2',
+   '#ffb167',
+   '#009bff',
+   '#e85ebe'
+];
+
+var loading = new Spinner({scale: 5, corners: 0, width: 2});
+
+function initPage(dataType, categories, constraints) {
+    $.ajax({url: 'inventory.php', data: {getGroups: 1}, success: function (data, textStatus, jqXHR) { setGroups(data); }, dataType: 'json', async: false});
+
+    $('#dataType > option[value="' + dataType + '"]')
+        .attr('selected', true);
+
+    $('#categories > option[value="' + categories + '"]')
+        .attr('selected', true);
+
+    for (var c in constraints) {
+        if (c == 'group') {
+            for (var g in constraints[c])
+                $('#group [value="' + constraints[c][g] + '"]').attr('selected', true);
+        }
+        else
+            $('#' + c).attr('value', constraints[c]);
+    }
+
+    $('#dataType').change(limitOptions);
+    $('#categories').change(limitOptions);
+    $('.constraint').change(limitOptions);
+
+    $(document).ajaxStart(function () {
+            var graph = d3.select('#graph');
+            graph.selectAll('.message').remove();
+            graph.selectAll('.axis').remove();
+            graph.selectAll('.velem').remove();
+            d3.select('#legend').selectAll('.legendEntry').remove();
+
+            loading.spin();
+            $('#graphCont').append($(loading.el));
+        });
+    $(document).ajaxStop(function () {
+            loading.stop();
+        });
+  
+    loadData();
+
+    limitOptions();
+}
+
+function limitOptions() {
+    // do not allow datasets view unless some constraints are set
+    $('#categories > option[value="datasets"]')
+        .attr('disabled', $('#campaign').val() == '' && $('#dataset').val() == '' && $('#site').val() == '');
+
+    var dataType = $('#dataType').val();
+
+    if (dataType == 'replication' || dataType == 'usage') {
+        var selected = $('#categories :selected').get(0);
+        if (selected.value == 'sites')
+            selected = $('#categories :first').get(0);
+        
+        $('#categories > option[value="sites"]')
+            .attr('selected', false)
+            .attr('disabled', true);
+        
+        if (dataType == 'replication')
+            $('#site')
+                .attr('value', '')
+                .attr('disabled', true);
+        else
+            $('#site')
+                .attr('disabled', false);
+
+        selected.selected = true;
+    }
+    else {
+        $('#categories > option[value="sites"]')
+            .attr('disabled', false);
+        $('#site')
+            .attr('value', '')
+            .attr('disabled', false);
+    }
+}
+
+function setGroups(data) {
+    d3.select('#group')
+        .selectAll('option')
+        .data(data)
+        .enter()
+        .append('option')
+        .attr('value', function (d) { return d; })
+        .text(function (d) { return d; });
+}
+
+function displayData(data) {
+    if (data.content.length == 0) {
+        d3.select('#graph')
+            .attr('viewBox', '0 0 70 70')
+            .append('text').classed('message', true)
+            .attr('transform', 'translate(20,35)')
+            .attr('font-size', 10)
+            .attr('fill', '#bbbbbb')
+            .text('Empty');
+
+        var legend = d3.select('#legend')
+            .attr('viewBox', '0 0 30 0');
+
+        return;
+    }
+
+    if (data.dataType == 'size') {
+        // data.content: [{key: (key_name), size: (size)}]
+
+        var graphData = data.content.slice(0, colors.length);
+        var residuals = data.content.slice(colors.length);
+        if (residuals.length != 0) {
+            var remaining = 0;
+            for (var i in residuals)
+                remaining += residuals[i].size;
+            graphData.push({key: 'Others', size: remaining});
+        }
+
+        var total = 0;
+        for (var i in graphData) {
+            total += graphData[i].size;
+        }
+    
+        var arcpath = d3.svg.arc()
+            .outerRadius(30)
+            .innerRadius(0);
+
+        var pie = d3.layout.pie()
+            .sort(null)
+            .value(function (d) { return d.size; });
+
+        d3.select('#graph')
+            .attr('viewBox', '-35 -35 70 100')
+            .selectAll('.velem')
+            .data(pie(graphData))
+            .enter()
+            .append('path').classed('velem', true)
+            .attr('d', arcpath)
+            .attr('fill', function (d, i) { return colors[i]; })
+            .attr('stroke', 'white')
+            .attr('stroke-width', function (d) { if (d.data.size < total * 0.01) return 0; else return 0.1; });
+
+        var legend = d3.select('#legend')
+            .attr('height', 10 + 20 * graphData.length) // 20 px per row
+            .attr('viewBox', '0 -1 30 ' + (1 + 2 * graphData.length)); // svg coordinate is 1/10 of browser
+
+        var entries = legend.selectAll('.legendEntry')
+            .data(graphData)
+            .enter().append('g').classed('legendEntry', true)
+            .attr('transform', function (d, i) { return 'translate(1,' + (2 * i) + ')'; });
+
+        entries.append('circle')
+            .attr('cx', 1.)
+            .attr('cy', 1.)
+            .attr('r', 0.9)
+            .attr('fill', function (d, i) { return colors[i]; });
+
+        entries.append('text')
+            .attr('font-size', 2)
+            .attr('dx', 4)
+            .attr('dy', 1.6)
+            .text(function (d) { return d.key; })
+            .each(function () { truncateText(this, 26); } );
+    }
+    else if (data.dataType == 'replication') {
+        // data.content: [{key: (key_name), mean: (mean), rms: (rms)}]
+
+        var graph = d3.select('#graph')
+            .attr('viewBox', '0 0 70 ' + (40 + 4 * data.content.length));
+
+        var x = d3.scale.linear()
+            .domain([0, d3.max(data.content, function (d) { return d.mean + d.rms + 0.5; })])
+            .range([0, 50]);
+
+        var xoffset = 20;
+
+        var xaxis = d3.svg.axis()
+            .scale(x)
+            .orient('top')
+            .tickSize(1, 1);
+
+        var gxaxis = graph.append('g').classed('axis', true)
+            .attr('transform', 'translate(' + xoffset + ',2.5)')
+            .call(xaxis);
+
+        gxaxis.selectAll('text')
+            .attr('y', -1.2)
+            .attr('font-size', 1);
+
+        var entry = graph.selectAll('.velem')
+            .data(data.content)
+            .enter()
+            .append('g').classed('velem', true)
+            .attr('transform', function (d, i) { return 'translate(0,' + (3 + i * 3.5) + ')'; });
+
+        entry.append('text')
+            .attr('font-size', 1.5)
+            .attr('text-anchor', 'end')
+            .attr('x', xoffset - 0.5)
+            .attr('y', 0)
+            .attr('dy', 2)
+            .text(function (d) { return d.key; })
+            .each(function () { truncateText(this, xoffset); });
+
+        var bar = entry.append('g').classed('bar', true)
+            .attr('transform', 'translate(' + xoffset + ',0)');
+
+        bar.append('rect').classed('mean', true)
+            .attr('width', function (d, i) { return x(d.mean); })
+            .attr('height', 3);
+
+        bar.append('rect').classed('rms', true)
+            .attr('transform', function (d, i) { return 'translate(' + (x(Math.max(0., d.mean - d.rms))) + ',1)'; })
+            .attr('width', function (d, i) { return x(Math.min(d.mean + d.rms, 2. * d.rms)); })
+            .attr('height', 1);
+
+        var legend = d3.select('#legend')
+            .attr('height', 400) // 20 px per row
+            .attr('viewBox', '0 -1 30 40'); // svg coordinate is 1/10 of browser
+
+        var legendMean = legend.append('g').classed('legendEntry', true)
+            .attr('transform', 'translate(1,2)');
+        var legendRMS = legend.append('g').classed('legendEntry', true)
+            .attr('transform', 'translate(1,4)');
+
+        legendMean.append('rect').classed('mean', true)
+            .attr('x', 0)
+            .attr('y', 0)
+            .attr('width', 1.8)
+            .attr('height', 1.8);
+
+        legendMean.append('text')
+            .attr('font-size', 2)
+            .attr('dx', 4)
+            .attr('dy', 1.6)
+            .text('Mean');
+
+        legendRMS.append('rect').classed('rms', true)
+            .attr('x', 0.2)
+            .attr('y', 0.2)
+            .attr('width', 1.4)
+            .attr('height', 1.4);
+
+        legendRMS.append('text')
+            .attr('font-size', 2)
+            .attr('dx', 4)
+            .attr('dy', 1.6)
+            .text('RMS');
+    }
+    else if (data.dataType == 'usage') {
+        // data.content: [{site: (site_name), usage: [{key: (key_name), size: (size)}]}]
+        // data.keys: [(key_name)]
+
+        var colorMap = d3.scale.ordinal()
+            .domain(data.keys)
+            .range(colors);
+
+        var graph = d3.select('#graph')
+            .attr('viewBox', '0 0 70 ' + (40 + 4 * data.content.length));
+
+        var x = d3.scale.linear()
+            .domain([0, d3.max(data.content, function (d) { return d3.sum(d.usage, function (u) { return u.size; }); })])
+            .range([0, 50]);
+
+        var xoffset = 15;
+
+        var xaxis = d3.svg.axis()
+            .scale(x)
+            .orient('top')
+            .tickSize(1, 1);
+
+        var gxaxis = graph.append('g').classed('axis', true)
+            .attr('transform', 'translate(' + xoffset + ',2.5)')
+            .call(xaxis);
+
+        gxaxis.selectAll('.tick text')
+            .attr('y', -1.2)
+            .attr('font-size', 1);
+
+        gxaxis.append('text').classed('unit', true)
+            .attr('x', 51)
+            .attr('y', -1)
+            .attr('font-size', 1.5)
+            .text('TB');
+
+        var entry = graph.selectAll('.velem')
+            .data(data.content)
+            .enter()
+            .append('g').classed('velem', true)
+            .attr('transform', function (d, i) { return 'translate(0,' + (3 + i * 3.5) + ')'; });
+
+        entry.append('text')
+            .attr('font-size', 1.5)
+            .attr('text-anchor', 'end')
+            .attr('x', xoffset - 0.5)
+            .attr('y', 0)
+            .attr('dy', 2)
+            .text(function (d) { return d.site; })
+            .each(function () { truncateText(this, xoffset); });
+
+        entry.append('g')
+            .attr('transform', 'translate(' + xoffset + ',0)')
+            .each(function (siteData) {
+                d3.select(this).selectAll('.usage')
+                    .data(siteData.usage)
+                    .enter().append('rect').classed('usage', true)
+                    .attr('width', function (d) { return x(d.size); })
+                    .attr('height', 3)
+                    .attr('transform',
+                          function (d, i) {
+                              return 'translate(' + x(d3.sum(siteData.usage.slice(0, i),
+                                                             function (u) { return u.size; }
+                                                             )) + ',0)';
+                          })
+                    .attr('fill', function (d) { return colorMap(d.key); })
+                    });
+
+        var legend = d3.select('#legend')
+            .attr('height', 10 + 20 * data.keys.length) // 20 px per row
+            .attr('viewBox', '0 -1 30 ' + (1 + 2 * data.keys.length)); // svg coordinate is 1/10 of browser
+
+        var entries = legend.selectAll('.legendEntry')
+            .data(data.keys)
+            .enter().append('g').classed('legendEntry', true)
+            .attr('transform', function (d, i) { return 'translate(1,' + (2 * i) + ')'; });
+
+        entries.append('circle')
+            .attr('cx', 1.)
+            .attr('cy', 1.)
+            .attr('r', 0.9)
+            .attr('fill', function (k) { return colorMap(k); });
+
+        entries.append('text')
+            .attr('font-size', 2)
+            .attr('dx', 4)
+            .attr('dy', 1.6)
+            .text(function (k) { return k; })
+            .each(function () { truncateText(this, 26); } );
+    }
+}
+
+function loadData() {
+    var inputData = {
+        getData: 1,
+        dataType: $('#dataType').val(),
+        categories: $('#categories').val(),
+        campaign: $('#campaign').val(),
+        dataTier: $('#dataTier').val(),
+        dataset: $('#dataset').val(),
+        site: $('#site').val(),
+        group: []
+    };
+
+    var groupElems = $('#group :selected').get();
+    for (var g in groupElems)
+        inputData.group.push(groupElems.value);
+
+    $.get('inventory.php', inputData, function (data, textStatus, jqXHR) { displayData(data); }, 'json');
+}
+
+function getData() {
+    var url = 'inventory.php?';
+    url += 'getData=1';
+    url += '&dataType=' + $('#dataType').val();
+    url += '&categories=' + $('#categories').val();
+    var fields = ['campaign', 'dataTier', 'dataset', 'site'];
+    for (var iF in fields) {
+        var elem = $('#' + fields[iF]);
+        if (elem.val() != '')
+            url += '&' + fields[iF] + '=' + elem.val();
+    }
+    var groups = $('#group :selected').get();
+    if (groups.length != 0) {
+        url += '&group=';
+        for (var g in groups) {
+            url += groups[g].value;
+            if (g != groups.length - 1)
+                url += ',';
+        }
+    }
+    
+    window.location = url;
+}
+
+function truncateText(textNode, width) {
+    var bbox = textNode.getBBox();
+    if (textNode.getBBox().width < width)
+        return;
+
+    var content = textNode.textContent;
+    var truncateAt = content.length - 1;
+    while (textNode.getBBox().width > width) {
+        textNode.textContent = content.slice(0, truncateAt) + '...';
+        truncateAt -= 1;
+    }
+}
