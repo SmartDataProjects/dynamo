@@ -23,6 +23,7 @@ class Detox(object):
 
         self.policy_stacks = {} # {partition: [policy]}
         self.quotas = {} # {partition: {site: quota}}
+        self.partitioners = {}
 
         self.deletion_message = 'Dynamo -- Automatic Cache Release Request.'
 
