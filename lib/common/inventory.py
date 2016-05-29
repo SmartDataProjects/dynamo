@@ -92,8 +92,7 @@ class InventoryManager(object):
             if make_snapshot:
                 logger.info('Making a snapshot of inventory.')
                 # Make a snapshot (older snapshots cleaned by an independent daemon)
-                # All replica data will be erased but the static data (sites, groups, software versions, datasets, and blocks) remain
-                self.store.make_snapshot(clear = LocalStoreInterface.CLEAR_REPLICAS)
+                self.store.make_snapshot()
 
             if load_first and len(self.sites) == 0:
                 logger.info('Loading existing data.')
