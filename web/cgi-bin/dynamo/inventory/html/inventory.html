@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Dynamo site and dataset statistics</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <link href="css/dynamo.css" rel="stylesheet">
+    <link href="css/inventory.css" rel="stylesheet">
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
+    <script type="text/javascript" src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+    <script type="text/javascript" src="js/utils.js"></script>
+    <script type="text/javascript" src="js/inventory.js"></script>
+    <script type="text/javascript">
+      $(document).ready(function() {
+      initPage('${DATA_TYPE}', '${CATEGORIES}', ${CONSTRAINTS});
+      });
+    </script>
+  </head>
+  <body>
+    <header id="header">
+      <h1 id="pageTitle">Dynamo site and dataset statistics</h1>
+    </header>
+    <main id="main">
+      <div id="viewSelection">
+        <div id="selections">
+          <div id="dataSelection">
+            <div class="menuTitle">
+              Show:
+            </div>
+            <div id="dataTypeCont">
+              <div style="height:40px;">
+                <select id="dataType" name="dataType" onchange="limitOptions();">
+                  <option value="size">Total size</option>
+                  <option value="replication">Average replication</option>
+                </select>
+              </div>
+              <div style="height:40px;margin-left:10px;">for each</div>
+              <div style="height:40px;">
+                <select id="categories" name="categories" onchange="limitOptions();">
+                  <option value="campaigns">Campaign</option>
+                  <option value="dataTiers">Data tier</option>
+                  <option value="datasets">Dataset</option>
+                  <option value="sites">Site</option>
+                  <option value="groups">Group</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div id="constraints">
+            <div class="menuTitle">
+              Limit to:
+            </div>
+            <div id="constraintsLeft">
+              <div class="constraintType">Campaign</div>
+              <div class="constraintType">Data tier</div>
+              <div class="constraintType">Dataset</div>
+              <div class="constraintType">Site</div>
+              <div class="constraintType">Group</div>
+            </div>
+            <div id="constraintsRight">
+              <div class="constraintInput"> = <input type="text" id="campaign" name="campaign"></div>
+              <div class="constraintInput"> = <input type="text" id="dataTier" name="dataTier"></div>
+              <div class="constraintInput"> = <input type="text" id="dataset" name="dataset"></div>
+              <div class="constraintInput"> = <input type="text" id="site" name="site"></div>
+              <div class="constraintInput"> = <input type="text" id="group" name="group"></div>
+            </div>
+          </div>
+        </div>
+        <div id="commitView">
+          <input type="button" id="commitSelection" value="Show" onclick="loadData();">
+        </div>
+      </div>
+      <section id="graphSection">
+        <div id="graphCont">
+          <svg id="graph">
+          </svg>
+        </div>
+        <div id="legendCont">
+          <svg id="legend">
+          </svg>
+        </div>
+      </section>
+      <hr>
+      <section id="tableSection">
+        <table id="textData">
+          <tr class="header">
+            <th id="keyDesc"></th>
+            <th id="valueDesc"></th>
+          </tr>
+        </table>
+      </section>
+    </main>
+    <footer id="footer">
+    </footer>
+  </body>
+</html>

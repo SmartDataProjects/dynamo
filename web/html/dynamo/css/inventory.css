@@ -1,0 +1,89 @@
+#viewSelection {
+    width: 410px;
+    height: 220px;
+    margin-top: 10px;
+    float: left;
+}
+
+#selections {
+    width: 100%;
+    height: 200px;
+}
+
+#dataSelection {
+    width: 140px;
+    height: 100%;
+    float: left;
+}
+
+.menuTitle {
+    height: 15%;
+    margin-left: 5px;
+}
+
+#dataTypeCont {
+    width: 100%;
+    height: 85%;
+}
+
+#constraints {
+    width: 260px;
+    height: 100%;
+    float: left;
+    border-left: 1px dashed;
+}
+
+#constraintsLeft {
+    width: 35%;
+    height: 85%;
+    float: left;
+}
+
+#constraintsRight {
+    width: 65%;
+    height: 85%;
+    float: left;
+}
+
+.constraintType {
+    height: 20%;
+    margin-left: 5px;
+}
+
+.constraintInput {
+    width: 100%;
+    height: 20%;
+}
+
+#commitView {
+    height: 20px;
+}
+
+#graphSection {
+    width: 1000px;
+    height: 1000px;
+    float: left;
+}
+
+#graphCont {
+    width: 70%;
+    height: 100%;
+    float: left;
+    overflow: scroll;
+}
+
+#graph {
+    width: 100%;
+    height: 100%;
+}
+
+#legendCont {
+    width: 30%;
+    height: 100%;
+    float: left;
+    overflow: scroll;
+}
+
+#legend {
+    width: 100%;
+}

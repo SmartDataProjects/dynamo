@@ -1,0 +1,145 @@
+#partitionName {
+    float: left;
+}
+
+#run {
+    width: 60%;
+    height: 100%;
+    float: left;
+}
+
+#runHeader {
+    font-size: 30px;
+    width: 100%;
+    height: 50%;
+    text-align: right;
+    margin: 0 0 0 0;
+}
+
+#runNav {
+    height: 50%;
+    float:right;
+}
+
+div.runLink {
+    float: left;
+    width: 50px;
+}
+
+#runJump {
+    float: left;
+    width: 200px;
+}
+
+#main {
+    width: 100%;
+}
+
+#partitions {
+    width: 100%;
+    height: 40px;
+}
+
+.partitionTab {
+    background-color: #aaaaaa;
+    width: 200px;
+    height: 20px;
+    float: left;
+    text-align: center;
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+.selectedPartition {
+    background-color: #ffaaaa;
+    text-decoration: none;
+    cursor: auto;
+}
+
+#graphs {
+    width: 100%;
+    border: 2px solid #cccccc;
+}
+
+#summaryPanel {
+    width: 100%;
+    height: 600px;
+}
+
+#summaryGraphContainer {
+    margin: 0 10% 0 10%;
+    width: 80%;
+    height: 500px;
+}
+
+#summaryGraph {
+    width: 100%;
+    height: 100%;
+}
+
+rect.outline {
+    stroke: black;
+    stroke-width: 0.1
+}
+
+.protect {
+    fill: #aaffaa;
+}
+
+.keep {
+    fill: #aaaaff;
+}
+
+.delete {
+    fill: #ffaaaa;
+}
+
+.graphAxis {
+    stroke: black;
+    stroke-width: 0.5;
+}
+
+.sitePanel {
+    width: 25%;
+    height: 400px;
+    float: left;
+}
+
+.sitePanel.even {
+    background-color: #eeeeee;
+}
+
+.sitePanel.odd {
+    background-color: white;
+}
+
+.panelTitle {
+    width: 100%;
+    height: 25px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: 500;
+    margin: 0 0 0 0;
+    padding: 10px 0 10px 0;
+}
+
+.graph {
+    width: 250px;
+    height: 350px;
+    margin-left: 25px;
+}
+
+.protected {
+    width: 250px;
+    fill: green;
+}
+
+.keep {
+    width: 250px;
+    fill: blue;
+}
+
+.delete {
+    width: 250px;
+    fill: red;
+}
