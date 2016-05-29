@@ -80,15 +80,16 @@ function initPage(dataType, categories, constraints) {
 
 function limitOptions() {
     if ($('#dataType').val() == 'replication') {
+        var current = $('#categories > option[selected="selected"]');
+        
         $('#categories > option[value="sites"]')
-            .attr('selected', '')
-            .attr('disabled', 'disabled');
-        $('#categories > option[value="groups"]')
             .attr('selected', '')
             .attr('disabled', 'disabled');
         $('#site')
             .attr('value', '')
             .attr('disabled', 'disabled');
+
+        current.attr('selected', 'selected');
     }
 }
 
@@ -138,6 +139,8 @@ function displayData(data) {
         var graph = d3.select('#graph')
             .attr('viewBox', '-35 -35 70 100');
 
+        graph.selectAll('.axis').remove();
+
         graph.selectAll('.velem').remove();
 
         graph.selectAll('.velem')
@@ -174,23 +177,64 @@ function displayData(data) {
     }
     else if (data.dataType == 'replication') {
         var graph = d3.select('#graph')
-            .attr('viewBox', '-35 -35 70 ' + (20 * data.content.length));
+            .attr('viewBox', '0 0 70 ' + (4 * data.content.length));
+
+        var x = d3.scale.linear()
+            .domain([0, 6])
+            .range([0, 50]);
 
         graph.selectAll('.velem').remove();
 
-        graph.selectAll('.velem')
+        var barx = 20;
+
+        var xaxis = d3.svg.axis()
+            .scale(x)
+            .orient('top')
+            .tickSize(1, 1);
+
+        var gxaxis = graph.append('g').classed('axis', true)
+            .attr('transform', 'translate(' + barx + ',2.5)')
+            .call(xaxis);
+
+        gxaxis.selectAll('text')
+            .attr('y', -1.2)
+            .attr('font-size', 1);
+
+        var entry = graph.selectAll('.velem')
             .data(data.content)
             .enter()
             .append('g').classed('velem', true)
-            .innerHTML(replicationMarker);
+            .attr('transform', function (d, i) { return 'translate(0,' + (3 + i * 3.5) + ')'; });
 
-        d3.select('#legend').selectAll('.legendEntry').remove();
+        entry.append('text')
+            .attr('font-size', 1.5)
+            .attr('text-anchor', 'end')
+            .attr('x', barx - 0.5)
+            .attr('y', 0)
+            .attr('dy', 2)
+            .text(function (d) { return d.key; });
+
+        entry.append('rect')
+            .attr('transform', 'translate(' + barx + ',0)')
+            .attr('width', function (d, i) { return x(d.value[0]); })
+            .attr('height', 3)
+            .attr('fill', 'steelblue');
+
+        entry.append('rect')
+            .attr('transform', function (d, i) { return 'translate(' + (barx + x(Math.max(0., d.value[0] - d.value[1]))) + ',1)'; })
+            .attr('width', function (d, i) { return x(2. * d.value[1]); })
+            .attr('height', 1)
+            .attr('fill', '#1d3549');
+
+        d3.select('#legend')
+            .attr('height', 0)
+            .selectAll('.legendEntry').remove();
     }
 }
 
 function loadData() {
     var inputData = {
-        ajax: 1,
+        getData: 1,
         dataType: $('#dataType').val(),
         categories: $('#categories').val(),
         campaign: $('#campaign').val(),
@@ -201,4 +245,19 @@ function loadData() {
     };
 
     $.get('inventory.php', inputData, function (data, textStatus, jqXHR) { displayData(data); }, 'json');
+}
+
+function getData() {
+    var url = 'inventory.php?';
+    url += 'getData=1';
+    url += '&dataType=' + $('#dataType').val();
+    url += '&categories=' + $('#categories').val();
+    var fields = ['campaign', 'dataTier', 'dataset', 'site', 'group'];
+    for (var iF in fields) {
+        var elem = $('#' + fields[iF]);
+        if (elem.val() != '')
+            url += '&' + fields[iF] + '=' + elem.val();
+    }
+    
+    window.location = url;
 }
