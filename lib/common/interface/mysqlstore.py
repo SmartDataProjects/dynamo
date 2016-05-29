@@ -233,7 +233,7 @@ class MySQLStore(LocalStoreInterface):
         logger.info('Loaded data for %d blocks.', len(blocks))
 
         for block_id, dataset_id, name, size, num_files, is_open in blocks:
-            block = Block(name, size = size, num_files = num_files, is_open = is_open)
+            block = Block(Block.translate_name(name), size = size, num_files = num_files, is_open = is_open)
 
             dataset = self._ids_to_datasets[dataset_id]
             block.dataset = dataset
@@ -304,7 +304,7 @@ class MySQLStore(LocalStoreInterface):
                 if dataset_replica:
                     dataset_replica.block_replicas.append(rep)
                 else:
-                    logger.warning('Found a block replica %s:%s#%s without a corresponding dataset replica', site.name, block.dataset.name, block.name)
+                    logger.warning('Found a block replica %s:%s#%s without a corresponding dataset replica', site.name, block.dataset.name, block.real_name())
     
             # For datasets with all replicas complete and not partial, block replica data is not saved on disk
             for dataset in dataset_list:
@@ -544,7 +544,13 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('CREATE TABLE `blocks_new` LIKE `blocks`')
 
         fields = ('name', 'dataset_id', 'size', 'num_files', 'is_open')
-        mapping = lambda b: (b.name, self._datasets_to_ids[b.dataset], b.size, b.num_files, b.is_open)
+        mapping = lambda b: (
+            b.real_name(),
+            self._datasets_to_ids[b.dataset],
+            b.size,
+            b.num_files,
+            b.is_open
+        )
 
         self._mysql.insert_many('blocks_new', fields, mapping, all_blocks, do_update = False)
 
@@ -613,11 +619,11 @@ class MySQLStore(LocalStoreInterface):
 
         block_to_id = {}
 
-        block_data = self._mysql.select_many('blocks', ('dataset_id', 'name', 'id'), ('dataset_id', 'name'), ['(%d,\'%s\')' % (did, r.block.name) for did, r in blockreps_to_write])
+        block_data = self._mysql.select_many('blocks', ('dataset_id', 'name', 'id'), ('dataset_id', 'name'), ['(%d,\'%s\')' % (did, r.block.real_name()) for did, r in blockreps_to_write])
 
         for dataset_id, block_name, block_id in block_data:
             dataset = self._ids_to_datasets[dataset_id]
-            block = dataset.find_block(block_name)
+            block = dataset.find_block(Block.translate_name(block_name))
 
             block_to_id[block] = block_id
 
@@ -715,7 +721,9 @@ class MySQLStore(LocalStoreInterface):
                 self._mysql.delete_in('block_replicas', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id), additional_conditions = ['`site_id` = %d' % site_id])
                 continue
 
-            block_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id))
+            block_ids = {}
+            for name_str, block_id in self._mysql.query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
+                block_ids[Block.translate_name(name_str)] = block_id
 
             # add the block replicas on this site to block_replicas together with SQL ID
             all_block_replicas.extend([(r, block_ids[r.block.name]) for r in replica.block_replicas])
@@ -729,7 +737,7 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('DELETE FROM `datasets` WHERE `name` LIKE %s', dataset.name)
 
     def _do_delete_block(self, block): #override
-        self._mysql.query('DELETE FROM `blocks` WHERE `name` LIKE %s', block.name)
+        self._mysql.query('DELETE FROM `blocks` WHERE `name` LIKE %s', block.real_name())
 
     def _do_delete_datasetreplicas(self, site, datasets, delete_blockreplicas): #override
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
@@ -770,7 +778,7 @@ class MySQLStore(LocalStoreInterface):
         sql += ' INNER JOIN `blocks` ON `blocks`.`id` = replicas.`block_id`'
         sql += ' WHERE (replicas.`site_id`, `blocks`.`dataset_id`, `blocks`.`name`) IN ({combinations})'
 
-        combinations = ','.join(['(%d,%d,\'%s\')' % (site_ids[r.site], dataset_ids[r.block.dataset], r.block.name) for r in replica_list])
+        combinations = ','.join(['(%d,%d,\'%s\')' % (site_ids[r.site], dataset_ids[r.block.dataset], r.block.real_name()) for r in replica_list])
 
         self._mysql.query(sql.format(combinations = combinations))
 

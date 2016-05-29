@@ -169,7 +169,7 @@ class InventoryManager(object):
                 site.remove_block_replica(block_replica)
 
             except ValueError:
-                logger.error('Site-block linking was corrupt. %s %s#%s', site.name, dataset.name, block.name)
+                logger.error('Site-block linking was corrupt. %s %s#%s', site.name, dataset.name, block.real_name())
 
         try:
             site.dataset_replicas.remove(replica)

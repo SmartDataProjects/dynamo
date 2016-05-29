@@ -53,7 +53,7 @@ class DBS(DatasetInfoSourceInterface):
             if block_record['dataset'] != ds_name:
                 continue
 
-            block_name = block_record['block_name'].replace(dataset.name + '#', '')
+            block_name = Block.translate_name(block_record['block_name'].replace(dataset.name + '#', ''))
 
             if block_record['open_for_writing'] == 1:
                 is_open = True

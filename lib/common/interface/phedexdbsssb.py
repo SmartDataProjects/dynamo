@@ -392,7 +392,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 ds_name = dataset_entry['name']
     
                 for block_entry in dataset_entry['block']:
-                    block_name = block_entry['name'].replace(ds_name + '#', '')
+                    block_name = Block.translate_name(block_entry['name'].replace(ds_name + '#', ''))
     
                     for replica_entry in block_entry['replica']:
                         if len(groups) != 0 and replica_entry['group'] not in groups:
@@ -467,7 +467,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         try:
                             group = groups[protoreplica.group_name]
                         except KeyError:
-                            logger.warning('Group %s for replica of block %s not registered.', protoreplica.group_name, block.name)
+                            logger.warning('Group %s for replica of block %s not registered.', protoreplica.group_name, block.real_name())
                             group = None
                     else:
                         group = None
@@ -607,12 +607,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 ds_name = name[:name.find('#')]
                 block_name = name[name.find('#') + 1:]
 
-                on_tape[ds_name].append(block_name)
+                on_tape[ds_name].append(Block.translate_name(block_name))
 
             lock.acquire()
 
-            for ds_name, blocks in on_tape.items():
-                blocks_on_tape[ds_name].extend(blocks)
+            for ds_name, block_names in on_tape.items():
+                blocks_on_tape[ds_name].extend(block_names)
 
             lock.release()
 
@@ -673,7 +673,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset.is_open = (ds_entry['is_open'] == 'y') # useless flag - all datasets are flagged open
        
                 for block_entry in ds_entry['block']:
-                    block_name = block_entry['name'].replace(dataset.name + '#', '')
+                    block_name = Block.translate_name(block_entry['name'].replace(dataset.name + '#', ''))
 
                     block = dataset.find_block(block_name)
 
@@ -713,7 +713,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         # routine to fetch block info from DBS
         def dbs_check(block):
-            dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block_name, 'detail=True']) # %23 = '#'
+            dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block.real_name(), 'detail=True']) # %23 = '#'
             if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
                 # cannot get data from DBS, or DBS also says this block is open
                 block.is_open = True
@@ -875,12 +875,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 file_catalogs[dataset] = catalog
                 
                 for block_entry in ds_entry['block']:
-                    block_name = block_entry['name'].replace(ds_name + '#', '')
+                    block_name = Block.translate_name(block_entry['name'].replace(ds_name + '#', ''))
 
                     if known_blocks_only:
-                        try:
-                            block = next(b for b in dataset.blocks if b.name == block_name)
-                        except StopIteration:
+                        block = dataset.find_block(block_name)
+                        if block is None:
                             logger.warning('Unknown block %s found in %s', block_name, dataset.name)
                             continue
 
@@ -922,7 +921,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 if human_readable:
                     xml += '   '
                 
-                xml += '<block name="%s#%s" is-open="%s">' % (dataset.name, block.name, 'y' if block.is_open else 'n')
+                xml += '<block name="%s#%s" is-open="%s">' % (dataset.name, block.real_name(), 'y' if block.is_open else 'n')
 
                 if human_readable:
                     xml += '\n'

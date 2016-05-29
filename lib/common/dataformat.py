@@ -103,7 +103,13 @@ class Dataset(object):
 class Block(object):
     """Represents a data block."""
 
+    @staticmethod
+    def translate_name(name_str):
+        # block name format: [8]-[4]-[4]-[4]-[12] where [n] is an n-digit hex.
+        return int(name_str.replace('-', ''), 16)
+
     def __init__(self, name, dataset = None, size = -1, num_files = 0, is_open = False):
+        # name represented by an integer translation of hex name in memory
         self.name = name
         self.dataset = dataset
         self.size = size
@@ -113,7 +119,11 @@ class Block(object):
 
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
-        return 'Block %s#%s (size=%d, num_files=%d, is_open=%d, replicas=%s)' % (self.dataset.name, self.name, self.size, self.num_files, self.is_open, replica_sites)
+        return 'Block %s#%s (size=%d, num_files=%d, is_open=%d, replicas=%s)' % (self.dataset.name, self.real_name(), self.size, self.num_files, self.is_open, replica_sites)
+
+    def real_name(self):
+        full_string = hex(self.name).replace('0x', '')[:-1] # last character is 'L'
+        return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]
 
     def find_replica(self, site):
         try:

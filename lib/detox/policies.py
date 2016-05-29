@@ -29,7 +29,7 @@ class ProtectLocked(policy.ProtectPolicy):
         super(self.__class__, self).__init__(name, static = True)
 
     def applies(self, replica, demand_manager): # override
-        all_blocks = set([b.name for b in replica.dataset.blocks])
+        all_blocks = set([b.real_name() for b in replica.dataset.blocks])
         locked_blocks = set(demand_manager.get_demand(replica.dataset).locked_blocks)
 
         intersection = all_blocks & locked_blocks

@@ -348,7 +348,7 @@ class LocalStoreInterface(object):
         """
 
         if config.read_only:
-            logger.debug('_do_delete_block(%s)', block.name)
+            logger.debug('_do_delete_block(%s)', block.real_name())
             return
 
         self.acquire_lock()
@@ -398,7 +398,7 @@ class LocalStoreInterface(object):
         """
 
         if config.read_only:
-            logger.debug('_do_delete_blockreplica(%s:%s)', replica.site.name, replica.block.name)
+            logger.debug('_do_delete_blockreplica(%s:%s)', replica.site.name, replica.block.real_name())
             return
 
         self.delete_blockreplicas([replica])
@@ -425,7 +425,7 @@ class LocalStoreInterface(object):
 
         if type(block) is Block:
             dataset_name = block.dataset.name
-            block_name = block.name
+            block_name = block.real_name()
         elif type(block) is str:
             dataset_name, sep, block_name = block.partition('#')
 
@@ -561,7 +561,7 @@ if __name__ == '__main__':
                 print 'No dataset %s found.' % dataset
                 sys.exit(0)
 
-            block = dataset.find_block(block_name)
+            block = dataset.find_block(Block.translate_name(block_name))
             if block is None:
                 print 'No block %s found in dataset %s.' % (block_name, dataset.name)
                 sys.exit(0)
@@ -602,7 +602,7 @@ if __name__ == '__main__':
                 sys.exit(0)
 
             if block_name != '':
-                replica = replica.find_block_replica(block_name)
+                replica = replica.find_block_replica(Block.translate_name(block_name))
                 if replica is None:
                     print 'No replica %s found.' % args.arguments[1]
                     sys.exit(0)
