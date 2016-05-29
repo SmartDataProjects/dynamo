@@ -24,10 +24,11 @@ chown root:$(id -gn $USER) $DYNAMO_DATADIR
 if [ -d /var/www/html ] && [ -d /var/www/cgi-bin ]
 then
   mkdir -p /var/www/html/dynamo
-  cp -r $DYNAMO_BASE/web/html/* /var/www/dynamo/
-  mkdir -p $DYNAMO_BASE/web/cgi-bin/* /var/www/cgi-bin/dynamo
-  ln -s /var/www/cgi-bin/dynamo/detox/main.php /var/www/html/dynamo/detox.php
-  ln -s /var/www/cgi-bin/dynamo/inventory/main.php /var/www/html/dynamo/inventory.php
+  cp -r $DYNAMO_BASE/web/html/* /var/www/html/dynamo/
+  mkdir -p /var/www/cgi-bin/dynamo
+  cp -r $DYNAMO_BASE/web/cgi-bin/* /var/www/cgi-bin/dynamo/
+  ln -sf /var/www/cgi-bin/dynamo/detox/main.php /var/www/html/dynamo/detox.php
+  ln -sf /var/www/cgi-bin/dynamo/inventory/main.php /var/www/html/dynamo/inventory.php
 fi
 
 sed -i "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/etc/crontab | crontab
