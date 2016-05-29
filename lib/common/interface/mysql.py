@@ -178,6 +178,8 @@ class MySQL(object):
 
             self.query('INSERT INTO `{copy}`.`{table}` SELECT * FROM `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name(), table = table))
 
+        return snapshot_db
+
     def remove_snapshot(self, newer_than, older_than):
         snapshots = self.list_snapshots()
 

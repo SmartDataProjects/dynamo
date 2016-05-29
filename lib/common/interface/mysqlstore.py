@@ -63,9 +63,9 @@ class MySQLStore(LocalStoreInterface):
             raise LocalStoreInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
     def _do_make_snapshot(self, timestamp, clear): #override
-        self._mysql.make_snapshot(timestamp)
+        new_db = self._mysql.make_snapshot(timestamp)
         
-        self._mysql.query('UPDATE `system` SET `lock_host` = \'\', `lock_process` = 0')
+        self._mysql.query('UPDATE `%s`.`system` SET `lock_host` = \'\', `lock_process` = 0' % new_db)
 
         tables = []
         if clear == LocalStoreInterface.CLEAR_ALL:
