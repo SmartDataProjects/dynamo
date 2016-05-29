@@ -9,17 +9,21 @@ $stmt->execute();
 $stmt->fetch();
 $stmt->close();
 if ($lock_host != '') {
-  $store_db->prepare('SHOW DATABASES');
-  $stmt->bind_result($db_name);
-  $stmt->execute();
+  $result = $store_db->query('SHOW DATABASES');
   $latest = 0;
-  while ($stmt->fetch()) {
-    $timestamp = 0 + str_replace($db_name . '_', '', $db_name);
+  while ($row = $result->fetch_row()) {
+    $db_name = $row[0];
+    if (strpos($db_name, $store_db_name) === false)
+      continue;
+
+    $timestamp = 0 + str_replace($store_db_name . '_', '', $db_name);
     if ($timestamp > $latest)
       $latest = $timestamp;
   }
-  $store_db->close();
-  $store_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $store_db_name . '_' . $latest);
+  if ($latest != 0) {
+    $store_db->close();
+    $store_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $store_db_name . '_' . $latest);
+  }
 }
 
 if (isset($_REQUEST['getGroups']) && $_REQUEST['getGroups']) {
