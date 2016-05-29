@@ -3,7 +3,7 @@
 if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
   $selection = 'SELECT `datasets`.`name`, COUNT(`dataset_replicas`.`site_id`) FROM `dataset_replicas`';
   $selection .= ' INNER JOIN `datasets` ON `datasets`.`id` = `dataset_replicas`.`dataset_id`';
-  if (strlen($const_group) != 0)
+  if (count($const_group) != 0)
     $selection .= ' INNER JOIN `groups` ON `groups`.`id` = `dataset_replicas`.`group_id`';
 }
 else if ($categories == 'groups') {
@@ -39,27 +39,30 @@ $repl_counts = array();
 if ($categories == 'campaigns') {
   while ($stmt->fetch()) {
     preg_match('/^\/[^\/]+\/([^\/-]+)-[^\/]+\/.*/', $name, $matches);
-    if (array_key_exists($matches[1], $repl_counts))
-      $repl_counts[$matches[1]][] = $repl;
+    $key = $matches[1];
+    if (array_key_exists($key, $repl_counts))
+      $repl_counts[$key][] = $repl;
     else
-      $repl_counts[$matches[1]] = array($repl);
+      $repl_counts[$key] = array($repl);
   }
 }
 else if ($categories == 'dataTiers') {
   while ($stmt->fetch()) {
     preg_match('/^\/[^\/]+\/[^\/]+\/([^\/-]+)/', $name, $matches);
-    if (array_key_exists($matches[1], $repl_counts))
-      $repl_counts[$matches[1]][] = $repl;
+    $key = $matches[1];
+    if (array_key_exists($key, $repl_counts))
+      $repl_counts[$key][] = $repl;
     else
-      $repl_counts[$matches[1]] = array($repl);
+      $repl_counts[$key] = array($repl);
   }
 }
 else if ($categories == 'datasets' || $categories == 'groups') {
   while ($stmt->fetch()) {
-    if (array_key_exists($name, $repl_counts))
-      $repl_counts[$name][] = $repl;
+    $key = $name;
+    if (array_key_exists($key, $repl_counts))
+      $repl_counts[$key][] = $repl;
     else
-      $repl_counts[$name] = array($repl);
+      $repl_counts[$key] = array($repl);
   }
 }
 
@@ -91,6 +94,6 @@ foreach ($repl_counts as $key => $array) {
 arsort($mean_array);
 
 foreach ($mean_array as $key => $mean)
-  $content[] = array('key' => $key, 'mean' => $mean, 'rms' => $rms);
+  $content[] = array('key' => $key, 'mean' => $mean, 'rms' => $rms_array[$key]);
 
 ?>

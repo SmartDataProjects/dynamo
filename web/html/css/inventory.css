@@ -73,6 +73,14 @@
     width: 70%;
     height: 100%;
     float: left;
+}
+
+#axisBox {
+    width: 100%;
+}
+
+#graphBox {
+    width: 100%;
     overflow: scroll;
 }
 

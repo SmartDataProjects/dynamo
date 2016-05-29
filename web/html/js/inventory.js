@@ -91,8 +91,8 @@ function initPage(dataType, categories, constraints) {
     $(document).ajaxStart(function () {
             var graph = d3.select('#graph');
             graph.selectAll('.message').remove();
-            graph.selectAll('.axis').remove();
             graph.selectAll('.velem').remove();
+            d3.select('#axis').selectAll('g').remove();
             d3.select('#legend').selectAll('.legendEntry').remove();
 
             loading.spin();
@@ -154,6 +154,8 @@ function setGroups(data) {
 
 function displayData(data) {
     if (data.content.length == 0) {
+        d3.select('#axisBox').style({height: '0'});
+        d3.select('#graphBox').style({height: '100%'});
         d3.select('#graph')
             .attr('viewBox', '0 0 70 70')
             .append('text').classed('message', true)
@@ -170,6 +172,9 @@ function displayData(data) {
 
     if (data.dataType == 'size') {
         // data.content: [{key: (key_name), size: (size)}]
+
+        d3.select('#axisBox').style({height: '0'});
+        d3.select('#graphBox').style({height: '100%'});
 
         var graphData = data.content.slice(0, colors.length);
         var residuals = data.content.slice(colors.length);
@@ -229,8 +234,14 @@ function displayData(data) {
     else if (data.dataType == 'replication') {
         // data.content: [{key: (key_name), mean: (mean), rms: (rms)}]
 
-        var graph = d3.select('#graph')
+        d3.select('#axisBox').style({height: '3%'});
+        d3.select('#graphBox').style({height: '97%'});
+
+        var graphArea = d3.select('#graph')
             .attr('viewBox', '0 0 70 ' + (40 + 4 * data.content.length));
+
+        var axisArea = d3.select('#axis')
+            .attr('viewBox', '0 0 70 3');
 
         var x = d3.scale.linear()
             .domain([0, d3.max(data.content, function (d) { return d.mean + d.rms + 0.5; })])
@@ -241,21 +252,30 @@ function displayData(data) {
         var xaxis = d3.svg.axis()
             .scale(x)
             .orient('top')
-            .tickSize(1, 1);
+            .tickSize(1, 0);
 
-        var gxaxis = graph.append('g').classed('axis', true)
+        var gxaxis = axisArea.append('g').classed('axis', true)
             .attr('transform', 'translate(' + xoffset + ',2.5)')
             .call(xaxis);
 
-        gxaxis.selectAll('text')
+        gxaxis.selectAll('.tick text')
             .attr('y', -1.2)
             .attr('font-size', 1);
 
-        var entry = graph.selectAll('.velem')
+        gxaxis.selectAll('.tick line')
+            .attr('stroke', 'black')
+            .attr('stroke-width', 0.1);
+
+        gxaxis.select('path.domain')
+            .attr('fill', 'none')
+            .attr('stroke', 'black')
+            .attr('stroke-width', 0.1);
+
+        var entry = graphArea.selectAll('.velem')
             .data(data.content)
             .enter()
             .append('g').classed('velem', true)
-            .attr('transform', function (d, i) { return 'translate(0,' + (3 + i * 3.5) + ')'; });
+            .attr('transform', function (d, i) { return 'translate(0,' + (i * 3.5) + ')'; });
 
         entry.append('text')
             .attr('font-size', 1.5)
@@ -315,12 +335,18 @@ function displayData(data) {
         // data.content: [{site: (site_name), usage: [{key: (key_name), size: (size)}]}]
         // data.keys: [(key_name)]
 
+        d3.select('#axisBox').style({height: '3%'});
+        d3.select('#graphBox').style({height: '97%'});
+
         var colorMap = d3.scale.ordinal()
             .domain(data.keys)
             .range(colors);
 
-        var graph = d3.select('#graph')
+        var graphArea = d3.select('#graph')
             .attr('viewBox', '0 0 70 ' + (40 + 4 * data.content.length));
+
+        var axisArea = d3.select('#axis')
+            .attr('viewBox', '0 0 70 3');
 
         var x = d3.scale.linear()
             .domain([0, d3.max(data.content, function (d) { return d3.sum(d.usage, function (u) { return u.size; }); })])
@@ -331,15 +357,24 @@ function displayData(data) {
         var xaxis = d3.svg.axis()
             .scale(x)
             .orient('top')
-            .tickSize(1, 1);
+            .tickSize(1, 0);
 
-        var gxaxis = graph.append('g').classed('axis', true)
+        var gxaxis = axisArea.append('g').classed('axis', true)
             .attr('transform', 'translate(' + xoffset + ',2.5)')
             .call(xaxis);
 
         gxaxis.selectAll('.tick text')
             .attr('y', -1.2)
             .attr('font-size', 1);
+        
+        gxaxis.selectAll('.tick line')
+            .attr('stroke', 'black')
+            .attr('stroke-width', 0.1);
+
+        gxaxis.select('path.domain')
+            .attr('fill', 'none')
+            .attr('stroke', 'black')
+            .attr('stroke-width', 0.1);
 
         gxaxis.append('text').classed('unit', true)
             .attr('x', 51)
@@ -347,11 +382,11 @@ function displayData(data) {
             .attr('font-size', 1.5)
             .text('TB');
 
-        var entry = graph.selectAll('.velem')
+        var entry = graphArea.selectAll('.velem')
             .data(data.content)
             .enter()
             .append('g').classed('velem', true)
-            .attr('transform', function (d, i) { return 'translate(0,' + (3 + i * 3.5) + ')'; });
+            .attr('transform', function (d, i) { return 'translate(0,' + (i * 3.5) + ')'; });
 
         entry.append('text')
             .attr('font-size', 1.5)
@@ -415,9 +450,9 @@ function loadData() {
         group: []
     };
 
-    var groupElems = $('#group :selected').get();
-    for (var g in groupElems)
-        inputData.group.push(groupElems.value);
+    var groups = $('#group :selected').get();
+    for (var g in groups)
+        inputData.group.push(groups[g].value);
 
     $.get('inventory.php', inputData, function (data, textStatus, jqXHR) { displayData(data); }, 'json');
 }
