@@ -230,12 +230,8 @@ class MySQLHistory(TransactionHistoryInterface):
             imem += 1
 
         replicas_to_update = {} # index -> replica
-        last_id = 0
 
         for snapshot_id, site_id, dataset_id, size in self._mysql.query('SELECT `id`, `site_id`, `dataset_id`, `size` FROM `replica_snapshots` WHERE `run_id` <= %s ORDER BY `run_id` DESC', run_number):
-            if last_id == 0:
-                last_id = snapshot_id
-
             index = (site_id, dataset_id)
             try:
                 replica = replicas_in_record[index]
@@ -245,7 +241,7 @@ class MySQLHistory(TransactionHistoryInterface):
             
             # snapshots ordered by time (recent to past)
             # replica already found -> older snapshot
-            if replica in self._replica_snapshot_ids or replica in replicas_to_update:
+            if replica in self._replica_snapshot_ids or index in replicas_to_update:
                 continue
 
             if replica.size() != size:
