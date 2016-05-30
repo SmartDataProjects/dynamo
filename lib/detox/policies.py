@@ -265,7 +265,7 @@ def make_stack(strategy):
         def stackgen(*arg):
             stack = [
                 KeepTargetOccupancy(config.target_site_occupancy),
-                ProtectNonReadySite()
+                ProtectNonReadySite(),
                 ProtectIncomplete(),
                 ProtectDiskOnly(),
                 ProtectNotOwnedBy('AnalysisOps'),
