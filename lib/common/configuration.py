@@ -8,7 +8,7 @@ logging.basicConfig(level = logging.INFO)
 
 read_only = False
 
-target_site_occupancy = 0.95
+target_site_occupancy = 0.9
 
 num_threads = 32
 

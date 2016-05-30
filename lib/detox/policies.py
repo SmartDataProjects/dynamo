@@ -30,7 +30,7 @@ class ProtectLocked(policy.ProtectPolicy):
 
     def applies(self, replica, demand_manager): # override
         all_blocks = set([b.real_name() for b in replica.dataset.blocks])
-        locked_blocks = set(demand_manager.get_demand(replica.dataset).locked_blocks)
+        locked_blocks = set(demand_manager.dataset_demands[replica.dataset].locked_blocks)
 
         intersection = all_blocks & locked_blocks
         reason = 'Blocks locked: ' + ' '.join(intersection)
@@ -71,7 +71,7 @@ class ProtectNonReadySite(policy.ProtectPolicy):
         super(self.__class__, self).__init__(name, static = True)
 
     def applies(self, replica, demand_manager): # override
-        return replica.site.status != Site.STAT_READY
+        return replica.site.status != Site.STAT_READY, 'Site is not in ready state.'
 
 
 class ProtectMinimumCopies(policy.ProtectPolicy):
@@ -83,7 +83,8 @@ class ProtectMinimumCopies(policy.ProtectPolicy):
         super(self.__class__, self).__init__(name, static = False)
 
     def applies(self, replica, demand_manager): # override
-        return len(replica.dataset.replicas) <= demand_manager.get_demand(replica.dataset).required_copies
+        required_copies = demand_manager.dataset_demands[replica.dataset].required_copies
+        return len(replica.dataset.replicas) <= required_copies, 'Dataset has <= ' + str(required_copies) + ' replicas.'
 
 
 class ProtectNotOwnedBy(policy.ProtectPolicy):
@@ -264,9 +265,11 @@ def make_stack(strategy):
         def stackgen(*arg):
             stack = [
                 KeepTargetOccupancy(config.target_site_occupancy),
+                ProtectNonReadySite()
                 ProtectIncomplete(),
                 ProtectDiskOnly(),
                 ProtectNotOwnedBy('AnalysisOps'),
+                ProtectMinimumCopies(),
                 DeletePartial(),
                 DeleteOld(*detox_config.delete_old.threshold),
     #            DeleteUnpopular()
