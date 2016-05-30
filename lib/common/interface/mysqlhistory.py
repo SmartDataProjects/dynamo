@@ -199,44 +199,48 @@ class MySQLHistory(TransactionHistoryInterface):
         # (site_id, dataset_id) -> replica in inventory
         indices_to_replicas = self._make_replica_map(inventory)
 
-        # replicas that are new or have sizes changed
-        new_replicas = {}
-        replicas_in_record = {}
-
         # find new replicas with no snapshots
+        new_replicas = {} # index -> replica
+
+        # all recorded replicas
         in_record = self._mysql.query('SELECT DISTINCT `site_id`, `dataset_id` FROM `replica_snapshots` ORDER BY `site_id`, `dataset_id`')
-        in_memory = sorted(indices_to_replicas.keys())
+        # replicas in inventory
+        current = sorted(indices_to_replicas.keys())
+
+        num_overlap = 0
 
         irec = 0
-        imem = 0
-        while irec != len(in_record) and imem != len(in_memory):
+        icur = 0
+        while irec != len(in_record) and icur != len(current):
             recidx = in_record[irec]
-            memidx = in_memory[imem]
+            curidx = current[icur]
 
-            if recidx < memidx:
+            if recidx < curidx:
                 # replica not in the current inventory
                 irec += 1
-            elif recidx > memidx:
+            elif recidx > curidx:
                 # new replica
-                new_replicas[memidx] = indices_to_replicas[memidx]
-                imem += 1
+                new_replicas[curidx] = indices_to_replicas[curidx]
+                icur += 1
             else:
+                num_overlap += 1
                 irec += 1
-                imem += 1
+                icur += 1
 
-        while imem != len(in_memory):
-            memidx = in_memory[imem]
-            new_replicas[memidx] = indices_to_replicas[memidx]
-            imem += 1
+        while icur != len(current):
+            curidx = current[icur]
+            new_replicas[curidx] = indices_to_replicas[curidx]
+            icur += 1
 
+        # find latest replica snapshots
         replicas_to_update = {} # index -> replica
 
         for snapshot_id, site_id, dataset_id, size in self._mysql.query('SELECT `id`, `site_id`, `dataset_id`, `size` FROM `replica_snapshots` WHERE `run_id` <= %s ORDER BY `run_id` DESC', run_number):
             index = (site_id, dataset_id)
             try:
-                replica = replicas_in_record[index]
+                replica = indices_to_replicas[index]
             except KeyError:
-                # this replica does not exist in the current inventory any more
+                # this replica does not exist in the current inventory
                 continue
             
             # snapshots ordered by time (recent to past)
@@ -249,11 +253,11 @@ class MySQLHistory(TransactionHistoryInterface):
             else:
                 self._replica_snapshot_ids[replica] = snapshot_id
 
-            if len(self._replica_snapshot_ids) + len(replicas_to_update) == len(replicas_in_record):
+            if len(self._replica_snapshot_ids) + len(replicas_to_update) == num_overlap:
                 # found latest snapshots for all existing replicas
                 break
 
-        replicas_in_record = None
+        indices_to_replicas = None
 
         # append contents of new_replicas
         replicas_to_update.update(new_replicas)
