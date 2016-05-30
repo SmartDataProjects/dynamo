@@ -79,8 +79,6 @@ class Detox(object):
 
         logger.info('Start deletion. Evaluating %d policies against %d replicas.', len(policy_stack), len(evaluations))
 
-        return
-
         while True:
             iteration += 1
 
