@@ -353,12 +353,12 @@ class DatasetReplica(object):
             return self.group
 
         if len(self.block_replicas) == 0:
-            return None
+            return Group('')
 
         # simple majority
         counts = collections.defaultdict(int)
         for br in self.block_replicas:
-            counts[br] += 1
+            counts[br.group] += 1
 
         order = sorted(counts.items(), key = lambda (g, c): c, reverse = True)
         if order[0][1] > order[1][1]:

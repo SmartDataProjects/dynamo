@@ -112,9 +112,10 @@ for stack_spec in args.stacks:
 
     # currently partition = group
     quotas = dict([(site, site.quota(inventory_manager.groups[partition])) for site in inventory_manager.sites.values()])
-    partitioner = lambda replica: replica.effective_owner().name == partition
 
-    detox.set_policies(policy_stack, quotas, partitioner = partitioner, partition = partition)
+    partitionByGroup = lambda replica: replica.effective_owner().name == partition
+
+    detox.set_policies(policy_stack, quotas, partitioner = partitionByGroup, partition = partition)
 
 if args.force_inventory_update:
     config.inventory.refresh_min = 0
