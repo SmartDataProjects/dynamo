@@ -173,8 +173,8 @@ function displayData(data) {
     if (data.dataType == 'size') {
         // data.content: [{key: (key_name), size: (size)}]
 
-        d3.select('#axisBox').style({height: '0'});
-        d3.select('#graphBox').style({height: '100%'});
+        d3.select('#axisBox').style({height: '4%'});
+        d3.select('#graphBox').style({height: '96%'});
 
         var graphData = data.content.slice(0, colors.length);
         var residuals = data.content.slice(colors.length);
@@ -190,24 +190,49 @@ function displayData(data) {
             total += graphData[i].size;
         }
     
-        var arcpath = d3.svg.arc()
+        var arcGen = d3.svg.arc()
             .outerRadius(30)
             .innerRadius(0);
+
+        var labelArcGen = d3.svg.arc()
+            .outerRadius(30)
+            .innerRadius(22);
 
         var pie = d3.layout.pie()
             .sort(null)
             .value(function (d) { return d.size; });
 
-        d3.select('#graph')
+        d3.select('#axis')
+            .attr('viewBox', '0 0 70 4')
+            .append('g')
+            .append('text')
+            .attr('transform', 'translate(35, 3.9)')
+            .attr('font-size', 4)
+            .attr('text-anchor', 'middle')
+            .text('Total: ' + total.toFixed(1) + ' TB');
+
+        var arc = d3.select('#graph')
             .attr('viewBox', '-35 -35 70 100')
             .selectAll('.velem')
             .data(pie(graphData))
             .enter()
-            .append('path').classed('velem', true)
-            .attr('d', arcpath)
+            .append('g').classed('velem', true);
+
+        arc.append('path')
+            .attr('d', arcGen)
             .attr('fill', function (d, i) { return colors[i]; })
             .attr('stroke', 'white')
             .attr('stroke-width', function (d) { if (d.data.size < total * 0.01) return 0; else return 0.1; });
+
+        arc.each(function (d) {
+            if (d.data.size > total * 0.02) {
+                d3.select(this).append('text')
+                    .attr('font-size', 2)
+                    .attr('transform', 'translate(' + labelArcGen.centroid(d) + ')')
+                    .attr('text-anchor', 'middle')
+                    .text((d.data.size / total * 100).toFixed(1) + '%');
+            }
+        });
 
         var legend = d3.select('#legend')
             .attr('height', 10 + 20 * graphData.length) // 20 px per row
@@ -479,17 +504,4 @@ function getData() {
     }
     
     window.location = url;
-}
-
-function truncateText(textNode, width) {
-    var bbox = textNode.getBBox();
-    if (textNode.getBBox().width < width)
-        return;
-
-    var content = textNode.textContent;
-    var truncateAt = content.length - 1;
-    while (textNode.getBBox().width > width) {
-        textNode.textContent = content.slice(0, truncateAt) + '...';
-        truncateAt -= 1;
-    }
 }

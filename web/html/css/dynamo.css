@@ -14,7 +14,7 @@ body {
     height: 100px;
     background-color: #666666;
     color: white;
-    padding: 0 0 0 0;
+    padding: 5px 0 0 0;
 }
 
 #pageTitle {
@@ -22,5 +22,4 @@ body {
     height: 80px;
     float: left;
     margin: 10px;
-    padding: 0 0 0 0;
 }

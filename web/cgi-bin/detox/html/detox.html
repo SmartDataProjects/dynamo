@@ -7,50 +7,39 @@
     <link href="css/detox.css" rel="stylesheet">
     <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
     <script type="text/javascript" src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
-    <script type="text/javascript" src="js/detox.js"></script>
+    <script type="text/javascript" src="http://spin.js.org/spin.min.js"></script>
     <script type="text/javascript" src="js/utils.js"></script>
+    <script type="text/javascript" src="js/detox.js"></script>
     <script type="text/javascript">
-      $(document).ajaxError(function(event, jqXHR, ajaxSettings, thrownError) {
-        alert(event);
-      });
       $(document).ready(function() {
-        $.get('detox.php', {data: 1, runNumber: ${RUN_NUMBER}, partitionId: ${PARTITION}}, function(data, textStatus, jqXHR) {initPage(data);}, 'json');
+      initPage(${RUN_NUMBER}, ${PARTITION});
       });
     </script>
   </head>
   <body>
-    <form id="selectPage" action="detox.php" method="post">
-      <input type="hidden" id="runNumber", name="run_number" class="runNumber" value="${RUN_NUMBER}">
-      <input type="hidden" id="partitionId" name="partition_id" class="partitionId" value="${PARTITION}">
-    </form>
     <header id="header">
       <h1 id="pageTitle">Detox deletion run results</h1>
-<!--      <h2 id="partitionName"></h2> -->
+      <!--      <h2 id="partitionName"></h2> -->
       <div id="run">
-        <h2 id="runHeader">Run ${RUN_NUMBER} (${RUN_TIMESTAMP})</h2>
+        <h2 id="runHeader">Run <span id="runNumber"></span> (<span id="runTimestamp"></span>)</h2>
         <nav id="runs">
-          <div id="runPrev" class="runLink"><span onclick="selectPage(${RUN_NUMBER}-1, ${PARTITION});" class="clickable">&lt;</span></div>
-          <div id="runNext" class="runLink"><span onclick="selectPage(${RUN_NUMBER}+1, ${PARTITION});" class="clickable">&gt;</span></div>
-          <div id="runJump">Run: <input type="text" name="runNumber" size="10" form="selectPage"><input type="submit" form="selectPage" value="Go"></div>
+          <div id="runPrev" class="runLink"><span onclick="loadSummary(currentRun-1, currentPartition);" class="clickable">&lt;</span></div>
+          <div id="runNext" class="runLink"><span onclick="loadSummary(currentRun+1, currentPartition);" class="clickable">&gt;</span></div>
+          <div id="runJump">Run: <input type="text" id="jumpInput" size="10"><input type="button" value="Go" onclick="loadData($('#jumpInput').val(), currentPartition)"></div>
         </nav>
       </div>
     </header>
     <main id="main">
       <nav id="partitions">
       </nav>
-      <section id="graphs">
-        <article id="summaryPanel">
-          <h3 class="panelTitle">Summary</h3>
-          <div id="summaryGraphContainer">
-            <svg id="summaryGraph" viewBox="0 0 200 100">
-              <line x1="3" x2="197" y1="70" y2="70" id="summaryXAxis" class="graphAxis" />
-              <line x1="8" x2="8" y1="3" y2="97" id="summaryYAxis" class="graphAxis" />
-              <rect x="8.25" y="30" width="3.5" height="40" style="fill:blue" />
-              <text x="10" y="72" transform="rotate(90 10,72)" font-size="4">T2_US_MIT</text>
-            </svg>
-          </div>
-        </article>
-      </section>
+      <div id="contents">
+        <section id="summary">
+          <svg id="summaryGraph">
+          </svg>
+        </section>
+        <section id="details">
+        </section>
+      </div>
     </main>
     <footer id="footer">
     </footer>

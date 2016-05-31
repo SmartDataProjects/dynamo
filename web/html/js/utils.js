@@ -1,14 +1,12 @@
-function submit(caller, keyvals)
-{
-    for (var key in keyvals) {
-        var elem = document.getElementById(key);
-        if (elem != undefined) {
-            elem.value = keyvals[key];
-        }
-    }
-    var parent = caller.parentNode;
-    while (parent.tagName.toLowerCase() != "form")
-        parent = parent.parentNode;
+function truncateText(textNode, width) {
+    var bbox = textNode.getBBox();
+    if (textNode.getBBox().width < width)
+        return;
 
-    parent.submit();
+    var content = textNode.textContent;
+    var truncateAt = content.length - 1;
+    while (textNode.getBBox().width > width) {
+        textNode.textContent = content.slice(0, truncateAt) + '...';
+        truncateAt -= 1;
+    }
 }

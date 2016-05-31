@@ -19,7 +19,7 @@ foreach ($mycnf as $line) {
   }
 }
 
-$db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $history_db_name);
+$history_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $history_db_name);
 $store_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $store_db_name);
 
 ?>
