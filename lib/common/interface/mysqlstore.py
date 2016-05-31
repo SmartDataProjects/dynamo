@@ -186,8 +186,8 @@ class MySQLStore(LocalStoreInterface):
         for site in site_list:
             for group in group_list:
                 if group not in site.group_quota:
-                    logger.info('Setting quota for %s on %s to %f', group.name, site.name, site.storage / len(group_list))
-                    site.group_quota[group] = site.storage / len(group_list)
+                    logger.info('Setting quota for %s on %s to %d', group.name, site.name, int(site.storage / len(group_list)))
+                    site.group_quota[group] = int(site.storage / len(group_list))
 
         # Load software versions
         software_version_map = {} # id -> version
@@ -245,7 +245,7 @@ class MySQLStore(LocalStoreInterface):
             # Link datasets to sites
             logger.info('Linking datasets to sites.')
     
-            sql = 'SELECT `dataset_id`, `site_id`, `group_id`, `is_complete`, `is_partial`, `is_custodial` FROM `dataset_replicas`'
+            sql = 'SELECT `dataset_id`, `site_id`, `group_id`, `is_complete`, `is_partial`, `is_custodial`, UNIX_TIMESTAMP(`last_block_created`) FROM `dataset_replicas`'
     
             conditions = []
             if site_filt != '*':
@@ -258,7 +258,7 @@ class MySQLStore(LocalStoreInterface):
     
             dataset_replicas = self._mysql.query(sql)
     
-            for dataset_id, site_id, group_id, is_complete, is_partial, is_custodial in dataset_replicas:
+            for dataset_id, site_id, group_id, is_complete, is_partial, is_custodial, last_block_created in dataset_replicas:
                 dataset = self._ids_to_datasets[dataset_id]
                 site = self._ids_to_sites[site_id]
                 if group_id == 0:
@@ -266,7 +266,7 @@ class MySQLStore(LocalStoreInterface):
                 else:
                     group = self._ids_to_groups[group_id]
     
-                rep = DatasetReplica(dataset, site, group = group, is_complete = is_complete, is_partial = is_partial, is_custodial = is_custodial)
+                rep = DatasetReplica(dataset, site, group = group, is_complete = is_complete, is_partial = is_partial, is_custodial = is_custodial, last_block_created = last_block_created)
     
                 dataset.replicas.append(rep)
                 site.dataset_replicas.append(rep)
@@ -578,8 +578,8 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query('CREATE TABLE `dataset_replicas_new` LIKE `dataset_replicas`')
 
-        fields = ('dataset_id', 'site_id', 'group_id', 'is_complete', 'is_partial', 'is_custodial')
-        mapping = lambda r: (self._datasets_to_ids[r.dataset], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_partial, r.is_custodial)
+        fields = ('dataset_id', 'site_id', 'group_id', 'is_complete', 'is_partial', 'is_custodial', 'last_block_created')
+        mapping = lambda r: (self._datasets_to_ids[r.dataset], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_partial, r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.last_block_created)))
 
         all_replicas = []
         for dataset in datasets:
@@ -704,8 +704,8 @@ class MySQLStore(LocalStoreInterface):
         # insert/update dataset replicas
         logger.info('Inserting/updating %d dataset replicas.', len(replicas))
 
-        fields = ('dataset_id', 'site_id', 'group_id', 'is_complete', 'is_partial', 'is_custodial')
-        mapping = lambda r: (self._datasets_to_ids[r.dataset], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_partial, r.is_custodial)
+        fields = ('dataset_id', 'site_id', 'group_id', 'is_complete', 'is_partial', 'is_custodial', 'last_block_created')
+        mapping = lambda r: (self._datasets_to_ids[r.dataset], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_partial, r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.last_block_created)))
 
         self._mysql.insert_many('dataset_replicas', fields, mapping, replicas)
 

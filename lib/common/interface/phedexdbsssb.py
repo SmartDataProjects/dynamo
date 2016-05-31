@@ -18,7 +18,7 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'is_complete'])
+ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'is_complete', 'time_create'])
 
 FileInfo = collections.namedtuple('File', ['name', 'bytes', 'checksum'])
 
@@ -326,7 +326,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
     def set_site_status(self, sites): #override (SiteInfoSourceInterface)
         for site in sites.values():
-            site.status = Site.STAT_UNKNOWN
+            site.status = Site.STAT_READY
 
         # get list of sites in waiting room (153) and morgue (199)
         for colid, stat in [(153, Site.STAT_WAITROOM), (199, Site.STAT_MORGUE)]:
@@ -336,16 +336,25 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             except KeyError:
                 logger.error('SSB parse error')
                 return
+
+            latest_timestamp = {}
     
             for entry in source:
                 try:
                     site = sites[entry['VOName']]
                 except KeyError:
                     continue
+                
+                # entry['Time'] is UTC but we are only interested in relative times here
+                timestamp = time.mktime(time.strptime(entry['Time'], '%Y-%m-%dT%H:%M:%S'))
+                if site in latest_timestamp and latest_timestamp[site] > timestamp:
+                    continue
+
+                latest_timestamp[site] = timestamp
 
                 if entry['Status'] == 'in':
                     site.status = stat
-                elif site.status == Site.STAT_UNKNOWN:
+                else:
                     site.status = Site.STAT_READY
 
     def get_group_list(self, groups, filt = '*'): #override (SiteInfoSourceInterface)
@@ -404,7 +413,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             block_name = block_name,
                             group_name = replica_entry['group'],
                             is_custodial = (replica_entry['custodial'] == 'y'),
-                            is_complete = (replica_entry['complete'] == 'y')
+                            is_complete = (replica_entry['complete'] == 'y'),
+                            time_create = replica_entry['time_create']
                         )
 
                         block_replicas[ds_name][site_name].append(protoreplica)
@@ -449,7 +459,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         site,
                         is_complete = True,
                         is_partial = False,
-                        is_custodial = False
+                        is_custodial = False,
+                        last_block_created = 0
                     )
 
                     dataset.replicas.append(dataset_replica)
@@ -482,6 +493,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                     block.replicas.append(replica)
                     site.add_block_replica(replica, adjust_cache = False) # not resetting cache to speed up
+                    
+                    if protoreplica.time_create > dataset_replica.last_block_created:
+                        dataset_replica.last_block_created = protoreplica.time_create
 
                     # add the block replica to the list
                     dataset_replica.block_replicas.append(replica)

@@ -59,7 +59,7 @@ class ProtectDiskOnly(policy.ProtectPolicy):
         super(self.__class__, self).__init__(name, static = True)
 
     def applies(self, replica, demand_manager): # override
-        return not replica.dataset.on_tape, 'Replica has no tape copy.'
+        return not replica.dataset.on_tape, 'Dataset has no tape copy.'
 
 
 class ProtectNonReadySite(policy.ProtectPolicy):
@@ -72,19 +72,6 @@ class ProtectNonReadySite(policy.ProtectPolicy):
 
     def applies(self, replica, demand_manager): # override
         return replica.site.status != Site.STAT_READY, 'Site is not in ready state.'
-
-
-class ProtectMinimumCopies(policy.ProtectPolicy):
-    """
-    PROTECT if the dataset has only minimum number of replicas.
-    """
-    
-    def __init__(self, name = 'ProtectMinimumCopies'):
-        super(self.__class__, self).__init__(name, static = False)
-
-    def applies(self, replica, demand_manager): # override
-        required_copies = demand_manager.dataset_demands[replica.dataset].required_copies
-        return len(replica.dataset.replicas) <= required_copies, 'Dataset has <= ' + str(required_copies) + ' replicas.'
 
 
 class ProtectNotOwnedBy(policy.ProtectPolicy):
@@ -105,14 +92,14 @@ class KeepTargetOccupancy(policy.KeepPolicy):
     KEEP if occupancy of the replica's site is less than a set target.
     """
 
-    def __init__(self, threshold, name = 'ProtectTargetOccupancy'):
+    def __init__(self, threshold, groups = [], name = 'ProtectTargetOccupancy'):
         super(self.__class__, self).__init__(name, static = False)
 
         self.threshold = threshold
+        self.groups = groups
 
     def applies(self, replica, demand_manager): # override
-        # TODO this is probably too inefficient - think caching
-        return replica.site.storage_occupancy() < self.threshold, 'Site is underused.'
+        return replica.site.storage_occupancy(self.groups) < self.threshold, 'Site is underused.'
 
 
 class DeletePartial(policy.DeletePolicy):
@@ -135,6 +122,8 @@ class DeleteOld(policy.DeletePolicy):
     def __init__(self, threshold, unit, name = 'DeleteOld'):
         super(self.__class__, self).__init__(name, static = True)
 
+        self.threshold_text = '%.1f%s' % (threshold, unit)
+
         if unit == 'y':
             threshold *= 365.
         if unit == 'y' or unit == 'd':
@@ -142,7 +131,6 @@ class DeleteOld(policy.DeletePolicy):
         if unit == 'y' or unit == 'd' or unit == 'h':
             threshold *= 3600.
 
-        self.threshold_text = '%f%s' % (threshold, unit)
         cutoff_timestamp = time.time() - threshold
         cutoff_datetime = datetime.datetime.utcfromtimestamp(cutoff_timestamp)
         self.cutoff = cutoff_datetime.date()
@@ -189,6 +177,57 @@ class DeleteUnpopular(policy.DeletePolicy):
             return False, ''
 
 
+class RecentMinimumCopies(policy.Policy):
+    """
+    PROTECT if the dataset has only minimum number of replicas, but DELETE if it is older than the threshold.
+    """
+
+    def __init__(self, threshold, unit, name = 'RecentMinimumCopies'):
+        super(self.__class__, self).__init__(name, static = True)
+
+        self.threshold_text = '%.1f%s' % (threshold, unit)
+
+        if unit == 'y':
+            threshold *= 365.
+        if unit == 'y' or unit == 'd':
+            threshold *= 24.
+        if unit == 'y' or unit == 'd' or unit == 'h':
+            threshold *= 3600.
+
+        cutoff_timestamp = time.time() - threshold
+        cutoff_datetime = datetime.datetime.utcfromtimestamp(cutoff_timestamp)
+        self.cutoff = cutoff_datetime.date()
+
+        self.action = policy.DEC_NEUTRAL # case_match is always called immediately after applies
+
+    def applies(self, replica, demand_manager): # override
+        self.action = policy.DEC_NEUTRAL
+
+        if datetime.datetime.utcfromtimestamp(replica.last_block_created).date() < self.cutoff:
+            # replica is old
+            last_acc_date = datetime.date.min
+
+            for acc_type, records in replica.accesses.items(): # remote and local
+                if len(records) == 0:
+                    continue
+                
+                last_acc_date = max([last_acc_date] + records.keys())
+
+            if last_acc_date < self.cutoff:
+                self.action = policy.DEC_DELETE
+                return True, 'Replica is older than ' + self.threshold_text + '.'
+
+        required_copies = demand_manager.dataset_demands[replica.dataset].required_copies
+        if len(replica.dataset.replicas) <= required_copies:
+            self.action = policy.DEC_PROTECT
+            return True, 'Dataset has <= ' + str(required_copies) + ' copies.'
+
+        return False, ''
+
+    def case_match(self, replica): # override
+        return self.action
+
+
 class ActionList(policy.Policy):
     """
     Take decision from a list of policies.
@@ -203,7 +242,7 @@ class ActionList(policy.Policy):
 
         self.res = [] # (action, site_re, dataset_re)
         self.patterns = [] # (action_str, site_pattern, dataset_pattern)
-        self.actions = {} # replica -> action
+        self.action = policy.DEC_NEUTRAL
 
         if list_path:
             self.load_list(list_path)
@@ -242,10 +281,12 @@ class ActionList(policy.Policy):
         Loop over the patterns list and make an entry in self.actions if the pattern matches.
         """
 
+        self.action = policy.DEC_NEUTRAL
+
         matches = []
         for iL, (action, site_re, dataset_re) in enumerate(self.res):
             if site_re.match(replica.site.name) and dataset_re.match(replica.dataset.name):
-                self.actions[replica] = action
+                self.action = action
                 matches.append(self.patterns[iL])
 
         if len(matches) != 0:
@@ -254,7 +295,7 @@ class ActionList(policy.Policy):
             return False, ''
     
     def case_match(self, replica): # override
-        return self.actions[replica]
+        return self.action
 
 
 def make_stack(strategy):
@@ -262,27 +303,29 @@ def make_stack(strategy):
 
     if strategy == 'TargetFraction':
         # stackgen(0.92) -> TargetFraction stack with threshold 92%
-        def stackgen(*arg):
+        def stackgen(*arg, **kwd):
             stack = [
                 KeepTargetOccupancy(config.target_site_occupancy),
                 ProtectNonReadySite(),
                 ProtectIncomplete(),
                 ProtectDiskOnly(),
                 ProtectNotOwnedBy('AnalysisOps'),
-                ProtectMinimumCopies(),
-                DeletePartial(),
-                DeleteOld(*detox_config.delete_old.threshold),
+                RecentMinimumCopies(*detox_config.delete_old.threshold),
+                DeletePartial()
     #            DeleteUnpopular()
             ]
 
             if len(arg) != 0:
                 stack[0].threshold = arg[0]
+
+            if 'inventory' in kwd:
+                stack[1].groups = [inventory.groups['AnalysisOps']]
             
             return stack
 
     elif strategy == 'List':
         # stackgen([files]) -> List stack with files loaded into ActionList
-        def stackgen(*arg):
+        def stackgen(*arg, **kwd):
             stack = [
                 ProtectIncomplete(),
                 ProtectLocked(),

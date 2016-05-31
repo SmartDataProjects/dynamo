@@ -97,7 +97,7 @@ class TransactionHistoryInterface(object):
 
         if config.read_only:
             logger.info('new_run')
-            return
+            return 0
 
         self.acquire_lock()
         try:
@@ -114,7 +114,7 @@ class TransactionHistoryInterface(object):
 
         if config.read_only:
             logger.info('new_run')
-            return
+            return 0
 
         self.acquire_lock()
         try:
@@ -123,6 +123,28 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
         return run_number
+
+    def close_copy_run(self, run_number):
+        if config.read_only:
+            logger.info('close_copy_run')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_close_run(HistoryRecord.OP_COPY, run_number)
+        finally:
+            self.release_lock()
+
+    def close_deletion_run(self, run_number):
+        if config.read_only:
+            logger.info('close_copy_run')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_close_run(HistoryRecord.OP_DELETE, run_number)
+        finally:
+            self.release_lock()
 
     def make_copy_entry(self, run_number, site, operation_id, approved, ro_list, size):
         if config.read_only:

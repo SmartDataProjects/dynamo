@@ -131,6 +131,8 @@ class Detox(object):
         logger.info('Committing deletion.')
         self.commit_deletions(run_number, deletion_list, is_test)
 
+        self.history.close_deletion_run(run_number)
+
         logger.info('Detox run finished at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
     @timer
@@ -143,14 +145,14 @@ class Detox(object):
         def run_policies(evaluation):
             evaluation.run(self.demand_manager)
 
-        parallel_exec(run_policies, evaluations.values(), print_progress = True)
+        parallel_exec(run_policies, evaluations.values())
 
         candidates = {} # {replica: record}
 
         for replica, evaluation in evaluations.items():
             record = evaluation.deciding_record()
 
-            if record is None:
+            if record is None or record.decision == policy.DEC_NEUTRAL:
                 deciding_records[replica] = None
                 continue
 

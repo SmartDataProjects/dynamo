@@ -321,13 +321,14 @@ class DatasetReplica(object):
     ACC_LOCAL, ACC_REMOTE = range(1, 3)
     Access = collections.namedtuple('Access', ['num_accesses', 'cputime'])
 
-    def __init__(self, dataset, site, group = None, is_complete = False, is_partial = False, is_custodial = False):
+    def __init__(self, dataset, site, group = None, is_complete = False, is_partial = False, is_custodial = False, last_block_created = 0):
         self.dataset = dataset
         self.site = site
         self.group = group # None also if owned by multiple groups
         self.is_complete = is_complete # = complete subscription. Can still be partial
         self.is_partial = is_partial
         self.is_custodial = is_custodial
+        self.last_block_created = last_block_created
         self.block_replicas = []
         self.accesses = dict([(i, {}) for i in range(1, 3)]) # UTC date -> Accesses
 

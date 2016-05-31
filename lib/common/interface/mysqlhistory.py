@@ -85,6 +85,9 @@ class MySQLHistory(TransactionHistoryInterface):
 
         return self._mysql.query('INSERT INTO `runs` (`operation`, `partition_id`, `time_start`) VALUES (%s, %s, FROM_UNIXTIME(%s))', operation_str, part_id, time.time())
 
+    def _do_close_run(self, operation, run_number): #override
+        self._mysql.query('UPDATE `runs` SET `time_end` = FROM_UNIXTIME(%s) WHERE `id` = %s', time.time(), run_number)
+
     def _do_make_copy_entry(self, run_number, site, operation_id, approved, do_list, size): #override
         """
         site and dataset are expected to be already in the database (save_deletion_decisions should be called first).
