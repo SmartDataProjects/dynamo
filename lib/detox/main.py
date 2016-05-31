@@ -126,7 +126,7 @@ class Detox(object):
                 self.inventory_manager.unlink_datasetreplica(replica)
 
         # save replica snapshots and all deletion decisions
-        self.history.save_deletion_decisions(run_number, deciding_records)
+        self.history.save_deletion_decisions(run_number, deciding_records, policy.DEC_KEEP)
 
         logger.info('Committing deletion.')
         self.commit_deletions(run_number, deletion_list, is_test)

@@ -278,7 +278,7 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
       
-    def save_deletion_decisions(self, run_number, records):
+    def save_deletion_decisions(self, run_number, records, default):
         """
         Make replica snapshots for updated replicas, and save the decision for all replicas.
         Arguments records is {replica: deciding_policy_record}.
@@ -290,7 +290,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_deletion_decisions(run_number, records)
+            self._do_save_deletion_decisions(run_number, records, default)
         finally:
             self.release_lock()
 

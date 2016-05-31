@@ -279,9 +279,9 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
 
-    def _do_save_deletion_decisions(self, run_number, records): #override
+    def _do_save_deletion_decisions(self, run_number, records, default): #override
         fields = ('run_id', 'snapshot_id', 'decision', 'reason')
-        mapping = lambda (rep, rec): (run_number, self._replica_snapshot_ids[rep], rec.decision if rec is not None else 'keep', rec.reason if rec is not None else '')
+        mapping = lambda (rep, rec): (run_number, self._replica_snapshot_ids[rep], rec.decision if rec is not None else default, MySQL.escape_string(rec.reason) if rec is not None else '')
 
         self._mysql.insert_many('deletion_decisions', fields, mapping, records.items())
 

@@ -319,7 +319,7 @@ def make_stack(strategy):
                 stack[0].threshold = arg[0]
 
             if 'inventory' in kwd:
-                stack[1].groups = [inventory.groups['AnalysisOps']]
+                stack[1].groups = [kwd['inventory'].groups['AnalysisOps']]
             
             return stack
 

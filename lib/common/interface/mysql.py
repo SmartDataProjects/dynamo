@@ -6,12 +6,17 @@ import MySQLdb
 import sys
 import logging
 import time
+import traceback
 
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
 class MySQL(object):
+
+    @staticmethod
+    def escape_string(string):
+        return MySQLdb.escape_string(string)
     
     def __init__(self, host = '', user = '', passwd = '', config_file = '', config_group = '', db = ''):
         if config_file:
@@ -46,12 +51,15 @@ class MySQL(object):
                     cursor.execute(sql, args)
                     break
                 except MySQLdb.OperationalError:
+                    last_except = sys.exc_info()[0]
                     # reconnect to server
+                    cursor.close()
                     self._connection = MySQLdb.connect(**self._connection_parameters)
                     cursor = self._connection.cursor()
     
             else: # 10 failures
-                raise MySQLdb.MySQLError('Too many OperationalErrors')
+                logger.error('Too many OperationalErrors. Last exception:')
+                raise last_except
 
         except:
             logger.error('There was an error executing the following statement:')
