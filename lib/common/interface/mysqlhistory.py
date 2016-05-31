@@ -123,7 +123,7 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_update_deletion_entry(self, deletion_record): #override
         self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, `size_deleted` = %s, `last_update` = FROM_UNIXTIME(%s) WHERE `id` = %s', deletion_record.approved, deletion_record.done, deletion_record.last_update, deletion_record.operation_id)
 
-    def _do_save_sites(self, inventory): #override
+    def _do_save_sites(self, run_number, inventory): #override
         if len(self._site_id_map) == 0:
             self._make_site_id_map()
 
@@ -132,13 +132,32 @@ class MySQLHistory(TransactionHistoryInterface):
             if site_name not in self._site_id_map:
                 sites_to_insert.append(site_name)
 
-        if len(sites_to_insert) == 0:
-            return
+        if len(sites_to_insert) != 0:
+            self._mysql.insert_many('sites', ('name',), lambda n: (n,), sites_to_insert)
+            self._make_site_id_map()
 
-        self._mysql.insert_many('sites', ('name',), lambda n: (n,), sites_to_insert)
-        self._make_site_id_map()
+        update_status = {} #site_name -> status
+        keep_status = [] #site_names
 
-    def _do_save_datasets(self, inventory): #override
+        for site_name, status in self._mysql.query('SELECT `sites`.`name`, 0 + `site_status_snapshots`.`status` FROM `site_status_snapshots` INNER JOIN `sites` ON `sites`.`id` = `site_status_snapshots`.`site_id` ORDER BY `run_id` DESC'):
+            if site_name in update_status or site_name in keep_status:
+                continue
+
+            site = inventory.sites[site_name]
+            if status == site.status:
+                keep_status.append(site_name)
+            else:
+                update_status[site_name] = site.status
+
+        for site_name, site in inventory.sites.items():
+            if site_name not in update_status and site_name not in keep_status:
+                update_status[site_name] = site.status
+
+        fields = ('site_id', 'run_id', 'status')
+        mapping = lambda (site_name, status): (self._site_id_map[site_name], run_number, status)
+        self._mysql.insert_many('site_status_snapshots', fields, mapping)
+
+    def _do_save_datasets(self, run_number, inventory): #override
         if len(self._dataset_id_map) == 0:
             self._make_dataset_id_map()
 

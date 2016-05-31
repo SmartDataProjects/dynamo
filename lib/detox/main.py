@@ -21,13 +21,15 @@ class Detox(object):
         self.demand_manager = demand
         self.history = history
 
+        self.site_conditions = {} # {partition: [function (site) -> delete_on_site]}
         self.policy_stacks = {} # {partition: [policy]}
         self.quotas = {} # {partition: {site: quota}}
         self.partitioners = {}
 
         self.deletion_message = 'Dynamo -- Automatic Cache Release Request.'
 
-    def set_policies(self, policy_stack, quotas, partitioner = None, partition = ''): # empty partition name -> default
+    def set_policies(self, site_condition, policy_stack, quotas, partitioner = None, partition = ''): # empty partition name -> default
+        self.site_conditions[partition] = site_condition
         self.policy_stacks[partition] = policy_stack
         self.quotas[partition] = quotas
         self.partitioners[partition] = partitioner
@@ -56,8 +58,9 @@ class Detox(object):
         logger.info('Preparing deletion run %d', run_number)
 
         # update site and dataset lists
-        self.history.save_sites(self.inventory_manager)
-        self.history.save_datasets(self.inventory_manager)
+        # take a snapshot of site status
+        self.history.save_sites(run_number, self.inventory_manager)
+        self.history.save_datasets(run_number, self.inventory_manager)
         # take a snapshot of current replicas
         self.history.save_replicas(run_number, self.inventory_manager)
         # take snapshots of quotas if updated
