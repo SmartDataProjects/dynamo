@@ -309,7 +309,6 @@ def make_stack(strategy):
                 ProtectNonReadySite(),
                 ProtectIncomplete(),
                 ProtectDiskOnly(),
-                ProtectNotOwnedBy('AnalysisOps'),
                 RecentMinimumCopies(*detox_config.delete_old.threshold),
                 DeletePartial()
     #            DeleteUnpopular()
@@ -330,7 +329,6 @@ def make_stack(strategy):
                 ProtectIncomplete(),
                 ProtectLocked(),
                 ProtectDiskOnly(),
-                ProtectNotOwnedBy('AnalysisOps'),
                 ActionList()
             ]
 
