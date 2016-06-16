@@ -298,11 +298,17 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
 
-    def _do_save_deletion_decisions(self, run_number, records, default): #override
+    def _do_save_deletion_decisions(self, run_number, protected, deleted, kept): #override
         fields = ('run_id', 'snapshot_id', 'decision', 'reason')
-        mapping = lambda (rep, rec): (run_number, self._replica_snapshot_ids[rep], rec.decision if rec is not None else default, MySQL.escape_string(rec.reason) if rec is not None else '')
 
-        self._mysql.insert_many('deletion_decisions', fields, mapping, records.items())
+        mapping = lambda (rep, reason): (run_number, self._replica_snapshot_ids[rep], 'protect', MySQL.escape_string(reason))
+        self._mysql.insert_many('deletion_decisions', fields, mapping, protected.items())
+
+        mapping = lambda (rep, reason): (run_number, self._replica_snapshot_ids[rep], 'delete', MySQL.escape_string(reason))
+        self._mysql.insert_many('deletion_decisions', fields, mapping, deleted.items())
+
+        mapping = lambda (rep, reason): (run_number, self._replica_snapshot_ids[rep], 'keep', MySQL.escape_string(reason))
+        self._mysql.insert_many('deletion_decisions', fields, mapping, kept.items())
 
     def _do_get_incomplete_copies(self): #override
         history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_copied`, UNIX_TIMESTAMP(h.`last_update`) FROM `copy_requests` AS h INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`size` != h.`size_copied`')
