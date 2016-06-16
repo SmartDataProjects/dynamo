@@ -49,49 +49,79 @@ def unicode2str(container):
             elif type(elem) is dict or type(elem) is list:
                 unicode2str(elem)
 
-def parallel_exec(target, arguments, clean_input = True, print_progress = False):
+def parallel_exec(target, arguments, add_args = None, get_output = False, per_thread = 1, print_progress = False):
     """
     Execute target(*args) in up to config.num_threads parallel threads,
     for each entry args of arguments list.
     """
 
+    def target_wrapper(arguments_chunk, output_list):
+        for args in arguments_chunk:
+            output = target(*args)
+            if get_output:
+                output_list.append(output)
+
     if print_progress:
         ntotal = len(arguments)
         interval = max(ntotal / 20, 1)
 
+    if get_output:
+        all_outputs = []
+
+    if per_thread < 1:
+        per_thread = 1
+
     threads = []
-    iarg = 0
-    while iarg != len(arguments):
-        if clean_input:
+    outputs = []
+    processing = True
+    
+    while processing:
+        arguments_chunk = []
+        for icall in range(per_thread):
             args = arguments.pop()
             if print_progress and (ntotal - len(arguments)) % interval == 0:
                 logging.info('Processed %f%% of input.', 100. * (ntotal - len(arguments)) / ntotal)
-        else:
-            args = arguments[iarg]
-            if print_progress and iarg % interval == 0:
-                logging.info('Processed %f%% of input.', 100. * iarg / ntotal)
+    
+            if type(args) is not tuple:
+                args = (args,)
+    
+            if add_args is not None:
+                args = args + add_args
 
-            iarg += 1
+            arguments_chunk.append(args)
 
-        if type(args) is not tuple:
-            args = (args,)
+            if len(arguments) == 0:
+                processing = False
+                break
 
-        thread = threading.Thread(target = target, args = args)
+        thread_outputs = []
+        thread = threading.Thread(target = target_wrapper, args = (arguments_chunk, thread_outputs))
+
         thread.start()
         threads.append(thread)
+        if get_output:
+            outputs.append(thread_outputs)
 
         while len(threads) >= config.num_threads:
-            iL = 0
-            while iL < len(threads):
-                thread = threads[iL]
+            ith = 0
+            while ith < len(threads):
+                thread = threads[ith]
                 if thread.is_alive():
-                    iL += 1
+                    ith += 1
                 else:
                     thread.join()
-                    threads.pop(iL)
+                    threads.pop(ith)
+                    if get_output:
+                        all_outputs.extend(outputs.pop(ith))
 
             if len(threads) >= config.num_threads:
                 time.sleep(1)
 
-    for thread in threads:
+    for ith, thread in enumerate(threads):
         thread.join()
+        if get_output:
+            all_outputs.extend(outputs[ith])
+
+    if get_output:
+        return all_outputs
+
