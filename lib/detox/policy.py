@@ -14,10 +14,11 @@ class Policy(object):
     DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(1, 4)
     DECISION_STR = {DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
 
-    def __init__(self, default, stack, quotas, site_requirement = None, prerequisite = None):
+    def __init__(self, default, stack, quotas, partition = '', site_requirement = None, prerequisite = None):
         self.default_decision = default # decision
         self.stack = stack # [rule]
         self.quotas = quotas # {site: quota}
+        self.partition = partition
         self.site_requirement = site_requirement # bool(site, partition)
         self.prerequisite = prerequisite # bool(replica)
 
@@ -27,11 +28,11 @@ class Policy(object):
         else:
             return self.prerequisite(replica)
 
-    def need_deletion(self, site, partition):
+    def need_deletion(self, site):
         if site_requirement is None:
             return True
         else:
-            return self.site_requirement(site, partition)
+            return self.site_requirement(site, self.partition)
 
     def evaluate(self, replica, demand_manager):
         for rule in self.rules:

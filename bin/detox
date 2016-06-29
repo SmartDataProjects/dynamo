@@ -132,7 +132,7 @@ for stack_spec in args.stacks:
     group = inventory_manager.groups[partition]
     quotas = dict([(site, site.quota(group)) for site in inventory_manager.sites.values()])
 
-    policy = Policy(default, rule_stack, quotas, site_requirement = site_overused, prerequisite = BelongsTo(group))
+    policy = Policy(default, rule_stack, quotas, partition = partition, site_requirement = site_overused, prerequisite = BelongsTo(group))
 
     detox.set_policy(policy, partition = partition)
 

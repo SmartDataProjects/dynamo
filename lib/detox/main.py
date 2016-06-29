@@ -43,8 +43,10 @@ class Detox(object):
             # inventory is stale -> update
             self.inventory_manager.update()
 
-        self.demand_manager.update(self.inventory_manager)
+        self.demand_manager.update(self.inventory_manager, accesses = True, requests = False)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
+
+        policy = self.policies[partition]
 
         # fetch the copy/deletion run number
         run_number = self.history.new_deletion_run(partition, is_test = is_test)
@@ -58,9 +60,7 @@ class Detox(object):
         # take a snapshot of current replicas
         self.history.save_replicas(run_number, self.inventory_manager)
         # take snapshots of quotas if updated
-        self.history.save_quotas(run_number, self.quotas, self.inventory_manager)
-
-        policy = self.policies[partition]
+        self.history.save_quotas(run_number, partition, policy.quotas, self.inventory_manager)
 
         # all replicas that the policy considers
         replicas = set()
@@ -248,14 +248,10 @@ if __name__ == '__main__':
 
     # at the moment partitions are set by groups
     quotas = {}
-    for group in inventory_manager.groups.values():
-        group_quotas = {}
-        for site in inventory_manager.sites.values():
-            group_quotas[site] = site.quota(group)
+    for site in inventory_manager.sites.values():
+        quotas[site] = site.quota(inventory_manager.groups[args.partition])
 
-        quotas[group.name] = group_quotas
-
-    policy = Policy(Policy.DEC_PROTECT, [action_list], quotas)
+    policy = Policy(Policy.DEC_PROTECT, [action_list], quotas, partition = args.partition)
 
     detox.set_policy(policy, partition = args.partition)
 

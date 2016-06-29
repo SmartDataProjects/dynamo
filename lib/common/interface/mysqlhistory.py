@@ -172,39 +172,38 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('datasets', ('name',), lambda n: (n,), datasets_to_insert)
         self._make_dataset_id_map()
 
-    def _do_save_quotas(self, run_number, quotas, inventory): #override
+    def _do_save_quotas(self, run_number, partition, quotas, inventory): #override
         if len(self._site_id_map) == 0:
             self._make_site_id_map()
 
         quota_updates = []
 
-        for partition, quota_map in quotas.items():
-            res = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
-            if len(res) == 0:
+        res = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
+        if len(res) == 0:
+            return
+
+        partition_id = res[0]
+        checked_sites = []
+
+        # find outdated quotas
+        result = self._mysql.query('SELECT s.`id`, s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE q.`partition_id` = %s AND q.`run_id` <= %s ORDER BY q.`run_id` DESC', partition_id, run_number)
+
+        for site_id, site_name, quota in result:
+            if site_id in checked_sites:
                 continue
+            
+            checked_sites.append(site_id)
 
-            partition_id = res[0]
-            checked_sites = []
+            site = inventory.sites[site_name]
 
-            # find outdated quotas
-            result = self._mysql.query('SELECT s.`id`, s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE q.`partition_id` = %s AND q.`run_id` <= %s ORDER BY q.`run_id` DESC', partition_id, run_number)
+            if quota != quotas[site]:
+                quota_updates.append((site_id, partition_id, run_number, quotas[site]))
 
-            for site_id, site_name, quota in result:
-                if site_id in checked_sites:
-                    continue
-                
-                checked_sites.append(site_id)
-
-                site = inventory.sites[site_name]
-
-                if quota != quota_map[site]:
-                    quota_updates.append((site_id, partition_id, run_number, quota_map[site]))
-
-            # insert quotas for sites not in the table
-            for site in inventory.sites.values():
-                site_id = self._site_id_map[site.name]
-                if site_id not in checked_sites:
-                    quota_updates.append((site_id, partition_id, run_number, quota_map[site]))
+        # insert quotas for sites not in the table
+        for site in inventory.sites.values():
+            site_id = self._site_id_map[site.name]
+            if site_id not in checked_sites:
+                quota_updates.append((site_id, partition_id, run_number, quotas[site]))
 
         fields = ('site_id', 'partition_id', 'run_id', 'quota')
         self._mysql.insert_many('quota_snapshots', fields, lambda u: u, quota_updates)
