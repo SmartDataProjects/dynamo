@@ -142,15 +142,42 @@ class DeleteOlderThan(Delete):
         cutoff_datetime = datetime.datetime.utcfromtimestamp(cutoff_timestamp)
         self.cutoff = cutoff_datetime.date()
 
+
+class DeleteRECOOlderThan(DeleteOlderThan):
+    """
+    DELETE RECO replica if it was created more than threshold ago.
+    """
+
+    def __init__(self, threshold, unit):
+        DeleteOlderThan.__init__(self, threshold, unit)
+
     def _do_call(self, replica, demand_manager):
-        # the dataset was updated after the cutoff -> don't delete
+        last_slash = replica.dataset.name.rfind('/')
+        if replica.dataset.name[last_slash + 1:last_slash + 5] != 'RECO':
+            return None
+
+        last_update = datetime.datetime.utcfromtimestamp(replica.dataset.last_update).date()
+        if last_update < self.cutoff:
+            return 'Replica was created more than ' + self.threshold_text + ' ago.'
+
+
+class DeleteNotAccessedFor(DeleteOlderThan):
+    """
+    DELETE if the replica is not accessed for more than a set time.
+    """
+
+    def __init__(self, threshold, unit):
+        DeleteOlderThan.__init__(self, threshold, unit)
+
+    def _do_call(self, replica, demand_manager):
         last_update = datetime.datetime.utcfromtimestamp(replica.dataset.last_update).date()
         if last_update > self.cutoff:
+            # the dataset was updated after the cutoff -> don't delete
             return None
 
         # no accesses recorded ever -> delete
         if len(replica.accesses) == 0:
-            return 'Replica was created on', last_update.strftime('%Y-%m-%d'), 'but is never accessed.'
+            return 'Replica was created on ' + last_update.strftime('%Y-%m-%d') + ' but is never accessed.'
 
         for acc_type, records in replica.accesses.items(): # remote and local
             if len(records) == 0:
@@ -162,6 +189,19 @@ class DeleteOlderThan(Delete):
                 return None
             
         return 'Last access is older than ' + self.threshold_text + '.'
+
+
+class DeleteUnused(Delete):
+    """
+    DELETE if the dataset global usage rank (scale low to high) is above threshold.
+    """
+
+    def __init__(self, threshold):
+        self.threshold = threshold
+
+    def _do_call(self, replica, demand_manager):
+        if demand_manager.dataset_demands[replica.dataset].global_usage_rank > self.threshold:
+            return 'Global usage rank is above %f.' % self.threshold
 
 
 class ActionList(object):
@@ -229,11 +269,13 @@ def make_stack(strategy):
 
     if strategy == 'Routine':
         def stackgen(*arg, **kwd):
+            # stackgen(rank_threshold)
             stack = [
                 protect_nonready_site,
                 protect_incomplete,
                 protect_diskonly,
-                delete_old,
+                DeleteUnused(arg[0]),
+                DeleteRECOOlderThan(180., 'd'),
                 delete_partial,
                 protect_minimum_copies
             ]
@@ -241,11 +283,13 @@ def make_stack(strategy):
             return stack, Policy.DEC_DELETE
 
     elif strategy == 'List':
-        # stackgen([files]) -> List stack with files loaded into ActionList
+        # stackgen([files])
         def stackgen(*arg, **kwd):
             stack = [
                 protect_incomplete,
                 protect_diskonly,
+                DeleteRECOOlderThan(180., 'd'),
+                delete_partial,
                 ActionList()
             ]
 
@@ -255,5 +299,8 @@ def make_stack(strategy):
                 stack[-1].load_list(arg[0])
 
             return stack, Policy.DEC_PROTECT
+
+    else:
+        raise RuntimeError('Unrecognized strategy ' + strategy)
 
     return stackgen
