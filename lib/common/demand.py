@@ -43,13 +43,13 @@ class DemandManager(object):
         self.dataset_demands = {}
 
     def load(self, inventory):
-        logger.info('Loading dataset access information.')
-
         sites = inventory.sites.values()
         groups = inventory.groups.values()
         datasets = inventory.datasets.values()
 
+        logger.info('Loading dataset access information.')
         self.last_accesses_update = self.store.load_replica_accesses(sites, datasets)
+        logger.info('Loading dataset requests information.')
         self.last_requests_update = self.store.load_dataset_requests(datasets)
         self.store.load_locks(sites, groups, datasets)
 
@@ -127,6 +127,9 @@ class DemandManager(object):
         Query the job queue interface and collect all job information between start datetime and
         end datetime. Save information in the inventory store.
         """
+
+        if self.last_requests_update is None:
+            self.load(inventory)
 
         # must convert UTC datetime to UNIX timestamps
         # not the best implementation here but gets the job done
@@ -280,4 +283,3 @@ if __name__ == '__main__':
     
             else:
                 manager.update(inventory)
-                icmd += 1
