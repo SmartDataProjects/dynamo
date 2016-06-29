@@ -207,7 +207,7 @@ if __name__ == '__main__':
     from common.transaction import TransactionManager
     from common.demand import DemandManager
     import common.interface.classes as classes
-    from detox.policies import ActionList
+    from detox.rules import ActionList
 
     parser = ArgumentParser(description = 'Use detox')
 

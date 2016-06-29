@@ -1,3 +1,8 @@
+import time
+import datetime
+import re
+import fnmatch
+
 from detox.policy import Policy
 from common.dataformat import Site
 
@@ -225,7 +230,7 @@ def make_stack(strategy):
     if strategy == 'Routine':
         def stackgen(*arg, **kwd):
             stack = [
-                protect_nonready_site
+                protect_nonready_site,
                 protect_incomplete,
                 protect_diskonly,
                 delete_old,
