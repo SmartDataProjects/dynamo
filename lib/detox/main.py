@@ -69,11 +69,11 @@ class Detox(object):
                 if policy.applies(replica):
                     replicas.add(replica)
 
-        logger.info('Start deletion. Evaluating %d policies against %d replicas.', len(policy_stack), len(evaluations))
+        logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(replicas))
 
         target_sites = set()
         for site in self.inventory_manager.sites().values():
-            if policy.need_deletion(site):
+            if policy.need_deletion(site, partition):
                 target_sites.add(site)
 
         protected = {} # {replica: reason}
@@ -91,7 +91,11 @@ class Detox(object):
                 if decision == Policy.DEC_PROTECT:
                     replicas.remove(replica)
                     protected[replica] = reason
-                elif replica.site in target_sites:
+
+                elif replica.site not in target_sites:
+                    kept[replica] = 'Site does not need deletion.'
+
+                else:
                     deletion_candidates[replica] = reason
 
             logger.info('Iteration %d', iteration)
@@ -103,7 +107,7 @@ class Detox(object):
                 logger.debug(pprint.pformat(['%s:%s' % (rep.site.name, rep.dataset.name) for rep in deletion_candidates.keys()]))
 
             if iterative_deletion:
-                iter_deletion = self.select_replicas(policy.quotas, deletion_candidates.keys(), protected.keys())
+                iter_deletion = self.select_replicas(policy, deletion_candidates.keys(), protected.keys())
 
                 if logger.getEffectiveLevel() == logging.INFO:
                     for replica, reason in iter_deletion.items():
@@ -113,11 +117,9 @@ class Detox(object):
                 iter_deletion = deletion_candidates
 
             if len(iter_deletion) == 0:
-                for replica, decision, reason in eval_results:
-                    if decision == Policy.DEC_DELETE:
-                        # replicas are on non-target sites
-                        kept[replica] = reason
-                        
+                for replica, reason in deletion_candidates.items():
+                    kept[replica] = 'CANCELED:', reason
+
                 break
 
             deleted.update(iter_deletion)
@@ -170,11 +172,9 @@ class Detox(object):
 
             logger.info('Done deleting %d replicas from %s.', len(replica_list), site.name)
 
-    def select_replicas(self, quotas, candidate_list, protection_list):
+    def select_replicas(self, policy, candidate_list, protection_list):
         """
         Select one dataset replica to delete out of all deletion candidates.
-        Currently returning the smallest replica on the site with the highest protected fraction.
-        Ranking policy here may be made dynamic at some point.
         """
 
         if len(candidate_list) == 0:
@@ -188,14 +188,12 @@ class Detox(object):
                 protection_by_site[replica.site].append(replica)
 
             # find the site with the highest protected fraction
-            target_site = max(candidate_sites, key = lambda site: sum(replica.size() for replica in protection_by_site[site]) / quotas[site])
+            target_site = max(candidate_sites, key = lambda site: sum(replica.size() for replica in protection_by_site[site]) / policy.quotas[site])
         else:
             target_site = random.choice(candidate_sites)
 
-        candidates_on_site = [rep for rep in candidte_list if rep.site == target_site]
+        candidates_on_site = policy.sort_deletion_candidates([rep for rep in candidte_list if rep.site == target_site])
 
-        # now rank
-        
         # return the smallest replica on the target site
         return candidates_on_site[:detox_config.deletion_per_iteration]
 
@@ -257,7 +255,9 @@ if __name__ == '__main__':
 
         quotas[group.name] = group_quotas
 
-    detox.set_policies(action_list, quotas)
+    policy = Policy(Policy.DEC_PROTECT, [action_list], quotas)
+
+    detox.set_policy(policy, partition = args.partition)
 
     if args.dry_run:
         config.read_only = True

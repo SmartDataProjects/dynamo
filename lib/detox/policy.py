@@ -11,14 +11,14 @@ class Policy(object):
     """
 
     # do not change order - used by history records
-    DEC_NEUTRAL, DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(1, 5)
-    DECISION_STR = {DEC_NEUTRAL: 'NEUTRAL', DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
+    DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(1, 4)
+    DECISION_STR = {DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
 
-    def __init__(self, default, stack, quotas, site_requirement, prerequisite = None):
+    def __init__(self, default, stack, quotas, site_requirement = None, prerequisite = None):
         self.default_decision = default # decision
         self.stack = stack # [rule]
         self.quotas = quotas # {site: quota}
-        self.site_requirement = site_requirement # bool(site)
+        self.site_requirement = site_requirement # bool(site, partition)
         self.prerequisite = prerequisite # bool(replica)
 
     def applies(self, replica):
@@ -27,8 +27,11 @@ class Policy(object):
         else:
             return self.prerequisite(replica)
 
-    def need_deletion(self, site):
-        return self.site_requirement(site)
+    def need_deletion(self, site, partition):
+        if site_requirement is None:
+            return True
+        else:
+            return self.site_requirement(site, partition)
 
     def evaluate(self, replica, demand_manager):
         for rule in self.rules:
@@ -39,3 +42,10 @@ class Policy(object):
             return self.default_decision, 'Policy default'
 
         return result
+
+    def sort_deletion_candidates(self, replicas):
+        """
+        Rank and sort replicas in decreasing order of deletion priority.
+        """
+
+        return []

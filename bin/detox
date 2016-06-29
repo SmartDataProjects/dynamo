@@ -10,7 +10,7 @@ from common.transaction import TransactionManager
 from common.demand import DemandManager
 import common.interface.classes as classes
 from detox.main import Detox
-from detox.policies import make_stack
+from detox.rules import make_stack
 
 import common.configuration as config
 
@@ -83,6 +83,23 @@ demand_manager = DemandManager(**kwd)
 
 history = classes.default_interface['history']()
 
+def site_overused(site, partition):
+    """
+    Return true if the site is overused for a given partition.
+    Currently partition and group names are identical.
+    """
+
+    group = inventory_manager.groups[partition]
+    return site.storage_occupancy(group) > config.target_site_occupancy
+
+class BelongsTo(object):
+    def __init__(self, group):
+        self.group = group
+
+    def __call__(self, replica):
+        return replica.effective_owner() == self.group
+
+
 detox = Detox(inventory_manager, transaction_manager, demand_manager, history)
 
 partitions = []
@@ -93,9 +110,10 @@ for stack_spec in args.stacks:
     partitions.append(partition)
 
     if stack_name.endswith('.py'):
-    # argument is a python file that defines a list of stacks
+        # argument is a python file that defines the default decision
+        # and a list of stacks with the same name as the file
         execfile(stack_name)
-        policy_stack = eval(os.path.basename(stack_name)[:-3])
+        rule_stack = eval(os.path.basename(stack_name)[:-3]) # removing .py
 
     else:
         if '(' in stack_name:
@@ -108,14 +126,15 @@ for stack_spec in args.stacks:
         else:
             stack_args = tuple()
 
-        policy_stack = make_stack(stack_name)(*stack_args, inventory = inventory_manager)
+        rule_stack, default = make_stack(stack_name)(*stack_args)
 
     # currently partition = group
-    quotas = dict([(site, site.quota(inventory_manager.groups[partition])) for site in inventory_manager.sites.values()])
+    group = inventory_manager.groups[partition]
+    quotas = dict([(site, site.quota(group)) for site in inventory_manager.sites.values()])
 
-    partitionByGroup = lambda replica: replica.effective_owner().name == partition
+    policy = Policy(default, rule_stack, quotas, site_requirement = site_overused, prerequisite = BelongsTo(group))
 
-    detox.set_policies(policy_stack, quotas, partitioner = partitionByGroup, partition = partition)
+    detox.set_policy(policy, partition = partition)
 
 if args.force_inventory_update:
     config.inventory.refresh_min = 0
