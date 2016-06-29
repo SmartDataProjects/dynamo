@@ -91,7 +91,6 @@ class Detox(object):
             deletion_candidates = {} # {replica: reason}
 
             for replica, decision, reason in eval_results:
-                print replica
                 if decision == Policy.DEC_PROTECT:
                     replicas.remove(replica)
                     protected[replica] = reason
