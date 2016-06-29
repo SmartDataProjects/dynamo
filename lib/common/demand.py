@@ -176,6 +176,7 @@ class DemandManager(object):
             if dataset.status != Dataset.STAT_VALID:
                 continue
 
+            # set the request weight
             request_weight = 0.
 
             for request in dataset.requests:
@@ -194,6 +195,42 @@ class DemandManager(object):
                 request_weight += weight
 
             demand.request_weight = request_weight
+
+            # set the usage rank
+            # IntelROCCS implementation
+            # datasetRank = (1-used)*(now-creationDate)/(60*60*24) + \
+            #               used*( (now-lastAccessed)/(60*60*24)-nAccessed) - size/1000
+
+            now = time.time()
+            today = datetime.datetime.utcfromtimestamp(now).date()
+            global_rank = 0.
+
+            for replica in dataset.replicas:
+                last_access = None
+                num_access = 0
+                
+                for records in replica.accesses.values():
+                    if len(records) == 0:
+                        continue
+
+                    num_access += len(records)
+
+                    acc = max(records.keys())
+                    if last_access is None or acc > last_access:
+                        last_access = acc
+
+                if num_access == 0:
+                    local_rank = (now - dataset.last_update) / (24. * 3600.)
+                else:
+                    local_rank = (today - last_access).days - num_access
+
+                local_rank -= dataset.size / 1000.
+
+                global_rank += local_rank
+
+            global_rank /= len(dataset.replicas)
+
+            demand.global_usage_rank = global_rank
 
 
 if __name__ == '__main__':

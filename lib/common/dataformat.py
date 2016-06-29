@@ -397,9 +397,10 @@ class BlockReplica(object):
 class DatasetDemand(object):
     """Represents information on dataset demand."""
 
-    def __init__(self, required_copies = 1, request_weight = -1.):
+    def __init__(self, required_copies = 1, request_weight = -1., global_usage_rank = 0):
         self.required_copies = required_copies
         self.request_weight = request_weight
+        self.global_usage_rank = global_usage_rank
         self.locked_blocks = []
 
 
@@ -430,7 +431,7 @@ class HistoryRecord(object):
     # operation types
     OP_COPY, OP_DELETE = range(2)
 
-    CopiedReplica = collections.namedtuple('CopiedReplica', ['dataset_name', 'origin_site_name'])
+    CopiedReplica = collections.namedtuple('CopiedReplica', ['dataset_name'])
     DeletedReplica = collections.namedtuple('DeletedReplica', ['dataset_name'])
 
     def __init__(self, operation_type, operation_id, site_name, timestamp = 0, approved = False, size = 0, done = 0, last_update = 0):
