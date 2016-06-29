@@ -510,7 +510,7 @@ if __name__ == '__main__':
 
         interface.remove_snapshot(newer_than = newer_than, older_than = older_than)
 
-    elif args.command == 'recover':
+    elif args.command == 'restore':
         if not args.timestamp:
             print 'Specify a timestamp (can be "last").'
             sys.exit(1)

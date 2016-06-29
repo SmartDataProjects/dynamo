@@ -354,8 +354,6 @@ class MySQLStore(LocalStoreInterface):
         # old accesses will eb removed automatically next time the access information is saved from memory
         accesses = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses`, `cputime` FROM `dataset_accesses` WHERE `date` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY `dataset_id`, `site_id`, `date`')
 
-        last_update = datetime.date.min
-
         # little speedup by not repeating lookups for the same replica
         current_dataset_id = 0
         current_site_id = 0
@@ -388,12 +386,11 @@ class MySQLStore(LocalStoreInterface):
             date = datetime.date(year, month, day)
             replica.accesses[int(access_type)][date] = DatasetReplica.Access(num_accesses, cputime)
 
-            if date > last_update:
-                last_update = date
+        last_update = datetime.datetime.utcfromtimestamp(self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0])
 
         logger.info('Loaded %d replica access data. Last update on %s UTC', len(accesses), last_update.strftime('%Y-%m-%d'))
 
-        return last_update
+        return last_update.date()
 
     def _do_load_dataset_requests(self, datasets): #override
         if len(self._datasets_to_ids) == 0:
@@ -405,8 +402,6 @@ class MySQLStore(LocalStoreInterface):
         # pick up requests that are less than 1 year old
         # old requests will be removed automatically next time the access information is saved from memory
         requests = self._mysql.query('SELECT `id`, `dataset_id`, UNIX_TIMESTAMP(`queue_time`), UNIX_TIMESTAMP(`completion_time`), `nodes_total`, `nodes_done`, `nodes_failed`, `nodes_queued` FROM `dataset_requests` WHERE `queue_time` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY `dataset_id`, `queue_time`')
-
-        last_update = datetime.datetime.min
 
         # little speedup by not repeating lookups for the same dataset
         current_dataset_id = 0
@@ -433,11 +428,9 @@ class MySQLStore(LocalStoreInterface):
 
             update = datetime.datetime.utcfromtimestamp(completion_time)
 
-            if update > last_update:
-                last_update = update
+        last_update = datetime.datetime.utcfromtimestamp(self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0])
 
-        if last_update > datetime.datetime.min:
-            logger.info('Loaded %d dataset request data. Last update on %s UTC', len(requests), last_update.strftime('%Y-%m-%d %H:%M:%S'))
+        logger.info('Loaded %d replica access data. Last update at %s UTC', len(requests), last_update.strftime('%Y-%m-%d %H:%M:%S'))
 
         return last_update
 
@@ -681,6 +674,8 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('RENAME TABLE `dataset_accesses_new` TO `dataset_accesses`')
         self._mysql.query('DROP TABLE `dataset_accesses_old`')
 
+        self._mysql.query('UPDATE `system` SET `dataset_accesses_last_update` = NOW()')
+
     def _do_save_dataset_requests(self, datasets): #override
         if len(self._datasets_to_ids) == 0:
             raise RuntimeError('save_dataset_requests cannot be called before initializing the id maps')
@@ -709,6 +704,8 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('RENAME TABLE `dataset_requests` TO `dataset_requests_old`')
         self._mysql.query('RENAME TABLE `dataset_requests_new` TO `dataset_requests`')
         self._mysql.query('DROP TABLE `dataset_requests_old`')
+
+        self._mysql.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()')
 
     def _do_add_dataset_replicas(self, replicas): #override
         # make name -> id maps for use later

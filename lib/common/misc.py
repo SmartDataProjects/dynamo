@@ -55,6 +55,12 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
     for each entry args of arguments list.
     """
 
+    if len(arguments) == 0:
+        if get_output:
+            return []
+        else:
+            return
+
     def target_wrapper(arguments_chunk, output_list):
         for args in arguments_chunk:
             output = target(*args)

@@ -73,22 +73,25 @@ class Detox(object):
         logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(replicas))
 
         target_sites = set()
-        for site in self.inventory_manager.sites().values():
-            if policy.need_deletion(site, partition):
+        for site in self.inventory_manager.sites.values():
+            if policy.need_deletion(site):
                 target_sites.add(site)
 
         protected = {} # {replica: reason}
         deleted = {}
         kept = {}
 
+        iteration = 0
+
         while True:
             iteration += 1
 
-            eval_results = parallel_exec(lambda r: policy.evaluate(r, self.demand_manager), replicas, get_output = True, per_thread = 100)
+            eval_results = parallel_exec(lambda r: policy.evaluate(r, self.demand_manager), list(replicas), get_output = True, per_thread = 100)
 
             deletion_candidates = {} # {replica: reason}
 
             for replica, decision, reason in eval_results:
+                print replica
                 if decision == Policy.DEC_PROTECT:
                     replicas.remove(replica)
                     protected[replica] = reason

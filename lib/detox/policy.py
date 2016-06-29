@@ -29,7 +29,7 @@ class Policy(object):
             return self.prerequisite(replica)
 
     def need_deletion(self, site):
-        if site_requirement is None:
+        if self.site_requirement is None:
             return True
         else:
             return self.site_requirement(site, self.partition)
@@ -40,7 +40,7 @@ class Policy(object):
             if result is not None:
                 break
         else:
-            return self.default_decision, 'Policy default'
+            return replica, self.default_decision, 'Policy default'
 
         return result
 
