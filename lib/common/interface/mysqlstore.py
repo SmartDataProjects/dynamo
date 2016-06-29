@@ -255,11 +255,18 @@ class MySQLStore(LocalStoreInterface):
     
             if len(conditions) != 0:
                 sql += ' WHERE ' + ' AND '.join(conditions)
+
+            sql += 'ORDER BY `dataset_id`'
     
             dataset_replicas = self._mysql.query(sql)
+
+            _dataset_id = 0
     
             for dataset_id, site_id, group_id, is_complete, is_partial, is_custodial, last_block_created in dataset_replicas:
-                dataset = self._ids_to_datasets[dataset_id]
+                if dataset_id != _dataset_id:
+                    _dataset_id = dataset_id
+                    dataset = self._ids_to_datasets[_dataset_id]
+
                 site = self._ids_to_sites[site_id]
                 if group_id == 0:
                     group = None
@@ -284,11 +291,18 @@ class MySQLStore(LocalStoreInterface):
     
             if len(conditions) != 0:
                 sql += ' WHERE ' + ' AND '.join(conditions)
+
+            sql += 'ORDER BY `block_id`'
     
             block_replicas = self._mysql.query(sql)
+
+            _block_id = 0
     
             for block_id, site_id, group_id, is_complete, is_custodial in block_replicas:
-                block = block_map[block_id]
+                if block_id != _block_id:
+                    _block_id = block_id
+                    block = block_map[_block_id]
+
                 site = self._ids_to_sites[site_id]
                 if group_id == 0:
                     group = None
