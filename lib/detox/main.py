@@ -43,7 +43,8 @@ class Detox(object):
             # inventory is stale -> update
             self.inventory_manager.update()
 
-        self.demand_manager.update(self.inventory_manager, accesses = True, requests = False)
+#        self.demand_manager.update(self.inventory_manager, accesses = True, requests = False)
+        self.demand_manager.update(self.inventory_manager, accesses = False, requests = False)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
         policy = self.policies[partition]
