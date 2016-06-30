@@ -281,15 +281,18 @@ function displaySummary(data)
     var headerRow = thead.append('tr')
         .style({'width': '100%', 'height': '40px'});
 
-    var datasetCol = headerRow.append('th').classed('datasetCol', true);
+    var datasetCol = headerRow.append('th').classed('datasetCol sortable', true);
     datasetCol.text('Dataset');
     datasetCol.on('click', function (d) { sortTableBy(d.name, 'dataset'); });
-    var sizeCol = headerRow.append('th').classed('sizeCol', true);
+
+    var sizeCol = headerRow.append('th').classed('sizeCol sortable', true);
     sizeCol.text('Size (GB)');
     sizeCol.on('click', function (d) { sortTableBy(d.name, 'size'); });
-    var decisionCol = headerRow.append('th').classed('decisionCol', true);
+
+    var decisionCol = headerRow.append('th').classed('decisionCol sortable', true);
     decisionCol.text('Decision');
     decisionCol.on('click', function (d) { sortTableBy(d.name, 'decision'); });
+
     headerRow.append('th').classed('reasonCol', true).text('Reason');
 
     var bodyCont = siteDetails.append('div').classed('siteTableCont', true)
@@ -304,7 +307,8 @@ function displaySummary(data)
     tbody.append('col').style({'width': '25%'});
 
     bodyCont.append('div')
-        .style({'width': '20%', 'height': '10%', 'margin': '45% 40% 45% 40%', 'cursor': 'pointer', 'text-decoration': 'underline'})
+        .style({'width': '20%', 'height': '10%', 'margin': '10% 40% 0 40%', 'cursor': 'pointer', 'text-decoration': 'underline'})
+        .text('Load site data')
         .on('click', function (d) { d3.select(this).remove(); loadSiteTable(d.name); });
 }
 
@@ -364,7 +368,7 @@ function loadSiteTable(name)
 {
     var spinner = new Spinner({scale: 5, corners: 0, width: 2, position: 'relative'});
     spinner.spin();
-    $('#' + name + ' .siteTableCont').append($(spinners[name].el));
+    $('#' + name + ' .siteTableCont').append($(spinner.el));
 
     var inputData = {
         getData: 1,

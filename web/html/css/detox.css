@@ -170,6 +170,9 @@ article.siteDetails table tr,th,td {
 table.siteTableHeader th {
     background-color: #a31f34;
     color: white;
+}
+
+table.siteTableHeader th.sortable {
     cursor: pointer;
 }
 
