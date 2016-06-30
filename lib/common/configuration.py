@@ -64,7 +64,38 @@ inventory = Configuration()
 inventory.refresh_min = 21600 # 6 hours
 inventory.included_sites = ['T2_*', 'T1_*_Disk']
 inventory.excluded_sites = ['T2_CH_CERNBOX', 'T2_MY_UPM_BIRUNI', 'T1_US_FNAL_New_Disk']
-inventory.included_groups = ['AnalysisOps', 'DataOps']
+inventory.included_groups = [
+    'AnalysisOps', 'DataOps', 'FacOps', 'IB RelVal', 'RelVal',
+    'B2G',
+    'SMP',
+    'b-physics',
+    'b-tagging',
+    'caf-alca',
+    'caf-comm',
+    'caf-lumi',
+    'caf-phys',
+    'deprecated-ewk',
+    'deprecated-qcd',
+    'deprecated-undefined',
+    'dqm',
+    'e-gamma_ecal',
+    'exotica',
+    'express',
+    'forward',
+    'heavy-ions',
+    'higgs',
+    'jets-met_hcal',
+    'local',
+    'muon',
+    'susy',
+    'tau-pflow',
+    'top',
+    'tracker-dpg',
+    'tracker-pog',
+    'trigger',
+    'upgrade'
+]
+
 
 demand = Configuration()
 demand.access_history = Configuration()
