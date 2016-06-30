@@ -19,6 +19,7 @@ class Policy(object):
         self.rules = rules # [rule]
         self.quotas = quotas # {site: quota}
         self.partition = partition
+        self.groups = [] # groups the policy concerns
         self.site_requirement = site_requirement # bool(site, partition)
         self.prerequisite = prerequisite # bool(replica)
 

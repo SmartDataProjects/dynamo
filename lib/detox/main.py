@@ -145,13 +145,13 @@ class Detox(object):
         self.history.save_deletion_decisions(run_number, protected, deleted, kept)
 
         logger.info('Committing deletion.')
-        self.commit_deletions(run_number, deleted.keys(), is_test)
+        self.commit_deletions(run_number, policy, deleted.keys(), is_test)
 
         self.history.close_deletion_run(run_number)
 
         logger.info('Detox run finished at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
-    def commit_deletions(self, run_number, deletion_list, is_test):
+    def commit_deletions(self, run_number, policy, deletion_list, is_test):
         # first make sure the list of blocks is up-to-date
         datasets = list(set(r.dataset for r in deletion_list))
         self.inventory_manager.dataset_source.set_dataset_constituent_info(datasets)
@@ -164,7 +164,7 @@ class Detox(object):
 
             logger.info('Deleting %d replicas from %s.', len(replica_list), site.name)
 
-            deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, comments = self.deletion_message, is_test = is_test)
+            deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, groups = policy.groups, comments = self.deletion_message, is_test = is_test)
             # deletion_mapping .. {deletion_id: (approved, [replicas])}
 
             for deletion_id, (approved, replicas) in deletion_mapping.items():
@@ -172,7 +172,7 @@ class Detox(object):
                     self.inventory_manager.store.delete_datasetreplicas(replicas)
                     self.inventory_manager.store.set_last_update()
 
-                size = sum([r.size() for r in replicas])
+                size = sum([r.size(policy.groups) for r in replicas])
 
                 self.history.make_deletion_entry(run_number, site, deletion_id, approved, [r.dataset for r in replicas], size)
 
@@ -194,7 +194,7 @@ class Detox(object):
                 protection_by_site[replica.site].append(replica)
 
             # find the site with the highest protected fraction
-            target_site = max(candidate_sites, key = lambda site: sum(replica.size() for replica in protection_by_site[site]) / policy.quotas[site])
+            target_site = max(candidate_sites, key = lambda site: sum(replica.size(policy.groups) for replica in protection_by_site[site]) / policy.quotas[site] if policy.quotas[site] != 0)
         else:
             target_site = random.choice(candidate_sites)
 
@@ -253,11 +253,14 @@ if __name__ == '__main__':
     action_list.add_action('Delete', site_pattern, dataset_pattern)
 
     # at the moment partitions are set by groups
+    group = inventory_manager.groups[args.partition]
+
     quotas = {}
     for site in inventory_manager.sites.values():
-        quotas[site] = site.quota(inventory_manager.groups[args.partition])
+        quotas[site] = site.group_quota[group]
 
     policy = Policy(Policy.DEC_PROTECT, [action_list], quotas, partition = args.partition)
+    policy.groups = [group]
 
     detox.set_policy(policy, partition = args.partition)
 

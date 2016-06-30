@@ -151,7 +151,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         return request_mapping
 
-    def schedule_deletion(self, replica, comments = '', is_test = False, catalogs = None): #override (DeletionInterface)
+    def schedule_deletion(self, replica, groups = [], comments = '', is_test = False, catalogs = None): #override (DeletionInterface)
         if type(replica) == DatasetReplica:
             dataset = replica.dataset
 
@@ -160,6 +160,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         if catalogs is None:
             catalogs = self._get_file_catalog(dataset)
+
+        if len(groups) != 0 and type(replica) == DatasetReplica:
+            # remove blocks that are not owned by specified groups from the deletion list
+            for brep in replica.block_replicas:
+                if brep.group is not None and brep.group not in groups:
+                    catalogs[dataset].pop(brep.block)
 
         options = {
             'node': replica.site.name,
@@ -199,7 +205,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 #
 #            return request_id
 
-    def schedule_deletions(self, replica_list, comments = '', is_test = False): #override (DeletionInterface)
+    def schedule_deletions(self, replica_list, groups = [], comments = '', is_test = False): #override (DeletionInterface)
 
         all_datasets = list(set([r.dataset for r in replica_list]))
         all_catalogs = self._get_file_catalog(all_datasets)
@@ -207,7 +213,14 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         request_mapping = {}
 
         def run_deletion_request(site, replicas_to_delete):
-            catalogs = dict([(r.dataset, all_catalogs[r.dataset]) for r in replicas_to_delete])
+            catalogs = dict([(r.dataset, dict(all_catalogs[r.dataset])) for r in replicas_to_delete])
+
+            if len(groups) != 0:
+                # remove blocks that are not owned by specified groups from the deletion list
+                for drep in replicas_to_delete:
+                    for brep in drep.block_replicas:
+                        if brep.group is not None and brep.group not in groups:
+                            catalogs[drep.dataset].pop(brep.block)
 
             options = {
                 'node': site.name,

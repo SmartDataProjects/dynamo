@@ -181,26 +181,26 @@ class MySQLStore(LocalStoreInterface):
             for group in group_list:
                 site.reset_group_usage_cache(group)
 
-        # Load site quotas
-        quotas = self._mysql.query('SELECT `site_id`, `group_id`, `storage` FROM `quotas`')
-        for site_id, group_id, storage in quotas:
-            try:
-                site = self._ids_to_sites[site_id]
-            except KeyError:
-                continue
-
-            try:
-                group = self._ids_to_groups[group_id]
-            except KeyError:
-                continue
-
-            site.group_quota[group] = storage
-
-        for site in site_list:
-            for group in group_list:
-                if group not in site.group_quota:
-                    logger.info('Setting quota for %s on %s to %d', group.name, site.name, int(site.storage / len(group_list)))
-                    site.group_quota[group] = int(site.storage / len(group_list))
+#        # Load site quotas
+#        quotas = self._mysql.query('SELECT `site_id`, `group_id`, `storage` FROM `quotas`')
+#        for site_id, group_id, storage in quotas:
+#            try:
+#                site = self._ids_to_sites[site_id]
+#            except KeyError:
+#                continue
+#
+#            try:
+#                group = self._ids_to_groups[group_id]
+#            except KeyError:
+#                continue
+#
+#            site.group_quota[group] = storage
+#
+#        for site in site_list:
+#            for group in group_list:
+#                if group not in site.group_quota:
+#                    logger.info('Setting quota for %s on %s to %d', group.name, site.name, int(site.storage / len(group_list)))
+#                    site.group_quota[group] = int(site.storage / len(group_list))
 
         # Load software versions
         software_version_map = {} # id -> version

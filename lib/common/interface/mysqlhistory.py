@@ -254,6 +254,9 @@ class MySQLHistory(TransactionHistoryInterface):
         # find latest replica snapshots
         replicas_to_update = {} # index -> replica
 
+        # TEMPORARY - SNAPSHOTS NEED TO BE GROUP-AWARE
+        accounting_group = inventory.groups['AnalysisOps']
+
         for snapshot_id, site_id, dataset_id, size in self._mysql.query('SELECT `id`, `site_id`, `dataset_id`, `size` FROM `replica_snapshots` WHERE `run_id` <= %s ORDER BY `run_id` DESC', run_number):
             index = (site_id, dataset_id)
             try:
@@ -267,7 +270,7 @@ class MySQLHistory(TransactionHistoryInterface):
             if replica in self._replica_snapshot_ids or index in replicas_to_update:
                 continue
 
-            if replica.size() != size:
+            if replica.size(accounting_group) != size:
                 replicas_to_update[index] = replica
             else:
                 self._replica_snapshot_ids[replica] = snapshot_id
@@ -284,7 +287,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         if len(replicas_to_update) != 0:
             fields = ('site_id', 'dataset_id', 'run_id', 'size')
-            mapping = lambda (index, replica): (index[0], index[1], run_number, replica.size())
+            mapping = lambda (index, replica): (index[0], index[1], run_number, replica.size(accounting_group))
     
             self._mysql.insert_many('replica_snapshots', fields, mapping, replicas_to_update.items())
     

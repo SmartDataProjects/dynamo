@@ -51,9 +51,13 @@ class Policy(object):
         """
         Compute site occupancy increase by adding a dataset to site.
         """
+
+        quota = site.group_quota[group]
+        if quota == 0:
+            return 0
         
         group = inventory.groups[self.partition]
-        return dataset.size * 1.e-12 / site.group_quota[group]
+        return dataset.size * 1.e-12 / quota
 
     def sort_datasets_by_demand(self, datasets, demands):
         """

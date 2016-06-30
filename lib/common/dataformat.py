@@ -275,7 +275,11 @@ class Site(object):
             groups = [groups]
 
         if len(groups) == 0:
-            return sum(self.group_usage(g) for g in self._occupancy.keys()) * 1.e-12 / sum(self.group_quota.values())
+            denom = sum(self.group_quota.values())
+            if denom == 0:
+                return 0.
+            else:
+                return sum(self.group_usage(g) for g in self._occupancy.keys()) * 1.e-12 / denom
         else:
             numer = 0.
             denom = 0.
@@ -287,7 +291,10 @@ class Site(object):
 
                 numer += self.group_usage(group) * 1.e-12
 
-            return numer / denom
+            if denom == 0.:
+                return 0.
+            else:
+                return numer / denom
 
     def quota(self, groups):
         if type(groups) is not list:
@@ -343,11 +350,21 @@ class DatasetReplica(object):
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1 and self.dataset.replicas[0] == self
 
-    def size(self):
-        if self.is_partial:
-            return sum([r.block.size for r in self.block_replicas])
-        else:
-            return self.dataset.size
+    def size(self, groups = None):
+        if groups is None:
+            if self.is_partial:
+                return sum([r.block.size for r in self.block_replicas])
+            else:
+                return self.dataset.size
+
+        elif type(groups) is Group:
+            return sum([r.block.size for r in self.block_replicas if r.group == groups])
+
+        elif type(groups) is list:
+            if len(groups) == 1:
+                return sum([r.block.size for r in self.block_replicas if r.group == groups[0]])
+            else:
+                return sum([r.block.size for r in self.block_replicas if r.group in groups])
 
     def effective_owner(self):
         if self.group:
