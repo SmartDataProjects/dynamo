@@ -781,10 +781,10 @@ class MySQLStore(LocalStoreInterface):
 
         dataset_ids = self._mysql.select_many('datasets', 'id', 'name', ['\'%s\'' % d.name for d in datasets])
 
-        self._mysql.delete_in('dataset_replicas', 'dataset_id', dataset_ids, 'site_id = %d' % site_id)
+        self._mysql.delete_in('dataset_replicas', 'dataset_id', dataset_ids, additional_conditions = ['site_id = %d' % site_id])
 
         if delete_blockreplicas:
-            self._mysql.delete_in('block_replicas', 'block_id', ('id', 'blocks', 'dataset_id', dataset_ids), 'site_id = %d' % site_id)
+            self._mysql.delete_in('block_replicas', 'block_id', ('id', 'blocks', 'dataset_id', dataset_ids), additional_conditions = ['site_id = %d' % site_id])
 
     def _do_delete_blockreplicas(self, replica_list): #override
         # Mass block replica deletion typically happens for a few sites and a few datasets.
