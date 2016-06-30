@@ -46,9 +46,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # Cache organized as {dataset: {site: [ProtoBlockReplicas]}}
         self._block_replicas = collections.defaultdict(lambda: collections.defaultdict(list))
 
-    def schedule_copy(self, dataset_replica, comments = '', is_test = False, catalogs = None): #override (CopyInterface)
-        if catalogs is None:
-            catalogs = self._get_file_catalog(dataset_replica.dataset)
+    def schedule_copy(self, dataset_replica, comments = '', is_test = False): #override (CopyInterface)
+        catalogs = {} # {dataset: {block: [file]}}. Content can be empty if inclusive deletion is desired.
+
+        dataset = dataset_replica.dataset
+        catalogs[dataset] = {}
 
         options = {
             'node': dataset_replica.site.name,
@@ -83,14 +85,15 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             return int(result[0]['id'])
 
     def schedule_copies(self, replica_list, comments = '', is_test = False): #override (CopyInterface)
-
         all_datasets = list(set([r.dataset for r in replica_list]))
-        all_catalogs = self._get_file_catalog(all_datasets)
 
         request_mapping = {}
 
         def run_subscription_request(site, replica_list):
-            catalogs = dict([(r.dataset, all_catalogs[r.dataset]) for r in replica_list])
+            catalogs = {}
+
+            for drep in replica_list:
+                catalogs[drep.dataset] = {}
 
             options = {
                 'node': site.name,
@@ -151,21 +154,29 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         return request_mapping
 
-    def schedule_deletion(self, replica, groups = [], comments = '', is_test = False, catalogs = None): #override (DeletionInterface)
+    def schedule_deletion(self, replica, groups = [], comments = '', is_test = False): #override (DeletionInterface)
+        catalogs = {} # {dataset: {block: [file]}}. Content can be empty if inclusive deletion is desired.
+
         if type(replica) == DatasetReplica:
             dataset = replica.dataset
+            catalogs[dataset] = {}
+
+            if len(groups) != 0:
+                if replica.group is None: # replica owned by multiple groups
+                    for brep in replica.block_replicas:
+                        if brep.group is not None and brep.group not in groups:
+                            catalogs[dataset][brep.block] = []
+
+                elif replica.group is not in groups:
+                    catalogs.pop(dataset)
 
         elif type(replica) == BlockReplica:
+            if len(groups) != 0:
+                if replica.group is None or replica.group not in groups:
+                    return 0
+
             dataset = replica.block.dataset
-
-        if catalogs is None:
-            catalogs = self._get_file_catalog(dataset)
-
-        if len(groups) != 0 and type(replica) == DatasetReplica:
-            # remove blocks that are not owned by specified groups from the deletion list
-            for brep in replica.block_replicas:
-                if brep.group is not None and brep.group not in groups:
-                    catalogs[dataset].pop(brep.block)
+            catalogs[dataset] = {replica.block: []}
 
         options = {
             'node': replica.site.name,
@@ -205,34 +216,27 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             return request_id
 
     def schedule_deletions(self, replica_list, groups = [], comments = '', is_test = False): #override (DeletionInterface)
-
         all_datasets = list(set([r.dataset for r in replica_list]))
-#        all_catalogs = self._get_file_catalog(all_datasets)
 
         request_mapping = {}
 
         def run_deletion_request(site, replicas_to_delete):
-#            catalogs = dict([(r.dataset, dict(all_catalogs[r.dataset])) for r in replicas_to_delete])
             catalogs = {}
-
-#            if len(groups) != 0:
-#                # remove blocks that are not owned by specified groups from the deletion list
-#                for drep in replicas_to_delete:
-#                    for brep in drep.block_replicas:
-#                        if brep.group is not None and brep.group not in groups:
-#                            catalogs[drep.dataset].pop(brep.block)
 
             for drep in replicas_to_delete:
                 catalogs[drep.dataset] = {}
                 if len(groups) != 0:
-                    for brep in drep.block_replicas:
-                        if brep.group in groups:
-                            catalogs[drep.dataset][brep.block] = []
+                    if drep.group is None: # replica owned by multiple groups
+                        for brep in drep.block_replicas:
+                            if brep.group is not None and brep.group in groups:
+                                catalogs[drep.dataset][brep.block] = []
 
-            xml = self._form_catalog_xml(catalogs)
+                    elif drep.group not in groups: # owned by a wrong group
+                        catalogs.pop(drep.dataset)
+
             options = {
                 'node': site.name,
-#                'data': self._form_catalog_xml(catalogs),
+                'data': self._form_catalog_xml(catalogs),
                 'data': xml,
                 'level': 'dataset',
                 'rm_subscriptions': 'y'
@@ -1048,13 +1052,11 @@ if __name__ == '__main__':
         dataset = Dataset(args.options[1])
         dataset_replica = DatasetReplica(dataset, site)
 
-        catalogs = interface._get_file_catalog(dataset, known_blocks_only = False)
-
         if command == 'delete':
-            operation_id = interface.schedule_deletion(dataset_replica, comments = comments, catalogs = catalogs)
+            operation_id = interface.schedule_deletion(dataset_replica, comments = comments)
 
         elif command == 'subscribe':
-            operation_id = interface.schedule_copy(dataset_replica, comments = comments, catalogs = catalogs)
+            operation_id = interface.schedule_copy(dataset_replica, comments = comments)
 
         print 'Request ID:', operation_id
 
