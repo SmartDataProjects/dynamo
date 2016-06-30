@@ -133,8 +133,11 @@ class Detox(object):
                 self.inventory_manager.unlink_datasetreplica(replica)
                 replicas.remove(replica)
 
+            if not iterative_deletion:
+                break
+
             # update the list of target sites
-            for site in self.inventory_manager.sites.keys():
+            for site in self.inventory_manager.sites.values():
                 if site not in target_sites and policy.need_deletion(site):
                     target_sites.add(site)
 
@@ -195,7 +198,7 @@ class Detox(object):
         else:
             target_site = random.choice(candidate_sites)
 
-        sorted_candidates = policy.sort_deletion_candidates([rep for rep in candidte_list if rep.site == target_site], self.demand_manager)
+        sorted_candidates = policy.sort_deletion_candidates([rep for rep in candidate_list if rep.site == target_site], self.demand_manager)
 
         # return the smallest replica on the target site
         return sorted_candidates[:detox_config.deletion_per_iteration]
