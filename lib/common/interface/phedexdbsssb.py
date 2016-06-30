@@ -738,7 +738,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         # routine to fetch block info from DBS
         def dbs_check(block):
-            dbs_result = self._make_dbs_request('blocks', ['block_name=' + dataset.name + '%23' + block.real_name(), 'detail=True']) # %23 = '#'
+            dbs_result = self._make_dbs_request('blocks', ['block_name=' + block.dataset.name + '%23' + block.real_name(), 'detail=True']) # %23 = '#'
             if len(dbs_result) == 0 or dbs_result[0]['open_for_writing'] == 1:
                 # cannot get data from DBS, or DBS also says this block is open
                 block.is_open = True
