@@ -12,6 +12,5 @@ exceptions.add_action('Keep', '*', '/*TOTEM*/*Run2015D*/RECO')
 reco_cleanup = [
     rules.protect_incomplete,
     exceptions,
-    rules.DeleteRECOOlderThan(180., 'd'),
-    rules.delete_partial
+    rules.DeleteRECOOlderThan(180., 'd')
 ]
