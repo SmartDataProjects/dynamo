@@ -167,7 +167,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         if brep.group is not None and brep.group not in groups:
                             catalogs[dataset][brep.block] = []
 
-                elif replica.group is not in groups:
+                elif replica.group not in groups:
                     catalogs.pop(dataset)
 
         elif type(replica) == BlockReplica:
