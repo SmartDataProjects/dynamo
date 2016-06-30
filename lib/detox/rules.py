@@ -272,10 +272,10 @@ def make_stack(strategy):
             # stackgen(rank_threshold)
             stack = [
                 protect_nonready_site,
+                DeleteRECOOlderThan(180., 'd'),
                 protect_incomplete,
                 protect_diskonly,
                 DeleteUnused(arg[0]),
-                DeleteRECOOlderThan(180., 'd'),
                 delete_partial,
                 protect_minimum_copies
             ]
@@ -287,8 +287,8 @@ def make_stack(strategy):
         def stackgen(*arg, **kwd):
             stack = [
                 protect_incomplete,
-                protect_diskonly,
                 DeleteRECOOlderThan(180., 'd'),
+                protect_diskonly,
                 delete_partial,
                 ActionList()
             ]
