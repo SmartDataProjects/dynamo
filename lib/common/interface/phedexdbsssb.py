@@ -207,23 +207,33 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     def schedule_deletions(self, replica_list, groups = [], comments = '', is_test = False): #override (DeletionInterface)
 
         all_datasets = list(set([r.dataset for r in replica_list]))
-        all_catalogs = self._get_file_catalog(all_datasets)
+#        all_catalogs = self._get_file_catalog(all_datasets)
 
         request_mapping = {}
 
         def run_deletion_request(site, replicas_to_delete):
-            catalogs = dict([(r.dataset, dict(all_catalogs[r.dataset])) for r in replicas_to_delete])
+#            catalogs = dict([(r.dataset, dict(all_catalogs[r.dataset])) for r in replicas_to_delete])
+            catalogs = {}
 
-            if len(groups) != 0:
-                # remove blocks that are not owned by specified groups from the deletion list
-                for drep in replicas_to_delete:
+#            if len(groups) != 0:
+#                # remove blocks that are not owned by specified groups from the deletion list
+#                for drep in replicas_to_delete:
+#                    for brep in drep.block_replicas:
+#                        if brep.group is not None and brep.group not in groups:
+#                            catalogs[drep.dataset].pop(brep.block)
+
+            for drep in replicas_to_delete:
+                catalogs[drep.dataset] = {}
+                if len(groups) != 0:
                     for brep in drep.block_replicas:
-                        if brep.group is not None and brep.group not in groups:
-                            catalogs[drep.dataset].pop(brep.block)
+                        if brep.group in groups:
+                            catalogs[drep.dataset][brep.block] = []
 
+            xml = self._form_catalog_xml(catalogs)
             options = {
                 'node': site.name,
-                'data': self._form_catalog_xml(catalogs),
+#                'data': self._form_catalog_xml(catalogs),
+                'data': xml,
                 'level': 'dataset',
                 'rm_subscriptions': 'y'
             }
