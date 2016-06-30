@@ -27,7 +27,7 @@ parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', defaul
 parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls', default = '', help = 'DeletionInterface class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--policy-stack', '-p', metavar = 'STACKS', dest = 'stacks', nargs = '+', default = ['AnalysisOps:Routine(500)'], help = 'Name of the policy stack. Syntax is <group>:<stack name>[(<init argument>)] or <group>:<path>.py. Options for stack names are\n TargetFraction (argument threshold)\n List (argument paths)\n The python file should contain a list of Policies with the same name as the file.')
-parser.add_argument('--greedy-deletion', '-G', action = 'store_true', dest = 'greedy_deletion', help = 'Delete everything in the deletion list at once from all sites.')
+parser.add_argument('--strategy', '-g', metavar = 'STRATEGY', dest = 'strategy', default = 'iterative', help = '"iterative", "static", or "greedy".')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to local databases.')
@@ -36,6 +36,10 @@ parser.add_argument('--repeat', '-n', metavar = 'CYCLES SLEEP', dest = 'repeat',
 
 args = parser.parse_args()
 sys.argv = []
+
+if args.strategy not in ['iterative', 'static', 'greedy']:
+    print 'Unknown strategy', args.strategy
+    sys.exit(1)
 
 log_level = logging.INFO
 if args.log_level:
@@ -84,19 +88,12 @@ demand_manager = DemandManager(**kwd)
 
 history = classes.default_interface['history']()
 
-def site_overused(site, partition):
-    """
-    Return true if the site is overused for a given partition.
-    Currently partition and group names are identical.
-    """
-
-    group = inventory_manager.groups[partition]
-    return site.storage_occupancy(group) > config.target_site_occupancy
-
-if args.greedy_deletion:
+if args.strategy == 'greedy':
     site_requirement = lambda site, partition: True
 else:
-    site_requirement = site_overused
+    # Return true if the site is overused for a given partition.
+    # Currently partition and group names are identical.
+    site_requirement = lambda site, partition: site.storage_occupancy(inventory_manager.groups[partition]) > config.target_site_occupancy
 
 class BelongsTo(object):
     def __init__(self, group):
@@ -147,7 +144,7 @@ if args.force_inventory_update:
 
 for nrun in range(args.repeat[0]):
     for partition in partitions:
-        detox.run(partition = partition, iterative_deletion = not args.greedy_deletion, is_test = args.test_run)
+        detox.run(partition = partition, iterative_deletion = (args.strategy == 'iterative'), is_test = args.test_run)
 
     if args.repeat[1] > 0:
         time.sleep(args.repeat[1] * 3600)
