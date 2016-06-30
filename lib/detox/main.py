@@ -194,7 +194,7 @@ class Detox(object):
                 protection_by_site[replica.site].append(replica)
 
             # find the site with the highest protected fraction
-            target_site = max(candidate_sites, key = lambda site: sum(replica.size(policy.groups) for replica in protection_by_site[site]) / policy.quotas[site] if policy.quotas[site] != 0)
+            target_site = max(candidate_sites, key = lambda site: 0 if policy.quotas[site] == 0 else sum(replica.size(policy.groups) for replica in protection_by_site[site]) / policy.quotas[site])
         else:
             target_site = random.choice(candidate_sites)
 
