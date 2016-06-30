@@ -94,7 +94,7 @@ def site_overused(site, partition):
     return site.storage_occupancy(group) > config.target_site_occupancy
 
 if args.greedy_deletion:
-    site_requirement = lambda site, partition: return True
+    site_requirement = lambda site, partition: True
 else:
     site_requirement = site_overused
 
