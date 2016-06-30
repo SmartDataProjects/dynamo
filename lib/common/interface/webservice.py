@@ -107,12 +107,8 @@ class RESTService(object):
                 response = opener.open(request)
                 break
     
-            except urllib2.HTTPError, e:
-                raise
-    
-            except urllib2.URLError, e:
-                if '[Errno 110]' in e.reason: # timed out
-                    continue
+            except:
+                continue
 
         else: # exhausted allowed attempts
             raise RuntimeError('webservice too many attempts')
