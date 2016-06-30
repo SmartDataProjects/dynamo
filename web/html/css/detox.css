@@ -22,12 +22,12 @@
 }
 
 div.runLink {
-    float: left;
+    float: right;
     width: 50px;
 }
 
 #runJump {
-    float: left;
+    float: right;
     width: 200px;
 }
 
@@ -170,6 +170,7 @@ article.siteDetails table tr,th,td {
 table.siteTableHeader th {
     background-color: #a31f34;
     color: white;
+    cursor: pointer;
 }
 
 table.siteTable tr.odd {

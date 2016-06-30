@@ -23,9 +23,9 @@
       <div id="run">
         <h2 id="runHeader">Run <span id="runNumber"></span> (<span id="runTimestamp"></span>)</h2>
         <nav id="runs">
-          <div id="runPrev" class="runLink"><span onclick="loadSummary(currentRun-1, currentPartition);" class="clickable">&lt;</span></div>
-          <div id="runNext" class="runLink"><span onclick="loadSummary(currentRun+1, currentPartition);" class="clickable">&gt;</span></div>
           <div id="runJump">Run: <input type="text" id="jumpInput" size="10"><input type="button" value="Go" onclick="loadData($('#jumpInput').val(), currentPartition)"></div>
+          <div id="runNext" class="runLink"><span onclick="loadSummary(currentRun+1, currentPartition);" class="clickable">&gt;</span></div>
+          <div id="runPrev" class="runLink"><span onclick="loadSummary(currentRun-1, currentPartition);" class="clickable">&lt;</span></div>
         </nav>
       </div>
     </header>

@@ -31,6 +31,36 @@ function storeSummaryData(data)
     $.data(document.body, 'summaryData', data);
 }
 
+function sortTableBy(siteName, column)
+{
+    var siteData = {name: siteName, datasets: []};
+    var table = d3.select('#' + siteName + ' .siteTable');
+
+    table.selectAll('tr')
+        .each(function (d, i) { 
+                siteData.datasets[i] = {
+                    name: this.childNodes[0].textContent,
+                    size: Number(this.childNodes[1].textContent),
+                    decision: this.childNodes[2].textContent,
+                    reason: this.childNodes[3].textContent
+                };
+            });
+
+    table.selectAll('tr').remove();
+
+    if (column == 'dataset')
+        siteData.datasets.sort(function (r1, r2) { return r1.name.localeCompare(r2.name); });
+    else if (column == 'size')
+        siteData.datasets.sort(function (r1, r2) { return r1.size - r2.size; });
+    else if (column == 'decision')
+        siteData.datasets.sort(function (r1, r2) { 
+                var diff = r1.decision.localeCompare(r2.decision);
+                return diff;
+            });
+
+    displayDetails(siteData);
+}
+
 function displaySummary()
 {
     // retrieve stored data
@@ -77,7 +107,7 @@ function displaySummary()
 
         yscale.domain([0, 1.25])
             .range([ymax, 0]);
-        ynorm = function (d, key) { return ymax - yscale(d[key] / d.quota); };
+        ynorm = function (d, key) { if (d.quota == 0.) return 0.; else return ymax - yscale(d[key] / d.quota); };
     }
     else {
         title.text('Absolute data volume');
@@ -261,10 +291,16 @@ function displaySummary()
     
     var headerRow = thead.append('tr')
         .style({'width': '100%', 'height': '40px'});
-    
-    headerRow.append('th').classed('datasetCol', true).text('Dataset');
-    headerRow.append('th').classed('sizeCol', true).text('Size (GB)');
-    headerRow.append('th').classed('decisionCol', true).text('Decision');
+
+    var datasetCol = headerRow.append('th').classed('datasetCol', true);
+    datasetCol.text('Dataset');
+    datasetCol.on('click', function (d) { sortTableBy(d.name, 'dataset'); });
+    var sizeCol = headerRow.append('th').classed('sizeCol', true);
+    sizeCol.text('Size (GB)');
+    sizeCol.on('click', function (d) { sortTableBy(d.name, 'size'); });
+    var decisionCol = headerRow.append('th').classed('decisionCol', true);
+    decisionCol.text('Decision');
+    decisionCol.on('click', function (d) { sortTableBy(d.name, 'decision'); });
     headerRow.append('th').classed('reasonCol', true).text('Reason');
 
     var bodyCont = siteDetails.append('div').classed('siteTableCont', true)
