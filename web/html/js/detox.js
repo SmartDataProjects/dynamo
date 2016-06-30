@@ -6,8 +6,6 @@ function initPage(runNumber, partitionId)
     $.ajax({url: 'detox.php', data: {getPartitions: 1}, success: function (data, textStatus, jqXHR) { setPartitions(data); }, dataType: 'json', async: false});
     
     loadSummary(runNumber, partitionId);
-
-    loadDetails();
 }
 
 function setPartitions(data)
@@ -21,14 +19,6 @@ function setPartitions(data)
         .on('click', function (d) { loadSummary(currentRun, d.id); });
 
     partitionsNav.select(':last-child').classed('last', true);
-}
-
-function storeSummaryData(data)
-{
-    for (var iS in data.siteData)
-        data.siteData[iS].detailLoaded = false;
-
-    $.data(document.body, 'summaryData', data);
 }
 
 function sortTableBy(siteName, column)
@@ -61,11 +51,8 @@ function sortTableBy(siteName, column)
     displayDetails(siteData);
 }
 
-function displaySummary()
+function displaySummary(data)
 {
-    // retrieve stored data
-    var data = $.data(document.body, 'summaryData');
-    
     d3.select('#runNumber').text(data.runNumber);
     d3.select('#runTimestamp').text(data.runTimestamp);
 
@@ -278,6 +265,8 @@ function displaySummary()
         .append('article').classed('siteDetails', true)
         .attr('id', function (d) { return d.name; });
 
+    // everything that is selected from siteDetails will have data = site data
+
     siteDetails.append('h3').classed('siteName', true)
         .text(function (d) { return d.name; });
 
@@ -313,6 +302,10 @@ function displaySummary()
     tbody.append('col').style({'width': '5%'});
     tbody.append('col').style({'width': '5%'});
     tbody.append('col').style({'width': '25%'});
+
+    bodyCont.append('div')
+        .style({'width': '20%', 'height': '10%', 'margin': '45% 40% 45% 40%', 'cursor': 'pointer', 'text-decoration': 'underline'})
+        .on('click', function (d) { d3.select(this).remove(); loadSiteTable(d.name); });
 }
 
 function displayDetails(siteData)
@@ -364,33 +357,25 @@ function loadSummary(runNumber, partitionId)
         partitionId: partitionId
     };
 
-    $.ajax({url: 'detox.php', data: inputData, success: function (data, textStatus, jqXHR) { storeSummaryData(data); displaySummary(); }, dataType: 'json', async: false});
+    $.ajax({url: 'detox.php', data: inputData, success: function (data, textStatus, jqXHR) { displaySummary(data); }, dataType: 'json', async: false});
 }
 
-function loadDetails()
+function loadSiteTable(name)
 {
-    var data = $.data(document.body, 'summaryData');
-    var spinners = [];
+    var spinner = new Spinner({scale: 5, corners: 0, width: 2, position: 'relative'});
+    spinner.spin();
+    $('#' + name + ' .siteTableCont').append($(spinners[name].el));
 
-    for (var iS in data.siteData) {
-        var site = data.siteData[iS];
+    var inputData = {
+        getData: 1,
+        dataType: 'siteDetail',
+        runNumber: currentRun,
+        partitionId: currentPartition,
+        siteName: name
+    };
 
-        spinners[site.name] = new Spinner({scale: 5, corners: 0, width: 2, position: 'relative'});
-        spinners[site.name].spin();
-        $('#' + site.name + ' .siteTableCont').append($(spinners[site.name].el));
-
-        var inputData = {
-            getData: 1,
-            dataType: 'siteDetail',
-            runNumber: currentRun,
-            partitionId: currentPartition,
-            siteName: site.name
-        };
-
-        // load details every 0.2 seconds
-        $.get('detox.php', inputData, function (data, textStatus, jqXHR) {
-                displayDetails(data);
-                spinners[data.name].stop();
-        }, 'json');
-    }
+    $.get('detox.php', inputData, function (data, textStatus, jqXHR) {
+            displayDetails(data);
+            spinner.stop();
+    }, 'json');
 }
