@@ -237,7 +237,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             options = {
                 'node': site.name,
                 'data': self._form_catalog_xml(catalogs),
-                'data': xml,
                 'level': 'dataset',
                 'rm_subscriptions': 'y'
             }
