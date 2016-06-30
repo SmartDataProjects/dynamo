@@ -354,7 +354,7 @@ class DatasetReplica(object):
             return self.group
 
         if len(self.block_replicas) == 0:
-            return Group('')
+            return None
 
         # simple majority
         counts = collections.defaultdict(int)

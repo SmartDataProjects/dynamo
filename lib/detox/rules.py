@@ -304,3 +304,15 @@ def make_stack(strategy):
         raise RuntimeError('Unrecognized strategy ' + strategy)
 
     return stackgen
+
+
+###########################################################
+# Replica prerequisites
+###########################################################
+
+class BelongsTo(object):
+    def __init__(self, group):
+        self.group = group
+
+    def __call__(self, replica):
+        return replica.group == self.group
