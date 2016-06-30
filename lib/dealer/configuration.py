@@ -1,12 +1,8 @@
 import common.configuration as common
 
-operating_group = 'AnalysisOps'
-
 demand_refresh_interval = 7200. # update demand if demand manager time_today is more than 7200 seconds ago
 
-popularity_threshold = 0.5
-occupancy_fraction_threshold = 0.1 # (CPU hour) / (time normalisation (s)) / (site CPU capacity (kHS06))
-reference_cpu_per_file = 0.5
+max_dataset_size = 10. # Maximum dataset size to consider for copy in TB
 
 request_to_replica_threshold = 1.75 # (weighted number of requests) / (number of replicas) above which replication happens
 
@@ -14,6 +10,8 @@ max_copy_per_site = 6. # Maximum volume to be copied per site in TB
 max_copy_total = 100.
 
 max_replicas = 10
+
+overflow_factor = 1.05 # Potentially copy up to target occupancy * overflow_factor
 
 excluded_destinations = [
     'T1_DE_KIT_Disk',

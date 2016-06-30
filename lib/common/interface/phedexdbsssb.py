@@ -46,9 +46,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # Cache organized as {dataset: {site: [ProtoBlockReplicas]}}
         self._block_replicas = collections.defaultdict(lambda: collections.defaultdict(list))
 
-    def schedule_copy(self, dataset_replica, origin = None, comments = '', is_test = False, catalogs = None): #override (CopyInterface)
-        # origin argument is not used because of the way PhEDEx works
-
+    def schedule_copy(self, dataset_replica, comments = '', is_test = False, catalogs = None): #override (CopyInterface)
         if catalogs is None:
             catalogs = self._get_file_catalog(dataset_replica.dataset)
 
@@ -84,15 +82,15 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
             return int(result[0]['id'])
 
-    def schedule_copies(self, replica_origin_list, comments = '', is_test = False): #override (CopyInterface)
+    def schedule_copies(self, replica_list, comments = '', is_test = False): #override (CopyInterface)
 
-        all_datasets = list(set([r.dataset for r, o in replica_origin_list]))
+        all_datasets = list(set([r.dataset for r in replica_list]))
         all_catalogs = self._get_file_catalog(all_datasets)
 
         request_mapping = {}
 
-        def run_subscription_request(site, ro_list):
-            catalogs = dict([(r.dataset, all_catalogs[r.dataset]) for r, o in ro_list])
+        def run_subscription_request(site, replica_list):
+            catalogs = dict([(r.dataset, all_catalogs[r.dataset]) for r in replica_list])
 
             options = {
                 'node': site.name,
@@ -119,7 +117,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 while request_id in request_mapping:
                     request_id -= 1
 
-                request_mapping[request_id] = (True, ro_list)
+                request_mapping[request_id] = (True, replica_list)
 
             else:
                 # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
@@ -133,20 +131,20 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                 logger.warning('PhEDEx subscription request id: %d', request_id)
                 
-                request_mapping[request_id] = (True, ro_list)
+                request_mapping[request_id] = (True, replica_list)
 
         replicas_by_site = collections.defaultdict(list)
-        for replica, origin in replica_origin_list:
-            replicas_by_site[replica.site].append((replica, origin))
+        for replica in replica_list:
+            replicas_by_site[replica.site].append(replica)
 
-        for site, ro_list in replicas_by_site.items():
+        for site, replica_list in replicas_by_site.items():
             subscription_chunk = []
             chunk_size = 0
-            for elem in ro_list:
+            for elem in replica_list:
                 replica, origin = elem
-                subscription_chunk.append((replica, origin))
+                subscription_chunk.append(replica)
                 chunk_size += replica.size()
-                if chunk_size >= config.phedex.subscription_chunk_size or elem == ro_list[-1]:
+                if chunk_size >= config.phedex.subscription_chunk_size or elem == replica_list[-1]:
                     run_subscription_request(site, subscription_chunk)
                     subscription_chunk = []
                     chunk_size = 0

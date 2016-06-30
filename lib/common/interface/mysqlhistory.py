@@ -88,11 +88,9 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_close_run(self, operation, run_number): #override
         self._mysql.query('UPDATE `runs` SET `time_end` = FROM_UNIXTIME(%s) WHERE `id` = %s', time.time(), run_number)
 
-    def _do_make_copy_entry(self, run_number, site, operation_id, approved, do_list, size): #override
+    def _do_make_copy_entry(self, run_number, site, operation_id, approved, dataset_list, size): #override
         """
-        site and dataset are expected to be already in the database (save_deletion_decisions should be called first).
-        Arguments:
-          do_list: [(dataset, origin)]
+        Site and datasets are expected to be already in the database.
         """
 
         if len(self._site_id_map) == 0:
@@ -102,7 +100,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._mysql.query('INSERT INTO `copy_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`, `size`) VALUES (%s, %s, NOW(), %s, %s, %s)', operation_id, run_number, approved, self._site_id_map[site.name], size)
 
-        self._mysql.insert_many('copied_replicas', ('copy_id', 'dataset_id', 'origin_site_id'), lambda (d, o): (operation_id, self._dataset_id_map[d.name], self._site_id_map[o.name]), do_list)
+        self._mysql.insert_many('copied_replicas', ('copy_id', 'dataset_id'), lambda d: (operation_id, self._dataset_id_map[d.name]), dataset_list)
 
     def _do_make_deletion_entry(self, run_number, site, operation_id, approved, datasets, size): #override
         """
@@ -155,7 +153,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         fields = ('site_id', 'run_id', 'status')
         mapping = lambda (site_name, status): (self._site_id_map[site_name], run_number, status)
-        self._mysql.insert_many('site_status_snapshots', fields, mapping)
+        self._mysql.insert_many('site_status_snapshots', fields, mapping, update_status.items())
 
     def _do_save_datasets(self, run_number, inventory): #override
         if len(self._dataset_id_map) == 0:
@@ -309,8 +307,8 @@ class MySQLHistory(TransactionHistoryInterface):
         mapping = lambda (rep, reason): (run_number, self._replica_snapshot_ids[rep], 'keep', MySQL.escape_string(reason))
         self._mysql.insert_many('deletion_decisions', fields, mapping, kept.items())
 
-    def _do_get_incomplete_copies(self): #override
-        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_copied`, UNIX_TIMESTAMP(h.`last_update`) FROM `copy_requests` AS h INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`size` != h.`size_copied`')
+    def _do_get_incomplete_copies(self, partition): #override
+        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_copied`, UNIX_TIMESTAMP(h.`last_update`) FROM `copy_requests` AS h INNER JOIN `runs` AS r ON r.`id` = h.`run_id` INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id` INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE p.`name` LIKE %s AND h.`size` != h.`size_copied`', partition)
         
         id_to_record = {}
         for eid, timestamp, approved, site_name, size, size_copied, last_update in history_entries:
@@ -319,15 +317,15 @@ class MySQLHistory(TransactionHistoryInterface):
         id_to_dataset = dict(self._mysql.query('SELECT `id`, `name` FROM `datasets`'))
         id_to_site = dict(self._mysql.query('SELECT `id`, `name` FROM `sites`'))
 
-        replicas = self._mysql.select_many('copied_replicas', ('copy_id', 'dataset_id', 'origin_site_id'), 'copy_id', ['%d' % i for i in id_to_record.keys()])
+        replicas = self._mysql.select_many('copied_replicas', ('copy_id', 'dataset_id'), 'copy_id', ['%d' % i for i in id_to_record.keys()])
 
         current_copy_id = 0
-        for copy_id, dataset_id, origin_site_id in replicas:
+        for copy_id, dataset_id in replicas:
             if copy_id != current_copy_id:
                 record = id_to_record[copy_id]
                 current_copy_id = copy_id
 
-            record.replicas.append(HistoryRecord.CopiedReplica(dataset_name = id_to_dataset[dataset_id], origin_site_name = id_to_site[origin_site_id]))
+            record.replicas.append(HistoryRecord.CopiedReplica(dataset_name = id_to_dataset[dataset_id]))
 
         return id_to_record.values()
 

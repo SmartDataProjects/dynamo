@@ -17,18 +17,26 @@ class Dealer(object):
         self.demand_manager = demand
         self.history = history
 
+        self.policies = {}
+
         self.copy_message = 'Dynamo -- Automatic Replication Request.'
+
+    def set_policy(self, policy, partition = ''): # empty partition name -> default
+        self.policies[partition] = policy
 
     def run(self, partition = '', is_test = False):
         """
         1. Update the inventory if necessary.
         2. Update popularity.
-        3. Create pairs of (new replica, source) representing copy operations that should take place.
+        3. Create new replicas representing copy operations that should take place.
         4. Execute copy.
         """
-        
-        logger.info('Dealer run starting at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
+        if partition:
+            logger.info('Dealer run for %s starting at %s', partition, time.strftime('%Y-%m-%d %H:%M:%S'))
+        else:
+            logger.info('Dealer run starting at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
+        
         if time.time() - self.inventory_manager.store.last_update > config.inventory.refresh_min:
             logger.info('Inventory was last updated at %s. Reloading content from remote sources.', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.inventory_manager.store.last_update)))
             # inventory is stale -> update
@@ -37,7 +45,20 @@ class Dealer(object):
         self.demand_manager.update(self.inventory_manager, accesses = False, requests = True)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
-        incomplete_copies = self.history.get_incomplete_copies()
+        policy = self.policies[partition]
+
+        run_number = self.history.new_copy_run(partition, is_test = is_test)
+
+        # update site and dataset lists
+        # take a snapshot of site status
+        self.history.save_sites(run_number, self.inventory_manager)
+        self.history.save_datasets(run_number, self.inventory_manager)
+        # take a snapshot of current replicas
+        self.history.save_replicas(run_number, self.inventory_manager)
+        # take snapshots of quotas if updated
+        self.history.save_quotas(run_number, partition, policy.quotas, self.inventory_manager)
+
+        incomplete_copies = self.history.get_incomplete_copies(partition)
         copy_volumes = collections.defaultdict(float)
         for operation in incomplete_copies:
             site = self.inventory_manager.sites[operation.site_name]
@@ -48,191 +69,26 @@ class Dealer(object):
                 else:
                     copy_volumes[site] += (total - copied) * 1.e-12
 
-#        copy_list = self.determine_copies_by_accesses(copy_volumes)
-        copy_list = self.determine_copies_by_requests(copy_volumes)
+        # all datasets that the policy considers
+        datasets = []
+        for dataset in self.inventory_manager.datasets.values():
+            for replica in dataset.replicas:
+                if policy.applies(replica):
+                    datasets.append(dataset)
+                    break
 
-        run_number = self.history.new_copy_run(partition)
+        copy_list = self.determine_copies_by_requests(datasets, policy, copy_volumes)
 
-        self.history.save_copy_decisions(run_number, copy_list, self.inventory)
+#        self.history.save_copy_decisions(run_number, copy_list)
 
-        logger.info('Committing copies')
+        logger.info('Committing copy.')
         self.commit_copies(run_number, copy_list, is_test)
+
+        self.history.close_copy_run(run_number)
 
         logger.info('Finished dealer run at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
-    def determine_copies_by_accesses(self, copy_volumes):
-        """
-        Simplest algorithm:
-        1. Compute time- and slot- normalized CPU hour (site occupancy fraction) for each dataset replica.
-        2. Sum up occupancy for each site.
-        3. At each site, datasets with occupancy fraction > threshold are placed in the list of copy candidates.
-        #5. Sum up occupancy fractions for each dataset.
-        #6. Datasets whose global occupancy fractions are increasing are placed in the list of copy candidates.
-        """
-
-        sites = self.inventory_manager.sites.values()
-
-        copy_list = dict([(site, []) for site in sites]) # site -> [(new_replica, origin)]
-
-        now = time.time() # UNIX timestamp of now
-        utc = time.gmtime(now) # struct_time in UTC
-        utctoday = datetime.date(utc.tm_year, utc.tm_mon, utc.tm_mday)
-        last_three_days = [utctoday - datetime.timedelta(2), utctoday - datetime.timedelta(1), utctoday]
-
-        group = self.inventory_manager.groups[dealer_config.operating_group]
-
-        dataset_cpus = collections.defaultdict(list) # dataset -> [(ncpu, site)]
-        site_cpu_occupancies = {}
-        site_storage = {}
-
-        for site in sites:
-            logger.info('Inspecting replicas at %s', site.name)
-
-            site_occupancy = 0.
-                
-            for replica in site.dataset_replicas:
-                if replica.group != group:
-                    continue
-
-                # TODO THINK ABOUT THIS
-                if replica.dataset.name.endswith('GEN-SIM-RAW'):
-                    continue
-
-                # skip non-complete datasets
-                if replica.dataset.status != Dataset.STAT_VALID:
-                    continue
-
-                # skip datasets size > 10 TB
-                if replica.dataset.size * 1.e-12 > 10.:
-                    continue
-
-                accesses = replica.accesses[DatasetReplica.ACC_LOCAL]
-
-                dataset_ncpu = 0.
-                for date in last_three_days:
-                    try:
-                        access = accesses[date]
-                    except KeyError:
-                        continue
-
-                    if date == utctoday:
-                        time_norm = self.demand_manager.time_today
-                    else:
-                        time_norm = 24. * 3600.
-
-                    ncpu = access.cputime * 3600. / time_norm
-
-                    dataset_ncpu += ncpu
-                    site_occupancy += ncpu / site.cpu
-
-                if dataset_ncpu != 0.:
-                    logger.info('%s has time-normalized CPU usage of %f', replica.dataset.name, dataset_ncpu)
-
-                dataset_cpus[replica.dataset].append((dataset_ncpu, site))
-
-            site_cpu_occupancies[site] = site_occupancy
-
-            site_storage[site] = site.storage_occupancy(group)
-
-            logger.info('%s occupancy: %f (CPU) %f (storage)', site.name, site_cpu_occupancies[site], site_storage[site])
-
-        popular_datasets = [] # (dataset, total_ncpu, total_site_capacity)
-
-        for dataset, usage_list in dataset_cpus.items():
-            total_ncpu = sum(n for n, site in usage_list)
-
-            if total_ncpu / dataset.num_files < dealer_config.popularity_threshold:
-                continue
-
-            total_site_capacity = sum(site.cpu for n, site in usage_list)
-
-            if total_ncpu / total_site_capacity < dealer_config.occupancy_fraction_threshold:
-                continue
-
-            logger.info('%s is popular and needs more resource.', dataset.name)
-
-            if len(dataset.replicas) > dealer_config.max_replicas:
-                logger.warning('%s has too many replicas already. Not copying.', dataset.name)
-                continue
-
-            popular_datasets.append((dataset, total_ncpu, total_site_capacity))
-
-        popular_datasets.sort(key = lambda (d, n, c): n / d.num_files, reverse = True)
-
-        site_cpu_occupancies_before = dict(site_cpu_occupancies)
-        site_storage_before = dict(site_storage)
-
-        for dataset, total_ncpu, total_site_capacity in popular_datasets:
-
-            global_stop = False
-
-            while total_ncpu / dataset.num_files > len(dataset.replicas) * dealer_config.reference_cpu_per_file:
-                sorted_sites = sorted(site_cpu_occupancies.items(), key = lambda (s, o): o) #sorted from emptiest to busiest
-    
-                try:
-                    destination_site = next(dest for dest, occ in sorted_sites if \
-                        dest.status == Site.STAT_READY and \
-                        dest.name not in dealer_config.excluded_destinations and \
-                        site_storage[dest] < config.target_site_occupancy and \
-                        site_storage[dest] + dataset.size * 1.e-12 / dest.group_quota[group] < 1. and \
-                        copy_volumes[dest] < dealer_config.max_copy_per_site and \
-                        dest.find_dataset_replica(dataset) is None
-                    )
-                    # site is ready
-                    # site is not full
-                    # site will not be full
-                    # copy quota not reached yet
-                    # does not have the dataset replica yet
-
-                except StopIteration:
-                    logger.warning('%s has no copy destination.', dataset.name)
-                    break
-    
-                logger.info('Copying %s to %s', dataset.name, destination_site.name)
-    
-                origin_site = max(usage_list, key = lambda (n, site): n)[1] # busiest site for this dataset
-    
-                new_replica = self.inventory_manager.add_dataset_to_site(dataset, destination_site, group)
-                copy_list[destination_site].append((new_replica, origin_site))
-    
-                copy_volumes[destination_site] += dataset.size * 1.e-12
-    
-                # add the size of this replica to destination storage
-                site_storage[destination_site] += dataset.size * 1.e-12 / destination_site.group_quota[group]
-
-                # add the cpu capacity of the destination site to total
-                total_site_capacity += destination_site.cpu
-                
-                # add the cpu usage of this replica to destination occupancy
-                site_cpu_occupancies[destination_site] += total_ncpu / total_site_capacity
-
-                if len(dataset.replicas) > dealer_config.max_replicas:
-                    logger.warning('%s has reached the maximum number of replicas allowed.', dataset.name)
-                    break
-    
-                if min(site_storage.values()) > config.target_site_occupancy:
-                    logger.warning('All sites have exceeded target storage occupancy. No more copies will be made.')
-                    global_stop = True
-                    break
-    
-                if min(copy_volumes.values()) > dealer_config.max_copy_per_site:
-                    logger.warning('All sites have exceeded copy volume target. No more copies will be made.')
-                    global_stop = True
-                    break
-
-                if sum(copy_volumes.values()) > dealer_config.max_copy_total:
-                    logger.warning('Total copy volume has exceeded the limit. No more copies will be made.')
-                    global_stop = True
-                    break
-
-            if global_stop:
-                break
-
-        self.write_summary_by_accesses(dataset_cpus, copy_list, site_cpu_occupancies_before, site_storage_before, site_storage)
-
-        return copy_list
-
-    def determine_copies_by_requests(self, copy_volumes):
+    def determine_copies_by_requests(self, datasets, policy, copy_volumes):
         """
         Algorithm:
         1. Compute a time-weighted sum of number of requests for the last three days.
@@ -242,31 +98,21 @@ class Dealer(object):
         
         sites = self.inventory_manager.sites.values()
         
-        copy_list = dict([(site, []) for site in sites]) # site -> [(new_replica, origin)]
-
-        group = self.inventory_manager.groups[dealer_config.operating_group]
+        copy_list = dict([(site, []) for site in sites]) # site -> [new_replica]
 
         # request-weighted, cpu-normalized number of running jobs at sites
-        site_nfiles = dict([(site, 0.) for site in sites])
+        site_business = {}
+        site_occupancy = {}
+        for site in sites:
+            site_business[site] = policy.compute_site_business(site, self.inventory_manager, self.demand_manager)
+            site_occupancy[site] = policy.compute_site_occupancy(site, self.inventory_manager)
 
-        for dataset in self.inventory_manager.datasets.values():
-            demand = self.demand_manager.dataset_demands[dataset]
-
-            if demand.request_weight > 0.:
-                total_cpu = sum([r.site.cpu for r in dataset.replicas])
-                for replica in dataset.replicas:
-                    # w * N * (site cpu / total cpu); normalized by site cpu
-                    site_nfiles[replica.site] += demand.request_weight * dataset.num_files / total_cpu
-
-        site_nfiles_before = dict(site_nfiles)
+        sorted_datasets = policy.sort_datasets_by_demand(datasets, self.demand_manager)
         
-        site_storage = dict([(site, site.storage_occupancy(group)) for site in sites])
-        site_storage_before = dict(site_storage)
-
         # now go through datasets sorted by weight / #replicas
-        for dataset, demand in sorted(self.demand_manager.dataset_demands.items(), key = lambda (ds, dm): dm.request_weight / len(ds.replicas), reverse = True):
+        for dataset, demand in sorted_datasets:
 
-            if dataset.size * 1.e-12 > 10.:
+            if dataset.size * 1.e-12 > dealer_config.max_dataset_size:
                 continue
 
             if len(dataset.replicas) > dealer_config.max_replicas:
@@ -274,15 +120,14 @@ class Dealer(object):
 
             global_stop = False
 
-            while demand.request_weight / len(dataset.replicas) > dealer_config.request_to_replica_threshold:
-                sorted_sites = sorted(site_nfiles.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
+            while policy.need_copy(dataset, demand):
+                sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
 
                 try:
                     destination_site = next(dest for dest, njob in sorted_sites if \
                         dest.status == Site.STAT_READY and \
                         dest.name not in dealer_config.excluded_destinations and \
-                        site_storage[dest] < config.target_site_occupancy and \
-                        site_storage[dest] + dataset.size * 1.e-12 / dest.group_quota[group] < 1. and \
+                        site_occupancy[dest] < config.target_site_occupancy * dealer_config.overflow_factor and \
                         copy_volumes[dest] < dealer_config.max_copy_per_site and \
                         dest.find_dataset_replica(dataset) is None
                     )
@@ -293,35 +138,25 @@ class Dealer(object):
 
                 logger.info('Copying %s to %s', dataset.name, destination_site.name)
 
-                try:
-                    origin_site = max(dataset.replicas, key = lambda r: site_nfiles[r.site]).site # busiest site for this dataset
-                except ValueError:
-                    # dataset has 0 replicas
-                    origin_site = None
-    
-                new_replica = self.inventory_manager.add_dataset_to_site(dataset, destination_site, group)
-                copy_list[destination_site].append((new_replica, origin_site))
-    
+                new_replica = self.inventory_manager.add_dataset_to_site(dataset, destination_site, policy.group)
+
+                copy_list[destination_site].append(new_replica)
+
                 copy_volumes[destination_site] += dataset.size * 1.e-12
     
-                # add the size of this replica to destination storage
-                site_storage[destination_site] += dataset.size * 1.e-12 / destination_site.group_quota[group]
-
-                # add the cpu load to the destination site and adjust the existing sites
-                total_cpu = sum([r.site.cpu for r in dataset.replicas])
-                total_cpu_before = total_cpu - destination_site.cpu
+                # recompute site properties
+                site_occupancy[destination_site] = policy.compute_site_occupancy(site, self.inventory_manager)
 
                 for replica in dataset.replicas:
-                    if replica != new_replica:
-                        site_nfiles[replica.site] -= demand.request_weight * dataset.num_files / total_cpu_before
+                    site = replica.site
+                    site_business[site] = policy.compute_site_business(site, self.inventory_manager, self.demand_manager)
 
-                    site_nfiles[replica.site] += demand.request_weight * dataset.num_files / total_cpu
-
+                # check if we should stop copying
                 if len(dataset.replicas) > dealer_config.max_replicas:
                     logger.warning('%s has reached the maximum number of replicas allowed.', dataset.name)
                     break
     
-                if min(site_storage.values()) > config.target_site_occupancy:
+                if min(site_occupancy.values()) > config.target_site_occupancy:
                     logger.warning('All sites have exceeded target storage occupancy. No more copies will be made.')
                     global_stop = True
                     break
@@ -339,539 +174,108 @@ class Dealer(object):
             if global_stop:
                 break
 
-        self.write_summary_by_requests(copy_list, site_nfiles_before, site_storage_before, site_storage)
-
         return copy_list
 
     def commit_copies(self, run_number, copy_list, is_test):
         # first make sure the list of blocks is up-to-date
         datasets = []
-        for site, replica_origins in copy_list.items():
-            for replica, origin in replica_origins:
+        for site, replicas in copy_list.items():
+            for replica in replicas:
                 if replica.dataset not in datasets:
                     datasets.append(replica.dataset)
 
         self.inventory_manager.dataset_source.set_dataset_constituent_info(datasets)
 
-        for site, replica_origins in copy_list.items():
-            if len(replica_origins) == 0:
+        for site, replicas in copy_list.items():
+            if len(replicas) == 0:
                 continue
 
-            copy_mapping = self.transaction_manager.copy.schedule_copies(replica_origins, comments = self.copy_message, is_test = is_test)
-            # copy_mapping .. {operation_id: (approved, [(replica, origin)])}
+            copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, comments = self.copy_message, is_test = is_test)
+            # copy_mapping .. {operation_id: (approved, [replica])}
     
-            for operation_id, (approved, list_chunk) in copy_mapping.items():
-                replicas = [r for r, o in list_chunk]
+            for operation_id, (approved, replicas) in copy_mapping.items():
                 if approved and not is_test:
                     self.inventory_manager.store.add_dataset_replicas(replicas)
                     self.inventory_manager.store.set_last_update()
     
                 size = sum([r.size() for r in replicas])
 
-                self.history.make_copy_entry(run_number, site, operation_id, approved, [(r.dataset, o) for r, o in list_chunk], size, is_test = is_test)
+                self.history.make_copy_entry(run_number, site, operation_id, approved, [r.dataset for r in replicas], size, is_test = is_test)
 
-    def write_summary_by_accesses(self, dataset_cpus, copy_list, cpu_before, storage_before, storage_after):
-        html = open(dealer_config.summary_html, 'w')
 
-        text = '''<html>
-<html>
- <head>
-  <title>Dealer copy decision records</title>
-  <style>
-body {
-  font-family: Monospace;
-  font-size: 120%;
-}
+if __name__ == '__main__':
 
-span.menuitem {
-  text-decoration: underline;
-  cursor:pointer;
-}
+    import sys
+    import fnmatch
+    import re
+    from argparse import ArgumentParser
 
-span.popular {
-  color: red;
-}
+    from common.inventory import InventoryManager
+    from common.transaction import TransactionManager
+    from common.demand import DemandManager
+    import common.interface.classes as classes
+    from dealer.policy import Policy
 
-.collapsible {
-  display: none;
-}
+    parser = ArgumentParser(description = 'Use dealer to copy a specific dataset from a specific site.')
 
-li.vanishable {
-  display: list-item;
-}
+    parser.add_argument('replica', metavar = 'SITE:DATASET', help = 'Replica to delete.')
+    parser.add_argument('--group', '-g', metavar = 'GROUP', dest = 'group', default = 'AnalysisOps', help = 'Group name.')
+    parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run',  help = 'Dry run (no write / delete at all)')
+    parser.add_argument('--production-run', '-P', action = 'store_true', dest = 'production_run', help = 'This is not a test.')
+    parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
-ul.arrive-bullet {
-  list-style-type: square;
-}
-  </style>
-  <script type="text/javascript">
-function toggleVisibility(id) {
-  var list = document.getElementById(id);
-  if (list.style.display == "block")
-    list.style.display = "none";
-  else
-    list.style.display = "block";
-}
-function isCollapsible(obj) {
-  var iC = 0;
-  for (; iC != obj.classList.length; ++iC) {
-    if (obj.classList[iC] == "collapsible")
-      break;
-  }
-  return iC != obj.classList.length;
-}
-function isVanishable(obj) {
-  var iC = 0;
-  for (; iC != obj.classList.length; ++iC) {
-    if (obj.classList[iC] == "vanishable")
-      break;
-  }
-  return iC != obj.classList.length;
-}
-function isInList(obj, list) {
-  var iC = 0;
-  for (; iC != list.length; ++iC) {
-    if (list[iC] == obj)
-      break;
-  }
-  return iC != list.length;
-}
-function searchDataset(name) {
-  if (name.length > 0 && name.length < 6)
-    return;
+    args = parser.parse_args()
+    sys.argv = []
 
-  var listitems = document.getElementsByTagName("li");
-  var listitem;
-  var sublist;
-  var colon;
-  var list;
-  var body = document.getElementsByTagName("body")[0];
-  var hits = [];
-
-  for (var iL = 0; iL != listitems.length; ++iL) {
-    listitem = listitems[iL];
-
-    if (name == "") {
-      listitem.style.display = "list-item";
-
-      list = listitem.parentNode;
-      if (listitem == list.firstChild) {
-        while (true) {
-          if (isCollapsible(list))
-            list.style.display = "none";
-          else
-            list.style.display = "block";
+    site_pattern, sep, dataset_pattern = args.replica.partition(':')
     
-          if (list.parentNode == body)
-            break;
+    if args.log_level:
+        try:
+            level = getattr(logging, args.log_level.upper())
+            logging.getLogger().setLevel(level)
+        except AttributeError:
+            logging.warning('Log level ' + args.log_level + ' not defined')
     
-          listitem = list.parentNode;
-          listitem.style.display = "list-item";
-          list = listitem.parentNode;
-        }
-      }
-      continue;
-    }
-
-    colon = listitem.id.indexOf(":");
-    if (listitem.id.slice(colon + 1).search(name) == 0) {
-      listitem.style.display = "list-item";
-      hits.push(listitem);
-    }
-  }
-
-  var protected = hits.slice(0);
-  for (var iL = 0; iL != hits.length; ++iL) {
-    listitem = hits[iL];
-    list = listitem.parentNode;
-
-    while (true) {
-      list.style.display = "block";
-      for (var iC = 0; iC != list.children.length; ++iC) {
-        if (list.children[iC] != listitem && !isInList(list.children[iC], protected) && isVanishable(list.children[iC]))
-          list.children[iC].style.display = "none";
-      }
-
-      protected.push(list.parentNode);
-
-      if (list.parentNode == body)
-        break;
-
-      listitem = list.parentNode;
-      listitem.style.display = "list-item";
-      list = listitem.parentNode;
-    }
-  }
-}
-  </script>
- </head>
- <body>
-  <div>
-  Search dataset: <input type="text" size="100" onkeyup="searchDataset(this.value)" onpaste="searchDataset(this.value)" onchange="searchDataset(this.value)">
-  </div>
-  <ul>
-'''
-
-        html.write(text)
-
-        keywords = {}
-
-        for site_name in sorted(self.inventory_manager.sites.keys()):
-            site = self.inventory_manager.sites[site_name]
-
-            keywords['site'] = site.name
-            keywords['site_cpu'] = cpu_before[site]
-            keywords['storage_before'] = storage_before[site] * 100.
-            keywords['storage_after'] = storage_after[site] * 100.
-
-            text = '   <li><span onclick="toggleVisibility(\'{site}\')" class="menuitem">{site}</span>'.format(**keywords)
-            text += ' (CPU: {site_cpu:.2f}, Storage: {storage_before:.2f}% -> {storage_after:.2f}%)\n'.format(**keywords)
-            text += '    <ul id="{site}" class="collapsible">\n'.format(**keywords)
-
-            site_replicas = []
-            for dataset, usage_list in dataset_cpus.items():
-                for ncpu, s in usage_list:
-                    if s == site:
-                        site_replicas.append((dataset, ncpu))
-                        break
-
-            site_replicas.sort(key = lambda (dataset, ncpu): ncpu, reverse = True)
-
-            text += '     <li class="vanishable"><span onclick="toggleVisibility(\'{site}:existing\')" class="menuitem">Existing</span>\n'.format(**keywords)
-            text += '      <ul id="{site}:existing" class="collapsible">\n'.format(**keywords)
-
-            for dataset, ncpu in site_replicas:
-                keywords['dataset'] = dataset.name
-                keywords['occ'] = ncpu / site.cpu
-
-                text += '       <li id="{site}:{dataset}" class="vanishable">'.format(**keywords)
-
-                if ncpu / site.cpu > dealer_config.occupancy_fraction_threshold:
-                    text += '<span class="popular">{dataset} ({occ:.2f})</span>'.format(**keywords)
-                else:
-                    text += '{dataset} ({occ:.2f})'.format(**keywords)
-
-                text += '</li>\n'
-
-            text += '      </ul>\n' # closing Existing list
-            text += '     </li>\n' # item Existing
-
-            site_copies = [r for r, origin in copy_list[site]]
-            site_copies.sort(key = lambda r: r.size(), reverse = True)
-
-            keywords['arrive_volume'] = sum(replica.size() * 1.e-9 for replica in site_copies)
-
-            text += '     <li class="vanishable"><span onclick="toggleVisibility(\'{site}:arriving\')" class="menuitem">Arriving</span> {arrive_volume:.2f}\n'.format(**keywords)
-            text += '      <ul id="{site}:arriving" class="arrive-bullet collapsible">\n'.format(**keywords)
-            
-            for replica in site_copies:
-                keywords['dataset'] = replica.dataset.name
-                keywords['size'] = replica.size() * 1.e-9
-                text += '       <li id="{site}:{dataset}" class="vanishable">{dataset} ({size:.2f} GB)</li>\n'.format(**keywords)
-
-            text += '      </ul>\n' # closing Arriving list
-            text += '     </li>\n' # item Arriving
-
-            text += '    </ul>\n' # site list (Existing / Arriving)
-            text += '   </li>\n' # closes site
-            
-            html.write(text)
-
-        text = '  </ul>\n'
-
-        total_volume = 0.
-        for replica_origins in copy_list.values():
-            total_volume += sum(r.size() for r, o in replica_origins)
-
-        text += '  <hr>\n'
-        text += '  <p>Copy total: {total_volume} TB</p>\n'.format(total_volume = total_volume * 1.e-12)
-        text += ''' </body>
-</html>
-'''
-
-        html.write(text)
-
-        html.close()
-
-    def write_summary_by_requests(self, copy_list, nfiles_before, storage_before, storage_after):
-        html = open(dealer_config.summary_html, 'w')
-
-        text = '''<html>
-<html>
- <head>
-  <title>Dealer copy decision records</title>
-  <style>
-body {
-  font-family: Monospace;
-  font-size: 120%;
-}
-
-span.menuitem {
-  text-decoration: underline;
-  cursor:pointer;
-}
-
-span.popular {
-  color: red;
-}
-
-.collapsible {
-  display: none;
-}
-
-li.vanishable {
-  display: list-item;
-}
-
-ul.arrive-bullet {
-  list-style-type: square;
-}
-  </style>
-  <script type="text/javascript">
-function toggleVisibility(id) {
-  var list = document.getElementById(id);
-  if (list.style.display == "block")
-    list.style.display = "none";
-  else
-    list.style.display = "block";
-}
-function isCollapsible(obj) {
-  var iC = 0;
-  for (; iC != obj.classList.length; ++iC) {
-    if (obj.classList[iC] == "collapsible")
-      break;
-  }
-  return iC != obj.classList.length;
-}
-function isVanishable(obj) {
-  var iC = 0;
-  for (; iC != obj.classList.length; ++iC) {
-    if (obj.classList[iC] == "vanishable")
-      break;
-  }
-  return iC != obj.classList.length;
-}
-function isInList(obj, list) {
-  var iC = 0;
-  for (; iC != list.length; ++iC) {
-    if (list[iC] == obj)
-      break;
-  }
-  return iC != list.length;
-}
-function searchDataset(name) {
-  if (name.length > 0 && name.length < 6)
-    return;
-
-  var listitems = document.getElementsByTagName("li");
-  var listitem;
-  var sublist;
-  var colon;
-  var list;
-  var body = document.getElementsByTagName("body")[0];
-  var hits = [];
-
-  for (var iL = 0; iL != listitems.length; ++iL) {
-    listitem = listitems[iL];
-
-    if (name == "") {
-      listitem.style.display = "list-item";
-
-      list = listitem.parentNode;
-      if (listitem == list.firstChild) {
-        while (true) {
-          if (isCollapsible(list))
-            list.style.display = "none";
-          else
-            list.style.display = "block";
+    kwd = {}
+    for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
+        kwd[cls + '_cls'] = classes.default_interface[cls]
     
-          if (list.parentNode == body)
-            break;
+    inventory_manager = InventoryManager(**kwd)
     
-          listitem = list.parentNode;
-          listitem.style.display = "list-item";
-          list = listitem.parentNode;
-        }
-      }
-      continue;
-    }
+    transaction_manager = TransactionManager()
+    
+    demand_manager = DemandManager()
 
-    colon = listitem.id.indexOf(":");
-    if (listitem.id.slice(colon + 1).search(name) == 0) {
-      listitem.style.display = "list-item";
-      hits.push(listitem);
-    }
-  }
+    history = classes.default_interface['history']()
 
-  var protected = hits.slice(0);
-  for (var iL = 0; iL != hits.length; ++iL) {
-    listitem = hits[iL];
-    list = listitem.parentNode;
+    dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history)
 
-    while (true) {
-      list.style.display = "block";
-      for (var iC = 0; iC != list.children.length; ++iC) {
-        if (list.children[iC] != listitem && !isInList(list.children[iC], protected) && isVanishable(list.children[iC]))
-          list.children[iC].style.display = "none";
-      }
+    # create a subclass of Policy that allows direct manipulation of specific replicas.
+    class DirectCopy(Policy):
+        def __init__(self, group, quotas, partition, site_pattern, dataset_pattern):
+            Policy.__init__(self, group, quotas, partition)
 
-      protected.push(list.parentNode);
+            self._site_re = re.compile(fnmatch.translate(site_pattern))
+            self._dataset_re = re.compile(fnmatch.translate(dataset_pattern))
 
-      if (list.parentNode == body)
-        break;
+        def applies(self, replica): # override
+            return self._site_re.match(replica.site.name) and self._dataset_re.match(replica.dataset.name)
 
-      listitem = list.parentNode;
-      listitem.style.display = "list-item";
-      list = listitem.parentNode;
-    }
-  }
-}
-  </script>
- </head>
- <body>
-  <div>
-  Search dataset: <input type="text" size="100" onkeyup="searchDataset(this.value)" onpaste="searchDataset(this.value)" onchange="searchDataset(this.value)">
-  </div>
-'''
+        def need_copy(self, dataset, demand): # override
+            return True
 
-        html.write(text)
 
-        dataset_copies = collections.defaultdict(list)
-        for site, replica_origins in copy_list.items():
-            for replica, origin in replica_origins:
-                dataset_copies[replica.dataset].append(replica)
+    group = inventory_manager.groups(args.group)
+    sites = inventory_manager.sites.keys()
+    quotas = {}
+    for site in sites:
+        quotas[site] = site.quota(group)
 
-        destination_sites = sorted([site.name for site in copy_list.keys() if len(copy_list[site]) != 0])
+    direct_copy = DirectCopy(group, quotas, args.group, site_pattern, dataset_pattern)
 
-        keywords = {}
+    dealer.set_policy(policy, partition = args.group)
 
-        html.write('  <h2>Copy destinations</h2>\n')
-        html.write('  <ul>\n')
+    if args.dry_run:
+        config.read_only = True
 
-        for site_name in destination_sites:
-            site = self.inventory_manager.sites[site_name]
-
-            site_copies = [r for r, origin in copy_list[site]]
-            site_copies.sort(key = lambda r: r.size(), reverse = True)
-
-            keywords['site'] = site.name
-            keywords['site_nfiles'] = nfiles_before[site]
-            keywords['storage_before'] = storage_before[site] * 100.
-            keywords['storage_after'] = storage_after[site] * 100.
-            keywords['arrive_volume'] = sum(replica.size() * 1.e-9 for replica in site_copies)
-
-            text = '   <li><span onclick="toggleVisibility(\'{site}\')" class="menuitem">{site}</span>'.format(**keywords)
-            text += ' (Activity: {site_nfiles:.2f}, Storage: {storage_before:.2f}% -> {storage_after:.2f}%, {arrive_volume:.2f} GB)\n'.format(**keywords)
-            text += '    <ul id="{site}" class="collapsible">\n'.format(**keywords)
-
-            site_replicas = []
-            for replica in site.dataset_replicas:
-                if replica not in site_copies:
-                    dataset = replica.dataset
-                    total_cpu = sum(r.site.cpu for r in dataset.replicas)
-                    site_replicas.append((dataset, self.demand_manager.dataset_demands[dataset].request_weight, total_cpu))
-
-            site_replicas.sort(key = lambda (dataset, weight, total_cpu): weight, reverse = True)
-
-            text += '     <li class="vanishable"><span onclick="toggleVisibility(\'{site}:existing\')" class="menuitem">Existing</span>\n'.format(**keywords)
-            text += '      <ul id="{site}:existing" class="collapsible">\n'.format(**keywords)
-
-            for dataset, weight, total_cpu in site_replicas:
-                keywords['dataset'] = dataset.name
-                keywords['weight'] = weight
-                keywords['num_replicas'] = len(dataset.replicas) - len(dataset_copies[dataset])
-
-                text += '       <li id="{site}:{dataset}" class="vanishable">'.format(**keywords)
-
-                if weight > keywords['num_replicas'] * dealer_config.request_to_replica_threshold:
-                    text += '<span class="popular">{dataset} ({weight:.2f}, {num_replicas})</span>'.format(**keywords)
-                else:
-                    text += '{dataset} ({weight:.2f}, {num_replicas})'.format(**keywords)
-
-                text += '</li>\n'
-
-            text += '      </ul>\n' # closing Existing list
-            text += '     </li>\n' # item Existing
-
-            text += '     <li class="vanishable"><span onclick="toggleVisibility(\'{site}:arriving\')" class="menuitem">Arriving</span> {arrive_volume:.2f}\n'.format(**keywords)
-            text += '      <ul id="{site}:arriving" class="arrive-bullet collapsible">\n'.format(**keywords)
-            
-            for replica in site_copies:
-                keywords['dataset'] = replica.dataset.name
-                keywords['size'] = replica.size() * 1.e-9
-                text += '       <li id="{site}:{dataset}" class="vanishable">{dataset} ({size:.2f} GB)</li>\n'.format(**keywords)
-
-            text += '      </ul>\n' # closing Arriving list
-            text += '     </li>\n' # item Arriving
-
-            text += '    </ul>\n' # site list (Existing / Arriving)
-            text += '   </li>\n' # closes site
-            
-            html.write(text)
-
-        html.write('  </ul>\n')
-        
-        html.write('  <h2>Other sites</h2>\n')
-        html.write('  <ul>\n')
-
-        for site_name in sorted(self.inventory_manager.sites.keys()):
-            if site_name in destination_sites:
-                continue
-
-            site = self.inventory_manager.sites[site_name]
-
-            keywords['site'] = site.name
-            keywords['site_nfiles'] = nfiles_before[site]
-            keywords['storage_before'] = storage_before[site] * 100.
-
-            text = '   <li><span onclick="toggleVisibility(\'{site}\')" class="menuitem">{site}</span>'.format(**keywords)
-            text += ' (Activity: {site_nfiles:.2f}, Storage: {storage_before:.2f}%)\n'.format(**keywords)
-            text += '    <ul id="{site}" class="collapsible">\n'.format(**keywords)
-
-            site_replicas = []
-            for replica in site.dataset_replicas:
-                dataset = replica.dataset
-                total_cpu = sum(r.site.cpu for r in dataset.replicas)
-                site_replicas.append((dataset, self.demand_manager.dataset_demands[dataset].request_weight, total_cpu))
-
-            site_replicas.sort(key = lambda (dataset, weight, total_cpu): weight, reverse = True)
-
-            text += '     <li class="vanishable"><span onclick="toggleVisibility(\'{site}:existing\')" class="menuitem">Existing</span>\n'.format(**keywords)
-            text += '      <ul id="{site}:existing" class="collapsible">\n'.format(**keywords)
-
-            for dataset, weight, total_cpu in site_replicas:
-                keywords['dataset'] = dataset.name
-                keywords['weight'] = weight
-                keywords['num_replicas'] = len(dataset.replicas) - len(dataset_copies[dataset])
-
-                text += '       <li id="{site}:{dataset}" class="vanishable">'.format(**keywords)
-
-                if weight > keywords['num_replicas'] * dealer_config.request_to_replica_threshold:
-                    text += '<span class="popular">{dataset} ({weight:.2f}, {num_replicas})</span>'.format(**keywords)
-                else:
-                    text += '{dataset} ({weight:.2f}, {num_replicas})'.format(**keywords)
-
-                text += '</li>\n'
-
-            text += '      </ul>\n' # closing Existing list
-            text += '     </li>\n' # item Existing
-            text += '    </ul>\n' # site list
-            text += '   </li>\n' # closes site
-            
-            html.write(text)
-
-        text = '  </ul>\n'
-
-        total_volume = 0.
-        for replica_origins in copy_list.values():
-            total_volume += sum(r.size() for r, o in replica_origins)
-
-        text += '  <hr>\n'
-        text += '  <p>Copy total: {total_volume} TB</p>\n'.format(total_volume = total_volume * 1.e-12)
-        text += ''' </body>
-</html>
-'''
-
-        html.write(text)
-
-        html.close()
+    dealer.run(partition = args.partition, is_test = not args.production_run)

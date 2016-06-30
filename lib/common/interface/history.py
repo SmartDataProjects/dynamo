@@ -146,7 +146,7 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def make_copy_entry(self, run_number, site, operation_id, approved, ro_list, size):
+    def make_copy_entry(self, run_number, site, operation_id, approved, dataset_list, size):
         if config.read_only:
             logger.info('make_copy_entry')
             return
@@ -156,7 +156,7 @@ class TransactionHistoryInterface(object):
             if operation_id < 0:
                 operation_id = self.get_next_test_id()
 
-            self._do_make_copy_entry(run_number, site, operation_id, approved, ro_list, size)
+            self._do_make_copy_entry(run_number, site, operation_id, approved, dataset_list, size)
         finally:
             self.release_lock()
 
@@ -266,6 +266,7 @@ class TransactionHistoryInterface(object):
 
     def save_copy_decisions(self, run_number, copies):
         """
+        Save reasons for copy decisions? Still deciding what to do..
         """
 
         if config.read_only:
@@ -280,8 +281,8 @@ class TransactionHistoryInterface(object):
       
     def save_deletion_decisions(self, run_number, protected, deleted, kept):
         """
-        Make replica snapshots for updated replicas, and save the decision for all replicas.
-        Arguments records is {replica: deciding_policy_record}.
+        Save decisions and their reasons for all replicas.
+        Arguments protected, deleted, and kept are all dict {replica: reason}
         """
 
         if config.read_only:
@@ -294,11 +295,11 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def get_incomplete_copies(self):
+    def get_incomplete_copies(self, partition):
         self.acquire_lock()
         try:
             # list of HistoryRecords
-            copies = self._do_get_incomplete_copies()
+            copies = self._do_get_incomplete_copies(partition)
         finally:
             self.release_lock()
 
