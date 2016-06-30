@@ -90,6 +90,21 @@ class LocalStoreInterface(object):
 
         return self._do_list_snapshots()
 
+    def clear(self):
+        """
+        Wipes out the store contents!!
+        """
+
+        if config.read_only:
+            logger.debug('_do_clear()')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_clear()
+        finally:
+            self.release_lock()
+
     def recover_from(self, timestamp):
         """
         Recover store contents from a snapshot (current content will be lost!)
@@ -471,7 +486,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Local inventory store interface')
 
-    parser.add_argument('command', metavar = 'COMMAND', help = '(snapshot [clear (replicas|all)]|clean|recover|list (datasets|groups|sites)|show (dataset|block|site|replica) <name>)')
+    parser.add_argument('command', metavar = 'COMMAND', help = '(help|snapshot [clear (replicas|all)]|clear|clean|recover|list (datasets|groups|sites)|show (dataset|block|site|replica) <name>)')
     parser.add_argument('arguments', metavar = 'ARGS', nargs = '*', help = '')
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'LocalStoreInterface class to be used.')
     parser.add_argument('--timestamp', '-t', metavar = 'YMDHMS', dest = 'timestamp', default = '', help = 'Timestamp of the snapshot to be loaded / cleaned. With command clean, prepend with "<" or ">" to remove all snapshots older or newer than the timestamp.')
@@ -484,7 +499,10 @@ if __name__ == '__main__':
     else:
         interface = getattr(classes, args.class_name)()
 
-    if args.command == 'snapshot':
+    if args.command == 'help':
+        pass
+
+    elif args.command == 'snapshot':
         clear = LocalStoreInterface.CLEAR_NONE
         if len(args.arguments) > 1 and args.arguments[0] == 'clear':
             if args.arguments[1] == 'replicas':
@@ -493,6 +511,9 @@ if __name__ == '__main__':
                 clear = LocalStoreInterface.CLEAR_ALL
 
         interface.make_snapshot(clear = clear)
+
+    elif args.command == 'clear':
+        interface.clear()
 
     elif args.command == 'clean':
         if not args.timestamp:

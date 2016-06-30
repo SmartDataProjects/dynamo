@@ -74,6 +74,9 @@ class MySQLStore(LocalStoreInterface):
             tables = ['dataset_replicas', 'block_replicas']
 
         for table in tables:
+            if table == 'system':
+                continue
+
             # drop the original table and copy back the format from the snapshot
             self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._mysql.db_name(), table = table))
 
@@ -82,6 +85,14 @@ class MySQLStore(LocalStoreInterface):
 
     def _do_list_snapshots(self):
         return self._mysql.list_snapshots()
+
+    def _do_clear(self):
+        tables = self._mysql.query('SHOW TABLES')
+        tables.remove('system')
+
+        for table in tables:
+            # drop the original table and copy back the format from the snapshot
+            self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._mysql.db_name(), table = table))
 
     def _do_recover_from(self, timestamp): #override
         self._mysql.recover_from(timestamp)
@@ -138,8 +149,10 @@ class MySQLStore(LocalStoreInterface):
 
         self._set_site_ids(site_list)
 
-        mean_storage = sum([s.storage for s in site_list]) / len(filter(lambda s: s.storage != 0., site_list))
-        mean_cpu = sum([s.cpu for s in site_list]) / len(filter(lambda s: s.cpu != 0., site_list))
+#        mean_storage = sum([s.storage for s in site_list]) / len(filter(lambda s: s.storage != 0., site_list))
+#        mean_cpu = sum([s.cpu for s in site_list]) / len(filter(lambda s: s.cpu != 0., site_list))
+        mean_storage = 500
+        mean_cpu = 2.
 
         for site in site_list:
             if site.storage == 0.:

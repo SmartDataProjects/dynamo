@@ -43,8 +43,7 @@ class Detox(object):
             # inventory is stale -> update
             self.inventory_manager.update()
 
-#        self.demand_manager.update(self.inventory_manager, accesses = True, requests = False)
-        self.demand_manager.update(self.inventory_manager, accesses = False, requests = False)
+        self.demand_manager.update(self.inventory_manager, accesses = True, requests = False)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
         policy = self.policies[partition]
@@ -113,11 +112,11 @@ class Detox(object):
                 iter_deletion = self.select_replicas(policy, deletion_candidates.keys(), protected.keys())
 
                 if logger.getEffectiveLevel() == logging.INFO:
-                    for replica, reason in iter_deletion.items():
+                    for replica in iter_deletion:
                         logger.info('Selected replica: %s %s', replica.site.name, replica.dataset.name)
 
             else:
-                iter_deletion = deletion_candidates
+                iter_deletion = deletion_candidates.keys()
 
             if len(iter_deletion) == 0:
                 for replica, reason in deletion_candidates.items():
@@ -125,11 +124,12 @@ class Detox(object):
 
                 break
 
-            deleted.update(iter_deletion)
+            for replica in iter_deletion:
+                deleted[replica] = deletion_candidates[replica]
 
             # take out replicas from inventory
             # we will not consider deleted replicas
-            for replica in iter_deletion.keys():
+            for replica in iter_deletion:
                 self.inventory_manager.unlink_datasetreplica(replica)
                 replicas.remove(replica)
 
@@ -181,7 +181,7 @@ class Detox(object):
         """
 
         if len(candidate_list) == 0:
-            return []
+            return {}
 
         candidate_sites = list(set(rep.site for rep in candidate_list))
 
@@ -195,10 +195,10 @@ class Detox(object):
         else:
             target_site = random.choice(candidate_sites)
 
-        candidates_on_site = policy.sort_deletion_candidates([rep for rep in candidte_list if rep.site == target_site])
+        sorted_candidates = policy.sort_deletion_candidates([rep for rep in candidte_list if rep.site == target_site], self.demand_manager)
 
         # return the smallest replica on the target site
-        return candidates_on_site[:detox_config.deletion_per_iteration]
+        return sorted_candidates[:detox_config.deletion_per_iteration]
 
 
 if __name__ == '__main__':

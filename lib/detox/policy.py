@@ -44,9 +44,9 @@ class Policy(object):
 
         return result
 
-    def sort_deletion_candidates(self, replicas):
+    def sort_deletion_candidates(self, replicas, demands):
         """
         Rank and sort replicas in decreasing order of deletion priority.
         """
 
-        return []
+        return sorted(replicas, key = lambda r: demands.dataset_demand[r.dataset].global_usage_rank, reverse = True)
