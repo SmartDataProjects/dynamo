@@ -50,4 +50,4 @@ class Policy(object):
         Rank and sort replicas in decreasing order of deletion priority.
         """
 
-        return sorted(replicas, key = lambda r: demands.dataset_demand[r.dataset].global_usage_rank, reverse = True)
+        return sorted(replicas, key = lambda r: demands.dataset_demands[r.dataset].global_usage_rank, reverse = True)
