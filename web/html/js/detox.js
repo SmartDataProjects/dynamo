@@ -29,14 +29,17 @@ function setPartitions(data)
     partitionsNav.select(':last-child').classed('last', true);
 }
 
-function sortTableBy(siteName, column)
+function sortTableBy(siteName, column, direction)
 {
     var siteData = {'name': siteName, 'datasets': []};
     var tableBox = d3.select('#' + siteName + ' .siteTableBox');
-    var tbody = d3.select('#' + siteName + ' .siteTable tbody');
+    var table = tableBox.select('.siteTable');
+    var tbody = table.select('tbody');
 
     var mask = tableBox.append('div')
-        .style({'width': '100%', 'height': '100%', 'position': 'absolute', 'top': 0, 'opacity': 0.5});
+        .style({'width': '100%', 'height': '100%', 'position': 'absolute', 'top': 0, 'background-color': 'white', 'opacity': 0.5});
+
+    tbody.remove();
 
     tbody.selectAll('tr')
         .each(function (d, i) {
@@ -48,21 +51,33 @@ function sortTableBy(siteName, column)
                 };
             });
 
-    tbody.remove();
+    var headText;
+    if (column == 'datasetCol') {
+        siteData.datasets.sort(function (r1, r2) { return direction * r1.name.localeCompare(r2.name); });
+        headText = 'Dataset';
+    }
+    else if (column == 'sizeCol') {
+        siteData.datasets.sort(function (r1, r2) { return direction * (r1.size - r2.size); });
+        headText = 'Size (GB)';
+    }
+    else if (column == 'decisionCol') {
+        siteData.datasets.sort(function (r1, r2) { return direction * r1.decision.localeCompare(r2.decision); });
+        headText = 'Decision';
+    }
 
-    if (column == 'dataset')
-        siteData.datasets.sort(function (r1, r2) { return r1.name.localeCompare(r2.name); });
-    else if (column == 'size')
-        siteData.datasets.sort(function (r1, r2) { return r1.size - r2.size; });
-    else if (column == 'decision')
-        siteData.datasets.sort(function (r1, r2) { 
-                var diff = r1.decision.localeCompare(r2.decision);
-                return diff;
-            });
+    if (direction > 0)
+        headText += '&#9660;'; // filled down-pointing triangle
+    else
+        headText += '&#9650;'; // filled up-pointing triangle
 
-    mask.remove();
+    window.setTimeout(function () {
+            displayDetails(siteData);
+            mask.remove();
+        }, 100);
 
-    displayDetails(siteData);
+    table.select('th.' + column)
+        .html(headText)
+        .on('click', function (d) { sortTableBy(d.name, column, -direction); });
 }
 
 function displaySummary(data)
@@ -284,7 +299,7 @@ function displaySummary(data)
         .text(function (d) { return d.name; });
 
     siteDetails.append('div').classed('toTop', true)
-        .text('Back to top')
+        .html('&#9650; Back to top')
         .on('click', function () { window.scrollTo(0, 0); });
 
     var tableBox = siteDetails.append('div').classed('siteTableBox', true)
@@ -299,17 +314,17 @@ function displaySummary(data)
     headerRow.append('th').classed('datasetCol sortable', true)
         .style('width', (tableNode.clientWidth * 0.65 - 1) + 'px')
         .text('Dataset')
-        .on('click', function (d) { sortTableBy(d.name, 'dataset'); });
+        .on('click', function (d) { sortTableBy(d.name, 'datasetCol', 1); });
 
     headerRow.append('th').classed('sizeCol sortable', true)
         .style('width', (tableNode.clientWidth * 0.05 - 1) + 'px')
         .text('Size (GB)')
-        .on('click', function (d) { sortTableBy(d.name, 'size'); });
+        .on('click', function (d) { sortTableBy(d.name, 'sizeCol', 1); });
 
     headerRow.append('th').classed('decisionCol sortable', true)
         .style('width', (tableNode.clientWidth * 0.05 - 1) + 'px')
         .text('Decision')
-        .on('click', function (d) { sortTableBy(d.name, 'decision'); });
+        .on('click', function (d) { sortTableBy(d.name, 'decisionCol', 1); });
 
     headerRow.append('th').classed('reasonCol', true)
         .style('width', (tableNode.clientWidth * 0.25) + 'px')
