@@ -25,10 +25,14 @@ function setPartitions(data)
 function sortTableBy(siteName, column)
 {
     var siteData = {name: siteName, datasets: []};
-    var table = d3.select('#' + siteName + ' .siteTable');
+    var tableBox = d3.select('#' + siteName + ' .siteTableBox');
+    var tbody = d3.select('#' + siteName + ' .siteTable tbody');
 
-    table.selectAll('tr')
-        .each(function (d, i) { 
+    var mask = tableBox.append('div')
+        .style({'width': '100%', 'height': '100%', 'position': 'absolute', 'top': 0, 'opacity': 0.5});
+
+    tbody.selectAll('tr')
+        .each(function (d, i) {
                 siteData.datasets[i] = {
                     name: this.childNodes[0].textContent,
                     size: Number(this.childNodes[1].textContent),
@@ -37,7 +41,7 @@ function sortTableBy(siteName, column)
                 };
             });
 
-    table.selectAll('tr').remove();
+    tbody.remove();
 
     if (column == 'dataset')
         siteData.datasets.sort(function (r1, r2) { return r1.name.localeCompare(r2.name); });
@@ -48,6 +52,8 @@ function sortTableBy(siteName, column)
                 var diff = r1.decision.localeCompare(r2.decision);
                 return diff;
             });
+
+    mask.remove();
 
     displayDetails(siteData);
 }
@@ -61,67 +67,74 @@ function displaySummary(data)
         return;
 
     // draw summary graph
-    var summaryGraph = d3.select('#summaryGraphBox').append('svg')
+    var box = d3.select('#summaryGraphBox');
+    var boxNode = box.node();
+    var summaryGraph = box.append('svg')
         .attr('id', 'summaryGraph');
 
     summaryGraph.selectAll('*').remove();
 
-    summaryGraph
-        .attr('viewBox', '0 0 500 200')
-        .style({'width': '100%', 'height': '600px'});
+    // scale 0-100 to actual x according to aspect ratio
+    var gxscale = boxNode.clientWidth / boxNode.clientHeight;
 
-    var xorigin = 20;
-    var yorigin = 145;
-    var xmax = 500 - xorigin;
-    var ymarginTop = 15;
-    var ymarginBottom = 200 - yorigin;
+    var gxnorm = function (x) { return x * gxscale; }
+
+    summaryGraph
+        .attr('viewBox', '0 0 ' + (100 * gxscale) + ' 100')
+        .style({'width': '100%', 'height': '100%'});
+
+    var xorigin = 6;
+    var yorigin = 74;
+    var xmax = 100 - xorigin;
+    var ymarginTop = 12;
+    var ymarginBottom = 100 - yorigin;
     var ymax = yorigin - ymarginTop;
 
     var xmapping = d3.scale.ordinal()
         .domain(data.siteData.map(function (v) { return v.name; }))
-        .rangePoints([0, xmax], 1);
+        .rangePoints([0, gxnorm(xmax)], 1);
 
-    var xspace = xmax / data.siteData.length;
+    var xspace = gxnorm(xmax / data.siteData.length);
 
     var yscale = d3.scale.linear();
 
     var ynorm;
 
     var titleRelative = summaryGraph.append('text')
-        .attr('font-size', 8)
-        .attr('x', xorigin + 2)
-        .attr('y', -2)
+        .attr('font-size', 3)
+        .attr('x', gxnorm(xorigin + 3))
+        .attr('y', 4)
         .text('Normalized site usage');
 
     var selectRelative = summaryGraph.append('circle')
-        .attr('cx', xorigin - 3)
-        .attr('cy', -5)
-        .attr('r', 3)
+        .attr('cx', gxnorm(xorigin + 2))
+        .attr('cy', 3)
+        .attr('r', 1)
         .attr('stroke', 'black')
         .attr('stroke-width', 0.3)
         .attr('fill', 'none');
 
     var titleAbsolute = summaryGraph.append('text')
-        .attr('font-size', 8)
-        .attr('x', xorigin + 2)
+        .attr('font-size', 3)
+        .attr('x', gxnorm(xorigin + 3))
         .attr('y', 8)
         .text('Absolute data volume');
 
     var selectAbsolute = summaryGraph.append('circle')
-        .attr('cx', xorigin - 3)
-        .attr('cy', 5)
-        .attr('r', 3)
+        .attr('cx', gxnorm(xorigin + 2))
+        .attr('cy', 7)
+        .attr('r', 1)
         .attr('stroke', 'black')
         .attr('stroke-width', 0.3)
         .attr('fill', 'none');
 
     var eye = summaryGraph.append('circle')
         .attr('fill', 'black')
-        .attr('r', 2);
+        .attr('cx', gxnorm(xorigin + 2))
+        .attr('r', 0.6);
 
     if (currentNorm == 'relative') {
-        eye.attr('cx', xorigin - 3)
-            .attr('cy', -5);
+            eye.attr('cy', 3);
 
         titleAbsolute.style('cursor', 'pointer')
             .attr('onclick', 'loadSummary(currentRun, currentPartition, \'absolute\');');
@@ -132,8 +145,7 @@ function displaySummary(data)
         ynorm = function (d, key) { if (d.quota == 0.) return 0.; else return ymax - yscale(d[key] / d.quota); };
     }
     else {
-        eye.attr('cx', xorigin - 3)
-            .attr('cy', 5);
+        eye.attr('cy', 7);
 
         titleRelative.style('cursor', 'pointer')
             .attr('onclick', 'loadSummary(currentRun, currentPartition, \'relative\');');
@@ -155,12 +167,12 @@ function displaySummary(data)
         .tickSize(1, 0);
 
     var gxaxis = summaryGraph.append('g').classed('axis', true)
-        .attr('transform', 'translate(' + xorigin + ',' + yorigin + ')')
+        .attr('transform', 'translate(' + gxnorm(xorigin) + ',' + yorigin + ')')
         .call(xaxis);
 
     gxaxis.selectAll('.tick text')
-        .attr('font-size', 5.5)
-        .attr('dx', -1)
+        .attr('font-size', 2.5)
+        .attr('dx', gxnorm(0))
         .attr('dy', -1)
         .attr('transform', 'rotate(300 0,0)')
         .style('text-anchor', 'end');
@@ -169,7 +181,7 @@ function displaySummary(data)
         .append('a')
         .attr('xlink:href', function () { return '#' + d3.select(this.parentNode).select('text').text(); })
         .append('rect')
-        .attr('transform', 'rotate(120 0,0) translate(0,-' + (xspace * 0.5) + ')')
+        .attr('transform', 'rotate(120 0,0) translate(0,-' + xspace * 0.5 + ')')
         .attr('fill', 'white')
         .attr('fill-opacity', 0)
         .attr('width', ymarginBottom)
@@ -181,11 +193,11 @@ function displaySummary(data)
         .attr('stroke-width', 0.2);
 
     var gyaxis = summaryGraph.append('g').classed('axis', true)
-        .attr('transform', 'translate(' + xorigin + ',' + ymarginTop + ')')
+        .attr('transform', 'translate(' + gxnorm(xorigin) + ',' + ymarginTop + ')')
         .call(yaxis);
 
     gyaxis.selectAll('.tick text')
-        .attr('font-size', 5);
+        .attr('font-size', 3);
 
     gyaxis.selectAll('.tick line')
         .attr('stroke', 'black')
@@ -197,25 +209,25 @@ function displaySummary(data)
         .attr('stroke-width', 0.2);
 
     var content = summaryGraph.append('g').classed('content', true)
-        .attr('transform', 'translate(' + xorigin + ',' + yorigin + ')');
+        .attr('transform', 'translate(' + gxnorm(xorigin) + ',' + yorigin + ')');
 
     if (currentNorm == 'relative') {
         content.append('line').classed('refMarker', true)
             .attr('x1', 0)
-            .attr('x2', xmax)
+            .attr('x2', gxnorm(xmax))
             .attr('y1', -ymax / 1.25)
             .attr('y2', -ymax / 1.25);
 
         content.append('line').classed('refMarker', true)
             .attr('x1', 0)
-            .attr('x2', xmax)
+            .attr('x2', gxnorm(xmax))
             .attr('y1', -ymax * 0.5 / 1.25)
             .attr('y2', -ymax * 0.5 / 1.25)
             .attr('stroke-dasharray', '3,3');
 
         content.append('line').classed('refMarker', true)
             .attr('x1', 0)
-            .attr('x2', xmax)
+            .attr('x2', gxnorm(xmax))
             .attr('y1', -ymax * 0.9 / 1.25)
             .attr('y2', -ymax * 0.9 / 1.25)
             .attr('stroke-dasharray', '1,1');
@@ -226,8 +238,8 @@ function displaySummary(data)
     }
     else {
         gyaxis.append('text')
-            .attr('transform', 'translate(-10,0)')
-            .attr('font-size', 5)
+            .attr('transform', 'translate(' + gxnorm(-2) + ',-2)')
+            .attr('font-size', 3)
             .text('TB');
     }
 
@@ -268,14 +280,14 @@ function displaySummary(data)
         .attr('width', xspace * 0.3);
 
     var legend = summaryGraph.append('g').classed('legend', true)
-        .attr('transform', 'translate(360, 5)');
+        .attr('transform', 'translate(' + gxnorm(70) + ', 0)');
 
     var legendContents =
-        [{'cls': 'keepPrev', 'title': 'Kept in previous run', 'position': '(0,10)'},
-         {'cls': 'protectPrev', 'title': 'Protected in previous run', 'position': '(0,20)'},
-         {'cls': 'delete', 'title': 'Deleted', 'position': '(80,0)'},
-         {'cls': 'keep', 'title': 'Kept', 'position': '(80,10)'},
-         {'cls': 'protect', 'title': 'Protected', 'position': '(80,20)'}];
+        [{'cls': 'keepPrev', 'title': 'Kept in previous run', 'position': '(0,4)'},
+         {'cls': 'protectPrev', 'title': 'Protected in previous run', 'position': '(0,8)'},
+         {'cls': 'delete', 'title': 'Deleted', 'position': '(' + gxnorm(20) + ',4)'},
+         {'cls': 'keep', 'title': 'Kept', 'position': '(' + gxnorm(20) + ',8)'},
+         {'cls': 'protect', 'title': 'Protected', 'position': '(' + gxnorm(20) + ',12)'}];
 
     var legendEntries = legend.selectAll('g')
         .data(legendContents)
@@ -284,15 +296,15 @@ function displaySummary(data)
         .attr('transform', function (d) { return 'translate' + d.position; });
 
     legendEntries.append('circle')
-        .attr('cx', 5)
-        .attr('cy', 5)
-        .attr('r', 4)
+        .attr('cx', gxnorm(2))
+        .attr('cy', 1)
+        .attr('r', 1.5)
         .attr('class', function (d) { return d.cls; });
 
     legendEntries.append('text')
-        .attr('font-size', 5)
-        .attr('dx', 12)
-        .attr('dy', 7)
+        .attr('font-size', 3)
+        .attr('dx', gxnorm(3))
+        .attr('dy', 2)
         .text(function (d) { return d.title; });
 
     // set up tables for individual sites
@@ -310,7 +322,8 @@ function displaySummary(data)
     siteDetails.append('h3').classed('siteName', true)
         .text(function (d) { return d.name; });
 
-    var tableBox = siteDetails.append('div').classed('siteTableBox', true);
+    var tableBox = siteDetails.append('div').classed('siteTableBox', true)
+        .style({'position': 'relative', 'top': 0, 'left': 0}); // needed to place objects in the box
 
     var table = tableBox.append('table').classed('siteTable', true);
 
@@ -421,7 +434,7 @@ function loadSummary(runNumber, partitionId, summaryNorm)
         getData: 1,
         dataType: 'summary',
         runNumber: runNumber,
-        partitionId: partitionId,
+        partitionId: partitionId
     };
 
     $.ajax({url: 'detox.php', data: inputData, success: function (data, textStatus, jqXHR) {
