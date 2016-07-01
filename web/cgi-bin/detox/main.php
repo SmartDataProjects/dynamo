@@ -16,7 +16,7 @@ if (isset($_REQUEST['getPartitions']) && $_REQUEST['getPartitions']) {
   exit(0);
 }
 
-$run = 0;
+$cycle = 0;
 $timestamp = '';
 $partition_id = 1;
 
@@ -31,21 +31,21 @@ if (isset($_REQUEST['partitionId'])) {
   $stmt->close();
 }
 
-if (isset($_REQUEST['runNumber'])) {
-  $run = 0 + $_REQUEST['runNumber'];
+if (isset($_REQUEST['cycleNumber'])) {
+  $cycle = 0 + $_REQUEST['cycleNumber'];
   $stmt = $history_db->prepare('SELECT `time_start` FROM `runs` WHERE `id` = ? AND `partition_id` = ? AND `operation` IN (\'deletion\', \'deletion_test\')');
-  $stmt->bind_param('ii', $run, $partition_id);
+  $stmt->bind_param('ii', $cycle, $partition_id);
   $stmt->bind_result($timestamp);
   $stmt->execute();
   if (!$stmt->fetch())
-    $run = 0;
+    $cycle = 0;
   $stmt->close();
 }
 
-if ($run == 0) {
+if ($cycle == 0) {
   $stmt = $history_db->prepare('SELECT `id`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `operation` IN (\'deletion\', \'deletion_test\') ORDER BY `id` DESC LIMIT 1');
   $stmt->bind_param('i', $partition_id);
-  $stmt->bind_result($run, $timestamp);
+  $stmt->bind_result($cycle, $timestamp);
   $stmt->execute();
   $stmt->fetch();
   $stmt->close();
@@ -55,8 +55,8 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
   // main data structure
   $data = array();
 
-  $data['runNumber'] = $run;
-  $data['runTimestamp'] = $timestamp;
+  $data['cycleNumber'] = $cycle;
+  $data['cycleTimestamp'] = $timestamp;
   $data['partition'] = $partition_id;
 
   if ($_REQUEST['dataType'] == 'summary') {
@@ -74,7 +74,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
 
     $quotas = array();
     $stmt = $history_db->prepare('SELECT `site_id`, `quota` FROM `quota_snapshots` WHERE `partition_id` = ? AND `run_id` <= ? ORDER BY `run_id` DESC');
-    $stmt->bind_param('ii', $partition_id, $run);
+    $stmt->bind_param('ii', $partition_id, $cycle);
     $stmt->bind_result($site_id, $quota);
     $stmt->execute();
     while ($stmt->fetch()) {
@@ -92,7 +92,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
       ${$decision} = array();
 
       $stmt = $history_db->prepare('SELECT s.`site_id`, SUM(s.`size`) * 1.e-12 FROM `deletion_decisions` AS d INNER JOIN `replica_snapshots` AS s ON s.`id` = d.`snapshot_id` WHERE d.`run_id` = ? AND d.`decision` LIKE ? GROUP BY s.`site_id`');
-      $stmt->bind_param('is', $run, $decision);
+      $stmt->bind_param('is', $cycle, $decision);
       $stmt->bind_result($site_id, $size);
       $stmt->execute();
       while ($stmt->fetch())
@@ -100,10 +100,10 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
       $stmt->close();
     }
 
-    $previous_run = 0;
+    $previous_cycle = 0;
     $stmt = $history_db->prepare('SELECT MAX(`id`) FROM `runs` WHERE `partition_id` = ? AND `operation` IN (\'deletion\', \'deletion_test\') AND `id` < ?');
-    $stmt->bind_param('ii', $partition_id, $run);
-    $stmt->bind_result($previous_run);
+    $stmt->bind_param('ii', $partition_id, $cycle);
+    $stmt->bind_result($previous_cycle);
     $stmt->execute();
     $stmt->fetch();
     $stmt->close();
@@ -112,7 +112,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
       ${$decision} = array();
 
       $stmt = $history_db->prepare('SELECT s.`site_id`, SUM(s.`size`) * 1.e-12 FROM `deletion_decisions` AS d INNER JOIN `replica_snapshots` AS s ON s.`id` = d.`snapshot_id` WHERE d.`run_id` = ? AND d.`decision` LIKE ? GROUP BY s.`site_id`');
-      $stmt->bind_param('is', $previous_run, str_replace('Prev', '', $decision));
+      $stmt->bind_param('is', $previous_cycle, str_replace('Prev', '', $decision));
       $stmt->bind_result($site_id, $size);
       $stmt->execute();
       while ($stmt->fetch())
@@ -149,7 +149,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     $query .= ' WHERE dl.`run_id` = ? AND st.`name` LIKE ? AND dl.`decision` IN (\'delete\', \'protect\')';
     $query .= ' ORDER BY ds.`name`';
     $stmt = $history_db->prepare($query);
-    $stmt->bind_param('is', $run, $site_name);
+    $stmt->bind_param('is', $cycle, $site_name);
     $stmt->bind_result($name, $size, $decision, $reason);
     $stmt->execute();
     while ($stmt->fetch())
@@ -162,7 +162,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
 else {
   $html = file_get_contents(__DIR__ . '/html/detox.html');
 
-  $html = str_replace('${RUN_NUMBER}', "$run", $html);
+  $html = str_replace('${CYCLE_NUMBER}', "$cycle", $html);
   $html = str_replace('${PARTITION}', "$partition_id", $html);
 
   echo $html;

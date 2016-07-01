@@ -12,20 +12,20 @@
     <script type="text/javascript" src="js/detox.js"></script>
     <script type="text/javascript">
       $(document).ready(function() {
-      initPage(${RUN_NUMBER}, ${PARTITION});
+      initPage(${CYCLE_NUMBER}, ${PARTITION});
       });
     </script>
   </head>
   <body>
     <header id="header">
-      <h1 id="pageTitle">Detox deletion run results</h1>
+      <h1 id="pageTitle">Detox deletion cycle results</h1>
       <!--      <h2 id="partitionName"></h2> -->
-      <div id="run">
-        <h2 id="runHeader">Run <span id="runNumber"></span> (<span id="runTimestamp"></span>)</h2>
-        <nav id="runs">
-          <div id="runJump">Run: <input type="text" id="jumpInput" size="10"><input type="button" value="Go" onclick="loadData($('#jumpInput').val(), currentPartition)"></div>
-          <div id="runNext" class="runLink"><span onclick="loadSummary(currentRun+1, currentPartition);" class="clickable">&gt;</span></div>
-          <div id="runPrev" class="runLink"><span onclick="loadSummary(currentRun-1, currentPartition);" class="clickable">&lt;</span></div>
+      <div id="cycle">
+        <h2 id="cycleHeader">Cycle <span id="cycleNumber"></span> (<span id="cycleTimestamp"></span>)</h2>
+        <nav id="cycles">
+          <div id="cycleJump">Cycle: <input type="text" id="jumpInput" size="10"><input type="button" value="Go" onclick="loadData($('#jumpInput').val(), currentPartition)"></div>
+          <div id="cycleNext" class="cycleLink"><span onclick="loadSummary(currentCycle+1, currentPartition);" class="clickable">&gt;</span></div>
+          <div id="cyclePrev" class="cycleLink"><span onclick="loadSummary(currentCycle-1, currentPartition);" class="clickable">&lt;</span></div>
         </nav>
       </div>
     </header>

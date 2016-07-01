@@ -1,12 +1,19 @@
-var currentRun = 0;
+var currentCycle = 0;
 var currentPartition = 0;
 var currentNorm = 'relative';
 
-function initPage(runNumber, partitionId)
+function initPage(cycleNumber, partitionId)
 {
-    $.ajax({url: 'detox.php', data: {getPartitions: 1}, success: function (data, textStatus, jqXHR) { setPartitions(data); }, dataType: 'json', async: false});
+    var jaxData = {
+        'url': 'detox.php',
+        'data': {'getPartitions': 1},
+        'success': function (data, textStatus, jqXHR) { setPartitions(data); },
+        'dataType': 'json',
+        'async': false};
+
+    $.ajax(jaxData);
     
-    loadSummary(runNumber, partitionId, currentNorm);
+    loadSummary(cycleNumber, partitionId, currentNorm);
 }
 
 function setPartitions(data)
@@ -17,14 +24,14 @@ function setPartitions(data)
         .enter().append('div').classed('partitionTab', true)
         .text(function (d) { return d.name; })
         .attr('id', function (d) { return 'partition' + d.id; })
-        .on('click', function (d) { loadSummary(currentRun, d.id, currentNorm); });
+        .on('click', function (d) { loadSummary(currentCycle, d.id, currentNorm); });
 
     partitionsNav.select(':last-child').classed('last', true);
 }
 
 function sortTableBy(siteName, column)
 {
-    var siteData = {name: siteName, datasets: []};
+    var siteData = {'name': siteName, 'datasets': []};
     var tableBox = d3.select('#' + siteName + ' .siteTableBox');
     var tbody = d3.select('#' + siteName + ' .siteTable tbody');
 
@@ -34,10 +41,10 @@ function sortTableBy(siteName, column)
     tbody.selectAll('tr')
         .each(function (d, i) {
                 siteData.datasets[i] = {
-                    name: this.childNodes[0].textContent,
-                    size: Number(this.childNodes[1].textContent),
-                    decision: this.childNodes[2].textContent,
-                    reason: this.childNodes[3].textContent
+                    'name': this.childNodes[0].textContent,
+                    'size': Number(this.childNodes[1].textContent),
+                    'decision': this.childNodes[2].textContent,
+                    'reason': this.childNodes[3].textContent
                 };
             });
 
@@ -60,8 +67,8 @@ function sortTableBy(siteName, column)
 
 function displaySummary(data)
 {
-    d3.select('#runNumber').text(data.runNumber);
-    d3.select('#runTimestamp').text(data.runTimestamp);
+    d3.select('#cycleNumber').text(data.cycleNumber);
+    d3.select('#cycleTimestamp').text(data.cycleTimestamp);
 
     if (data.siteData.length == 0)
         return;
@@ -101,43 +108,29 @@ function displaySummary(data)
     var ynorm;
 
     var titleRelative = summaryGraph.append('text')
-        .attr('font-size', 3)
-        .attr('x', gxnorm(xorigin + 3))
-        .attr('y', 4)
+        .attr({'font-size': 3, 'x': gxnorm(xorigin + 3), 'y': 4})
         .text('Normalized site usage');
 
     var selectRelative = summaryGraph.append('circle')
-        .attr('cx', gxnorm(xorigin + 2))
-        .attr('cy', 3)
-        .attr('r', 1)
-        .attr('stroke', 'black')
-        .attr('stroke-width', 0.3)
-        .attr('fill', 'none');
+        .attr({'cx': gxnorm(xorigin + 2), 'cy': 3, 'r': 1, 'stroke': 'black', 'stroke-width': 0.3, 'fill': 'white'});
 
     var titleAbsolute = summaryGraph.append('text')
-        .attr('font-size', 3)
-        .attr('x', gxnorm(xorigin + 3))
-        .attr('y', 8)
+        .attr({'font-size': 3, 'x': gxnorm(xorigin + 3), 'y': 8})
         .text('Absolute data volume');
 
     var selectAbsolute = summaryGraph.append('circle')
-        .attr('cx', gxnorm(xorigin + 2))
-        .attr('cy', 7)
-        .attr('r', 1)
-        .attr('stroke', 'black')
-        .attr('stroke-width', 0.3)
-        .attr('fill', 'none');
+        .attr({'cx': gxnorm(xorigin + 2), 'cy': 7, 'r': 1, 'stroke': 'black', 'stroke-width': 0.3, 'fill': 'white'});
 
     var eye = summaryGraph.append('circle')
-        .attr('fill', 'black')
-        .attr('cx', gxnorm(xorigin + 2))
-        .attr('r', 0.6);
+        .attr({'fill': 'black', 'cx': gxnorm(xorigin + 2), 'r': 0.6});
 
     if (currentNorm == 'relative') {
-            eye.attr('cy', 3);
+        eye.attr('cy', 3);
+
+        selectAbsolute.attr('onclick', 'loadSummary(currentCycle, currentPartition, \'absolute\');');
 
         titleAbsolute.style('cursor', 'pointer')
-            .attr('onclick', 'loadSummary(currentRun, currentPartition, \'absolute\');');
+            .attr('onclick', 'loadSummary(currentCycle, currentPartition, \'absolute\');');
 
         yscale.domain([0, 1.25])
             .range([ymax, 0]);
@@ -147,8 +140,10 @@ function displaySummary(data)
     else {
         eye.attr('cy', 7);
 
+        selectRelative.attr('onclick', 'loadSummary(currentCycle, currentPartition, \'relative\');');
+
         titleRelative.style('cursor', 'pointer')
-            .attr('onclick', 'loadSummary(currentRun, currentPartition, \'relative\');');
+            .attr('onclick', 'loadSummary(currentCycle, currentPartition, \'relative\');');
 
         yscale.domain([0, d3.max(data.siteData, function (d) { return Math.max(d.protect + d.keep + d.delete, d.protectPrev + d.keepPrev); }) * 1.25])
             .range([ymax, 0]);
@@ -171,26 +166,12 @@ function displaySummary(data)
         .call(xaxis);
 
     gxaxis.selectAll('.tick text')
-        .attr('font-size', 2.5)
-        .attr('dx', gxnorm(0))
-        .attr('dy', -1)
-        .attr('transform', 'rotate(300 0,0)')
-        .style('text-anchor', 'end');
-
-    gxaxis.selectAll('.tick')
-        .append('a')
-        .attr('xlink:href', function () { return '#' + d3.select(this.parentNode).select('text').text(); })
-        .append('rect')
-        .attr('transform', 'rotate(120 0,0) translate(0,-' + xspace * 0.5 + ')')
-        .attr('fill', 'white')
-        .attr('fill-opacity', 0)
-        .attr('width', ymarginBottom)
-        .attr('height', xspace);
+        .attr({'font-size': 2.2, 'dx': gxnorm(-0.2), 'dy': -1.4, 'transform': 'rotate(300 0,0)'})
+        .attr('onclick', function (siteName) { return 'd3.select(\'#' + siteName + '\').node().scrollIntoView();'; })
+        .style({'text-anchor': 'end', 'cursor': 'pointer'});
 
     gxaxis.select('path.domain')
-        .attr('fill', 'none')
-        .attr('stroke', 'black')
-        .attr('stroke-width', 0.2);
+        .attr({'fill': 'none', 'stroke': 'black', 'stroke-width': 0.2});
 
     var gyaxis = summaryGraph.append('g').classed('axis', true)
         .attr('transform', 'translate(' + gxnorm(xorigin) + ',' + ymarginTop + ')')
@@ -200,46 +181,30 @@ function displaySummary(data)
         .attr('font-size', 3);
 
     gyaxis.selectAll('.tick line')
-        .attr('stroke', 'black')
-        .attr('stroke-width', 0.2);
+        .attr({'stroke': 'black', 'stroke-width': 0.2});
 
     gyaxis.select('path.domain')
-        .attr('fill', 'none')
-        .attr('stroke', 'black')
-        .attr('stroke-width', 0.2);
+        .attr({'fill': 'none', 'stroke': 'black', 'stroke-width': 0.2});
 
     var content = summaryGraph.append('g').classed('content', true)
         .attr('transform', 'translate(' + gxnorm(xorigin) + ',' + yorigin + ')');
 
     if (currentNorm == 'relative') {
         content.append('line').classed('refMarker', true)
-            .attr('x1', 0)
-            .attr('x2', gxnorm(xmax))
-            .attr('y1', -ymax / 1.25)
-            .attr('y2', -ymax / 1.25);
+            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax / 1.25, 'y2': -ymax / 1.25});
 
         content.append('line').classed('refMarker', true)
-            .attr('x1', 0)
-            .attr('x2', gxnorm(xmax))
-            .attr('y1', -ymax * 0.5 / 1.25)
-            .attr('y2', -ymax * 0.5 / 1.25)
-            .attr('stroke-dasharray', '3,3');
+            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 0.5 / 1.25, 'y2': -ymax * 0.5 / 1.25, 'stroke-dasharray': '3,3'});
 
         content.append('line').classed('refMarker', true)
-            .attr('x1', 0)
-            .attr('x2', gxnorm(xmax))
-            .attr('y1', -ymax * 0.9 / 1.25)
-            .attr('y2', -ymax * 0.9 / 1.25)
-            .attr('stroke-dasharray', '1,1');
+            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 0.9 / 1.25, 'y2': -ymax * 0.9 / 1.25, 'stroke-dasharray': '1,1'});
 
         content.selectAll('.refMarker')
-            .attr('stroke', 'black')
-            .attr('stroke-width', 0.2);
+            .attr({'stroke': 'black', 'stroke-width': 0.2});
     }
     else {
         gyaxis.append('text')
-            .attr('transform', 'translate(' + gxnorm(-2) + ',-2)')
-            .attr('font-size', 3)
+            .attr({'transform': 'translate(' + gxnorm(-2) + ',-2)', 'font-size': 3})
             .text('TB');
     }
 
@@ -280,14 +245,14 @@ function displaySummary(data)
         .attr('width', xspace * 0.3);
 
     var legend = summaryGraph.append('g').classed('legend', true)
-        .attr('transform', 'translate(' + gxnorm(70) + ', 0)');
+        .attr('transform', 'translate(' + gxnorm(68) + ', 0)');
 
     var legendContents =
-        [{'cls': 'keepPrev', 'title': 'Kept in previous run', 'position': '(0,4)'},
-         {'cls': 'protectPrev', 'title': 'Protected in previous run', 'position': '(0,8)'},
-         {'cls': 'delete', 'title': 'Deleted', 'position': '(' + gxnorm(20) + ',4)'},
-         {'cls': 'keep', 'title': 'Kept', 'position': '(' + gxnorm(20) + ',8)'},
-         {'cls': 'protect', 'title': 'Protected', 'position': '(' + gxnorm(20) + ',12)'}];
+        [{'cls': 'delete', 'title': 'Deleted', 'position': '(0,4)'},
+         {'cls': 'keep', 'title': 'Kept', 'position': '(0,8)'},
+         {'cls': 'protect', 'title': 'Protected', 'position': '(0,12)'},
+         {'cls': 'keepPrev', 'title': 'Kept in previous cycle', 'position': '(' + gxnorm(10) + ',4)'},
+         {'cls': 'protectPrev', 'title': 'Protected in previous cycle', 'position': '(' + gxnorm(10) + ',8)'}];
 
     var legendEntries = legend.selectAll('g')
         .data(legendContents)
@@ -296,15 +261,11 @@ function displaySummary(data)
         .attr('transform', function (d) { return 'translate' + d.position; });
 
     legendEntries.append('circle')
-        .attr('cx', gxnorm(2))
-        .attr('cy', 1)
-        .attr('r', 1.5)
+        .attr({'cx': gxnorm(2), 'cy': 1, 'r': 1.5})
         .attr('class', function (d) { return d.cls; });
 
     legendEntries.append('text')
-        .attr('font-size', 3)
-        .attr('dx', gxnorm(3))
-        .attr('dy', 2)
+        .attr({'font-size': 3, 'dx': gxnorm(3), 'dy': 2})
         .text(function (d) { return d.title; });
 
     // set up tables for individual sites
@@ -322,8 +283,12 @@ function displaySummary(data)
     siteDetails.append('h3').classed('siteName', true)
         .text(function (d) { return d.name; });
 
+    siteDetails.append('div').classed('toTop', true)
+        .text('Back to top')
+        .on('click', function () { window.scrollTo(0, 0); });
+
     var tableBox = siteDetails.append('div').classed('siteTableBox', true)
-        .style({'position': 'relative', 'top': 0, 'left': 0}); // needed to place objects in the box
+        .style({'height': '82px', 'position': 'relative', 'top': 0, 'left': 0}); // needed to place objects in the box
 
     var table = tableBox.append('table').classed('siteTable', true);
 
@@ -353,7 +318,7 @@ function displaySummary(data)
     d3.select(window).on('resize', padTables);
 
     tableBox.append('div')
-        .style({'width': '20%', 'height': '10%', 'margin': '20% 40% 0 40%', 'cursor': 'pointer', 'text-decoration': 'underline', 'text-align': 'center'})
+        .style({'width': '20%', 'margin': '10px 40% 0 40%', 'cursor': 'pointer', 'text-decoration': 'underline', 'text-align': 'center'})
         .text('Load site data')
         .on('click', function (d) { d3.select(this).remove(); loadSiteTable(d.name); });
 }
@@ -375,19 +340,20 @@ function padTables()
 function displayDetails(siteData)
 {
     var block = d3.select('#' + siteData.name);
+
+    var tableBox = block.select('.siteTableBox');
+    var table = block.select('.siteTable');
     
     if (siteData.datasets.length == 0) {
-        block.select('.siteTable').remove();
-        block.select('.siteTableBox')
-            .style({'font-size': '108px;', 'text-align': 'center', 'padding-top': '150px', 'font-weight': '500'})
+        table.remove();
+        tableBox.style({'height': '82px', 'font-size': '108px;', 'text-align': 'center', 'padding-top': '150px', 'font-weight': '500'})
             .text('Empty');
 
         return;
     }
-    
-    var table = block.select('.siteTable');
-    var tableNode = table.node();
 
+    tableBox.style('height', '700px');
+    
     var tbody = table.append('tbody')
         .style({'height': '656px', 'overflow-y': 'auto', 'overflow-x': 'hidden'});
 
@@ -397,23 +363,24 @@ function displayDetails(siteData)
         .append('tr')
         .each(function (d, i) { if (i % 2 == 1) d3.select(this).classed('odd', true); });
 
+    var tableWidth = table.node().clientWidth;
+
     row.append('td').classed('datasetCol', true)
-        .style({'width': (tableNode.clientWidth * 0.65 - 1) + 'px', 'font-size': '10px'})
+        .style({'width': (tableWidth * 0.65 - 1) + 'px', 'font-size': '10px'})
         .text(function (d) { return d.name; });
     row.append('td').classed('sizeCol', true)
-        .style('width', (tableNode.clientWidth * 0.05 - 1) + 'px')
+        .style('width', (tableWidth * 0.05 - 1) + 'px')
         .text(function (d) { return d.size.toFixed(1); });
     row.append('td').classed('decisionCol', true)
-        .style('width', (tableNode.clientWidth * 0.05 - 1) + 'px')
+        .style('width', (tableWidth * 0.05 - 1) + 'px')
         .text(function (d) { return d.decision; });
     row.append('td').classed('reasonCol', true)
-        //        .style('width', (tableNode.clientWidth * 0.25) + 'px')
         .text(function (d) { return d.reason; });
 }
 
-function loadSummary(runNumber, partitionId, summaryNorm)
+function loadSummary(cycleNumber, partitionId, summaryNorm)
 {
-    currentRun = runNumber;
+    currentCycle = cycleNumber;
     currentPartition = partitionId;
     currentNorm = summaryNorm;
 
@@ -426,35 +393,35 @@ function loadSummary(runNumber, partitionId, summaryNorm)
     var box = d3.select('#summaryGraphBox');
     box.selectAll('*').remove();
 
-    var spinner = new Spinner({scale: 5, corners: 0, width: 2, position: 'absolute'});
+    var spinner = new Spinner({'scale': 5, 'corners': 0, 'width': 2, 'position': 'absolute'});
     spinner.spin();
     $(box.node()).append($(spinner.el));
 
     var inputData = {
-        getData: 1,
-        dataType: 'summary',
-        runNumber: runNumber,
-        partitionId: partitionId
+        'getData': 1,
+        'dataType': 'summary',
+        'cycleNumber': cycleNumber,
+        'partitionId': partitionId
     };
 
-    $.ajax({url: 'detox.php', data: inputData, success: function (data, textStatus, jqXHR) {
+    $.ajax({'url': 'detox.php', 'data': inputData, 'success': function (data, textStatus, jqXHR) {
                 displaySummary(data);
                 spinner.stop();
-            }, dataType: 'json', async: false});
+            }, 'dataType': 'json', 'async': false});
 }
 
 function loadSiteTable(name)
 {
-    var spinner = new Spinner({scale: 5, corners: 0, width: 2, position: 'relative'});
+    var spinner = new Spinner({'scale': 5, 'corners': 0, 'width': 2, 'position': 'relative'});
     spinner.spin();
     $('#' + name + ' .siteTableBox').append($(spinner.el));
 
     var inputData = {
-        getData: 1,
-        dataType: 'siteDetail',
-        runNumber: currentRun,
-        partitionId: currentPartition,
-        siteName: name
+        'getData': 1,
+        'dataType': 'siteDetail',
+        'cycleNumber': currentCycle,
+        'partitionId': currentPartition,
+        'siteName': name
     };
 
     $.get('detox.php', inputData, function (data, textStatus, jqXHR) {
