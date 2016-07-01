@@ -134,8 +134,6 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
               'keepPrev' => 0. + $keepPrev[$id]
               );
     }
-
-    $data['display'] = 'relative';
   }
   else if ($_REQUEST['dataType'] == 'siteDetail') {
     $site_name = $_REQUEST['siteName'];

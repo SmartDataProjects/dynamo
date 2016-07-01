@@ -1,5 +1,5 @@
 #viewSelection {
-    width: 410px;
+    width: 30%;
     height: 220px;
     margin-top: 10px;
     float: left;
@@ -11,7 +11,7 @@
 }
 
 #dataSelection {
-    width: 140px;
+    width: 35%;
     height: 100%;
     float: left;
 }
@@ -27,7 +27,7 @@
 }
 
 #constraints {
-    width: 260px;
+    width: 60%;
     height: 100%;
     float: left;
     border-left: 1px dashed;
@@ -64,7 +64,7 @@
 }
 
 #graphSection {
-    width: 1000px;
+    width: 70%;
     height: 1000px;
     float: left;
 }

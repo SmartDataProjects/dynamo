@@ -3,9 +3,9 @@
 }
 
 #run {
-    width: 60%;
+    width: 40%;
     height: 100%;
-    float: left;
+    float: right;
 }
 
 #runHeader {
@@ -157,26 +157,60 @@ h3.siteName {
     padding: 10px 0 10px 0;
 }
 
-article.siteDetails table {
-    border-collapse: collapse;
+.siteTableBox {
+    width: 100%;
+    height: 700px;
+    margin-bottom: 20px;
+    border: 1px solid black;
+}
+
+.siteTable {
+    width: 100%;
+    border-spacing: 0;
     border: 1px solid #999999;
     font-size: 12px;
 }
 
-article.siteDetails table tr,th,td {
-    border: 1px solid #999999;
+.siteTable thead,
+.siteTable tbody {
+    display: block;
+    width: 100%;
 }
 
-table.siteTableHeader th {
+.siteTable tbody {
+    border-top: 2px solid black;
+}
+
+.siteTable tr {
+    display: block;
+    width: 100%;
+    height: 40px;
+}
+
+.siteTable th,
+.siteTable td
+{
+    height: 40px;
+    border-right: 1px solid #999999;
+    padding: 0;
+}
+
+.siteTable th {
     background-color: #a31f34;
     color: white;
 }
 
-table.siteTableHeader th.sortable {
+.siteTable th.sortable {
     cursor: pointer;
 }
 
-table.siteTable tr.odd {
+.siteTable th:last-child,
+.siteTable td:last-child
+{
+    border-right: none;
+}
+
+.siteTable tr.odd {
     background-color: #c2c0bf;
 }
 
