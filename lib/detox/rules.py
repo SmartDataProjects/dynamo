@@ -264,30 +264,38 @@ class ActionList(object):
             return replica, action, 'Pattern match: (action, site, dataset) = [%s]' % (','.join(['(%s, %s, %s)' % match for match in matches]))
     
 
-def make_stack(strategy):
+# TODO Not quite elegant to do this here..
+def make_stack(stack_name):
     # return a *function* that returns the selected stack
 
-    if strategy == 'Routine':
+    import detox.configuration as detox_config
+
+    if stack_name == 'Routine':
         def stackgen(*arg, **kwd):
-            # stackgen(rank_threshold)
+            # stackgen()
+
+            exceptions = ActionList()
+            for line in detox_config.routine_exceptions:
+                exceptions.add_action(*line)
+
             stack = [
                 protect_nonready_site,
-                DeleteRECOOlderThan(180., 'd'),
+                DeleteRECOOlderThan(detox_config.reco_max_age, 'd'),
                 protect_incomplete,
                 protect_diskonly,
-                DeleteUnused(arg[0]),
+                DeleteUnused(detox_config.max_nonusage),
                 delete_partial,
                 protect_minimum_copies
             ]
 
             return stack, Policy.DEC_DELETE
 
-    elif strategy == 'List':
+    elif stack_name == 'List':
         # stackgen([files])
         def stackgen(*arg, **kwd):
             stack = [
                 protect_incomplete,
-                DeleteRECOOlderThan(180., 'd'),
+                DeleteRECOOlderThan(detox_config.reco_max_age, 'd'),
                 protect_diskonly,
                 delete_partial,
                 ActionList()
@@ -301,7 +309,7 @@ def make_stack(strategy):
             return stack, Policy.DEC_PROTECT
 
     else:
-        raise RuntimeError('Unrecognized strategy ' + strategy)
+        raise RuntimeError('Unrecognized stack name ' + stack_name)
 
     return stackgen
 
