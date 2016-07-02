@@ -138,8 +138,8 @@ class Detox(object):
 
             # update the list of target sites
             for site in self.inventory_manager.sites.values():
-                if site not in target_sites and policy.need_deletion(site):
-                    target_sites.add(site)
+                if site in target_sites and not policy.need_deletion(site):
+                    target_sites.remove(site)
 
         # save replica snapshots and all deletion decisions
         self.history.save_deletion_decisions(run_number, protected, deleted, kept)
