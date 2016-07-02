@@ -38,8 +38,11 @@ $repl_counts = array();
 
 if ($categories == 'campaigns') {
   while ($stmt->fetch()) {
-    preg_match('/^\/[^\/]+\/([^\/-]+)-[^\/]+\/.*/', $name, $matches);
-    $key = $matches[1];
+    preg_match('/^\/[^\/]+\/(?:(Run20.+)-v[0-9]+|([^\/-]+)-[^\/]+)\/.*/', $name, $matches);
+    $key = $matches[2];
+    if ($key == "")
+      $key = $matches[1];
+
     if (array_key_exists($key, $repl_counts))
       $repl_counts[$key][] = $repl;
     else

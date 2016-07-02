@@ -61,7 +61,8 @@ var colors = [
    '#a5ffd2',
    '#ffb167',
    '#009bff',
-   '#e85ebe'
+   '#e85ebe',
+   '#dddddd'
 ];
 
 var loading = new Spinner({scale: 5, corners: 0, width: 2});
@@ -153,6 +154,8 @@ function setGroups(data) {
 }
 
 function displayData(data) {
+    var legendWidth = d3.select('#legendCont').node().clientWidth * 0.1;
+
     if (data.content.length == 0) {
         d3.select('#axisBox').style({height: '0'});
         d3.select('#graphBox').style({height: '100%'});
@@ -165,7 +168,7 @@ function displayData(data) {
             .text('Empty');
 
         var legend = d3.select('#legend')
-            .attr('viewBox', '0 0 30 0');
+            .attr('viewBox', '0 0 ' + legendWidth + ' 0');
 
         return;
     }
@@ -176,8 +179,8 @@ function displayData(data) {
         d3.select('#axisBox').style({height: '4%'});
         d3.select('#graphBox').style({height: '96%'});
 
-        var graphData = data.content.slice(0, colors.length);
-        var residuals = data.content.slice(colors.length);
+        var graphData = data.content.slice(0, colors.length - 1);
+        var residuals = data.content.slice(colors.length - 1);
         if (residuals.length != 0) {
             var remaining = 0;
             for (var i in residuals)
@@ -236,12 +239,12 @@ function displayData(data) {
 
         var legend = d3.select('#legend')
             .attr('height', 10 + 20 * graphData.length) // 20 px per row
-            .attr('viewBox', '0 -1 30 ' + (1 + 2 * graphData.length)); // svg coordinate is 1/10 of browser
+            .attr('viewBox', '0 0 ' + legendWidth + ' ' + (1 + 2 * graphData.length)); // svg coordinate is 1/10 of browser
 
         var entries = legend.selectAll('.legendEntry')
             .data(graphData)
             .enter().append('g').classed('legendEntry', true)
-            .attr('transform', function (d, i) { return 'translate(1,' + (2 * i) + ')'; });
+            .attr('transform', function (d, i) { return 'translate(1,' + (1 + 2 * i) + ')'; });
 
         entries.append('circle')
             .attr('cx', 1.)
@@ -250,11 +253,11 @@ function displayData(data) {
             .attr('fill', function (d, i) { return colors[i]; });
 
         entries.append('text')
-            .attr('font-size', 2)
-            .attr('dx', 4)
-            .attr('dy', 1.6)
+            .attr('font-size', 1.5)
+            .attr('dx', 2.5)
+            .attr('dy', 1.5)
             .text(function (d) { return d.key; })
-            .each(function () { truncateText(this, 26); } );
+            .each(function () { truncateText(this, legendWidth - 3); } );
     }
     else if (data.dataType == 'replication') {
         // data.content: [{key: (key_name), mean: (mean), rms: (rms)}]
@@ -325,7 +328,7 @@ function displayData(data) {
 
         var legend = d3.select('#legend')
             .attr('height', 400) // 20 px per row
-            .attr('viewBox', '0 -1 30 40'); // svg coordinate is 1/10 of browser
+            .attr('viewBox', '0 0 ' + legendWidth + ' 40'); // svg coordinate is 1/10 of browser
 
         var legendMean = legend.append('g').classed('legendEntry', true)
             .attr('transform', 'translate(1,2)');
@@ -363,8 +366,11 @@ function displayData(data) {
         d3.select('#axisBox').style({height: '3%'});
         d3.select('#graphBox').style({height: '97%'});
 
+        var keys = data.keys.slice(0, colors.length - 1);
+        keys[keys.length] = 'Others';
+
         var colorMap = d3.scale.ordinal()
-            .domain(data.keys)
+            .domain(keys)
             .range(colors);
 
         var graphArea = d3.select('#graph')
@@ -436,17 +442,21 @@ function displayData(data) {
                                                              function (u) { return u.size; }
                                                              )) + ',0)';
                           })
-                    .attr('fill', function (d) { return colorMap(d.key); })
+                    .attr('fill', function (d) {
+                            var color = colorMap(d.key);
+                            if (!color)
+                                color = colorMap('Others');
+                            return color; })
                     });
 
         var legend = d3.select('#legend')
-            .attr('height', 10 + 20 * data.keys.length) // 20 px per row
-            .attr('viewBox', '0 -1 30 ' + (1 + 2 * data.keys.length)); // svg coordinate is 1/10 of browser
+            .attr('height', 10 + 20 * keys.length) // 20 px per row
+            .attr('viewBox', '0 0 ' + legendWidth + ' ' + (1 + 2 * keys.length)); // svg coordinate is 1/10 of browser
 
         var entries = legend.selectAll('.legendEntry')
-            .data(data.keys)
+            .data(keys)
             .enter().append('g').classed('legendEntry', true)
-            .attr('transform', function (d, i) { return 'translate(1,' + (2 * i) + ')'; });
+            .attr('transform', function (d, i) { return 'translate(1,' + (1 + 2 * i) + ')'; });
 
         entries.append('circle')
             .attr('cx', 1.)
@@ -459,7 +469,7 @@ function displayData(data) {
             .attr('dx', 4)
             .attr('dy', 1.6)
             .text(function (k) { return k; })
-            .each(function () { truncateText(this, 26); } );
+            .each(function () { truncateText(this, legendWidth - 4); } );
     }
 }
 
@@ -479,7 +489,9 @@ function loadData() {
     for (var g in groups)
         inputData.group.push(groups[g].value);
 
-    $.get('inventory.php', inputData, function (data, textStatus, jqXHR) { displayData(data); }, 'json');
+    $.get('inventory.php', inputData, function (data, textStatus, jqXHR) {
+            displayData(data);
+        }, 'json');
 }
 
 function getData() {

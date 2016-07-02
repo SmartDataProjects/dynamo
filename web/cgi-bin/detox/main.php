@@ -33,7 +33,7 @@ if (isset($_REQUEST['partitionId'])) {
 
 if (isset($_REQUEST['cycleNumber'])) {
   $cycle = 0 + $_REQUEST['cycleNumber'];
-  $stmt = $history_db->prepare('SELECT `time_start` FROM `runs` WHERE `id` = ? AND `partition_id` = ? AND `operation` IN (\'deletion\', \'deletion_test\')');
+  $stmt = $history_db->prepare('SELECT `time_start` FROM `runs` WHERE `id` = ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\')');
   $stmt->bind_param('ii', $cycle, $partition_id);
   $stmt->bind_result($timestamp);
   $stmt->execute();
@@ -43,7 +43,7 @@ if (isset($_REQUEST['cycleNumber'])) {
 }
 
 if ($cycle == 0) {
-  $stmt = $history_db->prepare('SELECT `id`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `operation` IN (\'deletion\', \'deletion_test\') ORDER BY `id` DESC LIMIT 1');
+  $stmt = $history_db->prepare('SELECT `id`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\') ORDER BY `id` DESC LIMIT 1');
   $stmt->bind_param('i', $partition_id);
   $stmt->bind_result($cycle, $timestamp);
   $stmt->execute();

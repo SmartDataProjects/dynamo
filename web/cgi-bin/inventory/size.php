@@ -5,7 +5,7 @@
 
 $size_sums = array();
 
-$fetch_size = function($selection, $constraint_base, $grouping) {
+function fetch_size($selection, $constraint_base, $grouping) {
   global $store_db;
   global $categories;
   global $const_campaign, $const_data_tier, $const_dataset, $const_site, $const_group;
@@ -34,8 +34,12 @@ $fetch_size = function($selection, $constraint_base, $grouping) {
 
   if ($categories == 'campaigns') {
     while ($stmt->fetch()) {
-      preg_match('/^\/[^\/]+\/([^\/-]+)-[^\/]+\/.*/', $name, $matches);
-      if (array_key_exists($matches[1], $size_sums))
+      preg_match('/^\/[^\/]+\/(?:(Run20.+)-v[0-9]+|([^\/-]+)-[^\/]+)\/.*/', $name, $matches);
+      $key = $matches[2];
+      if ($key == "")
+        $key = $matches[1];
+
+      if (array_key_exists($key, $size_sums))
         $size_sums[$matches[1]] += $size;
       else
         $size_sums[$matches[1]] = $size;
@@ -93,7 +97,7 @@ else if ($categories == 'groups') {
 
 $constraint_base = ' WHERE `dataset_replicas`.`is_complete` = 1 AND `dataset_replicas`.`is_partial` = 0';
 
-$fetch_size($selection, $constraint_base, $grouping);
+fetch_size($selection, $constraint_base, $grouping);
 
 // block replicas are saved for dataset replicas that are
 //  . incomplete or partial
@@ -123,7 +127,7 @@ else if ($categories == 'sites') {
 else if ($categories == 'groups') {
   $selection = 'SELECT `groups`.`name`, SUM(`blocks`.`size`) * 1.e-12 FROM `block_replicas`';
   $selection .= ' INNER JOIN `blocks` ON `blocks`.`id` = `block_replicas`.`block_id`';
-  $selection .= ' INNER JOIN `group` ON `groups`.`id` = `block_replicas`.`group_id`';
+  $selection .= ' INNER JOIN `groups` ON `groups`.`id` = `block_replicas`.`group_id`';
   if (strlen($const_campaign) != 0 || strlen($const_data_tier) != 0 || strlen($const_dataset) != 0)
     $selection .= ' INNER JOIN `datasets` ON `datasets`.`id` = `blocks`.`dataset_id`';
   if (strlen($const_site) != 0)
@@ -134,7 +138,7 @@ else if ($categories == 'groups') {
 
 $constraint_base = ' WHERE `block_replicas`.`is_complete` = 1';
 
-$fetch_size($selection, $constraint_base, $grouping);
+fetch_size($selection, $constraint_base, $grouping);
 
 arsort($size_sums);
     

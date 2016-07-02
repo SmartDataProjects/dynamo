@@ -13,7 +13,7 @@ function initPage(cycleNumber, partitionId)
 
     $.ajax(jaxData);
     
-    loadSummary(cycleNumber, partitionId, currentNorm);
+    loadSummary(cycleNumber, partitionId, currentNorm, true);
 }
 
 function setPartitions(data)
@@ -27,6 +27,63 @@ function setPartitions(data)
         .on('click', function (d) { loadSummary(currentCycle, d.id, currentNorm); });
 
     partitionsNav.select(':last-child').classed('last', true);
+}
+
+function setupSiteDetails(siteData)
+{
+    // set up tables for individual sites
+
+    d3.select('#details').selectAll('.siteDetails').remove();
+    
+    var siteDetails = d3.select('#details').selectAll('.siteDetails')
+        .data(siteData)
+        .enter()
+        .append('article').classed('siteDetails', true)
+        .attr('id', function (d) { return d.name; });
+
+    // everything that is selected from siteDetails will have data = site data
+
+    siteDetails.append('h3').classed('siteName', true)
+        .text(function (d) { return d.name; });
+
+    siteDetails.append('div').classed('toTop', true)
+        .html('&#9650; Back to top')
+        .on('click', function () { window.scrollTo(0, 0); });
+
+    var tableBox = siteDetails.append('div').classed('siteTableBox', true)
+        .style({'height': '82px', 'position': 'relative', 'top': 0, 'left': 0}); // needed to place objects in the box
+
+    var table = tableBox.append('table').classed('siteTable', true);
+
+    var tableNode = table.node();
+
+    var headerRow = table.append('thead').append('tr');
+
+    headerRow.append('th').classed('datasetCol sortable', true)
+        .style('width', (tableNode.clientWidth * 0.65 - 1) + 'px')
+        .text('Dataset')
+        .on('click', function (d) { sortTableBy(d.name, 'datasetCol', 1); });
+
+    headerRow.append('th').classed('sizeCol sortable', true)
+        .style('width', (tableNode.clientWidth * 0.05 - 1) + 'px')
+        .text('Size (GB)')
+        .on('click', function (d) { sortTableBy(d.name, 'sizeCol', 1); });
+
+    headerRow.append('th').classed('decisionCol sortable', true)
+        .style('width', (tableNode.clientWidth * 0.05 - 1) + 'px')
+        .text('Decision')
+        .on('click', function (d) { sortTableBy(d.name, 'decisionCol', 1); });
+
+    headerRow.append('th').classed('reasonCol', true)
+        .style('width', (tableNode.clientWidth * 0.25) + 'px')
+        .text('Reason');
+
+    d3.select(window).on('resize', padTables);
+
+    tableBox.append('div')
+        .style({'width': '20%', 'margin': '10px 40% 0 40%', 'cursor': 'pointer', 'text-decoration': 'underline', 'text-align': 'center'})
+        .text('Load site data')
+        .on('click', function (d) { d3.select(this).remove(); loadSiteTable(d.name); });
 }
 
 function sortTableBy(siteName, column, direction)
@@ -160,10 +217,10 @@ function displaySummary(data)
         titleRelative.style('cursor', 'pointer')
             .attr('onclick', 'loadSummary(currentCycle, currentPartition, \'relative\');');
 
-        yscale.domain([0, d3.max(data.siteData, function (d) { return Math.max(d.protect + d.keep + d.delete, d.protectPrev + d.keepPrev); }) * 1.25])
+        yscale.domain([0, d3.max(data.siteData, function (d) { return Math.max(d.protect + d.keep + d.delete, d.protectPrev + d.keepPrev) / 1000.; }) * 1.25])
             .range([ymax, 0]);
 
-        ynorm = function (d, key) { return ymax - yscale(d[key]); };
+        ynorm = function (d, key) { return (ymax - yscale(d[key])) / 1000.; };
     }
 
     var xaxis = d3.svg.axis()
@@ -181,7 +238,7 @@ function displaySummary(data)
         .call(xaxis);
 
     gxaxis.selectAll('.tick text')
-        .attr({'font-size': 2.2, 'dx': gxnorm(-0.2), 'dy': -1.4, 'transform': 'rotate(300 0,0)'})
+        .attr({'font-size': 2, 'dx': gxnorm(-0.2), 'dy': -1.4, 'transform': 'rotate(300 0,0)'})
         .attr('onclick', function (siteName) { return 'd3.select(\'#' + siteName + '\').node().scrollIntoView();'; })
         .style({'text-anchor': 'end', 'cursor': 'pointer'});
 
@@ -220,7 +277,7 @@ function displaySummary(data)
     else {
         gyaxis.append('text')
             .attr({'transform': 'translate(' + gxnorm(-2) + ',-2)', 'font-size': 3})
-            .text('TB');
+            .text('PB');
     }
 
     var barPrev = content.selectAll('.barPrev')
@@ -280,62 +337,8 @@ function displaySummary(data)
         .attr('class', function (d) { return d.cls; });
 
     legendEntries.append('text')
-        .attr({'font-size': 3, 'dx': gxnorm(3), 'dy': 2})
+        .attr({'font-size': 2, 'dx': gxnorm(3), 'dy': 2})
         .text(function (d) { return d.title; });
-
-    // set up tables for individual sites
-
-    d3.select('#details').selectAll('.siteDetails').remove();
-    
-    var siteDetails = d3.select('#details').selectAll('.siteDetails')
-        .data(data.siteData)
-        .enter()
-        .append('article').classed('siteDetails', true)
-        .attr('id', function (d) { return d.name; });
-
-    // everything that is selected from siteDetails will have data = site data
-
-    siteDetails.append('h3').classed('siteName', true)
-        .text(function (d) { return d.name; });
-
-    siteDetails.append('div').classed('toTop', true)
-        .html('&#9650; Back to top')
-        .on('click', function () { window.scrollTo(0, 0); });
-
-    var tableBox = siteDetails.append('div').classed('siteTableBox', true)
-        .style({'height': '82px', 'position': 'relative', 'top': 0, 'left': 0}); // needed to place objects in the box
-
-    var table = tableBox.append('table').classed('siteTable', true);
-
-    var tableNode = table.node();
-
-    var headerRow = table.append('thead').append('tr');
-
-    headerRow.append('th').classed('datasetCol sortable', true)
-        .style('width', (tableNode.clientWidth * 0.65 - 1) + 'px')
-        .text('Dataset')
-        .on('click', function (d) { sortTableBy(d.name, 'datasetCol', 1); });
-
-    headerRow.append('th').classed('sizeCol sortable', true)
-        .style('width', (tableNode.clientWidth * 0.05 - 1) + 'px')
-        .text('Size (GB)')
-        .on('click', function (d) { sortTableBy(d.name, 'sizeCol', 1); });
-
-    headerRow.append('th').classed('decisionCol sortable', true)
-        .style('width', (tableNode.clientWidth * 0.05 - 1) + 'px')
-        .text('Decision')
-        .on('click', function (d) { sortTableBy(d.name, 'decisionCol', 1); });
-
-    headerRow.append('th').classed('reasonCol', true)
-        .style('width', (tableNode.clientWidth * 0.25) + 'px')
-        .text('Reason');
-
-    d3.select(window).on('resize', padTables);
-
-    tableBox.append('div')
-        .style({'width': '20%', 'margin': '10px 40% 0 40%', 'cursor': 'pointer', 'text-decoration': 'underline', 'text-align': 'center'})
-        .text('Load site data')
-        .on('click', function (d) { d3.select(this).remove(); loadSiteTable(d.name); });
 }
 
 function padTables()
@@ -393,7 +396,7 @@ function displayDetails(siteData)
         .text(function (d) { return d.reason; });
 }
 
-function loadSummary(cycleNumber, partitionId, summaryNorm)
+function loadSummary(cycleNumber, partitionId, summaryNorm, initial)
 {
     currentCycle = cycleNumber;
     currentPartition = partitionId;
@@ -422,6 +425,8 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
     $.ajax({'url': 'detox.php', 'data': inputData, 'success': function (data, textStatus, jqXHR) {
                 displaySummary(data);
                 spinner.stop();
+                if (initial)
+                    setupSiteDetails(data.siteData);
             }, 'dataType': 'json', 'async': false});
 }
 

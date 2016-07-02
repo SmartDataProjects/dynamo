@@ -37,8 +37,10 @@ $fetch_size = function($selection, $constraint_base, $grouping) {
 
       $usage = &$site_usages[$site];
 
-      preg_match('/^\/[^\/]+\/([^\/-]+)-[^\/]+\/.*/', $name, $matches);
-      $key = $matches[1];
+      preg_match('/^\/[^\/]+\/(?:(Run20.+)-v[0-9]+|([^\/-]+)-[^\/]+)\/.*/', $name, $matches);
+      $key = $matches[2];
+      if ($key == "")
+        $key = $matches[1];
 
       if (array_key_exists($key, $usage))
         $usage[$key] += $size;
