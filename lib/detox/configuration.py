@@ -6,7 +6,7 @@ delete_old.threshold = (1.5, 'y')
 delete_unpopular = Configuration()
 delete_unpopular.threshold = 1.
 
-deletion_per_iteration = 3
+deletion_per_iteration = 10
 
 reco_max_age = 180. # number of days to keep /RECO* datasets
 max_nonusage = 500. # threshold for global usage rank
