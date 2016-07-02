@@ -41,8 +41,9 @@ mysqlstore.db_params = {
 
 phedex = Configuration()
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'
-phedex.deletion_chunk_size = 40000000000000 # 40 TB
-phedex.subscription_chunk_size = 40000000000000 # 40 TB
+#phedex.deletion_chunk_size = 40000000000000 # 40 TB
+phedex.deletion_chunk_size = 5.e+14 # 500 TB
+phedex.subscription_chunk_size = 4.e+13 # 40 TB
 
 dbs = Configuration()
 dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
