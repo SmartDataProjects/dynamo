@@ -112,6 +112,24 @@ class ProtectNotOwnedBy(Protect):
             return 'Not all parts of replica is owned by ' + self.group_name
 
 
+class ProtectNew(Protect):
+    """
+    PROTECT if the replica is new.
+    """
+
+    def __init__(self, usage_threshold, request_threshold):
+        self.usage_threshold = usage_threshold
+        self.request_threshold = request_threshold
+
+    def _do_call(self, replica, demand_manager):
+        demand = demand_manager.dataset_demands[replica.dataset]
+        if demand.global_usage_rank < self.usage_threshold:
+            return 'Global usage rank is below %f.' % self.usage_threshold
+        if demand.request_weight > self.request_threshold:
+            return 'Request weight is above %f.' % self.request_threshold
+
+protect_new = ProtectNew(500., 1.)
+
 class DeletePartial(Delete):
     """
     DELETE if the replica is partial.
