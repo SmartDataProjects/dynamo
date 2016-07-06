@@ -271,9 +271,7 @@ class MySQLStore(LocalStoreInterface):
 
             sql += 'ORDER BY `dataset_id`'
 
-            start = time.time()
             dataset_replicas = self._mysql.query(sql)
-            print time.time() - start, 'seconds for query'
 
             _dataset_id = 0
     
@@ -312,13 +310,10 @@ class MySQLStore(LocalStoreInterface):
 
             sql += 'ORDER BY `block_id`'
 
-            start = time.time()
             block_replicas = self._mysql.query(sql)
-            print time.time() - start, 'seconds for block query'
 
             _block_id = 0
     
-            start = time.time()
             for block_id, site_id, group_id, is_complete, is_custodial in block_replicas:
                 if block_id != _block_id:
                     _block_id = block_id
@@ -341,9 +336,6 @@ class MySQLStore(LocalStoreInterface):
                 else:
                     logger.warning('Found a block replica %s:%s#%s without a corresponding dataset replica', site.name, block.dataset.name, block.real_name())
 
-            print time.time() - start, 'seconds for block linking'
-
-            start = time.time()
             # For datasets with all replicas complete and not partial, block replica data is not saved on disk
             for dataset in dataset_list:
                 for replica in dataset.replicas:
@@ -356,8 +348,6 @@ class MySQLStore(LocalStoreInterface):
                         block.replicas.append(rep)
                         replica.site.add_block_replica(rep, adjust_cache = False)
                         replica.block_replicas.append(rep)
-
-            print time.time() - start, 'seconds for block creation'
 
         # Finally set last_update
         self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
