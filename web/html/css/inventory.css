@@ -1,3 +1,13 @@
+#lastUpdate {
+    width: 30%;
+    padding-right: 1%;
+    margin-top: 50px;
+    height: 50px;
+    font: 24px sans-serif;
+    text-align: right;
+    float: right;
+}
+
 #viewSelection {
     width: 35%;
     height: 220px;
