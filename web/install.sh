@@ -1,5 +1,11 @@
 #!/bin/bash
 
+if ! [ $DYNAMO_BASE ]
+then
+  echo "DYNAMO_BASE is not set."
+  exit 1
+fi
+
 TARGET=/var/www
 HTMLTARGET=$TARGET/html
 BINTARGET=$TARGET/cgi-bin
