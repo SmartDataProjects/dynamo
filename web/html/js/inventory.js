@@ -436,6 +436,12 @@ function displayData(data) {
                     .enter().append('rect').classed('usage', true)
                     .attr('width', function (d) { return x(d.size); })
                     .attr('height', 3)
+                    .attr('transform',
+                          function (d, i) {
+                              return 'translate(' + x(d3.sum(siteData.usage.slice(0, i),
+                                                             function (u) { return u.size; }
+                                                             )) + ',0)';
+                          })
                     .attr('fill', function (d) {
                             var color = colorMap(d.key);
                             if (!color)
