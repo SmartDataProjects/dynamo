@@ -1,5 +1,4 @@
 function truncateText(textNode, width) {
-    var bbox = textNode.getBBox();
     if (textNode.getBBox().width < width)
         return;
 

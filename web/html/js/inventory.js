@@ -176,8 +176,8 @@ function displayData(data) {
     if (data.dataType == 'size') {
         // data.content: [{key: (key_name), size: (size)}]
 
-        d3.select('#axisBox').style({height: '4%'});
-        d3.select('#graphBox').style({height: '96%'});
+        d3.select('#axisBox').style({height: '8%'});
+        d3.select('#graphBox').style({height: '92%'});
 
         var graphData = data.content.slice(0, colors.length - 1);
         var residuals = data.content.slice(colors.length - 1);
@@ -206,11 +206,11 @@ function displayData(data) {
             .value(function (d) { return d.size; });
 
         d3.select('#axis')
-            .attr('viewBox', '0 0 70 4')
+            .attr('viewBox', '0 0 70 8')
             .append('g')
             .append('text')
             .attr('transform', 'translate(35, 3.9)')
-            .attr('font-size', 4)
+            .attr('font-size', 3)
             .attr('text-anchor', 'middle')
             .text('Total: ' + total.toFixed(1) + ' TB');
 
@@ -417,7 +417,7 @@ function displayData(data) {
             .data(data.content)
             .enter()
             .append('g').classed('velem', true)
-            .attr('transform', function (d, i) { return 'translate(0,' + (i * 3.5) + ')'; });
+            .attr('transform', function (d, i) { return 'translate(0,' + (i * 3.5 + 0.5) + ')'; });
 
         entry.append('text')
             .attr('font-size', 1.5)
@@ -436,18 +436,30 @@ function displayData(data) {
                     .enter().append('rect').classed('usage', true)
                     .attr('width', function (d) { return x(d.size); })
                     .attr('height', 3)
-                    .attr('transform',
-                          function (d, i) {
-                              return 'translate(' + x(d3.sum(siteData.usage.slice(0, i),
-                                                             function (u) { return u.size; }
-                                                             )) + ',0)';
-                          })
                     .attr('fill', function (d) {
                             var color = colorMap(d.key);
                             if (!color)
                                 color = colorMap('Others');
-                            return color; })
-                    });
+                            return color; });
+
+                var total = 0;
+                for (var i in siteData.usage)
+                    total += siteData.usage[i].size;
+
+                var position = x(total) - 0.4;
+
+                var numtext = d3.select(this).append('text')
+                    .attr('font-size', 1)
+                    .attr('y', 1.7)
+                    .text(total.toFixed(1));
+
+                var node = numtext.node();
+
+                if (position - numtext.node().getBBox().width < 0)
+                    numtext.attr({'text-anchor': 'start', 'x': x(total) + 0.4});
+                else
+                    numtext.attr({'text-anchor': 'end', 'x': position});
+                });
 
         var legend = d3.select('#legend')
             .attr('height', 10 + 20 * keys.length) // 20 px per row
