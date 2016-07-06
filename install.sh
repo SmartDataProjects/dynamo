@@ -21,14 +21,6 @@ chmod 775 $DYNAMO_DATADIR
 chown root:$(id -gn $USER) $DYNAMO_DATADIR
 
 # WEB INTERFACE
-if [ -d /var/www/html ] && [ -d /var/www/cgi-bin ]
-then
-  mkdir -p /var/www/html/dynamo
-  cp -r $DYNAMO_BASE/web/html/* /var/www/html/dynamo/
-  mkdir -p /var/www/cgi-bin/dynamo
-  cp -r $DYNAMO_BASE/web/cgi-bin/* /var/www/cgi-bin/dynamo/
-  ln -sf /var/www/cgi-bin/dynamo/detox/main.php /var/www/html/dynamo/detox.php
-  ln -sf /var/www/cgi-bin/dynamo/inventory/main.php /var/www/html/dynamo/inventory.php
-fi
+$DYNAMO_BASE/web/install.sh
 
 sed -i "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/etc/crontab | crontab
