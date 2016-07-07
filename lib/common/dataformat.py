@@ -347,6 +347,13 @@ class DatasetReplica(object):
                 num_block_replicas = len(self.block_replicas), num_local_accesses = len(self.accesses[DatasetReplica.ACC_LOCAL]),
                 num_remote_accesses = len(self.accesses[DatasetReplica.ACC_REMOTE]))
 
+    def clone(self): # Create a detached clone. Detached in the sense that it is not linked from dataset or site.
+        replica = DatasetReplica(dataset = self.dataset, site = self.site, group = self.group, is_complete = self.is_complete, is_partial = self.is_partial, is_custodial = self.is_custodial, last_block_created = self.last_block_created)
+        for brep in self.block_replicas:
+            replica.block_replicas.append(brep.clone())
+
+        return replica
+
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1 and self.dataset.replicas[0] == self
 
@@ -409,6 +416,9 @@ class BlockReplica(object):
     def __str__(self):
         return 'BlockReplica {site}:{dataset}#{block} (group={group}, is_complete={is_complete}, is_custodial={is_custodial})'.format(
             site = self.site.name, dataset = self.dataset.name, group = self.group.name if self.group is not None else None, is_complete = self.is_complete, is_custodial = self.is_custodial)
+
+    def clone(self): # Create a detached clone. See DatasetReplica.clone
+        return BlockReplica(block = self.block, site = self.site, group = self.group, is_complete = self.is_complete, is_custodial = self.is_custodial)
 
 
 class DatasetDemand(object):

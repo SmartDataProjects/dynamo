@@ -249,7 +249,7 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def save_replicas(self, run_number, inventory):
+    def save_replicas(self, run_number, replicas):
         """
         Update replica snapshots.
         """
@@ -260,7 +260,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_replicas(run_number, inventory)
+            self._do_save_replicas(run_number, replicas)
         finally:
             self.release_lock()
 

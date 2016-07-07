@@ -7,6 +7,7 @@ import random
 import sys
 
 import common.configuration as config
+from common.dataformat import DatasetReplica, BlockReplica
 from policy import Policy
 import detox.configuration as detox_config
 from common.misc import timer, parallel_exec
@@ -57,17 +58,30 @@ class Detox(object):
         # take a snapshot of site status
         self.history.save_sites(run_number, self.inventory_manager)
         self.history.save_datasets(run_number, self.inventory_manager)
-        # take a snapshot of current replicas
-        self.history.save_replicas(run_number, self.inventory_manager)
         # take snapshots of quotas if updated
         self.history.save_quotas(run_number, partition, policy.quotas, self.inventory_manager)
 
-        # all replicas that the policy considers
-        replicas = set()
+        replicas = [] # all replicas that the policy considers
+        partition_replicas = [] # cloned list of dataset replicas that contain only the block replicas in the partition
         for dataset in self.inventory_manager.datasets.values():
             for replica in dataset.replicas:
-                if policy.applies(replica):
-                    replicas.add(replica)
+                applies = policy.applies(replica)
+                if applies == 0: # not at all in the partition
+                    continue
+
+                replicas.append(replica)
+
+                drep = replica.clone()
+                if applies == 2: # replica not fully in the partition; remove parts that are not
+                    drep.is_partial = True # partial from the point of the partition
+                    for brep in list(drep.block_replicas):
+                        if not policy.block_applies(brep):
+                            drep.block_replicas.remove(brep)
+
+                partition_replicas.append(drep)
+
+        # take a snapshot of current replicas
+        self.history.save_replicas(run_number, partition_replicas)
 
         logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(replicas))
 

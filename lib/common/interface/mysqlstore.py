@@ -275,7 +275,6 @@ class MySQLStore(LocalStoreInterface):
 
             _dataset_id = 0
     
-            start = time.time()
             for dataset_id, site_id, group_id, is_complete, is_partial, is_custodial, last_block_created in dataset_replicas:
                 if dataset_id != _dataset_id:
                     _dataset_id = dataset_id
@@ -292,8 +291,6 @@ class MySQLStore(LocalStoreInterface):
                 dataset.replicas.append(rep)
                 site.dataset_replicas.append(rep)
 
-            print time.time() - start, 'seconds linking'
-    
             logger.info('Linking blocks to sites.')
     
             # Link blocks to sites and groups

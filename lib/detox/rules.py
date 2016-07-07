@@ -340,5 +340,13 @@ class BelongsTo(object):
     def __init__(self, group):
         self.group = group
 
-    def __call__(self, replica):
+    def dataset(self, replica):
+        if replica.group == self.group:
+            return 1
+        elif replica.effective_owner() == self.group:
+            return 2
+        else:
+            return 0
+
+    def block(self, replica):
         return replica.group == self.group

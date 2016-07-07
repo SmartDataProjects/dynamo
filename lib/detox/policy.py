@@ -21,13 +21,22 @@ class Policy(object):
         self.partition = partition
         self.groups = [] # groups the policy concerns
         self.site_requirement = site_requirement # bool(site, partition)
-        self.prerequisite = prerequisite # bool(replica)
+        # An object with two methods dataset(replica) and block(replica)
+        # dataset: int(replica), 0: does not apply, 1: applies on all blocks, 2: partially applies
+        # block: bool(replica)
+        self.prerequisite = prerequisite
 
-    def applies(self, replica):
+    def applies(self, replica): # check if dataset replica is in the partition
+        if self.prerequisite is None:
+            return 1
+        else:
+            return self.prerequisite.dataset(replica)
+
+    def block_applies(self, replica): # check if block replica is in the partition
         if self.prerequisite is None:
             return True
         else:
-            return self.prerequisite(replica)
+            return self.prerequisite.block(replica)
 
     def need_deletion(self, site):
         if self.site_requirement is None:
