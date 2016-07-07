@@ -105,15 +105,14 @@ class RESTService(object):
                 opener.addheaders.extend(self.headers)
 
                 response = opener.open(request)
-                break
+
+                return response.read()
     
             except:
                 continue
 
         else: # exhausted allowed attempts
             raise RuntimeError('webservice too many attempts')
-
-        return response.read()
 
 
 if __name__ == '__main__':
