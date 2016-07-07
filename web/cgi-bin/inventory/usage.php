@@ -101,7 +101,7 @@ function fetch_size($selection, $constraint_base, $grouping) {
         $total_usage[$key] = $size;
     }
   }
-
+  
   $stmt->close();
 };
 
@@ -111,15 +111,18 @@ if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == '
   $selection .= ' INNER JOIN `sites` ON `sites`.`id` = `dataset_replicas`.`site_id`';
   if (count($const_group) != 0)
     $selection .= ' INNER JOIN `groups` ON `groups`.`id` = `dataset_replicas`.`group_id`';
+
+  $grouping = ' GROUP BY `sites`.`id`, `datasets`.`id`';
 }
 else if ($categories == 'groups') {
   $selection = 'SELECT `sites`.`name`, `groups`.`name`, SUM(`datasets`.`size`) * 1.e-12 FROM `dataset_replicas`';
   $selection .= ' INNER JOIN `datasets` ON `datasets`.`id` = `dataset_replicas`.`dataset_id`';
   $selection .= ' INNER JOIN `groups` ON `groups`.`id` = `dataset_replicas`.`group_id`';
   $selection .= ' INNER JOIN `sites` ON `sites`.`id` = `dataset_replicas`.`site_id`';
+
+  $grouping = ' GROUP BY `sites`.`id`, `groups`.`id`';
 }
 
-$grouping = ' GROUP BY `datasets`.`id`';
 $constraint_base = '`dataset_replicas`.`is_complete` = 1 AND `dataset_replicas`.`is_partial` = 0';
 
 fetch_size($selection, $constraint_base, $grouping);
@@ -134,6 +137,8 @@ if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == '
   $selection .= ' INNER JOIN `sites` ON `sites`.`id` = `block_replicas`.`site_id`';
   if (count($const_group) != 0)
     $selection .= ' INNER JOIN `groups` ON `groups`.`id` = `block_replicas`.`group_id`';
+
+  $grouping = ' GROUP BY `sites`.`id`, `datasets`.`id`';
 }
 else if ($categories == 'groups') {
   $selection = 'SELECT `sites`.`name`, `groups`.`name`, SUM(`blocks`.`size`) * 1.e-12 FROM `block_replicas`';
@@ -142,9 +147,9 @@ else if ($categories == 'groups') {
   $selection .= ' INNER JOIN `sites` ON `sites`.`id` = `block_replicas`.`site_id`';
   if (strlen($const_campaign) != 0 || strlen($const_data_tier) != 0 || strlen($const_dataset) != 0)
     $selection .= ' INNER JOIN `datasets` ON `datasets`.`id` = `blocks`.`dataset_id`';
-}
 
-$grouping = ' GROUP BY `blocks`.`id`';
+  $grouping = ' GROUP BY `sites`.`id`, `groups`.`id`';
+}
 
 fetch_size($selection, '', $grouping);
 

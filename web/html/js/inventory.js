@@ -303,7 +303,7 @@ function displayData(data) {
             .data(data.content)
             .enter()
             .append('g').classed('velem', true)
-            .attr('transform', function (d, i) { return 'translate(0,' + (i * 3.5) + ')'; });
+            .attr('transform', function (d, i) { return 'translate(0,' + (i * 3.5 + 0.5) + ')'; });
 
         entry.append('text')
             .attr('font-size', 1.5)
