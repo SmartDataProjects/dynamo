@@ -49,6 +49,15 @@ def unicode2str(container):
             elif type(elem) is dict or type(elem) is list:
                 unicode2str(elem)
 
+
+class ExceptionHolder(object):
+    def __init__:
+        self.exception = None
+
+    def set(self, exc):
+        self.exception = exc
+
+
 def parallel_exec(target, arguments, add_args = None, get_output = False, per_thread = 1, print_progress = False):
     """
     Execute target(*args) in up to config.num_threads parallel threads,
@@ -61,11 +70,15 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
         else:
             return
 
-    def target_wrapper(arguments_chunk, output_list):
-        for args in arguments_chunk:
-            output = target(*args)
-            if get_output:
-                output_list.append(output)
+    def target_wrapper(arguments_chunk, output_list, exception):
+        try:
+            for args in arguments_chunk:
+                output = target(*args)
+                if get_output:
+                    output_list.append(output)
+
+        except Exception as ex:
+            exception.set(ex)
 
     if print_progress:
         ntotal = len(arguments)
@@ -79,8 +92,9 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
 
     threads = []
     outputs = []
+    exceptions = []
     processing = True
-    
+
     while processing:
         arguments_chunk = []
         for icall in range(per_thread):
@@ -101,12 +115,15 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
                 break
 
         thread_outputs = []
-        thread = threading.Thread(target = target_wrapper, args = (arguments_chunk, thread_outputs))
+        thread_exception = ExceptionHolder()
+        thread = threading.Thread(target = target_wrapper, args = (arguments_chunk, thread_outputs, thread_exception))
+        thread.name = 'Th%d' % len(threads)
 
         thread.start()
         threads.append(thread)
         if get_output:
             outputs.append(thread_outputs)
+        exceptions.append(thread_exception)
 
         while len(threads) >= config.num_threads:
             ith = 0
@@ -116,6 +133,11 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
                     ith += 1
                 else:
                     thread.join()
+                    exc = exceptions.pop(ith)
+                    if exc.exception is not None:
+                        print 'Exception in thread ' + thread.name
+                        raise exc.exception
+
                     threads.pop(ith)
                     if get_output:
                         all_outputs.extend(outputs.pop(ith))
