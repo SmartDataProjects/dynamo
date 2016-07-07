@@ -219,7 +219,7 @@ class MySQLHistory(TransactionHistoryInterface):
         indices_to_replicas = self._make_replica_map(replicas)
 
         # find new replicas with no snapshots
-        new_replicas = {} # index -> replica
+        new_replicas = {} # index -> (replica, size)
 
         partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
 
@@ -243,7 +243,8 @@ class MySQLHistory(TransactionHistoryInterface):
                 irec += 1
             elif recidx > curidx:
                 # new replica
-                new_replicas[curidx] = indices_to_replicas[curidx]
+                replica = indices_to_replicas[curidx]
+                new_replicas[curidx] = (replica, replica.size())
                 icur += 1
             else:
                 num_overlap += 1
@@ -252,7 +253,8 @@ class MySQLHistory(TransactionHistoryInterface):
 
         while icur != len(current):
             curidx = current[icur]
-            new_replicas[curidx] = indices_to_replicas[curidx]
+            replica = indices_to_replicas[curidx]
+            new_replicas[curidx] = (replica, replica.size())
             icur += 1
 
         # set the size of the deleted replicas to 0
@@ -262,7 +264,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         # now loop over the snapshots again and find the latest snapshots / update the outdated
 
-        replicas_to_update = {} # index -> replica
+        replicas_to_update = {} # index -> (replica, size)
 
         for snapshot_id, site_id, dataset_id, size in self._mysql.query('SELECT `id`, `site_id`, `dataset_id`, `size` FROM `replica_snapshots` WHERE `size` != 0 AND `run_id` <= %s AND `run_id` IN (SELECT `id` FROM `runs` WHERE `partition_id` = %s) ORDER BY `run_id` DESC', run_number, partition_id):
             index = (site_id, dataset_id)
@@ -279,8 +281,9 @@ class MySQLHistory(TransactionHistoryInterface):
             if repkey in self._replica_snapshot_ids or index in replicas_to_update:
                 continue
 
-            if replica.size() != size: # passed replica is flagged "partial" if actually partial or not fully in the partition -> will add block sizes
-                replicas_to_update[index] = replica
+            replica_size = replica.size() # passed replica is flagged "partial" if actually partial or not fully in the partition -> will add block sizes
+            if replica_size != size: 
+                replicas_to_update[index] = (replica, replica_size)
             else:
                 self._replica_snapshot_ids[repkey] = snapshot_id
 
@@ -296,13 +299,13 @@ class MySQLHistory(TransactionHistoryInterface):
 
         if len(replicas_to_update) != 0:
             fields = ('site_id', 'dataset_id', 'run_id', 'size')
-            mapping = lambda (index, replica): (index[0], index[1], run_number, replica.size(accounting_group))
+            mapping = lambda (index, (replica, replica_size)): (index[0], index[1], run_number, replica_size)
     
             self._mysql.insert_many('replica_snapshots', fields, mapping, replicas_to_update.items())
     
             # finally fetch the ids of the snapshots added here
-            for snapshot_id, site_id, dataset_id in self._mysql.query('SELECT `id`, `site_id`, `dataset_id` FROM `replica_snapshots` WHERE `run_id` = %s', run_number):
-                replica = replicas_to_update[(site_id, dataset_id)]
+            for snapshot_id, site_id, dataset_id in self._mysql.query('SELECT `id`, `site_id`, `dataset_id` FROM `replica_snapshots` WHERE `run_id` = %s AND `size` != 0', run_number):
+                replica, replica_size = replicas_to_update[(site_id, dataset_id)]
                 self._replica_snapshot_ids[(replica.site, replica.dataset)] = snapshot_id
 
     def _do_save_copy_decisions(self, run_number, copies): #override
