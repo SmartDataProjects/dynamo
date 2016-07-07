@@ -380,7 +380,7 @@ function displayData(data) {
             .attr('viewBox', '0 0 70 3');
 
         var x = d3.scale.linear()
-            .domain([0, d3.max(data.content, function (d) { return d3.sum(d.usage, function (u) { return u.size; }); })])
+            .domain([0, d3.max(data.content, function (d) { return d3.sum(d.usage, function (u) { return u.size; }); }) + 4]) // +4 for size text
             .range([0, 50]);
 
         var xoffset = 15;
@@ -452,19 +452,11 @@ function displayData(data) {
                 for (var i in siteData.usage)
                     total += siteData.usage[i].size;
 
-                var position = x(total) - 0.4;
-
-                var numtext = d3.select(this).append('text')
+                d3.select(this).append('text')
                     .attr('font-size', 1)
                     .attr('y', 1.7)
-                    .text(total.toFixed(1));
-
-                var node = numtext.node();
-
-                if (position - numtext.node().getBBox().width < 0)
-                    numtext.attr({'text-anchor': 'start', 'x': x(total) + 0.4});
-                else
-                    numtext.attr({'text-anchor': 'end', 'x': position});
+                    .text(total.toFixed(1))
+                    .attr({'text-anchor': 'start', 'x': x(total) + 0.4});
                 });
 
         var legend = d3.select('#legend')

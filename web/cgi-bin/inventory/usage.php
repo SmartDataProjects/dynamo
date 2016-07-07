@@ -3,31 +3,37 @@
 $site_usages = array();
 $total_usage = array();
 
-function fetch_size($selection, $constraint, $grouping) {
+function fetch_size($selection, $constraint_base, $grouping) {
   global $store_db;
   global $categories;
   global $const_campaign, $const_data_tier, $const_dataset, $const_site, $const_group;
   global $site_usages, $total_usage;
 
+  $constraints = array();
+
+  if ($constraint_base != '')
+    $constraints[] = $constraint_base;
   if (strlen($const_campaign) != 0)
-    $constraint .= ' AND `datasets`.`name` LIKE \'/%/' . $const_campaign . '%/%\'';
+    $constraints[] = '`datasets`.`name` LIKE \'/%/' . $const_campaign . '%/%\'';
   if (strlen($const_data_tier) != 0)
-    $constraint .= ' AND `datasets`.`name` LIKE \'/%/%/' . $const_data_tier . '\'';
+    $constraints[] = '`datasets`.`name` LIKE \'/%/%/' . $const_data_tier . '\'';
   if (strlen($const_dataset) != 0)
-    $constraint .= ' AND `datasets`.`name` LIKE \'' . $const_dataset . '\'';
+    $constraints[] = '`datasets`.`name` LIKE \'' . $const_dataset . '\'';
   if (strlen($const_site) != 0)
-    $constraint .= ' AND `sites`.`name` LIKE \'' . $const_site . '\'';
+    $constraints[] = '`sites`.`name` LIKE \'' . $const_site . '\'';
   if (count($const_group) != 0) {
     $subconsts = array();
     foreach ($const_group as $cg)
       $subconsts[] = '`groups`.`name` LIKE \'' . $cg . '\'';
-    $constraint .= ' AND (' . implode(' OR ', $subconsts) . ')';
+    $constraints[] = '(' . implode(' OR ', $subconsts) . ')';
   }
 
-  if ($constraint != '')
-    $constraint = ' WHERE ' . $constraint;
+  if (count($constraints) != 0)
+    $constraint = ' WHERE ' . implode(' AND ', $constraints);
+  else
+    $constraint = '';
 
-  $stmt = $store_db->prepare($selection . $constraint . $grouping);
+  $stmt = $store_db->prepare($selection . ' ' . $constraint . ' ' . $grouping);
   $stmt->bind_result($site, $name, $size);
   $stmt->execute();
 
@@ -114,9 +120,9 @@ else if ($categories == 'groups') {
 }
 
 $grouping = ' GROUP BY `datasets`.`id`';
-$constraint = '`dataset_replicas`.`is_complete` = 1 AND `dataset_replicas`.`is_partial` = 0';
+$constraint_base = '`dataset_replicas`.`is_complete` = 1 AND `dataset_replicas`.`is_partial` = 0';
 
-fetch_size($selection, $constraint, $grouping);
+fetch_size($selection, $constraint_base, $grouping);
 
 // block replicas are saved for dataset replicas that are
 //  . incomplete or partial
