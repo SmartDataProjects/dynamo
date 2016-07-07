@@ -51,7 +51,7 @@ def unicode2str(container):
 
 
 class ExceptionHolder(object):
-    def __init__:
+    def __init__(self):
         self.exception = None
 
     def set(self, exc):
