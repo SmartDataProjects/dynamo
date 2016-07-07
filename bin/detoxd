@@ -26,7 +26,16 @@ do
   fi
 
   echo "Start $RUNS_PER_CYCLE loops; log file $LOG" >> $LOG
-  $DYNAMO_BASE/bin/detox --log-level INFO --log-file $LOG --repeat $RUNS_PER_CYCLE $DYNAMO_DETOX_INTERVAL 2>>$LOG
+  $DYNAMO_BASE/bin/detox --test-run --log-level INFO --log-file $LOG --repeat $RUNS_PER_CYCLE $DYNAMO_DETOX_INTERVAL 2>>$LOG
+
+  if [ $? -ne 0 ]
+  then
+    # execution failed - recover inventory to avoid running with corrupt inventory
+    $DYNAMO_BASE/bin/execlib common/interface/store.py restore --timestamp last
+    $DYNAMO_BASE/bin/execlib common/interface/store.py set_last_update 0
+    # and send email
+    echo "Help! Detox failed - check log $LOG on $HOSTNAME." | mailx -s "Dynamo error" t2lab@mit.edu
+  fi
 
   # take a deep breath
   sleep 5

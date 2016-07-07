@@ -486,7 +486,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Local inventory store interface')
 
-    parser.add_argument('command', metavar = 'COMMAND', help = '(help|snapshot [clear (replicas|all)]|clear|clean|recover|list (datasets|groups|sites)|show (dataset|block|site|replica) <name>)')
+    parser.add_argument('command', metavar = 'COMMAND', help = '(help|snapshot [clear (replicas|all)]|clear|clean|restore|list (datasets|groups|sites)|show (dataset|block|site|replica) <name>)')
     parser.add_argument('arguments', metavar = 'ARGS', nargs = '*', help = '')
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'LocalStoreInterface class to be used.')
     parser.add_argument('--timestamp', '-t', metavar = 'YMDHMS', dest = 'timestamp', default = '', help = 'Timestamp of the snapshot to be loaded / cleaned. With command clean, prepend with "<" or ">" to remove all snapshots older or newer than the timestamp.')
@@ -635,3 +635,6 @@ if __name__ == '__main__':
 
     elif args.command == 'set_dataset_status':
         interface.set_dataset_status(args.arguments[0], args.arguments[1])
+
+    elif args.command == 'set_last_update':
+        interface.set_last_update(int(args.arguments[0]))
