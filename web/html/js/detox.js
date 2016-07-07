@@ -44,7 +44,13 @@ function setupSiteDetails(siteData)
     // everything that is selected from siteDetails will have data = site data
 
     siteDetails.append('h3').classed('siteName', true)
-        .text(function (d) { return d.name; });
+        .text(function (d) {
+                var text = d.name + ' (';
+                text += d.delete.toFixed(1) + ' TB Delete, ';
+                text += d.keep.toFixed(1) + ' TB Keep, ';
+                text += d.protect.toFixed(1) + ' TB Protect)';
+                return text;
+            });
 
     siteDetails.append('div').classed('toTop', true)
         .html('&#9650; Back to top')
@@ -284,7 +290,9 @@ function displaySummary(data)
         .data(data.siteData)
         .enter()
         .append('g').classed('barPrev', true)
-        .attr('transform', function (d) { return 'translate(' + (xmapping(d.name) - xspace * 0.325) + ',0)'; });
+        .attr('transform', function (d) { return 'translate(' + (xmapping(d.name) - xspace * 0.325) + ',0)'; })
+        .attr('onclick', function (d) { return 'd3.select(\'#' + d.name + '\').node().scrollIntoView();'; })
+        .style('cursor', 'pointer');
 
     var y = ynorm(data.siteData[0], 'protect');
 
@@ -299,7 +307,9 @@ function displaySummary(data)
     var barNew = content.selectAll('.barNew')
         .data(data.siteData)
         .enter().append('g').classed('barNew', true)
-        .attr('transform', function (d) { return 'translate(' + (xmapping(d.name) + xspace * 0.025) + ',0)'; });
+        .attr('transform', function (d) { return 'translate(' + (xmapping(d.name) + xspace * 0.025) + ',0)'; })
+        .attr('onclick', function (d) { return 'd3.select(\'#' + d.name + '\').node().scrollIntoView();'; })
+        .style('cursor', 'pointer');
 
     barNew.append('rect').classed('protect barComponent', true)
         .attr('transform', function (d) { return 'translate(0,-' + ynorm(d, 'protect') + ')'; })

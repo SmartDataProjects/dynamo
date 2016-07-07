@@ -88,15 +88,17 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     }
     $stmt->close();
 
+    $site_total = array();
+
     foreach (array('protect', 'keep', 'delete') as $decision) {
-      ${$decision} = array();
+      $site_total[$decision] = array();
 
       $stmt = $history_db->prepare('SELECT s.`site_id`, SUM(s.`size`) * 1.e-12 FROM `deletion_decisions` AS d INNER JOIN `replica_snapshots` AS s ON s.`id` = d.`snapshot_id` WHERE d.`run_id` = ? AND d.`decision` LIKE ? GROUP BY s.`site_id`');
       $stmt->bind_param('is', $cycle, $decision);
       $stmt->bind_result($site_id, $size);
       $stmt->execute();
       while ($stmt->fetch())
-        ${$decision}[$site_id] = $size;
+        $site_total[$decision][$site_id] = $size;
       $stmt->close();
     }
 
@@ -109,14 +111,14 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     $stmt->close();
 
     foreach (array('protectPrev', 'keepPrev') as $decision) {
-      ${$decision} = array();
+      $site_total[$decision] = array();
 
       $stmt = $history_db->prepare('SELECT s.`site_id`, SUM(s.`size`) * 1.e-12 FROM `deletion_decisions` AS d INNER JOIN `replica_snapshots` AS s ON s.`id` = d.`snapshot_id` WHERE d.`run_id` = ? AND d.`decision` LIKE ? GROUP BY s.`site_id`');
       $stmt->bind_param('is', $previous_cycle, str_replace('Prev', '', $decision));
       $stmt->bind_result($site_id, $size);
       $stmt->execute();
       while ($stmt->fetch())
-        ${$decision}[$site_id] = $size;
+        $site_total[$decision][$site_id] = $size;
       $stmt->close();
     }
 
@@ -127,11 +129,11 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
               'id' => $id,
               'name' => $site_names[$id],
               'quota' => $quotas[$id],
-              'protect' => 0. + $protect[$id],
-              'keep' => 0. + $keep[$id],
-              'delete' => 0. + $delete[$id],
-              'protectPrev' => 0. + $protectPrev[$id],
-              'keepPrev' => 0. + $keepPrev[$id]
+              'protect' => 0. + $site_total['protect'][$id],
+              'keep' => 0. + $site_total['keep'][$id],
+              'delete' => 0. + $site_total['delete'][$id],
+              'protectPrev' => 0. + $site_total['protectPrev'][$id],
+              'keepPrev' => 0. + $site_total['keepPrev'][$id]
               );
     }
   }
