@@ -28,7 +28,7 @@ parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls'
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--policy-stack', '-p', metavar = 'STACKS', dest = 'stacks', nargs = '+', default = ['AnalysisOps:Routine()'], help = 'Name of the policy stack. Syntax is <group>:<stack name>[(<init argument>)] or <group>:<path>.py. Options for stack names are\n TargetFraction (argument threshold)\n List (argument paths)\n The python file should contain a list of Policies with the same name as the file.')
 parser.add_argument('--strategy', '-g', metavar = 'STRATEGY', dest = 'strategy', default = 'iterative', help = '"iterative", "static", or "greedy".')
-parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
+parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to local databases.')
 parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Make a test run (results recorded in local database).')
@@ -41,12 +41,7 @@ if args.strategy not in ['iterative', 'static', 'greedy']:
     print 'Unknown strategy', args.strategy
     sys.exit(1)
 
-log_level = logging.INFO
-if args.log_level:
-    try:
-        log_level = getattr(logging, args.log_level.upper())
-    except AttributeError:
-        logging.warning('Log level ' + args.log_level + ' not defined')
+log_level = getattr(logging, args.log_level.upper())
 
 if args.log_file:
     logging.basicConfig(filename = args.log_file, filemode = 'w', level = log_level)
