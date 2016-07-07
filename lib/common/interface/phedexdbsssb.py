@@ -18,7 +18,7 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'is_complete', 'time_create'])
+ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'is_complete', 'time_update'])
 
 FileInfo = collections.namedtuple('File', ['name', 'bytes', 'checksum'])
 
@@ -436,7 +436,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             group_name = replica_entry['group'],
                             is_custodial = (replica_entry['custodial'] == 'y'),
                             is_complete = (replica_entry['complete'] == 'y'),
-                            time_create = replica_entry['time_create']
+                            time_update = replica_entry['time_update']
                         )
 
                         block_replicas[ds_name][site_name].append(protoreplica)
@@ -516,8 +516,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     block.replicas.append(replica)
                     site.add_block_replica(replica, adjust_cache = False) # not resetting cache to speed up
                     
-                    if protoreplica.time_create > dataset_replica.last_block_created:
-                        dataset_replica.last_block_created = protoreplica.time_create
+                    # time_update is usually the time when the transfer of the block finished
+                    if protoreplica.time_update > dataset_replica.last_block_created:
+                        dataset_replica.last_block_created = protoreplica.time_update
 
                     # add the block replica to the list
                     dataset_replica.block_replicas.append(replica)
