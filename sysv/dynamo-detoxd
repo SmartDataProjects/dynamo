@@ -20,8 +20,8 @@ PROG=dynamo-detoxd
 TARGET=_DYNAMO_BASE_/bin/detoxd
 
 # Path to the running script, server binary, and short-form for messages.
-PIDFILE=${PIDFILE-/var/run/detoxd.pid}
-LOCKFILE=${LOCKFILE-/var/lock/subsys/detoxd}
+PIDFILE=${PIDFILE-/var/run/dynamo-detoxd.pid}
+LOCKFILE=${LOCKFILE-/var/lock/subsys/dynamo-detoxd}
 
 EXITCODE=0
 STOP_TIMEOUT=${STOP_TIMEOUT-10}

@@ -19,8 +19,8 @@ PROG=dynamo-dealerd
 TARGET=_DYNAMO_BASE_/bin/dealerd
 
 # Path to the running script, server binary, and short-form for messages.
-PIDFILE=${PIDFILE-/var/run/dealerd.pid}
-LOCKFILE=${LOCKFILE-/var/lock/subsys/dealerd}
+PIDFILE=${PIDFILE-/var/run/dynamo-dealerd.pid}
+LOCKFILE=${LOCKFILE-/var/lock/subsys/dynamo-dealerd}
 
 EXITCODE=0
 STOP_TIMEOUT=${STOP_TIMEOUT-10}

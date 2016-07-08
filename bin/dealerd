@@ -27,14 +27,20 @@ do
 
   echo "Start $RUNS_PER_CYCLE loops; log file $LOG" >> $LOG
   $DYNAMO_BASE/bin/dealer --log-level INFO --log-file $LOG --repeat $RUNS_PER_CYCLE $DYNAMO_DEALER_INTERVAL 2>>$LOG
+  RC=$?
 
-  if [ $? -ne 0 ]
+  if [ $RC -ne 0 ]
   then
     # execution failed - recover inventory to avoid running with corrupt inventory
     $DYNAMO_BASE/bin/execlib common/interface/store.py restore --timestamp last
     $DYNAMO_BASE/bin/execlib common/interface/store.py set_last_update 0
-    # and send email
-    echo "Help! Detox failed - check log $LOG on $HOSTNAME." | mailx -s "Dynamo error" t2lab@mit.edu
+    if [ -e /var/run/dynamo-dealerd.pid ]
+    then
+      # this process is run as a daemon - send email and continue
+      echo "Help! Dealer failed. Return code $RC. Check log $LOG on $HOSTNAME." | mailx -s "Dynamo error" t2lab@mit.edu
+    else
+      exit $RC 
+    fi
   fi
 
   # take a deep breath
