@@ -139,4 +139,7 @@ for nrun in range(args.repeat[0]):
         detox.run(partition = partition, iterative_deletion = (args.strategy == 'iterative'), is_test = args.test_run)
 
     if args.repeat[1] > 0:
-        time.sleep(args.repeat[1] * 3600)
+        try:
+            time.sleep(args.repeat[1] * 3600)
+        except: # interrupted
+            sys.exit(0)
