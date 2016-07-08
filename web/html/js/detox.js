@@ -1,4 +1,6 @@
 var currentCycle = 0;
+var nextCycle = 0;
+var previousCycle = 0;
 var currentPartition = 0;
 var currentNorm = 'relative';
 
@@ -433,6 +435,8 @@ function loadSummary(cycleNumber, partitionId, summaryNorm, initial)
     };
 
     $.ajax({'url': 'detox.php', 'data': inputData, 'success': function (data, textStatus, jqXHR) {
+                nextCycle = data.nextCycle;
+                previousCycle = data.previousCycle;
                 displaySummary(data);
                 spinner.stop();
                 if (initial)

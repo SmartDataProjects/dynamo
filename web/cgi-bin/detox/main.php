@@ -51,11 +51,29 @@ if ($cycle == 0) {
   $stmt->close();
 }
 
+$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` > ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\') ORDER BY `id` ASC LIMIT 1');
+$stmt->bind_param('ii', $cycle, $partition_id);
+$stmt->bind_result($next_cycle);
+$stmt->execute();
+if (!$stmt->fetch())
+  $next_cycle = 0;
+$stmt->close();
+
+$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` < ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\') ORDER BY `id` DESC LIMIT 1');
+$stmt->bind_param('ii', $cycle, $partition_id);
+$stmt->bind_result($prev_cycle);
+$stmt->execute();
+if (!$stmt->fetch())
+  $prev_cycle = 0;
+$stmt->close();
+
 if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
   // main data structure
   $data = array();
 
   $data['cycleNumber'] = $cycle;
+  $data['previousCycle'] = $prev_cycle;
+  $data['nextCycle'] = $next_cycle;
   $data['cycleTimestamp'] = $timestamp;
   $data['partition'] = $partition_id;
 
