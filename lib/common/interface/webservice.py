@@ -46,8 +46,6 @@ class RESTService(object):
 
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug(url)
-        else:
-            logger.info(self.url_base + '/' + resource)
         
         request = urllib2.Request(url)
 
