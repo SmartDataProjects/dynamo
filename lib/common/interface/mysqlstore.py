@@ -319,6 +319,7 @@ class MySQLStore(LocalStoreInterface):
 
             _block_id = 0
             isize = 0
+            nsize = len(block_replica_sizes)
     
             for block_id, site_id, group_id, is_complete, is_custodial in block_replicas:
                 # find the block: avoid looking up for each entry by ordering the block_replicas list by block_id
@@ -337,15 +338,15 @@ class MySQLStore(LocalStoreInterface):
                 # find the physical size for incomplete replicas
                 if not is_complete:
                     # fast forward the size list to this block (in principle nothing should happen here if the sizes table is up to date)
-                    while block_replica_sizes[isize][0] < _block_id:
+                    while isize < nsize and block_replica_sizes[isize][0] < _block_id:
                         isize += 1
 
                     # this replica is incomplete -> there must be a matching entry..
-                    if block_replica_sizes[isize][0] == _block_id:
-                        while block_replica_sizes[isize][1] < site_id:
+                    if isize < nsize and block_replica_sizes[isize][0] == _block_id:
+                        while isize < nsize and block_replica_sizes[isize][1] < site_id:
                             isize += 1
     
-                        if block_replica_sizes[isize][1] == site_id:
+                        if isize < nsize and block_replica_sizes[isize][1] == site_id:
                             size = block_replica_sizes[isize][2]
                             isize += 1
     
