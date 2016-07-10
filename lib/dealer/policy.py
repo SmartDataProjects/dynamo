@@ -42,10 +42,11 @@ class Policy(object):
     def compute_site_occupancy(self, site, inventory):
         """
         Site storage usage fraction for the partition. Currently partition = group.
+        Take the projected (after all transfers are complete) occupancy, rather than the current physical usage.
         """
 
         group = inventory.groups[self.partition]
-        return site.storage_occupancy(group)
+        return site.storage_occupancy(group, physical = False)
 
     def site_occupancy_increase(self, site, dataset, inventory):
         """

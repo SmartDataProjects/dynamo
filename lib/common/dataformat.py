@@ -215,7 +215,8 @@ class Site(object):
         self.group_quota = {} # in TB
         self.dataset_replicas = []
         self._block_replicas = []
-        self._occupancy = {} # cached sum of block replica sizes
+        self._occupancy_logical = {} # cached sum of block sizes
+        self._occupancy_physical = {} # cached sum of block replica sizes
 
     def __str__(self):
         return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s)' % \
@@ -244,33 +245,48 @@ class Site(object):
     def add_block_replica(self, replica, adjust_cache = True):
         self._block_replicas.append(replica)
         if adjust_cache:
-            if self._occupancy[replica.group] != -1:
-                self._occupancy[replica.group] += replica.block.size
+            if self._occupancy_logical[replica.group] != -1:
+                self._occupancy_logical[replica.group] += replica.block.size
+
+            if self._occupancy_physical[replica.group] != -1:
+                self._occupancy_physical[replica.group] += replica.size
 
     def remove_block_replica(self, replica, adjust_cache = True):
         self._block_replicas.remove(replica)
         if adjust_cache:
-            if self._occupancy[replica.group] != -1:
-                self._occupancy[replica.group] -= replica.block.size
+            if self._occupancy_logical[replica.group] != -1:
+                self._occupancy_logical[replica.group] -= replica.block.size
+
+            if self._occupancy_physical[replica.group] != -1:
+                self._occupancy_physical[replica.group] -= replica.size
 
     def clear_block_replicas(self):
         self._block_replicas = []
-        for group in self._occupancy.keys():
-            self._occupancy[group] = -1
+        for group in self._occupancy_logical.keys():
+            self._occupancy_logical[group] = -1
+
+        for group in self._occupancy_physical.keys():
+            self._occupancy_physical[group] = -1
 
     def reset_group_usage_cache(self, group):
-        self._occupancy[group] = -1
+        self._occupancy_logical[group] = -1
+        self._occupancy_physical[group] = -1
 
-    def group_usage(self, group):
-        occupancy = self._occupancy[group]
+    def group_usage(self, group, physical = True):
+        if physical:
+            occupancy = self._occupancy_physical
+        else:
+            occupancy = self._occupancy_logical
 
-        if occupancy == -1:
-            occupancy = sum([r.block.size for r in self._block_replicas if r.group == group])
-            self._occupancy[group] = occupancy
+        if occupancy[group] == -1:
+            if physical:
+                occupancy[group] = sum([r.size for r in self._block_replicas if r.group == group])
+            else:
+                occupancy[group] = sum([r.block.size for r in self._block_replicas if r.group == group])
 
-        return occupancy
+        return occupancy[group]
 
-    def storage_occupancy(self, groups = []):
+    def storage_occupancy(self, groups = [], physical = True):
         if type(groups) is not list:
             groups = [groups]
 
@@ -279,7 +295,10 @@ class Site(object):
             if denom == 0:
                 return 0.
             else:
-                return sum(self.group_usage(g) for g in self._occupancy.keys()) * 1.e-12 / denom
+                if physical:
+                    return sum(self.group_usage(g, physical = True) for g in self._occupancy_physical.keys()) * 1.e-12 / denom
+                else:
+                    return sum(self.group_usage(g, physical = False) for g in self._occupancy_logical.keys()) * 1.e-12 / denom
         else:
             numer = 0.
             denom = 0.
@@ -289,7 +308,7 @@ class Site(object):
                 except KeyError:
                     continue
 
-                numer += self.group_usage(group) * 1.e-12
+                numer += self.group_usage(group, physical) * 1.e-12
 
             if denom == 0.:
                 return 0.
@@ -406,19 +425,24 @@ class DatasetReplica(object):
 class BlockReplica(object):
     """Represents a block replica."""
 
-    def __init__(self, block, site, group = None, is_complete = False, is_custodial = False):
+    def __init__(self, block, site, group = None, is_complete = False, is_custodial = False, size = 0):
         self.block = block
         self.site = site
         self.group = group
         self.is_complete = is_complete
         self.is_custodial = is_custodial
+        self.size = size # can be smaller than the full block size if not complete
 
     def __str__(self):
-        return 'BlockReplica {site}:{dataset}#{block} (group={group}, is_complete={is_complete}, is_custodial={is_custodial})'.format(
-            site = self.site.name, dataset = self.dataset.name, group = self.group.name if self.group is not None else None, is_complete = self.is_complete, is_custodial = self.is_custodial)
+        if self.is_complete:
+            return 'BlockReplica {site}:{dataset}#{block} (group={group}, is_complete={is_complete}, is_custodial={is_custodial})'.format(
+                site = self.site.name, dataset = self.dataset.name, group = self.group.name if self.group is not None else None, is_complete = self.is_complete, is_custodial = self.is_custodial)
+        else:
+            return 'BlockReplica {site}:{dataset}#{block} (group={group}, is_complete={is_complete}, is_custodial={is_custodial}, size={size})'.format(
+                site = self.site.name, dataset = self.dataset.name, group = self.group.name if self.group is not None else None, is_complete = self.is_complete, is_custodial = self.is_custodial, size = self.size)
 
     def clone(self): # Create a detached clone. See DatasetReplica.clone
-        return BlockReplica(block = self.block, site = self.site, group = self.group, is_complete = self.is_complete, is_custodial = self.is_custodial)
+        return BlockReplica(block = self.block, site = self.site, group = self.group, is_complete = self.is_complete, is_custodial = self.is_custodial, size = self.size)
 
 
 class DatasetDemand(object):

@@ -18,7 +18,7 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'is_complete', 'time_update'])
+ProtoBlockReplica = collections.namedtuple('ProtoBlockReplica', ['block_name', 'group_name', 'is_custodial', 'is_complete', 'time_update', 'bytes'])
 
 FileInfo = collections.namedtuple('File', ['name', 'bytes', 'checksum'])
 
@@ -436,7 +436,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             group_name = replica_entry['group'],
                             is_custodial = (replica_entry['custodial'] == 'y'),
                             is_complete = (replica_entry['complete'] == 'y'),
-                            time_update = replica_entry['time_update']
+                            time_update = replica_entry['time_update'],
+                            bytes = replica_entry['bytes']
                         )
 
                         block_replicas[ds_name][site_name].append(protoreplica)
@@ -510,7 +511,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         site,
                         group = group,
                         is_complete = protoreplica.is_complete,
-                        is_custodial = protoreplica.is_custodial
+                        is_custodial = protoreplica.is_custodial,
+                        size = protoreplica.bytes
                     )
     
                     block.replicas.append(replica)
@@ -830,7 +832,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         """
 
         resp = self._phedex_interface.make_request(resource, options = options, method = method, format = format)
-        logger.info('PhEDEx returned a response of ' + str(len(resp)) + ' bytes.')
+        logger.debug('PhEDEx returned a response of ' + str(len(resp)) + ' bytes.')
 
         try:
             result = json.loads(resp)['phedex']
