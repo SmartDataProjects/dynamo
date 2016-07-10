@@ -65,10 +65,18 @@ var colors = [
    '#dddddd'
 ];
 
-var loading = new Spinner({scale: 5, corners: 0, width: 2});
+var loading = new Spinner({'scale': 5, 'corners': 0, 'width': 2});
 
 function initPage(dataType, categories, constraints) {
-    $.ajax({url: 'inventory.php', data: {getGroups: 1}, success: function (data, textStatus, jqXHR) { setGroups(data); }, dataType: 'json', async: false});
+    var ajaxInput = {
+        'url': 'inventory.php',
+        'data': {'getGroups': 1},
+        'success': function (data, textStatus, jqXHR) { setGroups(data); },
+        'dataType': 'json',
+        'async': false
+    };
+
+    $.ajax(ajaxInput);
 
     $('#dataType > option[value="' + dataType + '"]')
         .attr('selected', true);
@@ -141,6 +149,15 @@ function limitOptions() {
             .attr('value', '')
             .attr('disabled', false);
     }
+
+    if (dataType == 'replication') {
+        $('#physicalText').html('Complete replicas');
+        $('#logicalText').html('All replicas');
+    }
+    else {
+        $('#physicalText').html('Physical size');
+        $('#logicalText').html('Logical size');
+    }
 }
 
 function setGroups(data) {
@@ -157,8 +174,8 @@ function displayData(data) {
     var legendWidth = d3.select('#legendCont').node().clientWidth * 0.1;
 
     if (data.content.length == 0) {
-        d3.select('#axisBox').style({height: '0'});
-        d3.select('#graphBox').style({height: '100%'});
+        d3.select('#axisBox').style('height', '0');
+        d3.select('#graphBox').style('height', '100%');
         d3.select('#graph')
             .attr('viewBox', '0 0 70 70')
             .append('text').classed('message', true)
@@ -176,8 +193,8 @@ function displayData(data) {
     if (data.dataType == 'size') {
         // data.content: [{key: (key_name), size: (size)}]
 
-        d3.select('#axisBox').style({height: '8%'});
-        d3.select('#graphBox').style({height: '92%'});
+        d3.select('#axisBox').style('height', '8%');
+        d3.select('#graphBox').style('height', '92%');
 
         var graphData = data.content.slice(0, colors.length - 1);
         var residuals = data.content.slice(colors.length - 1);
@@ -185,7 +202,7 @@ function displayData(data) {
             var remaining = 0;
             for (var i in residuals)
                 remaining += residuals[i].size;
-            graphData.push({key: 'Others', size: remaining});
+            graphData.push({'key': 'Others', 'size': remaining});
         }
 
         var total = 0;
@@ -262,8 +279,8 @@ function displayData(data) {
     else if (data.dataType == 'replication') {
         // data.content: [{key: (key_name), mean: (mean), rms: (rms)}]
 
-        d3.select('#axisBox').style({height: '3%'});
-        d3.select('#graphBox').style({height: '97%'});
+        d3.select('#axisBox').style('height', '3%');
+        d3.select('#graphBox').style('height', '97%');
 
         var graphArea = d3.select('#graph')
             .attr('viewBox', '0 0 70 ' + (40 + 4 * data.content.length));
@@ -363,8 +380,8 @@ function displayData(data) {
         // data.content: [{site: (site_name), usage: [{key: (key_name), size: (size)}]}]
         // data.keys: [(key_name)]
 
-        d3.select('#axisBox').style({height: '3%'});
-        d3.select('#graphBox').style({height: '97%'});
+        d3.select('#axisBox').style('height', '3%');
+        d3.select('#graphBox').style('height', '97%');
 
         var keys = data.keys.slice(0, colors.length - 1);
         keys[keys.length] = 'Others';
@@ -483,16 +500,21 @@ function displayData(data) {
     }
 }
 
+function changeDataType() {
+
+}
+
 function loadData() {
     var inputData = {
-        getData: 1,
-        dataType: $('#dataType').val(),
-        categories: $('#categories').val(),
-        campaign: $('#campaign').val(),
-        dataTier: $('#dataTier').val(),
-        dataset: $('#dataset').val(),
-        site: $('#site').val(),
-        group: []
+        'getData': 1,
+        'dataType': $('#dataType').val(),
+        'categories': $('#categories').val(),
+        'physical': $('.physical:checked').val(),
+        'campaign': $('#campaign').val(),
+        'dataTier': $('#dataTier').val(),
+        'dataset': $('#dataset').val(),
+        'site': $('#site').val(),
+        'group': []
     };
 
     var groups = $('#group :selected').get();
@@ -509,6 +531,7 @@ function getData() {
     url += 'getData=1';
     url += '&dataType=' + $('#dataType').val();
     url += '&categories=' + $('#categories').val();
+    url += 'physical=' + $('.physical:checked').val();
     var fields = ['campaign', 'dataTier', 'dataset', 'site'];
     for (var iF in fields) {
         var elem = $('#' + fields[iF]);

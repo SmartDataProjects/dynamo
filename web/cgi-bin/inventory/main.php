@@ -66,6 +66,7 @@ else if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
 
   $data_type = $_REQUEST['dataType'];
   $categories = $_REQUEST['categories'];
+  $physical = $_REQUEST['physical'] == 'y';
 
   $data = array('dataType' => $data_type, 'content' => array());
   $content = &$data['content'];
@@ -108,6 +109,20 @@ else {
     else if (strlen($_REQUEST['group']) != 0)
       $constraints['group'] = explode(',', $_REQUEST['group']);
   }
+  if (isset($_REQUEST['physical'])) {
+    if ($_REQUEST['physical'] == 'y') {
+      $physical_checked = ' checked="checked"';
+      $logical_checked = '';
+    }
+    else {
+      $physical_checked = '';
+      $logical_checked = ' checked="checked"';
+    }
+  }
+  else {
+    $physical_checked = ' checked="checked"';
+    $logical_checked = '';
+  }
 
   if (count($constraints) == 0)
     $constraints['group'] = array('AnalysisOps');
@@ -118,6 +133,8 @@ else {
   $html = str_replace('${CATEGORIES}', $categories, $html);
   $html = str_replace('${CONSTRAINTS}', json_encode($constraints), $html);
   $html = str_replace('${LAST_UPDATE}', $last_update, $html);
+  $html = str_replace('${PHYSICAL_CHECKED}', $physical_checked, $html);
+  $html = str_replace('${LOGICAL_CHECKED}', $logical_checked, $html);
 
   echo $html;
 }

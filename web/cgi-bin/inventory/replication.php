@@ -1,34 +1,41 @@
 <?php
 
 if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
-  $selection = 'SELECT `datasets`.`name`, COUNT(`dataset_replicas`.`site_id`) FROM `dataset_replicas`';
-  $selection .= ' INNER JOIN `datasets` ON `datasets`.`id` = `dataset_replicas`.`dataset_id`';
+  $selection = 'SELECT d.`name`, COUNT(dr.`site_id`) FROM `dataset_replicas` AS dr';
+  $selection .= ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`';
   if (count($const_group) != 0)
-    $selection .= ' INNER JOIN `groups` ON `groups`.`id` = `dataset_replicas`.`group_id`';
+    $selection .= ' INNER JOIN `groups` AS g ON g.`id` = dr.`group_id`';
 }
 else if ($categories == 'groups') {
-  $selection = 'SELECT `groups`.`name`, COUNT(`dataset_replicas`.`site_id`) FROM `dataset_replicas`';
-  $selection .= ' INNER JOIN `groups` ON `groups`.`id` = `dataset_replicas`.`group_id`';
+  $selection = 'SELECT g.`name`, COUNT(dr.`site_id`) FROM `dataset_replicas` AS dr';
+  $selection .= ' INNER JOIN `groups` AS g ON g.`id` = dr.`group_id`';
   if (strlen($const_campaign) != 0 || strlen($const_data_tier) != 0 || strlen($const_dataset))
-    $selection .= ' INNER JOIN `datasets` ON `datasets`.`id` = `dataset_replicas`.`dataset_id`';
+    $selection .= ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`';
 }
 
-$grouping = ' GROUP BY `dataset_replicas`.`dataset_id`';
+$grouping = ' GROUP BY dr.`dataset_id`';
 
-$constraint = ' WHERE `dataset_replicas`.`is_complete` = 1';
+$constraints = array();
+if ($physical)
+  $constraints[] = 'dr.`is_complete` = 1';
 
 if (strlen($const_campaign) != 0)
-  $constraint .= ' AND `datasets`.`name` LIKE \'/%/' . $const_campaign . '%/%\'';
+  $constraints[] = 'd.`name` LIKE \'/%/' . $const_campaign . '%/%\'';
 if (strlen($const_data_tier) != 0)
-  $constraint .= ' AND `datasets`.`name` LIKE \'/%/%/' . $const_data_tier . '\'';
+  $constraints[] = 'd.`name` LIKE \'/%/%/' . $const_data_tier . '\'';
 if (strlen($const_dataset) != 0)
-  $constraint .= ' AND `datasets`.`name` LIKE \'' . $const_dataset . '\'';
+  $constraints[] = 'd.`name` LIKE \'' . $const_dataset . '\'';
 if (count($const_group) != 0) {
   $subconsts = array();
   foreach ($const_group as $cg)
-    $subconsts[] = '`groups`.`name` LIKE \'' . $cg . '\'';
-  $constraint .= ' AND (' . implode(' OR ', $subconsts) . ')';
+    $subconsts[] = 'g.`name` LIKE \'' . $cg . '\'';
+  $constraints[] = '(' . implode(' OR ', $subconsts) . ')';
 }
+
+if (count($constraints) != 0)
+  $constraint = ' WHERE ' . implode(' AND ', $constraints);
+else
+  $constraint = '';
 
 $stmt = $store_db->prepare($selection . $constraint . $grouping);
 $stmt->bind_result($name, $repl);
