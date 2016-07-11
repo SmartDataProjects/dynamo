@@ -111,7 +111,17 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     foreach (array('protect', 'keep', 'delete') as $decision) {
       $site_total[$decision] = array();
 
+      // existing replicas
       $stmt = $history_db->prepare('SELECT s.`site_id`, SUM(s.`size`) * 1.e-12 FROM `deletion_decisions` AS d INNER JOIN `replica_snapshots` AS s ON s.`id` = d.`snapshot_id` WHERE d.`run_id` = ? AND d.`decision` LIKE ? GROUP BY s.`site_id`');
+      $stmt->bind_param('is', $cycle, $decision);
+      $stmt->bind_result($site_id, $size);
+      $stmt->execute();
+      while ($stmt->fetch())
+        $site_total[$decision][$site_id] = $size;
+      $stmt->close();
+
+      // past replicas
+      $stmt = $history_db->prepare('SELECT s.`site_id`, SUM(s.`size`) * 1.e-12 FROM `deletion_decisions` AS d INNER JOIN `deleted_replica_snapshots` AS s ON s.`id` = d.`snapshot_id` WHERE d.`run_id` = ? AND d.`decision` LIKE ? GROUP BY s.`site_id`');
       $stmt->bind_param('is', $cycle, $decision);
       $stmt->bind_result($site_id, $size);
       $stmt->execute();
@@ -131,7 +141,17 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     foreach (array('protectPrev', 'keepPrev') as $decision) {
       $site_total[$decision] = array();
 
+      // existing replicas
       $stmt = $history_db->prepare('SELECT s.`site_id`, SUM(s.`size`) * 1.e-12 FROM `deletion_decisions` AS d INNER JOIN `replica_snapshots` AS s ON s.`id` = d.`snapshot_id` WHERE d.`run_id` = ? AND d.`decision` LIKE ? GROUP BY s.`site_id`');
+      $stmt->bind_param('is', $previous_cycle, str_replace('Prev', '', $decision));
+      $stmt->bind_result($site_id, $size);
+      $stmt->execute();
+      while ($stmt->fetch())
+        $site_total[$decision][$site_id] = $size;
+      $stmt->close();
+
+      // past replicas
+      $stmt = $history_db->prepare('SELECT s.`site_id`, SUM(s.`size`) * 1.e-12 FROM `deletion_decisions` AS d INNER JOIN `deleted_replica_snapshots` AS s ON s.`id` = d.`snapshot_id` WHERE d.`run_id` = ? AND d.`decision` LIKE ? GROUP BY s.`site_id`');
       $stmt->bind_param('is', $previous_cycle, str_replace('Prev', '', $decision));
       $stmt->bind_result($site_id, $size);
       $stmt->execute();
@@ -162,8 +182,24 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
 
     $data['datasets'] = array();
 
+    // existing replicas
     $query = 'SELECT ds.`name`, sn.`size` * 1.e-9, dl.`decision`, dl.`reason` FROM `deletion_decisions` AS dl';
     $query .= ' INNER JOIN `replica_snapshots` AS sn ON sn.`id` = dl.`snapshot_id`';
+    $query .= ' INNER JOIN `datasets` AS ds ON ds.`id` = sn.`dataset_id`';
+    $query .= ' INNER JOIN `sites` AS st ON st.`id` = sn.`site_id`';
+    $query .= ' WHERE dl.`run_id` = ? AND st.`name` LIKE ? AND dl.`decision` IN (\'delete\', \'protect\')';
+    $query .= ' ORDER BY ds.`name`';
+    $stmt = $history_db->prepare($query);
+    $stmt->bind_param('is', $cycle, $site_name);
+    $stmt->bind_result($name, $size, $decision, $reason);
+    $stmt->execute();
+    while ($stmt->fetch())
+      $data['datasets'][] = array('name' => $name, 'size' => $size, 'decision' => $decision, 'reason' => $reason);
+    $stmt->close();
+
+    // deleted replicas
+    $query = 'SELECT ds.`name`, sn.`size` * 1.e-9, dl.`decision`, dl.`reason` FROM `deletion_decisions` AS dl';
+    $query .= ' INNER JOIN `deleted_replica_snapshots` AS sn ON sn.`id` = dl.`snapshot_id`';
     $query .= ' INNER JOIN `datasets` AS ds ON ds.`id` = sn.`dataset_id`';
     $query .= ' INNER JOIN `sites` AS st ON st.`id` = sn.`site_id`';
     $query .= ' WHERE dl.`run_id` = ? AND st.`name` LIKE ? AND dl.`decision` IN (\'delete\', \'protect\')';

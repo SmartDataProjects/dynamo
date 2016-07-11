@@ -208,9 +208,13 @@ class MySQLHistory(TransactionHistoryInterface):
 
     def _do_save_replicas(self, run_number, replicas): #override
         """
-        1. Compare the list of sites and datasets in the history database with what is in inventory. -> new_replicas
-        2. Compare the latest snapshots to replicas in inventory in terms of size and partition id. -> replicas_to_update
-        3. Insert updated information to replica_snapshots.
+        1. Compare the list of sites and datasets in the history database to the passed list of replicas.
+           If a replica is not found in the database, pass it to new_replicas. If database has an extra entry, pass it to snapshots_to_remove.
+        2. Move snapshots in snapshots_to_remove (all past entries) to deleted_replica_snapshots. Insert a last entry with the current run number and size 0.
+           Delete the snapshots from replica_snapshots
+        3. Compare the latest snapshots to passed list of replicas.
+           If the sizes differ, add the replica to replicas_to_update. If not, add to replica_snapshot_ids.
+        4. Insert updated information to replica_snapshots. Update replica_snapshot_ids.
         """
         # find the latest snapshots for all replicas in record
         self._replica_snapshot_ids = {} # (site, dataset) -> snapshot id, cannot be used across partitions
@@ -223,8 +227,8 @@ class MySQLHistory(TransactionHistoryInterface):
 
         partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
 
-        # all recorded replicas in the partition with nonzero size
-        in_record = self._mysql.query('SELECT DISTINCT `site_id`, `dataset_id` FROM `replica_snapshots` WHERE `size` != 0 AND `run_id` IN (SELECT `id` FROM `runs` WHERE `partition_id` = %s) ORDER BY `site_id`, `dataset_id`', partition_id)
+        # all snapshotted replicas in the partition with nonzero size
+        in_record = self._mysql.query('SELECT DISTINCT `site_id`, `dataset_id` FROM `replica_snapshots` WHERE `run_id` <= %s AND `run_id` IN (SELECT `id` FROM `runs` WHERE `partition_id` = %s) ORDER BY `site_id` ASC, `dataset_id` ASC', run_number, partition_id)
         # replicas in inventory
         current = sorted(indices_to_replicas.keys())
 
@@ -234,7 +238,7 @@ class MySQLHistory(TransactionHistoryInterface):
         irec = 0
         icur = 0
         while irec != len(in_record) and icur != len(current):
-            recidx = in_record[irec]
+            recidx = tuple(map(int, in_record[irec]))
             curidx = current[icur]
 
             if recidx < curidx:
@@ -242,7 +246,7 @@ class MySQLHistory(TransactionHistoryInterface):
                 snapshots_to_remove.append(recidx)
                 irec += 1
             elif recidx > curidx:
-                # new replica
+                # no snapshot in record -> new replica
                 replica = indices_to_replicas[curidx]
                 new_replicas[curidx] = (replica, replica.size())
                 icur += 1
@@ -251,45 +255,48 @@ class MySQLHistory(TransactionHistoryInterface):
                 irec += 1
                 icur += 1
 
+        while irec != len(in_record):
+            # remaining snapshots must all be deleted
+            recidx = tuple(map(int, in_record[irec]))
+            snapshots_to_remove.append(recidx)
+            irec += 1
+
         while icur != len(current):
+            # remaining replicas are all new
             curidx = current[icur]
             replica = indices_to_replicas[curidx]
             new_replicas[curidx] = (replica, replica.size())
             icur += 1
 
-        # set the size of the deleted replicas to 0
-        fields = ('site_id', 'dataset_id', 'run_id', 'size')
-        mapping = lambda index: (index[0], index[1], run_number, 0)
-        self._mysql.insert_many('replica_snapshots', fields, mapping, snapshots_to_remove)
+        # move the entries for deleted replicas
+        self._mysql.execute_many('INSERT INTO `deleted_replica_snapshots` SELECT * FROM `replica_snapshots`', ('site_id', 'dataset_id'), snapshots_to_remove)
+        self._mysql.insert_many('deleted_replica_snapshots', ('site_id', 'dataset_id', 'run_id', 'size'), lambda idx: (idx[0], idx[1], run_number, 0), snapshots_to_remove, do_update = False)
+        self._mysql.delete_many('replica_snapshots', ('site_id', 'dataset_id'), snapshots_to_remove)
 
         # now loop over the snapshots again and find the latest snapshots / update the outdated
 
         replicas_to_update = {} # index -> (replica, size)
 
-        for snapshot_id, site_id, dataset_id, size in self._mysql.query('SELECT `id`, `site_id`, `dataset_id`, `size` FROM `replica_snapshots` WHERE `size` != 0 AND `run_id` <= %s AND `run_id` IN (SELECT `id` FROM `runs` WHERE `partition_id` = %s) ORDER BY `run_id` DESC', run_number, partition_id):
-            index = (site_id, dataset_id)
-            try:
-                replica = indices_to_replicas[index]
-            except KeyError:
-                # this replica does not exist in the current inventory
+        snapshots = self._mysql.query('SELECT `id`, `site_id`, `dataset_id`, `size` FROM `replica_snapshots` WHERE `run_id` <= %s AND `run_id` IN (SELECT `id` FROM `runs` WHERE `partition_id` = %s) ORDER BY `site_id` ASC, `dataset_id` ASC, `run_id` DESC', run_number, partition_id)
+
+        _index = (0, 0)
+
+        for snapshot_id, site_id, dataset_id, size in snapshots:
+            index = (int(site_id), int(dataset_id))
+            if index == _index:
+                # skipping to next replica
                 continue
 
+            _index = index
+
+            replica = indices_to_replicas[index]
             repkey = (replica.site, replica.dataset)
             
-            # snapshots ordered by time (recent to past)
-            # replica already found -> older snapshot
-            if repkey in self._replica_snapshot_ids or index in replicas_to_update:
-                continue
-
             replica_size = replica.size() # passed replica is flagged "partial" if actually partial or not fully in the partition -> will add block replica sizes
-            if replica_size != size: 
+            if replica_size != int(size):
                 replicas_to_update[index] = (replica, replica_size)
             else:
-                self._replica_snapshot_ids[repkey] = snapshot_id
-
-            if len(self._replica_snapshot_ids) + len(replicas_to_update) == num_overlap:
-                # found latest snapshots for all existing replicas
-                break
+                self._replica_snapshot_ids[repkey] = int(snapshot_id)
 
         indices_to_replicas = None
 
@@ -304,9 +311,9 @@ class MySQLHistory(TransactionHistoryInterface):
             self._mysql.insert_many('replica_snapshots', fields, mapping, replicas_to_update.items())
     
             # finally fetch the ids of the snapshots added here
-            for snapshot_id, site_id, dataset_id in self._mysql.query('SELECT `id`, `site_id`, `dataset_id` FROM `replica_snapshots` WHERE `run_id` = %s AND `size` != 0', run_number):
-                replica, replica_size = replicas_to_update[(site_id, dataset_id)]
-                self._replica_snapshot_ids[(replica.site, replica.dataset)] = snapshot_id
+            for snapshot_id, site_id, dataset_id in self._mysql.query('SELECT `id`, `site_id`, `dataset_id` FROM `replica_snapshots` WHERE `run_id` = %s', run_number):
+                replica, replica_size = replicas_to_update[(int(site_id), int(dataset_id))]
+                self._replica_snapshot_ids[(replica.site, replica.dataset)] = int(snapshot_id)
 
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
@@ -390,10 +397,14 @@ class MySQLHistory(TransactionHistoryInterface):
         return min(copy_result, deletion_result) - 1
 
     def _make_site_id_map(self):
-        self._site_id_map = dict(self._mysql.query('SELECT `name`, `id` FROM `sites`'))
+        self._site_id_map = {}
+        for name, site_id in self._mysql.query('SELECT `name`, `id` FROM `sites`'):
+            self._site_id_map[name] = int(site_id)
 
     def _make_dataset_id_map(self):
-        self._dataset_id_map = dict(self._mysql.query('SELECT `name`, `id` FROM `datasets`'))
+        self._dataset_id_map = {}
+        for name, dataset_id in self._mysql.query('SELECT `name`, `id` FROM `datasets`'):
+            self._dataset_id_map[name] = int(dataset_id)
 
     def _make_replica_map(self, replicas):
         if len(self._site_id_map) == 0:
