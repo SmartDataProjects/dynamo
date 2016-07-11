@@ -1,6 +1,7 @@
 import threading
 import time
 import logging
+import signal
 from functools import wraps
 
 import common.configuration as config
@@ -153,3 +154,35 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
     if get_output:
         return all_outputs
 
+class SigintHandler(object):
+    """
+    Block SIGINT during critical operations.
+    """
+
+    def __init__(self):
+        self._blocking = False
+        self._interrupted = False
+        self._default = signal.getsignal(signal.SIGINT)
+
+    def __call__(self, signum, frame):
+        logging.warning('The system is in the middle of a critical operation and cannot be interrupted just now.')
+        self._interrupted = True
+
+    def block(self):
+        if self._blocking:
+            logging.error('SIGINT is already being blocked.')
+            return
+
+        self._default = signal.signal(signal.SIGINT, self)
+        self._blocking = True
+
+    def unblock(self):
+        signal.signal(signal.SIGINT, self._default)
+
+        if self._interrupted:
+            raise KeyboardInterrupt()
+
+        self._interrupted = False
+        self._blocking = False
+
+sigint = SigintHandler()

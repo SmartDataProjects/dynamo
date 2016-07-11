@@ -10,7 +10,7 @@ import common.configuration as config
 from common.dataformat import DatasetReplica, BlockReplica
 from policy import Policy
 import detox.configuration as detox_config
-from common.misc import timer, parallel_exec
+from common.misc import timer, parallel_exec, sigint
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ class Detox(object):
 
                 drep = replica.clone()
                 if applies == 2: # replica not fully in the partition; remove parts that are not
-                    drep.is_partial = True # partial from the point of the partition
+                    drep.is_partial = True # partial for the partition
                     for brep in list(drep.block_replicas):
                         if not policy.block_applies(brep):
                             drep.block_replicas.remove(brep)
@@ -163,7 +163,7 @@ class Detox(object):
 
         self.history.close_deletion_run(run_number)
 
-        logger.info('Detox run finished at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
+        logger.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
 
     def commit_deletions(self, run_number, policy, deletion_list, is_test):
         # first make sure the list of blocks is up-to-date
@@ -178,6 +178,8 @@ class Detox(object):
 
             logger.info('Deleting %d replicas from %s.', len(replica_list), site.name)
 
+            sigint.block()
+
             deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, groups = policy.groups, comments = self.deletion_message, is_test = is_test)
             # deletion_mapping .. {deletion_id: (approved, [replicas])}
 
@@ -189,6 +191,8 @@ class Detox(object):
                 size = sum([r.size(policy.groups) for r in replicas])
 
                 self.history.make_deletion_entry(run_number, site, deletion_id, approved, [r.dataset for r in replicas], size)
+
+            sigint.unblock()
 
             logger.info('Done deleting %d replicas from %s.', len(replica_list), site.name)
 

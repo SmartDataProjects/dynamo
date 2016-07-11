@@ -27,68 +27,72 @@ class TransactionHistoryInterface(object):
         if self._lock_depth > 0: # should always be the case if properly programmed
             self._lock_depth -= 1
 
-    def make_snapshot(self):
+    def make_snapshot(self, tag = ''):
         """
         Make a snapshot of the current state of the persistent records.
         """
 
-        timestamp = time.strftime('%y%m%d%H%M%S')
+        if not tag:
+            tag = time.strftime('%y%m%d%H%M%S')
 
         if config.read_only:
-            logger.debug('_do_make_snapshot(%s, %d)', timestamp)
+            logger.debug('_do_make_snapshot(%s, %d)', tag)
             return
 
         self.acquire_lock()
         try:
-            self._do_make_snapshot(timestamp)
+            self._do_make_snapshot(tag)
         finally:
             self.release_lock()
 
-    def remove_snapshot(self, newer_than = 0, older_than = 0):
-        if older_than == 0:
+    def remove_snapshot(self, tag = '', newer_than = 0, older_than = 0):
+        if not tag and older_than == 0:
             older_than = time.time()
 
         if config.read_only:
-            logger.debug('_do_remove_snapshot(%f, %f)', newer_than, older_than)
+            logger.debug('_do_remove_snapshot(%s, %f, %f)', tag, newer_than, older_than)
             return
 
         self.acquire_lock()
         try:
-            self._do_remove_snapshot(newer_than, older_than)
+            self._do_remove_snapshot(tag, newer_than, older_than)
         finally:
             self.release_lock()
 
-    def list_snapshots(self):
+    def list_snapshots(self, timestamp_only = False):
         """
-        List the timestamps of the snapshots that is not the current.
+        List the tags of the snapshots that is not the current.
         """
 
-        return self._do_list_snapshots()
+        return self._do_list_snapshots(timestamp_only)
 
-    def recover_from(self, timestamp):
+    def recover_from(self, tag):
         """
         Recover records from a snapshot (current content will be lost!)
-        timestamp can be 'last'.
+        tag can be 'last'.
         """
 
-        timestamps = self.list_snapshots()
+        if tag == 'last':
+            tags = self.list_snapshots(timestamp_only = True)
+        else:
+            tags = self.list_snapshots()
 
-        if len(timestamps) == 0:
+        if len(tags) == 0:
             print 'No snapshots taken.'
             return
 
-        if timestamp == 'last':
-            timestamp = timestamps[0]
-            print 'Recovering history records from snapshot', timestamp
+        if tag == 'last':
+            tag = tags[0]
+            print 'Recovering history records from snapshot', tag
             
-        elif timestamp not in timestamps:
-            print 'Cannot copy from snapshot', timestamp
+        elif tag not in tags:
+            print 'Cannot copy from snapshot', tag
             return
 
         while self._lock_depth > 0:
             self.release_lock()
 
-        self._do_recover_from(timestamp)
+        self._do_recover_from(tag)
 
     def new_copy_run(self, partition, is_test = False):
         """
@@ -343,7 +347,8 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Local inventory store interface')
 
-    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = '(update|check {copy|deletion} <operation_id>)')
+    parser.add_argument('command', metavar = 'COMMAND', help = '(update|check {copy|deletion} <operation_id>|snapshot [tag]|clean [tag]|restore <tag>)')
+    parser.add_argument('arguments', metavar = 'COMMAND', nargs = '*', help = '')
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'TransactionHistoryInterface class to be used.')
     parser.add_argument('--copy-class', '-p', metavar = 'CLASS', dest = 'copy_class_name', default = '', help = 'CopyInterface class to be used.')
     parser.add_argument('--deletion-class', '-d', metavar = 'CLASS', dest = 'deletion_class_name', default = '', help = 'DeletionInterface class to be used.')
@@ -374,87 +379,89 @@ if __name__ == '__main__':
     else:
         deletion_interface = getattr(classes, args.deletion_class_name)()
 
-    icmd = 0
-    while icmd != len(args.command):
-        command = args.command[icmd]
-        icmd += 1
+    if args.command == 'update':
+        incomplete_copies = interface.get_incomplete_copies()
+        
+        for record in incomplete_copies:
+            updates = copy_interface.copy_status(record.operation_id)
 
-        if command == 'update':
-            incomplete_copies = interface.get_incomplete_copies()
-            
-            for record in incomplete_copies:
-                updates = copy_interface.copy_status(record.operation_id)
+            last_update = max([last_update for last_update, total, copied in updates.values()])
+            if last_update > record.last_update:
+                logger.info('Updating record for copy %d to %s.', record.operation_id, record.site_name)
+        
+                record.last_update = last_update
+                record.done = sum(copied for last_update, total, copied in updates.values())
+                interface.update_copy_entry(record)
+        
+        incomplete_deletions = interface.get_incomplete_deletions()
+        
+        for record in incomplete_deletions:
+            updates = deletion_interface.deletion_status(record.operation_id)
 
-                last_update = max([last_update for last_update, total, copied in updates.values()])
-                if last_update > record.last_update:
-                    logger.info('Updating record for copy %d to %s.', record.operation_id, record.site_name)
-            
-                    record.last_update = last_update
-                    record.done = sum(copied for last_update, total, copied in updates.values())
-                    interface.update_copy_entry(record)
-            
-            incomplete_deletions = interface.get_incomplete_deletions()
-            
-            for record in incomplete_deletions:
-                updates = deletion_interface.deletion_status(record.operation_id)
+            last_update = max([last_update for last_update, total, deleted in updates.values()])
+            if last_update > record.last_update:
+                logger.info('Updating record for deletion %d at %s.', record.operation_id, record.site_name)
+        
+                record.last_update = last_update
+                record.done = sum(deleted for last_update, total, deleted in updates.values())
+                interface.update_deletion_entry(record)
 
-                last_update = max([last_update for last_update, total, deleted in updates.values()])
-                if last_update > record.last_update:
-                    logger.info('Updating record for deletion %d at %s.', record.operation_id, record.site_name)
-            
-                    record.last_update = last_update
-                    record.done = sum(deleted for last_update, total, deleted in updates.values())
-                    interface.update_deletion_entry(record)
-    
-        elif command == 'check':
-            operation = args.command[icmd]
-            icmd += 1
+    elif args.command == 'check':
+        operation = args.arguments[0]
 
-            try:
-                operation_ids = [int(args.command[icmd])]
-                icmd += 1
-            except:
-                operations = interface.get_incomplete_copies()
-                operation_ids = [op.operation_id for op in operations]
+        try:
+            operation_ids = map(int, args.arguments[1:])
+        except:
+            operations = interface.get_incomplete_copies()
+            operation_ids = [op.operation_id for op in operations]
 
-            for operation_id in operation_ids:
-                print 'ID: %d' % operation_id
-                print 'Site: ' + interface.get_site_name(operation_id)
-    
-                if operation == 'copy':
-                    status = copy_interface.copy_status(operation_id)
-    
-                    total = 0.
-                    done = 0.
-                    latest_update = 0
-                    for dataset in sorted(status.keys()):
-                        size, copied, last_update = status[dataset]
-                        if size == 0: # why??
-                            print '{dataset} (0 GB) [{update}]'.format(dataset = dataset, update = time.ctime(last_update))
-                        else:
-                            print '{dataset} ({total:.2f} GB): {percentage:.2f}% [{update}]'.format(dataset = dataset, total = size * 1.e-9, percentage = float(copied) / size * 100., update = time.ctime(last_update))
+        for operation_id in operation_ids:
+            print 'ID: %d' % operation_id
+            print 'Site: ' + interface.get_site_name(operation_id)
 
-                        total += size
-                        done += copied
-                        if last_update > latest_update:
-                            latest_update = last_update
-    
-                    print '----------------------------'
-                    if total == 0: # why??
-                        print 'Transfer NAN% complete'
+            if operation == 'copy':
+                status = copy_interface.copy_status(operation_id)
+
+                total = 0.
+                done = 0.
+                latest_update = 0
+                for dataset in sorted(status.keys()):
+                    size, copied, last_update = status[dataset]
+                    if size == 0: # why??
+                        print '{dataset} (0 GB) [{update}]'.format(dataset = dataset, update = time.ctime(last_update))
                     else:
-                        print 'Transfer {percentage:.2f}% complete [{update}]'.format(percentage = done / total * 100., update = time.ctime(latest_update))
+                        print '{dataset} ({total:.2f} GB): {percentage:.2f}% [{update}]'.format(dataset = dataset, total = size * 1.e-9, percentage = float(copied) / size * 100., update = time.ctime(last_update))
 
-                    print ''
+                    total += size
+                    done += copied
+                    if last_update > latest_update:
+                        latest_update = last_update
 
-        elif command == 'snapshot':
-            interface.make_snapshot()
+                print '----------------------------'
+                if total == 0: # why??
+                    print 'Transfer NAN% complete'
+                else:
+                    print 'Transfer {percentage:.2f}% complete [{update}]'.format(percentage = done / total * 100., update = time.ctime(latest_update))
 
-        elif command == 'clean':
-            interface.remove_snapshot()
+                print ''
 
-        elif command == 'restore':
-            timestamp = args.command[icmd]
-            icmd += 1
+    elif args.command == 'snapshot':
+        try:
+            tag = args.arguments[0]
+        except IndexError:
+            tag = ''
 
-            interface.recover_from(timestamp)
+        interface.make_snapshot(tag = tag)
+
+    elif args.command == 'clean':
+        try:
+            tag = args.arguments[0]
+        except IndexError:
+            tag = ''
+
+        interface.remove_snapshot(tag = tag)
+
+    elif args.command == 'restore':
+        tag = args.arguments[0]
+
+        interface.recover_from(tag)

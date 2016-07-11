@@ -62,8 +62,8 @@ class MySQLStore(LocalStoreInterface):
         if host != '' or pid != 0:
             raise LocalStoreInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
-    def _do_make_snapshot(self, timestamp, clear): #override
-        new_db = self._mysql.make_snapshot(timestamp)
+    def _do_make_snapshot(self, tag, clear): #override
+        new_db = self._mysql.make_snapshot(tag)
         
         self._mysql.query('UPDATE `%s`.`system` SET `lock_host` = \'\', `lock_process` = 0' % new_db)
 
@@ -80,11 +80,14 @@ class MySQLStore(LocalStoreInterface):
             # drop the original table and copy back the format from the snapshot
             self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._mysql.db_name(), table = table))
 
-    def _do_remove_snapshot(self, newer_than, older_than): #override
-        self._mysql.remove_snapshot(newer_than, older_than)
+    def _do_remove_snapshot(self, tag, newer_than, older_than): #override
+        if tag:
+            self._mysql.remove_snapshot(tag = tag)
+        else:
+            self._mysql.remove_snapshot(newer_than = newer_than, older_than = older_than)
 
-    def _do_list_snapshots(self):
-        return self._mysql.list_snapshots()
+    def _do_list_snapshots(self, timestamp_only):
+        return self._mysql.list_snapshots(timestamp_only)
 
     def _do_clear(self):
         tables = self._mysql.query('SHOW TABLES')
@@ -94,11 +97,11 @@ class MySQLStore(LocalStoreInterface):
             # drop the original table and copy back the format from the snapshot
             self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._mysql.db_name(), table = table))
 
-    def _do_recover_from(self, timestamp): #override
-        self._mysql.recover_from(timestamp)
+    def _do_recover_from(self, tag): #override
+        self._mysql.recover_from(tag)
 
-    def _do_switch_snapshot(self, timestamp): #override
-        snapshot_name = self._mysql.db_name() + '_' + timestamp
+    def _do_switch_snapshot(self, tag): #override
+        snapshot_name = self._mysql.db_name() + '_' + tag
 
         self._mysql.query('USE ' + snapshot_name)
 

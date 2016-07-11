@@ -42,7 +42,7 @@ class LocalStoreInterface(object):
         self.last_update = tm
 
         if config.read_only:
-            logger.debug('_do_timestamp(%f)', tm)
+            logger.debug('_do_set_last_update(%f)', tm)
             return
 
         self.acquire_lock()
@@ -51,44 +51,46 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
-    def make_snapshot(self, clear = CLEAR_NONE):
+    def make_snapshot(self, clear = CLEAR_NONE, tag = ''):
         """
         Make a snapshot of the current state of the persistent inventory. Flag clear = True
         will "move" the data into the snapshot, rather than cloning it.
+        Tag is normally, but is not restricted to be, a timestamp.
         """
 
-        timestamp = time.strftime('%y%m%d%H%M%S')
+        if not tag:
+            tag = time.strftime('%y%m%d%H%M%S')
 
         if config.read_only:
-            logger.debug('_do_make_snapshot(%s, %d)', timestamp, clear)
+            logger.debug('_do_make_snapshot(%s, %d)', tag, clear)
             return
 
         self.acquire_lock()
         try:
-            self._do_make_snapshot(timestamp, clear)
+            self._do_make_snapshot(tag, clear)
         finally:
             self.release_lock()
 
-    def remove_snapshot(self, newer_than = 0, older_than = 0):
-        if older_than == 0:
+    def remove_snapshot(self, tag = '', newer_than = 0, older_than = 0):
+        if not tag and older_than == 0:
             older_than = time.time()
 
         if config.read_only:
-            logger.debug('_do_remove_snapshot(%f, %f)', newer_than, older_than)
+            logger.debug('_do_remove_snapshot(%s, %f, %f)', tag, newer_than, older_than)
             return
 
         self.acquire_lock()
         try:
-            self._do_remove_snapshot(newer_than, older_than)
+            self._do_remove_snapshot(tag, newer_than, older_than)
         finally:
             self.release_lock()
 
-    def list_snapshots(self):
+    def list_snapshots(self, timestamp_only = False):
         """
-        List the timestamps of the inventory snapshots that is not the current.
+        List the tags of the inventory snapshots that is not the current.
         """
 
-        return self._do_list_snapshots()
+        return self._do_list_snapshots(timestamp_only)
 
     def clear(self):
         """
@@ -105,55 +107,61 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
-    def recover_from(self, timestamp):
+    def recover_from(self, tag):
         """
         Recover store contents from a snapshot (current content will be lost!)
         timestamp can be 'last'.
         """
 
-        timestamps = self.list_snapshots()
+        if tag == 'last':
+            tags = self.list_snapshots(timestamp_only = True)
+        else:
+            tags = self.list_snapshots()
 
-        if len(timestamps) == 0:
-            print 'No snapshots taken.'
+        if len(tags) == 0:
+            logger.info('No snapshots taken.')
             return
 
-        if timestamp == 'last':
-            timestamp = timestamps[0]
-            print 'Recovering inventory store from snapshot', timestamp
+        if tag == 'last':
+            tag = tags[0]
+            logger.info('Recovering inventory store from snapshot %s', tag)
             
-        elif timestamp not in timestamps:
-            print 'Cannot copy from snapshot', timestamp
+        elif tag not in tags:
+            logger.info('Cannot copy from snapshot %s', tag)
             return
 
         while self._lock_depth > 0:
             self.release_lock()
 
-        self._do_recover_from(timestamp)
+        self._do_recover_from(tag)
 
-    def switch_snapshot(self, timestamp):
+    def switch_snapshot(self, tag):
         """
         Switch to a specific snapshot.
         timestamp can be 'last'.
         """
 
-        timestamps = self.list_snapshots()
+        if tag == 'last':
+            tags = self.list_snapshots(timestamp_only = True)
+        else:
+            tags = self.list_snapshots()
 
-        if len(timestamps) == 0:
-            print 'No snapshots taken.'
+        if len(tags) == 0:
+            logger.info('No snapshots taken.')
             return
 
-        if timestamp == 'last':
-            timestamp = timestamps[0]
-            print 'Switching inventory store to snapshot', timestamp
+        if tag == 'last':
+            tag = tags[0]
+            logger.info('Switching inventory store to snapshot %s', tag)
             
-        elif timestamp not in timestamps:
-            print 'Cannot switch to snapshot', timestamp
+        elif tag not in tags:
+            logger.info('Cannot switch to snapshot %s', tag)
             return
 
         while self._lock_depth > 0:
             self.release_lock()
 
-        self._do_switch_snapshot(timestamp)
+        self._do_switch_snapshot(tag)
 
     def get_site_list(self, site_filt = '*'):
         """
@@ -489,7 +497,7 @@ if __name__ == '__main__':
     parser.add_argument('command', metavar = 'COMMAND', help = '(help|snapshot [clear (replicas|all)]|clear|clean|restore|list (datasets|groups|sites)|show (dataset|block|site|replica) <name>)')
     parser.add_argument('arguments', metavar = 'ARGS', nargs = '*', help = '')
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'LocalStoreInterface class to be used.')
-    parser.add_argument('--timestamp', '-t', metavar = 'YMDHMS', dest = 'timestamp', default = '', help = 'Timestamp of the snapshot to be loaded / cleaned. With command clean, prepend with "<" or ">" to remove all snapshots older or newer than the timestamp.')
+    parser.add_argument('--tag', '-t', metavar = 'YMDHMS', dest = 'tag', default = '', help = 'Tag of the snapshot to be loaded / cleaned. With command clean and a timestamp tag, prepend with "<" or ">" to remove all snapshots older or newer than the timestamp.')
 
     args = parser.parse_args()
     sys.argv = []
@@ -510,37 +518,40 @@ if __name__ == '__main__':
             elif args.arguments[1] == 'all':
                 clear = LocalStoreInterface.CLEAR_ALL
 
-        interface.make_snapshot(clear = clear)
+        interface.make_snapshot(clear = clear, tag = args.tag)
 
     elif args.command == 'clear':
         interface.clear()
 
     elif args.command == 'clean':
-        if not args.timestamp:
-            newer_than = 0
-            older_than = time.time()
-        elif args.timestamp.startswith('>'):
-            newer_than = time.mktime(time.strptime(args.timestamp[1:], '%y%m%d%H%M%S'))
-            older_than = time.time()
-        elif args.timestamp.startswith('<'):
-            newer_than = 0
-            older_than = time.mktime(time.strptime(args.timestamp[1:], '%y%m%d%H%M%S'))
-        else:
-            newer_than = time.mktime(time.strptime(args.timestamp, '%y%m%d%H%M%S'))
-            older_than = newer_than
+        tag = ''
+        newer_than = time.time()
+        older_than = 0
 
-        interface.remove_snapshot(newer_than = newer_than, older_than = older_than)
+        if not args.tag:
+            newer_than = 0
+            older_than = time.time()
+        elif args.tag.startswith('>'):
+            newer_than = time.mktime(time.strptime(args.tag[1:], '%y%m%d%H%M%S'))
+            older_than = time.time()
+        elif args.tag.startswith('<'):
+            newer_than = 0
+            older_than = time.mktime(time.strptime(args.tag[1:], '%y%m%d%H%M%S'))
+        else:
+            tag = args.tag
+
+        interface.remove_snapshot(tag = tag, newer_than = newer_than, older_than = older_than)
 
     elif args.command == 'restore':
-        if not args.timestamp:
-            print 'Specify a timestamp (can be "last").'
+        if not args.tag:
+            print 'Specify a tag (can be "last").'
             sys.exit(1)
 
-        interface.recover_from(args.timestamp)
+        interface.recover_from(args.tag)
 
     elif args.command == 'list':
-        if args.timestamp:
-            interface.switch_snapshot(args.timestamp)
+        if args.tag:
+            interface.switch_snapshot(args.tag)
 
         if args.arguments[0] != 'snapshots':
             sites, groups, datasets = interface.load_data()
@@ -558,8 +569,8 @@ if __name__ == '__main__':
             print interface.list_snapshots()
 
     elif args.command == 'show':
-        if args.timestamp:
-            interface.switch_snapshot(args.timestamp)
+        if args.tag:
+            interface.switch_snapshot(args.tag)
 
         if args.arguments[0] == 'dataset':
             sites, groups, datasets = interface.load_data(dataset_filt = args.arguments[1])

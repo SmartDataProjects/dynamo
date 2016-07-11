@@ -6,6 +6,7 @@ import MySQLdb
 import sys
 import logging
 import time
+import re
 import traceback
 
 import common.configuration as config
@@ -174,8 +175,8 @@ class MySQL(object):
             else:
                 values += ','
 
-    def make_snapshot(self, timestamp):
-        snapshot_db = self.db_name() + '_' + timestamp
+    def make_snapshot(self, tag):
+        snapshot_db = self.db_name() + '_' + tag
 
         self.query('CREATE DATABASE `{copy}`'.format(copy = snapshot_db))
 
@@ -188,26 +189,32 @@ class MySQL(object):
 
         return snapshot_db
 
-    def remove_snapshot(self, newer_than, older_than):
-        snapshots = self.list_snapshots()
+    def remove_snapshot(self, tag = '', newer_than = time.time(), older_than = 0):
+        if tag:
+            self.query('DROP DATABASE ' + self.db_name() + '_' + tag)
 
-        for snapshot in snapshots:
-            tm = int(time.mktime(time.strptime(snapshot, '%y%m%d%H%M%S')))
-            if (newer_than == older_than and tm == newer_than) or \
-                    (tm > newer_than and tm < older_than):
-                database = self.db_name() + '_' + snapshot
-                logger.info('Dropping database ' + database)
-                self.query('DROP DATABASE ' + database)
+        else:
+            snapshots = self.list_snapshots(timestamp_only = True)
+            for snapshot in snapshots:
+                tm = int(time.mktime(time.strptime(snapshot, '%y%m%d%H%M%S')))
+                if (newer_than == older_than and tm == newer_than) or \
+                        (tm > newer_than and tm < older_than):
+                    database = self.db_name() + '_' + snapshot
+                    logger.info('Dropping database ' + database)
+                    self.query('DROP DATABASE ' + database)
 
-    def list_snapshots(self):
+    def list_snapshots(self, timestamp_only):
         databases = self.query('SHOW DATABASES')
 
-        snapshots = [db.replace(self.db_name() + '_', '') for db in databases if db.startswith(self.db_name() + '_')]
+        if timestamp_only:
+            snapshots = [db.replace(self.db_name() + '_', '') for db in databases if re.match(self.db_name() + '_[0-9]{12}$', db)]
+        else:
+            snapshots = [db.replace(self.db_name() + '_', '') for db in databases if db.startswith(self.db_name() + '_')]
 
         return sorted(snapshots, reverse = True)
 
-    def recover_from(self, timestamp):
-        snapshot_name = self.db_name() + '_' + timestamp
+    def recover_from(self, tag):
+        snapshot_name = self.db_name() + '_' + tag
 
         tables = self.query('SHOW TABLES')
 

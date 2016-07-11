@@ -24,7 +24,7 @@ PIDFILE=${PIDFILE-/var/run/dynamo-detoxd.pid}
 LOCKFILE=${LOCKFILE-/var/lock/subsys/dynamo-detoxd}
 
 EXITCODE=0
-STOP_TIMEOUT=${STOP_TIMEOUT-10}
+STOP_TIMEOUT=${STOP_TIMEOUT-120} # it takes some time to restore databases
 
 # Start detox daemon (detoxd)
 start() {

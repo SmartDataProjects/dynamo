@@ -53,17 +53,19 @@ class MySQLHistory(TransactionHistoryInterface):
         if host != '' or pid != 0:
             raise LocalStoreInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
-    def _do_make_snapshot(self, timestamp): #override
-        self._mysql.make_snapshot(timestamp)
+    def _do_make_snapshot(self, tag): #override
+        new_db = self._mysql.make_snapshot(tag)
 
-    def _do_remove_snapshot(self, newer_than, older_than): #override
-        self._mysql.remove_snapshot(newer_than, older_than)
+        self._mysql.query('UPDATE `%s`.`lock` SET `lock_host` = \'\', `lock_process` = 0' % new_db)
 
-    def _do_list_snapshots(self): #override
-        return self._mysql.list_snapshots()
+    def _do_remove_snapshot(self, tag, newer_than, older_than): #override
+        self._mysql.remove_snapshot(tag = tag, newer_than = newer_than, older_than = older_than)
 
-    def _do_recover_from(self, timestamp): #override
-        self._mysql.recover_from(timestamp)
+    def _do_list_snapshots(self, timestamp_only): #override
+        return self._mysql.list_snapshots(timestamp_only)
+
+    def _do_recover_from(self, tag): #override
+        self._mysql.recover_from(tag)
 
     def _do_new_run(self, operation, partition, is_test): #override
         part_ids = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
