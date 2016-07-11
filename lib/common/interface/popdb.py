@@ -43,7 +43,7 @@ class PopDB(AccessHistoryInterface):
         """
 
         resp = self._popdb_interface.make_request(resource, options = options, method = method, format = format)
-        logger.info('PopDB returned a response of ' + str(len(resp)) + ' bytes.')
+        logger.debug('PopDB returned a response of ' + str(len(resp)) + ' bytes.')
 
         result = json.loads(resp)['DATA']
         unicode2str(result)
