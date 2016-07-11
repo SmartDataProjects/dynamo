@@ -450,7 +450,10 @@ if __name__ == '__main__':
         elif command == 'snapshot':
             interface.make_snapshot()
 
-        elif command == 'recover':
+        elif command == 'clean':
+            interface.remove_snapshot()
+
+        elif command == 'restore':
             timestamp = args.command[icmd]
             icmd += 1
 
