@@ -146,7 +146,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             for elem in replica_list:
                 replica, origin = elem
                 subscription_chunk.append(replica)
-                chunk_size += replica.size()
+                chunk_size += replica.size(physical = False)
                 if chunk_size >= config.phedex.subscription_chunk_size or elem == replica_list[-1]:
                     run_subscription_request(site, subscription_chunk)
                     subscription_chunk = []
@@ -863,7 +863,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         """
 
         resp = self._dbs_interface.make_request(resource, options = options, method = method, format = format)
-        logger.info('DBS returned a response of ' + str(len(resp)) + ' bytes.')
+        logger.debug('DBS returned a response of ' + str(len(resp)) + ' bytes.')
 
         result = json.loads(resp)
         unicode2str(result)

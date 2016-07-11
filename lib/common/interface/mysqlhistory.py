@@ -281,7 +281,7 @@ class MySQLHistory(TransactionHistoryInterface):
             if repkey in self._replica_snapshot_ids or index in replicas_to_update:
                 continue
 
-            replica_size = replica.size() # passed replica is flagged "partial" if actually partial or not fully in the partition -> will add block sizes
+            replica_size = replica.size() # passed replica is flagged "partial" if actually partial or not fully in the partition -> will add block replica sizes
             if replica_size != size: 
                 replicas_to_update[index] = (replica, replica_size)
             else:

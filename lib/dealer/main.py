@@ -198,7 +198,7 @@ class Dealer(object):
                     self.inventory_manager.store.add_dataset_replicas(replicas)
                     self.inventory_manager.store.set_last_update()
     
-                size = sum([r.size() for r in replicas]) # this is not group size but the total size on disk
+                size = sum([r.size(physical = False) for r in replicas]) # this is not group size but the total size on disk
 
                 self.history.make_copy_entry(run_number, site, operation_id, approved, [r.dataset for r in replicas], size, is_test = is_test)
 

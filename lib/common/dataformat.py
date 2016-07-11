@@ -376,19 +376,25 @@ class DatasetReplica(object):
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1 and self.dataset.replicas[0] == self
 
-    def size(self, groups = None):
+    def size(self, groups = None, physical = True):
         if groups is None:
-            if self.is_partial:
-                return sum([r.block.size for r in self.block_replicas])
-            else:
+            if self.is_complete and not self.is_partial:
                 return self.dataset.size
+            else:
+                if physical:
+                    return sum([r.size for r in self.block_replicas])
+                else:
+                    return sum([r.block.size for r in self.block_replicas])
 
         elif type(groups) is Group:
-            return sum([r.block.size for r in self.block_replicas if r.group == groups])
+            if physical:
+                return sum([r.size for r in self.block_replicas if r.group == groups])
+            else:
+                return sum([r.block.size for r in self.block_replicas if r.group == groups])
 
         elif type(groups) is list:
-            if len(groups) == 1:
-                return sum([r.block.size for r in self.block_replicas if r.group == groups[0]])
+            if physical:
+                return sum([r.size for r in self.block_replicas if r.group in groups])
             else:
                 return sum([r.block.size for r in self.block_replicas if r.group in groups])
 

@@ -224,7 +224,7 @@ class DemandManager(object):
                 else:
                     local_rank = (today - last_access).days - num_access
 
-                local_rank -= replica.size() * 1.e-12
+                local_rank -= replica.size(physical = False) * 1.e-12
 
                 global_rank += local_rank
 
