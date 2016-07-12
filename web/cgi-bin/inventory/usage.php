@@ -172,23 +172,23 @@ if ($physical) {
 # now tally up the incomplete replicas
 
   if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
-    $selection = 'SELECT s.`name`, d.`name`, SUM(brs.`size`) * 1.e-12 FROM `block_replicas` AS br';
-    $selection .= ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = br.`block_id` AND brs.`site_id` = br.`site_id`';
-    $selection .= ' INNER JOIN `blocks` AS b ON b.`id` = br.`block_id`';
+    $selection = 'SELECT s.`name`, d.`name`, SUM(brs.`size`) * 1.e-12 FROM `block_replica_sizes` AS brs';
+    $selection .= ' INNER JOIN `block_replicas` AS br ON br.`block_id` = brs.`block_id` AND br.`site_id` = brs.`site_id`'; // always used for is_complete
+    $selection .= ' INNER JOIN `blocks` AS b ON b.`id` = brs.`block_id`';
     $selection .= ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`';
-    $selection .= ' INNER JOIN `sites` AS s ON s.`id` = br.`site_id`';
+    $selection .= ' INNER JOIN `sites` AS s ON s.`id` = brs.`site_id`';
     if (count($const_group) != 0)
       $selection .= ' INNER JOIN `groups` AS g ON g.`id` = br.`group_id`';
 
     $grouping = ' GROUP BY s.`id`, d.`id`';
   }
   else if ($categories == 'groups') {
-    $selection = 'SELECT s.`name`, g.`name`, SUM(brs.`size`) * 1.e-12 FROM `block_replicas` AS br';
-    $selection .= ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = br.`block_id` AND brs.`site_id` = br.`site_id`';
+    $selection = 'SELECT s.`name`, g.`name`, SUM(brs.`size`) * 1.e-12 FROM `block_replica_sizes` AS brs';
+    $selection .= ' INNER JOIN `block_replicas` AS br ON br.`block_id` = brs.`block_id` AND br.`site_id` = brs.`site_id`';
     $selection .= ' INNER JOIN `groups` AS g ON g.`id` = br.`group_id`';
-    $selection .= ' INNER JOIN `sites` AS s ON s.`id` = br.`site_id`';
+    $selection .= ' INNER JOIN `sites` AS s ON s.`id` = brs.`site_id`';
     if (strlen($const_campaign) != 0 || strlen($const_data_tier) != 0 || strlen($const_dataset) != 0) {
-      $selection .= ' INNER JOIN `blocks` AS b ON b.`id` = br.`block_id`';
+      $selection .= ' INNER JOIN `blocks` AS b ON b.`id` = brs.`block_id`';
       $selection .= ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`';
     }
 
