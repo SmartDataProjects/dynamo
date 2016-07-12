@@ -112,16 +112,16 @@ else {
   if (isset($_REQUEST['physical'])) {
     if ($_REQUEST['physical'] == 'y') {
       $physical_checked = ' checked="checked"';
-      $logical_checked = '';
+      $projected_checked = '';
     }
     else {
       $physical_checked = '';
-      $logical_checked = ' checked="checked"';
+      $projected_checked = ' checked="checked"';
     }
   }
   else {
     $physical_checked = ' checked="checked"';
-    $logical_checked = '';
+    $projected_checked = '';
   }
 
   if (count($constraints) == 0)
@@ -134,7 +134,7 @@ else {
   $html = str_replace('${CONSTRAINTS}', json_encode($constraints), $html);
   $html = str_replace('${LAST_UPDATE}', $last_update, $html);
   $html = str_replace('${PHYSICAL_CHECKED}', $physical_checked, $html);
-  $html = str_replace('${LOGICAL_CHECKED}', $logical_checked, $html);
+  $html = str_replace('${PROJECTED_CHECKED}', $projected_checked, $html);
 
   echo $html;
 }

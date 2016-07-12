@@ -5,7 +5,7 @@
   $store_db: mysqi, dynamo inventory store
   $categories: string, what the results will be presented in terms of
   $const_*: string, constraints
-  $physical: bool, show physical/logical size
+  $physical: bool, show physical/projected size
   $content: output array
 */
 

@@ -152,11 +152,11 @@ function limitOptions() {
 
     if (dataType == 'replication') {
         $('#physicalText').html('Complete replicas');
-        $('#logicalText').html('All replicas');
+        $('#projectedText').html('All replicas');
     }
     else {
         $('#physicalText').html('Physical size');
-        $('#logicalText').html('Logical size');
+        $('#projectedText').html('Projected size');
     }
 }
 
