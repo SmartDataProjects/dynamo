@@ -123,6 +123,9 @@ class Block(object):
 
     def real_name(self):
         full_string = hex(self.name).replace('0x', '')[:-1] # last character is 'L'
+        if len(full_string) < 32:
+            full_string = '0' * (32 - len(full_string)) + full_string
+
         return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]
 
     def find_replica(self, site):
@@ -215,7 +218,7 @@ class Site(object):
         self.group_quota = {} # in TB
         self.dataset_replicas = []
         self._block_replicas = []
-        self._occupancy_logical = {} # cached sum of block sizes
+        self._occupancy_projected = {} # cached sum of block sizes
         self._occupancy_physical = {} # cached sum of block replica sizes
 
     def __str__(self):
@@ -245,8 +248,8 @@ class Site(object):
     def add_block_replica(self, replica, adjust_cache = True):
         self._block_replicas.append(replica)
         if adjust_cache:
-            if self._occupancy_logical[replica.group] != -1:
-                self._occupancy_logical[replica.group] += replica.block.size
+            if self._occupancy_projected[replica.group] != -1:
+                self._occupancy_projected[replica.group] += replica.block.size
 
             if self._occupancy_physical[replica.group] != -1:
                 self._occupancy_physical[replica.group] += replica.size
@@ -254,29 +257,29 @@ class Site(object):
     def remove_block_replica(self, replica, adjust_cache = True):
         self._block_replicas.remove(replica)
         if adjust_cache:
-            if self._occupancy_logical[replica.group] != -1:
-                self._occupancy_logical[replica.group] -= replica.block.size
+            if self._occupancy_projected[replica.group] != -1:
+                self._occupancy_projected[replica.group] -= replica.block.size
 
             if self._occupancy_physical[replica.group] != -1:
                 self._occupancy_physical[replica.group] -= replica.size
 
     def clear_block_replicas(self):
         self._block_replicas = []
-        for group in self._occupancy_logical.keys():
-            self._occupancy_logical[group] = -1
+        for group in self._occupancy_projected.keys():
+            self._occupancy_projected[group] = -1
 
         for group in self._occupancy_physical.keys():
             self._occupancy_physical[group] = -1
 
     def reset_group_usage_cache(self, group):
-        self._occupancy_logical[group] = -1
+        self._occupancy_projected[group] = -1
         self._occupancy_physical[group] = -1
 
     def group_usage(self, group, physical = True):
         if physical:
             occupancy = self._occupancy_physical
         else:
-            occupancy = self._occupancy_logical
+            occupancy = self._occupancy_projected
 
         if occupancy[group] == -1:
             if physical:
@@ -298,7 +301,7 @@ class Site(object):
                 if physical:
                     return sum(self.group_usage(g, physical = True) for g in self._occupancy_physical.keys()) * 1.e-12 / denom
                 else:
-                    return sum(self.group_usage(g, physical = False) for g in self._occupancy_logical.keys()) * 1.e-12 / denom
+                    return sum(self.group_usage(g, physical = False) for g in self._occupancy_projected.keys()) * 1.e-12 / denom
         else:
             numer = 0.
             denom = 0.
