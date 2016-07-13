@@ -313,7 +313,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         for subscription in subscriptions:
             cont = subscription['subscription'][0]
             status[(site_name, subscription['name'])] = (subscription['bytes'], cont['node_bytes'], cont['time_update'])
-            
+
         return status
 
     def deletion_status(self, request_id): #override (DeletionInterface)
@@ -345,7 +345,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             if entry['name'] not in sites:
                 site = Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology'])
                 sites[entry['name']] = site
-
+        
     def set_site_status(self, sites): #override (SiteInfoSourceInterface)
         for site in sites.values():
             site.status = Site.STAT_READY
@@ -488,7 +488,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                     dataset.replicas.append(dataset_replica)
                     site.dataset_replicas.append(dataset_replica)
-    
+
                 for protoreplica in ds_block_list:
                     block = dataset.find_block(protoreplica.block_name)
                     if block is None:
@@ -517,7 +517,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                     block.replicas.append(replica)
                     site.add_block_replica(replica, adjust_cache = False) # not resetting cache to speed up
-                    
+
                     # time_update is usually the time when the transfer of the block finished
                     if protoreplica.time_update > dataset_replica.last_block_created:
                         dataset_replica.last_block_created = protoreplica.time_update
@@ -737,7 +737,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 lock.acquire()
                 all_open_blocks.extend(open_blocks) # += doesn't work because it's an assignment!
                 lock.release()
-
+                
         # set_constituent can take 10000 datasets at once
         chunk_size = 10000
         dataset_chunks = []
@@ -808,7 +808,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
             # a dataset can have multiple versions; use the first one
             version = result[0]['release_version'][0]
-    
+
             matches = re.match('CMSSW_([0-9]+)_([0-9]+)_([0-9]+)(|_.*)', version)
             if matches:
                 cycle, major, minor = map(int, [matches.group(i) for i in range(1, 4)])
@@ -853,9 +853,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         for metadata in ['request_timestamp', 'instance', 'request_url', 'request_version', 'request_call', 'call_time', 'request_date']:
             result.pop(metadata)
+
+        # the only one item left in the results should be the result body. Clone the keys to use less memory..
+        key = result.keys()[0]
+        body = result[key]
         
-        # the only one item left in the results should be the result body
-        return result.values()[0]
+        return body
 
     def _make_dbs_request(self, resource, options = [], method = GET, format = 'url'):
         """
@@ -866,6 +869,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         logger.debug('DBS returned a response of ' + str(len(resp)) + ' bytes.')
 
         result = json.loads(resp)
+
         unicode2str(result)
 
         if logger.getEffectiveLevel() == logging.DEBUG:
