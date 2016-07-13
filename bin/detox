@@ -12,6 +12,7 @@ import common.interface.classes as classes
 from detox.main import Detox
 from detox.policy import Policy
 from detox.rules import make_stack, BelongsTo
+import detox.configuration as detox_config
 
 import common.configuration as config
 
@@ -120,11 +121,12 @@ for stack_spec in args.stacks:
     quotas = dict([(site, site.group_quota[group]) for site in inventory_manager.sites.values()])
 
     if args.strategy == 'greedy':
-        site_requirement = lambda site, partition: site.group_quota[inventory_manager.groups[partition]] != 0
+        site_requirement = lambda site, partition, initial: site.group_quota[inventory_manager.groups[partition]] != 0
     else:
         # Return true if the site is overused for a given partition.
         # Currently partition and group names are identical.
-        site_requirement = lambda site, partition: site.group_quota[inventory_manager.groups[partition]] != 0 and site.storage_occupancy(inventory_manager.groups[partition]) > config.target_site_occupancy
+        site_requirement = lambda site, partition, initial: site.group_quota[inventory_manager.groups[partition]] != 0 and \
+            site.storage_occupancy(inventory_manager.groups[partition]) > (detox_config.threshold_occupancy if initial else config.target_site_occupancy)
 
     policy = Policy(default, rule_stack, quotas, partition = partition, site_requirement = site_requirement, prerequisite = BelongsTo(group))
     policy.groups = [group]
