@@ -405,15 +405,15 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         def exec_get(sites, groups, ds_filt):
             if len(sites) == 1:
-                logger.info('Fetching names of datasets on %s.', sites[0].name)
-            else:
-                logger.info('Fetching names of datasets from %d sites.', len(sites))
+                logger.debug('Fetching names of datasets on %s.', sites[0].name)
 
             block_replicas = collections.defaultdict(lambda: collections.defaultdict(list))
 
             options = ['subscribed=y', 'show_dataset=y']
             for site in sites:
                 options.append('node=' + site.name)
+            for group in groups:
+                options.append('group=' + group.name)
 
             options.append('dataset=%s' % ds_filt)
 
@@ -426,9 +426,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     block_name = Block.translate_name(block_entry['name'].replace(ds_name + '#', ''))
     
                     for replica_entry in block_entry['replica']:
-                        if len(groups) != 0 and replica_entry['group'] not in groups:
-                            continue
-   
                         site_name = replica_entry['node']
     
                         protoreplica = ProtoBlockReplica(
@@ -448,13 +445,16 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset_names.add(ds_name)
 
                 for site_name, replicas in ds_replicas.items():
-                    self._block_replicas[ds_name][site_name] += replicas
+                    self._block_replicas[ds_name][site_name].extend(replicas)
 
             lock.release()
 
+            if len(sites) == 1:
+                logger.info('Extracted dataset names from %s.', sites[0].name)
+
         if filt == '/*/*/*' or filt == '' or filt == '*':
-            items = [([site], groups, filt) for site in sites]
-            parallel_exec(exec_get, items)
+            items = [([site], [group], filt) for site in sites for group in groups]
+            parallel_exec(exec_get, items, num_threads = len(items))
         else:
             exec_get(sites, groups, filt)
 
@@ -691,6 +691,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         Need to process 10000 at a time due to PhEDEx limitations.
         """
 
+        logger.info('set_dataset_constituent_info  Checking blocks of %d datasets', len(datasets))
+
         all_open_blocks = []
         
         lock = threading.Lock()
@@ -733,12 +735,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset.size = sum([b.size for b in dataset.blocks])
                 dataset.num_files = sum([b.num_files for b in dataset.blocks])
 
-                lock.acquire()
-                all_open_blocks.extend(open_blocks) # += doesn't work because it's an assignment!
-                lock.release()
+            lock.acquire()
+            all_open_blocks.extend(open_blocks) # += doesn't work because it's an assignment!
+            lock.release()
                 
-        # set_constituent can take 10000 datasets at once
-        chunk_size = 10000
+        # set_constituent can take 10000 datasets at once, make it smaller and more parallel
+        chunk_size = 100
         dataset_chunks = []
 
         start = 0
@@ -747,7 +749,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             start += chunk_size
 
         # run set_constituent for all chunks in parallel
-        parallel_exec(set_constituent, dataset_chunks)
+        parallel_exec(set_constituent, dataset_chunks, num_threads = 64)
 
         # routine to fetch block info from DBS
         def dbs_check(block):
@@ -759,10 +761,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 block.dataset.status = Dataset.STAT_PRODUCTION
 
         # run dbs_check in parallel on all open blocks
-        parallel_exec(dbs_check, all_open_blocks)
+        parallel_exec(dbs_check, all_open_blocks, num_threads = 64)
 
     def set_dataset_details(self, datasets): #override (DatasetInfoSourceInterface)
-        logger.info('set_dataset_deatils  Checking status of %d datasets', len(datasets))
+        logger.info('set_dataset_details  Checking status of %d datasets', len(datasets))
 
         # routine to set status and type (run in parallel)
         def set_status_type(dataset_list):
