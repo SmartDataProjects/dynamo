@@ -104,7 +104,15 @@ class RESTService(object):
 
                 response = opener.open(request)
 
-                return response.read()
+                # clean up - break reference cycle so python can free the memory up
+                for handler in opener.handlers:
+                    handler.parent = None
+                del opener
+
+                content = response.read()
+                del response
+
+                return content
     
             except:
                 continue
