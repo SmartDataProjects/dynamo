@@ -81,7 +81,7 @@ class MySQL(object):
         else:
             return list(result)
 
-    def execute_many(self, sqlbase, key, pool, additional_conditions = [], exec_on_match = True):
+    def execute_many(self, sqlbase, key, pool, additional_conditions = [], exec_on_match = True, order_by = ''):
         result = []
 
         if type(key) is tuple:
@@ -99,7 +99,11 @@ class MySQL(object):
             sqlbase += ' NOT IN '
 
         def execute(pool_expr):
-            vals = self.query(sqlbase + pool_expr)
+            sql = sqlbase + pool_expr
+            if order_by:
+                sql += ' ORDER BY ' + order_by
+
+            vals = self.query(sql)
             if type(vals) is list:
                 result.extend(vals)
 
@@ -107,7 +111,7 @@ class MySQL(object):
 
         return result
 
-    def select_many(self, table, fields, key, pool, additional_conditions = [], select_match = True):
+    def select_many(self, table, fields, key, pool, additional_conditions = [], select_match = True, order_by = ''):
         if type(fields) is str:
             fields_str = '`%s`' % fields
         else:
@@ -115,7 +119,7 @@ class MySQL(object):
 
         sqlbase = 'SELECT {fields} FROM `{table}`'.format(fields = fields_str, table = table)
 
-        return self.execute_many(sqlbase, key, pool, additional_conditions, select_match)
+        return self.execute_many(sqlbase, key, pool, additional_conditions, select_match, order_by = order_by)
 
     def delete_many(self, table, key, pool, additional_conditions = [], delete_match = True):
         sqlbase = 'DELETE FROM `{table}`'.format(table = table)
