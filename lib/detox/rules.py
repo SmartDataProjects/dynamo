@@ -128,7 +128,7 @@ class ProtectNew(Protect):
         if demand.request_weight > self.request_threshold:
             return 'Request weight is above %f.' % self.request_threshold
 
-protect_new = ProtectNew(500., 1.)
+protect_new = ProtectNew(400., 1.)
 
 class DeletePartial(Delete):
     """

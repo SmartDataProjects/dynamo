@@ -20,7 +20,8 @@ class Policy(object):
         self.quotas = quotas # {site: quota}
         self.partition = partition
         self.groups = [] # groups the policy concerns
-        self.site_requirement = site_requirement # bool(site, partition)
+        self.site_requirement = site_requirement # bool(site, partition, initial). initial: check deletion should be triggered
+
         # An object with two methods dataset(replica) and block(replica)
         # dataset: int(replica), 0: does not apply, 1: applies on all blocks, 2: partially applies
         # block: bool(replica)
@@ -38,11 +39,11 @@ class Policy(object):
         else:
             return self.prerequisite.block(replica)
 
-    def need_deletion(self, site):
+    def need_deletion(self, site, initial = False):
         if self.site_requirement is None:
             return True
         else:
-            return self.site_requirement(site, self.partition)
+            return self.site_requirement(site, self.partition, initial)
 
     def evaluate(self, replica, demand_manager):
         for rule in self.rules:

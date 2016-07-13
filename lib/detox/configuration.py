@@ -1,10 +1,6 @@
 from common.configuration import paths, Configuration
 
-delete_old = Configuration()
-delete_old.threshold = (1.5, 'y')
-
-delete_unpopular = Configuration()
-delete_unpopular.threshold = 1.
+threshold_occupancy = 0.9
 
 deletion_per_iteration = 10
 

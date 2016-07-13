@@ -85,9 +85,10 @@ class Detox(object):
 
         logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(replicas))
 
+        # Ask each site if deletion should be triggered
         target_sites = set()
         for site in self.inventory_manager.sites.values():
-            if policy.need_deletion(site):
+            if policy.need_deletion(site, initial = True):
                 target_sites.add(site)
 
         protected = {} # {replica: reason}
@@ -99,7 +100,7 @@ class Detox(object):
         while True:
             iteration += 1
 
-            eval_results = parallel_exec(lambda r: policy.evaluate(r, self.demand_manager), list(replicas), get_output = True, per_thread = 100)
+            eval_results = parallel_exec(lambda r: policy.evaluate(r, self.demand_manager), replicas, get_output = True, per_thread = 100)
 
             deletion_candidates = {} # {replica: reason}
 
@@ -113,6 +114,8 @@ class Detox(object):
 
                 else:
                     deletion_candidates[replica] = reason
+
+            del eval_results
 
             logger.info('Iteration %d', iteration)
             logger.info(' %d dataset replicas in deletion candidates', len(deletion_candidates))
@@ -161,6 +164,10 @@ class Detox(object):
         logger.info('Committing deletion.')
         self.commit_deletions(run_number, policy, deleted.keys(), is_test)
 
+        del protected
+        del deleted
+        del kept
+
         self.history.close_deletion_run(run_number)
 
         logger.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
@@ -191,6 +198,8 @@ class Detox(object):
                 size = sum([r.size(policy.groups) for r in replicas])
 
                 self.history.make_deletion_entry(run_number, site, deletion_id, approved, [r.dataset for r in replicas], size)
+
+            del deletion_mapping
 
             sigint.unblock()
 
