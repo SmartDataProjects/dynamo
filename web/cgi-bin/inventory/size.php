@@ -163,26 +163,28 @@ if ($physical) {
 
   if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
     $selection = 'SELECT d.`name`, SUM(brs.`size`) * 1.e-12 FROM `block_replica_sizes` AS brs';
-    $selection .= ' INNER JOIN `block_replicas` AS br ON br.`block_id` = brs.`block_id` AND br.`site_id` = brs.`site_id`'; // always used for is_complete
     $selection .= ' INNER JOIN `blocks` AS b ON b.`id` = brs.`block_id`';
     $selection .= ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`';
     if (strlen($const_site) != 0)
       $selection .= ' INNER JOIN `sites` AS s ON s.`id` = brs.`site_id`';
-    if (count($const_group) != 0)
+    if (count($const_group) != 0) {
+      $selection .= ' INNER JOIN `block_replicas` AS br ON br.`block_id` = brs.`block_id` AND br.`site_id` = brs.`site_id`';
       $selection .= ' INNER JOIN `groups` AS g ON g.`id` = br.`group_id`';
+    }
 
     $grouping = ' GROUP BY d.`id`';
   }
   else if ($categories == 'sites') {
     $selection = 'SELECT s.`name`, SUM(brs.`size`) * 1.e-12 FROM `block_replica_sizes` AS brs';
-    $selection .= ' INNER JOIN `block_replicas` AS br ON br.`block_id` = brs.`block_id` AND br.`site_id` = brs.`site_id`'; // always used for is_complete
     $selection .= ' INNER JOIN `sites` AS s ON s.`id` = brs.`site_id`';
     if (strlen($const_campaign) != 0 || strlen($const_data_tier) != 0 || strlen($const_dataset) != 0) {
       $selection .= ' INNER JOIN `blocks` AS b ON b.`id` = brs.`block_id`';
       $selection .= ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`';
     }
-    if (count($const_group) != 0)
+    if (count($const_group) != 0) {
+      $selection .= ' INNER JOIN `block_replicas` AS br ON br.`block_id` = brs.`block_id` AND br.`site_id` = brs.`site_id`';
       $selection .= ' INNER JOIN `groups` AS g ON g.`id` = br.`group_id`';
+    }
 
     $grouping = ' GROUP BY s.`id`';
   }
@@ -200,9 +202,7 @@ if ($physical) {
     $grouping = ' GROUP BY g.`id`';
   }
 
-  $constraint_base = 'br.`is_complete` = 0';
-
-  fetch_size($selection, $constraint_base, $grouping);
+  fetch_size($selection, '', $grouping);
 }
 
 arsort($size_sums);
