@@ -515,7 +515,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         size = protoreplica.bytes
                     )
     
-                    block.replicas.append(replica)
                     site.add_block_replica(replica, adjust_cache = False) # not resetting cache to speed up
 
                     # time_update is usually the time when the transfer of the block finished

@@ -100,43 +100,33 @@ class Dataset(object):
             return None
 
 
-class Block(object):
-    """Represents a data block."""
+# Block and BlockReplica implemented as tuples to reduce memory footprint
+Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files', 'is_open'])
 
-    @staticmethod
-    def translate_name(name_str):
-        # block name format: [8]-[4]-[4]-[4]-[12] where [n] is an n-digit hex.
-        return int(name_str.replace('-', ''), 16)
+def _Block_translate_name(name_str):
+    # block name format: [8]-[4]-[4]-[4]-[12] where [n] is an n-digit hex.
+    return int(name_str.replace('-', ''), 16)
 
-    def __init__(self, name, dataset = None, size = -1, num_files = 0, is_open = False):
-        # name represented by an integer translation of hex name in memory
-        self.name = name
-        self.dataset = dataset
-        self.size = size
-        self.num_files = num_files
-        self.is_open = is_open
-        self.replicas = []
+def _Block_real_name(self):
+    full_string = hex(self.name).replace('0x', '')[:-1] # last character is 'L'
+    if len(full_string) < 32:
+        full_string = '0' * (32 - len(full_string)) + full_string
 
-    def __str__(self):
-        replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
-        return 'Block %s#%s (size=%d, num_files=%d, is_open=%d, replicas=%s)' % (self.dataset.name, self.real_name(), self.size, self.num_files, self.is_open, replica_sites)
+    return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]
 
-    def real_name(self):
-        full_string = hex(self.name).replace('0x', '')[:-1] # last character is 'L'
-        if len(full_string) < 32:
-            full_string = '0' * (32 - len(full_string)) + full_string
+def _Block_find_replica(self, site):
+    try:
+        if type(site) is Site:
+            return next(r for r in self.replicas if r.site == site)
+        else:
+            return next(r for r in self.replicas if r.site.name == site)
 
-        return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]
+    except StopIteration:
+        return None
 
-    def find_replica(self, site):
-        try:
-            if type(site) is Site:
-                return next(r for r in self.replicas if r.site == site)
-            else:
-                return next(r for r in self.replicas if r.site.name == site)
-
-        except StopIteration:
-            return None
+Block.translate_name = staticmethod(_Block_translate_name)
+Block.real_name = _Block_real_name
+Block.find_replica = _Block_find_replica
 
 
 class Site(object):
@@ -372,7 +362,7 @@ class DatasetReplica(object):
     def clone(self): # Create a detached clone. Detached in the sense that it is not linked from dataset or site.
         replica = DatasetReplica(dataset = self.dataset, site = self.site, group = self.group, is_complete = self.is_complete, is_partial = self.is_partial, is_custodial = self.is_custodial, last_block_created = self.last_block_created)
         for brep in self.block_replicas:
-            replica.block_replicas.append(brep.clone())
+            replica.block_replicas.append(BlockReplica(*brep))
 
         return replica
 
@@ -430,28 +420,8 @@ class DatasetReplica(object):
         except StopIteration:
             return None
 
-
-class BlockReplica(object):
-    """Represents a block replica."""
-
-    def __init__(self, block, site, group = None, is_complete = False, is_custodial = False, size = 0):
-        self.block = block
-        self.site = site
-        self.group = group
-        self.is_complete = is_complete
-        self.is_custodial = is_custodial
-        self.size = size # can be smaller than the full block size if not complete
-
-    def __str__(self):
-        if self.is_complete:
-            return 'BlockReplica {site}:{dataset}#{block} (group={group}, is_complete={is_complete}, is_custodial={is_custodial})'.format(
-                site = self.site.name, dataset = self.dataset.name, group = self.group.name if self.group is not None else None, is_complete = self.is_complete, is_custodial = self.is_custodial)
-        else:
-            return 'BlockReplica {site}:{dataset}#{block} (group={group}, is_complete={is_complete}, is_custodial={is_custodial}, size={size})'.format(
-                site = self.site.name, dataset = self.dataset.name, group = self.group.name if self.group is not None else None, is_complete = self.is_complete, is_custodial = self.is_custodial, size = self.size)
-
-    def clone(self): # Create a detached clone. See DatasetReplica.clone
-        return BlockReplica(block = self.block, site = self.site, group = self.group, is_complete = self.is_complete, is_custodial = self.is_custodial, size = self.size)
+# Block and BlockReplica implemented as tuples to reduce memory footprint
+BlockReplica = collections.namedtuple('BlockReplica', ['block', 'site', 'group', 'is_complete', 'is_custodial', 'size'])
 
 
 class DatasetDemand(object):
@@ -462,7 +432,6 @@ class DatasetDemand(object):
         self.request_weight = request_weight
         self.global_usage_rank = global_usage_rank
         self.locked_blocks = []
-
 
 class DatasetRequest(object):
     """Represents a request to a dataset in the job queue"""

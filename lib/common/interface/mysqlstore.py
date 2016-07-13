@@ -242,16 +242,21 @@ class MySQLStore(LocalStoreInterface):
         sql = 'SELECT `id`, `dataset_id`, `name`, `size`, `num_files`, `is_open` FROM `blocks`'
         if dataset_filt != '/*/*/*':
             sql += ' WHERE `dataset_id` IN (%s)' % (','.join(map(str, self._ids_to_datasets.keys())))
+        sql += ' ORDER BY `dataset_id`'
 
         blocks = self._mysql.query(sql)
 
         logger.info('Loaded data for %d blocks.', len(blocks))
 
+        _dataset_id = 0
+        dataset = None
         for block_id, dataset_id, name, size, num_files, is_open in blocks:
-            block = Block(Block.translate_name(name), size = size, num_files = num_files, is_open = is_open)
+            if dataset_id != _dataset_id:
+                dataset = self._ids_to_datasets[dataset_id]
+                _dataset_id = dataset_id
 
-            dataset = self._ids_to_datasets[dataset_id]
-            block.dataset = dataset
+            block = Block(Block.translate_name(name), dataset, size, num_files, is_open)
+
             dataset.blocks.append(block)
 
             block_map[block_id] = block
@@ -355,7 +360,6 @@ class MySQLStore(LocalStoreInterface):
     
                 rep = BlockReplica(block, site, group = group, is_complete = is_complete, is_custodial = is_custodial, size = size)
     
-                block.replicas.append(rep)
                 site.add_block_replica(rep, adjust_cache = False)
     
                 dataset_replica = block.dataset.find_replica(site)
@@ -373,7 +377,6 @@ class MySQLStore(LocalStoreInterface):
     
                     for block in dataset.blocks:
                         rep = BlockReplica(block, replica.site, group = replica.group, is_complete = True, is_custodial = replica.is_custodial, size = block.size)
-                        block.replicas.append(rep)
                         replica.site.add_block_replica(rep, adjust_cache = False)
                         replica.block_replicas.append(rep)
 
