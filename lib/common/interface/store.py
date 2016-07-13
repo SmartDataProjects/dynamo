@@ -92,6 +92,13 @@ class LocalStoreInterface(object):
 
         return self._do_list_snapshots(timestamp_only)
 
+    def clear_cache(self):
+        """
+        Clear whatever is cached
+        """
+
+        self._do_clear_cache()
+
     def clear(self):
         """
         Wipes out the store contents!!

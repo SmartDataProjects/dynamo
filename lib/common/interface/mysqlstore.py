@@ -89,6 +89,18 @@ class MySQLStore(LocalStoreInterface):
     def _do_list_snapshots(self, timestamp_only):
         return self._mysql.list_snapshots(timestamp_only)
 
+    def _do_clear_cache(self): #override
+        """
+        Clear the id <-> object mappings.
+        """
+
+        self._datasets_to_ids = {} # cache dictionary object -> mysql id
+        self._sites_to_ids = {} # cache dictionary object -> mysql id
+        self._groups_to_ids = {} # cache dictionary object -> mysql id
+        self._ids_to_datasets = {} # cache dictionary mysql id -> object
+        self._ids_to_sites = {} # cache dictionary mysql id -> object
+        self._ids_to_groups = {} # cache dictionary mysql id -> object
+
     def _do_clear(self):
         tables = self._mysql.query('SHOW TABLES')
         tables.remove('system')
@@ -512,6 +524,8 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.insert_many('software_versions', fields, lambda v: v, version_list) # version is already a tuple
 
+        del version_list
+
         version_map = {(0, 0, 0, ''): 0} # tuple -> id
         versions = self._mysql.query('SELECT `id`, `cycle`, `major`, `minor`, `suffix` FROM `software_versions`')
 
@@ -556,7 +570,7 @@ class MySQLStore(LocalStoreInterface):
         
         self._mysql.insert_many('datasets_new', fields, mapping, known_datasets, do_update = False)
 
-        known_datasets = None
+        del known_datasets
 
         # at this point we should drop records that make reference to datasets that are not in the store any more
         self._mysql.delete_not_in('dataset_replicas', 'dataset_id', ('id', 'datasets_new'))
@@ -586,7 +600,7 @@ class MySQLStore(LocalStoreInterface):
         # reload the dataset ids
         self._set_dataset_ids(new_datasets, update = True)
 
-        new_datasets = None
+        del new_datasets
 
         # insert/update blocks
         all_blocks = []
@@ -608,7 +622,7 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.insert_many('blocks_new', fields, mapping, all_blocks, do_update = False)
 
-        all_blocks = None
+        del all_blocks
 
         self._mysql.query('RENAME TABLE `blocks` TO `blocks_old`')
         self._mysql.query('RENAME TABLE `blocks_new` TO `blocks`')
@@ -642,8 +656,6 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.insert_many('dataset_replicas_new', fields, mapping, all_replicas, do_update = False)
 
-        all_replicas = None
-
         self._mysql.query('RENAME TABLE `dataset_replicas` TO `dataset_replicas_old`')
         self._mysql.query('RENAME TABLE `dataset_replicas_new` TO `dataset_replicas`')
         self._mysql.query('DROP TABLE `dataset_replicas_old`')
@@ -652,28 +664,38 @@ class MySQLStore(LocalStoreInterface):
         blockreps_to_write = []
         blockrepsizes_to_write = []
 
-        for dataset in datasets:
-            dataset_id = self._datasets_to_ids[dataset]
+        _dataset = None
+        for replica in all_replicas:
+            if _dataset != replica.dataset:
+                dataset_id = self._datasets_to_ids[replica.dataset]
+                _dataset = replica.dataset
 
-            for replica in dataset.replicas:
-                # replica is incomplete or has multiple owners
-                if replica.is_partial or not replica.is_complete or replica.group is None:
-                    blockreps_to_write.extend([(dataset_id, r) for r in replica.block_replicas])
-                    blockrepsizes_to_write.extend([(r, r.size) for r in replica.block_replicas if not r.is_complete])
+            # replica is incomplete or has multiple owners
+            if replica.is_partial or not replica.is_complete or replica.group is None:
+                blockreps_to_write.extend([(dataset_id, r) for r in replica.block_replicas])
+                blockrepsizes_to_write.extend([(r, r.size) for r in replica.block_replicas if not r.is_complete])
+
+        del all_replicas
 
         logger.info('Saving %d block replica info.', len(blockreps_to_write))
 
         block_to_id = {}
 
-        block_data = self._mysql.select_many('blocks', ('dataset_id', 'name', 'id'), ('dataset_id', 'name'), ['(%d,\'%s\')' % (did, r.block.real_name()) for did, r in blockreps_to_write])
+        block_data = self._mysql.select_many('blocks', ('dataset_id', 'name', 'id'), ('dataset_id', 'name'), ['(%d,\'%s\')' % (did, r.block.real_name()) for did, r in blockreps_to_write], order_by = 'dataset_id')
 
+        _dataset_id = 0
         for dataset_id, block_name, block_id in block_data:
-            dataset = self._ids_to_datasets[dataset_id]
+            if dataset_id != _dataset_id:
+                dataset = self._ids_to_datasets[dataset_id]
+                _dataset_id = dataset_id
+
             block = dataset.find_block(Block.translate_name(block_name))
+            if block is None:
+                print dataset.name, Block.translate_name(block_name)
 
             block_to_id[block] = block_id
 
-        block_data = None
+        del block_data
 
         self._mysql.query('CREATE TABLE `block_replicas_new` LIKE `block_replicas`')
 
@@ -681,6 +703,8 @@ class MySQLStore(LocalStoreInterface):
         mapping = lambda (did, r): (block_to_id[r.block], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_custodial)
 
         self._mysql.insert_many('block_replicas_new', fields, mapping, blockreps_to_write, do_update = False)
+
+        del blockreps_to_write
 
         self._mysql.query('RENAME TABLE `block_replicas` TO `block_replicas_old`')
         self._mysql.query('RENAME TABLE `block_replicas_new` TO `block_replicas`')
@@ -692,6 +716,8 @@ class MySQLStore(LocalStoreInterface):
         mapping = lambda (r, size): (block_to_id[r.block], self._sites_to_ids[r.site], size)
 
         self._mysql.insert_many('block_replica_sizes_new', fields, mapping, blockrepsizes_to_write, do_update = False)
+
+        del blockrepsizes_to_write
 
         self._mysql.query('RENAME TABLE `block_replica_sizes` TO `block_replica_sizes_old`')
         self._mysql.query('RENAME TABLE `block_replica_sizes_new` TO `block_replica_sizes`')
