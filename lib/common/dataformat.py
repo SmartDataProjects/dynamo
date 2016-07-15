@@ -56,7 +56,7 @@ class Dataset(object):
         else:
             return arg
 
-    def __init__(self, name, size = -1, num_files = -1, is_open = True, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0):
+    def __init__(self, name, size = -1, num_files = 0, is_open = True, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0):
         self.name = name
         self.size = size
         self.num_files = num_files
@@ -71,6 +71,12 @@ class Dataset(object):
         self.blocks = []
         self.replicas = []
         self.requests = []
+
+    def __del__(self):
+        # unlink objects to avoid ref cycles
+        del self.blocks
+        del self.replicas
+        del self.requests
 
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
@@ -124,9 +130,19 @@ def _Block_find_replica(self, site):
     except StopIteration:
         return None
 
+def _Block_clone(self, dataset = None, size = None, num_files = None, is_open = None):
+    return Block(
+        self.name,
+        self.dataset if dataset is None else dataset,
+        self.size if size is None else size,
+        self.num_files if num_files is None else num_files,
+        self.is_open if is_open is None else is_open
+    )
+
 Block.translate_name = staticmethod(_Block_translate_name)
 Block.real_name = _Block_real_name
 Block.find_replica = _Block_find_replica
+Block.clone = _Block_clone
 
 
 class Site(object):
@@ -210,6 +226,14 @@ class Site(object):
         self._block_replicas = []
         self._occupancy_projected = {} # cached sum of block sizes
         self._occupancy_physical = {} # cached sum of block replica sizes
+
+    def __del__(self):
+        # unlink objects to avoid ref cycles
+        del self.group_quota
+        del self.dataset_replicas
+        del self._block_replicas
+        del self._occupancy_projected
+        del self._occupancy_physical
 
     def __str__(self):
         return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s)' % \
@@ -349,7 +373,13 @@ class DatasetReplica(object):
         self.is_custodial = is_custodial
         self.last_block_created = last_block_created
         self.block_replicas = []
-        self.accesses = dict([(i, {}) for i in range(1, 3)]) # UTC date -> Accesses
+        self.accesses = {DatasetReplica.ACC_LOCAL: {}, DatasetReplica.ACC_REMOTE: {}} # UTC date -> Accesses
+
+    def __del__(self):
+        del self.dataset
+        del self.site
+        del self.block_replicas
+        del self.accesses
 
     def __str__(self):
         return 'DatasetReplica {site}:{dataset} (group={group}, is_complete={is_complete}, is_partial={is_partial}, is_custodial={is_custodial},' \
@@ -362,7 +392,7 @@ class DatasetReplica(object):
     def clone(self): # Create a detached clone. Detached in the sense that it is not linked from dataset or site.
         replica = DatasetReplica(dataset = self.dataset, site = self.site, group = self.group, is_complete = self.is_complete, is_partial = self.is_partial, is_custodial = self.is_custodial, last_block_created = self.last_block_created)
         for brep in self.block_replicas:
-            replica.block_replicas.append(BlockReplica(*brep))
+            replica.block_replicas.append(brep.clone())
 
         return replica
 
@@ -423,6 +453,17 @@ class DatasetReplica(object):
 # Block and BlockReplica implemented as tuples to reduce memory footprint
 BlockReplica = collections.namedtuple('BlockReplica', ['block', 'site', 'group', 'is_complete', 'is_custodial', 'size'])
 
+def _BlockReplica_clone(self, block = None, site = None, group = None, is_complete = None, is_custodial = None, size = None):
+    return BlockReplica(
+        self.block if block is None else block,
+        self.site if site is None else site,
+        self.group if group is None else group,
+        self.is_complete if is_complete is None else is_complete,
+        self.is_custodial if is_custodial is None else is_custodial,
+        self.size if size is None else size
+    )
+
+BlockReplica.clone = _BlockReplica_clone
 
 class DatasetDemand(object):
     """Represents information on dataset demand."""
@@ -432,6 +473,9 @@ class DatasetDemand(object):
         self.request_weight = request_weight
         self.global_usage_rank = global_usage_rank
         self.locked_blocks = []
+
+    def __del__(self):
+        del self.locked_blocks
 
 class DatasetRequest(object):
     """Represents a request to a dataset in the job queue"""
@@ -473,3 +517,6 @@ class HistoryRecord(object):
         self.done = done
         self.last_update = last_update
         self.replicas = []
+
+    def __del__(self):
+        del self.replicas
