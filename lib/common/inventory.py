@@ -112,43 +112,49 @@ class InventoryManager(object):
 
             logger.info('Fetching info on sites.')
             self.site_source.get_site_list(self.sites, filt = config.inventory.included_sites)
+
             self.site_source.set_site_status(self.sites)
+
             if len(config.inventory.excluded_sites) != 0:
-                site_names = self.sites.keys()
-                for site_name in site_names:
-                    if site_name in config.inventory.excluded_sites:
-                        self.sites.pop(site_name)
+                sites = self.sites.values()
+                for site in sites:
+                    if site.name in config.inventory.excluded_sites:
+                        self.sites.pop(site.name)
+                        self.store.clear_cache()
+
+                del sites
 
             logger.info('Fetching info on groups.')
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
-            # First construct a full list of dataset names we consider, then make a mass query to optimize speed
+            # First get information on all replicas in the system, possibly creating datasets / blocks along the way.
+            logger.info('Making replica links.')
             if dataset_filter == '/*/*/*':
-                dataset_names = self.replica_source.get_dataset_names(sites = self.sites.values(), groups = self.groups)
-            else:
-                dataset_names = self.replica_source.get_dataset_names(sites = self.sites.values(), groups = self.groups, filt = dataset_filter)
-
-            # Do not consider datasets loaded from the inventory but is not on any of the sites
-            loaded_names = self.datasets.keys()
-            for ds_name in loaded_names:
-                if ds_name not in dataset_names:
-                    self.datasets.pop(ds_name)
-
-            if logger.getEffectiveLevel() == logging.DEBUG:
-                logger.debug('dataset_names: %s', ' '.join(dataset_names))
-
-            if len(dataset_names) != 0: # should be true for any normal operation. Relevant when debugging
-                logger.info('Constructing %d dataset objects.', len(self.datasets))
-
-                self.dataset_source.get_datasets(dataset_names, self.datasets)
-                self.replica_source.find_tape_copies(self.datasets)
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
+            else:
+                self.replica_source.make_replica_links(self.sites, self.groups, self.datasets, dataset_filt = dataset_filter)
 
-            # Do not consider datasets with no replicas
+            # Take out datasets with no replicas
             datasets = self.datasets.values()
             for dataset in datasets:
                 if len(dataset.replicas) == 0:
                     self.datasets.pop(dataset.name)
+                    self.store.clear_cache()
+
+            del datasets
+
+            logger.info('Constructing %d dataset objects.', len(self.datasets))
+
+            self.dataset_source.fill_dataset_info(self.datasets)
+
+            # Number of blocks for each dataset is now known. Check for partial replicas.
+            for dataset in self.datasets.values():
+                num_blocks = len(dataset.blocks)
+                for replica in dataset.replicas:
+                    if replica.is_complete and len(replica.block_replicas) != num_blocks:
+                        replica.is_partial = True
+            
+            self.replica_source.find_tape_copies(self.datasets)
 
             logger.info('Saving data.')
 
@@ -188,8 +194,6 @@ class InventoryManager(object):
     def unlink_all_replicas(self):
         for dataset in self.datasets.values():
             dataset.replicas = []
-            for block in dataset.blocks:
-                block.replicas = []
 
         for site in self.sites.values():
             site.dataset_replicas = []
