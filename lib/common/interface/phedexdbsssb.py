@@ -531,8 +531,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             if existing.find_block(block.name) is None:
                                 existing.blocks.append(block.clone(dataset = existing))
     
-                        del new_dataset.blocks
-                        
                         # existing dataset should not have this replica because only one thread runs on any given site-dataset combination
                         for replica in new_dataset.replicas:
                             replica.dataset = existing
@@ -545,18 +543,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                             replica.block_replicas = new_block_replicas
 
-                        del new_dataset.replicas
-
-            # new blocks for existing datasets
-            with lock:
-                for new_block in new_blocks:
-                    dataset = new_block.dataset
-                    if dataset.find_block(new_block.name) is None:
-                        dataset.blocks.append(new_block)
-                        #if a new block is found
-                        # DBS status VALID apparently does not mean the dataset is closed -> just consider it open whenever a new block is found in the system
-                        # In principle the best thing to do is to query DBS for every single dataset; run inventory scan periodically
-                        dataset.status = Dataset.STAT_PRODUCTION
+                        del new_dataset
 
             # new replicas for existing datasets
             # replica can always be appended, see above
@@ -573,6 +560,17 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             new_replica.block_replicas[irep] = block_replica
 
                         site.add_block_replica(block_replica, adjust_cache = False)
+
+            # new blocks for existing datasets
+            with lock:
+                for new_block in new_blocks:
+                    dataset = new_block.dataset
+                    if dataset.find_block(new_block.name) is None:
+                        dataset.blocks.append(new_block)
+                        #if a new block is found
+                        # DBS status VALID apparently does not mean the dataset is closed -> just consider it open whenever a new block is found in the system
+                        # In principle the best thing to do is to query DBS for every single dataset; run inventory scan periodically
+                        dataset.status = Dataset.STAT_PRODUCTION
 
             if len(sites) == 1:
                 logger.debug('Extracted dataset names from %s.', site_list[0].name)
