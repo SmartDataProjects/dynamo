@@ -59,9 +59,9 @@ class ExceptionHolder(object):
         self.exception = exc
 
 
-def parallel_exec(target, arguments, add_args = None, get_output = False, per_thread = 1, print_progress = False):
+def parallel_exec(target, arguments, add_args = None, get_output = False, per_thread = 1, num_threads = config.num_threads, print_progress = False):
     """
-    Execute target(*args) in up to config.num_threads parallel threads,
+    Execute target(*args) in up to num_threads parallel threads,
     for each entry args of arguments list.
     """
 
@@ -126,7 +126,7 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
             outputs.append(thread_outputs)
         exceptions.append(thread_exception)
 
-        while len(threads) >= config.num_threads:
+        while len(threads) >= num_threads:
             ith = 0
             while ith < len(threads):
                 thread = threads[ith]
@@ -143,7 +143,7 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
                     if get_output:
                         all_outputs.extend(outputs.pop(ith))
 
-            if len(threads) >= config.num_threads:
+            if len(threads) >= num_threads:
                 time.sleep(1)
 
     for ith, thread in enumerate(threads):
