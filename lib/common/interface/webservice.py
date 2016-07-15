@@ -1,3 +1,4 @@
+import sys
 import urllib
 import urllib2
 import httplib
@@ -89,10 +90,8 @@ class RESTService(object):
 
             request.add_data(data)
 
-        attempts = 0
-        while attempts != config.webservice.num_attempts:
-            attempts += 1
-
+        exceptions = []
+        while len(exceptions) != config.webservice.num_attempts:
             try:
                 if self.url_base.startswith('https:'):
                     opener = urllib2.build_opener(HTTPSGridAuthHandler())
@@ -115,9 +114,12 @@ class RESTService(object):
                 return content
     
             except:
+                exceptions.append(sys.exc_info()[:2])
                 continue
 
         else: # exhausted allowed attempts
+            logger.error('Too many failed attempts in webservice')
+            logger.error('%s' % ' '.join(map(str, exceptions)))
             raise RuntimeError('webservice too many attempts')
 
 
