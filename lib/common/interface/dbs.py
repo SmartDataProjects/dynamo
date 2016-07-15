@@ -19,29 +19,20 @@ class DBS(DatasetInfoSourceInterface):
 
         self._interface = RESTService(config.dbs.url_base)
 
-    def get_dataset(self, name, datasets): # override
-        ds_records = self._make_request('datasets', ['dataset=' + name, 'detail=True'])
-        if len(ds_records) == 0:
-            logger.warning('Dataset %s not found on record.', name)
-            return dataset
-
-        block_records = self._make_request('blocksummaries', ['dataset=' + name, 'detail=True'])
-
-        datasets[name] = self._construct_dataset(ds_records[0], block_records)
-
-    def get_datasets(self, names, datasets): # override
+    def fill_dataset_info(self, datasets): # override
+        dataset_list = datasets.values()
         first = 0
-        while first < len(names):
+        while first < len(dataset_list):
             # fetch data 1000 at a time
             last = first + 1000
-            ds_records = self._make_request('datasetlist', {'dataset': names[first:last], 'detail': True}, method = POST, format = 'json')            
+            ds_records = self._make_request('datasetlist', {'dataset': [d.name for d in dataset_list[first:last]], 'detail': True}, method = POST, format = 'json')            
 
             # This is still way too slow - have to make one API call (O(1)s) for each dataset.
             # We are actually only interested in the number of blocks in the dataset; DBS datasetlist does not give you that.
             for ds_record in ds_records:
                 block_records = self._make_request('blocksummaries', ['dataset=' + ds_record['dataset']] + ['detail=True'])
             
-                datasets[name] = self._construct_dataset(ds_record, block_records)
+                datasets[ds_record['dataset']] = self._construct_dataset(ds_record, block_records)
 
             first = last
 
