@@ -108,7 +108,7 @@ else if ($categories == 'groups') {
   $grouping = ' GROUP BY g.`id`';
 }
 
-$constraint_base = 'dr.`is_complete` = 1 AND dr.`is_partial` = 0';
+$constraint_base = 'dr.`is_complete` = 1 AND dr.`is_partial` = 0 AND dr.`group_id` != 0';
 
 fetch_size($selection, $constraint_base, $grouping);
 
