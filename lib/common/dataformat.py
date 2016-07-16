@@ -72,18 +72,32 @@ class Dataset(object):
         self.replicas = []
         self.requests = []
 
-    def __del__(self):
-        # unlink objects to avoid ref cycles
-        del self.blocks
-        del self.replicas
-        del self.requests
-
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
         return 'Dataset %s (is_open=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, #blocks=%d, replicas=%s)' % \
             (self.name, self.is_open, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
             str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), len(self.blocks), replica_sites)
+
+    def unlink(self):
+        # unlink objects to avoid ref cycles - should be called when this dataset is absolutely not needed
+        sites = []
+        for replica in self.replicas:
+            replica.dataset = None
+            site = replica.site
+
+            sites.append(site)
+            for block_replica in replica.block_replicas:
+                site.remove_block_replica(block_replica, adjust_cache = False)
+                
+            site.dataset_replicas.remove(replica)
+
+        for site in sites:
+            site.reset_group_usage_cache()
+
+        # by removing the dataset replicas, the block replicas should become deletable (site->blockrep link is cut)
+        self.replicas = []
+        self.blocks = []
 
     def find_block(self, block):
         try:
@@ -227,13 +241,26 @@ class Site(object):
         self._occupancy_projected = {} # cached sum of block sizes
         self._occupancy_physical = {} # cached sum of block replica sizes
 
-    def __del__(self):
-        # unlink objects to avoid ref cycles
-        del self.group_quota
-        del self.dataset_replicas
-        del self._block_replicas
-        del self._occupancy_projected
-        del self._occupancy_physical
+    def unlink(self):
+        # unlink objects to avoid ref cycles - should be called when this site is absolutely not needed
+        self.group_quota = {}
+
+        for replica in self.dataset_replicas:
+            replica.dataset.replicas.remove(replica)
+            replica.dataset = None
+            replica.site = None
+            for block_replica in replica.block_replicas:
+                self.remove_block_replica(block_replica, adjust_cache = False)
+
+            replica.block_replicas = []
+
+        self.dataset_replicas = []
+        self._block_replicas = []
+
+        self.reset_group_usage_cache()
+
+        self._occupancy_projected = {}
+        self._occupancy_physical = {}
 
     def __str__(self):
         return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s)' % \
@@ -285,9 +312,17 @@ class Site(object):
         for group in self._occupancy_physical.keys():
             self._occupancy_physical[group] = -1
 
-    def reset_group_usage_cache(self, group):
-        self._occupancy_projected[group] = -1
-        self._occupancy_physical[group] = -1
+    def reset_group_usage_cache(self, group = None):
+        if group is None:
+            for grp in self._occupancy_projected.keys():
+                self._occupancy_projected[grp] = -1
+
+            for grp in self._occupancy_physical.keys():
+                self._occupancy_physical[grp] = -1
+
+        else:
+            self._occupancy_projected[group] = -1
+            self._occupancy_physical[group] = -1
 
     def group_usage(self, group, physical = True):
         if physical:
@@ -375,11 +410,17 @@ class DatasetReplica(object):
         self.block_replicas = []
         self.accesses = {DatasetReplica.ACC_LOCAL: {}, DatasetReplica.ACC_REMOTE: {}} # UTC date -> Accesses
 
-    def __del__(self):
-        del self.dataset
-        del self.site
-        del self.block_replicas
-        del self.accesses
+    def unlink(self):
+        self.dataset.replicas.remove(self)
+        self.dataset = None
+
+        self.site.dataset_replicas.remove(self)
+
+        for block_replica in self.block_replicas:
+            self.site.remove_block_replica(block_replica, adjust_cache = False)
+
+        self.block_replicas = []
+        self.site = None
 
     def __str__(self):
         return 'DatasetReplica {site}:{dataset} (group={group}, is_complete={is_complete}, is_partial={is_partial}, is_custodial={is_custodial},' \

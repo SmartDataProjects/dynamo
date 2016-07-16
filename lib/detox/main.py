@@ -164,19 +164,11 @@ class Detox(object):
         logger.info('Committing deletion.')
         self.commit_deletions(run_number, policy, deleted.keys(), is_test)
 
-        del protected
-        del deleted
-        del kept
-
         self.history.close_deletion_run(run_number)
 
         logger.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
 
     def commit_deletions(self, run_number, policy, deletion_list, is_test):
-        # first make sure the list of blocks is up-to-date
-        datasets = list(set(r.dataset for r in deletion_list))
-        self.inventory_manager.dataset_source.set_dataset_constituent_info(datasets)
-
         sites = set(r.site for r in deletion_list)
 
         # now schedule deletion for each site
@@ -193,6 +185,12 @@ class Detox(object):
             for deletion_id, (approved, replicas) in deletion_mapping.items():
                 if approved and not is_test:
                     self.inventory_manager.store.delete_datasetreplicas(replicas)
+                    for replica in replicas:
+                        dataset = replica.dataset
+                        if len(dataset.replicas) == 0:
+                            self.inventory_manager.store.delete_dataset(dataset)
+                            dataset.unlink()
+
                     self.inventory_manager.store.set_last_update()
 
                 size = sum([r.size(policy.groups) for r in replicas])

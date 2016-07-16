@@ -120,6 +120,7 @@ class InventoryManager(object):
                 for site in sites:
                     if site.name in config.inventory.excluded_sites:
                         self.sites.pop(site.name)
+                        site.unlink()
                         self.store.clear_cache()
 
                 del sites
@@ -140,6 +141,8 @@ class InventoryManager(object):
                 if len(dataset.replicas) == 0:
                     self.datasets.pop(dataset.name)
                     self.store.clear_cache()
+
+                dataset.unlink()
 
             del datasets
 
@@ -190,6 +193,8 @@ class InventoryManager(object):
             dataset.replicas.remove(replica)
         except ValueError:
             logger.error('Site-dataset linking was corrupt. %s %s', site.name, dataset.name)
+
+        replica.unlink()
 
     def unlink_all_replicas(self):
         for dataset in self.datasets.values():

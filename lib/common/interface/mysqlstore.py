@@ -827,10 +827,29 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.insert_many('block_replica_sizes', fields, mapping, [entry for entry in all_block_replicas if not entry[0].is_complete])
 
     def _do_delete_dataset(self, dataset): #override
-        self._mysql.query('DELETE FROM `datasets` WHERE `name` LIKE %s', dataset.name)
+        """
+        Delete everything related to this dataset
+        """
+        try:
+            dataset_id = self._mysql.query('SELECT `id` FROM `datasets` WHERE `name` LIKE %s', dataset.name)[0]
+        except IndexError:
+            return
+
+        self._mysql.delete_in('block_replicas', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id))
+        self._mysql.delete_in('block_replica_sizes', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id))
+        self._mysql.query('DELETE FROM `blocks` WHERE `dataset_id` = %s', dataset_id)
+        self._mysql.query('DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s', dataset_id)
+        self._mysql.query('DELETE FROM `datasets` WHERE `id` = %d', dataset_id)
 
     def _do_delete_block(self, block): #override
-        self._mysql.query('DELETE FROM `blocks` WHERE `name` LIKE %s', block.real_name())
+        try:
+            block_id = self._mysql.query('SELECT `id` FROM `blocks` WHERE `name` LIKE %s AND `dataset_id` IN (SELECT `id` FROM `datasets` WHERE `name` LIKE %s)', block.real_name(), block.dataset.name)[0]
+        except IndexError:
+            return
+
+        self._mysql.query('DELETE FROM `block_replicas` WHERE `block_id` = %s', block_id)
+        self._mysql.query('DELETE FROM `block_replica_sizes` WHERE `block_id` = %s', block_id)
+        self._mysql.query('DELETE FROM `blocks` WHERE `id` = %s', block_id)
 
     def _do_delete_datasetreplicas(self, site, datasets, delete_blockreplicas): #override
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
