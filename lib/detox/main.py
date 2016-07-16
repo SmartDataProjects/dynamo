@@ -61,8 +61,10 @@ class Detox(object):
         # take snapshots of quotas if updated
         self.history.save_quotas(run_number, partition, policy.quotas, self.inventory_manager)
 
+        logger.info('Identfying dataset replicas in the partition.')
+
         replicas = [] # all replicas that the policy considers
-        partition_replicas = [] # cloned list of dataset replicas that contain only the block replicas in the partition
+        partition_replicas = [] # cloned list of unlinked dataset replicas that contain only the block replicas in the partition
         for dataset in self.inventory_manager.datasets.values():
             for replica in dataset.replicas:
                 applies = policy.applies(replica)
@@ -83,6 +85,8 @@ class Detox(object):
         # take a snapshot of current replicas
         self.history.save_replicas(run_number, partition_replicas)
 
+        del partition_replicas
+
         logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(replicas))
 
         # Ask each site if deletion should be triggered
@@ -100,7 +104,7 @@ class Detox(object):
         while True:
             iteration += 1
 
-            eval_results = parallel_exec(lambda r: policy.evaluate(r, self.demand_manager), replicas, get_output = True, per_thread = 100)
+            eval_results = parallel_exec(lambda r: policy.evaluate(r, self.demand_manager), replicas, per_thread = 100)
 
             deletion_candidates = {} # {replica: reason}
 
@@ -128,9 +132,9 @@ class Detox(object):
             if iterative_deletion:
                 iter_deletion = self.select_replicas(policy, deletion_candidates.keys(), protected.keys())
 
-                if logger.getEffectiveLevel() == logging.INFO:
+                if logger.getEffectiveLevel() == logging.DEBUG:
                     for replica in iter_deletion:
-                        logger.info('Selected replica: %s %s', replica.site.name, replica.dataset.name)
+                        logger.debug('Selected replica: %s %s', replica.site.name, replica.dataset.name)
 
             else:
                 iter_deletion = deletion_candidates.keys()

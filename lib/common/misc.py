@@ -51,6 +51,20 @@ def unicode2str(container):
                 unicode2str(elem)
 
 
+class FunctionWrapper(object):
+    def __init__(self, function):
+        self.function = function
+
+    def __call__(self, inputs, outputs, exception):
+        try:
+            for args in inputs:
+                output = self.function(*args)
+                outputs.append(output)
+
+        except Exception as ex:
+            exception.set(ex)
+
+
 class ExceptionHolder(object):
     def __init__(self):
         self.exception = None
@@ -59,117 +73,85 @@ class ExceptionHolder(object):
         self.exception = exc
 
 
-def parallel_exec(target, arguments, add_args = None, get_output = False, per_thread = 1, num_threads = config.num_threads, print_progress = False):
+class ThreadCollector(object):
+    def __init__(self, ntotal = 0):
+        self.outputs = []
+        self.ntotal = ntotal
+        self.ndone = 0
+        self.watermark = 0
+
+    def collect(self, threads):
+        ith = 0
+        while ith < len(threads):
+            thread = threads[ith][0]
+            if thread.is_alive():
+                ith += 1
+                continue
+
+            thread.join()
+            thread, inputs, outputs, exception = threads.pop(ith)
+            if exception.exception is not None:
+                logging.error('Exception in thread ' + thread.name)
+                raise exception.exception
+
+            self.outputs.extend(outputs)
+
+            if self.ntotal != 0: # progress report requested
+                self.ndone += len(inputs)
+                if self.ndone == self.ntotal or self.ndone > self.watermark:
+                    logging.info('Processed %.1f%% of input.', 100. * self.ndone / self.ntotal)
+                    self.watermark += max(1, self.ntotal / 20)
+
+
+def parallel_exec(function, arguments, per_thread = 1, num_threads = config.num_threads, print_progress = False):
     """
-    Execute target(*args) in up to num_threads parallel threads,
+    Execute function(*args) in up to num_threads parallel threads,
     for each entry args of arguments list.
     """
 
     if len(arguments) == 0:
-        if get_output:
-            return []
-        else:
-            return
-
-    def target_wrapper(arguments_chunk, output_list, exception):
-        try:
-            for args in arguments_chunk:
-                output = target(*args)
-                if get_output:
-                    output_list.append(output)
-
-        except Exception as ex:
-            exception.set(ex)
-
-    class ThreadCollector(object):
-        def __init__(self, ntotal):
-            self.ntotal = ntotal
-            self.ndone = 0
-            self.watermark = 0
-
-        def __call__(self):
-            ith = 0
-            while ith < len(threads):
-                thread = threads[ith]
-                if thread.is_alive():
-                    ith += 1
-                    continue
-    
-                thread.join()
-                exc = exceptions.pop(ith)
-                if exc.exception is not None:
-                    logging.error('Exception in thread ' + thread.name)
-                    raise exc.exception
-    
-                threads.pop(ith)
-                if get_output:
-                    all_outputs.extend(outputs.pop(ith))
-    
-                if print_progress:
-                    self.ndone += num_args.pop(ith)
-                    if self.ndone == self.ntotal or self.ndone > self.watermark:
-                        logging.info('Processed %.1f%% of input.', 100. * self.ndone / self.ntotal)
-                        self.watermark += max(1, self.ntotal / 20)
-
-
-    if get_output:
-        all_outputs = []
+        return []
 
     if per_thread < 1:
         per_thread = 1
 
     threads = []
-    outputs = []
-    exceptions = []
     processing = True
+
+    target = FunctionWrapper(function)
     if print_progress:
-        num_args = []
+        collector = ThreadCollector(len(arguments))
+    else:
+        collector = ThreadCollector()
 
-    collector = ThreadCollector(len(arguments))
+    # format the inputs: list (one element for one thread) of lists (arguments x per_thread) of tuples
+    input_list = [[]]
+    for args in arguments:
+        if type(args) is not tuple:
+            args = (args,)
 
-    while processing:
-        arguments_chunk = []
-        for icall in range(per_thread):
-            args = arguments.pop()
-    
-            if type(args) is not tuple:
-                args = (args,)
-    
-            if add_args is not None:
-                args = args + add_args
+        input_list[-1].append(args)
+        if len(input_list[-1]) == per_thread:
+            input_list.append([])
 
-            arguments_chunk.append(args)
-
-            if len(arguments) == 0:
-                processing = False
-                break
-
-        thread_outputs = []
-        thread_exception = ExceptionHolder()
-        thread = threading.Thread(target = target_wrapper, args = (arguments_chunk, thread_outputs, thread_exception))
+    for inputs in input_list:
+        outputs = []
+        exception = ExceptionHolder()
+        thread = threading.Thread(target = target, args = (inputs, outputs, exception))
         thread.name = 'Th%d' % len(threads)
 
         thread.start()
-        threads.append(thread)
-        exceptions.append(thread_exception)
-        if get_output:
-            outputs.append(thread_outputs)
-        if print_progress:
-            num_args.append(len(arguments_chunk))
+        threads.append((thread, inputs, outputs, exception))
 
         while len(threads) >= num_threads:
-            collector()
-
-            if len(threads) >= num_threads:
-                time.sleep(1)
+            collector.collect(threads)
+            time.sleep(1)
 
     while len(threads) > 0:
-        collector()
-
+        collector.collect(threads)
         time.sleep(1)
 
-    if get_output:
-        return all_outputs
+    return collector.outputs
 
 class SigintHandler(object):
     """

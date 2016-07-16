@@ -571,6 +571,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     items.append(([site], gname_list, ['/*/*/*']))
 
             parallel_exec(exec_get, items, num_threads = min(64, len(items)), print_progress = True)
+            del items
         else:
             exec_get(all_sites, gname_list, [dataset_filt])
 
@@ -642,7 +643,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             options = [('create_since', '0'), ('node', 'T*MSS'), ('custodial', 'y'), ('complete', 'y')]
             options.extend([('dataset', dataset.name) for dataset in dataset_list])
 
-            logger.info('find_tape_copies::run_ontape_query  Checking whether %d datasets (%s, ...) are on tape', len(options) - 4, options[4][1])
             source = self._make_phedex_request('blockreplicasummary', options, method = POST)
 
             on_tape = collections.defaultdict(list)
@@ -674,7 +674,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         if len(dataset_chunks[-1]) == 0:
             dataset_chunks.pop()
 
+        logger.info('find_tape_copies::run_ontape_query  Checking tape copies.')
+
         parallel_exec(run_ontape_query, dataset_chunks)
+        del dataset_chunks
 
         # Loop again and fill datasets
         for dataset in datasets.values():
@@ -762,6 +765,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         # run set_constituent for all chunks in parallel
         parallel_exec(set_constituent, dataset_chunks, num_threads = 64)
+        del dataset_chunks
 
         # routine to fetch block info from DBS
         def dbs_check(block):
@@ -814,10 +818,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             start += chunk_size
 
         parallel_exec(set_status_type, dataset_chunks)
+        del dataset_chunks
       
         # routine to set release verions
         def set_release_version(dataset):
-            logger.info('set_dataset_software_info  Fetching software version for %s', dataset.name)
+            logger.debug('set_dataset_software_info  Fetching software version for %s', dataset.name)
 
             result = self._make_dbs_request('releaseversions', ['dataset=' + dataset.name])
             if len(result) == 0 or 'release_version' not in result[0]:

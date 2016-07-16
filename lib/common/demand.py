@@ -102,6 +102,7 @@ class DemandManager(object):
             local_accesses[(site, date)].extend(self.access_history.get_local_accesses(site, date))
 
         parallel_exec(exec_get, sitesdates)
+        del sitesdates
 
         for (site, date), access_list in local_accesses.items():
             for dataset_name, access in access_list:
