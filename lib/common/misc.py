@@ -81,9 +81,9 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
         except Exception as ex:
             exception.set(ex)
 
-    if print_progress:
-        ntotal = len(arguments)
-        interval = max(ntotal / 20, 1)
+    ntotal = len(arguments)
+    ndone = 0
+    watermark = max(1, ntotal / 20)
 
     if get_output:
         all_outputs = []
@@ -95,13 +95,39 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
     outputs = []
     exceptions = []
     processing = True
+    if print_progress:
+        num_args = []
+
+    def collect_done():
+        global ndone, watermark
+
+        ith = 0
+        while ith < len(threads):
+            thread = threads[ith]
+            if thread.is_alive():
+                ith += 1
+                continue
+
+            thread.join()
+            exc = exceptions.pop(ith)
+            if exc.exception is not None:
+                print 'Exception in thread ' + thread.name
+                raise exc.exception
+
+            threads.pop(ith)
+            if get_output:
+                all_outputs.extend(outputs.pop(ith))
+
+            if print_progress:
+                ndone += num_args.pop(ith)
+                if ndone > watermark:
+                    logging.info('Processed %.1f%% of input.', 100. * ndone / ntotal)
+                    watermark += max(1, ntotal / 20)
 
     while processing:
         arguments_chunk = []
         for icall in range(per_thread):
             args = arguments.pop()
-            if print_progress and (ntotal - len(arguments)) % interval == 0:
-                logging.info('Processed %f%% of input.', 100. * (ntotal - len(arguments)) / ntotal)
     
             if type(args) is not tuple:
                 args = (args,)
@@ -122,34 +148,22 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
 
         thread.start()
         threads.append(thread)
+        exceptions.append(thread_exception)
         if get_output:
             outputs.append(thread_outputs)
-        exceptions.append(thread_exception)
+        if print_progress:
+            num_args.append(len(arguments_chunk))
 
         while len(threads) >= num_threads:
-            ith = 0
-            while ith < len(threads):
-                thread = threads[ith]
-                if thread.is_alive():
-                    ith += 1
-                else:
-                    thread.join()
-                    exc = exceptions.pop(ith)
-                    if exc.exception is not None:
-                        print 'Exception in thread ' + thread.name
-                        raise exc.exception
-
-                    threads.pop(ith)
-                    if get_output:
-                        all_outputs.extend(outputs.pop(ith))
+            collect_done()
 
             if len(threads) >= num_threads:
                 time.sleep(1)
 
-    for ith, thread in enumerate(threads):
-        thread.join()
-        if get_output:
-            all_outputs.extend(outputs[ith])
+    while len(threads) > 0:
+        collect_done()
+
+        time.sleep(1)
 
     if get_output:
         return all_outputs
