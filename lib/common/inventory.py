@@ -141,12 +141,11 @@ class InventoryManager(object):
                 if len(dataset.replicas) == 0:
                     self.datasets.pop(dataset.name)
                     self.store.clear_cache()
-
-                dataset.unlink()
+                    dataset.unlink()
 
             del datasets
 
-            logger.info('Constructing %d dataset objects.', len(self.datasets))
+            logger.info('Filling details of %d datasets.', len(self.datasets))
 
             self.dataset_source.fill_dataset_info(self.datasets)
 

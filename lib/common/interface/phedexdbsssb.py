@@ -534,6 +534,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             with lock:
                 for new_replica in new_replicas:
                     dataset = new_replica.dataset
+                    site = new_replica.site
                     dataset.replicas.append(new_replica)
                     site.dataset_replicas.append(new_replica)
                     for block_replica in new_replica.block_replicas:

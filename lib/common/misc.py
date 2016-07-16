@@ -81,9 +81,36 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
         except Exception as ex:
             exception.set(ex)
 
-    ntotal = len(arguments)
-    ndone = 0
-    watermark = max(1, ntotal / 20)
+    class ThreadCollector(object):
+        def __init__(self, ntotal):
+            self.ntotal = ntotal
+            self.ndone = 0
+            self.watermark = 0
+
+        def __call__(self):
+            ith = 0
+            while ith < len(threads):
+                thread = threads[ith]
+                if thread.is_alive():
+                    ith += 1
+                    continue
+    
+                thread.join()
+                exc = exceptions.pop(ith)
+                if exc.exception is not None:
+                    logging.error('Exception in thread ' + thread.name)
+                    raise exc.exception
+    
+                threads.pop(ith)
+                if get_output:
+                    all_outputs.extend(outputs.pop(ith))
+    
+                if print_progress:
+                    self.ndone += num_args.pop(ith)
+                    if self.ndone == self.ntotal or self.ndone > self.watermark:
+                        logging.info('Processed %.1f%% of input.', 100. * self.ndone / self.ntotal)
+                        self.watermark += max(1, self.ntotal / 20)
+
 
     if get_output:
         all_outputs = []
@@ -98,31 +125,7 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
     if print_progress:
         num_args = []
 
-    def collect_done():
-        global ndone, watermark
-
-        ith = 0
-        while ith < len(threads):
-            thread = threads[ith]
-            if thread.is_alive():
-                ith += 1
-                continue
-
-            thread.join()
-            exc = exceptions.pop(ith)
-            if exc.exception is not None:
-                print 'Exception in thread ' + thread.name
-                raise exc.exception
-
-            threads.pop(ith)
-            if get_output:
-                all_outputs.extend(outputs.pop(ith))
-
-            if print_progress:
-                ndone += num_args.pop(ith)
-                if ndone == ntotal or ndone > watermark:
-                    logging.info('Processed %.1f%% of input.', 100. * ndone / ntotal)
-                    watermark += max(1, ntotal / 20)
+    collector = ThreadCollector(len(arguments))
 
     while processing:
         arguments_chunk = []
@@ -155,13 +158,13 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
             num_args.append(len(arguments_chunk))
 
         while len(threads) >= num_threads:
-            collect_done()
+            collector()
 
             if len(threads) >= num_threads:
                 time.sleep(1)
 
     while len(threads) > 0:
-        collect_done()
+        collector()
 
         time.sleep(1)
 

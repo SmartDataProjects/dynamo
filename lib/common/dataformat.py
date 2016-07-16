@@ -283,13 +283,14 @@ class Site(object):
 
     def _group_key(self, group):
         try:
-            index = self._group_keys[replica.group]
+            return self._group_keys[group]
         except KeyError:
-            index = len(self._group_keys) + 1
-            self._group_keys[replica.group] = index
+            index = len(self._group_keys)
+            self._group_keys[group] = index
             self._group_quota.append(0)
             self._occupancy_projected.append(0)
             self._occupancy_physical.append(0)
+            return index
 
     def group_present(self, group):
         return (group in self._group_keys)
@@ -302,7 +303,11 @@ class Site(object):
         self._occupancy_physical[index] += replica.size
 
     def remove_block_replica(self, replica):
-        self._block_replicas.remove(replica)
+        try:
+            self._block_replicas.remove(replica)
+        except ValueError:
+            print replica.site.name, replica.block.dataset.name, replica.block.name
+            raise
 
         index = self._group_keys[replica.group]
 
