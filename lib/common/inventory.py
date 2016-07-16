@@ -179,21 +179,10 @@ class InventoryManager(object):
 
         # Remove block replicas from the site
         for block_replica in replica.block_replicas:
-            block = block_replica.block
-            try:
-                block.replicas.remove(block_replica)
-                site.remove_block_replica(block_replica)
+            site.remove_block_replica(block_replica)
 
-            except ValueError:
-                logger.error('Site-block linking was corrupt. %s %s#%s', site.name, dataset.name, block.real_name())
-
-        try:
-            site.dataset_replicas.remove(replica)
-            dataset.replicas.remove(replica)
-        except ValueError:
-            logger.error('Site-dataset linking was corrupt. %s %s', site.name, dataset.name)
-
-        replica.unlink()
+        site.dataset_replicas.remove(replica)
+        dataset.replicas.remove(replica)
 
     def unlink_all_replicas(self):
         for dataset in self.datasets.values():
