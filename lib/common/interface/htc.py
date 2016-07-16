@@ -20,7 +20,16 @@ class HTCondor(object):
 
         logger.info('Finding schedds reporting to collector %s', collector)
 
-        schedd_ads = self._collector.query(htcondor.AdTypes.Schedd, schedd_constraint, ['ScheddIpAddr'])
+        attempt = 0
+        while True:
+            try:
+                schedd_ads = self._collector.query(htcondor.AdTypes.Schedd, schedd_constraint, ['ScheddIpAddr'])
+                break
+            except IOError:
+                attempt += 1
+                logger.error('Collector query failed: %s', str(sys.exc_info()[0]))
+                if attempt == 10:
+                    raise
 
         self._schedds = [htcondor.Schedd(ad) for ad in schedd_ads]
 
