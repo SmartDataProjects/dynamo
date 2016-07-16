@@ -4,8 +4,8 @@ threshold_occupancy = 0.9
 
 deletion_per_iteration = 10
 
-reco_max_age = 180. # number of days to keep /RECO* datasets
-max_nonusage = 500. # threshold for global usage rank
+reco_max_age = 90. # number of days to keep /RECO* datasets
+max_nonusage = 400. # threshold for global usage rank
 
 routine_exceptions = [
     ('Keep', '*', '/HLTPhysics/CMSSW_7_4_14-2015_10_20_newconditions0_74X_dataRun2_HLTValidation_Candidate_2015_10_12_10_41_09-v1/RECO'),
