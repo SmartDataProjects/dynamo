@@ -269,18 +269,13 @@ class ActionList(object):
 
     def __call__(self, replica, demand_manager):
         """
-        Loop over the patterns list and make an entry in self.actions if the pattern matches.
+        Pass the replica through the patterns and take action on the *first* match.
         """
 
-        matches = []
-        for iL, (action, site_re, dataset_re) in enumerate(self.res):
+        for iline, (action, site_re, dataset_re) in enumerate(self.res):
             if site_re.match(replica.site.name) and dataset_re.match(replica.dataset.name):
-                action = action
-                matches.append(self.patterns[iL])
+                return replica, action, 'Pattern match: (action, site, dataset) = (%s, %s, %s)' % self.patterns[iline]
 
-        if len(matches) != 0:
-            return replica, action, 'Pattern match: (action, site, dataset) = [%s]' % (','.join(['(%s, %s, %s)' % match for match in matches]))
-    
 
 # TODO Not quite elegant to do this here..
 def make_stack(stack_name):
