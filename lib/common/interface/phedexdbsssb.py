@@ -577,6 +577,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             datasets.pop(dataset.name)
             dataset.unlink()
 
+        logger.info('Setting group owners of dataset replicas')
         # Data retrieval was split in groups. Now merge the group information.
         for site in all_sites:
             for replica in site.dataset_replicas:

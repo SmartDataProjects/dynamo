@@ -120,7 +120,7 @@ def parallel_exec(target, arguments, add_args = None, get_output = False, per_th
 
             if print_progress:
                 ndone += num_args.pop(ith)
-                if ndone > watermark:
+                if ndone == ntotal or ndone > watermark:
                     logging.info('Processed %.1f%% of input.', 100. * ndone / ntotal)
                     watermark += max(1, ntotal / 20)
 
