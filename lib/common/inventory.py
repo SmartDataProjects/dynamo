@@ -113,17 +113,17 @@ class InventoryManager(object):
             logger.info('Fetching info on sites.')
             self.site_source.get_site_list(self.sites, filt = config.inventory.included_sites)
 
+            for site_name in config.inventory.excluded_sites:
+                try:
+                    site = self.sites.pop(site_name)
+                except KeyError:
+                    continue
+
+                site.unlink()
+                del site
+                self.store.clear_cache()
+
             self.site_source.set_site_status(self.sites)
-
-            if len(config.inventory.excluded_sites) != 0:
-                sites = self.sites.values()
-                for site in sites:
-                    if site.name in config.inventory.excluded_sites:
-                        self.sites.pop(site.name)
-                        site.unlink()
-                        self.store.clear_cache()
-
-                del sites
 
             logger.info('Fetching info on groups.')
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
