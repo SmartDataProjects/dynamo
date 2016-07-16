@@ -269,7 +269,7 @@ if __name__ == '__main__':
     sites = inventory_manager.sites.keys()
     quotas = {}
     for site in sites:
-        quotas[site] = site.quota(group)
+        quotas[site] = site.group_quota(group)
 
     direct_copy = DirectCopy(group, quotas, args.group, site_pattern, dataset_pattern)
 

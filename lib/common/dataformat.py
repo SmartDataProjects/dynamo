@@ -88,12 +88,9 @@ class Dataset(object):
 
             sites.append(site)
             for block_replica in replica.block_replicas:
-                site.remove_block_replica(block_replica, adjust_cache = False)
+                site.remove_block_replica(block_replica)
                 
             site.dataset_replicas.remove(replica)
-
-        for site in sites:
-            site.reset_group_usage_cache()
 
         # by removing the dataset replicas, the block replicas should become deletable (site->blockrep link is cut)
         self.replicas = []
@@ -235,32 +232,30 @@ class Site(object):
         self.storage = storage # in TB
         self.cpu = cpu # in kHS06
         self.status = status
-        self.group_quota = {} # in TB
+
         self.dataset_replicas = []
+
         self._block_replicas = []
-        self._occupancy_projected = {} # cached sum of block sizes
-        self._occupancy_physical = {} # cached sum of block replica sizes
+        self._group_keys = {} # {group: index}
+        self._group_quota = [] # in TB
+        self._occupancy_projected = [] # cached sum of block sizes
+        self._occupancy_physical = [] # cached sum of block replica sizes
 
     def unlink(self):
         # unlink objects to avoid ref cycles - should be called when this site is absolutely not needed
-        self.group_quota = {}
-
         for replica in self.dataset_replicas:
             replica.dataset.replicas.remove(replica)
             replica.dataset = None
             replica.site = None
             for block_replica in replica.block_replicas:
-                self.remove_block_replica(block_replica, adjust_cache = False)
+                self.remove_block_replica(block_replica)
 
             replica.block_replicas = []
 
         self.dataset_replicas = []
         self._block_replicas = []
 
-        self.reset_group_usage_cache()
-
-        self._occupancy_projected = {}
-        self._occupancy_physical = {}
+        self._group_keys = {}
 
     def __str__(self):
         return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s)' % \
@@ -286,99 +281,97 @@ class Site(object):
         except StopIteration:
             return None
 
-    def add_block_replica(self, replica, adjust_cache = True):
+    def _group_key(self, group):
+        try:
+            index = self._group_keys[replica.group]
+        except KeyError:
+            index = len(self._group_keys) + 1
+            self._group_keys[replica.group] = index
+            self._group_quota.append(0)
+            self._occupancy_projected.append(0)
+            self._occupancy_physical.append(0)
+
+    def group_present(self, group):
+        return (group in self._group_keys)
+
+    def add_block_replica(self, replica):
         self._block_replicas.append(replica)
-        if adjust_cache:
-            if self._occupancy_projected[replica.group] != -1:
-                self._occupancy_projected[replica.group] += replica.block.size
+        index = self._group_key(replica.group)
 
-            if self._occupancy_physical[replica.group] != -1:
-                self._occupancy_physical[replica.group] += replica.size
+        self._occupancy_projected[index] += replica.block.size
+        self._occupancy_physical[index] += replica.size
 
-    def remove_block_replica(self, replica, adjust_cache = True):
+    def remove_block_replica(self, replica):
         self._block_replicas.remove(replica)
-        if adjust_cache:
-            if self._occupancy_projected[replica.group] != -1:
-                self._occupancy_projected[replica.group] -= replica.block.size
 
-            if self._occupancy_physical[replica.group] != -1:
-                self._occupancy_physical[replica.group] -= replica.size
+        index = self._group_keys[replica.group]
+
+        self._occupancy_projected[index] -= replica.block.size
+        self._occupancy_physical[index] -= replica.size
 
     def clear_block_replicas(self):
         self._block_replicas = []
-        for group in self._occupancy_projected.keys():
-            self._occupancy_projected[group] = -1
 
-        for group in self._occupancy_physical.keys():
-            self._occupancy_physical[group] = -1
-
-    def reset_group_usage_cache(self, group = None):
-        if group is None:
-            for grp in self._occupancy_projected.keys():
-                self._occupancy_projected[grp] = -1
-
-            for grp in self._occupancy_physical.keys():
-                self._occupancy_physical[grp] = -1
-
-        else:
-            self._occupancy_projected[group] = -1
-            self._occupancy_physical[group] = -1
+        for index in self._group_keys.values():
+            self._occupancy_projected[index] = 0
+            self._occupancy_physical[index] = 0
 
     def group_usage(self, group, physical = True):
+        index = self._group_key(group)
+
         if physical:
-            occupancy = self._occupancy_physical
+            return self._occupancy_physical[index]
         else:
-            occupancy = self._occupancy_projected
+            return self._occupancy_projected[index]
 
-        if occupancy[group] == -1:
-            if physical:
-                occupancy[group] = sum([r.size for r in self._block_replicas if r.group == group])
-            else:
-                occupancy[group] = sum([r.block.size for r in self._block_replicas if r.group == group])
+    def group_quota(self, group):
+        index = self._group_key(group)
 
-        return occupancy[group]
+        return self._group_quota[index]
+
+    def set_group_quota(self, group, quota):
+        index = self._group_key(group)
+        self._group_quota[index] = quota
 
     def storage_occupancy(self, groups = [], physical = True):
         if type(groups) is not list:
             groups = [groups]
 
         if len(groups) == 0:
-            denom = sum(self.group_quota.values())
+            denom = sum(self._group_quota)
             if denom == 0:
                 return 0.
             else:
                 if physical:
-                    return sum(self.group_usage(g, physical = True) for g in self._occupancy_physical.keys()) * 1.e-12 / denom
+                    return sum(self._occupancy_physical) * 1.e-12 / denom
                 else:
-                    return sum(self.group_usage(g, physical = False) for g in self._occupancy_projected.keys()) * 1.e-12 / denom
+                    return sum(self._occupancy_projected) * 1.e-12 / denom
         else:
             numer = 0.
             denom = 0.
             for group in groups:
-                try:
-                    denom += self.group_quota[group]
-                except KeyError:
-                    continue
+                index = self._group_key(group)
 
-                numer += self.group_usage(group, physical) * 1.e-12
+                denom += self._group_quota[index]
+                if physical:
+                    numer += self._occupancy_physical[index] * 1.e-12
+                else:
+                    numer += self._occupancy_projected[index] * 1.e-12
 
             if denom == 0.:
                 return 0.
             else:
                 return numer / denom
 
-    def quota(self, groups):
-        if type(groups) is not list:
-            groups = [groups]
-
-        quota = 0.
-        for group in groups:
-            try:
-                quota += self.group_quota[group]
-            except KeyError:
-                pass
-
-        return quota
+    def quota(self, groups = []):
+        if len(groups) == 0:
+            return sum(self._group_quota)
+        else:
+            quota = 0.
+            for group in groups:
+                quota += self.group_quota(group)
+    
+            return quota
 
 
 class Group(object):
@@ -417,7 +410,7 @@ class DatasetReplica(object):
         self.site.dataset_replicas.remove(self)
 
         for block_replica in self.block_replicas:
-            self.site.remove_block_replica(block_replica, adjust_cache = False)
+            self.site.remove_block_replica(block_replica)
 
         self.block_replicas = []
         self.site = None

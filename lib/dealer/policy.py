@@ -53,7 +53,7 @@ class Policy(object):
         Compute site occupancy increase by adding a dataset to site.
         """
 
-        quota = site.group_quota[group]
+        quota = site.group_quota(group)
         if quota == 0:
             return 0
         

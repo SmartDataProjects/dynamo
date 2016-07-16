@@ -282,7 +282,7 @@ if __name__ == '__main__':
 
     quotas = {}
     for site in inventory_manager.sites.values():
-        quotas[site] = site.group_quota[group]
+        quotas[site] = site.group_quota(group)
 
     policy = Policy(Policy.DEC_PROTECT, [action_list], quotas, partition = args.partition)
     policy.groups = [group]

@@ -190,11 +190,6 @@ class MySQLStore(LocalStoreInterface):
 
         self._set_group_ids(group_list)
 
-        # reset cached group usage at sites
-        for site in site_list:
-            for group in group_list:
-                site.reset_group_usage_cache(group)
-
 #        # Load site quotas
 #        quotas = self._mysql.query('SELECT `site_id`, `group_id`, `storage` FROM `quotas`')
 #        for site_id, group_id, storage in quotas:
@@ -208,13 +203,13 @@ class MySQLStore(LocalStoreInterface):
 #            except KeyError:
 #                continue
 #
-#            site.group_quota[group] = storage
+#            site.set_group_quota(group, storage)
 #
 #        for site in site_list:
 #            for group in group_list:
-#                if group not in site.group_quota:
+#                if site.group_present(group)
 #                    logger.info('Setting quota for %s on %s to %d', group.name, site.name, int(site.storage / len(group_list)))
-#                    site.group_quota[group] = int(site.storage / len(group_list))
+#                    site.set_group_quota(group, int(site.storage / len(group_list)))
 
         # Load software versions
         software_version_map = {} # id -> version
@@ -372,7 +367,7 @@ class MySQLStore(LocalStoreInterface):
     
                 rep = BlockReplica(block, site, group = group, is_complete = is_complete, is_custodial = is_custodial, size = size)
     
-                site.add_block_replica(rep, adjust_cache = False)
+                site.add_block_replica(rep)
     
                 dataset_replica = block.dataset.find_replica(site)
                 if dataset_replica:
@@ -389,7 +384,7 @@ class MySQLStore(LocalStoreInterface):
     
                     for block in dataset.blocks:
                         rep = BlockReplica(block, replica.site, group = replica.group, is_complete = True, is_custodial = replica.is_custodial, size = block.size)
-                        replica.site.add_block_replica(rep, adjust_cache = False)
+                        replica.site.add_block_replica(rep)
                         replica.block_replicas.append(rep)
 
         # Finally set last_update

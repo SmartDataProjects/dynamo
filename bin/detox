@@ -118,14 +118,14 @@ for stack_spec in args.stacks:
 
     # currently partition = group
     group = inventory_manager.groups[partition]
-    quotas = dict([(site, site.group_quota[group]) for site in inventory_manager.sites.values()])
+    quotas = dict([(site, site.group_quota(group)) for site in inventory_manager.sites.values()])
 
     if args.strategy == 'greedy':
-        site_requirement = lambda site, partition, initial: site.group_quota[inventory_manager.groups[partition]] != 0
+        site_requirement = lambda site, partition, initial: site.group_quota(inventory_manager.groups[partition]) != 0
     else:
         # Return true if the site is overused for a given partition.
         # Currently partition and group names are identical.
-        site_requirement = lambda site, partition, initial: site.group_quota[inventory_manager.groups[partition]] != 0 and \
+        site_requirement = lambda site, partition, initial: site.group_quota(inventory_manager.groups[partition]) != 0 and \
             site.storage_occupancy(inventory_manager.groups[partition]) > (detox_config.threshold_occupancy if initial else config.target_site_occupancy)
 
     policy = Policy(default, rule_stack, quotas, partition = partition, site_requirement = site_requirement, prerequisite = BelongsTo(group))

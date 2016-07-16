@@ -537,7 +537,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     dataset.replicas.append(new_replica)
                     site.dataset_replicas.append(new_replica)
                     for block_replica in new_replica.block_replicas:
-                        site.add_block_replica(block_replica, adjust_cache = False)
+                        site.add_block_replica(block_replica)
 
                     try:
                         # a replica ends up here either when the dataset already existed initially
@@ -557,7 +557,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         if dataset_filt == '/*/*/*' or dataset_filt == '' or dataset_filt == '*':
             items = []
             for site in all_sites:
-                total_quota = sum(site.group_quota.values())
+                total_quota = site.quota()
                 if total_quota >= 500:
                     # further split by the first character of the dataset names
                     # a-zA-Z0-9 -> 62 characters; split depending on the quota
@@ -579,9 +579,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         # Data retrieval was split in groups. Now merge the group information.
         for site in all_sites:
-            for group in all_groups:
-                site.reset_group_usage_cache(group)
-
             for replica in site.dataset_replicas:
                 if len(replica.block_replicas) != len(replica.dataset.blocks):
                     replica.is_partial = True
