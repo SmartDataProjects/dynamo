@@ -2,8 +2,8 @@
 
 include_once(__DIR__ . '/../common/init_db.php');
 
-$stmt = $store_db->prepare('SELECT `lock_host`, `last_update` FROM `system`');
-$stmt->bind_result($lock_host, $last_update);
+$stmt = $store_db->prepare('SELECT `lock_host` FROM `system`');
+$stmt->bind_result($lock_host);
 $stmt->execute();
 $stmt->fetch();
 $stmt->close();
@@ -24,12 +24,6 @@ if ($lock_host != '') {
   if ($latest != 0) {
     $store_db->close();
     $store_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $store_db_name . '_' . $latest);
-
-    $stmt = $store_db->prepare('SELECT `last_update` FROM `system`');
-    $stmt->bind_result($last_update);
-    $stmt->execute();
-    $stmt->fetch();
-    $stmt->close();
   }
 }
 
@@ -69,6 +63,15 @@ else if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
   $physical = $_REQUEST['physical'] == 'y';
 
   $data = array('dataType' => $data_type, 'content' => array());
+
+  $stmt = $store_db->prepare('SELECT `last_update` FROM `system`');
+  $stmt->bind_result($last_update);
+  $stmt->execute();
+  $stmt->fetch();
+  $stmt->close();
+
+  $data['lastUpdate'] = $last_update;
+
   $content = &$data['content'];
 
   if ($data_type == 'size') {
@@ -132,7 +135,6 @@ else {
   $html = str_replace('${DATA_TYPE}', $data_type, $html);
   $html = str_replace('${CATEGORIES}', $categories, $html);
   $html = str_replace('${CONSTRAINTS}', json_encode($constraints), $html);
-  $html = str_replace('${LAST_UPDATE}', $last_update, $html);
   $html = str_replace('${PHYSICAL_CHECKED}', $physical_checked, $html);
   $html = str_replace('${PROJECTED_CHECKED}', $projected_checked, $html);
 

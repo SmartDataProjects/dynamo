@@ -173,6 +173,8 @@ function setGroups(data) {
 function displayData(data) {
     var legendWidth = d3.select('#legendCont').node().clientWidth * 0.1;
 
+    d3.select('#lastUpdateTimestamp').text(data.lastUpdate);
+
     if (data.content.length == 0) {
         d3.select('#axisBox').style('height', '0');
         d3.select('#graphBox').style('height', '100%');

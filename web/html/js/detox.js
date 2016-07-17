@@ -396,7 +396,7 @@ function displayDetails(siteData)
     var tableWidth = table.node().clientWidth;
 
     row.append('td').classed('datasetCol', true)
-        .style({'width': (tableWidth * 0.65 - 1) + 'px', 'font-size': '10px'})
+        .style({'width': (tableWidth * 0.65 - 1) + 'px', 'font-size': '14px'})
         .text(function (d) { return d.name; });
     row.append('td').classed('sizeCol', true)
         .style('width', (tableWidth * 0.05 - 1) + 'px')
