@@ -733,7 +733,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         dataset.blocks.append(block)
 
                     elif block.size != block_entry['bytes'] or block.num_files != block_entry['files']:
-                        block = dataset.upate_block(block_name, block_entry['bytes'], block_entry['files'])
+                        block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'])
 
                 dataset.size = sum([b.size for b in dataset.blocks])
                 dataset.num_files = sum([b.num_files for b in dataset.blocks])
