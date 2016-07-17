@@ -210,11 +210,10 @@ class MySQLHistory(TransactionHistoryInterface):
 
     def _do_save_replicas(self, run_number, replicas): #override
         """
-        1. Compare the list of sites and datasets in the history database to the passed list of replicas.
+        1. Compare the list of sites and datasets in the history database to the list of replicas in the argument.
            If a replica is not found in the database, pass it to new_replicas. If database has an extra entry, pass it to snapshots_to_remove.
-        2. Move snapshots in snapshots_to_remove (all past entries) to deleted_replica_snapshots. Insert a last entry with the current run number and size 0.
-           Delete the snapshots from replica_snapshots
-        3. Compare the latest snapshots to passed list of replicas.
+        2. Move snapshots in snapshots_to_remove (all past entries) to deleted_replica_snapshots. Insert an entry to this table with the current run number and size 0.
+        3. Compare the latest snapshots to the list of replicas in the argument.
            If the sizes differ, add the replica to replicas_to_update. If not, add to replica_snapshot_ids.
         4. Insert updated information to replica_snapshots. Update replica_snapshot_ids.
         """
@@ -271,8 +270,10 @@ class MySQLHistory(TransactionHistoryInterface):
             icur += 1
 
         # move the entries for deleted replicas
+        # first insert the "deletion entry (size 0)" to replica_snapshots so that unique ids are assigned to these entries too
+        self._mysql.insert_many('replica_snapshots', ('site_id', 'dataset_id', 'run_id', 'size'), lambda idx: (idx[0], idx[1], run_number, 0), snapshots_to_remove, do_update = False)
+        # then move the entire set of entries to deleted_replica_snapshots
         self._mysql.execute_many('INSERT INTO `deleted_replica_snapshots` SELECT * FROM `replica_snapshots`', ('site_id', 'dataset_id'), snapshots_to_remove)
-        self._mysql.insert_many('deleted_replica_snapshots', ('site_id', 'dataset_id', 'run_id', 'size'), lambda idx: (idx[0], idx[1], run_number, 0), snapshots_to_remove, do_update = False)
         self._mysql.delete_many('replica_snapshots', ('site_id', 'dataset_id'), snapshots_to_remove)
 
         # now loop over the snapshots again and find the latest snapshots / update the outdated
