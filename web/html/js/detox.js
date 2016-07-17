@@ -50,7 +50,8 @@ function setupSiteDetails(siteData)
                 var text = d.name + ' (';
                 text += d.delete.toFixed(1) + ' TB Delete, ';
                 text += d.keep.toFixed(1) + ' TB Keep, ';
-                text += d.protect.toFixed(1) + ' TB Protect)';
+                text += d.protect.toFixed(1) + ' TB Protect, ';
+                text += (d.delete + d.keep + d.protect).toFixed(1) + ' TB Total)';
                 return text;
             });
 
