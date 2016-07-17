@@ -280,8 +280,8 @@ function displaySummary(data)
         content.append('line').classed('refMarker', true)
             .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 0.9 / 1.25, 'y2': -ymax * 0.9 / 1.25, 'stroke-dasharray': '1,1'});
 
-        content.selectAll('.refMarker')
-            .attr({'stroke': 'black', 'stroke-width': 0.2});
+        content.append('line').classed('refMarker', true)
+            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 0.85 / 1.25, 'y2': -ymax * 0.85 / 1.25, 'stroke-dasharray': '2,1'});
     }
     else {
         gyaxis.append('text')
@@ -329,15 +329,37 @@ function displaySummary(data)
     content.selectAll('.barComponent')
         .attr('width', xspace * 0.3);
 
+    var lineLegend = summaryGraph.append('g').classed('lineLegend', true)
+        .attr('transform', 'translate(' + gxnorm(56) + ', 0)');
+
+    var lineLegendContents =
+        [{'title': 'Deletion trigger', 'dasharray': '1,1', 'position': '(0,3.5)'},
+         {'title': 'Target occupancy', 'dasharray': '2,1', 'position': '(0,7.5)'}];
+
+    var lineLegendEntries = lineLegend.selectAll('g')
+        .data(lineLegendContents)
+        .enter()
+        .append('g')
+        .attr('transform', function (d) { return 'translate' + d.position });
+
+    lineLegendEntries.append('line')
+        .classed('refMarker', true)
+        .attr({'x1': 0, 'x2': gxnorm(2), 'y1': 1, 'y2': 1})
+        .attr('stroke-dasharray', function (d) { return d.dasharray; });
+
+    lineLegendEntries.append('text')
+        .attr({'font-size': 2, 'dx': gxnorm(3), 'dy': 2})
+        .text(function (d) { return d.title; });
+
     var legend = summaryGraph.append('g').classed('legend', true)
         .attr('transform', 'translate(' + gxnorm(68) + ', 0)');
 
     var legendContents =
-        [{'cls': 'delete', 'title': 'Deleted', 'position': '(0,4)'},
-         {'cls': 'keep', 'title': 'Kept', 'position': '(0,8)'},
-         {'cls': 'protect', 'title': 'Protected', 'position': '(0,12)'},
-         {'cls': 'keepPrev', 'title': 'Kept in previous cycle', 'position': '(' + gxnorm(10) + ',4)'},
-         {'cls': 'protectPrev', 'title': 'Protected in previous cycle', 'position': '(' + gxnorm(10) + ',8)'}];
+        [{'cls': 'delete', 'title': 'Deleted', 'position': '(0,3.5)'},
+         {'cls': 'keep', 'title': 'Kept', 'position': '(0,7.5)'},
+         {'cls': 'protect', 'title': 'Protected', 'position': '(0,11.5)'},
+         {'cls': 'keepPrev', 'title': 'Kept in previous cycle', 'position': '(' + gxnorm(10) + ',3.5)'},
+         {'cls': 'protectPrev', 'title': 'Protected in previous cycle', 'position': '(' + gxnorm(10) + ',7.5)'}];
 
     var legendEntries = legend.selectAll('g')
         .data(legendContents)

@@ -118,6 +118,11 @@ rect.outline {
     stroke-width: 0.5;
 }
 
+.refMarker {
+    stroke: black;
+    stroke-width: 0.2;
+}
+
 .sitePanel {
     width: 25%;
     height: 400px;

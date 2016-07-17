@@ -2,7 +2,7 @@ from common.configuration import paths, Configuration
 
 threshold_occupancy = 0.9
 
-deletion_per_iteration = 50
+deletion_per_iteration = 30
 
 reco_max_age = 90. # number of days to keep /RECO* datasets
 max_nonusage = 400. # threshold for global usage rank
