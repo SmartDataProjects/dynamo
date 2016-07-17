@@ -58,7 +58,7 @@ class Policy(object):
             return 0
         
         group = inventory.groups[self.partition]
-        return dataset.size * 1.e-12 / quota
+        return dataset.size() * 1.e-12 / quota
 
     def sort_datasets_by_demand(self, datasets, demands):
         """

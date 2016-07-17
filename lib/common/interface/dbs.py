@@ -56,9 +56,6 @@ class DBS(DatasetInfoSourceInterface):
         
             dataset.blocks.append(block)
 
-        dataset.size = sum([b.size for b in dataset.blocks])
-        dataset.num_files = sum([b.num_files for b in dataset.blocks])
-
         return dataset
 
     def _make_request(self, resource, options = [], method = GET, format = 'url'):

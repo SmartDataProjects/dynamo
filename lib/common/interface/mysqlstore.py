@@ -224,7 +224,7 @@ class MySQLStore(LocalStoreInterface):
         # Load datasets
         dataset_list = []
 
-        datasets = self._mysql.query('SELECT `name`, `size`, `num_files`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`) FROM `datasets`')
+        datasets = self._mysql.query('SELECT `name`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`) FROM `datasets`')
 
         logger.info('Loaded data for %d datasets.', len(datasets))
 
@@ -232,7 +232,7 @@ class MySQLStore(LocalStoreInterface):
             if dataset_filt != '/*/*/*' and not fnmatch.fnmatch(name, dataset_filt):
                 continue
 
-            dataset = Dataset(name, size = size, num_files = num_files, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update)
+            dataset = Dataset(name, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update)
             if software_version_id != 0:
                 dataset.software_version = software_version_map[software_version_id]
 
@@ -548,13 +548,11 @@ class MySQLStore(LocalStoreInterface):
             else:
                 known_datasets.append((dataset, dataset_id))
 
-        fields = ('id', 'name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
+        fields = ('id', 'name', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
         # MySQL expects the local time for last_update
         mapping = lambda (d, i): (
             i,
             d.name,
-            d.size,
-            d.num_files,
             d.status,
             d.on_tape,
             d.data_type,
@@ -571,12 +569,10 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.delete_not_in('dataset_accesses', 'dataset_id', ('id', 'datasets_new'))
         self._mysql.delete_not_in('dataset_requests', 'dataset_id', ('id', 'datasets_new'))
 
-        fields = ('name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
+        fields = ('name', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
         # MySQL expects the local time for last_update
         mapping = lambda d: (
             d.name,
-            d.size,
-            d.num_files,
             d.status,
             d.on_tape,
             d.data_type,

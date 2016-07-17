@@ -459,9 +459,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                         block_array.append(block)
 
-                    dataset.size = sum([b.size for b in dataset.blocks])
-                    dataset.num_files = sum([b.num_files for b in dataset.blocks])
-
             # now construct replicas; keep them in a local container and merge later
             new_replicas = []
 
@@ -735,12 +732,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     elif block.size != block_entry['bytes'] or block.num_files != block_entry['files']:
                         block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'])
 
-                dataset.size = sum([b.size for b in dataset.blocks])
-                dataset.num_files = sum([b.num_files for b in dataset.blocks])
-
             for dataset in list_chunk: # what remains - in case PhEDEx does not say anything about this dataset
-                dataset.size = 0
-                dataset.num_files = 0
                 dataset.blocks = []
                 
         # set_constituent can take 10000 datasets at once, make it smaller and more parallel

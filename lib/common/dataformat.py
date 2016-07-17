@@ -56,10 +56,8 @@ class Dataset(object):
         else:
             return arg
 
-    def __init__(self, name, size = -1, num_files = 0, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0):
+    def __init__(self, name, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0):
         self.name = name
-        self.size = size
-        self.num_files = num_files
         self.status = status
         self.on_tape = on_tape
         self.data_type = data_type
@@ -94,6 +92,12 @@ class Dataset(object):
         # by removing the dataset replicas, the block replicas should become deletable (site->blockrep link is cut)
         self.replicas = []
         self.blocks = []
+
+    def size(self):
+        return sum(b.size for b in self.blocks)
+
+    def num_files(self):
+        return sum(b.num_files for b in self.blocks)
 
     def find_block(self, block):
         try:

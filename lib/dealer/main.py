@@ -65,7 +65,7 @@ class Dealer(object):
             status = self.transaction_manager.copy.copy_status(operation.operation_id)
             for (site_name, dataset_name), (total, copied) in status.items():
                 if total == 0.:
-                    copy_volumes[site] += self.inventory_manager.datasets[dataset_name].size * 1.e-12
+                    copy_volumes[site] += self.inventory_manager.datasets[dataset_name].size() * 1.e-12
                 else:
                     copy_volumes[site] += (total - copied) * 1.e-12
 
@@ -112,7 +112,7 @@ class Dealer(object):
         # now go through datasets sorted by weight / #replicas
         for dataset, demand in sorted_datasets:
 
-            if dataset.size * 1.e-12 > dealer_config.max_dataset_size:
+            if dataset.size() * 1.e-12 > dealer_config.max_dataset_size:
                 continue
 
             if len(dataset.replicas) > dealer_config.max_replicas:
@@ -142,7 +142,7 @@ class Dealer(object):
 
                 copy_list[destination_site].append(new_replica)
 
-                copy_volumes[destination_site] += dataset.size * 1.e-12
+                copy_volumes[destination_site] += dataset.size() * 1.e-12
     
                 # recompute site properties
                 site_occupancy[destination_site] = policy.compute_site_occupancy(site, self.inventory_manager)
