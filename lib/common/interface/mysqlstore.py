@@ -228,7 +228,7 @@ class MySQLStore(LocalStoreInterface):
 
         logger.info('Loaded data for %d datasets.', len(datasets))
 
-        for name, size, num_files, status, on_tape, data_type, software_version_id, last_update in datasets:
+        for name, status, on_tape, data_type, software_version_id, last_update in datasets:
             if dataset_filt != '/*/*/*' and not fnmatch.fnmatch(name, dataset_filt):
                 continue
 
