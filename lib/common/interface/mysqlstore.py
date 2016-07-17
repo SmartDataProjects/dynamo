@@ -147,8 +147,6 @@ class MySQLStore(LocalStoreInterface):
 
         sites = self._mysql.query('SELECT `name`, `host`, `storage_type`, `backend`, `storage`, `cpu`, `status` FROM `sites`')
 
-        logger.info('Loaded data for %d sites.', len(sites))
-        
         for name, host, storage_type, backend, storage, cpu, status in sites:
             if type(site_filt) is str:
                 if site_filt != '*' and not fnmatch.fnmatch(name, site_filt):
@@ -162,6 +160,8 @@ class MySQLStore(LocalStoreInterface):
             site_list.append(site)
 
         self._set_site_ids(site_list)
+
+        logger.info('Loaded data for %d sites.', len(sites))
 
 #        mean_storage = sum([s.storage for s in site_list]) / len(filter(lambda s: s.storage != 0., site_list))
 #        mean_cpu = sum([s.cpu for s in site_list]) / len(filter(lambda s: s.cpu != 0., site_list))
@@ -182,13 +182,13 @@ class MySQLStore(LocalStoreInterface):
 
         groups = self._mysql.query('SELECT `name` FROM `groups`')
 
-        logger.info('Loaded data for %d groups.', len(groups))
-
         for name in groups:
             group = Group(name)
             group_list.append(group)
 
         self._set_group_ids(group_list)
+
+        logger.info('Loaded data for %d groups.', len(groups))
 
 #        # Load site quotas
 #        quotas = self._mysql.query('SELECT `site_id`, `group_id`, `storage` FROM `quotas`')
@@ -216,17 +216,17 @@ class MySQLStore(LocalStoreInterface):
 
         versions = self._mysql.query('SELECT `id`, `cycle`, `major`, `minor`, `suffix` FROM `software_versions`')
 
-        logger.info('Loaded data for %d software versions.', len(versions))
-
         for software_version_id, cycle, major, minor, suffix in versions:
             software_version_map[software_version_id] = (cycle, major, minor, suffix)
+
+        logger.info('Loaded data for %d software versions.', len(versions))
+
+        del versions
 
         # Load datasets
         dataset_list = []
 
         datasets = self._mysql.query('SELECT `name`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`) FROM `datasets`')
-
-        logger.info('Loaded data for %d datasets.', len(datasets))
 
         for name, status, on_tape, data_type, software_version_id, last_update in datasets:
             if dataset_filt != '/*/*/*' and not fnmatch.fnmatch(name, dataset_filt):
@@ -239,6 +239,10 @@ class MySQLStore(LocalStoreInterface):
             dataset_list.append(dataset)
 
         self._set_dataset_ids(dataset_list)
+
+        logger.info('Loaded data for %d datasets.', len(datasets))
+
+        del datasets
 
         if len(dataset_list) == 0:
             return site_list, group_list, dataset_list
@@ -253,8 +257,6 @@ class MySQLStore(LocalStoreInterface):
 
         blocks = self._mysql.query(sql)
 
-        logger.info('Loaded data for %d blocks.', len(blocks))
-
         _dataset_id = 0
         dataset = None
         for block_id, dataset_id, name, size, num_files in blocks:
@@ -267,6 +269,10 @@ class MySQLStore(LocalStoreInterface):
             dataset.blocks.append(block)
 
             block_map[block_id] = block
+
+        logger.info('Loaded data for %d blocks.', len(blocks))
+
+        del blocks
 
         if load_replicas:
             # Link datasets to sites
@@ -304,6 +310,8 @@ class MySQLStore(LocalStoreInterface):
     
                 dataset.replicas.append(rep)
                 site.dataset_replicas.append(rep)
+
+            del dataset_replicas
 
             logger.info('Linking blocks to sites.')
     
@@ -374,6 +382,8 @@ class MySQLStore(LocalStoreInterface):
                     dataset_replica.block_replicas.append(rep)
                 else:
                     logger.warning('Found a block replica %s:%s#%s without a corresponding dataset replica', site.name, block.dataset.name, block.real_name())
+
+            del block_replicas
 
             # For datasets with all replicas complete and not partial, block replica data is not saved on disk
             for dataset in dataset_list:
