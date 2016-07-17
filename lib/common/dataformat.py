@@ -56,11 +56,10 @@ class Dataset(object):
         else:
             return arg
 
-    def __init__(self, name, size = -1, num_files = 0, is_open = True, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0):
+    def __init__(self, name, size = -1, num_files = 0, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0):
         self.name = name
         self.size = size
         self.num_files = num_files
-        self.is_open = is_open
         self.status = status
         self.on_tape = on_tape
         self.data_type = data_type
@@ -75,8 +74,8 @@ class Dataset(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset %s (is_open=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, #blocks=%d, replicas=%s)' % \
-            (self.name, self.is_open, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
+        return 'Dataset %s (status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, #blocks=%d, replicas=%s)' % \
+            (self.name, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
             str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), len(self.blocks), replica_sites)
 
     def unlink(self):
@@ -118,7 +117,7 @@ class Dataset(object):
 
 
 # Block and BlockReplica implemented as tuples to reduce memory footprint
-Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files', 'is_open'])
+Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files'])
 
 def _Block_translate_name(name_str):
     # block name format: [8]-[4]-[4]-[4]-[12] where [n] is an n-digit hex.
@@ -141,13 +140,12 @@ def _Block_find_replica(self, site):
     except StopIteration:
         return None
 
-def _Block_clone(self, dataset = None, size = None, num_files = None, is_open = None):
+def _Block_clone(self, dataset = None, size = None, num_files = None):
     return Block(
         self.name,
         self.dataset if dataset is None else dataset,
         self.size if size is None else size,
-        self.num_files if num_files is None else num_files,
-        self.is_open if is_open is None else is_open
+        self.num_files if num_files is None else num_files
     )
 
 Block.translate_name = staticmethod(_Block_translate_name)

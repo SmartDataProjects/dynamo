@@ -103,14 +103,13 @@ class InventoryManager(object):
                 self.store.make_snapshot()
 
             if load_first and len(self.sites) == 0:
-                logger.info('Loading existing data.')
+                logger.info('Loading data from local storage.')
                 self.load(load_replicas = False)
 
             else:
                 logger.info('Unlinking replicas.')
                 self.unlink_all_replicas()
 
-            logger.info('Fetching info on sites.')
             self.site_source.get_site_list(self.sites, filt = config.inventory.included_sites)
 
             for site_name in config.inventory.excluded_sites:
@@ -125,11 +124,9 @@ class InventoryManager(object):
 
             self.site_source.set_site_status(self.sites)
 
-            logger.info('Fetching info on groups.')
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
             # First get information on all replicas in the system, possibly creating datasets / blocks along the way.
-            logger.info('Making replica links.')
             if dataset_filter == '/*/*/*':
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
             else:
@@ -145,9 +142,7 @@ class InventoryManager(object):
 
             del datasets
 
-            logger.info('Filling details of %d datasets.', len(self.datasets))
-
-            self.dataset_source.fill_dataset_info(self.datasets)
+            self.dataset_source.set_dataset_details(self.datasets, skip_valid = True)
 
             # Number of blocks for each dataset is now known. Check for partial replicas.
             for dataset in self.datasets.values():
@@ -223,13 +218,7 @@ class InventoryManager(object):
             regex = re.compile(fnmatch.translate(dataset_filter))
             datasets = [d for d in self.datasets.values() if regex.match(d.name) and d.status != Dataset.STAT_IGNORED]
 
-        last_updates = dict([(d, d.last_update) for d in datasets])
-
         self.dataset_source.set_dataset_details(datasets)
-
-        updated_datasets = [d for d in datasets if d.last_update > last_updates[d]]
-
-        self.dataset_source.set_dataset_constituent_info(updated_datasets)
 
         self.store.save_datasets(datasets)
 

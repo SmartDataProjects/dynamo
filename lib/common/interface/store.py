@@ -448,27 +448,6 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
-    def close_block(self, block):
-        """
-        Set and save block.is_open = False
-        """
-
-        if type(block) is Block:
-            dataset_name = block.dataset.name
-            block_name = block.real_name()
-        elif type(block) is str:
-            dataset_name, sep, block_name = block.partition('#')
-
-        if config.read_only:
-            logger.debug('_do_close_block(%s#%s)', dataset_name, block_name)
-            return
-
-        self.acquire_lock()
-        try:
-            self._do_close_block(dataset_name, block_name)
-        finally:
-            self.release_lock()
-
     def set_dataset_status(self, dataset, status):
         """
         Set and save dataset status
@@ -647,9 +626,6 @@ if __name__ == '__main__':
                     sys.exit(0)
 
             print replica
-
-    elif args.command == 'close_block':
-        interface.close_block(args.arguments[0])
 
     elif args.command == 'set_dataset_status':
         interface.set_dataset_status(args.arguments[0], args.arguments[1])

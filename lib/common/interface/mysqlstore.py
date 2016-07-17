@@ -224,15 +224,15 @@ class MySQLStore(LocalStoreInterface):
         # Load datasets
         dataset_list = []
 
-        datasets = self._mysql.query('SELECT `name`, `size`, `num_files`, `is_open`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`) FROM `datasets`')
+        datasets = self._mysql.query('SELECT `name`, `size`, `num_files`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`) FROM `datasets`')
 
         logger.info('Loaded data for %d datasets.', len(datasets))
 
-        for name, size, num_files, is_open, status, on_tape, data_type, software_version_id, last_update in datasets:
+        for name, size, num_files, status, on_tape, data_type, software_version_id, last_update in datasets:
             if dataset_filt != '/*/*/*' and not fnmatch.fnmatch(name, dataset_filt):
                 continue
 
-            dataset = Dataset(name, size = size, num_files = num_files, is_open = is_open, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update)
+            dataset = Dataset(name, size = size, num_files = num_files, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update)
             if software_version_id != 0:
                 dataset.software_version = software_version_map[software_version_id]
 
@@ -246,7 +246,7 @@ class MySQLStore(LocalStoreInterface):
         # Load blocks
         block_map = {} # id -> block
 
-        sql = 'SELECT `id`, `dataset_id`, `name`, `size`, `num_files`, `is_open` FROM `blocks`'
+        sql = 'SELECT `id`, `dataset_id`, `name`, `size`, `num_files` FROM `blocks`'
         if dataset_filt != '/*/*/*':
             sql += ' WHERE `dataset_id` IN (%s)' % (','.join(map(str, self._ids_to_datasets.keys())))
         sql += ' ORDER BY `dataset_id`'
@@ -257,12 +257,12 @@ class MySQLStore(LocalStoreInterface):
 
         _dataset_id = 0
         dataset = None
-        for block_id, dataset_id, name, size, num_files, is_open in blocks:
+        for block_id, dataset_id, name, size, num_files in blocks:
             if dataset_id != _dataset_id:
                 dataset = self._ids_to_datasets[dataset_id]
                 _dataset_id = dataset_id
 
-            block = Block(Block.translate_name(name), dataset, size, num_files, is_open)
+            block = Block(Block.translate_name(name), dataset, size, num_files)
 
             dataset.blocks.append(block)
 
@@ -548,14 +548,13 @@ class MySQLStore(LocalStoreInterface):
             else:
                 known_datasets.append((dataset, dataset_id))
 
-        fields = ('id', 'name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
+        fields = ('id', 'name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
         # MySQL expects the local time for last_update
         mapping = lambda (d, i): (
             i,
             d.name,
             d.size,
             d.num_files,
-            d.is_open,
             d.status,
             d.on_tape,
             d.data_type,
@@ -572,13 +571,12 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.delete_not_in('dataset_accesses', 'dataset_id', ('id', 'datasets_new'))
         self._mysql.delete_not_in('dataset_requests', 'dataset_id', ('id', 'datasets_new'))
 
-        fields = ('name', 'size', 'num_files', 'is_open', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
+        fields = ('name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
         # MySQL expects the local time for last_update
         mapping = lambda d: (
             d.name,
             d.size,
             d.num_files,
-            d.is_open,
             d.status,
             d.on_tape,
             d.data_type,
@@ -606,13 +604,12 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query('CREATE TABLE `blocks_new` LIKE `blocks`')
 
-        fields = ('name', 'dataset_id', 'size', 'num_files', 'is_open')
+        fields = ('name', 'dataset_id', 'size', 'num_files')
         mapping = lambda b: (
             b.real_name(),
             self._datasets_to_ids[b.dataset],
             b.size,
-            b.num_files,
-            b.is_open
+            b.num_files
         )
 
         self._mysql.insert_many('blocks_new', fields, mapping, all_blocks, do_update = False)
@@ -661,7 +658,7 @@ class MySQLStore(LocalStoreInterface):
 
         _dataset = None
         for replica in all_replicas:
-            if _dataset != replica.dataset:
+            if replica.dataset != _dataset:
                 dataset_id = self._datasets_to_ids[replica.dataset]
                 _dataset = replica.dataset
 
@@ -685,9 +682,6 @@ class MySQLStore(LocalStoreInterface):
                 _dataset_id = dataset_id
 
             block = dataset.find_block(Block.translate_name(block_name))
-            if block is None:
-                print dataset.name, Block.translate_name(block_name)
-
             block_to_id[block] = block_id
 
         del block_data
@@ -897,9 +891,6 @@ class MySQLStore(LocalStoreInterface):
         combinations = ','.join(['(%d,%d,\'%s\')' % (site_ids[r.site], dataset_ids[r.block.dataset], r.block.real_name()) for r in replica_list])
 
         self._mysql.query(sql.format(combinations = combinations))
-
-    def _do_close_block(self, dataset_name, block_name): #override
-        self._mysql.query('UPDATE `blocks` INNER JOIN `datasets` ON `datasets`.`id` = `blocks`.`dataset_id` SET `blocks`.`is_open` = 0 WHERE `datasets`.`name` LIKE %s AND `blocks`.`name` LIKE %s', dataset_name, block_name)
 
     def _do_set_dataset_status(self, dataset_name, status_str): #override
         self._mysql.query('UPDATE `datasets` SET `status` = %s WHERE `name` LIKE %s', status_str, dataset_name)
