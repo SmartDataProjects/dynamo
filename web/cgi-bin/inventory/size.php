@@ -87,9 +87,8 @@ $join_s = ' INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`';
 $join_g = ' INNER JOIN `groups` AS g ON g.`id` = dr.`group_id`';
 
 if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
-  $selection = 'SELECT d.`name`, SUM(b.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
+  $selection = 'SELECT d.`name`, SUM(d.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
   $selection .= $join_d;
-  $selection .= $join_b;
   if (strlen($const_site) != 0)
     $selection .= $join_s;
   if (count($const_group) != 0)
@@ -98,9 +97,8 @@ if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == '
   $grouping = ' GROUP BY d.`id`';
 }
 else if ($categories == 'sites') {
-  $selection = 'SELECT s.`name`, SUM(b.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
+  $selection = 'SELECT s.`name`, SUM(d.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
   $selection .= $join_d;
-  $selection .= $join_b;
   $selection .= $join_s;
   if (count($const_group) != 0)
     $selection .= $join_g;
@@ -108,9 +106,8 @@ else if ($categories == 'sites') {
   $grouping = ' GROUP BY s.`id`';
 }
 else if ($categories == 'groups') {
-  $selection = 'SELECT g.`name`, SUM(b.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
+  $selection = 'SELECT g.`name`, SUM(d.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
   $selection .= $join_d;
-  $selection .= $join_b;
   $selection .= $join_g;
   if (strlen($const_site) != 0)
     $selection .= $join_s;

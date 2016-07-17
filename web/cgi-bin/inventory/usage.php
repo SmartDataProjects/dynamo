@@ -123,9 +123,8 @@ $join_s = ' INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`';
 $join_g = ' INNER JOIN `groups` AS g ON g.`id` = dr.`group_id`';
 
 if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
-  $selection = 'SELECT s.`name`, d.`name`, SUM(b.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
+  $selection = 'SELECT s.`name`, d.`name`, SUM(d.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
   $selection .= $join_d;
-  $selection .= $join_b;
   $selection .= $join_s;
   if (count($const_group) != 0)
     $selection .= $join_g;
@@ -133,9 +132,8 @@ if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == '
   $grouping = ' GROUP BY s.`id`, d.`id`';
 }
 else if ($categories == 'groups') {
-  $selection = 'SELECT s.`name`, g.`name`, SUM(b.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
+  $selection = 'SELECT s.`name`, g.`name`, SUM(d.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
   $selection .= $join_d;
-  $selection .= $join_b;
   $selection .= $join_g;
   $selection .= $join_s;
 

@@ -548,11 +548,13 @@ class MySQLStore(LocalStoreInterface):
             else:
                 known_datasets.append((dataset, dataset_id))
 
-        fields = ('id', 'name', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
+        # datasets.size stored only for query speedup in inventory web interface
+        fields = ('id', 'name', 'size', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
         # MySQL expects the local time for last_update
         mapping = lambda (d, i): (
             i,
             d.name,
+            d.size(),
             d.status,
             d.on_tape,
             d.data_type,
