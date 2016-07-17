@@ -26,8 +26,12 @@ class Detox(object):
 
         self.deletion_message = 'Dynamo -- Automatic Cache Release Request.'
 
-    def set_policy(self, policy, partition = ''): # empty partition name -> default
-        self.policies[partition] = policy
+    def set_policy(self, policy):
+        """
+        Can be called multiple times to set policies for different partitions.
+        """
+
+        self.policies[policy.partition] = policy
 
     def run(self, partition = '', iterative_deletion = True, is_test = False):
         """
@@ -35,9 +39,9 @@ class Detox(object):
         """
 
         if partition:
-            logger.info('Detox run for %s starting at %s', partition, time.strftime('%Y-%m-%d %H:%M:%S'))
+            logger.info('Detox cycle for %s starting at %s', partition, time.strftime('%Y-%m-%d %H:%M:%S'))
         else:
-            logger.info('Detox run starting at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
+            logger.info('Detox cycle starting at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
         if time.time() - self.inventory_manager.store.last_update > config.inventory.refresh_min:
             logger.info('Inventory was last updated at %s. Reloading content from remote sources.', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.inventory_manager.store.last_update)))
@@ -61,39 +65,23 @@ class Detox(object):
         # take snapshots of quotas if updated
         self.history.save_quotas(run_number, partition, policy.quotas, self.inventory_manager)
 
-        logger.info('Identfying dataset replicas in the partition.')
-
-        replicas = [] # all replicas that the policy considers
-        partition_replicas = [] # cloned list of unlinked dataset replicas that contain only the block replicas in the partition
-        for dataset in self.inventory_manager.datasets.values():
-            for replica in dataset.replicas:
-                applies = policy.applies(replica)
-                if applies == 0: # not at all in the partition
-                    continue
-
-                replicas.append(replica)
-
-                drep = replica.clone()
-                if applies == 2: # replica not fully in the partition; remove parts that are not
-                    drep.is_partial = True # partial for the partition
-                    for brep in list(drep.block_replicas):
-                        if not policy.block_applies(brep):
-                            drep.block_replicas.remove(brep)
-
-                partition_replicas.append(drep)
-
-        # take a snapshot of current replicas
-        self.history.save_replicas(run_number, partition_replicas)
-
-        del partition_replicas
-
-        logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(replicas))
+        logger.info('Identfying target sites.')
 
         # Ask each site if deletion should be triggered
         target_sites = set()
         for site in self.inventory_manager.sites.values():
             if policy.need_deletion(site, initial = True):
                 target_sites.add(site)
+
+        logger.info('Identfying dataset replicas in the partition.')
+
+        # "partition" as a verb - selecting only the blockreps in the partition
+        all_replicas = policy.partition_replicas(self.inventory_manager.datasets.values())
+
+        # take a snapshot of current replicas
+        self.history.save_replicas(run_number, all_replicas)
+
+        logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(all_replicas))
 
         protected = {} # {replica: reason}
         deleted = {}
@@ -104,13 +92,13 @@ class Detox(object):
         while True:
             iteration += 1
 
-            eval_results = parallel_exec(lambda r: policy.evaluate(r, self.demand_manager), replicas, per_thread = 100)
+            eval_results = parallel_exec(lambda r: policy.evaluate(r, self.demand_manager), all_replicas, per_thread = 100)
 
             deletion_candidates = {} # {replica: reason}
 
             for replica, decision, reason in eval_results:
                 if decision == Policy.DEC_PROTECT:
-                    replicas.remove(replica)
+                    all_replicas.remove(replica)
                     protected[replica] = reason
 
                 elif replica.site not in target_sites:
@@ -152,7 +140,7 @@ class Detox(object):
             # we will not consider deleted replicas
             for replica in iter_deletion:
                 self.inventory_manager.unlink_datasetreplica(replica)
-                replicas.remove(replica)
+                all_replicas.remove(replica)
 
             if not iterative_deletion:
                 break
@@ -167,6 +155,16 @@ class Detox(object):
 
         logger.info('Committing deletion.')
         self.commit_deletions(run_number, policy, deleted.keys(), is_test)
+
+        policy.restore_replicas()
+
+        # remove datasets that lost replicas
+        for dataset in set([replica.dataset for replica in deleted.keys()]):
+            if len(dataset.replicas) == 0:
+                if not is_test:
+                    self.inventory_manager.store.delete_dataset(dataset)
+
+                dataset.unlink()
 
         self.history.close_deletion_run(run_number)
 
@@ -183,25 +181,23 @@ class Detox(object):
 
             sigint.block()
 
-            deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, groups = policy.groups, comments = self.deletion_message, is_test = is_test)
+            deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, comments = self.deletion_message, is_test = is_test)
             # deletion_mapping .. {deletion_id: (approved, [replicas])}
 
             for deletion_id, (approved, replicas) in deletion_mapping.items():
                 if approved and not is_test:
-                    self.inventory_manager.store.delete_datasetreplicas(replicas)
                     for replica in replicas:
-                        dataset = replica.dataset
-                        if len(dataset.replicas) == 0:
-                            self.inventory_manager.store.delete_dataset(dataset)
-                            dataset.unlink()
+                        self.inventory_manager.store.delete_blockreplicas(replica.block_replicas)
+                        if replica not in policy.untracked_replicas:
+                            # this replica was fully in the partition
+                            # second arg is False because block replicas must be all gone by now
+                            self.inventory_manager.store.delete_datasetreplica(replica, delete_blockreplicas = False)
 
                     self.inventory_manager.store.set_last_update()
 
-                size = sum([r.size(policy.groups) for r in replicas])
+                size = sum([r.size() for r in replicas])
 
                 self.history.make_deletion_entry(run_number, site, deletion_id, approved, [r.dataset for r in replicas], size)
-
-            del deletion_mapping
 
             sigint.unblock()
 
@@ -218,12 +214,13 @@ class Detox(object):
         candidate_sites = list(set(rep.site for rep in candidate_list))
 
         if len(protection_list) != 0:
-            protection_by_site = collections.defaultdict(list)
+            protection_by_site = dict([(site, 0.) for site in candidate_sites])
             for replica in protection_list:
-                protection_by_site[replica.site].append(replica)
+                if replica.site in candidate_sites:
+                    protection_by_site[replica.site] += replica.size()
 
             # find the site with the highest protected fraction
-            target_site = max(candidate_sites, key = lambda site: 0 if policy.quotas[site] == 0 else sum(replica.size(policy.groups) for replica in protection_by_site[site]) / policy.quotas[site])
+            target_site = max(candidate_sites, key = lambda site: 0 if policy.quotas[site] == 0 else protection_by_site[site] / policy.quotas[site])
         else:
             target_site = random.choice(candidate_sites)
 
@@ -242,7 +239,7 @@ if __name__ == '__main__':
     from common.transaction import TransactionManager
     from common.demand import DemandManager
     import common.interface.classes as classes
-    from detox.rules import ActionList
+    from detox.rules import ActionList, BelongsTo
 
     parser = ArgumentParser(description = 'Use detox')
 
@@ -288,10 +285,9 @@ if __name__ == '__main__':
     for site in inventory_manager.sites.values():
         quotas[site] = site.group_quota(group)
 
-    policy = Policy(Policy.DEC_PROTECT, [action_list], quotas, partition = args.partition)
-    policy.groups = [group]
+    policy = Policy(Policy.DEC_PROTECT, [action_list], quotas, partition = args.partition, block_requirement = BelongsTo(group))
 
-    detox.set_policy(policy, partition = args.partition)
+    detox.set_policy(policy)
 
     if args.dry_run:
         config.read_only = True

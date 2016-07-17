@@ -45,7 +45,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         self._last_request_time = 0
         self._last_request_url = ''
 
-    def schedule_copy(self, dataset_replica, comments = '', is_test = False): #override (CopyInterface)
+    def schedule_copy(self, dataset_replica, group, comments = '', is_test = False): #override (CopyInterface)
         catalogs = {} # {dataset: {block: [file]}}. Content can be empty if inclusive deletion is desired.
 
         dataset = dataset_replica.dataset
@@ -59,7 +59,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             'move': 'n',
             'static': 'n',
             'custodial': 'n',
-            'group': 'AnalysisOps',
+            'group': group.name,
             'request_only': 'n',
             'no_mail': 'n'
         }
@@ -83,7 +83,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
             return int(result[0]['id'])
 
-    def schedule_copies(self, replica_list, comments = '', is_test = False): #override (CopyInterface)
+    def schedule_copies(self, replica_list, group, comments = '', is_test = False): #override (CopyInterface)
         all_datasets = list(set([r.dataset for r in replica_list]))
 
         request_mapping = {}
@@ -102,7 +102,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 'move': 'n',
                 'static': 'n',
                 'custodial': 'n',
-                'group': 'AnalysisOps',
+                'group': group.name,
                 'request_only': 'n',
                 'no_mail': 'n'
             }
@@ -153,29 +153,14 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         return request_mapping
 
-    def schedule_deletion(self, replica, groups = [], comments = '', is_test = False): #override (DeletionInterface)
+    def schedule_deletion(self, replica, comments = '', is_test = False): #override (DeletionInterface)
         catalogs = {} # {dataset: {block: [file]}}. Content can be empty if inclusive deletion is desired.
 
         if type(replica) == DatasetReplica:
-            dataset = replica.dataset
-            catalogs[dataset] = {}
-
-            if len(groups) != 0:
-                if replica.group is None: # replica owned by multiple groups
-                    for brep in replica.block_replicas:
-                        if brep.group is not None and brep.group not in groups:
-                            catalogs[dataset][brep.block] = []
-
-                elif replica.group not in groups:
-                    catalogs.pop(dataset)
+            catalogs[replica.dataset] = dict([(block_replica.block, []) for block_replica in replica.block_replicas])
 
         elif type(replica) == BlockReplica:
-            if len(groups) != 0:
-                if replica.group is None or replica.group not in groups:
-                    return 0
-
-            dataset = replica.block.dataset
-            catalogs[dataset] = {replica.block: []}
+            catalogs[replica.block.dataset] = {replica.block: []}
 
         options = {
             'node': replica.site.name,
@@ -214,7 +199,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             return request_id
 
-    def schedule_deletions(self, replica_list, groups = [], comments = '', is_test = False): #override (DeletionInterface)
+    def schedule_deletions(self, replica_list, comments = '', is_test = False): #override (DeletionInterface)
         all_datasets = list(set([r.dataset for r in replica_list]))
 
         request_mapping = {}
@@ -222,16 +207,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         def run_deletion_request(site, replicas_to_delete):
             catalogs = {}
 
-            for drep in replicas_to_delete:
-                catalogs[drep.dataset] = {}
-                if len(groups) != 0:
-                    if drep.group is None: # replica owned by multiple groups
-                        for brep in drep.block_replicas:
-                            if brep.group is not None and brep.group in groups:
-                                catalogs[drep.dataset][brep.block] = []
-
-                    elif drep.group not in groups: # owned by a wrong group
-                        catalogs.pop(drep.dataset)
+            for replica in replicas_to_delete:
+                catalogs[replica.dataset] = dict([(block_replica.block, []) for block_replica in replica.block_replicas])
 
             options = {
                 'node': site.name,
@@ -276,12 +253,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                 request_mapping[request_id] = (True, replicas_to_delete)
 
-        replicas_by_site = {}
+        replicas_by_site = collections.defaultdict(list)
         for replica in replica_list:
-            try:
-                replicas_by_site[replica.site].append(replica)
-            except KeyError:
-                replicas_by_site[replica.site] = [replica]
+            replicas_by_site[replica.site].append(replica)
 
         for site, replica_list in replicas_by_site.items():
             run_deletion_request(site, replica_list)

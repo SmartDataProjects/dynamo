@@ -451,10 +451,12 @@ class DatasetReplica(object):
                 num_block_replicas = len(self.block_replicas), num_local_accesses = len(self.accesses[DatasetReplica.ACC_LOCAL]),
                 num_remote_accesses = len(self.accesses[DatasetReplica.ACC_REMOTE]))
 
-    def clone(self): # Create a detached clone. Detached in the sense that it is not linked from dataset or site.
+    def clone(self, block_replicas = True): # Create a detached clone. Detached in the sense that it is not linked from dataset or site.
         replica = DatasetReplica(dataset = self.dataset, site = self.site, group = self.group, is_complete = self.is_complete, is_partial = self.is_partial, is_custodial = self.is_custodial, last_block_created = self.last_block_created)
-        for brep in self.block_replicas:
-            replica.block_replicas.append(brep.clone())
+
+        if block_replicas:
+            for brep in self.block_replicas:
+                replica.block_replicas.append(brep.clone())
 
         return replica
 
