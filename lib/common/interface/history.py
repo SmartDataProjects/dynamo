@@ -49,6 +49,17 @@ class TransactionHistoryInterface(object):
         if not tag and older_than == 0:
             older_than = time.time()
 
+        if tag == 'last':
+            tags = self.list_snapshots(timestamp_only = True)
+
+            if len(tags) == 0:
+                print 'No snapshots taken.'
+                return
+
+            tag = tags[0]
+            newer_than = 0
+            older_than = 0
+
         if config.read_only:
             logger.debug('_do_remove_snapshot(%s, %f, %f)', tag, newer_than, older_than)
             return
