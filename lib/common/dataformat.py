@@ -464,7 +464,7 @@ class DatasetReplica(object):
     def size(self, groups = None, physical = True):
         if groups is None:
             if self.is_complete and not self.is_partial:
-                return self.dataset.size
+                return self.dataset.size()
             else:
                 if physical:
                     return sum([r.size for r in self.block_replicas])
