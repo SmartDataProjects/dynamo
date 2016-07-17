@@ -115,6 +115,27 @@ class Dataset(object):
         except StopIteration:
             return None
 
+    def update_block(self, name, size, num_files):
+        # not catching exception intentionally
+        old_block = next(b for b in self.blocks if b.name == name)
+        self.blocks.remove(old_block)
+
+        new_block = Block(name, self, size, num_files)
+        self.blocks.append(new_block)
+
+        for replica in self.replicas:
+            site = replica.site
+            for block_replica in list(replica.block_replicas):
+                if block_replica.block == old_block:
+                    new_block_replica = block_replica.clone(block = new_block)
+
+                    replica.block_replicas.remove(block_replica)
+                    replica.block_replicas.append(new_block_replica)
+
+                    site.remove_block_replica(block_replica)
+                    site.add_block_replica(new_block_replica)
+
+        return new_block
 
 # Block and BlockReplica implemented as tuples to reduce memory footprint
 Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files'])

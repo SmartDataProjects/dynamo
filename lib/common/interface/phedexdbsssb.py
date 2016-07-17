@@ -450,8 +450,17 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             )
 
                             dataset.blocks.append(block)
+                            dataset.status = Dataset.STAT_PRODUCTION # trigger DBS query
+
+                        elif block.size != block_entry['bytes'] or block.num_files != block_entry['files']:
+                            # block record was updated
+                            block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'])
+                            dataset.status = Dataset.STAT_PRODUCTION
 
                         block_array.append(block)
+
+                    dataset.size = sum([b.size for b in dataset.blocks])
+                    dataset.num_files = sum([b.num_files for b in dataset.blocks])
 
             # now construct replicas; keep them in a local container and merge later
             new_replicas = []
@@ -696,7 +705,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     def _set_dataset_constituent_info(self, datasets):
         """
         Query phedex "data" interface and fill the list of blocks.
-        Argument is a list of datasets
+        Argument is a list of datasets.
         """
 
         def inquire_phedex(list_chunk):
@@ -722,6 +731,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             num_files = block_entry['files']
                         )
                         dataset.blocks.append(block)
+
+                    elif block.size != block_entry['bytes'] or block.num_files != block_entry['files']:
+                        block = dataset.upate_block(block_name, block_entry['bytes'], block_entry['files'])
 
                 dataset.size = sum([b.size for b in dataset.blocks])
                 dataset.num_files = sum([b.num_files for b in dataset.blocks])
