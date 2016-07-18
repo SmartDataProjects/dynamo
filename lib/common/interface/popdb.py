@@ -1,4 +1,3 @@
-import json
 import logging
 import time
 import datetime
@@ -7,7 +6,6 @@ import pprint
 from common.dataformat import DatasetReplica
 from common.interface.access import AccessHistoryInterface
 from common.interface.webservice import RESTService, GET, POST
-from common.misc import unicode2str
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -43,10 +41,9 @@ class PopDB(AccessHistoryInterface):
         """
 
         resp = self._popdb_interface.make_request(resource, options = options, method = method, format = format)
-        logger.debug('PopDB returned a response of ' + str(len(resp)) + ' bytes.')
 
-        result = json.loads(resp)['DATA']
-        unicode2str(result)
+        result = resp['DATA']
+        del resp
 
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug(pprint.pformat(result))

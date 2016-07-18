@@ -1,4 +1,3 @@
-import json
 import logging
 import time
 import re
@@ -14,7 +13,7 @@ from common.interface.replicainfo import ReplicaInfoSourceInterface
 from common.interface.datasetinfo import DatasetInfoSourceInterface
 from common.interface.webservice import RESTService, GET, POST
 from common.dataformat import Dataset, Block, Site, Group, DatasetReplica, BlockReplica
-from common.misc import unicode2str, parallel_exec
+from common.misc import parallel_exec
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -319,7 +318,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         for colid, stat in [(153, Site.STAT_WAITROOM), (199, Site.STAT_MORGUE)]:
             result = self._ssb_interface.make_request('getplotdata', 'columnid=%d&time=2184&dateFrom=&dateTo=&sites=all&clouds=undefined&batch=1' % colid)
             try:
-                source = json.loads(result)['csvdata']
+                source = result['csvdata']
             except KeyError:
                 logger.error('SSB parse error')
                 return
@@ -789,15 +788,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         """
 
         resp = self._phedex_interface.make_request(resource, options = options, method = method, format = format)
-        logger.debug('PhEDEx returned a response of ' + str(len(resp)) + ' bytes.')
 
         try:
-            result = json.loads(resp)['phedex']
+            result = resp['phedex']
         except KeyError:
             logger.error(resp)
             return
-
-        unicode2str(result)
 
         self._last_request = result['request_timestamp']
         self._last_request_url = result['request_url']
@@ -823,16 +819,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         """
 
         resp = self._dbs_interface.make_request(resource, options = options, method = method, format = format)
-        logger.debug('DBS returned a response of ' + str(len(resp)) + ' bytes.')
-
-        result = json.loads(resp)
-
-        unicode2str(result)
 
         if logger.getEffectiveLevel() == logging.DEBUG:
-            logger.debug(pprint.pformat(result))
+            logger.debug(pprint.pformat(resp))
 
-        return result
+        return resp
 
     def _form_catalog_xml(self, file_catalogs, human_readable = False):
 

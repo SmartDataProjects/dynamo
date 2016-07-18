@@ -6,6 +6,7 @@ import json
 import logging
 
 import common.configuration as config
+from common.misc import unicode2str
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +31,13 @@ class RESTService(object):
     An interface to RESTful APIs (e.g. PhEDEx, DBS) with X509 authentication.
     make_request will take the REST "command" and a list of options as arguments.
     Options are chained together with '&' and appended to the url after '?'.
-    Return values are in JSON format.
+    Returns python-parsed content.
     """
 
-    def __init__(self, url_base, headers = []):
+    def __init__(self, url_base, headers = [], accept = 'application/json'):
         self.url_base = url_base
         self.headers = list(headers)
+        self.accept = accept
 
     def make_request(self, resource, options = [], method = GET, format = 'url'):
         url = self.url_base + '/' + resource
@@ -98,7 +100,9 @@ class RESTService(object):
                 else:
                     opener = urllib2.build_opener(urllib2.HTTPHandler())
 
-                opener.addheaders.append(('Accept', 'application/json'))
+                if 'Accept' not in self.headers:
+                    opener.addheaders.append(('Accept', self.accept))
+
                 opener.addheaders.extend(self.headers)
 
                 response = opener.open(request)
@@ -111,7 +115,17 @@ class RESTService(object):
                 content = response.read()
                 del response
 
-                return content
+                if self.accept == 'application/json':
+                    result = json.loads(content)
+                    unicode2str(result)
+
+                elif self.accept == 'application/xml':
+                    # TODO implement xml -> dict
+                    pass
+
+                del content
+
+                return result
     
             except:
                 exceptions.append(sys.exc_info()[:2])

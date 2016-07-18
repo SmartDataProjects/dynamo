@@ -1,4 +1,3 @@
-import json
 import fnmatch
 import re
 import logging
@@ -8,7 +7,6 @@ from common.interface.siteinfo import SiteInfoSourceInterface
 from common.interface.webservice import RESTService, GET, POST
 from common.dataformat import Site
 import common.configuration as config
-from common.misc import unicode2str
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +87,8 @@ class SiteDB(SiteInfoSourceInterface):
         """
 
         resp = self._interface.make_request(resource)
-        logger.info('SiteDB returned a response of ' + str(len(resp)) + ' bytes.')
 
-        result = json.loads(resp)
-        unicode2str(result)
-
-        return result['result']
+        return resp['result']
 
 
 if __name__ == '__main__':

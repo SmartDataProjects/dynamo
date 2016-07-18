@@ -1,10 +1,8 @@
-import json
 import logging
 
 from common.interface.datasetinfo import DatasetInfoSourceInterface
 from common.interface.webservice import RESTService, GET, POST
 from common.dataformat import Dataset, Block
-from common.misc import unicode2str
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -63,15 +61,7 @@ class DBS(DatasetInfoSourceInterface):
         Make a single DBS request call. Returns a list of dictionaries.
         """
 
-        resp = self._interface.make_request(resource, options = options, method = method, format = format)
-        logger.info('DBS returned a response of ' + str(len(resp)) + ' bytes.')
-
-        result = json.loads(resp)
-        logger.debug(result)
-
-        unicode2str(result)
-
-        return result
+        return self._interface.make_request(resource, options = options, method = method, format = format)
 
 
 if __name__ == '__main__':
