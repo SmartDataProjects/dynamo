@@ -344,6 +344,13 @@ class Site(object):
             self._occupancy_projected[index] = 0
             self._occupancy_physical[index] = 0
 
+    def set_block_replicas(self, replicas):
+        self._block_replicas = replicas
+
+        for index in self._group_keys.values():
+            self._occupancy_projected[index] = sum(r.block.size for r in replicas)
+            self._occupancy_physical[index] = sum(r.size for r in replicas)
+
     def group_usage(self, group, physical = True):
         index = self._group_key(group)
 

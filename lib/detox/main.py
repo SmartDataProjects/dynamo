@@ -285,7 +285,7 @@ if __name__ == '__main__':
     for site in inventory_manager.sites.values():
         quotas[site] = site.group_quota(group)
 
-    policy = Policy(Policy.DEC_PROTECT, [action_list], quotas, partition = args.partition, block_requirement = BelongsTo(group))
+    policy = Policy(Policy.DEC_PROTECT, [action_list], quotas, partition = args.partition, replica_requirement = BelongsTo(group))
 
     detox.set_policy(policy)
 

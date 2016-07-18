@@ -14,15 +14,16 @@ class Policy(object):
     DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(1, 4)
     DECISION_STR = {DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
 
-    def __init__(self, default, rules, quotas, partition = '', site_requirement = None, block_requirement = None):
+    def __init__(self, default, rules, quotas, partition = '', site_requirement = None, replica_requirement = None):
         self.default_decision = default # decision
         self.rules = rules # [rule]
         self.quotas = quotas # {site: quota}
         self.partition = partition
         # bool(site, partition, initial). initial: check deletion should be triggered.
         self.site_requirement = site_requirement
-        # bool(block_replica). True if block replica is in the partition.
-        self.block_requirement = block_requirement
+        # An object with two methods dataset = int(DatasetReplica), block = bool(BlockReplica).
+        # dataset return values: 1->drep is in partition, 0->drep is not in partition, -1->drep is partially in partition
+        self.replica_requirement = replica_requirement
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
 
     def partition_replicas(self, datasets):
@@ -34,36 +35,70 @@ class Policy(object):
 
         all_replicas = []
 
-        if self.block_requirement is None:
-            # all blocks are in
+        if self.replica_requirement is None:
+            # all replicas are in
             for dataset in datasets:
                 all_replicas.extend(dataset.replicas)
                 
             return all_replicas
 
         # otherwise sort replicas out
+
+        # stacking up replicas (rather than removing them one by one) for efficiency
+        site_all_dataset_replicas = collections.defaultdict(list)
+        site_all_block_replicas = collections.defaultdict(list)
+
         for dataset in datasets:
             ir = 0
             while ir != len(dataset.replicas):
                 replica = dataset.replicas[ir]
+                site = replica.site
 
-                not_in_partition = []
-                for block_replica in replica.block_replicas:
-                    if not self.block_requirement(block_replica):
-                        not_in_partition.append(block_replica)
+                partitioning = self.replica_requirement.dataset(replica)
 
-                if len(not_in_partition) != 0:
-                    self.untracked_replicas[replica] = not_in_partition
-                    for block_replica in not_in_partition:
-                        replica.block_replicas.remove(block_replica)
-                        replica.site.remove_block_replica(block_replica)
+                if partitioning > 0:
+                    # this replica is fully in partition
+                    site_all_dataset_replicas[site].append(replica)
+                    site_all_block_replicas[site].extend(replica.block_replicas)
+
+                elif partitioning == 0:
+                    # this replica is completely not in partition
+                    self.untracked_replicas[replica] = replica.block_replicas
+                    replica.block_replicas = []
+
+                else:
+                    # this replica is partially in partition
+                    replica.is_partial = True
+
+                    site_all_dataset_replicas[site].append(replica)
+
+                    site_block_replicas = site_all_block_replicas[site]
+
+                    block_replicas = []
+                    not_in_partition = []
+                    for block_replica in replica.block_replicas:
+                        if self.replica_requirement.block(block_replica):
+                            site_block_replicas.append(block_replica)
+                            block_replicas.append(block_replica)
+                        else:
+                            not_in_partition.append(block_replica)
+
+                    replica.block_replicas = block_replicas
+    
+                    if len(not_in_partition) != 0:
+                        self.untracked_replicas[replica] = not_in_partition
 
                 if len(replica.block_replicas) == 0:
                     dataset.replicas.pop(ir)
-                    replica.site.dataset_replicas.remove(replica)
                 else:
                     all_replicas.append(replica)
                     ir += 1
+
+        for site, dataset_replicas in site_all_dataset_replicas.items():
+            site.dataset_replicas = dataset_replicas
+
+        for site, block_replicas in site_all_block_replicas.items():
+            site.set_block_replicas(block_replicas)
 
         return all_replicas
 
@@ -83,6 +118,8 @@ class Policy(object):
             for block_replica in block_replicas:
                 replica.block_replicas.append(block_replica)
                 site.add_block_replica(block_replica)
+
+            replica.is_partial = (len(replica.block_replicas) != len(dataset.blocks))
 
     def need_deletion(self, site, initial = False):
         if self.site_requirement is None:
