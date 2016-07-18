@@ -2,6 +2,7 @@ import os
 import socket
 import logging
 import time
+import collections
 
 from common.interface.history import TransactionHistoryInterface
 from common.interface.mysql import MySQL
@@ -139,23 +140,51 @@ class MySQLHistory(TransactionHistoryInterface):
         update_status = {} #site_name -> status
         keep_status = [] #site_names
 
-        for site_name, status in self._mysql.query('SELECT `sites`.`name`, 0 + `site_status_snapshots`.`status` FROM `site_status_snapshots` INNER JOIN `sites` ON `sites`.`id` = `site_status_snapshots`.`site_id` ORDER BY `run_id` DESC'):
+        for site_name, active, status in self._mysql.query('SELECT `sites`.`name`, sn.`active`, 0 + sn.`status` FROM `site_status_snapshots` AS sn INNER JOIN `sites` ON `sites`.`id` = sn.`site_id` ORDER BY `run_id` DESC'):
             if site_name in update_status or site_name in keep_status:
                 continue
 
             site = inventory.sites[site_name]
-            if status == site.status:
+            if status == site.status and active == site.active:
                 keep_status.append(site_name)
             else:
-                update_status[site_name] = site.status
+                update_status[site_name] = (active, site.status)
 
         for site_name, site in inventory.sites.items():
             if site_name not in update_status and site_name not in keep_status:
-                update_status[site_name] = site.status
+                update_status[site_name] = (site.active, site.status)
 
-        fields = ('site_id', 'run_id', 'status')
-        mapping = lambda (site_name, status): (self._site_id_map[site_name], run_number, status)
+        fields = ('site_id', 'run_id', 'active', 'status')
+        mapping = lambda (site_name, (active, statuses)): (self._site_id_map[site_name], run_number, active, status)
         self._mysql.insert_many('site_status_snapshots', fields, mapping, update_status.items())
+
+    def _do_get_sites(self, run_number): #override
+        partition_id = self._mysql.query('SELECT `partition_id` FROM runs WHERE `id` = %s', run_number)[0]
+
+        sites_dict = {}
+
+        query = 'SELECT s.`name`, st.`active`, st.`status` FROM `sites` AS s'
+        query += ' INNER JOIN `site_status_snapshots` AS st ON st.`site_id` = s.`id`'
+        query += ' WHERE st.`run_id` <= %d' % run_number
+        query += ' ORDER BY s.`id`, st.`run_id`'
+        status = self._mysql.query(query)
+
+        query = 'SELECT s.`name`, q.`quota` FROM `sites` AS s'
+        query += ' INNER JOIN `quota_snapshots` AS q on q.`site_id` = s.`id`'
+        query += ' WHERE q.`partition_id` = %d AND q.`run_id` <= %d' % (partition_id, run_number)
+        query += ' ORDER BY s.`id`, q.`run_id`'
+        quota = self._mysql.query(query)
+
+        for site_name, site_active, site_status in status:
+            if site_name in sites_dict:
+                continue
+
+            site_quota = next(q for n, q in quota if n == site_name)
+
+            sites_dict[site_name] = (site_active, site_status, site_quota)
+
+        return sites_dict
+            
 
     def _do_save_datasets(self, run_number, inventory): #override
         if len(self._dataset_id_map) == 0:
@@ -333,6 +362,35 @@ class MySQLHistory(TransactionHistoryInterface):
         mapping = lambda (rep, reason): (run_number, self._replica_snapshot_ids[(rep.site, rep.dataset)], 'keep', MySQL.escape_string(reason))
         self._mysql.insert_many('deletion_decisions', fields, mapping, kept.items())
 
+    def _do_get_deletion_decisions(self, run_number, size_only): #override
+        if size_only:
+            query = 'SELECT s.`name`, d.`decision`, SUM(sn.`size`) * 1.e-12 FROM `deletion_decisions` AS d'
+            query += ' INNER JOIN `replica_snapshots` AS sn ON sn.`id` = d.`snapshot_id`'
+            query += ' INNER JOIN `sites` AS s ON s.`id` = sn.`site_id`'
+            query += ' WHERE d.`run_id` = %d' % run_number
+            query += ' GROUP BY s.`id`, d.`decision` ORDER BY s.`id`, d.`decision`'
+
+            result = self._mysql.query(query)
+
+            tmp_dict = collections.defaultdict(dict)
+
+            for site_name, decision, size in result:
+                tmp_dict[site_name][decision] = size
+
+            product = {}
+            for site_name, tmp_cont in tmp_dict.items():
+                for dec in ['protect', 'delete', 'keep']:
+                    if dec not in tmp_cont:
+                        tmp_cont[dec] = 0
+
+                product[site_name] = (tmp_cont['protect'], tmp_cont['delete'], tmp_cont['keep'])
+
+            return product
+
+        else:
+            # implement later
+            return {}
+
     def _do_get_incomplete_copies(self, partition): #override
         history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_copied`, UNIX_TIMESTAMP(h.`last_update`) FROM `copy_requests` AS h INNER JOIN `runs` AS r ON r.`id` = h.`run_id` INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id` INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE p.`name` LIKE %s AND h.`size` != h.`size_copied`', partition)
         
@@ -387,6 +445,25 @@ class MySQLHistory(TransactionHistoryInterface):
             return result[0]
 
         return ''
+
+    def _do_get_latest_deletion_run(self, partition): #override
+        result = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
+        if len(result) == 0:
+            return 0
+
+        partition_id = result[0]
+        result = self._mysql.query('SELECT `id` FROM `runs` WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\') ORDER BY `id` DESC LIMIT 1', partition_id)
+        if len(result) == 0:
+            return 0
+
+        return result[0]
+
+    def _do_get_run_timestamp(self, run_number): #override
+        result = self._mysql.query('SELECT UNIX_TIMESTAMP(`time_start`) FROM `runs` WHERE `id` = %s', run_number)
+        if len(result) == 0:
+            return 0
+
+        return result[0]
 
     def _do_get_next_test_id(self): #override
         copy_result = self._mysql.query('SELECT MIN(`id`) FROM `copy_requests`')[0]

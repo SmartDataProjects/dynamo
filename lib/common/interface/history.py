@@ -234,6 +234,23 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
+    def get_sites(self, run_number = 0, partition = ''):
+        """
+        Collect the site status for a given run number or the latest run of the partition
+        and return as a plain dict.
+        """
+
+        if run_number == 0:
+            run_number = self.get_latest_deletion_run(partition)
+
+        self.acquire_lock()
+        try:
+            sites_info = self._do_get_sites(run_number)
+        finally:
+            self.release_lock()
+
+        return sites_info
+
     def save_datasets(self, run_number, inventory):
         """
         Save datasets that are in the inventory but not in the history records.
@@ -310,6 +327,20 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
+    def get_deletion_decisions(self, run_number, size_only = True):
+        """
+        Return a dict {site: (protect_size, delete_size, keep_size)} if size_only = True.
+        Else return a massive dict {site: {dataset: (size, decision, reason)}}
+        """
+
+        self.acquire_lock()
+        try:
+            decisions = self._do_get_deletion_decisions(run_number, size_only)
+        finally:
+            self.release_lock()
+
+        return decisions
+
     def get_incomplete_copies(self, partition):
         self.acquire_lock()
         try:
@@ -338,6 +369,24 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
         return site_name
+
+    def get_latest_deletion_run(self, partition):
+        self.acquire_lock()
+        try:
+            run_number = self._do_get_latest_deletion_run(partition)
+        finally:
+            self.release_lock()
+
+        return run_number
+
+    def get_run_timestamp(self, run_number):
+        self.acquire_lock()
+        try:
+            timestamp = self._do_get_run_timestamp(run_number)
+        finally:
+            self.release_lock()
+
+        return timestamp        
 
     def get_next_test_id(self):
         self.acquire_lock()

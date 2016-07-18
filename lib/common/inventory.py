@@ -79,6 +79,8 @@ class InventoryManager(object):
                 for group in groups:
                     site.set_group_quota(group, quota_manager.get_quota(site, group))
 
+                site.active = quota_manager.get_status(site)
+
             self.sites = dict((s.name, s) for s in sites)
             self.groups = dict((g.name, g) for g in groups)
             self.datasets = dict((d.name, d) for d in datasets)

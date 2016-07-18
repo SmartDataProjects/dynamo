@@ -184,6 +184,7 @@ class Site(object):
 
     TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, 5)
     STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, 5)
+    ACT_IGNORE, ACT_AVAILABLE, ACT_NOCOPY = range(3)
 
     @staticmethod
     def storage_type_val(arg):
@@ -247,7 +248,7 @@ class Site(object):
         else:
             return arg
 
-    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN):
+    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN, active = ACT_AVAILABLE):
         self.name = name
         self.host = host
         self.storage_type = storage_type
@@ -255,6 +256,8 @@ class Site(object):
         self.storage = storage # in TB
         self.cpu = cpu # in kHS06
         self.status = status
+
+        self.active = active
 
         self.dataset_replicas = []
 
