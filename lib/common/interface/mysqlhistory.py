@@ -155,7 +155,7 @@ class MySQLHistory(TransactionHistoryInterface):
                 update_status[site_name] = (site.active, site.status)
 
         fields = ('site_id', 'run_id', 'active', 'status')
-        mapping = lambda (site_name, (active, statuses)): (self._site_id_map[site_name], run_number, active, status)
+        mapping = lambda (site_name, (active, status)): (self._site_id_map[site_name], run_number, active, status)
         self._mysql.insert_many('site_status_snapshots', fields, mapping, update_status.items())
 
     def _do_get_sites(self, run_number): #override
