@@ -36,7 +36,6 @@ parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', 
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to local databases.')
 parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Make a test run (results recorded in local database).')
-parser.add_argument('--repeat', '-n', metavar = 'CYCLES SLEEP', dest = 'repeat', type = int, nargs = 2, default = [1, 0], help = 'Repeat execution for CYCLES times with SLEEP hour interval.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -155,19 +154,11 @@ if 'dealer' in args.module:
     
     dealer.set_policy(policy)
 
-for nrun in range(args.repeat[0]):
-    if 'detox' in args.module:
-        for partition in partitions:
-            detox.run(partition = partition, iterative_deletion = (args.detox_strategy == 'iterative'), is_test = args.test_run)
 
-    if 'dealer' in args.module:
-        for partition in partitions:
-            dealer.run(partition = partition, is_test = args.test_run)
+if 'detox' in args.module:
+    for partition in partitions:
+        detox.run(partition = partition, iterative_deletion = (args.detox_strategy == 'iterative'), is_test = args.test_run)
 
-    if args.repeat[1] > 0:
-        logging.info('Waiting %d seconds before next cycle.' % (args.repeat[1] * 3600))
-        try:
-            time.sleep(args.repeat[1] * 3600)
-        except: # interrupted
-            logging.info('Repeat interrupted. Quitting peacefully.')
-            sys.exit(130)
+if 'dealer' in args.module:
+    for partition in partitions:
+        dealer.run(partition = partition, is_test = args.test_run)
