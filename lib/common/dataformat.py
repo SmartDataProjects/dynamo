@@ -553,8 +553,6 @@ class DatasetDemand(object):
         self.global_usage_rank = global_usage_rank
         self.locked_blocks = []
 
-    def __del__(self):
-        del self.locked_blocks
 
 class DatasetRequest(object):
     """Represents a request to a dataset in the job queue"""
@@ -576,6 +574,7 @@ class DatasetRequest(object):
         self.nodes_done = other.nodes_done
         self.nodes_failed = other.nodes_failed
         self.nodes_queued = other.nodes_queued
+
 
 class HistoryRecord(object):
     """Represents a transaction history record."""
