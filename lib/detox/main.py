@@ -163,6 +163,7 @@ class Detox(object):
             if len(dataset.replicas) == 0:
                 if not is_test:
                     self.inventory_manager.store.delete_dataset(dataset)
+                    self.inventory_manager.datasets.pop(dataset.name)
 
                 dataset.unlink()
 
