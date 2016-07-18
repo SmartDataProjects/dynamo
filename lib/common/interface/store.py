@@ -232,9 +232,6 @@ class LocalStoreInterface(object):
 
         return last_update
 
-    def load_locks(self, sites, groups, blocks):
-        pass
-
     def save_data(self, sites, groups, datasets):
         """
         Write information in memory into persistent storage.
