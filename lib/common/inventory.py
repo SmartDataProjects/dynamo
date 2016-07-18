@@ -144,13 +144,6 @@ class InventoryManager(object):
 
             self.dataset_source.set_dataset_details(self.datasets, skip_valid = True)
 
-            # Number of blocks for each dataset is now known. Check for partial replicas.
-            for dataset in self.datasets.values():
-                num_blocks = len(dataset.blocks)
-                for replica in dataset.replicas:
-                    if replica.is_complete and len(replica.block_replicas) != num_blocks:
-                        replica.is_partial = True
-            
             self.replica_source.find_tape_copies(self.datasets)
 
             logger.info('Saving data.')

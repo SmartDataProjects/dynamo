@@ -135,7 +135,7 @@ class DeletePartial(Delete):
     DELETE if the replica is partial.
     """
     def _do_call(self, replica, demand_manager):
-        if replica.is_partial:
+        if replica.is_partial():
             return 'Replica is partial.'
 
 delete_partial = DeletePartial()

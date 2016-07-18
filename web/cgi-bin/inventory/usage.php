@@ -140,7 +140,7 @@ else if ($categories == 'groups') {
   $grouping = ' GROUP BY s.`id`, g.`id`';
 }
 
-$constraint_base = 'dr.`is_complete` = 1 AND dr.`is_partial` = 0 and dr.`group_id` != 0';
+$constraint_base = 'dr.`completion` LIKE \'full\' AND dr.`group_id` != 0';
 
 fetch_size($selection, $constraint_base, $grouping);
 

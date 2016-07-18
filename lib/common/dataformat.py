@@ -427,12 +427,11 @@ class DatasetReplica(object):
     ACC_LOCAL, ACC_REMOTE = range(1, 3)
     Access = collections.namedtuple('Access', ['num_accesses', 'cputime'])
 
-    def __init__(self, dataset, site, group = None, is_complete = False, is_partial = False, is_custodial = False, last_block_created = 0):
+    def __init__(self, dataset, site, group = None, is_complete = False, is_custodial = False, last_block_created = 0):
         self.dataset = dataset
         self.site = site
         self.group = group # None also if owned by multiple groups
         self.is_complete = is_complete # = complete subscription. Can still be partial
-        self.is_partial = is_partial
         self.is_custodial = is_custodial
         self.last_block_created = last_block_created
         self.block_replicas = []
@@ -451,15 +450,15 @@ class DatasetReplica(object):
         self.site = None
 
     def __str__(self):
-        return 'DatasetReplica {site}:{dataset} (group={group}, is_complete={is_complete}, is_partial={is_partial}, is_custodial={is_custodial},' \
+        return 'DatasetReplica {site}:{dataset} (group={group}, is_complete={is_complete}, is_custodial={is_custodial},' \
             ' #block_replicas={num_block_replicas}, #accesses[LOCAL]={num_local_accesses}, #accesses[REMOTE]={num_remote_accesses})'.format(
                 site = self.site.name, dataset = self.dataset.name, group = self.group.name if self.group is not None else None, is_complete = self.is_complete,
-                is_partial = self.is_partial, is_custodial = self.is_custodial,
+                is_custodial = self.is_custodial,
                 num_block_replicas = len(self.block_replicas), num_local_accesses = len(self.accesses[DatasetReplica.ACC_LOCAL]),
                 num_remote_accesses = len(self.accesses[DatasetReplica.ACC_REMOTE]))
 
     def clone(self, block_replicas = True): # Create a detached clone. Detached in the sense that it is not linked from dataset or site.
-        replica = DatasetReplica(dataset = self.dataset, site = self.site, group = self.group, is_complete = self.is_complete, is_partial = self.is_partial, is_custodial = self.is_custodial, last_block_created = self.last_block_created)
+        replica = DatasetReplica(dataset = self.dataset, site = self.site, group = self.group, is_complete = self.is_complete, is_custodial = self.is_custodial, last_block_created = self.last_block_created)
 
         if block_replicas:
             for brep in self.block_replicas:
@@ -470,9 +469,15 @@ class DatasetReplica(object):
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1 and self.dataset.replicas[0] == self
 
+    def is_partial(self):
+        return self.is_complete and len(self.block_replicas) != len(self.dataset.blocks)
+
+    def is_full(self):
+        return self.is_complete and len(self.block_replicas) == len(self.dataset.blocks)
+
     def size(self, groups = None, physical = True):
         if groups is None:
-            if self.is_complete and not self.is_partial:
+            if self.is_full():
                 return self.dataset.size()
             else:
                 if physical:

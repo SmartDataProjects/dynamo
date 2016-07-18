@@ -278,7 +278,7 @@ class MySQLStore(LocalStoreInterface):
             # Link datasets to sites
             logger.info('Linking datasets to sites.')
     
-            sql = 'SELECT `dataset_id`, `site_id`, `group_id`, `is_complete`, `is_partial`, `is_custodial`, UNIX_TIMESTAMP(`last_block_created`) FROM `dataset_replicas`'
+            sql = 'SELECT `dataset_id`, `site_id`, `group_id`, `completion`, `is_custodial`, UNIX_TIMESTAMP(`last_block_created`) FROM `dataset_replicas`'
     
             conditions = []
             if site_filt != '*':
@@ -295,7 +295,7 @@ class MySQLStore(LocalStoreInterface):
 
             _dataset_id = 0
     
-            for dataset_id, site_id, group_id, is_complete, is_partial, is_custodial, last_block_created in dataset_replicas:
+            for dataset_id, site_id, group_id, completion, is_custodial, last_block_created in dataset_replicas:
                 if dataset_id != _dataset_id:
                     _dataset_id = dataset_id
                     dataset = self._ids_to_datasets[_dataset_id]
@@ -306,7 +306,7 @@ class MySQLStore(LocalStoreInterface):
                 else:
                     group = self._ids_to_groups[group_id]
     
-                rep = DatasetReplica(dataset, site, group = group, is_complete = is_complete, is_partial = is_partial, is_custodial = is_custodial, last_block_created = last_block_created)
+                rep = DatasetReplica(dataset, site, group = group, is_complete = (completion != 'incomplete'), is_custodial = is_custodial, last_block_created = last_block_created)
     
                 dataset.replicas.append(rep)
                 site.dataset_replicas.append(rep)
@@ -647,8 +647,8 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query('CREATE TABLE `dataset_replicas_new` LIKE `dataset_replicas`')
 
-        fields = ('dataset_id', 'site_id', 'group_id', 'is_complete', 'is_partial', 'is_custodial', 'last_block_created')
-        mapping = lambda r: (self._datasets_to_ids[r.dataset], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_partial, r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.last_block_created)))
+        fields = ('dataset_id', 'site_id', 'group_id', 'completion', 'is_custodial', 'last_block_created')
+        mapping = lambda r: (self._datasets_to_ids[r.dataset], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, 'partial' if r.is_partial() else ('full' if r.is_complete else 'incomplete'), r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.last_block_created)))
 
         all_replicas = []
         for dataset in datasets:
@@ -671,7 +671,7 @@ class MySQLStore(LocalStoreInterface):
                 _dataset = replica.dataset
 
             # replica is incomplete or has multiple owners
-            if replica.is_partial or not replica.is_complete or replica.group is None:
+            if not replica.is_full() or replica.group is None:
                 blockreps_to_write.extend([(dataset_id, r) for r in replica.block_replicas])
                 blockrepsizes_to_write.extend([(r, r.size) for r in replica.block_replicas if not r.is_complete])
 
@@ -788,8 +788,8 @@ class MySQLStore(LocalStoreInterface):
         # insert/update dataset replicas
         logger.info('Inserting/updating %d dataset replicas.', len(replicas))
 
-        fields = ('dataset_id', 'site_id', 'group_id', 'is_complete', 'is_partial', 'is_custodial', 'last_block_created')
-        mapping = lambda r: (self._datasets_to_ids[r.dataset], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_partial, r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.last_block_created)))
+        fields = ('dataset_id', 'site_id', 'group_id', 'completion', 'is_custodial', 'last_block_created')
+        mapping = lambda r: (self._datasets_to_ids[r.dataset], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, 'partial' if r.is_partial() else ('full' if r.is_complete else 'incomplete'), r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.last_block_created)))
 
         self._mysql.insert_many('dataset_replicas', fields, mapping, replicas)
 
@@ -800,7 +800,7 @@ class MySQLStore(LocalStoreInterface):
             dataset_id = self._datasets_to_ids[replica.dataset]
             site_id = self._sites_to_ids[replica.site]
             
-            if not replica.is_partial and replica.is_complete:
+            if replica.is_full() and replica.group is not None:
                 # this is a complete replica. Remove block replica for this dataset replica.
                 self._mysql.delete_in('block_replicas', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id), additional_conditions = ['`site_id` = %d' % site_id])
                 self._mysql.delete_in('block_replica_sizes', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id), additional_conditions = ['`site_id` = %d' % site_id])

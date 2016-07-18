@@ -1,5 +1,7 @@
 <?php
 
+$full_only = $physical;
+
 if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
   $selection = 'SELECT d.`name`, COUNT(dr.`site_id`) FROM `dataset_replicas` AS dr';
   $selection .= ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`';
@@ -16,8 +18,8 @@ else if ($categories == 'groups') {
 $grouping = ' GROUP BY dr.`dataset_id`';
 
 $constraints = array();
-if ($physical)
-  $constraints[] = 'dr.`is_complete` = 1';
+if ($full_only)
+  $constraints[] = 'dr.`completion` LIKE \'full\'';
 
 if (strlen($const_campaign) != 0)
   $constraints[] = 'd.`name` LIKE \'/%/' . $const_campaign . '%/%\'';

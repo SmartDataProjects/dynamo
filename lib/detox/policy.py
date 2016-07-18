@@ -68,8 +68,6 @@ class Policy(object):
 
                 else:
                     # this replica is partially in partition
-                    replica.is_partial = True
-
                     site_all_dataset_replicas[site].append(replica)
 
                     site_block_replicas = site_all_block_replicas[site]
@@ -118,8 +116,6 @@ class Policy(object):
             for block_replica in block_replicas:
                 replica.block_replicas.append(block_replica)
                 site.add_block_replica(block_replica)
-
-            replica.is_partial = (len(replica.block_replicas) != len(dataset.blocks))
 
     def need_deletion(self, site, initial = False):
         if self.site_requirement is None:

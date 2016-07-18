@@ -476,7 +476,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 dataset,
                                 site,
                                 is_complete = True,
-                                is_partial = False,
                                 is_custodial = False,
                                 last_block_created = 0
                             )
@@ -567,9 +566,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # Data retrieval was split in groups. Now merge the group information.
         for site in all_sites:
             for replica in site.dataset_replicas:
-                if len(replica.block_replicas) != len(replica.dataset.blocks):
-                    replica.is_partial = True
-
                 for block_replica in replica.block_replicas:
                     if replica.group is None:
                         replica.group = block_replica.group
