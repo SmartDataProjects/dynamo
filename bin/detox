@@ -27,8 +27,8 @@ parser.add_argument('--access-history', '-a', metavar = 'CLASS', dest = 'access_
 parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', default = '', help = 'LockInterface class.')
 parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls', default = '', help = 'DeletionInterface class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
-parser.add_argument('--policy-stack', '-p', metavar = 'STACKS', dest = 'stacks', nargs = '+', default = ['AnalysisOps:Routine()'], help = 'Name of the policy stack. Syntax is <group>:<stack name>[(<init argument>)] or <group>:<path>.py. Options for stack names are\n TargetFraction (argument threshold)\n List (argument paths)\n The python file should contain a list of Policies with the same name as the file.')
-parser.add_argument('--strategy', '-g', metavar = 'STRATEGY', dest = 'strategy', default = 'iterative', help = '"iterative", "static", or "greedy".')
+#parser.add_argument('--policy-stack', '-p', metavar = 'STACKS', dest = 'stacks', nargs = '+', default = ['AnalysisOps:Routine():iterative', 'DataOps:Lock():greedy'], help = 'Name of the policy stack. Syntax is <group>:<stack name>[(<init argument>)]:strategy or <group>:<path>.py:strategy. Options for stack names are\n TargetFraction (argument threshold)\n List (argument paths)\n The python file should contain a list of Policies with the same name as the file. Recognized strategies are "iterative", "static", and "greedy".')
+parser.add_argument('--policy-stack', '-p', metavar = 'STACKS', dest = 'stacks', nargs = '+', default = ['DataOps:Lock():greedy'], help = 'Name of the policy stack. Syntax is <group>:<stack name>[(<init argument>)] or <group>:<path>.py. Options for stack names are\n TargetFraction (argument threshold)\n List (argument paths)\n The python file should contain a list of Policies with the same name as the file.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to local databases.')
@@ -36,10 +36,6 @@ parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run'
 
 args = parser.parse_args()
 sys.argv = []
-
-if args.strategy not in ['iterative', 'static', 'greedy']:
-    print 'Unknown strategy', args.strategy
-    sys.exit(1)
 
 log_level = getattr(logging, args.log_level.upper())
 
@@ -92,7 +88,11 @@ detox = Detox(inventory_manager, transaction_manager, demand_manager, history)
 partitions = []
 
 for stack_spec in args.stacks:
-    partition, stack_name = stack_spec.split(':')
+    partition, stack_name, strategy = stack_spec.split(':')
+
+    if strategy not in ['iterative', 'static', 'greedy']:
+        print 'Unknown strategy', strategy
+        sys.exit(1)
 
     partitions.append(partition)
 
@@ -119,7 +119,7 @@ for stack_spec in args.stacks:
     group = inventory_manager.groups[partition]
     quotas = dict([(site, site.group_quota(group)) for site in inventory_manager.sites.values()])
 
-    if args.strategy == 'greedy':
+    if strategy == 'greedy':
         site_requirement = lambda site, partition, initial: site.group_quota(inventory_manager.groups[partition]) != 0
     else:
         # Return true if the site is overused for a given partition.
@@ -135,4 +135,4 @@ if args.force_inventory_update:
     config.inventory.refresh_min = 0
 
 for partition in partitions:
-    detox.run(partition = partition, iterative_deletion = (args.strategy == 'iterative'), is_test = args.test_run)
+    detox.run(partition = partition, iterative_deletion = (strategy == 'iterative'), is_test = args.test_run)

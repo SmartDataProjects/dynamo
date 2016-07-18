@@ -18,8 +18,6 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-FileInfo = collections.namedtuple('File', ['name', 'bytes', 'checksum'])
-
 # Using POST requests with PhEDEx:
 # Accumulate dataset=/A/B/C options and make a query once every 10000 entries
 # PhEDEx does not document a hard limit on the length of POST request list.

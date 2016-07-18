@@ -39,8 +39,11 @@ class RESTService(object):
         self.headers = list(headers)
         self.accept = accept
 
-    def make_request(self, resource, options = [], method = GET, format = 'url'):
-        url = self.url_base + '/' + resource
+    def make_request(self, resource = '', options = [], method = GET, format = 'url'):
+        url = self.url_base
+        if resource:
+            url += '/' + resource
+
         if method == GET and len(options) != 0:
             if type(options) is list:
                 url += '?' + '&'.join(options)

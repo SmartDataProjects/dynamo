@@ -544,6 +544,7 @@ def _BlockReplica_clone(self, block = None, site = None, group = None, is_comple
 
 BlockReplica.clone = _BlockReplica_clone
 
+
 class DatasetDemand(object):
     """Represents information on dataset demand."""
 

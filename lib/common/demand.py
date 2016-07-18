@@ -51,7 +51,6 @@ class DemandManager(object):
         self.last_accesses_update = self.store.load_replica_accesses(sites, datasets)
         logger.info('Loading dataset requests information.')
         self.last_requests_update = self.store.load_dataset_requests(datasets)
-        self.store.load_locks(sites, groups, datasets)
 
         self.setup_demands(inventory)
 
@@ -71,6 +70,8 @@ class DemandManager(object):
 
         if requests:
             self.update_requests(inventory, datetime.datetime(start_date.year, start_date.month, start_date.day), utcnow)
+
+        self.lock.update(inventory)
 
         self.setup_demands(inventory)
 
@@ -173,6 +174,11 @@ class DemandManager(object):
                 if r >= 0:
                     demand.required_copies = r
                     break
+
+            try:
+                demand.locked_blocks = self.lock.locked_blocks[dataset]
+            except KeyError:
+                pass
 
             if dataset.status != Dataset.STAT_VALID:
                 continue

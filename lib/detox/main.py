@@ -92,7 +92,7 @@ class Detox(object):
         while True:
             iteration += 1
 
-            eval_results = parallel_exec(lambda r: policy.evaluate(r, self.demand_manager), all_replicas, per_thread = 100)
+            eval_results = parallel_exec(lambda r: policy.evaluate(r, self.demand_manager.dataset_demands[r.dataset]), all_replicas, per_thread = 100)
 
             deletion_candidates = {} # {replica: reason}
 
@@ -109,7 +109,9 @@ class Detox(object):
 
             del eval_results
 
-            logger.info('Iteration %d', iteration)
+            if iterative_deletion:
+                logger.info('Iteration %d', iteration)
+
             logger.info(' %d dataset replicas in deletion candidates', len(deletion_candidates))
             logger.info(' %d dataset replicas in protection list', len(protected))
 
@@ -151,6 +153,7 @@ class Detox(object):
                     target_sites.remove(site)
 
         # save replica snapshots and all deletion decisions
+        logger.info('Saving deletion decisions.')
         self.history.save_deletion_decisions(run_number, protected, deleted, kept)
 
         logger.info('Committing deletion.')
@@ -225,10 +228,15 @@ class Detox(object):
         else:
             target_site = random.choice(candidate_sites)
 
-        sorted_candidates = policy.sort_deletion_candidates([rep for rep in candidate_list if rep.site == target_site], self.demand_manager)
+        sorted_candidates = policy.sort_deletion_candidates([(rep, self.demand_manager.dataset_demands[rep.dataset]) for rep in candidate_list if rep.site == target_site])
 
-        # return the smallest replica on the target site
-        return sorted_candidates[:detox_config.deletion_per_iteration]
+        selected_candidates = []
+        for replica, demand in sorted_candidates:
+            selected_candidates.append(replica)
+            if len(selected_candidates) == detox_config.deletion_per_iteration:
+                break
+
+        return selected_candidates
 
 
 if __name__ == '__main__':

@@ -123,9 +123,9 @@ class Policy(object):
         else:
             return self.site_requirement(site, self.partition, initial)
 
-    def evaluate(self, replica, demand_manager):
+    def evaluate(self, replica, dataset_demand):
         for rule in self.rules:
-            result = rule(replica, demand_manager)
+            result = rule(replica, dataset_demand)
             if result is not None:
                 break
         else:
@@ -133,9 +133,9 @@ class Policy(object):
 
         return result
 
-    def sort_deletion_candidates(self, replicas, demands):
+    def sort_deletion_candidates(self, replicas_demands):
         """
         Rank and sort replicas in decreasing order of deletion priority.
         """
 
-        return sorted(replicas, key = lambda r: demands.dataset_demands[r.dataset].global_usage_rank, reverse = True)
+        return sorted(replicas_demands, key = lambda (r, d): d.global_usage_rank, reverse = True)
