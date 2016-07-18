@@ -1,7 +1,7 @@
 export DYNAMO_BASE=$(dirname $(dirname $(cd $(dirname ${BASH_SOURCE[0]}); pwd)))
 export DYNAMO_DATADIR='/var/spool/dynamo'
 export DYNAMO_LOGDIR=/var/log/dynamo
-export DYNAMO_DETOX_INTERVAL=6
+export DYNAMO_DETOX_INTERVAL=2
 export DYNAMO_DEALER_INTERVAL=1
 export X509_USER_PROXY=/tmp/x509up_u$(id -u)
 

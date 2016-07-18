@@ -18,7 +18,8 @@ parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', defaul
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
-parser.add_argument('--dry-run', '-T', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual copy requests, do not save anything to local storage.')
+parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual copy requests, do not save anything to local storage.')
+parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Make a test run (results recorded in local database).')
 parser.add_argument('--repeat', '-n', metavar = 'CYCLES SLEEP', dest = 'repeat', type = int, nargs = 2, default = [1, 0], help = 'Repeat execution for CYCLES times with SLEEP hour interval.')
 
 args = parser.parse_args()
@@ -43,6 +44,7 @@ from common.transaction import TransactionManager
 from common.demand import DemandManager
 import common.interface.classes as classes
 from dealer.main import Dealer
+from dealer.policy import DealerPolicy
 
 import common.configuration as config
 
@@ -83,11 +85,23 @@ history = classes.default_interface['history']()
 
 dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history)
 
+group = inventory_manager.groups['AnalysisOps']
+
+quotas = [site.group_quota(group) for site in inventory_manager.sites.values()]
+
+site_occupancy = lambda site: site.storage_occupancy(group, physical = False)
+
+in_partition = lambda replica: replica.effective_owner() == group
+
+policy = DealerPolicy(quotas, site_occupancy, partition = 'AnalysisOps', in_partition = in_partition, group = group)
+
+dealer.set_policy(policy)
+
 if args.force_inventory_update:
     config.inventory.refresh_min = 0
 
 for nrun in range(args.repeat[0]):
-    dealer.run('AnalysisOps')
+    dealer.run('AnalysisOps', is_test = args.test_run)
 
     if args.repeat[1] > 0:
         try:
