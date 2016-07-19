@@ -121,7 +121,7 @@ class Detox(object):
                 logger.debug('Deletion list:')
                 logger.debug(pprint.pformat(['%s:%s' % (rep.site.name, rep.dataset.name) for rep in deletion_candidates.keys()]))
 
-            if stategy == Detox.ST_ITERATIVE:
+            if strategy == Detox.ST_ITERATIVE:
                 # Pick out the replicas to delete in this iteration, unlink the replicas, and update the list of target sites.
 
                 iter_deletion = self.select_replicas(policy, deletion_candidates.keys(), protected.keys())
