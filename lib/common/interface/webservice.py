@@ -133,13 +133,13 @@ class RESTService(object):
                 return result
     
             except urllib2.HTTPError as err:
-                last_except = (err.code, err.reason)
+                last_except = (str(err))
             except:
                 last_except = sys.exc_info()[:2]
 
             exceptions.append(last_except)
 
-            logger.info('Exception %s occurred in webservice. Trying again in %.1f seconds.', str(last_except), wait)
+            logger.info('Exception "%s" occurred in webservice. Trying again in %.1f seconds.', str(last_except), wait)
 
             time.sleep(wait)
             wait *= 1.5
