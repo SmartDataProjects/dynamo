@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 class Detox(object):
 
+    ST_ITERATIVE, ST_STATIC, ST_GREEDY = range(3)
+
     def __init__(self, inventory, transaction, demand, history):
         self.inventory_manager = inventory
         self.transaction_manager = transaction
@@ -33,7 +35,7 @@ class Detox(object):
 
         self.policies[policy.partition] = policy
 
-    def run(self, partition = '', iterative_deletion = True, is_test = False):
+    def run(self, partition = '', strategy = ST_ITERATIVE, is_test = False):
         """
         Main executable.
         """
@@ -109,7 +111,7 @@ class Detox(object):
 
             del eval_results
 
-            if iterative_deletion:
+            if strategy == Detox.ST_ITERATIVE:
                 logger.info('Iteration %d', iteration)
 
             logger.info(' %d dataset replicas in deletion candidates', len(deletion_candidates))
@@ -119,38 +121,58 @@ class Detox(object):
                 logger.debug('Deletion list:')
                 logger.debug(pprint.pformat(['%s:%s' % (rep.site.name, rep.dataset.name) for rep in deletion_candidates.keys()]))
 
-            if iterative_deletion:
+            if stategy == Detox.ST_ITERATIVE:
+                # Pick out the replicas to delete in this iteration, unlink the replicas, and update the list of target sites.
+
                 iter_deletion = self.select_replicas(policy, deletion_candidates.keys(), protected.keys())
 
                 if logger.getEffectiveLevel() == logging.DEBUG:
                     for replica in iter_deletion:
                         logger.debug('Selected replica: %s %s', replica.site.name, replica.dataset.name)
 
-            else:
-                iter_deletion = deletion_candidates.keys()
+                if len(iter_deletion) == 0:
+                    for replica, reason in deletion_candidates.items():
+                        kept[replica] = 'CANCELED:', reason
+    
+                    break
+    
+                for replica in iter_deletion:
+                    deleted[replica] = deletion_candidates[replica]
+    
+                # take out replicas from inventory
+                # we will not consider deleted replicas
+                for replica in iter_deletion:
+                    self.inventory_manager.unlink_datasetreplica(replica)
+                    all_replicas.remove(replica)
 
-            if len(iter_deletion) == 0:
-                for replica, reason in deletion_candidates.items():
-                    kept[replica] = 'CANCELED:', reason
+                # update the list of target sites
+                for site in self.inventory_manager.sites.values():
+                    if site in target_sites and not policy.need_deletion(site):
+                        target_sites.remove(site)
+
+            elif strategy == Detox.ST_STATIC:
+                # Delete the replicas site-by-site in the order given by the policy until the site does not need any more deletion.
+
+                for site in target_sites:
+                    sorted_candidates = policy.sort_deletion_candidates([(rep, self.demand_manager.dataset_demands[rep.dataset]) for rep in deletion_candidates if rep.site == site])
+
+                    for replica in sorted_candidates:
+                        self.inventory_manager.unlink_datasetreplica(replica)
+                        deleted[replica] = deletion_candidates[replica]
+                        if not policy.need_deletion(site):
+                            break
 
                 break
 
-            for replica in iter_deletion:
-                deleted[replica] = deletion_candidates[replica]
+            elif strategy == Detox.ST_GREEDY:
+                # Delete all candidates.
 
-            # take out replicas from inventory
-            # we will not consider deleted replicas
-            for replica in iter_deletion:
-                self.inventory_manager.unlink_datasetreplica(replica)
-                all_replicas.remove(replica)
+                deleted = deletion_candidates
 
-            if not iterative_deletion:
+                for replica in deleted.keys():
+                    self.inventory_manager.unlink_datasetreplica(replica)
+
                 break
-
-            # update the list of target sites
-            for site in self.inventory_manager.sites.values():
-                if site in target_sites and not policy.need_deletion(site):
-                    target_sites.remove(site)
 
         # save replica snapshots and all deletion decisions
         logger.info('Saving deletion decisions.')
@@ -230,11 +252,7 @@ class Detox(object):
 
         sorted_candidates = policy.sort_deletion_candidates([(rep, self.demand_manager.dataset_demands[rep.dataset]) for rep in candidate_list if rep.site == target_site])
 
-        selected_candidates = []
-        for replica, demand in sorted_candidates:
-            selected_candidates.append(replica)
-            if len(selected_candidates) == detox_config.deletion_per_iteration:
-                break
+        selected_candidates = sorted_candidates[:detox_config.deletion_per_iteration]
 
         return selected_candidates
 
@@ -301,4 +319,4 @@ if __name__ == '__main__':
     if args.dry_run:
         config.read_only = True
 
-    detox.run(partition = args.partition, iterative_deletion = False, is_test = not args.production_run)
+    detox.run(partition = args.partition, strategy = Detox.ST_GREEDY, is_test = not args.production_run)

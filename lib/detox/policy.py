@@ -138,4 +138,5 @@ class Policy(object):
         Rank and sort replicas in decreasing order of deletion priority.
         """
 
-        return sorted(replicas_demands, key = lambda (r, d): d.global_usage_rank, reverse = True)
+        sorted_list = sorted(replicas_demands, key = lambda (r, d): d.global_usage_rank, reverse = True)
+        return [replica for replica, demand in sorted_list]
