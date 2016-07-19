@@ -32,7 +32,7 @@ do
     date >> $LOG
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
-    $DYNAMO_BASE/bin/detox --force-inventory-update --log-level INFO --log-file $LOG 2>>$LOG
+    $DYNAMO_BASE/bin/detox --policy-stack 'AnalysisOps:Routine():iterative' --force-inventory-update --log-level INFO --log-file $LOG 2>>$LOG
     RC=$?
 
     if [ $RC -ne 0 ] && [ $RC -ne 130 ]
