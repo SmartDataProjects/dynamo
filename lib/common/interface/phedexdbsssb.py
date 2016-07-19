@@ -43,7 +43,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         self._last_request_url = ''
 
     def schedule_copy(self, dataset_replica, group, comments = '', is_test = False): #override (CopyInterface)
-        catalogs = {} # {dataset: {block: [file]}}. Content can be empty if inclusive deletion is desired.
+        catalogs = {} # {dataset: [block]}. Content can be empty if inclusive deletion is desired.
 
         dataset = dataset_replica.dataset
         catalogs[dataset] = {}
@@ -89,7 +89,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             catalogs = {}
 
             for drep in replica_list:
-                catalogs[drep.dataset] = {}
+                catalogs[drep.dataset] = []
 
             options = {
                 'node': site.name,
@@ -151,13 +151,13 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         return request_mapping
 
     def schedule_deletion(self, replica, comments = '', is_test = False): #override (DeletionInterface)
-        catalogs = {} # {dataset: {block: [file]}}. Content can be empty if inclusive deletion is desired.
+        catalogs = {} # {dataset: [block]}. Content can be empty if inclusive deletion is desired.
 
         if type(replica) == DatasetReplica:
-            catalogs[replica.dataset] = dict([(block_replica.block, []) for block_replica in replica.block_replicas])
+            catalogs[replica.dataset] = [block_replica.block for block_replica in replica.block_replicas]
 
         elif type(replica) == BlockReplica:
-            catalogs[replica.block.dataset] = {replica.block: []}
+            catalogs[replica.block.dataset] = [replica.block]
 
         options = {
             'node': replica.site.name,
@@ -205,7 +205,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             catalogs = {}
 
             for replica in replicas_to_delete:
-                catalogs[replica.dataset] = dict([(block_replica.block, []) for block_replica in replica.block_replicas])
+                catalogs[replica.dataset] = [block_replica.block for block_replica in replica.block_replicas]
 
             options = {
                 'node': site.name,
@@ -824,6 +824,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         return resp
 
     def _form_catalog_xml(self, file_catalogs, human_readable = False):
+        """
+        Take a catalog dict of form {dataset: [block]} and form an input xml for delete and subscribe calls.
+        """
 
         # we should consider using an actual xml tool
         if human_readable:
@@ -831,38 +834,37 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         else:
             xml = '<data version="2.0"><dbs name="%s">' % config.dbs.url_base
 
-        for dataset, catalogs in file_catalogs.items():
+        for dataset, blocks in file_catalogs.items():
+            options = ['level=block', 'dataset=' + dataset.name]
+
+            phedex_data = self._make_phedex_request('data', options, method = POST)[0]['dataset']
+
+            if len(phedex_data) == 0:
+                continue
+
+            phedex_dataset = phedex_data[0]
+
             if human_readable:
                 xml += '  '
 
-            xml += '<dataset name="%s" is-open="y" is-transient="n">' % dataset.name
+            xml += '<dataset name="{name}" is-open="{is_open}">'.format(name = dataset.name, is_open = phedex_dataset['is_open'])
 
             if human_readable:
                 xml += '\n'
 
-            for block, filelist in catalogs.items():
+            phedex_blocks = phedex_dataset['block']
+
+            for block in blocks:
+                block_name = dataset.name + '#' + block.real_name()
+                try:
+                    phedex_block = next(entry for entry in phedex_blocks if entry['name'] == block_name)
+                except StopIteration:
+                    continue
+
                 if human_readable:
                     xml += '   '
                 
-                xml += '<block name="%s#%s">' % (dataset.name, block.real_name())
-
-                if human_readable:
-                    xml += '\n'
-
-                for fileinfo in filelist:
-                    if human_readable:
-                        xml += '    '
-
-                    xml += '<file name="%s" bytes="%d" checksum="%s"/>' % fileinfo
-
-                    if human_readable:
-                        xml += '\n'
-                
-                if human_readable:
-                    xml += '   '
-
-                xml += '</block>'
-
+                xml += '<block name="{name}" is-open="{is_open}"/>'.format(name = block_name, is_open = phedex_block['is_open'])
                 if human_readable:
                     xml += '\n'
 
@@ -878,6 +880,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             xml += ' </dbs>\n</data>\n'
         else:
             xml += '</dbs></data>'
+
+        logger.info(xml)
 
         return xml
 

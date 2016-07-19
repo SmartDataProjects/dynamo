@@ -126,7 +126,7 @@ class RESTService(object):
 
                 elif self.accept == 'application/xml':
                     # TODO implement xml -> dict
-                    pass
+                    result = content
 
                 del content
 
@@ -161,6 +161,7 @@ if __name__ == '__main__':
     parser.add_argument('resource', metavar = 'RES', help = 'Request resource.')
     parser.add_argument('options', metavar = 'EXPR', nargs = '*', default = [], help = 'Options after ? (chained with &).')
     parser.add_argument('--post', '-P', action = 'store_true', dest = 'use_post', help = 'Use POST instead of GET request.')
+    parser.add_argument('--output-format', '-f', metavar = 'FORMAT', dest = 'output_format', help = 'json or xml')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
     args = parser.parse_args()
@@ -173,7 +174,15 @@ if __name__ == '__main__':
         except AttributeError:
             logging.warning('Log level ' + args.log_level + ' not defined')
 
-    interface = RESTService(args.url_base)
+    if args.output_format == 'json':
+        accept = 'application/json'
+    elif args.output_format == 'xml':
+        accept = 'application/xml'
+    else:
+        logging.error('Unrecognized format %s', args.output_format)
+        sys.exit(1)
+
+    interface = RESTService(args.url_base, accept = accept)
 
     if args.use_post:
         method = POST
