@@ -95,7 +95,12 @@ class ProtectMinimumCopies(Protect):
     """
     def _do_call(self, replica, dataset_demand):
         required_copies = dataset_demand.required_copies
-        if len(replica.dataset.replicas) <= required_copies:
+        num_copies = 0
+        for replica in replica.dataset.replicas:
+            if replica.is_full():
+                num_copies += 1
+
+        if num_copies <= required_copies:
             return 'Dataset has <= ' + str(required_copies) + ' copies.'
 
 protect_minimum_copies = ProtectMinimumCopies()

@@ -115,6 +115,9 @@ class Detox(object):
             logger.info(' %d dataset replicas in deletion candidates', len(deletion_candidates))
             logger.info(' %d dataset replicas in protection list', len(protected))
 
+            if len(deletion_candidates) == 0:
+                break
+
             if logger.getEffectiveLevel() == logging.DEBUG:
                 logger.debug('Deletion list:')
                 logger.debug(pprint.pformat(['%s:%s' % (rep.site.name, rep.dataset.name) for rep in deletion_candidates.keys()]))
