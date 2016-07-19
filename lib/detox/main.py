@@ -257,8 +257,11 @@ class Detox(object):
 
         else:
             selected_replicas = []
-            while sum(replica.size() for replica in selected_replicas) / policy.quotas[target_site] < detox_config.deletion_per_iteration:
-                selected_replicas.append(sorted_candidates.pop())
+            selected_volume = 0.
+            while len(sorted_candidates) and selected_volume / policy.quotas[target_site] < detox_config.deletion_per_iteration:
+                replica = sorted_candidates.pop()
+                selected_replicas.append(replica)
+                selected_volume += replica.size() * 1.e-12
 
             return selected_replicas
 
