@@ -7,6 +7,7 @@ from argparse import ArgumentParser
 from common.interface.mysqlhistory import MySQLHistory
 
 parser = ArgumentParser(description = 'SitesInfo')
+parser.add_argument('--out', '-o', metavar = 'PATH', dest = 'out_path', default = '.', help = 'Output path.')
 parser.add_argument('--cycle', '-c', metavar = 'ID', dest = 'cycle', type = int, default = 0, help = 'Cycle number.')
 
 args = parser.parse_args()
@@ -16,24 +17,25 @@ history = MySQLHistory()
 
 history.acquire_lock()
 
+output = open(args.out_path + '/SitesInfo.txt', 'w')
+
 try:
-    if args.cycle == 0:
-        cycle = history.get_latest_deletion_run(partition = 'AnalysisOps')
-        print 'Cycle', cycle
-    else:
-        cycle = args.cycle
-
-    timestamp = history.get_run_timestamp(cycle)
-    sites_info = history.get_sites(cycle)
-    sites_usage = history.get_deletion_decisions(cycle)
-
-    with open('/tmp/SitesInfo.txt', 'w') as output:
+    for partition in ['AnalysisOps', 'DataOps']:
+        if args.cycle == 0:
+            cycle = history.get_latest_deletion_run(partition = partition)
+        else:
+            cycle = args.cycle
+    
+        timestamp = history.get_run_timestamp(cycle)
+        sites_info = history.get_sites(cycle)
+        sites_usage = history.get_deletion_decisions(cycle)
+    
         output.write('#- %s\n' % time.strftime('%Y-%m-%d %H:%M', time.localtime(timestamp)))
         output.write('#\n')
         output.write('#- S I T E S  I N F O R M A T I O N ----\n')
         output.write('#\n')
         output.write('#\n')
-        output.write('#- DDM Partition: AnalysisOps -\n')
+        output.write('#- DDM Partition: ' + partition + ' -\n')
         output.write('#\n')
         output.write('#  Active Quota[TB] Taken[TB] LastCopy[TB] SiteName\n')
         output.write('#------------------------------------------------------\n')
@@ -100,6 +102,8 @@ try:
             (' ', ' ', used_fraction * 100., protect_fraction * 100.))
 
         output.write('#------------------------------------------------------\n')
+        output.write('\n')
         
 finally:
     history.release_lock()
+    output.close()

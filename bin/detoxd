@@ -32,7 +32,7 @@ do
     date >> $LOG
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
-    $DYNAMO_BASE/bin/detox --test-run --log-level INFO --log-file $LOG 2>>$LOG
+    $DYNAMO_BASE/bin/detox --force-inventory-update --log-level INFO --log-file $LOG 2>>$LOG
     RC=$?
 
     if [ $RC -ne 0 ] && [ $RC -ne 130 ]
@@ -55,8 +55,10 @@ do
         exit $RC
       fi
     fi
-  
+
     $DYNAMO_BASE/bin/execlib common/interface/history.py clean last
+
+    $DYNAMO_BASE/bin/siteinfo.py --out /home/$USER/public_html 2>>$LOG
 
     ICYCLE=$(($ICYCLE+1))
 
