@@ -132,7 +132,7 @@ class RESTService(object):
 
                 return result
     
-            except HTTPError as err:
+            except urllib2.HTTPError as err:
                 last_except = (err.code, err.reason)
             except:
                 last_except = sys.exc_info()[:2]
