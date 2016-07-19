@@ -835,7 +835,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             if human_readable:
                 xml += '  '
 
-            xml += '<dataset name="%s">' % dataset.name
+            xml += '<dataset name="%s" is-open="y" is-transient="n">' % dataset.name
 
             if human_readable:
                 xml += '\n'
