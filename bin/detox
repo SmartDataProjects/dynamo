@@ -90,7 +90,7 @@ for stack_spec in args.stacks:
     partition, stack_name, strategy_str = stack_spec.split(':')
 
     try:
-        strategy = eval('Detox.ST_' + strategy_str.upper())
+        strategy = eval('Policy.ST_' + strategy_str.upper())
     except NameError:
         print 'Unknown strategy', strategy_str
         sys.exit(1)
@@ -120,17 +120,17 @@ for stack_spec in args.stacks:
     group = inventory_manager.groups[partition]
     quotas = dict([(site, site.group_quota(group)) for site in inventory_manager.sites.values()])
 
-    if strategy == Detox.ST_ITERATIVE or strategy == Detox.ST_STATIC:
+    if strategy == Policy.ST_ITERATIVE or strategy == Policy.ST_STATIC:
         # Return true if the site is overused for a given partition.
         # Currently partition and group names are identical.
         site_requirement = lambda site, partition, initial: site.group_quota(inventory_manager.groups[partition]) != 0 and \
             site.storage_occupancy(inventory_manager.groups[partition]) > (detox_config.threshold_occupancy if initial else config.target_site_occupancy)
 
-    elif strategy == Detox.ST_GREEDY:
+    elif strategy == Policy.ST_GREEDY:
         # Always return true
         site_requirement = lambda site, partition, initial: site.group_quota(inventory_manager.groups[partition]) != 0
 
-    policy = Policy(default, rule_stack, quotas, partition = partition, site_requirement = site_requirement, replica_requirement = BelongsTo(group))
+    policy = Policy(default, rule_stack, strategy, quotas, partition = partition, site_requirement = site_requirement, replica_requirement = BelongsTo(group))
 
     detox.set_policy(policy)
 
@@ -138,4 +138,4 @@ if args.force_inventory_update:
     config.inventory.refresh_min = 0
 
 for partition in partitions:
-    detox.run(partition = partition, strategy = strategy, is_test = args.test_run)
+    detox.run(partition = partition, is_test = args.test_run)

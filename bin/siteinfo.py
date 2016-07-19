@@ -19,6 +19,7 @@ history.acquire_lock()
 try:
     if args.cycle == 0:
         cycle = history.get_latest_deletion_run(partition = 'AnalysisOps')
+        print 'Cycle', cycle
     else:
         cycle = args.cycle
 

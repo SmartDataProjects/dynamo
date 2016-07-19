@@ -13,10 +13,12 @@ class Policy(object):
     # do not change order - used by history records
     DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(1, 4)
     DECISION_STR = {DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
+    ST_ITERATIVE, ST_STATIC, ST_GREEDY = range(3)
 
-    def __init__(self, default, rules, quotas, partition = '', site_requirement = None, replica_requirement = None):
+    def __init__(self, default, rules, strategy, quotas, partition = '', site_requirement = None, replica_requirement = None):
         self.default_decision = default # decision
         self.rules = rules # [rule]
+        self.strategy = strategy # one of ST_ enums
         self.quotas = quotas # {site: quota}
         self.partition = partition
         # bool(site, partition, initial). initial: check deletion should be triggered.

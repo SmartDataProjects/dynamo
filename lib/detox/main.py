@@ -16,8 +16,6 @@ logger = logging.getLogger(__name__)
 
 class Detox(object):
 
-    ST_ITERATIVE, ST_STATIC, ST_GREEDY = range(3)
-
     def __init__(self, inventory, transaction, demand, history):
         self.inventory_manager = inventory
         self.transaction_manager = transaction
@@ -35,7 +33,7 @@ class Detox(object):
 
         self.policies[policy.partition] = policy
 
-    def run(self, partition = '', strategy = ST_ITERATIVE, is_test = False):
+    def run(self, partition = '', is_test = False):
         """
         Main executable.
         """
@@ -111,7 +109,7 @@ class Detox(object):
 
             del eval_results
 
-            if strategy == Detox.ST_ITERATIVE:
+            if policy.strategy == Policy.ST_ITERATIVE:
                 logger.info('Iteration %d', iteration)
 
             logger.info(' %d dataset replicas in deletion candidates', len(deletion_candidates))
@@ -121,7 +119,7 @@ class Detox(object):
                 logger.debug('Deletion list:')
                 logger.debug(pprint.pformat(['%s:%s' % (rep.site.name, rep.dataset.name) for rep in deletion_candidates.keys()]))
 
-            if strategy == Detox.ST_ITERATIVE:
+            if policy.strategy == Policy.ST_ITERATIVE:
                 # Pick out the replicas to delete in this iteration, unlink the replicas, and update the list of target sites.
 
                 iter_deletion = self.select_replicas(policy, deletion_candidates.keys(), protected.keys())
@@ -130,18 +128,11 @@ class Detox(object):
                     for replica in iter_deletion:
                         logger.debug('Selected replica: %s %s', replica.site.name, replica.dataset.name)
 
-                if len(iter_deletion) == 0:
-                    for replica, reason in deletion_candidates.items():
-                        kept[replica] = 'CANCELED:', reason
-    
-                    break
-    
                 for replica in iter_deletion:
                     deleted[replica] = deletion_candidates[replica]
-    
-                # take out replicas from inventory
-                # we will not consider deleted replicas
-                for replica in iter_deletion:
+
+                    # take out replicas from inventory
+                    # we will not consider deleted replicas    
                     self.inventory_manager.unlink_datasetreplica(replica)
                     all_replicas.remove(replica)
 
@@ -150,21 +141,25 @@ class Detox(object):
                     if site in target_sites and not policy.need_deletion(site):
                         target_sites.remove(site)
 
-            elif strategy == Detox.ST_STATIC:
+            elif policy.strategy == Policy.ST_STATIC:
                 # Delete the replicas site-by-site in the order given by the policy until the site does not need any more deletion.
 
                 for site in target_sites:
                     sorted_candidates = policy.sort_deletion_candidates([(rep, self.demand_manager.dataset_demands[rep.dataset]) for rep in deletion_candidates if rep.site == site])
 
-                    for replica in sorted_candidates:
+                    while len(sorted_candidates) != 0:
+                        replica = sorted_candidates.pop(0)
                         self.inventory_manager.unlink_datasetreplica(replica)
                         deleted[replica] = deletion_candidates[replica]
                         if not policy.need_deletion(site):
                             break
 
+                    for replica in sorted_candidates:
+                        kept[replica] = 'Site does not need deletion.'
+
                 break
 
-            elif strategy == Detox.ST_GREEDY:
+            elif policy.strategy == Policy.ST_GREEDY:
                 # Delete all candidates.
 
                 deleted = deletion_candidates
@@ -312,11 +307,11 @@ if __name__ == '__main__':
     for site in inventory_manager.sites.values():
         quotas[site] = site.group_quota(group)
 
-    policy = Policy(Policy.DEC_PROTECT, [action_list], quotas, partition = args.partition, replica_requirement = BelongsTo(group))
+    policy = Policy(Policy.DEC_PROTECT, [action_list], Policy.ST_GREEDY, quotas, partition = args.partition, replica_requirement = BelongsTo(group))
 
     detox.set_policy(policy)
 
     if args.dry_run:
         config.read_only = True
 
-    detox.run(partition = args.partition, strategy = Detox.ST_GREEDY, is_test = not args.production_run)
+    detox.run(partition = args.partition, is_test = not args.production_run)
