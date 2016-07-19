@@ -149,9 +149,10 @@ class Detox(object):
 
                 for site in target_sites:
                     sorted_candidates = policy.sort_deletion_candidates([(rep, self.demand_manager.dataset_demands[rep.dataset]) for rep in deletion_candidates if rep.site == site])
+                    # from the least desirable (to delete) to the most
 
                     while len(sorted_candidates) != 0:
-                        replica = sorted_candidates.pop(0)
+                        replica = sorted_candidates.pop()
                         self.inventory_manager.unlink_datasetreplica(replica)
                         deleted[replica] = deletion_candidates[replica]
                         if not policy.need_deletion(site):
@@ -249,10 +250,17 @@ class Detox(object):
             target_site = random.choice(candidate_sites)
 
         sorted_candidates = policy.sort_deletion_candidates([(rep, self.demand_manager.dataset_demands[rep.dataset]) for rep in candidate_list if rep.site == target_site])
+        # from the least desirable (to delete) to the most
 
-        selected_candidates = sorted_candidates[:detox_config.deletion_per_iteration]
+        if policy.quotas[target_site] == 0:
+            return [sorted_candidates[-1]]
 
-        return selected_candidates
+        else:
+            selected_replicas = []
+            while sum(replica.size() for replica in selected_replicas) / policy.quotas[target_site] < detox_config.deletion_per_iteration:
+                selected_replicas.append(sorted_candidates.pop())
+
+            return selected_replicas
 
 
 if __name__ == '__main__':

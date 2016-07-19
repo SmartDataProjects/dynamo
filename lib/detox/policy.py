@@ -138,7 +138,8 @@ class Policy(object):
     def sort_deletion_candidates(self, replicas_demands):
         """
         Rank and sort replicas in decreasing order of deletion priority.
+        The last item in the list should be the first replica to be deleted.
         """
 
-        sorted_list = sorted(replicas_demands, key = lambda (r, d): d.global_usage_rank, reverse = True)
+        sorted_list = sorted(replicas_demands, key = lambda (r, d): d.global_usage_rank)
         return [replica for replica, demand in sorted_list]
