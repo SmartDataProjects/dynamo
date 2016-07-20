@@ -229,7 +229,7 @@ class DemandManager(object):
                             last_access = acc
     
                     if num_access == 0:
-                        local_rank = (now - dataset.last_update) / (24. * 3600.)
+                        local_rank = (now - replica.last_block_created) / (24. * 3600.)
                     else:
                         local_rank = (today - last_access).days - num_access
     

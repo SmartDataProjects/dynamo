@@ -83,7 +83,7 @@ class ProtectNonreadySite(Protect):
     PROTECT if the site is not ready.
     """
     def _do_call(self, replica, dataset_demand):
-        if replica.site.status != Site.STAT_READY:
+        if replica.site.status != Site.STAT_READY or replica.active == Site.ACT_IGNORE:
             return 'Site is not in ready state.'
 
 protect_nonready_site = ProtectNonreadySite()
@@ -91,7 +91,7 @@ protect_nonready_site = ProtectNonreadySite()
 
 class ProtectMinimumCopies(Protect):
     """
-    PROTECT if the replica has fewer than or equal to minimum number of copies.
+    PROTECT if the replica has fewer than or equal to minimum number of full copies.
     """
     def _do_call(self, replica, dataset_demand):
         required_copies = dataset_demand.required_copies
@@ -180,9 +180,9 @@ class DeleteRECOOlderThan(DeleteOlderThan):
         if replica.dataset.name[last_slash + 1:last_slash + 5] != 'RECO':
             return None
 
-        last_update = datetime.datetime.utcfromtimestamp(replica.dataset.last_update).date()
+        last_update = datetime.datetime.utcfromtimestamp(replica.last_block_created).date()
         if last_update < self.cutoff:
-            return 'Replica was created more than ' + self.threshold_text + ' ago.'
+            return 'Replica was updated more than ' + self.threshold_text + ' ago.'
 
 
 class DeleteNotAccessedFor(DeleteOlderThan):
@@ -194,7 +194,7 @@ class DeleteNotAccessedFor(DeleteOlderThan):
         DeleteOlderThan.__init__(self, threshold, unit)
 
     def _do_call(self, replica, dataset_demand):
-        last_update = datetime.datetime.utcfromtimestamp(replica.dataset.last_update).date()
+        last_update = datetime.datetime.utcfromtimestamp(replica.last_block_created).date()
         if last_update > self.cutoff:
             # the dataset was updated after the cutoff -> don't delete
             return None
