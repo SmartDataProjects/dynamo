@@ -866,8 +866,6 @@ class MySQLStore(LocalStoreInterface):
         sites = list(set([r.site for r in replica_list])) # list of unique sites
         datasets = list(set([r.block.dataset for r in replica_list])) # list of unique sites
 
-        print 'delete blockreplica for', datasets[0].name
-        
         site_names = ','.join(['\'%s\'' % s.name for s in sites])
         dataset_names = ','.join(['\'%s\'' % d.name for d in datasets])
 
