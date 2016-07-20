@@ -83,7 +83,7 @@ class ProtectNonreadySite(Protect):
     PROTECT if the site is not ready.
     """
     def _do_call(self, replica, dataset_demand):
-        if replica.site.status != Site.STAT_READY or replica.active == Site.ACT_IGNORE:
+        if replica.site.status != Site.STAT_READY or replica.site.active == Site.ACT_IGNORE:
             return 'Site is not in ready state.'
 
 protect_nonready_site = ProtectNonreadySite()
