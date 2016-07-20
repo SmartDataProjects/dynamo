@@ -54,7 +54,7 @@ class DemandManager(object):
 
         self.setup_demands(inventory)
 
-    def update(self, inventory, accesses = True, requests = True):
+    def update(self, inventory, accesses = True, requests = True, locks = True):
         if self.last_accesses_update is None or self.last_requests_update is None:
             self.load(inventory)
 
@@ -71,7 +71,8 @@ class DemandManager(object):
         if requests:
             self.update_requests(inventory, datetime.datetime(start_date.year, start_date.month, start_date.day), utcnow)
 
-        self.lock.update(inventory)
+        if locks:
+            self.lock.update(inventory)
 
         self.setup_demands(inventory)
 

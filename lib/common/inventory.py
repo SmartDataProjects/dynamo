@@ -193,7 +193,7 @@ class InventoryManager(object):
         site.dataset_replicas.append(new_replica)
 
         for block in dataset.blocks:
-            block_replica = BlockReplica(block, site, group = group)
+            block_replica = BlockReplica(block, site, group, is_complete = False, is_custodial = False, size = 0)
             new_replica.block_replicas.append(block_replica)
             site.add_block_replica(block_replica)
 

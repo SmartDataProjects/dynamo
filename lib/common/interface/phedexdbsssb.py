@@ -80,8 +80,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
             return int(result[0]['id'])
 
-    def schedule_copies(self, replica_list, group, comments = '', is_test = False): #override (CopyInterface)
-        all_datasets = list(set([r.dataset for r in replica_list]))
+    def schedule_copies(self, replicas, group, comments = '', is_test = False): #override (CopyInterface)
+        all_datasets = list(set([r.dataset for r in replicas]))
 
         request_mapping = {}
 
@@ -133,17 +133,16 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 request_mapping[request_id] = (True, replica_list)
 
         replicas_by_site = collections.defaultdict(list)
-        for replica in replica_list:
+        for replica in replicas:
             replicas_by_site[replica.site].append(replica)
 
         for site, replica_list in replicas_by_site.items():
             subscription_chunk = []
             chunk_size = 0
-            for elem in replica_list:
-                replica, origin = elem
+            for replica in replica_list:
                 subscription_chunk.append(replica)
                 chunk_size += replica.size(physical = False)
-                if chunk_size >= config.phedex.subscription_chunk_size or elem == replica_list[-1]:
+                if chunk_size >= config.phedex.subscription_chunk_size or replica == replica_list[-1]:
                     run_subscription_request(site, subscription_chunk)
                     subscription_chunk = []
                     chunk_size = 0
@@ -881,8 +880,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         else:
             xml += '</dbs></data>'
 
-        logger.info(xml)
-
         return xml
 
 
@@ -941,12 +938,13 @@ if __name__ == '__main__':
         site = Site(args.options[0])
         dataset = Dataset(args.options[1])
         dataset_replica = DatasetReplica(dataset, site)
+        group = Group('AnalysisOps')
 
         if command == 'delete':
             operation_id = interface.schedule_deletion(dataset_replica, comments = comments)
 
         elif command == 'subscribe':
-            operation_id = interface.schedule_copy(dataset_replica, comments = comments)
+            operation_id = interface.schedule_copy(dataset_replica, group, comments = comments)
 
         print 'Request ID:', operation_id
 

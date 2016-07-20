@@ -865,6 +865,8 @@ class MySQLStore(LocalStoreInterface):
 
         sites = list(set([r.site for r in replica_list])) # list of unique sites
         datasets = list(set([r.block.dataset for r in replica_list])) # list of unique sites
+
+        print 'delete blockreplica for', datasets[0].name
         
         site_names = ','.join(['\'%s\'' % s.name for s in sites])
         dataset_names = ','.join(['\'%s\'' % d.name for d in datasets])
@@ -884,21 +886,20 @@ class MySQLStore(LocalStoreInterface):
             dataset = next(d for d in datasets if d.name == dataset_name)
             dataset_ids[dataset] = dataset_id
 
-        sql = 'DELETE FROM `block_replicas` AS replicas'
-        sql += ' INNER JOIN `blocks` ON `blocks`.`id` = replicas.`block_id`'
-        sql += ' WHERE (replicas.`site_id`, `blocks`.`dataset_id`, `blocks`.`name`) IN ({combinations})'
+        for site, site_id in site_ids.items():
+            replicas_on_site = [r for r in replica_list if r.site == site]
 
-        combinations = ','.join(['(%d,%d,\'%s\')' % (site_ids[r.site], dataset_ids[r.block.dataset], r.block.real_name()) for r in replica_list])
+            sql = 'DELETE FROM `block_replicas` WHERE `site_id` = %d' % site_id
+            sql += ' AND `block_id` IN'
+            sql += ' (SELECT `id` FROM `blocks` WHERE `dataset_id` IN (%s))' % ','.join(['%d' % dataset_ids[r.block.dataset] for r in replicas_on_site])
 
-        self._mysql.query(sql.format(combinations = combinations))
+            self._mysql.query(sql)
 
-        sql = 'DELETE FROM `block_replica_sizes` AS sizes'
-        sql += ' INNER JOIN `blocks` ON `blocks`.`id` = sizes.`block_id`'
-        sql += ' WHERE (sizes.`site_id`, `blocks`.`dataset_id`, `blocks`.`name`) IN ({combinations})'
+            sql = 'DELETE FROM `block_replica_sizes` WHERE `site_id` = %d' % site_id
+            sql += ' AND `block_id` IN'
+            sql += ' (SELECT `id` FROM `blocks` WHERE `dataset_id` IN (%s))' % ','.join(['%d' % dataset_ids[r.block.dataset] for r in replicas_on_site])
 
-        combinations = ','.join(['(%d,%d,\'%s\')' % (site_ids[r.site], dataset_ids[r.block.dataset], r.block.real_name()) for r in replica_list])
-
-        self._mysql.query(sql.format(combinations = combinations))
+            self._mysql.query(sql)
 
     def _do_set_dataset_status(self, dataset_name, status_str): #override
         self._mysql.query('UPDATE `datasets` SET `status` = %s WHERE `name` LIKE %s', status_str, dataset_name)

@@ -298,6 +298,7 @@ def make_stack(stack_name):
                 exceptions.add_action(*line)
 
             stack = [
+                exceptions,
                 protect_nonready_site,
                 DeleteRECOOlderThan(detox_config.reco_max_age, 'd'),
                 protect_incomplete,
@@ -317,6 +318,7 @@ def make_stack(stack_name):
                 exceptions.add_action(*line)
 
             stack = [
+                exceptions,
                 protect_nonready_site,
                 protect_incomplete,
                 protect_locked
