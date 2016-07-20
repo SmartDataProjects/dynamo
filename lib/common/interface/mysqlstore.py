@@ -836,7 +836,7 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.delete_in('block_replica_sizes', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id))
         self._mysql.query('DELETE FROM `blocks` WHERE `dataset_id` = %s', dataset_id)
         self._mysql.query('DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s', dataset_id)
-        self._mysql.query('DELETE FROM `datasets` WHERE `id` = %d', dataset_id)
+        self._mysql.query('DELETE FROM `datasets` WHERE `id` = %s', dataset_id)
 
     def _do_delete_block(self, block): #override
         try:
