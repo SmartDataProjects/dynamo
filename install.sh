@@ -4,7 +4,7 @@ USER=$1
 
 if ! [ $USER ]
 then
-  "Using cmsprod as the user of the executables."
+  echo "Using cmsprod as the user of the executables."
   USER=cmsprod
 fi
 
