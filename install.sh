@@ -2,6 +2,12 @@
 
 USER=$1
 
+if ! [ $USER ]
+then
+  "Using cmsprod as the user of the executables."
+  USER=cmsprod
+fi
+
 export DYNAMO_BASE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
 source $DYNAMO_BASE/etc/profile.d/init.sh
 
