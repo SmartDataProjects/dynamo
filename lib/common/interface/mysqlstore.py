@@ -232,7 +232,7 @@ class MySQLStore(LocalStoreInterface):
             if dataset_filt != '/*/*/*' and not fnmatch.fnmatch(name, dataset_filt):
                 continue
 
-            dataset = Dataset(name, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update, (is_open == 1))
+            dataset = Dataset(name, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update, is_open = (is_open == 1))
             if software_version_id != 0:
                 dataset.software_version = software_version_map[software_version_id]
 
