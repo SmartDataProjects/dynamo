@@ -701,8 +701,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         )
                         dataset.blocks.append(block)
 
-                    elif block.size != block_entry['bytes'] or block.num_files != block_entry['files']:
-                        block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'])
+                    elif block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
+                        block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
 
             for dataset in list_chunk: # what remains - in case PhEDEx does not say anything about this dataset
                 dataset.blocks = []
