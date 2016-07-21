@@ -56,15 +56,16 @@ class Dealer(object):
 
         pending_volumes = collections.defaultdict(float)
 
-        incomplete_copies = self.history.get_incomplete_copies(partition)
-        for operation in incomplete_copies:
-            site = self.inventory_manager.sites[operation.site_name]
-            status = self.transaction_manager.copy.copy_status(operation.operation_id)
-            for (site_name, dataset_name), (total, copied) in status.items():
-                if total == 0.:
-                    pending_volumes[site] += self.inventory_manager.datasets[dataset_name].size() * 1.e-12
-                else:
-                    pending_volumes[site] += (total - copied) * 1.e-12
+# We have no regular updates of transfer status yet. Commenting out for now.
+#        incomplete_copies = self.history.get_incomplete_copies(partition)
+#        for operation in incomplete_copies:
+#            site = self.inventory_manager.sites[operation.site_name]
+#            status = self.transaction_manager.copy.copy_status(operation.operation_id)
+#            for (site_name, dataset_name), (total, copied, update_time) in status.items():
+#                if total == 0.:
+#                    pending_volumes[site] += self.inventory_manager.datasets[dataset_name].size() * 1.e-12
+#                else:
+#                    pending_volumes[site] += (total - copied) * 1.e-12
 
         # all datasets that the policy considers
         datasets = []
