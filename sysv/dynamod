@@ -1,0 +1,105 @@
+#!/bin/bash
+# --------------------------------------------------------------------------------------------------
+# dynamod       Startup script for the Dynamo detox/dealer Server
+#
+# chkconfig: - 70 15
+# description:
+#
+# processname: dynamod
+# pidfile:     /var/run/dynamod.pid
+# --------------------------------------------------------------------------------------------------
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# This will prevent initlog from swallowing up a pass-phrase prompt if
+# mod_ssl needs a pass-phrase from the user.
+INITLOG_ARGS=""
+
+PROG=dynamod
+TARGET=_DYNAMO_BASE_/bin/dynamod
+
+# Path to the running script, server binary, and short-form for messages.
+PIDFILE=${PIDFILE-/var/run/dynamod.pid}
+LOCKFILE=${LOCKFILE-/var/lock/subsys/dynamod}
+
+EXITCODE=0
+STOP_TIMEOUT=${STOP_TIMEOUT-120} # it takes some time to restore databases
+
+# Start dynamo daemon (dynamod)
+start() {
+  PIDS=$(pgrep $TARGET > /dev/null)
+  if [ "$PIDS" ]
+  then
+    echo "$PROG already running: $PIDS"
+    return 1
+  fi
+
+  if [ -e $PIDFILE ]
+  then
+    echo "$PROG does not appear running but PID file $PIDFILE exists."
+    echo "PID: $(cat $PIDFILE)"
+    return 1
+  fi
+
+  if [ -e $LOCKFILE ]
+  then
+    echo "$PROG may have just started in another session."
+    return 1
+  fi
+
+  touch $LOCKFILE
+
+  echo -n $"Starting $PROG:"
+  daemon --user=cmsprod --pidfile=$PIDFILE $TARGET \&
+  EXITCODE=$?
+  echo
+
+  if [ $EXITCODE -eq 0 ]
+  then
+    echo $(pgrep $TARGET) > $PIDFILE
+  fi
+
+  rm $LOCKFILE
+
+  return $EXITCODE
+}
+
+# Stop dynamo daemon (dynamod)
+stop() {
+  echo -n $"Stopping $PROG:"
+  killproc -p $PIDFILE -d $STOP_TIMEOUT $TARGET
+  EXITCODE=$?
+  echo
+
+  [ $EXITCODE -eq 0 ] && rm -f $PIDFILE
+}
+
+# See how we were called.
+case "$1" in
+  start)
+    start
+    ;;
+  stop)
+    stop
+    ;;
+  status)
+    status -p $PIDFILE $PROG
+    EXITCODE=$?
+    ;;
+  restart)
+    stop
+    start
+    ;;
+  condrestart|try-restart)
+    if status -p $PIDFILE $PROG >&/dev/null
+    then
+      stop
+      start
+    fi
+    ;;
+  *)
+    echo $"Usage: $PROG {start|stop|restart|status|help}"
+    EXITCODE=2
+esac
+
+exit $EXITCODE

@@ -14,8 +14,10 @@ source $DYNAMO_BASE/etc/profile.d/init.sh
 # DAEMONS
 sed "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/sysv/dynamo-detoxd > /etc/init.d/dynamo-detoxd
 sed "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/sysv/dynamo-dealerd > /etc/init.d/dynamo-dealerd
+sed "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/sysv/dynamod > /etc/init.d/dynamod
 chmod +x /etc/init.d/dynamo-detoxd
 chmod +x /etc/init.d/dynamo-dealerd
+chmod +x /etc/init.d/dynamod
 
 # DIRECTORIES
 mkdir -p $DYNAMO_LOGDIR
