@@ -48,8 +48,10 @@ class DemandManager(object):
         datasets = inventory.datasets.values()
 
         logger.info('Loading dataset access information.')
+        # returns a UTC date
         self.last_accesses_update = self.store.load_replica_accesses(sites, datasets)
         logger.info('Loading dataset requests information.')
+        # returns a UTC datetime
         self.last_requests_update = self.store.load_dataset_requests(datasets)
 
         self.setup_demands(inventory)
@@ -62,14 +64,13 @@ class DemandManager(object):
 
         utctoday = utcnow.date()
 
-        start_date = max(self.last_accesses_update, utctoday - datetime.timedelta(config.demand.access_history.max_back_query))
-
         if accesses:
+            start_date = max(self.last_accesses_update, utctoday - datetime.timedelta(config.demand.access_history.max_back_query))
             self.update_accesses(inventory, start_date, utctoday)
             self.last_accesses_update = utctoday - datetime.timedelta(1)
 
         if requests:
-            self.update_requests(inventory, datetime.datetime(start_date.year, start_date.month, start_date.day), utcnow)
+            self.update_requests(inventory, self.last_requests_update, utcnow)
 
         if locks:
             self.lock.update(inventory)

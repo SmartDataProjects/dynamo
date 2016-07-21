@@ -42,7 +42,7 @@ class Dealer(object):
             # inventory is stale -> update
             self.inventory_manager.update()
 
-        self.demand_manager.update(self.inventory_manager, accesses = False, requests = True)
+        self.demand_manager.update(self.inventory_manager, accesses = False, requests = True, locks = False)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
         policy = self.policies[partition]
@@ -76,15 +76,12 @@ class Dealer(object):
 
         datasets.sort(key = lambda (dataset, popularity): popularity, reverse = True)
 
-# TODO
         self.history.save_dataset_popularity(run_number, datasets)
 
         copy_list = self.determine_copies(datasets, policy, pending_volumes)
 
-#        self.history.save_copy_decisions(run_number, copy_list)
-
         logger.info('Committing copy.')
-        self.commit_copies(run_number, copy_list, is_test)
+        self.commit_copies(run_number, policy, copy_list, is_test)
 
         self.history.close_copy_run(run_number)
 
@@ -118,7 +115,7 @@ class Dealer(object):
                     # total capability of the sites this dataset is at
                     total_cpu = sum([r.site.cpu for r in dataset.replicas])
                     # w * N * (site cpu / total cpu); normalized by site cpu
-                    business += popularity * dataset.num_files / total_cpu
+                    business += popularity * dataset.num_files() / total_cpu
 
             return business
 
@@ -150,7 +147,7 @@ class Dealer(object):
                 try:
                     destination_site = next(dest for dest, njob in sorted_sites if \
                         dest.status == Site.STAT_READY and \
-                        dest.name not in dealer_config.excluded_destinations and \
+                        dest.active == Site.ACT_AVAILABLE and \
                         site_occupancy[dest] < config.target_site_occupancy * dealer_config.overflow_factor and \
                         pending_volumes[dest] < dealer_config.max_copy_per_site and \
                         dest.find_dataset_replica(dataset) is None
@@ -169,7 +166,7 @@ class Dealer(object):
                 pending_volumes[destination_site] += dataset.size() * 1.e-12
     
                 # recompute site properties
-                site_occupancy[destination_site] = policy.site_occupancy(site, self.inventory_manager)
+                site_occupancy[destination_site] = policy.site_occupancy(site)
 
                 for replica in dataset.replicas:
                     site = replica.site
@@ -200,12 +197,12 @@ class Dealer(object):
 
         return copy_list
 
-    def commit_copies(self, run_number, copy_list, is_test):
+    def commit_copies(self, run_number, policy, copy_list, is_test):
         for site, replicas in copy_list.items():
             if len(replicas) == 0:
                 continue
 
-            copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, comments = self.copy_message, is_test = is_test)
+            copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, policy.group, comments = self.copy_message, is_test = is_test)
             # copy_mapping .. {operation_id: (approved, [replica])}
     
             for operation_id, (approved, replicas) in copy_mapping.items():
@@ -215,7 +212,7 @@ class Dealer(object):
     
                 size = sum([r.size(physical = False) for r in replicas]) # this is not group size but the total size on disk
 
-                self.history.make_copy_entry(run_number, site, operation_id, approved, [r.dataset for r in replicas], size, is_test = is_test)
+                self.history.make_copy_entry(run_number, site, operation_id, approved, [r.dataset for r in replicas], size)
 
 
 if __name__ == '__main__':

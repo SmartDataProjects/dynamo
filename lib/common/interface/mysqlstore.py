@@ -494,7 +494,7 @@ class MySQLStore(LocalStoreInterface):
 
         last_update = datetime.datetime.utcfromtimestamp(self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0])
 
-        logger.info('Loaded %d replica access data. Last update at %s UTC', len(requests), last_update.strftime('%Y-%m-%d %H:%M:%S'))
+        logger.info('Loaded %d dataset request data. Last update at %s UTC', len(requests), last_update.strftime('%Y-%m-%d %H:%M:%S'))
 
         return last_update
 

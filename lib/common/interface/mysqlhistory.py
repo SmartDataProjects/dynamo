@@ -391,8 +391,16 @@ class MySQLHistory(TransactionHistoryInterface):
             # implement later
             return {}
 
+    def _do_save_dataset_popularity(self, run_number, popularity): #override
+        if len(self._dataset_id_map) == 0:
+            self._make_dataset_id_map()
+
+        fields = ('run_id', 'dataset_id', 'popularity')
+        mapping = lambda (dataset, score): (run_number, self._dataset_id_map[dataset.name], score)
+        self._mysql.insert_many('dataset_popularity_snapshots', fields, mapping, popularity)
+
     def _do_get_incomplete_copies(self, partition): #override
-        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_copied`, UNIX_TIMESTAMP(h.`last_update`) FROM `copy_requests` AS h INNER JOIN `runs` AS r ON r.`id` = h.`run_id` INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id` INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE p.`name` LIKE %s AND h.`size` != h.`size_copied`', partition)
+        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_copied`, UNIX_TIMESTAMP(h.`last_update`) FROM `copy_requests` AS h INNER JOIN `runs` AS r ON r.`id` = h.`run_id` INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id` INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`id` > 0 AND p.`name` LIKE %s AND h.`size` != h.`size_copied`', partition)
         
         id_to_record = {}
         for eid, timestamp, approved, site_name, size, size_copied, last_update in history_entries:

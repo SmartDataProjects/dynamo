@@ -341,6 +341,21 @@ class TransactionHistoryInterface(object):
 
         return decisions
 
+    def save_dataset_popularity(self, run_number, popularities):
+        """
+        Second argument popularities is a list [(dataset, popularity_score)].
+        """
+
+        if config.read_only:
+            logger.info('save_dataset_popularity')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_dataset_popularity(run_number, popularities)
+        finally:
+            self.release_lock()
+
     def get_incomplete_copies(self, partition):
         self.acquire_lock()
         try:

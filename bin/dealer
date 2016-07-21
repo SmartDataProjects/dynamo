@@ -20,7 +20,6 @@ parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', 
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual copy requests, do not save anything to local storage.')
 parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Make a test run (results recorded in local database).')
-parser.add_argument('--repeat', '-n', metavar = 'CYCLES SLEEP', dest = 'repeat', type = int, nargs = 2, default = [1, 0], help = 'Repeat execution for CYCLES times with SLEEP hour interval.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -100,11 +99,4 @@ dealer.set_policy(policy)
 if args.force_inventory_update:
     config.inventory.refresh_min = 0
 
-for nrun in range(args.repeat[0]):
-    dealer.run('AnalysisOps', is_test = args.test_run)
-
-    if args.repeat[1] > 0:
-        try:
-            time.sleep(args.repeat[1] * 3600)
-        except: # interrupted
-            sys.exit(0)
+dealer.run('AnalysisOps', is_test = args.test_run)
