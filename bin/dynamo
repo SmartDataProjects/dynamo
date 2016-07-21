@@ -50,9 +50,6 @@ else:
 if args.dry_run:
     config.read_only = True
 
-if args.force_inventory_update:
-    config.inventory.refresh_min = 0
-
 kwd = {}
 for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
     clsname = getattr(args, cls + '_cls')
@@ -158,6 +155,9 @@ if 'dealer' in args.module:
     
     dealer.set_policy(policy)
 
+
+if args.force_inventory_update:
+    inventory_manager.update()
 
 if 'detox' in args.module:
     for partition in detox_partitions:

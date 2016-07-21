@@ -97,6 +97,6 @@ policy = DealerPolicy(quotas, site_occupancy, partition = 'AnalysisOps', in_part
 dealer.set_policy(policy)
 
 if args.force_inventory_update:
-    config.inventory.refresh_min = 0
+    inventory_manager.update()
 
 dealer.run('AnalysisOps', is_test = args.test_run)
