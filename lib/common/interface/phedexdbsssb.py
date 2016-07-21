@@ -402,6 +402,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         datasets[ds_name] = dataset
                         new_dataset = True
 
+                    dataset.is_open = (dataset_entry['is_open'] == 'y')
+
                     dataset_array.append(dataset)
 
                     for block_entry in dataset_entry['block']:
@@ -416,15 +418,16 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 block_name,
                                 dataset = dataset,
                                 size = block_entry['bytes'],
-                                num_files = block_entry['files']
+                                num_files = block_entry['files'],
+                                is_open = (block_entry['is_open'] == 'y')
                             )
 
                             dataset.blocks.append(block)
                             dataset.status = Dataset.STAT_PRODUCTION # trigger DBS query
 
-                        elif block.size != block_entry['bytes'] or block.num_files != block_entry['files']:
+                        elif block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
                             # block record was updated
-                            block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'])
+                            block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
                             dataset.status = Dataset.STAT_PRODUCTION
 
                         block_array.append(block)
@@ -681,6 +684,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset = next(d for d in list_chunk if d.name == ds_entry['name'])
                 list_chunk.remove(dataset)
 
+                dataset.is_open = (ds_entry['is_open'] == 'y')
+
                 for block_entry in ds_entry['block']:
                     block_name = Block.translate_name(block_entry['name'].replace(dataset.name + '#', ''))
 
@@ -691,7 +696,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             block_name,
                             dataset = dataset,
                             size = block_entry['bytes'],
-                            num_files = block_entry['files']
+                            num_files = block_entry['files'],
+                            is_open = (block_entry['is_open'] == 'y')
                         )
                         dataset.blocks.append(block)
 
@@ -834,36 +840,21 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             xml = '<data version="2.0"><dbs name="%s">' % config.dbs.url_base
 
         for dataset, blocks in file_catalogs.items():
-            options = ['level=block', 'dataset=' + dataset.name]
-
-            phedex_data = self._make_phedex_request('data', options, method = POST)[0]['dataset']
-
-            if len(phedex_data) == 0:
-                continue
-
-            phedex_dataset = phedex_data[0]
-
             if human_readable:
                 xml += '  '
 
-            xml += '<dataset name="{name}" is-open="{is_open}">'.format(name = dataset.name, is_open = phedex_dataset['is_open'])
+            xml += '<dataset name="{name}" is-open="{is_open}">'.format(name = dataset.name, is_open = ('y' if dataset.is_open else 'n'))
 
             if human_readable:
                 xml += '\n'
 
-            phedex_blocks = phedex_dataset['block']
-
             for block in blocks:
                 block_name = dataset.name + '#' + block.real_name()
-                try:
-                    phedex_block = next(entry for entry in phedex_blocks if entry['name'] == block_name)
-                except StopIteration:
-                    continue
 
                 if human_readable:
                     xml += '   '
                 
-                xml += '<block name="{name}" is-open="{is_open}"/>'.format(name = block_name, is_open = phedex_block['is_open'])
+                xml += '<block name="{name}" is-open="{is_open}"/>'.format(name = block_name, is_open = ('y' if block.is_open else 'n'))
                 if human_readable:
                     xml += '\n'
 

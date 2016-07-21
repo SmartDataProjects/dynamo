@@ -56,13 +56,14 @@ class Dataset(object):
         else:
             return arg
 
-    def __init__(self, name, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0):
+    def __init__(self, name, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0, is_open = True):
         self.name = name
         self.status = status
         self.on_tape = on_tape
         self.data_type = data_type
         self.software_version = software_version
         self.last_update = last_update # in UNIX time
+        self.is_open = is_open
 
         # "transient" members
         self.blocks = []
@@ -72,9 +73,9 @@ class Dataset(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset %s (status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, #blocks=%d, replicas=%s)' % \
+        return 'Dataset %s (status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, #blocks=%d, replicas=%s)' % \
             (self.name, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
-            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), len(self.blocks), replica_sites)
+            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), len(self.blocks), replica_sites)
 
     def unlink(self):
         # unlink objects to avoid ref cycles - should be called when this dataset is absolutely not needed
@@ -119,12 +120,12 @@ class Dataset(object):
         except StopIteration:
             return None
 
-    def update_block(self, name, size, num_files):
+    def update_block(self, name, size, num_files, is_open):
         # not catching exception intentionally
         old_block = next(b for b in self.blocks if b.name == name)
         self.blocks.remove(old_block)
 
-        new_block = Block(name, self, size, num_files)
+        new_block = Block(name, self, size, num_files, is_open)
         self.blocks.append(new_block)
 
         for replica in self.replicas:
@@ -142,7 +143,7 @@ class Dataset(object):
         return new_block
 
 # Block and BlockReplica implemented as tuples to reduce memory footprint
-Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files'])
+Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files', 'is_open'])
 
 def _Block_translate_name(name_str):
     # block name format: [8]-[4]-[4]-[4]-[12] where [n] is an n-digit hex.
@@ -165,12 +166,13 @@ def _Block_find_replica(self, site):
     except StopIteration:
         return None
 
-def _Block_clone(self, dataset = None, size = None, num_files = None):
+def _Block_clone(self, dataset = None, size = None, num_files = None, is_open = None):
     return Block(
         self.name,
         self.dataset if dataset is None else dataset,
         self.size if size is None else size,
-        self.num_files if num_files is None else num_files
+        self.num_files if num_files is None else num_files,
+        self.is_open if is_open is None else is_open
     )
 
 Block.translate_name = staticmethod(_Block_translate_name)

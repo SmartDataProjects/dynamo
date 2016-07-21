@@ -226,13 +226,13 @@ class MySQLStore(LocalStoreInterface):
         # Load datasets
         dataset_list = []
 
-        datasets = self._mysql.query('SELECT `name`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`) FROM `datasets`')
+        datasets = self._mysql.query('SELECT `name`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`), `is_open` FROM `datasets`')
 
-        for name, status, on_tape, data_type, software_version_id, last_update in datasets:
+        for name, status, on_tape, data_type, software_version_id, last_update, is_open in datasets:
             if dataset_filt != '/*/*/*' and not fnmatch.fnmatch(name, dataset_filt):
                 continue
 
-            dataset = Dataset(name, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update)
+            dataset = Dataset(name, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update, (is_open == 1))
             if software_version_id != 0:
                 dataset.software_version = software_version_map[software_version_id]
 
@@ -250,7 +250,7 @@ class MySQLStore(LocalStoreInterface):
         # Load blocks
         block_map = {} # id -> block
 
-        sql = 'SELECT `id`, `dataset_id`, `name`, `size`, `num_files` FROM `blocks`'
+        sql = 'SELECT `id`, `dataset_id`, `name`, `size`, `num_files`, `is_open` FROM `blocks`'
         if dataset_filt != '/*/*/*':
             sql += ' WHERE `dataset_id` IN (%s)' % (','.join(map(str, self._ids_to_datasets.keys())))
         sql += ' ORDER BY `dataset_id`'
@@ -259,12 +259,12 @@ class MySQLStore(LocalStoreInterface):
 
         _dataset_id = 0
         dataset = None
-        for block_id, dataset_id, name, size, num_files in blocks:
+        for block_id, dataset_id, name, size, num_files, is_open in blocks:
             if dataset_id != _dataset_id:
                 dataset = self._ids_to_datasets[dataset_id]
                 _dataset_id = dataset_id
 
-            block = Block(Block.translate_name(name), dataset, size, num_files)
+            block = Block(Block.translate_name(name), dataset, size, num_files, is_open)
 
             dataset.blocks.append(block)
 
@@ -559,7 +559,7 @@ class MySQLStore(LocalStoreInterface):
                 known_datasets.append((dataset, dataset_id))
 
         # datasets.size stored only for query speedup in inventory web interface
-        fields = ('id', 'name', 'size', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
+        fields = ('id', 'name', 'size', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
         # MySQL expects the local time for last_update
         mapping = lambda (d, i): (
             i,
@@ -569,7 +569,8 @@ class MySQLStore(LocalStoreInterface):
             d.on_tape,
             d.data_type,
             version_map[d.software_version],
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update))
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update)),
+            1 if d.is_open else 0
         )
         
         self._mysql.insert_many('datasets_new', fields, mapping, known_datasets, do_update = False)
@@ -581,7 +582,7 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.delete_not_in('dataset_accesses', 'dataset_id', ('id', 'datasets_new'))
         self._mysql.delete_not_in('dataset_requests', 'dataset_id', ('id', 'datasets_new'))
 
-        fields = ('name', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update')
+        fields = ('name', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
         # MySQL expects the local time for last_update
         mapping = lambda d: (
             d.name,
@@ -589,7 +590,8 @@ class MySQLStore(LocalStoreInterface):
             d.on_tape,
             d.data_type,
             version_map[d.software_version],
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update))
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update)),
+            1 if d.is_open else 0
         )
 
         self._mysql.insert_many('datasets_new', fields, mapping, new_datasets, do_update = False)
@@ -612,12 +614,13 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query('CREATE TABLE `blocks_new` LIKE `blocks`')
 
-        fields = ('name', 'dataset_id', 'size', 'num_files')
+        fields = ('name', 'dataset_id', 'size', 'num_files', 'is_open')
         mapping = lambda b: (
             b.real_name(),
             self._datasets_to_ids[b.dataset],
             b.size,
-            b.num_files
+            b.num_files,
+            1 if b.is_open else 0
         )
 
         self._mysql.insert_many('blocks_new', fields, mapping, all_blocks, do_update = False)
