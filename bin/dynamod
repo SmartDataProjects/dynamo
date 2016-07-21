@@ -45,7 +45,7 @@ do
   
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    $DYNAMO_BASE/bin/dynamo $APPLICATIONS --test-run --detox-policy-stack 'AnalysisOps:Routine():iterative'  --log-level INFO --log-file $LOG 2>>$LOG
+    $DYNAMO_BASE/bin/dynamo $APPLICATIONS --detox-policy-stack 'AnalysisOps:Routine():iterative' --log-level INFO --log-file $LOG 2>>$LOG
 
     RC=$?
   
