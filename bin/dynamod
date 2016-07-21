@@ -29,9 +29,17 @@ do
   IHOUR=0
   while [ $IHOUR -lt $HOURS_PER_LOGFILE ]
   do
+    OPTIONS=""
     APPLICATIONS=""
-    [ $(($IHOUR%$DYNAMO_DETOX_INTERVAL)) -eq 0 ] && APPLICATIONS="detox"
-    [ $(($IHOUR%$DYNAMO_DEALER_INTERVAL)) -eq 0 ] && APPLICATIONS="dealer $APPLICATIONS"
+    if [ $(($IHOUR%$DYNAMO_DETOX_INTERVAL)) -eq 0 ]
+    then
+      APPLICATIONS="detox"
+      OPTIONS="--force-inventory-update"
+    fi
+    if [ $(($IHOUR%$DYNAMO_DEALER_INTERVAL)) -eq 0 ]
+    then
+      APPLICATIONS="dealer $APPLICATIONS"
+    fi
 
     IHOUR=$(($IHOUR+1))
 
@@ -45,7 +53,7 @@ do
   
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    $DYNAMO_BASE/bin/dynamo $APPLICATIONS --detox-policy-stack 'AnalysisOps:Routine():iterative' --log-level INFO --log-file $LOG 2>>$LOG
+    $DYNAMO_BASE/bin/dynamo $APPLICATIONS $OPTIONS --detox-policy-stack 'AnalysisOps:Routine():iterative' --log-level INFO --log-file $LOG 2>>$LOG
 
     RC=$?
   
