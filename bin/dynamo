@@ -10,11 +10,11 @@ from common.transaction import TransactionManager
 from common.demand import DemandManager
 import common.interface.classes as classes
 from detox.main import Detox
-import detox.policy
+from detox.policy import Policy
 from detox.rules import make_stack, BelongsTo
 import detox.configuration as detox_config
 from dealer.main import Dealer
-import dealer.policy
+from dealer.policy import DealerPolicy
 
 import common.configuration as config
 
@@ -52,10 +52,6 @@ if args.dry_run:
 
 if args.force_inventory_update:
     config.inventory.refresh_min = 0
-
-if args.detox_strategy not in ['iterative', 'static', 'greedy']:
-    print 'Unknown strategy', args.detox_strategy
-    sys.exit(1)
 
 kwd = {}
 for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
@@ -96,18 +92,18 @@ if 'detox' in args.module:
     
     # Set up detox policies
     
-    partitions = []
+    detox_partitions = []
     
     for stack_spec in args.detox_stacks:
         partition, stack_name, strategy_str = stack_spec.split(':')
 
         try:
-            strategy = eval('detox.policy.Policy.ST_' + strategy_str.upper())
+            strategy = eval('Policy.ST_' + strategy_str.upper())
         except NameError:
             print 'Unknown strategy', strategy_str
             sys.exit(1)
     
-        partitions.append(partition)
+        detox_partitions.append(partition)
     
         if stack_name.endswith('.py'):
             # argument is a python file that defines the default decision
@@ -132,13 +128,13 @@ if 'detox' in args.module:
         group = inventory_manager.groups[partition]
         quotas = dict([(site, site.group_quota(group)) for site in inventory_manager.sites.values()])
 
-        if strategy == detox.policy.Policy.ST_ITERATIVE or strategy == detox.policy.Policy.ST_STATIC:
+        if strategy == Policy.ST_ITERATIVE or strategy == Policy.ST_STATIC:
             # Return true if the site is overused for a given partition.
             # Currently partition and group names are identical.
             site_requirement = lambda site, partition, initial: site.group_quota(inventory_manager.groups[partition]) != 0 and \
                 site.storage_occupancy(inventory_manager.groups[partition]) > (detox_config.threshold_occupancy if initial else config.target_site_occupancy)
     
-        elif strategy == detox.policy.Policy.ST_GREEDY:
+        elif strategy == Policy.ST_GREEDY:
             # Always return true
             site_requirement = lambda site, partition, initial: site.group_quota(inventory_manager.groups[partition]) != 0
     
@@ -158,15 +154,14 @@ if 'dealer' in args.module:
     
     in_partition = lambda replica: replica.effective_owner().name == 'AnalysisOps'
     
-    policy = dealer.policy.DealerPolicy(quotas, site_occupancy, partition = 'AnalysisOps', in_partition = in_partition, group = group)
+    policy = DealerPolicy(quotas, site_occupancy, partition = 'AnalysisOps', in_partition = in_partition, group = group)
     
     dealer.set_policy(policy)
 
 
 if 'detox' in args.module:
-    for partition in partitions:
-        detox.run(partition = partition, iterative_deletion = (args.detox_strategy == 'iterative'), is_test = args.test_run)
+    for partition in detox_partitions:
+        detox.run(partition = partition, is_test = args.test_run)
 
 if 'dealer' in args.module:
-    for partition in partitions:
-        dealer.run(partition = partition, is_test = args.test_run)
+    dealer.run(partition = 'AnalysisOps', is_test = args.test_run)

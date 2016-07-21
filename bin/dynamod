@@ -29,11 +29,13 @@ do
   IHOUR=0
   while [ $IHOUR -lt $HOURS_PER_LOGFILE ]
   do
+    APPLICATIONS=""
+    [ $(($IHOUR%$DYNAMO_DETOX_INTERVAL)) -eq 0 ] && APPLICATIONS="detox"
+    [ $(($IHOUR%$DYNAMO_DEALER_INTERVAL)) -eq 0 ] && APPLICATIONS="dealer $APPLICATIONS"
+
     IHOUR=$(($IHOUR+1))
 
-    RUN_DETOX=$(($IHOUR%$DYNAMO_DETOX_INTERVAL))
-    RUN_DEALER=$(($IHOUR%$DYNAMO_DEALER_INTERVAL))
-    if [ $RUN_DETOX -ne 0 ] && [ $RUN_DEALER -ne 0 ]
+    if [ -z "$APPLICATIONS" ]
     then
       sleep 3600
       continue
@@ -43,16 +45,7 @@ do
   
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    if [ $RUN_DETOX -eq 0 ] && [ $RUN_DEALER -eq 0 ]
-    then
-      $DYNAMO_BASE/bin/dynamo --test-run --detox-policy-stack 'AnalysisOps:Routine():iterative' --force-inventory-update --log-level INFO --log-file $LOG 2>>$LOG
-    elif [ $RUN_DETOX -eq 0 ]
-    then
-      $DYNAMO_BASE/bin/detox --test-run --policy-stack 'AnalysisOps:Routine():iterative' --force-inventory-update --log-level INFO --log-file $LOG 2>>$LOG
-    elif [ $RUN_DEALER -eq 0 ]
-    then
-      $DYNAMO_BASE/bin/dealer --test-run --force-inventory-update --log-level INFO --log-file $LOG 2>>$LOG
-    fi
+    $DYNAMO_BASE/bin/dynamo $APPLICATIONS --test-run --detox-policy-stack 'AnalysisOps:Routine():iterative'  --log-level INFO --log-file $LOG 2>>$LOG
 
     RC=$?
   
