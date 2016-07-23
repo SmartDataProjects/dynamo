@@ -692,8 +692,35 @@ class MySQLStore(LocalStoreInterface):
                 dataset = self._ids_to_datasets[dataset_id]
                 _dataset_id = dataset_id
 
-            block = dataset.find_block(Block.translate_name(block_name))
-            block_to_id[block] = block_id
+#            block = dataset.find_block(Block.translate_name(block_name))
+
+            # weird KeyErrors have been seen in block_to_id. Suspecting blocks somehow getting duplicated.
+            name = Block.translate_name(block_name)
+            block = None
+            for blk in dataset.blocks:
+                if blk.name == name:
+                    if block is None:
+                        block = blk
+                    else:
+                        logger.error('Duplicate block found in dataset %s: %d', dataset.name, name)
+                        # pick the correct block
+                        for brep in blockreps_to_write:
+                            if brep.block == blk:
+                                block = blk
+                                break
+                            elif brep.block == block:
+                                break
+
+            if block is None:
+                logger.error('Block %d not found in dataset %s', name, dataset.name)
+                
+                for ir in blockreps_to_write:
+                    if blockreps_to_write[ir][1].block.name == name:
+                        blockreps_to_write.pop(ir)
+                        break
+
+            else:
+                block_to_id[block] = block_id
 
         del block_data
 
