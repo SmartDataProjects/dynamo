@@ -9,10 +9,10 @@ class DeletionInterface(object):
     def schedule_deletion(self, replica, comments = '', is_test = False):
         """
         Schedule a deletion of the dataset or block replica.
-        Return the deletion ID (a number that allows the unique identification of the deletion.)
+        Returns (operation id, approved, [replicas])
         """
 
-        return 0
+        return None
 
     def schedule_deletions(self, replica_list, comments = '', is_test = False):
         """
@@ -23,8 +23,13 @@ class DeletionInterface(object):
 
         deletion_mapping = {}
         for replica in replica_list:
-            deletion_id = self.schedule_deletion(replica, comments = comments, is_test = is_test)
-            deletion_mapping[deletion_id] = (True, [replica])
+            result = self.schedule_deletion(replica, comments = comments, is_test = is_test)
+            if result is None:
+                continue
+
+            deletion_id, approved, replicas = result
+            if deletion_id != 0:
+                deletion_mapping[deletion_id] = (approved, replicas)
 
         return deletion_mapping
 
