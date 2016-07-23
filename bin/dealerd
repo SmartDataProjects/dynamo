@@ -5,12 +5,14 @@
 # v1.0                                                                       Y.Iiyama (Apr 19, 2016)
 # --------------------------------------------------------------------------------------------------
 
-RUNS_PER_CYCLE=10
+HOURS_PER_LOGFILE=10
 
 export DYNAMO_BASE=$(dirname $(cd $(dirname ${BASH_SOURCE[0]}); pwd))
 source $DYNAMO_BASE/etc/profile.d/init.sh
 
-while [ 1 ]
+exec 0<&-
+
+while true
 do
 
   # make sure the log directory exists
@@ -19,29 +21,60 @@ do
   # generate specific log file
   TAG=`date "+%s"`
   LOG=$DYNAMO_LOGDIR/dealer-${TAG}.log
+
+  exec 1>$LOG
+  exec 2>&1
   
   if [ $(du -mc $DYNAMO_LOGDIR/dealer-* 2>/dev/null | awk '/total/ {print $1}') -gt 10000 ] # logs exceeding 10 GB
   then
     find $DYNAMO_LOGDIR -name dealer-* -mtime 1 -delete
   fi
 
-  echo "Start $RUNS_PER_CYCLE loops; log file $LOG" >> $LOG
-  $DYNAMO_BASE/bin/dealer --log-level INFO --log-file $LOG --repeat $RUNS_PER_CYCLE $DYNAMO_DEALER_INTERVAL 2>>$LOG
-  RC=$?
+  echo "Start $HOURS_PER_LOGFILE loops; log file $LOG"
+  IHOUR=0
+  while [ $IHOUR -lt $HOURS_PER_LOGFILE ]
+  do
+    IHOUR=$(($IHOUR+1))
 
-  if [ $RC -ne 0 ]
-  then
-    # execution failed - recover inventory to avoid running with corrupt inventory
-    $DYNAMO_BASE/bin/execlib common/interface/store.py restore --timestamp last
-    $DYNAMO_BASE/bin/execlib common/interface/store.py set_last_update 0
-    if [ -e /var/run/dynamo-dealerd.pid ]
+    date
+
+    $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
+
+    $DYNAMO_BASE/bin/dealer --log-level INFO 2>>$LOG
+
+    RC=$?
+
+    if [ $RC -ne 0 ]
     then
-      # this process is run as a daemon - send email and continue
-      echo "Help! Dealer failed. Return code $RC. Check log $LOG on $HOSTNAME." | mailx -s "Dynamo error" t2lab@mit.edu
-    else
-      exit $RC 
+      TAG=crash_$(date +%s)
+      echo "Abnormal termination of detox cycle. Preserving the database state to tag $TAG."
+      $DYNAMO_BASE/bin/execlib common/interface/store.py snapshot --tag $TAG
+      $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot $TAG
+      echo "Restoring the database state."
+      $DYNAMO_BASE/bin/execlib common/interface/store.py restore --tag last
+      $DYNAMO_BASE/bin/execlib common/interface/store.py set_last_update 0
+      $DYNAMO_BASE/bin/execlib common/interface/history.py restore last
+      if [ -e /var/run/dynamo-detoxd.pid ]
+      then
+        # this process is run as a daemon - send email and continue
+        echo "Help! Detox failed. Return code $RC. Check log $LOG on $HOSTNAME." | mailx -s "Dynamo error" t2lab@mit.edu
+        echo "Re-entering cycle.. (see next log)"
+        break
+      else
+        echo "Exiting with code $RC."
+        exit $RC
+      fi
     fi
-  fi
+
+    $DYNAMO_BASE/bin/execlib common/interface/history.py clean last
+
+    $DYNAMO_BASE/bin/siteinfo.py --out /home/$USER/public_html
+
+    # SIGINT at sleep - peaceful exit
+    [ $RC -eq 130 ] && exit 0
+
+    sleep $(($DYNAMO_DETOX_INTERVAL*3600))
+  done
 
   # take a deep breath
   sleep 5

@@ -5,10 +5,12 @@
 # v1.0                                                                       Y.Iiyama (Apr 19, 2016)
 # --------------------------------------------------------------------------------------------------
 
-CYCLES_PER_LOGFILE=10
+HOURS_PER_LOGFILE=10
 
 export DYNAMO_BASE=$(dirname $(cd $(dirname ${BASH_SOURCE[0]}); pwd))
 source $DYNAMO_BASE/etc/profile.d/init.sh
+
+exec 0<&-
 
 while true
 do
@@ -20,27 +22,35 @@ do
   TAG=`date "+%s"`
   LOG=$DYNAMO_LOGDIR/detox-${TAG}.log
 
+  exec 1>$LOG
+  exec 2>&1
+
   if [ $(du -mc $DYNAMO_LOGDIR/detox-* 2>/dev/null | awk '/total/ {print $1}') -gt 10000 ] # logs exceeding 10 GB
   then
     find $DYNAMO_LOGDIR -name detox-* -mtime 1 -delete
   fi
 
-  echo "Start $CYCLES_PER_LOGFILE cycles; log file $LOG" >> $LOG
-  ICYCLE=0
-  while [ $ICYCLE -lt $CYCLES_PER_LOGFILE ]
+  echo "Start $HOURS_PER_LOGFILE cycles; log file $LOG"
+  IHOUR=0
+  while [ $IHOUR -lt $HOURS_PER_LOGFILE ]
   do
-    date >> $LOG
+    IHOUR=$(($IHOUR+1))
+
+    date
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
-    $DYNAMO_BASE/bin/detox --policy-stack 'AnalysisOps:Routine():iterative' --force-inventory-update --log-level INFO --log-file $LOG 2>>$LOG
+
+    $DYNAMO_BASE/bin/detox --policy-stack 'AnalysisOps:Routine():iterative' --force-inventory-update --log-level INFO
+
     RC=$?
 
     if [ $RC -ne 0 ] && [ $RC -ne 130 ]
     then
-      echo "Abnormal termination of detox cycle. Preserving the database state." >> $LOG
-      $DYNAMO_BASE/bin/execlib common/interface/store.py snapshot --tag crash_$(date +%s)
-      $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot crash_$(date +%s)
-      echo "Restoring the database state." >> $LOG
+      TAG=crash_$(date +%s)
+      echo "Abnormal termination of detox cycle. Preserving the database state to tag $TAG."
+      $DYNAMO_BASE/bin/execlib common/interface/store.py snapshot --tag $TAG
+      $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot $TAG
+      echo "Restoring the database state."
       $DYNAMO_BASE/bin/execlib common/interface/store.py restore --tag last
       $DYNAMO_BASE/bin/execlib common/interface/store.py set_last_update 0
       $DYNAMO_BASE/bin/execlib common/interface/history.py restore last
@@ -48,19 +58,17 @@ do
       then
         # this process is run as a daemon - send email and continue
         echo "Help! Detox failed. Return code $RC. Check log $LOG on $HOSTNAME." | mailx -s "Dynamo error" t2lab@mit.edu
-        echo "Re-entering cycle.. (see next log)" >> $LOG
+        echo "Re-entering cycle.. (see next log)"
         break
       else
-        echo "Exiting with code $RC." >> $LOG
+        echo "Exiting with code $RC."
         exit $RC
       fi
     fi
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py clean last
 
-    $DYNAMO_BASE/bin/siteinfo.py --out /home/$USER/public_html 2>>$LOG
-
-    ICYCLE=$(($ICYCLE+1))
+    $DYNAMO_BASE/bin/siteinfo.py --out /home/$USER/public_html
 
     # SIGINT at sleep - peaceful exit
     [ $RC -eq 130 ] && exit 0
