@@ -18,9 +18,7 @@ do
   # make sure the log directory exists
   mkdir -p $DYNAMO_LOGDIR
 
-  # generate specific log file
-  TAG=`date "+%s"`
-  LOG=$DYNAMO_LOGDIR/dynamo-${TAG}.log
+  LOG=$DYNAMO_LOGDIR/dynamo-$(date "+%Y%m%d_%H%M%S").log
 
   exec 1>$LOG
   exec 2>&1
@@ -90,6 +88,8 @@ do
   
     # SIGINT at sleep - peaceful exit
     [ $RC -eq 130 ] && break
+
+    echo ""
 
     sleep 3600
   done
