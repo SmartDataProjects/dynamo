@@ -220,11 +220,20 @@ class MySQL(object):
     def recover_from(self, tag):
         snapshot_name = self.db_name() + '_' + tag
 
-        tables = self.query('SHOW TABLES')
+        snapshot_tables = self.query('SHOW TABLES FROM `%s`' % snapshot_name)
+        current_tables = self.query('SHOW TABLES')
 
-        for table in tables:
-            self.query('TRUNCATE TABLE `%s`.`%s`' % (self.db_name(), table))
-            self.query('INSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s`' % (self.db_name(), table, snapshot_name, table))
+        for table in snapshot_tables:
+            if table not in current_tables:
+                self.query('CREATE TABLE `{current}`.`{table}` LIKE `{snapshot}`.`{table}`'.format(current = self.db_name(), snapshot = snapshot_name, table = table))
+            else:
+                self.query('TRUNCATE TABLE `%s`.`%s`' % (self.db_name(), table))
+
+            self.query('INSERT INTO `{current}`.`{table}` SELECT * FROM `{snapshot}`.`{table}`'.format(current = self.db_name(), snapshot = snapshot_name, table = table))
+
+        for table in current_tables:
+            if table not in snapshot_tables:
+                self.query('DROP TABLE `%s`.`%s`' % (self.db_name(), table))
 
     def _execute_in_batches(self, execute, pool):
         """
