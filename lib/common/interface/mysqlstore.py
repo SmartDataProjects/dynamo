@@ -693,7 +693,9 @@ class MySQLStore(LocalStoreInterface):
                 _dataset_id = dataset_id
 
 #            block = dataset.find_block(Block.translate_name(block_name))
+#            block_to_id[block] = block_id
 
+##### TEMPORARY
             # weird KeyErrors have been seen in block_to_id. Suspecting blocks somehow getting duplicated.
             name = Block.translate_name(block_name)
             block = None
@@ -722,7 +724,31 @@ class MySQLStore(LocalStoreInterface):
             else:
                 block_to_id[block] = block_id
 
+##### TEMPORARY
+
         del block_data
+
+##### TEMPORARY
+
+        ir = 0
+        while ir != len(blockreps_to_write):
+            did, block_replica = blockreps_to_write[ir]
+            if block_replica.block not in block_to_id:
+                block = block_replica.block
+                dataset = block.dataset
+                logger.error('Block %s of dataset %s not found in the block_to_id map', str(block), dataset.name)
+                logger.error('List of blocks in memory:')
+                for b in dataset.blocks:
+                    logger.error(' %s', str(b))
+                logger.error('List of blocks in store:')
+                for block_name in self._mysql.query('SELECT `name` FROM `blocks` WHERE `dataset_id` = %s', did):
+                    logger.error(' %s', Block.translate_name(block_name))
+
+                blockreps_to_write.pop(ir)
+            else:
+                ir += 1
+
+##### TEMPORARY
 
         self._mysql.query('CREATE TABLE `block_replicas_new` LIKE `block_replicas`')
 
