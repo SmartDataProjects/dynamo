@@ -4,7 +4,7 @@ import re
 import fnmatch
 
 from detox.policy import Policy
-from common.dataformat import Site
+from common.dataformat import Dataset, Site
 
 class Protect(object):
     """
