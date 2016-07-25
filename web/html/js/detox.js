@@ -15,7 +15,7 @@ function initPage(cycleNumber, partitionId)
 
     $.ajax(jaxData);
     
-    loadSummary(cycleNumber, partitionId, currentNorm, true);
+    loadSummary(cycleNumber, partitionId, currentNorm);
 }
 
 function setPartitions(data)
@@ -431,7 +431,7 @@ function displayDetails(siteData)
         .text(function (d) { return d.reason; });
 }
 
-function loadSummary(cycleNumber, partitionId, summaryNorm, initial)
+function loadSummary(cycleNumber, partitionId, summaryNorm)
 {
     currentCycle = cycleNumber;
     currentPartition = partitionId;
@@ -462,8 +462,7 @@ function loadSummary(cycleNumber, partitionId, summaryNorm, initial)
                 previousCycle = data.previousCycle;
                 displaySummary(data);
                 spinner.stop();
-                if (initial)
-                    setupSiteDetails(data.siteData);
+                setupSiteDetails(data.siteData);
             }, 'dataType': 'json', 'async': false});
 }
 
