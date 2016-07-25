@@ -5,7 +5,7 @@ from common.interface.lock import ReplicaLockInterface
 from common.interface.webservice import RESTService
 import common.configuration as config
 
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
 
 class WebReplicaLockInterface(ReplicaLockInterface):
     """
