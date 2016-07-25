@@ -19,14 +19,20 @@ class ASCIIHistory(TransactionHistoryInterface):
         self.deletion_datasets_path = deletion_datasets
         self.lock_path = lock
 
-    def _do_acquire_lock(self): #override
+    def _do_acquire_lock(self, blocking): #override
         while os.path.exists(self.lock_path):
-            logger.warning('Failed to lock. Waiting 30 seconds..')
-            time.sleep(30)
+            if blocking:
+                logger.warning('Failed to lock. Waiting 30 seconds..')
+                time.sleep(30)
+            else:
+                logger.warning('Failed to lock.')
+                return False
 
         open(self.lock_path, 'w').close()
 
-    def _do_release_lock(self): #override
+        return True
+
+    def _do_release_lock(self, force): #override
         os.remove(self.lock_path)
 
     def _do_make_copy_entry(self, site, operation_id, approved, do_list, size): #override

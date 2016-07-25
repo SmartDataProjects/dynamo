@@ -25,15 +25,18 @@ class LocalStoreInterface(object):
 
         self.last_update = 0
 
-    def acquire_lock(self):
+    def acquire_lock(self, blocking = True):
         if self._lock_depth == 0:
-            self._do_acquire_lock()
+            locked = self._do_acquire_lock(blocking)
+            if not locked: # only happens when not blocking
+                return False
 
         self._lock_depth += 1
+        return True
 
     def release_lock(self, force = False):
         if self._lock_depth == 1 or force:
-            self._do_release_lock()
+            self._do_release_lock(force)
 
         if self._lock_depth > 0: # should always be the case if properly programmed
             self._lock_depth -= 1
@@ -477,7 +480,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Local inventory store interface')
 
-    parser.add_argument('command', metavar = 'COMMAND', help = '(help|snapshot [clear (replicas|all)]|clear|clean|restore|list (datasets|groups|sites)|show (dataset|block|site|replica) <name>)')
+    parser.add_argument('command', metavar = 'COMMAND', help = '(help|snapshot [clear (replicas|all)]|clear|clean|restore|list (datasets|groups|sites)|show (dataset|block|site|replica) <name>|lock|release)')
     parser.add_argument('arguments', metavar = 'ARGS', nargs = '*', help = '')
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'LocalStoreInterface class to be used.')
     parser.add_argument('--tag', '-t', metavar = 'YMDHMS', dest = 'tag', default = '', help = 'Tag of the snapshot to be loaded / cleaned. With command clean and a timestamp tag, prepend with "<" or ">" to remove all snapshots older or newer than the timestamp.')
@@ -629,3 +632,9 @@ if __name__ == '__main__':
 
     elif args.command == 'set_last_update':
         interface.set_last_update(int(args.arguments[0]))
+
+    elif args.command == 'lock':
+        interface.acquire_lock(blocking = False)
+
+    elif args.command == 'release':
+        interface.release_lock(force = True)

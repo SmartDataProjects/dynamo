@@ -25,11 +25,13 @@ class MySQLHistory(TransactionHistoryInterface):
         self._dataset_id_map = {}
         self._replica_snapshot_ids = {} # (site, dataset) -> snapshot id
 
-    def _do_acquire_lock(self): #override
+    def _do_acquire_lock(self, blocking): #override
         while True:
             # Use the system table to "software-lock" the database
             self._mysql.query('LOCK TABLES `lock` WRITE')
             self._mysql.query('UPDATE `lock` SET `lock_host` = %s, `lock_process` = %s WHERE `lock_host` LIKE \'\' AND `lock_process` = 0', socket.gethostname(), os.getpid())
+
+            print socket.gethostname(), os.getpid()
 
             # Did the update go through?
             host, pid = self._mysql.query('SELECT `lock_host`, `lock_process` FROM `lock`')[0]
@@ -38,21 +40,29 @@ class MySQLHistory(TransactionHistoryInterface):
             if host == socket.gethostname() and pid == os.getpid():
                 # The database is locked.
                 break
+            
+            if blocking:
+                logger.warning('Failed to lock database. Waiting 30 seconds..')
+                time.sleep(30)
+            else:
+                logger.warning('Failed to lock database.')
+                return False
 
-            logger.warning('Failed to lock database. Waiting 30 seconds..')
+        return True
 
-            time.sleep(30)
-
-    def _do_release_lock(self): #override
+    def _do_release_lock(self, force): #override
         self._mysql.query('LOCK TABLES `lock` WRITE')
-        self._mysql.query('UPDATE `lock` SET `lock_host` = \'\', `lock_process` = 0 WHERE `lock_host` LIKE %s AND `lock_process` = %s', socket.gethostname(), os.getpid())
+        if force:
+            self._mysql.query('UPDATE `lock` SET `lock_host` = \'\', `lock_process` = 0')
+        else:
+            self._mysql.query('UPDATE `lock` SET `lock_host` = \'\', `lock_process` = 0 WHERE `lock_host` LIKE %s AND `lock_process` = %s', socket.gethostname(), os.getpid())
 
         # Did the update go through?
         host, pid = self._mysql.query('SELECT `lock_host`, `lock_process` FROM `lock`')[0]
         self._mysql.query('UNLOCK TABLES')
 
         if host != '' or pid != 0:
-            raise LocalStoreInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
+            raise TransactionHistoryInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
     def _do_make_snapshot(self, tag): #override
         new_db = self._mysql.make_snapshot(tag)

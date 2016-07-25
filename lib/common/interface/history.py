@@ -11,18 +11,24 @@ class TransactionHistoryInterface(object):
     Interface for transaction history. Has a locking mechanism similar to store.
     """
 
+    class LockError(Exception):
+        pass
+
     def __init__(self):
         self._lock_depth = 0
 
-    def acquire_lock(self):
+    def acquire_lock(self, blocking = True):
         if self._lock_depth == 0:
-            self._do_acquire_lock()
+            locked = self._do_acquire_lock(blocking)
+            if not locked: # only happens when not blocking
+                return False
 
         self._lock_depth += 1
+        return True
 
     def release_lock(self, force = False):
         if self._lock_depth == 1 or force:
-            self._do_release_lock()
+            self._do_release_lock(force)
 
         if self._lock_depth > 0: # should always be the case if properly programmed
             self._lock_depth -= 1
@@ -422,7 +428,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description = 'Local inventory store interface')
 
-    parser.add_argument('command', metavar = 'COMMAND', help = '(update|check {copy|deletion} <operation_id>|snapshot [tag]|clean [tag]|restore <tag>)')
+    parser.add_argument('command', metavar = 'COMMAND', help = '(update|check {copy|deletion} <operation_id>|snapshot [tag]|clean [tag]|restore <tag>|lock|release)')
     parser.add_argument('arguments', metavar = 'COMMAND', nargs = '*', help = '')
     parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'TransactionHistoryInterface class to be used.')
     parser.add_argument('--copy-class', '-p', metavar = 'CLASS', dest = 'copy_class_name', default = '', help = 'CopyInterface class to be used.')
@@ -540,3 +546,9 @@ if __name__ == '__main__':
         tag = args.arguments[0]
 
         interface.recover_from(tag)
+
+    elif args.command == 'lock':
+        interface.acquire_lock(blocking = False)
+
+    elif args.command == 'release':
+        interface.release_lock(force = True)

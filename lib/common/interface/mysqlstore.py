@@ -33,7 +33,7 @@ class MySQLStore(LocalStoreInterface):
         self._ids_to_sites = {} # cache dictionary mysql id -> object
         self._ids_to_groups = {} # cache dictionary mysql id -> object
 
-    def _do_acquire_lock(self): #override
+    def _do_acquire_lock(self, blocking): #override
         while True:
             # Use the system table to "software-lock" the database
             self._mysql.query('LOCK TABLES `system` WRITE')
@@ -47,13 +47,21 @@ class MySQLStore(LocalStoreInterface):
                 # The database is locked.
                 break
 
-            logger.warning('Failed to lock database. Waiting 30 seconds..')
+            if blocking:
+                logger.warning('Failed to lock database. Waiting 30 seconds..')
+                time.sleep(30)
+            else:
+                logger.warning('Failed to lock database.')
+                return False
 
-            time.sleep(30)
+        return True
 
-    def _do_release_lock(self): #override
+    def _do_release_lock(self, force): #override
         self._mysql.query('LOCK TABLES `system` WRITE')
-        self._mysql.query('UPDATE `system` SET `lock_host` = \'\', `lock_process` = 0 WHERE `lock_host` LIKE %s AND `lock_process` = %s', socket.gethostname(), os.getpid())
+        if force:
+            self._mysql.query('UPDATE `system` SET `lock_host` = \'\', `lock_process` = 0')
+        else:
+            self._mysql.query('UPDATE `system` SET `lock_host` = \'\', `lock_process` = 0 WHERE `lock_host` LIKE %s AND `lock_process` = %s', socket.gethostname(), os.getpid())
 
         # Did the update go through?
         host, pid = self._mysql.query('SELECT `lock_host`, `lock_process` FROM `system`')[0]
