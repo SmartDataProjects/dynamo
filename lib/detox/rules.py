@@ -147,6 +147,17 @@ class DeletePartial(Delete):
 delete_partial = DeletePartial()
 
 
+class DeleteDeprecated(Delete):
+    """
+    DELETE if the dataset of the replica is deprecated.
+    """
+    def _do_call(self, replica, dataset_demand):
+        if replica.dataset.status == Dataset.STAT_DEPRECATED:
+            return 'Dataset is deprecated.'
+
+delete_deprecated = DeleteDeprecated()
+
+
 class DeleteOlderThan(Delete):
     """
     DELETE if the replica is not accessed for more than a set time.
@@ -301,6 +312,7 @@ def make_stack(stack_name):
                 exceptions,
                 protect_nonready_site,
                 DeleteRECOOlderThan(detox_config.reco_max_age, 'd'),
+                delete_deprecated,
                 protect_incomplete,
                 protect_diskonly,
                 DeleteUnused(detox_config.max_nonusage),
@@ -320,6 +332,7 @@ def make_stack(stack_name):
             stack = [
                 exceptions,
                 protect_nonready_site,
+                delete_deprecated,
                 protect_incomplete,
                 protect_locked
             ]
