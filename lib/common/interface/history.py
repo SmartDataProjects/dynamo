@@ -59,7 +59,7 @@ class TransactionHistoryInterface(object):
             tags = self.list_snapshots(timestamp_only = True)
 
             if len(tags) == 0:
-                print 'No snapshots taken.'
+                logger.warning('No snapshots taken.')
                 return
 
             tag = tags[0]
@@ -95,15 +95,15 @@ class TransactionHistoryInterface(object):
             tags = self.list_snapshots()
 
         if len(tags) == 0:
-            print 'No snapshots taken.'
+            logger.warning('No snapshots taken.')
             return
 
         if tag == 'last':
             tag = tags[0]
-            print 'Recovering history records from snapshot', tag
+            logger.info('Recovering history records from snapshot', tag)
             
         elif tag not in tags:
-            print 'Cannot copy from snapshot', tag
+            logger.error('Cannot copy from snapshot', tag)
             return
 
         while self._lock_depth > 0:

@@ -31,8 +31,6 @@ class MySQLHistory(TransactionHistoryInterface):
             self._mysql.query('LOCK TABLES `lock` WRITE')
             self._mysql.query('UPDATE `lock` SET `lock_host` = %s, `lock_process` = %s WHERE `lock_host` LIKE \'\' AND `lock_process` = 0', socket.gethostname(), os.getpid())
 
-            print socket.gethostname(), os.getpid()
-
             # Did the update go through?
             host, pid = self._mysql.query('SELECT `lock_host`, `lock_process` FROM `lock`')[0]
             self._mysql.query('UNLOCK TABLES')
