@@ -47,11 +47,12 @@ function setupSiteDetails(siteData)
 
     siteDetails.append('h3').classed('siteName', true)
         .text(function (d) {
-                var text = d.name + ' (';
-                text += d.delete.toFixed(1) + ' TB Delete, ';
-                text += d.keep.toFixed(1) + ' TB Keep, ';
-                text += d.protect.toFixed(1) + ' TB Protect, ';
-                text += (d.delete + d.keep + d.protect).toFixed(1) + ' TB Total)';
+                var text = d.name + ' (' +
+                    d.delete.toFixed(1) + ' TB Delete, ' +
+                    d.keep.toFixed(1) + ' TB Keep, ' +
+                    d.protect.toFixed(1) + ' TB Protect, ' +
+                    (d.delete + d.keep + d.protect).toFixed(1) + ' TB Total / ' +
+                    'Quota ' + d.quota + ' TB)';
                 return text;
             });
 
