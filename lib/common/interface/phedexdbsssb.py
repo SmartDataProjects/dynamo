@@ -654,6 +654,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                         elif block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
                             dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
+
+                        if block_entry['time_update'] > dataset.last_update:
+                            dataset.last_update = block_entry['time_update']
     
                 for dataset in list_chunk: # what remains - in case PhEDEx does not say anything about this dataset
                     dataset.blocks = []
@@ -684,8 +687,15 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
             for dataset in dataset_list:
                 try:
-                    dbs_entry = next(e for e in dbs_entries if e['dataset'] == dataset.name)
-                    dbs_entries.remove(dbs_entry)
+                    ie = 0
+                    while ie != len(dbs_entries):
+                        if dbs_entries[ie]['dataset'] == dataset.name:
+                            dbs_entry = dbs_entries.pop(ie)
+                            break
+                        ie += 1
+                    else:
+                        raise StopIteration()
+
                 except StopIteration:
                     logger.info('set_dataset_details  Status of %s is unknown.', dataset.name)
                     dataset.status = Dataset.STAT_UNKNOWN
@@ -694,7 +704,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                 dataset.status = Dataset.status_val(dbs_entry['dataset_access_type'])
                 dataset.data_type = Dataset.data_type_val(dbs_entry['primary_ds_type'])
-                dataset.last_update = dbs_entry['last_modification_date']
+                if dbs_entry['last_modification_date'] > dataset.last_update:
+                    # normally last_update is determined by the last block update
+                    # in case there was a change in the dataset info itself in DBS
+                    dataset.last_update = dbs_entry['last_modification_date']
 
         # set_status_type can work on up to 1000 datasets
         chunk_size = 1000
