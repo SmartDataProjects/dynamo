@@ -119,22 +119,20 @@ class ProtectNotOwnedBy(Protect):
             return 'Not all parts of replica is owned by ' + self.group_name
 
 
-class ProtectNew(Protect):
+class ProtectNewDiskOnly(Protect):
     """
-    PROTECT if the replica is new.
+    PROTECT if the replica is not on tape and new.
     """
 
-    def __init__(self, usage_threshold, request_threshold):
-        self.usage_threshold = usage_threshold
-        self.request_threshold = request_threshold
+    def __init__(self, threshold):
+        self.threshold = threshold
 
     def _do_call(self, replica, dataset_demand):
-        if dataset_demand.global_usage_rank < self.usage_threshold:
-            return 'Global usage rank is below %f.' % self.usage_threshold
-        if dataset_demand.request_weight > self.request_threshold:
-            return 'Request weight is above %f.' % self.request_threshold
+        if replica.last_block_created > self.threshold:
+            return 'Replica has a block newer than %d.' % int(self.threshold)
 
-protect_new = ProtectNew(400., 1.)
+protect_new_diskonly = ProtectNewDiskOnly(time.time() - 3600 * 24 * 14)
+
 
 class DeletePartial(Delete):
     """
@@ -178,20 +176,25 @@ class DeleteOlderThan(Delete):
         self.cutoff = cutoff_datetime.date()
 
 
-class DeleteRECOOlderThan(DeleteOlderThan):
+class DeleteByNameOlderThan(DeleteOlderThan):
     """
     DELETE RECO replica if it was created more than threshold ago.
     """
 
-    def __init__(self, threshold, unit):
+    def __init__(self, threshold, unit, pattern, use_dataset_time = False):
         DeleteOlderThan.__init__(self, threshold, unit)
+        self.pattern = re.compile(fnmatch.translate(pattern))
+        self.use_dataset_time = use_dataset_time
 
     def _do_call(self, replica, dataset_demand):
-        last_slash = replica.dataset.name.rfind('/')
-        if replica.dataset.name[last_slash + 1:last_slash + 5] != 'RECO':
-            return None
+        if not self.pattern.match(replica.dataset.name):
+            return
 
-        last_update = datetime.datetime.utcfromtimestamp(replica.last_block_created).date()
+        if self.use_dataset_time:
+            last_update = datetime.datetime.utcfromtimestamp(replica.dataset.last_update).date()
+        else:
+            last_update = datetime.datetime.utcfromtimestamp(replica.last_block_created).date()
+
         if last_update < self.cutoff:
             return 'Replica was updated more than ' + self.threshold_text + ' ago.'
 
@@ -311,7 +314,7 @@ def make_stack(stack_name):
             stack = [
                 exceptions,
                 protect_nonready_site,
-                DeleteRECOOlderThan(detox_config.reco_max_age, 'd'),
+                DeleteByNameOlderThan(detox_config.reco_max_age, 'd', '/*/*/RECO'),
                 delete_deprecated,
                 protect_incomplete,
                 protect_diskonly,
@@ -329,11 +332,15 @@ def make_stack(stack_name):
             for line in detox_config.routine_exceptions:
                 exceptions.add_action(*line)
 
+            exceptions.add_action('Keep', '*', '/*/*-PromptReco-*/*')
+            exceptions.add_action('Keep', '*', '/*/*/RECO')
+
             stack = [
                 exceptions,
                 protect_nonready_site,
                 delete_deprecated,
                 protect_incomplete,
+                protect_new_diskonly,
                 protect_locked
             ]
 
@@ -344,7 +351,7 @@ def make_stack(stack_name):
         def stackgen(*arg, **kwd):
             stack = [
                 protect_incomplete,
-                DeleteRECOOlderThan(detox_config.reco_max_age, 'd'),
+                DeleteByNameOlderThan(detox_config.reco_max_age, 'd', '/*/*/RECO'),
                 protect_diskonly,
                 delete_partial,
                 ActionList()
