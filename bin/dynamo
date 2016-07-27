@@ -103,10 +103,11 @@ if 'detox' in args.module:
         detox_partitions.append(partition)
     
         if stack_name.endswith('.py'):
-            # argument is a python file that defines the default decision
-            # and a list of stacks with the same name as the file
+            # argument is a python file that defines the following variables:
+            #  default: default decision
+            #  rule_stack: a list of rules
+
             execfile(stack_name)
-            rule_stack = eval(os.path.basename(stack_name)[:-3]) # removing .py
     
         else:
             if '(' in stack_name:

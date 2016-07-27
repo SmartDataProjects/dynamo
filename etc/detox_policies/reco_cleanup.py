@@ -9,8 +9,10 @@ exceptions.add_action('Keep', '*', '/HLTPhysics/CMSSW_7_4_14-2015_10_20_referenc
 exceptions.add_action('Keep', '*', '/ZeroBias*/Run2015A-PromptReco-v1/RECO')
 exceptions.add_action('Keep', '*', '/*TOTEM*/*Run2015D*/RECO')
 
-reco_cleanup = [
+rule_stack = [
     rules.protect_incomplete,
     exceptions,
-    rules.DeleteRECOOlderThan(180., 'd')
+    rules.DeleteByNameOlderThan(180., 'd', '/*/*/RECO', use_dataset_time = True),
+    rules.DeleteByNameOlderThan(180., 'd', '/*/*LogError*/RAW-RECO', use_dataset_time = True),
+    rules.DeleteByNameOlderThan(60., 'd', '/*/*/RAW', use_dataset_time = True)
 ]
