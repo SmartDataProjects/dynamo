@@ -1,2 +1,4 @@
 *~
 *.pyc
+policies/
+lib/detox/policies
