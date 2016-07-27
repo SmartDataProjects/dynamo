@@ -205,14 +205,14 @@ class InventoryManager(object):
             self.load()
 
         if dataset_filter == '/*/*/*':
-            datasets = [d for d in self.datasets.values() if d.status != Dataset.STAT_IGNORED]
+            datasets = dict([(d.name, d) for d in self.datasets.values() if d.status != Dataset.STAT_IGNORED])
         else:
             regex = re.compile(fnmatch.translate(dataset_filter))
-            datasets = [d for d in self.datasets.values() if regex.match(d.name) and d.status != Dataset.STAT_IGNORED]
+            datasets = dict([(d.name, d) for d in self.datasets.values() if regex.match(d.name) and d.status != Dataset.STAT_IGNORED])
 
         self.dataset_source.set_dataset_details(datasets)
 
-        self.store.save_datasets(datasets)
+        self.store.save_datasets(datasets.values())
 
 
 if __name__ == '__main__':
