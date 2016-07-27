@@ -18,35 +18,38 @@ if (isset($_REQUEST['getPartitions']) && $_REQUEST['getPartitions']) {
 
 $cycle = 0;
 $timestamp = '';
-$partition_id = 1;
+$partition_id = 0;
 $operation = 'deletion';
-
-if (isset($_REQUEST['partitionId'])) {
-  $partition_id = 0 + $_REQUEST['partitionId'];
-  $stmt = $history_db->prepare('SELECT `name` FROM `partitions` WHERE `id` = ?');
-  $stmt->bind_param('i', $partition_id);
-  $stmt->bind_result($partition);
-  $stmt->execute();
-  if (!$stmt->fetch())
-    $partition_id = 1;
-  $stmt->close();
-}
 
 if (isset($TESTMODE) && $TESTMODE)
   $operation = 'deletion_test';
 
 if (isset($_REQUEST['cycleNumber'])) {
   $cycle = 0 + $_REQUEST['cycleNumber'];
-  $stmt = $history_db->prepare('SELECT `time_start` FROM `runs` WHERE `id` = ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ?');
-  $stmt->bind_param('iis', $cycle, $partition_id, $operation);
-  $stmt->bind_result($timestamp);
+  $stmt = $history_db->prepare('SELECT `partition_id`, `time_start` FROM `runs` WHERE `id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ?');
+  $stmt->bind_param('is', $cycle, $operation);
+  $stmt->bind_result($partition_id, $timestamp);
   $stmt->execute();
   if (!$stmt->fetch())
     $cycle = 0;
   $stmt->close();
 }
+else if (isset($_REQUEST['partition'])) {
+  $stmt = $history_db->prepare('SELECT `id` FROM `partitions` WHERE `name` LIKE ?');
+  $stmt->bind_param('s', $_REQUEST['partition']);
+  $stmt->bind_result($partition_id);
+  $stmt->execute();
+  if (!$stmt->fetch())
+    $partition_id = 0;
+  $stmt->close();
+}
+else if (isset($_REQUEST['partitionId']))
+  $partition_id = 0 + $_REQUEST['partitionId'];
 
 if ($cycle == 0) {
+  if ($partition_id == 0)
+    $partition_id = 1;
+
   $stmt = $history_db->prepare('SELECT `id`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` DESC LIMIT 1');
   $stmt->bind_param('is', $partition_id, $operation);
   $stmt->bind_result($cycle, $timestamp);

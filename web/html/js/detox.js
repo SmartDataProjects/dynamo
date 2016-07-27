@@ -26,7 +26,7 @@ function setPartitions(data)
         .enter().append('div').classed('partitionTab', true)
         .text(function (d) { return d.name; })
         .attr('id', function (d) { return 'partition' + d.id; })
-        .on('click', function (d) { loadSummary(currentCycle, d.id, currentNorm); });
+        .on('click', function (d) { window.location.assign(window.location.protocol + '//' + window.location.hostname + window.location.pathname + '?partitionId=' + d.id); });
 
     partitionsNav.select(':last-child').classed('last', true);
 }
