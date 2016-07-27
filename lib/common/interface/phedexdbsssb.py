@@ -674,38 +674,41 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         Argument is a list of datasets.
         """
 
+        lock = threading.Lock()
+
         def inquire_phedex(list_chunk):
             options = [('level', 'block')]
             options.extend([('dataset', d.name) for d in list_chunk])
 
             source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
 
-            for ds_entry in source:
-                dataset = next(d for d in list_chunk if d.name == ds_entry['name'])
-                list_chunk.remove(dataset)
-
-                dataset.is_open = (ds_entry['is_open'] == 'y')
-
-                for block_entry in ds_entry['block']:
-                    block_name = Block.translate_name(block_entry['name'].replace(dataset.name + '#', ''))
-
-                    block = dataset.find_block(block_name)
-
-                    if block is None:
-                        block = Block(
-                            block_name,
-                            dataset = dataset,
-                            size = block_entry['bytes'],
-                            num_files = block_entry['files'],
-                            is_open = (block_entry['is_open'] == 'y')
-                        )
-                        dataset.blocks.append(block)
-
-                    elif block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
-                        block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
-
-            for dataset in list_chunk: # what remains - in case PhEDEx does not say anything about this dataset
-                dataset.blocks = []
+            with lock:
+                for ds_entry in source:
+                    dataset = next(d for d in list_chunk if d.name == ds_entry['name'])
+                    list_chunk.remove(dataset)
+    
+                    dataset.is_open = (ds_entry['is_open'] == 'y')
+    
+                    for block_entry in ds_entry['block']:
+                        block_name = Block.translate_name(block_entry['name'].replace(dataset.name + '#', ''))
+    
+                        block = dataset.find_block(block_name)
+    
+                        if block is None:
+                            block = Block(
+                                block_name,
+                                dataset = dataset,
+                                size = block_entry['bytes'],
+                                num_files = block_entry['files'],
+                                is_open = (block_entry['is_open'] == 'y')
+                            )
+                            dataset.blocks.append(block)
+    
+                        elif block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
+                            dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
+    
+                for dataset in list_chunk: # what remains - in case PhEDEx does not say anything about this dataset
+                    dataset.blocks = []
                 
         # set_constituent can take 10000 datasets at once, make it smaller and more parallel
         chunk_size = 100
