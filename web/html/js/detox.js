@@ -7,7 +7,7 @@ var currentNorm = 'relative';
 function initPage(cycleNumber, partitionId)
 {
     var jaxData = {
-        'url': 'detox.php',
+        'url': window.location.href,
         'data': {'getPartitions': 1},
         'success': function (data, textStatus, jqXHR) { setPartitions(data); },
         'dataType': 'json',
@@ -458,7 +458,7 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
         'partitionId': partitionId
     };
 
-    $.ajax({'url': 'detox.php', 'data': inputData, 'success': function (data, textStatus, jqXHR) {
+    $.ajax({'url': window.location.href, 'data': inputData, 'success': function (data, textStatus, jqXHR) {
                 nextCycle = data.nextCycle;
                 previousCycle = data.previousCycle;
                 displaySummary(data);
@@ -481,7 +481,7 @@ function loadSiteTable(name)
         'siteName': name
     };
 
-    $.get('detox.php', inputData, function (data, textStatus, jqXHR) {
+    $.get(window.location.href, inputData, function (data, textStatus, jqXHR) {
             displayDetails(data);
             spinner.stop();
     }, 'json');

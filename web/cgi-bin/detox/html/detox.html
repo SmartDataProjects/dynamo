@@ -22,9 +22,10 @@
       <div id="cycle">
         <h2 id="cycleHeader">Cycle <span id="cycleNumber"></span> (<span id="cycleTimestamp"></span>)</h2>
         <nav id="cycles">
-          <div id="cycleJump">Cycle: <input type="text" id="jumpInput" size="10"><input type="button" value="Go" onclick="loadSummary($('#jumpInput').val(), currentPartition, currentNorm)"></div>
-          <div id="cycleNext" class="cycleLink"><span onclick="loadSummary(nextCycle, currentPartition, currentNorm);" class="clickable">&gt;</span></div>
-          <div id="cyclePrev" class="cycleLink"><span onclick="loadSummary(previousCycle, currentPartition, currentNorm);" class="clickable">&lt;</span></div>
+          Cycle: 
+          <span onclick="loadSummary(previousCycle, currentPartition, currentNorm);" class="clickable">Previous</span>
+          <span onclick="loadSummary(nextCycle, currentPartition, currentNorm);" class="clickable">Next</span>
+          <input type="text" id="jumpInput" size="10"><input type="button" value="Go" onclick="loadSummary($('#jumpInput').val(), currentPartition, currentNorm)">
         </nav>
       </div>
     </header>

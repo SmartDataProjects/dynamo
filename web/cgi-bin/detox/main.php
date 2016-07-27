@@ -19,6 +19,7 @@ if (isset($_REQUEST['getPartitions']) && $_REQUEST['getPartitions']) {
 $cycle = 0;
 $timestamp = '';
 $partition_id = 1;
+$operation = 'deletion';
 
 if (isset($_REQUEST['partitionId'])) {
   $partition_id = 0 + $_REQUEST['partitionId'];
@@ -31,10 +32,13 @@ if (isset($_REQUEST['partitionId'])) {
   $stmt->close();
 }
 
+if (isset($TESTMODE) && $TESTMODE)
+  $operation = 'deletion_test';
+
 if (isset($_REQUEST['cycleNumber'])) {
   $cycle = 0 + $_REQUEST['cycleNumber'];
-  $stmt = $history_db->prepare('SELECT `time_start` FROM `runs` WHERE `id` = ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\')');
-  $stmt->bind_param('ii', $cycle, $partition_id);
+  $stmt = $history_db->prepare('SELECT `time_start` FROM `runs` WHERE `id` = ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ?');
+  $stmt->bind_param('iis', $cycle, $partition_id, $operation);
   $stmt->bind_result($timestamp);
   $stmt->execute();
   if (!$stmt->fetch())
@@ -43,24 +47,24 @@ if (isset($_REQUEST['cycleNumber'])) {
 }
 
 if ($cycle == 0) {
-  $stmt = $history_db->prepare('SELECT `id`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\') ORDER BY `id` DESC LIMIT 1');
-  $stmt->bind_param('i', $partition_id);
+  $stmt = $history_db->prepare('SELECT `id`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` DESC LIMIT 1');
+  $stmt->bind_param('is', $partition_id, $operation);
   $stmt->bind_result($cycle, $timestamp);
   $stmt->execute();
   $stmt->fetch();
   $stmt->close();
 }
 
-$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` > ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\') ORDER BY `id` ASC LIMIT 1');
-$stmt->bind_param('ii', $cycle, $partition_id);
+$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` > ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` ASC LIMIT 1');
+$stmt->bind_param('iis', $cycle, $partition_id, $operation);
 $stmt->bind_result($next_cycle);
 $stmt->execute();
 if (!$stmt->fetch())
   $next_cycle = 0;
 $stmt->close();
 
-$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` < ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\') ORDER BY `id` DESC LIMIT 1');
-$stmt->bind_param('ii', $cycle, $partition_id);
+$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` < ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` DESC LIMIT 1');
+$stmt->bind_param('iis', $cycle, $partition_id, $operation);
 $stmt->bind_result($prev_cycle);
 $stmt->execute();
 if (!$stmt->fetch())
@@ -71,6 +75,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
   // main data structure
   $data = array();
 
+  $data['operation'] = $operation;
   $data['cycleNumber'] = $cycle;
   $data['previousCycle'] = $prev_cycle;
   $data['nextCycle'] = $next_cycle;
@@ -125,8 +130,8 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     while ($stmt->fetch())
       $site_total[$decision][$site_id] += $size;
     $stmt->close();
-
-    // existing replicas
+ 
+    // existing replicas - Prev
     $stmt = $history_db->prepare('SELECT s.`site_id`, CONCAT(d.`decision`, \'Prev\'), SUM(s.`size`) * 1.e-12 FROM `deletion_decisions` AS d INNER JOIN `replica_snapshots` AS s ON s.`id` = d.`snapshot_id` WHERE d.`run_id` = ? GROUP BY s.`site_id`, d.`decision`');
     $stmt->bind_param('i', $prev_cycle);
     $stmt->bind_result($site_id, $decision, $size);
@@ -134,8 +139,8 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     while ($stmt->fetch())
       $site_total[$decision][$site_id] = $size;
     $stmt->close();
-
-    // past replicas
+ 
+    // past replicas - Prev
     $stmt = $history_db->prepare('SELECT s.`site_id`, CONCAT(d.`decision`, \'Prev\'), SUM(s.`size`) * 1.e-12 FROM `deletion_decisions` AS d INNER JOIN `deleted_replica_snapshots` AS s ON s.`id` = d.`snapshot_id` WHERE d.`run_id` = ? GROUP BY s.`site_id`, d.`decision`');
     $stmt->bind_param('i', $prev_cycle);
     $stmt->bind_result($site_id, $decision, $size);
