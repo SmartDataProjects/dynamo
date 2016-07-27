@@ -23,11 +23,11 @@ PIDFILE=${PIDFILE-/var/run/dynamo-dealerd.pid}
 LOCKFILE=${LOCKFILE-/var/lock/subsys/dynamo-dealerd}
 
 EXITCODE=0
-STOP_TIMEOUT=${STOP_TIMEOUT-10}
+STOP_TIMEOUT=${STOP_TIMEOUT-120}
 
 # Start dealer daemon (dealerd)
 start() {
-  PIDS=$(pgrep $TARGET > /dev/null)
+  PIDS=$(pgrep $PROG > /dev/null)
   if [ "$PIDS" ]
   then
     echo "$PROG already running: $PIDS"
@@ -50,13 +50,13 @@ start() {
   touch $LOCKFILE
 
   echo -n $"Starting $PROG:"
-  daemon --user=cmsprod --pidfile=$PIDFILE $TARGET \&
+  daemon --user=_USER_ --pidfile=$PIDFILE $TARGET \&
   EXITCODE=$?
   echo
 
   if [ $EXITCODE -eq 0 ]
   then
-    echo $(pgrep $TARGET) > $PIDFILE
+    echo $(pgrep $PROG) > $PIDFILE
   fi
 
   rm $LOCKFILE

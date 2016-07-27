@@ -27,7 +27,7 @@ STOP_TIMEOUT=${STOP_TIMEOUT-120} # it takes some time to restore databases
 
 # Start dynamo daemon (dynamod)
 start() {
-  PIDS=$(pgrep $TARGET > /dev/null)
+  PIDS=$(pgrep -n $PROG > /dev/null)
   if [ "$PIDS" ]
   then
     echo "$PROG already running: $PIDS"
@@ -50,13 +50,13 @@ start() {
   touch $LOCKFILE
 
   echo -n $"Starting $PROG:"
-  daemon --user=cmsprod --pidfile=$PIDFILE $TARGET \&
+  daemon --user=_USER_ --pidfile=$PIDFILE $TARGET \&
   EXITCODE=$?
   echo
 
   if [ $EXITCODE -eq 0 ]
   then
-    echo $(pgrep $TARGET) > $PIDFILE
+    echo $(pgrep -n $PROG) > $PIDFILE
   fi
 
   rm $LOCKFILE
