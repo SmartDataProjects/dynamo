@@ -135,14 +135,11 @@ class InventoryManager(object):
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets, dataset_filt = dataset_filter)
 
             # Take out datasets with no replicas
-            datasets = self.datasets.values()
-            for dataset in datasets:
+            for dataset in self.datasets.values():
                 if len(dataset.replicas) == 0:
                     self.datasets.pop(dataset.name)
                     self.store.clear_cache()
                     dataset.unlink()
-
-            del datasets
 
             self.dataset_source.set_dataset_details(self.datasets, skip_valid = True)
 

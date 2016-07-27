@@ -364,9 +364,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         logger.info('make_replica_links  Fetching block replica information from PhEDEx')
 
-        # knock out datasets from this list as replicas are found
-        datasets_without_replicas = set(datasets.values())
-
         lock = threading.Lock()
 
         def exec_get(site_list, gname_list, dname_list):
@@ -382,10 +379,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             source = self._make_phedex_request('blockreplicas', options)
 
-            dataset_array = []
-            block_array = []
-
-            # first prepare all datasets and blocks under a lock
+            # process retrieved data under a lock - otherwise can cause inconsistencies when e.g. block info is updated between one phedex call and another.
             with lock:
                 for dataset_entry in source:
                     if 'block' not in dataset_entry:
@@ -403,8 +397,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         new_dataset = True
 
                     dataset.is_open = (dataset_entry['is_open'] == 'y')
-
-                    dataset_array.append(dataset)
 
                     for block_entry in dataset_entry['block']:
                         block_name = Block.translate_name(block_entry['name'].replace(ds_name + '#', ''))
@@ -430,107 +422,67 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
                             dataset.status = Dataset.STAT_PRODUCTION
 
-                        block_array.append(block)
-
-            # now construct replicas; keep them in a local container and merge later
-            new_replicas = []
-
-            darray_entry = 0
-            barray_entry = 0
-            for dataset_entry in source:
-                if 'block' not in dataset_entry:
-                    continue
-
-                ds_name = dataset_entry['name']
-                dataset = dataset_array[darray_entry]
-                darray_entry += 1
-
-                # convenient lookup localized to this dataset
-                dataset_replicas = {}
+                        for replica_entry in block_entry['replica']:
+                            if replica_entry['group'] not in gname_list:
+                                continue
     
-                for block_entry in dataset_entry['block']:
-                    block = block_array[barray_entry]
-                    barray_entry += 1
-
-                    for replica_entry in block_entry['replica']:
-                        if replica_entry['group'] not in gname_list:
-                            continue
-
-                        if replica_entry['group'] is not None:
-                            try:
-                                group = groups[replica_entry['group']]
-                            except KeyError:
-                                logger.warning('Group %s for replica of block %s not registered.', replica_entry['group'], block.real_name())
+                            if replica_entry['group'] is not None:
+                                try:
+                                    group = groups[replica_entry['group']]
+                                except KeyError:
+                                    logger.warning('Group %s for replica of block %s not registered.', replica_entry['group'], block.real_name())
+                                    group = None
+                            else:
                                 group = None
-                        else:
-                            group = None
+    
+                            site = sites[replica_entry['node']]
 
-                        site = sites[replica_entry['node']]
+                            dataset_replica = dataset.find_replica(site)    
 
-                        try:
-                            dataset_replica = dataset_replicas[site]
-                        except KeyError:
-                            # first time associating this dataset with this site
-                            dataset_replica = DatasetReplica(
-                                dataset,
+                            if dataset_replica is None:
+                                # first time associating this dataset with this site
+                                dataset_replica = DatasetReplica(
+                                    dataset,
+                                    site,
+                                    is_complete = True,
+                                    is_custodial = False,
+                                    last_block_created = 0
+                                )
+    
+                                dataset.replicas.append(dataset_replica)
+
+                                site.dataset_replicas.append(dataset_replica)
+    
+                            if replica_entry['time_update'] > dataset_replica.last_block_created:
+                                dataset_replica.last_block_created = replica_entry['time_update']
+    
+                            # PhEDEx 'complete' flag cannot be trusted; defining completeness in terms of size.
+                            is_complete = (replica_entry['bytes'] == block.size)
+                            is_custodial = (replica_entry['custodial'] == 'y')
+    
+                            # if any block replica is not complete, dataset replica is not
+                            if not is_complete:
+                                dataset_replica.is_complete = False
+    
+                            # if any of the block replica is custodial, dataset replica also is
+                            if is_custodial:
+                                dataset_replica.is_custodial = True
+    
+                            block_replica = BlockReplica(
+                                block,
                                 site,
-                                is_complete = True,
-                                is_custodial = False,
-                                last_block_created = 0
+                                group,
+                                is_complete, 
+                                is_custodial,
+                                size = replica_entry['bytes']
                             )
+    
+                            dataset_replica.block_replicas.append(block_replica)
 
-                            dataset_replicas[site] = dataset_replica
-
-                            new_replicas.append(dataset_replica)
-
-                        if replica_entry['time_update'] > dataset_replica.last_block_created:
-                            dataset_replica.last_block_created = replica_entry['time_update']
-
-                        # PhEDEx 'complete' flag cannot be trusted; defining completeness in terms of size.
-                        is_complete = (replica_entry['bytes'] == block.size)
-                        is_custodial = (replica_entry['custodial'] == 'y')
-
-                        # if any block replica is not complete, dataset replica is not
-                        if not is_complete:
-                            dataset_replica.is_complete = False
-
-                        # if any of the block replica is custodial, dataset replica also is
-                        if is_custodial:
-                            dataset_replica.is_custodial = True
-
-                        block_replica = BlockReplica(
-                            block,
-                            site,
-                            group,
-                            is_complete, 
-                            is_custodial,
-                            size = replica_entry['bytes']
-                        )
-
-                        dataset_replica.block_replicas.append(block_replica)
-
+                            site.add_block_replica(block_replica)
+    
             if len(sites) == 1:
                 logger.debug('Done processing PhEDEx data from %s', site_list[0].name)
-
-            # now grab a lock and insert the new dataset replicas into global pool
-            with lock:
-                for new_replica in new_replicas:
-                    dataset = new_replica.dataset
-                    site = new_replica.site
-                    dataset.replicas.append(new_replica)
-                    site.dataset_replicas.append(new_replica)
-                    for block_replica in new_replica.block_replicas:
-                        site.add_block_replica(block_replica)
-
-                    try:
-                        # a replica ends up here either when the dataset already existed initially
-                        # or if another thread created it and put it in the datasets dict
-                        datasets_without_replicas.remove(dataset)
-                    except KeyError:
-                        pass
-
-            if len(sites) == 1:
-                logger.debug('Extracted dataset names from %s.', site_list[0].name)
 
 
         all_sites = [site for name, site in sites.items() if fnmatch.fnmatch(name, site_filt)]
@@ -556,10 +508,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             del items
         else:
             exec_get(all_sites, gname_list, [dataset_filt])
-
-        for dataset in datasets_without_replicas:
-            datasets.pop(dataset.name)
-            dataset.unlink()
 
         logger.info('Setting group owners of dataset replicas')
         # Data retrieval was split in groups. Now merge the group information.
