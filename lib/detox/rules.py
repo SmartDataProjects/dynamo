@@ -126,10 +126,11 @@ class ProtectNewDiskOnly(Protect):
 
     def __init__(self, threshold):
         self.threshold = threshold
+        self.threshold_str = time.strftime('%Y-%m-%d', time.gmtime(self.threshold))
 
     def _do_call(self, replica, dataset_demand):
-        if replica.last_block_created > self.threshold:
-            return 'Replica has a block newer than %d.' % int(self.threshold)
+        if not replica.dataset.on_tape and replica.last_block_created > self.threshold:
+            return 'Replica has no full tape copy and has a block newer than %s.' % self.threshold_str
 
 protect_new_diskonly = ProtectNewDiskOnly(time.time() - 3600 * 24 * 14)
 
