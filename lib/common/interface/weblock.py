@@ -1,5 +1,7 @@
 import logging
 import collections
+import urllib2
+import time
 
 from common.interface.lock import ReplicaLockInterface
 from common.interface.webservice import RESTService
@@ -30,6 +32,21 @@ class WebReplicaLockInterface(ReplicaLockInterface):
         self._sources.append((RESTService(url, accept = data_type), content_type))
 
     def update(self, inventory): #override
+
+        # check that the lock files themselves are not locked
+        while True:
+            try:
+                urllib2.urlopen(config.weblock.lock)
+            except urllib2.HTTPError as err:
+                if err.code == 404:
+                    # file not found -> no lock
+                    break
+                else:
+                    raise
+
+            logger.info('Lock files are being produced. Waiting 60 seconds.')
+            time.sleep(60)
+
         self.locked_blocks = collections.defaultdict(list)
 
         for source, content_type in self._sources:

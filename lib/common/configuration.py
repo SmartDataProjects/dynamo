@@ -68,6 +68,7 @@ weblock.sources = [
     ('https://cmsweb.cern.ch/t0wmadatasvc/replayone/dataset_locked', 'CMSWEB_LIST_OF_DATASETS'),
     ('https://cmsweb.cern.ch/t0wmadatasvc/replaytwo/dataset_locked', 'CMSWEB_LIST_OF_DATASETS')
 ]
+weblock.lock = 'https://cmst2.web.cern.ch/cmst2/unified/globallocks.json.lock'
 
 inventory = Configuration()
 inventory.refresh_min = 21600 # 6 hours
