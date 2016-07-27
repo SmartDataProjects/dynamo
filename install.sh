@@ -31,4 +31,8 @@ chown root:$(id -gn $USER) $DYNAMO_DATADIR
 # WEB INTERFACE
 $DYNAMO_BASE/web/install.sh
 
+# POLICIES
+[ -e $DYNAMO_BASE/policies ] || git clone https://github.com/SmartDataProjects/dynamo-policies.git $DYNAMO_BASE/policies
+ln -s $DYNAMO_BASE/policies/detoxpolicies $DYNAMO_BASE/lib/detox/policies
+
 sed -i "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/etc/crontab | crontab

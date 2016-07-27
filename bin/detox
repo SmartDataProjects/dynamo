@@ -13,9 +13,9 @@ from common.demand import DemandManager
 import common.interface.classes as classes
 from detox.main import Detox
 from detox.policy import Policy
-from detox.rules import make_stack, BelongsTo
+from detox.policies.site import NonzeroQuota, GroupOccupancy
+from detox.policies.replica import BelongsTo
 import detox.configuration as detox_config
-
 import common.configuration as config
 
 from argparse import ArgumentParser
@@ -29,7 +29,7 @@ parser.add_argument('--access-history', '-a', metavar = 'CLASS', dest = 'access_
 parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', default = '', help = 'LockInterface class.')
 parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls', default = '', help = 'DeletionInterface class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
-parser.add_argument('--policy-stack', '-p', metavar = 'STACKS', dest = 'stacks', nargs = '+', default = ['AnalysisOps:Routine():iterative', 'DataOps:Lock():static'], help = 'Name of the policy stack. Syntax is <group>:<stack name>[(<init argument>)]:strategy or <group>:<path>.py:strategy. Options for stack names are\n TargetFraction (argument threshold)\n List (argument paths)\n The python file should contain a list of Policies with the same name as the file. Recognized strategies are "iterative", "static", and "greedy".')
+parser.add_argument('--policy-stack', '-p', metavar = 'STACKS', dest = 'stacks', nargs = '+', default = ['AnalysisOps:minimum_copies:iterative', 'DataOps:locked:static'], help = 'Name of the policy stack. Syntax is <group>:<path>.py:strategy. The python file should contain variables "default" and "rule_stack". If a relative path is provided, a file is searched for in policies/detoxstacks. Recognized strategies are "iterative", "static", and "greedy".')
 parser.add_argument('--site', '-c', metavar = 'SITE', dest = 'included_sites', nargs = '+', default = [], help = 'List of sites to include. If not specified, all sites in inventory are included. Wildcard is allowed.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
@@ -105,25 +105,15 @@ for stack_spec in args.stacks:
 
     partitions.append(partition)
 
-    if stack_name.endswith('.py'):
-        # argument is a python file that defines the following variables:
-        #  default: default decision
-        #  rule_stack: a list of rules
-        
-        execfile(stack_name)
+    if not stack_name.endswith('.py'):
+        stack_name += '.py'
 
-    else:
-        if '(' in stack_name:
-            name_with_args = stack_name
-            stack_name = name_with_args[:name_with_args.find('(')]
-            stack_args = eval(name_with_args[name_with_args.find('('):]) # evaluate the entire "(arg)" as python code
-            if type(stack_args) is not tuple:
-                stack_args = (stack_args,)
+    # if the file does not exist, it's probably in policies/detoxstacks
+    if not os.path.exists(stack_name):
+        stack_name = os.environ['DYNAMO_BASE'] + '/policies/detoxstacks/' + stack_name
 
-        else:
-            stack_args = tuple()
-
-        rule_stack, default = make_stack(stack_name)(*stack_args)
+    # imports "default" and "rule_stack"
+    execfile(stack_name)
 
     # currently partition = group
     group = inventory_manager.groups[partition]
@@ -132,21 +122,11 @@ for stack_spec in args.stacks:
     if strategy == Policy.ST_ITERATIVE or strategy == Policy.ST_STATIC:
         # Return true if the site is overused for a given partition.
         # Currently partition and group names are identical.
-        if included_sites is None: # all sites are considered
-            site_requirement = lambda site, partition, initial: site.group_quota(inventory_manager.groups[partition]) != 0 and \
-                site.storage_occupancy(inventory_manager.groups[partition]) > (detox_config.threshold_occupancy if initial else config.target_site_occupancy)
-        else:
-            site_requirement = lambda site, partition, initial: included_sites.match(site.name) and \
-                site.group_quota(inventory_manager.groups[partition]) != 0 and \
-                site.storage_occupancy(inventory_manager.groups[partition]) > (detox_config.threshold_occupancy if initial else config.target_site_occupancy)
+        site_requirement = GroupOccupancy(inventory_manager.groups, included_sites)
 
     elif strategy == Policy.ST_GREEDY:
-        # Always return true
-        if included_sites is None: # all sites are considered
-            site_requirement = lambda site, partition, initial: site.group_quota(inventory_manager.groups[partition]) != 0
-        else:
-            site_requirement = lambda site, partition, initial: included_sites.match(site.name) and \
-                site.group_quota(inventory_manager.groups[partition]) != 0
+        # True as long as the group has a nonzero quota
+        site_requirement = NonzeroQuota(inventory_manager.groups, included_sites)
 
     policy = Policy(default, rule_stack, strategy, quotas, partition = partition, site_requirement = site_requirement, replica_requirement = BelongsTo(group))
 
