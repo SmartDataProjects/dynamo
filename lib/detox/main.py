@@ -79,7 +79,7 @@ class Detox(object):
             # take snapshots of quotas if updated
             self.history.save_quotas(run_number, partition, policy.quotas, self.inventory_manager)
     
-            logger.info('Identfying target sites.')
+            logger.info('Identifying target sites.')
     
             # Ask each site if deletion should be triggered
             target_sites = set()
@@ -87,7 +87,7 @@ class Detox(object):
                 if policy.need_deletion(site, initial = True):
                     target_sites.add(site)
     
-            logger.info('Identfying dataset replicas in the partition.')
+            logger.info('Identifying dataset replicas in the partition.')
     
             # "partition" as a verb - selecting only the blockreps in the partition
             all_replicas = policy.partition_replicas(self.inventory_manager.datasets.values())
