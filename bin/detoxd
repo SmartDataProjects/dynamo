@@ -73,7 +73,7 @@ do
       exit 0
     fi
 
-    $DYNAMO_BASE/bin/siteinfo --out /home/$USER/public_html
+    $DYNAMO_BASE/bin/siteinfo --out /home/$USER/public_html/IntelROCCS/Detox
 
     echo ""
 
