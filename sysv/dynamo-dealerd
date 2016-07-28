@@ -1,12 +1,12 @@
 #!/bin/bash
 # --------------------------------------------------------------------------------------------------
-# dealerd       Startup script for the dealer Server
+# dynamo-dealerd       Startup script for the dealer Server
 #
 # chkconfig: - 70 15
 # description: Dealer is a process that will distribute popular datasets in CMS.
 #
 # processname: dealerd
-# pidfile:     /var/run/dealerd.pid
+# pidfile:     /var/run/dynamo-dealerd.pid
 # --------------------------------------------------------------------------------------------------
 # Source function library.
 . /etc/rc.d/init.d/functions
@@ -15,7 +15,8 @@
 # mod_ssl needs a pass-phrase from the user.
 INITLOG_ARGS=""
 
-PROG=dynamo-dealerd
+PROG='_DYNAMO_BASE_/bin/dealer(| .*)$' # pgrep pattern of the main program
+EXECUTABLE=dealerd
 TARGET=_DYNAMO_BASE_/bin/dealerd
 
 # Path to the running script, server binary, and short-form for messages.
@@ -23,40 +24,40 @@ PIDFILE=${PIDFILE-/var/run/dynamo-dealerd.pid}
 LOCKFILE=${LOCKFILE-/var/lock/subsys/dynamo-dealerd}
 
 EXITCODE=0
-STOP_TIMEOUT=${STOP_TIMEOUT-120}
+STOP_TIMEOUT=${STOP_TIMEOUT-120} # it takes some time to restore databases
 
 # Start dealer daemon (dealerd)
 start() {
-  PIDS=$(pgrep $PROG > /dev/null)
+  PIDS=$(pgrep $EXECUTABLE > /dev/null)
   if [ "$PIDS" ]
   then
-    echo "$PROG already running: $PIDS"
+    echo "$EXECUTABLE already running: $PIDS"
     return 1
   fi
 
   if [ -e $PIDFILE ]
   then
-    echo "$PROG does not appear running but PID file $PIDFILE exists."
+    echo "$EXECUTABLE does not appear running but PID file $PIDFILE exists."
     echo "PID: $(cat $PIDFILE)"
     return 1
   fi
 
   if [ -e $LOCKFILE ]
   then
-    echo "$PROG may have just started in another session."
+    echo "$EXECUTABLE may have just started in another session."
     return 1
   fi
 
   touch $LOCKFILE
 
-  echo -n $"Starting $PROG:"
+  echo -n $"Starting $EXECUTABLE:"
   daemon --user=_USER_ --pidfile=$PIDFILE $TARGET \&
   EXITCODE=$?
   echo
 
   if [ $EXITCODE -eq 0 ]
   then
-    echo $(pgrep $PROG) > $PIDFILE
+    echo $(pgrep -n $EXECUTABLE) > $PIDFILE
   fi
 
   rm $LOCKFILE
@@ -66,10 +67,15 @@ start() {
 
 # Stop dealer daemon (dealerd)
 stop() {
-  echo -n $"Stopping $PROG:"
+  echo -n $"Stopping $EXECUTABLE:"
   killproc -p $PIDFILE -d $STOP_TIMEOUT $TARGET
   EXITCODE=$?
   echo
+  PROGPID=$(pgrep -nf $PROG)
+  if [ $PROGPID ]
+  then
+    echo "The main program ($PROGPID) will stay alive until normal termination."
+  fi
 
   [ $EXITCODE -eq 0 ] && rm -f $PIDFILE
 }
@@ -83,7 +89,7 @@ case "$1" in
     stop
     ;;
   status)
-    status -p $PIDFILE $PROG
+    status -p $PIDFILE $EXECUTABLE
     EXITCODE=$?
     ;;
   restart)
@@ -91,14 +97,14 @@ case "$1" in
     start
     ;;
   condrestart|try-restart)
-    if status -p $PIDFILE $PROG >&/dev/null
+    if status -p $PIDFILE $EXECUTABLE >&/dev/null
     then
       stop
       start
     fi
     ;;
   *)
-    echo $"Usage: $PROG {start|stop|restart|status|help}"
+    echo $"Usage: $EXECUTABLE {start|stop|restart|status|help}"
     EXITCODE=2
 esac
 

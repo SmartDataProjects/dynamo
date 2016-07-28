@@ -5,7 +5,7 @@
 # v1.0                                                                       Y.Iiyama (Apr 19, 2016)
 # --------------------------------------------------------------------------------------------------
 
-HOURS_PER_LOGFILE=10
+CYCLES_PER_LOGFILE=10
 
 export DYNAMO_BASE=$(dirname $(cd $(dirname ${BASH_SOURCE[0]}); pwd))
 source $DYNAMO_BASE/etc/profile.d/init.sh
@@ -28,22 +28,23 @@ do
     find $DYNAMO_LOGDIR -name dealer-* -mtime 1 -delete
   fi
 
-  echo "Start $HOURS_PER_LOGFILE loops; log file $LOG"
-  IHOUR=0
-  while [ $IHOUR -lt $HOURS_PER_LOGFILE ]
+  echo "Start $CYCLES_PER_LOGFILE loops; log file $LOG"
+  ICYCLE=0
+  while [ $ICYCLE -lt $CYCLES_PER_LOGFILE ]
   do
-    IHOUR=$(($IHOUR+1))
+    ICYCLE=$(($ICYCLE+1))
 
     date
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    $DYNAMO_BASE/bin/dealer --log-level INFO 2>>$LOG
+    $DYNAMO_BASE/bin/dealer --log-level INFO
 
     RC=$?
 
-    if [ $RC -ne 0 ]
+    if [ $RC -ne 0 ] && [ $RC -ne 130 ]
     then
+      # this is a crash of some sort
       TAG=crash_$(date +%s)
       echo "Abnormal termination of detox cycle. Preserving the database state to tag $TAG."
       $DYNAMO_BASE/bin/execlib common/interface/store.py snapshot --tag $TAG
@@ -52,6 +53,7 @@ do
       $DYNAMO_BASE/bin/execlib common/interface/store.py restore --tag last
       $DYNAMO_BASE/bin/execlib common/interface/store.py set_last_update 0
       $DYNAMO_BASE/bin/execlib common/interface/history.py restore last
+
       if [ -e /var/run/dynamo-detoxd.pid ]
       then
         # this process is run as a daemon - send email and continue
@@ -66,10 +68,13 @@ do
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py clean last
 
-    $DYNAMO_BASE/bin/siteinfo.py --out /home/$USER/public_html
+    if [ $RC -eq 130 ]
+    then
+      # case: dynamo killed with SIGINT - you were probably running this script in a terminal and pressed Ctrl-C
+      exit 0
+    fi
 
-    # SIGINT at sleep - peaceful exit
-    [ $RC -eq 130 ] && exit 0
+    $DYNAMO_BASE/bin/siteinfo.py --out /home/$USER/public_html
 
     echo ""
 

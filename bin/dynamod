@@ -10,35 +10,6 @@ HOURS_PER_LOGFILE=12
 export DYNAMO_BASE=$(dirname $(cd $(dirname ${BASH_SOURCE[0]}); pwd))
 source $DYNAMO_BASE/etc/profile.d/init.sh
 
-cleanup() {
-  PID=$1
-
-  if [ -e /proc/$PID ]
-  then
-    echo "Dynamo process $PID is not dead. Please kill it by hand."
-  fi
-
-  if [ "$2" = "crash" ]
-  then
-    TAG=crash_$(date +%s)
-    echo "Abnormal termination of dynamo cycle. Preserving the database state to tag $TAG."
-    $DYNAMO_BASE/bin/execlib common/interface/store.py snapshot --tag $TAG
-    $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot $TAG
-    echo "Restoring the database state."
-    $DYNAMO_BASE/bin/execlib common/interface/store.py restore --tag last
-    $DYNAMO_BASE/bin/execlib common/interface/store.py set_last_update 0
-    $DYNAMO_BASE/bin/execlib common/interface/history.py restore last
-
-    # this process is run as a daemon - send email and continue
-    echo "Help! Dynamo failed. Return code $RC. Check log $LOG on $HOSTNAME." | mailx -s "Dynamo error" t2lab@mit.edu
-    echo "Re-entering cycle.. (see next log)"
-  else
-    echo "Dynamod is killed. Please clean up after yourself."
-    echo "Exiting with code 1."
-    exit 1
-  fi
-}
-
 exec 0<&-
 
 while true
@@ -82,21 +53,43 @@ do
     fi
 
     date
-  
+
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    $DYNAMO_BASE/bin/dynamo $APPLICATIONS $OPTIONS --detox-policy-stack 'AnalysisOps:Routine():iterative' 'DataOps:Lock():static' --log-level INFO &
-    PID=$!
+    $DYNAMO_BASE/bin/dynamo $APPLICATIONS $OPTIONS --detox-policy-stack 'AnalysisOps:Routine():iterative' 'DataOps:Lock():static' --log-level INFO
+    RC=$?
 
-    trap "kill -INT $PID; cleanup $PID" SIGINT SIGTERM
+    if [ $RC -ne 0 ] && [ $RC -ne 130 ]
+    then
+      # this is a crash of some sort
+      TAG=crash_$(date +%s)
+      echo "Abnormal termination of dynamo cycle. Preserving the database state to tag $TAG."
+      $DYNAMO_BASE/bin/execlib common/interface/store.py snapshot --tag $TAG
+      $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot $TAG
+      echo "Restoring the database state."
+      $DYNAMO_BASE/bin/execlib common/interface/store.py restore --tag last
+      $DYNAMO_BASE/bin/execlib common/interface/store.py set_last_update 0
+      $DYNAMO_BASE/bin/execlib common/interface/history.py restore last
 
-    wait $PID
-
-    [ $? -eq 0 ] || cleanup $PID crash
-
-    trap - SIGINT SIGTERM
+      if [ -e /var/run/dynamod.pid ]
+      then
+        # this process is run as a daemon - send email and continue
+        echo "Help! Dynamo failed. Return code $RC. Check log $LOG on $HOSTNAME." | mailx -s "Dynamo error" t2lab@mit.edu
+        echo "Re-entering cycle.. (see next log)"
+        break
+      else
+        echo "Exiting with code $RC."
+        exit $RC
+      fi
+    fi
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py clean last
+
+    if [ $RC -eq 130 ]
+    then
+      # case: dynamo killed with SIGINT - you were probably running this script in a terminal and pressed Ctrl-C
+      exit 0
+    fi
 
     $DYNAMO_BASE/bin/siteinfo.py --out /home/$USER/public_html
   

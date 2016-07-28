@@ -15,8 +15,9 @@
 # mod_ssl needs a pass-phrase from the user.
 INITLOG_ARGS=""
 
-PROG=dynamod
-TARGET=_DYNAMO_BASE_/bin/dynamod
+PROG='_DYNAMO_BASE_/bin/dynamo(| .*)$' # pgrep pattern of the main program
+EXECUTABLE=dynamod # executable this script spawns
+TARGET=_DYNAMO_BASE_/bin/dynamod # full path to the executable
 
 # Path to the running script, server binary, and short-form for messages.
 PIDFILE=${PIDFILE-/var/run/dynamod.pid}
@@ -27,36 +28,36 @@ STOP_TIMEOUT=${STOP_TIMEOUT-120} # it takes some time to restore databases
 
 # Start dynamo daemon (dynamod)
 start() {
-  PIDS=$(pgrep -n $PROG > /dev/null)
+  PIDS=$(pgrep -n $EXECUTABLE > /dev/null)
   if [ "$PIDS" ]
   then
-    echo "$PROG already running: $PIDS"
+    echo "$EXECUTABLE already running: $PIDS"
     return 1
   fi
 
   if [ -e $PIDFILE ]
   then
-    echo "$PROG does not appear running but PID file $PIDFILE exists."
+    echo "$EXECUTABLE does not appear running but PID file $PIDFILE exists."
     echo "PID: $(cat $PIDFILE)"
     return 1
   fi
 
   if [ -e $LOCKFILE ]
   then
-    echo "$PROG may have just started in another session."
+    echo "$EXECUTABLE may have just started in another session."
     return 1
   fi
 
   touch $LOCKFILE
 
-  echo -n $"Starting $PROG:"
+  echo -n $"Starting $EXECUTABLE:"
   daemon --user=_USER_ --pidfile=$PIDFILE $TARGET \&
   EXITCODE=$?
   echo
 
   if [ $EXITCODE -eq 0 ]
   then
-    echo $(pgrep -n $PROG) > $PIDFILE
+    echo $(pgrep -n $EXECUTABLE) > $PIDFILE
   fi
 
   rm $LOCKFILE
@@ -66,10 +67,15 @@ start() {
 
 # Stop dynamo daemon (dynamod)
 stop() {
-  echo -n $"Stopping $PROG:"
+  echo -n $"Stopping $EXECUTABLE:"
   killproc -p $PIDFILE -d $STOP_TIMEOUT $TARGET
   EXITCODE=$?
   echo
+  PROGPID=$(pgrep -nf $PROG)
+  if [ $PROGPID ]
+  then
+    echo "The main program ($PROGPID) will stay alive until normal termination."
+  fi
 
   [ $EXITCODE -eq 0 ] && rm -f $PIDFILE
 }
@@ -83,7 +89,7 @@ case "$1" in
     stop
     ;;
   status)
-    status -p $PIDFILE $PROG
+    status -p $PIDFILE $EXECUTABLE
     EXITCODE=$?
     ;;
   restart)
@@ -91,14 +97,14 @@ case "$1" in
     start
     ;;
   condrestart|try-restart)
-    if status -p $PIDFILE $PROG >&/dev/null
+    if status -p $PIDFILE $EXECUTABLE >&/dev/null
     then
       stop
       start
     fi
     ;;
   *)
-    echo $"Usage: $PROG {start|stop|restart|status|help}"
+    echo $"Usage: $EXECUTABLE {start|stop|restart|status|help}"
     EXITCODE=2
 esac
 
