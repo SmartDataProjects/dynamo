@@ -514,7 +514,12 @@ class DatasetReplica(object):
         for br in self.block_replicas:
             counts[br.group] += 1
 
+        if len(counts) == 1:
+            # blocks solely owned by "None"
+            return counts.keys()[0]
+
         order = sorted(counts.items(), key = lambda (g, c): c, reverse = True)
+
         if order[0][1] > order[1][1]:
             return order[0][0]
         else:
