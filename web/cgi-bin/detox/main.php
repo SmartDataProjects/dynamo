@@ -114,6 +114,27 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     }
     $stmt->close();
 
+    $statuses = array();
+    $stmt = $history_db->prepare('SELECT `site_id`, `active`, `status` FROM `site_status_snapshots` WHERE `run_id` <= ? ORDER BY `run_id` DESC');
+    $stmt->bind_param('i', $cycle);
+    $stmt->bind_result($site_id, $active, $status);
+    $stmt->execute();
+    while ($stmt->fetch()) {
+      if (array_key_exists($site_id, $statuses))
+        continue;
+
+      if ($status == 'morgue' || $status == 'waitroom' || $active == 0)
+        $statuses[$site_id] = 0;
+      else if ($active == 2)
+        $statuses[$site_id] = 2;
+      else
+        $statuses[$site_id] = 1;
+
+      if (count($statuses) == count($data['sites']))
+        break;
+    }
+    $stmt->close();
+
     $site_total = array('protect' => array(), 'keep' => array(), 'delete' => array(), 'protectPrev' => array(), 'keepPrev' => array());
 
     // existing replicas
@@ -159,6 +180,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
               'id' => $id,
               'name' => $site_names[$id],
               'quota' => $quotas[$id],
+              'status' => $statuses[$id],
               'protect' => 0. + $site_total['protect'][$id],
               'keep' => 0. + $site_total['keep'][$id],
               'delete' => 0. + $site_total['delete'][$id],

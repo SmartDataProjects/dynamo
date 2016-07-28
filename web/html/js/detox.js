@@ -217,7 +217,7 @@ function displaySummary(data)
         yscale.domain([0, 1.25])
             .range([ymax, 0]);
 
-        ynorm = function (d, key) { if (d.quota == 0.) return 0.; else return ymax - yscale(d[key] / d.quota); };
+        ynorm = function (d, key) { if (d.quota == 0.) return 0.; else return ymax - yscale(d[key] / d.quota); }
     }
     else {
         eye.attr('cy', 7);
@@ -230,7 +230,7 @@ function displaySummary(data)
         yscale.domain([0, d3.max(data.siteData, function (d) { return Math.max(d.protect + d.keep + d.delete, d.protectPrev + d.keepPrev) / 1000.; }) * 1.25])
             .range([ymax, 0]);
 
-        ynorm = function (d, key) { return (ymax - yscale(d[key])) / 1000.; };
+        ynorm = function (d, key) { return (ymax - yscale(d[key])) / 1000.; }
     }
 
     var xaxis = d3.svg.axis()
@@ -247,10 +247,18 @@ function displaySummary(data)
         .attr('transform', 'translate(' + gxnorm(xorigin) + ',' + yorigin + ')')
         .call(xaxis);
 
+    var siteStatus = {};
+    for (var s in data.siteData)
+        siteStatus[data.siteData[s].name] = data.siteData[s].status;
+
     gxaxis.selectAll('.tick text')
         .attr({'font-size': 2, 'dx': gxnorm(-0.2), 'dy': -1.4, 'transform': 'rotate(300 0,0)'})
         .attr('onclick', function (siteName) { return 'd3.select(\'#' + siteName + '\').node().scrollIntoView();'; })
-        .style({'text-anchor': 'end', 'cursor': 'pointer'});
+        .style({'text-anchor': 'end', 'cursor': 'pointer'})
+        .each(function (siteName) {
+                if (siteStatus[siteName] == 0)
+                    d3.select(this).attr('fill', '#808080');
+            });
 
     gxaxis.select('path.domain')
         .attr({'fill': 'none', 'stroke': 'black', 'stroke-width': 0.2});
@@ -275,14 +283,22 @@ function displaySummary(data)
         content.append('line').classed('refMarker', true)
             .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax / 1.25, 'y2': -ymax / 1.25});
 
-        content.append('line').classed('refMarker', true)
-            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 0.5 / 1.25, 'y2': -ymax * 0.5 / 1.25, 'stroke-dasharray': '3,3'});
+        content.selectAll('.gridLine')
+            .data([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.1])
+            .enter()
+            .append('line').classed('gridLine', true)
+            .attr({'x1': 0, 'x2': gxnorm(xmax), 'stroke-dasharray': '0.2,0.2', 'stroke-width': 0.2, 'stroke': 'silver'})
+            .attr('y1', function (d) { return -ymax * d / 1.25; })
+            .attr('y2', function (d) { return -ymax * d / 1.25; });
 
         content.append('line').classed('refMarker', true)
-            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 0.9 / 1.25, 'y2': -ymax * 0.9 / 1.25, 'stroke-dasharray': '1,1'});
+            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 1 / 1.25, 'y2': -ymax * 1 / 1.25, 'stroke-width': 0.2, 'stroke': 'black'});
 
         content.append('line').classed('refMarker', true)
-            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 0.85 / 1.25, 'y2': -ymax * 0.85 / 1.25, 'stroke-dasharray': '2,1'});
+            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 0.9 / 1.25, 'y2': -ymax * 0.9 / 1.25, 'stroke-width': 0.2, 'stroke': 'darkorange'});
+
+        content.append('line').classed('refMarker', true)
+            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 0.85 / 1.25, 'y2': -ymax * 0.85 / 1.25, 'stroke-width': 0.2, 'stroke': 'silver'});
     }
     else {
         gyaxis.append('text')
@@ -302,7 +318,13 @@ function displaySummary(data)
 
     barPrev.append('rect').classed('protectPrev barComponent', true)
         .attr('transform', function (d) { return 'translate(0,-' + ynorm(d, 'protectPrev') + ')'; })
-        .attr('height', function (d) { return ynorm(d, 'protectPrev')});
+        .attr('height', function (d) { return ynorm(d, 'protectPrev')})
+        .each(function (d) {
+                if (d.protectPrev > d.quota)
+                    this.style.fill = '#ff8888';
+                else if (d.protectPrev > d.quota * 0.9)
+                    this.style.fill = '#ffbb88';
+            });
 
     barPrev.append('rect').classed('keepPrev barComponent', true)
         .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d, 'protectPrev') + ynorm(d, 'keepPrev')) + ')'; })
@@ -317,7 +339,13 @@ function displaySummary(data)
 
     barNew.append('rect').classed('protect barComponent', true)
         .attr('transform', function (d) { return 'translate(0,-' + ynorm(d, 'protect') + ')'; })
-        .attr('height', function (d) { return ynorm(d, 'protect')});
+        .attr('height', function (d) { return ynorm(d, 'protect')})
+        .each(function (d) {
+                if (d.protect > d.quota)
+                    this.style.fill = '#ff0000';
+                else if (d.protectPrev > d.quota * 0.9)
+                    this.style.fill = '#ff8800';
+            });
 
     barNew.append('rect').classed('keep barComponent', true)
         .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d, 'protect') + ynorm(d, 'keep')) + ')'; })
@@ -330,12 +358,26 @@ function displaySummary(data)
     content.selectAll('.barComponent')
         .attr('width', xspace * 0.3);
 
+    content.selectAll('.siteMask')
+        .data(data.siteData)
+        .enter().append('g').classed('siteMask', true)
+        .attr('transform', function (d) { return 'translate(' + (xmapping(d.name) - xspace * 0.325) + ',0)'; })
+        .each(function (d) {
+                if (d.status == 0) {
+                    var mask = d3.select(this);
+                    var height = ynorm(d, 'protect') + ynorm(d, 'keep') + ynorm(d, 'delete');
+                    mask.append('rect')
+                        .attr('transform', 'translate(0,-' + height + ')')
+                        .attr({'width': xspace * 0.65, 'height': height, 'fill': 'dimgrey', 'fill-opacity': 0.5});
+                }
+            });
+
     var lineLegend = summaryGraph.append('g').classed('lineLegend', true)
         .attr('transform', 'translate(' + gxnorm(56) + ', 0)');
 
     var lineLegendContents =
-        [{'title': 'Deletion trigger', 'dasharray': '1,1', 'position': '(0,3.5)'},
-         {'title': 'Target occupancy', 'dasharray': '2,1', 'position': '(0,7.5)'}];
+        [{'title': 'Deletion trigger', 'stroke': 'darkorange', 'position': '(0,3.5)'},
+         {'title': 'Target occupancy', 'stroke': 'silver', 'position': '(0,7.5)'}];
 
     var lineLegendEntries = lineLegend.selectAll('g')
         .data(lineLegendContents)
@@ -345,8 +387,8 @@ function displaySummary(data)
 
     lineLegendEntries.append('line')
         .classed('refMarker', true)
-        .attr({'x1': 0, 'x2': gxnorm(2), 'y1': 1, 'y2': 1})
-        .attr('stroke-dasharray', function (d) { return d.dasharray; });
+        .attr({'x1': 0, 'x2': gxnorm(2), 'y1': 1, 'y2': 1, 'stroke-width': 0.2})
+        .attr('stroke', function (d) { return d.stroke; });
 
     lineLegendEntries.append('text')
         .attr({'font-size': 2, 'dx': gxnorm(3), 'dy': 2})
