@@ -122,11 +122,11 @@ for stack_spec in args.stacks:
     if strategy == Policy.ST_ITERATIVE or strategy == Policy.ST_STATIC:
         # Return true if the site is overused for a given partition.
         # Currently partition and group names are identical.
-        site_requirement = GroupOccupancy(inventory_manager.groups, included_sites)
+        site_requirement = GroupOccupancy(group, included_sites)
 
     elif strategy == Policy.ST_GREEDY:
         # True as long as the group has a nonzero quota
-        site_requirement = NonzeroQuota(inventory_manager.groups, included_sites)
+        site_requirement = NonzeroQuota(group, included_sites)
 
     policy = Policy(default, rule_stack, strategy, quotas, partition = partition, site_requirement = site_requirement, replica_requirement = BelongsTo(group))
 
