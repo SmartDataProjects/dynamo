@@ -86,7 +86,7 @@ do
     if [[ $APPLICATIONS =~ detox ]]
     then
       # test run to produce sites info
-      $DYNAMO_BASE/bin/dynamo $APPLICATIONS --test-run --detox-policy-stack 'caf-comm:minimum_copies:static' 'caf-alca:minimum_copies:static' 'local:minimum_copies:iterative' 'IB-RelVal:minimum_copies:static' --log-level INFO
+      $DYNAMO_BASE/bin/dynamo $APPLICATIONS --test-run --detox-policy-stack 'caf-comm:minimum_copies:static' 'caf-alca:minimum_copies:static' 'local:minimum_copies:iterative' 'IB RelVal:minimum_copies:static' --log-level INFO
     fi
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py clean last

@@ -19,8 +19,12 @@ history.acquire_lock()
 
 output = open(args.out_path + '/SitesInfo.txt', 'w')
 
+output.write('#\n')
+output.write('#- S I T E S  I N F O R M A T I O N ----\n')
+output.write('#\n')
+
 try:
-    for partition in ['AnalysisOps', 'DataOps']:
+    for partition in ['AnalysisOps', 'DataOps', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']:
         if args.cycle == 0:
             cycle = history.get_latest_deletion_run(partition = partition)
         else:
@@ -32,10 +36,7 @@ try:
     
         output.write('#- %s\n' % time.strftime('%Y-%m-%d %H:%M', time.localtime(timestamp)))
         output.write('#\n')
-        output.write('#- S I T E S  I N F O R M A T I O N ----\n')
-        output.write('#\n')
-        output.write('#\n')
-        output.write('#- DDM Partition: ' + partition + ' -\n')
+        output.write('#- DDM Partition: ' + partition.replace(' ', '-') + ' -\n')
         output.write('#\n')
         output.write('#  Active Quota[TB] Taken[TB] LastCopy[TB] SiteName\n')
         output.write('#------------------------------------------------------\n')
@@ -54,7 +55,7 @@ try:
             try:
                 protect, delete, keep = sites_usage[site]
             except KeyError:
-                protect, delete, keep = (0., 0., 0.)
+                continue
 
             used = protect + delete + keep
             
@@ -102,7 +103,7 @@ try:
             (' ', ' ', used_fraction * 100., protect_fraction * 100.))
 
         output.write('#------------------------------------------------------\n')
-        output.write('\n')
+        output.write('#\n')
         
 finally:
     history.release_lock()
