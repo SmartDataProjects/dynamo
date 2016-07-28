@@ -208,7 +208,7 @@ class Detox(object):
             self.history.close_deletion_run(run_number)
 
         finally:
-            if os.path.exists(detox_config.activity_indicator):
+            if not config.read_only and not is_test and os.path.exists(detox_config.activity_indicator):
                 os.remove(detox_config.activity_indicator)
 
         logger.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
