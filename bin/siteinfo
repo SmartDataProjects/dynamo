@@ -29,17 +29,25 @@ try:
             cycle = history.get_latest_deletion_run(partition = partition)
         else:
             cycle = args.cycle
-    
-        timestamp = history.get_run_timestamp(cycle)
-        sites_info = history.get_sites(cycle)
-        sites_usage = history.get_deletion_decisions(cycle)
-    
+
+        if cycle == 0:
+            timestamp = 0
+        else:
+            timestamp = history.get_run_timestamp(cycle)
+   
         output.write('#- %s\n' % time.strftime('%Y-%m-%d %H:%M', time.localtime(timestamp)))
         output.write('#\n')
         output.write('#- DDM Partition: ' + partition.replace(' ', '-') + ' -\n')
         output.write('#\n')
         output.write('#  Active Quota[TB] Taken[TB] LastCopy[TB] SiteName\n')
         output.write('#------------------------------------------------------\n')
+
+        if cycle == 0:
+            output.write('# N/A\n')
+            continue
+
+        sites_info = history.get_sites(cycle)
+        sites_usage = history.get_deletion_decisions(cycle)
 
         quota_total = 0
         used_total = 0.
