@@ -38,7 +38,7 @@ do
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    $DYNAMO_BASE/bin/detox --policy-stack 'AnalysisOps:Routine():iterative' --force-inventory-update --log-level INFO
+    $DYNAMO_BASE/bin/detox --force-inventory-update --log-level INFO
     RC=$?
 
     if [ $RC -ne 0 ] && [ $RC -ne 130 ]
@@ -73,7 +73,7 @@ do
       exit 0
     fi
 
-    $DYNAMO_BASE/bin/siteinfo.py --out /home/$USER/public_html
+    $DYNAMO_BASE/bin/siteinfo --out /home/$USER/public_html
 
     echo ""
 

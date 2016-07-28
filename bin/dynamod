@@ -56,7 +56,7 @@ do
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    $DYNAMO_BASE/bin/dynamo $APPLICATIONS $OPTIONS --detox-policy-stack 'AnalysisOps:Routine():iterative' 'DataOps:Lock():static' --log-level INFO
+    $DYNAMO_BASE/bin/dynamo $APPLICATIONS $OPTIONS --log-level INFO
     RC=$?
 
     if [ $RC -ne 0 ] && [ $RC -ne 130 ]
@@ -83,6 +83,12 @@ do
       fi
     fi
 
+    if [[ $APPLICATIONS =~ detox ]]
+    then
+      # test run to produce sites info
+      $DYNAMO_BASE/bin/dynamo $APPLICATIONS --test-run --detox-policy-stack 'caf-comm:minimum_copies:static' 'caf-alca:minimum_copies:static' 'local:minimum_copies:iterative' 'IB-RelVal:minimum_copies:static' --log-level INFO
+    fi
+
     $DYNAMO_BASE/bin/execlib common/interface/history.py clean last
 
     if [ $RC -eq 130 ]
@@ -91,7 +97,7 @@ do
       exit 0
     fi
 
-    $DYNAMO_BASE/bin/siteinfo.py --out /home/$USER/public_html
+    $DYNAMO_BASE/bin/siteinfo --out /home/$USER/public_html
   
     echo ""
 
