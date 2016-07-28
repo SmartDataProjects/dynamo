@@ -341,19 +341,28 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     site.status = Site.STAT_READY
 
     def get_group_list(self, groups, filt = '*'): #override (SiteInfoSourceInterface)
-        options = []
-        if type(filt) is str and len(filt) != 0:
-            options = ['group=' + filt]
-        elif type(filt) is list:
-            options = ['group=%s' % s for s in filt]
-
         logger.info('get_group_list  Fetching the list of groups from PhEDEx')
-        source = self._make_phedex_request('groups', options)
+        source = self._make_phedex_request('groups')
+
+        if type(filt) is str:
+            filt = [filt]
         
         for entry in source:
-            if entry['name'] not in groups:
-                group = Group(entry['name'])
-                groups[entry['name']] = group
+            name = entry['name']
+            if name == 'IB RelVal':
+                name = 'IB-RelVal'
+
+            if name in groups:
+                continue
+
+            for f in filt:
+                if fnmatch.fnmatch(name, f):
+                    break
+            else:
+                continue
+
+            group = Group(name)
+            groups[name] = group
 
     def make_replica_links(self, sites, groups, datasets, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*'): #override (ReplicaInfoSourceInterface)
         """
@@ -486,8 +495,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
 
         all_sites = [site for name, site in sites.items() if fnmatch.fnmatch(name, site_filt)]
-        all_groups = [group for name, group in groups.items() if fnmatch.fnmatch(name, group_filt)]
-        gname_list = [g.name for g in all_groups]
+        gname_list = [name for name in groups.keys() if fnmatch.fnmatch(name, group_filt)]
 
         if dataset_filt == '/*/*/*' or dataset_filt == '' or dataset_filt == '*':
             items = []

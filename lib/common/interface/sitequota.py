@@ -10,7 +10,11 @@ class SiteQuotaRetriever(object):
         self._mysql = MySQL(config_file = '/etc/my.cnf', config_group = 'mysql-ddm', db = 'IntelROCCS')
 
     def get_quota(self, site, group):
-        entry = self._mysql.query('SELECT q.`SizeTb` FROM `Quotas` AS q INNER JOIN `Sites` AS s ON s.`SiteId` = q.`SiteId` INNER JOIN `Groups` AS g ON g.`GroupId` = q.`GroupId` WHERE s.`SiteName` LIKE %s AND g.`GroupName` LIKE %s ORDER BY q.`EntryDateUT` DESC LIMIT 1', site.name, group.name)
+        group_name = group.name
+        if group_name == 'IB RelVal':
+            group_name = 'IB-RelVal'
+
+        entry = self._mysql.query('SELECT q.`SizeTb` FROM `Quotas` AS q INNER JOIN `Sites` AS s ON s.`SiteId` = q.`SiteId` INNER JOIN `Groups` AS g ON g.`GroupId` = q.`GroupId` WHERE s.`SiteName` LIKE %s AND g.`GroupName` LIKE %s ORDER BY q.`EntryDateUT` DESC LIMIT 1', site.name, group_name)
 
         if len(entry) == 0:
             return 0
