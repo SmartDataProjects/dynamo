@@ -139,6 +139,7 @@ def parallel_exec(function, arguments, per_thread = 1, num_threads = config.num_
         exception = ExceptionHolder()
         thread = threading.Thread(target = target, args = (inputs, outputs, exception))
         thread.name = 'Th%d' % len(threads)
+        thread.daemon = True
 
         thread.start()
         threads.append((thread, inputs, outputs, exception))
