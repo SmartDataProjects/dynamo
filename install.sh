@@ -35,4 +35,11 @@ $DYNAMO_BASE/web/install.sh
 [ -e $DYNAMO_BASE/policies ] || git clone https://github.com/SmartDataProjects/dynamo-policies.git $DYNAMO_BASE/policies
 ln -s $DYNAMO_BASE/policies/detoxpolicies $DYNAMO_BASE/lib/detox/policies
 
+cd $DYNAMO_BASE/policies
+TAG=$(cat $DYNAMO_BASE/etc/policies.tag)
+echo "Checking out policies tag $TAG"
+git checkout $TAG 2> /dev/null
+cd - > /dev/null
+
+# CRONTAB
 sed -i "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/etc/crontab | crontab
