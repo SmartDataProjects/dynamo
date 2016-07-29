@@ -11,6 +11,6 @@ max_copy_total = 100.
 
 max_replicas = 10
 
-overflow_factor = 1.05 # Potentially copy up to target occupancy * overflow_factor
+overflow_factor = 1.1 # Potentially copy up to target occupancy * overflow_factor
 
 summary_html = '/home/cmsprod/public_html/dynamo/dealer/copy_decisions.html'
