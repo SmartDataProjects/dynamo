@@ -46,7 +46,7 @@ do
     then
       # this is a crash of some sort
       TAG=crash_$(date +%s)
-      echo "Abnormal termination of detox cycle. Preserving the database state to tag $TAG."
+      echo "Abnormal termination of dealer cycle. Preserving the database state to tag $TAG."
       $DYNAMO_BASE/bin/execlib common/interface/store.py snapshot --tag $TAG
       $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot $TAG
       echo "Restoring the database state."
@@ -54,10 +54,10 @@ do
       $DYNAMO_BASE/bin/execlib common/interface/store.py set_last_update 0
       $DYNAMO_BASE/bin/execlib common/interface/history.py restore last
 
-      if [ -e /var/run/dynamo-detoxd.pid ]
+      if [ -e /var/run/dynamo-dealerd.pid ]
       then
         # this process is run as a daemon - send email and continue
-        echo "Help! Detox failed. Return code $RC. Check log $LOG on $HOSTNAME." | mailx -s "Dynamo error" t2lab@mit.edu
+        echo "Help! Dealer failed. Return code $RC. Check log $LOG on $HOSTNAME." | mailx -s "Dynamo error" t2lab@mit.edu
         echo "Re-entering cycle.. (see next log)"
         break
       else
@@ -78,7 +78,7 @@ do
 
     echo ""
 
-    sleep $(($DYNAMO_DETOX_INTERVAL*3600))
+    sleep $(($DYNAMO_DEALER_INTERVAL*3600))
   done
 
   # take a deep breath
