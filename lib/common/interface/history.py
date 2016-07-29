@@ -100,10 +100,10 @@ class TransactionHistoryInterface(object):
 
         if tag == 'last':
             tag = tags[0]
-            logger.info('Recovering history records from snapshot', tag)
+            logger.info('Recovering history records from snapshot %s', tag)
             
         elif tag not in tags:
-            logger.error('Cannot copy from snapshot', tag)
+            logger.error('Cannot copy from snapshot %s', tag)
             return
 
         while self._lock_depth > 0:
