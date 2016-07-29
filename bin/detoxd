@@ -38,8 +38,13 @@ do
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    $DYNAMO_BASE/bin/detox --force-inventory-update --log-level INFO
+    $DYNAMO_BASE/bin/detox --force-inventory-update --site T2_* T1_*_Disk --log-level INFO
     RC=$?
+    if [ $RC -eq 0 ]
+    then
+      $DYNAMO_BASE/bin/detox --site T0_CH_CERN_Disk --policy-stack DataOps:locked:static --log-level INFO
+      RC=$?
+    fi
 
     if [ $RC -ne 0 ] && [ $RC -ne 130 ]
     then

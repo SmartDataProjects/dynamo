@@ -4,6 +4,8 @@ import sys
 import os
 import logging
 import time
+import re
+import fnmatch
 
 from common.inventory import InventoryManager
 from common.transaction import TransactionManager
@@ -33,6 +35,7 @@ parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls'
 parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--detox-policy-stack', '-p', metavar = 'STACKS', dest = 'detox_stacks', nargs = '+', default = ['AnalysisOps:minimum_copies:iterative', 'DataOps:locked:static'], help = 'Name of the policy stack. Syntax is <group>:<path>.py:strategy. The python file should define variables default and rule_stack. Options for strategy are\n iterative\n static\n greedy.')
+parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'included_sites', nargs = '+', default = [], help = 'List of sites to include. If not specified, all sites in inventory are included. Wildcard is allowed.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to local databases.')
@@ -83,6 +86,11 @@ demand_manager = DemandManager(**kwd)
 
 history = classes.default_interface['history']()
 
+included_sites = None
+if len(args.included_sites) != 0:
+    # form a regexp (?:pattern1|pattern2|..)
+    included_sites = re.compile('(?:' + '|'.join(map(fnmatch.translate, args.included_sites)) + ')')
+
 if 'detox' in args.module:
     # Main detox object
     
@@ -120,11 +128,11 @@ if 'detox' in args.module:
         if strategy == Policy.ST_ITERATIVE or strategy == Policy.ST_STATIC:
             # Return true if the site is overused for a given partition.
             # Currently partition and group names are identical.
-            site_requirement = GroupOccupancy(group)
+            site_requirement = GroupOccupancy(group, included_sites)
 
         elif strategy == Policy.ST_GREEDY:
             # True as long as the group has a nonzero quota
-            site_requirement = NonzeroQuota(group)
+            site_requirement = NonzeroQuota(group, included_sites)
     
         policy = Policy(default, rule_stack, strategy, quotas, partition = partition, site_requirement = site_requirement, replica_requirement = BelongsTo(group))
     
@@ -136,13 +144,12 @@ if 'dealer' in args.module:
     dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history)
 
     group = inventory_manager.groups['AnalysisOps']
-    quotas = [site.group_quota(group) for site in inventory_manager.sites.values()]
     
     site_occupancy = lambda site: site.storage_occupancy(inventory_manager.groups['AnalysisOps'], physical = False)
     
     in_partition = lambda replica: replica.effective_owner().name == 'AnalysisOps'
     
-    policy = DealerPolicy(quotas, site_occupancy, partition = 'AnalysisOps', in_partition = in_partition, group = group)
+    policy = DealerPolicy(site_occupancy, partition = 'AnalysisOps', in_partition = in_partition, group = group, included_sites = included_sites)
     
     dealer.set_policy(policy)
 

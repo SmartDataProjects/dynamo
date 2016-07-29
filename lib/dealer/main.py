@@ -54,6 +54,14 @@ class Dealer(object):
         self.history.save_sites(run_number, self.inventory_manager)
         self.history.save_datasets(run_number, self.inventory_manager)
 
+        target_sites = []
+        for site in self.inventory_manager.sites.values():
+            if policy.included_sites and not policy.included_sites.match(site.name):
+                continue
+
+            if site.status == Site.STAT_READY and site.active == Site.ACT_AVAILABLE:
+                target_sites.append(site)
+
         pending_volumes = collections.defaultdict(float)
 
 # We have no regular updates of transfer status yet. Commenting out for now.
@@ -79,7 +87,7 @@ class Dealer(object):
 
         self.history.save_dataset_popularity(run_number, datasets)
 
-        copy_list = self.determine_copies(datasets, policy, pending_volumes)
+        copy_list = self.determine_copies(target_sites, datasets, policy, pending_volumes)
 
         logger.info('Committing copy.')
         self.commit_copies(run_number, policy, copy_list, is_test)
@@ -88,15 +96,13 @@ class Dealer(object):
 
         logger.info('Finished dealer run at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
 
-    def determine_copies(self, datasets, policy, pending_volumes):
+    def determine_copies(self, sites, datasets, policy, pending_volumes):
         """
         Algorithm:
         1. Compute a time-weighted sum of number of requests for the last three days.
         2. Decide the sites least-occupied by analysis activities.
         3. Copy datasets with number of requests > available replicas to empty sites.
         """
-        
-        sites = self.inventory_manager.sites.values()
         
         copy_list = dict([(site, []) for site in sites]) # site -> [new_replica]
 
@@ -147,8 +153,6 @@ class Dealer(object):
 
                 try:
                     destination_site = next(dest for dest, njob in sorted_sites if \
-                        dest.status == Site.STAT_READY and \
-                        dest.active == Site.ACT_AVAILABLE and \
                         site_occupancy[dest] < config.target_site_occupancy * dealer_config.overflow_factor and \
                         pending_volumes[dest] < dealer_config.max_copy_per_site and \
                         dest.find_dataset_replica(dataset) is None
@@ -209,7 +213,6 @@ class Dealer(object):
             for operation_id, (approved, replicas) in copy_mapping.items():
                 if approved and not is_test:
                     self.inventory_manager.store.add_dataset_replicas(replicas)
-                    self.inventory_manager.store.set_last_update()
     
                 size = sum([r.size(physical = False) for r in replicas]) # this is not group size but the total size on disk
 
@@ -265,8 +268,8 @@ if __name__ == '__main__':
 
     # create a subclass of Policy that allows direct manipulation of specific replicas.
     class DirectCopy(DealerPolicy):
-        def __init__(self, quotas, site_occupancy, partition, site_pattern, dataset_pattern):
-            DealerPolicy.__init__(self, quotas, site_occupancy, partition)
+        def __init__(self, site_occupancy, partition, site_pattern, dataset_pattern):
+            DealerPolicy.__init__(self, site_occupancy, partition)
 
             self._site_re = re.compile(fnmatch.translate(site_pattern))
             self._dataset_re = re.compile(fnmatch.translate(dataset_pattern))
@@ -275,13 +278,10 @@ if __name__ == '__main__':
 
     group = inventory_manager.groups(args.group)
     sites = inventory_manager.sites.keys()
-    quotas = {}
-    for site in sites:
-        quotas[site] = site.group_quota(group)
 
     site_occupancy = lambda site: site.storage_occupancy(group, physical = False)
 
-    direct_copy = DirectCopy(quotas, site_occupancy, args.group, site_pattern, dataset_pattern)
+    direct_copy = DirectCopy(site_occupancy, args.group, site_pattern, dataset_pattern)
 
     dealer.set_policy(policy)
 

@@ -38,7 +38,7 @@ do
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    $DYNAMO_BASE/bin/dealer --log-level INFO
+    $DYNAMO_BASE/bin/dealer --site T2_* T1_*_Disk --log-level INFO
 
     RC=$?
 

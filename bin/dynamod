@@ -32,12 +32,12 @@ do
   IHOUR=0
   while [ $IHOUR -lt $HOURS_PER_LOGFILE ]
   do
-    OPTIONS=""
+    OPTIONS="--site T2_* T1_*_Disk"
     APPLICATIONS=""
     if [ $(($IHOUR%$DYNAMO_DETOX_INTERVAL)) -eq 0 ]
     then
       APPLICATIONS="detox"
-      OPTIONS="--force-inventory-update"
+      OPTIONS=$OPTIONS" --force-inventory-update"
     fi
     if [ $(($IHOUR%$DYNAMO_DEALER_INTERVAL)) -eq 0 ]
     then
@@ -58,6 +58,11 @@ do
 
     $DYNAMO_BASE/bin/dynamo $APPLICATIONS $OPTIONS --log-level INFO
     RC=$?
+    if [[ $APPLICATIONS =~ detox ]] && [ $RC -eq 0 ]
+    then 
+      $DYNAMO_BASE/bin/dynamo detox --site T0_CH_CERN_Disk --detox-policy-stack DataOps:locked:static --log-level INFO     
+      RC=$?
+    fi
 
     if [ $RC -ne 0 ] && [ $RC -ne 130 ]
     then
