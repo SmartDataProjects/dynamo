@@ -13,15 +13,15 @@ parser.add_argument('--cycle', '-c', metavar = 'ID', dest = 'cycle', type = int,
 args = parser.parse_args()
 sys.argv = []
 
-history = MySQLHistory()
-
-history.acquire_lock()
-
 output = open(args.out_path + '/SitesInfo.txt', 'w')
 
 output.write('#\n')
 output.write('#- S I T E S  I N F O R M A T I O N ----\n')
 output.write('#\n')
+
+history = MySQLHistory()
+
+history.acquire_lock()
 
 try:
     for partition in ['AnalysisOps', 'DataOps', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']:
