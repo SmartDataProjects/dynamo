@@ -8,7 +8,7 @@ import sys
 import os
 
 import common.configuration as config
-from common.dataformat import DatasetReplica, BlockReplica
+from common.dataformat import Site, DatasetReplica, BlockReplica
 from policy import Policy
 import detox.configuration as detox_config
 from common.misc import timer, parallel_exec, sigint
@@ -81,9 +81,13 @@ class Detox(object):
     
             logger.info('Identifying target sites.')
     
-            # Ask each site if deletion should be triggered
+            # Ask each site if deletion should be triggered.
+            # Sites not in READY state or in IGNORE activity state are hard-coded to not be considered.
             target_sites = set()
             for site in self.inventory_manager.sites.values():
+                if site.status != Site.STAT_READY or site.active == Site.ACT_IGNORE:
+                    continue
+
                 if policy.need_deletion(site, initial = True):
                     target_sites.add(site)
     
@@ -227,6 +231,8 @@ class Detox(object):
             deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, comments = self.deletion_message, is_test = is_test)
             # deletion_mapping .. {deletion_id: (approved, [replicas])}
 
+            total_size = 0
+
             for deletion_id, (approved, replicas) in deletion_mapping.items():
                 if approved and not is_test:
                     for replica in replicas:
@@ -236,15 +242,14 @@ class Detox(object):
                             # second arg is False because block replicas must be all gone by now
                             self.inventory_manager.store.delete_datasetreplica(replica, delete_blockreplicas = False)
 
-                    self.inventory_manager.store.set_last_update()
-
                 size = sum([r.size() for r in replicas])
 
                 self.history.make_deletion_entry(run_number, site, deletion_id, approved, [r.dataset for r in replicas], size)
+                total_size += size
 
             sigint.unblock()
 
-            logger.info('Done deleting %d replicas from %s.', len(replica_list), site.name)
+            logger.info('Done deleting %d replicas (%.1f TB) from %s.', len(replica_list), total_size * 1.e-12, site.name)
 
     def select_replicas(self, policy, candidate_list, protection_list):
         """
