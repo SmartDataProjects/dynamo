@@ -235,7 +235,10 @@ class MySQLHistory(TransactionHistoryInterface):
             
             checked_sites.append(site_id)
 
-            site = inventory.sites[site_name]
+            try:
+                site = inventory.sites[site_name]
+            except KeyError:
+                continue
 
             if quota != quotas[site]:
                 quota_updates.append((site_id, partition_id, run_number, quotas[site]))
