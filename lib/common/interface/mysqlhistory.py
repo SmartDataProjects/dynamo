@@ -152,7 +152,11 @@ class MySQLHistory(TransactionHistoryInterface):
             if site_name in update_status or site_name in keep_status:
                 continue
 
-            site = inventory.sites[site_name]
+            try:
+                site = inventory.sites[site_name]
+            except KeyError:
+                continue
+
             if status == site.status and active == site.active:
                 keep_status.append(site_name)
             else:
