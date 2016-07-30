@@ -18,7 +18,9 @@ class PopDB(AccessHistoryInterface):
         self._popdb_interface = RESTService(url_base)
 
     def get_local_accesses(self, site, date): #override
-        if site.name.startswith('T1') and site.name.count('_') > 2:
+        if site.name.startswith('T0'):
+            return []
+        elif site.name.startswith('T1') and site.name.count('_') > 2:
             nameparts = site.name.split('_')
             sitename = '_'.join(nameparts[:3])
         else:
