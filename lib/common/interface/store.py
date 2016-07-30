@@ -74,6 +74,8 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
+        return tag
+
     def remove_snapshot(self, tag = '', newer_than = 0, older_than = 0):
         if not tag and older_than == 0:
             older_than = time.time()

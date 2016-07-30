@@ -101,8 +101,7 @@ class InventoryManager(object):
         try:
             if make_snapshot:
                 logger.info('Making a snapshot of inventory.')
-                # Make a snapshot (older snapshots cleaned by an independent daemon)
-                self.store.make_snapshot()
+                snapshot_tag = self.store.make_snapshot()
 
             if load_first and len(self.sites) == 0:
                 logger.info('Loading data from local storage.')
@@ -150,6 +149,10 @@ class InventoryManager(object):
             # Save inventory data to persistent storage
             # Datasets and groups with no replicas are removed
             self.store.save_data(self.sites.values(), self.groups.values(), self.datasets.values())
+
+            if make_snapshot:
+                logger.info('Removing the snapshot.')
+                self.store.remove_snapshot(snapshot_tag)
 
         finally:
             # Lock is released even in case of unexpected errors
