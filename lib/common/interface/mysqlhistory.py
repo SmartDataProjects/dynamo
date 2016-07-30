@@ -191,7 +191,10 @@ class MySQLHistory(TransactionHistoryInterface):
             if site_name in sites_dict:
                 continue
 
-            site_quota = next(q for n, q in quota if n == site_name)
+            try:
+                site_quota = next(q for n, q in quota if n == site_name)
+            except StopIteration:
+                pass
 
             sites_dict[site_name] = (site_active, site_status, site_quota)
 
