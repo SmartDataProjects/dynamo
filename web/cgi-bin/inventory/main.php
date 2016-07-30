@@ -40,12 +40,10 @@ if (isset($_REQUEST['getGroups']) && $_REQUEST['getGroups']) {
   echo json_encode($data);
 }
 else if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
-  foreach (array('campaign', 'dataTier', 'dataset', 'site') as $const) {
-    if (isset($_REQUEST[$const]))
-      ${'const_' . $const} = str_replace('*', '%', $_REQUEST[$const]);
-    else
-      ${'const_' . $const} = '';
-  }
+  $const_campaign = str_replace('*', '%', $_REQUEST['campaign']);
+  $const_data_tier = str_replace('*', '%', $_REQUEST['dataTier']);
+  $const_dataset = str_replace('*', '%', $_REQUEST['dataset']);
+  $const_site = str_replace('*', '%', $_REQUEST['site']);
   $const_group = array();
   if (isset($_REQUEST['group'])) {
     $groups = array();

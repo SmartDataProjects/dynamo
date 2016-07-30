@@ -53,9 +53,9 @@ function fetch_size($selection, $constraint_base, $grouping) {
         $key = $matches[1];
 
       if (array_key_exists($key, $size_sums))
-        $size_sums[$matches[1]] += $size;
+        $size_sums[$key] += $size;
       else
-        $size_sums[$matches[1]] = $size;
+        $size_sums[$key] = $size;
     }
   }
   else if ($categories == 'dataTiers') {
