@@ -1,0 +1,47 @@
+#!/bin/bash
+
+if ! [ $DYNAMO_BACKUP_PATH ]
+then
+  echo "DYNAMO_BACKUP_PATH is not set."
+  exit 1
+fi
+
+RECENT=$(date -d "12 hours ago" +%Y%m%d%H%M%S)
+OLD=$(date -d "1 week ago" +%Y%m%d%H%M%S)
+
+for DB in dynamo dynamohistory
+do
+  if [ $DB = dynamo ]
+  then
+    LIB=common/interface/store.py
+  elif [ $DB = dynamohistory ]
+  then
+    LIB=common/interface/history.py
+  fi
+
+  LATEST=$(ls $DYNAMO_BACKUP_PATH/${DB}* | tail -n 1)
+  LATEST_TAG=$(echo $LATEST | sed "s/.*$DB_\(.*\)\.sql\.gz/\1/")
+  if [ $LATEST_TAG -ge $RECENT ]
+  then
+    echo "Backup ${DB}_${LATEST_TAG} was already taken recently."
+    continue
+  fi
+
+  $DYNAMO_BASE/bin/execlib $LIB lock block
+
+  sed 's/\[mysql-dynamo\]/[mysqldump]/' /etc/my.cnf > /tmp/my.dump.cnf
+
+  TAG=$(date +%Y%m%d%H%M%S)
+  mysqldump --defaults-file=/tmp/my.dump.cnf $DB > $DYNAMO_BACKUP_PATH/${DB}_${TAG}.sql
+  gzip $DYNAMO_BACKUP_PATH/${DB}_${TAG}.sql
+
+  rm /tmp/my.dump.cnf
+
+  $DYNAMO_BASE/bin/execlib $LIB release
+
+  for BACKUP in $(ls $DYNAMO_BACKUP_PATH/${DB}*)
+  do
+    BACKUP_TAG=$(echo $BACKUP | sed "s/.*$DB_\(.*\)\.sql\.gz/\1/")
+    [ $BACKUP_TAG -lt $OLD ] && rm $BACKUP
+  done
+done

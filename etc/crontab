@@ -1,4 +1,2 @@
-0 5 * * * _DYNAMO_BASE_/bin/execlib common/demand.py update accesses last now update requests last now > /var/log/dynamo/demand.log 2>&1
-0 1 * * * _DYNAMO_BASE_/bin/execlib common/interface/store.py clean --tag "<`/bin/date -d "2 days ago" +\%y\%m\%d\%H\%M\%S`" > /var/log/dynamo/store.log 2>&1
-15 * * * * _DYNAMO_BASE_/bin/execlib common/interface/history.py update > /var/log/dynamo/history.log 2>&1
-45 * * * * _DYNAMO_BASE_/bin/execlib common/interface/history.py update > /var/log/dynamo/history.log 2>&1
+15,45 * * * * _DYNAMO_BASE_/bin/execlib common/interface/history.py update > /var/log/dynamo/history.log 2>&1
+00 01 * * * _DYNAMO_BASE_/bin/backup > /var/log/dynamo/backup.log 2>&1

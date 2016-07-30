@@ -636,7 +636,10 @@ if __name__ == '__main__':
         interface.set_last_update(int(args.arguments[0]))
 
     elif args.command == 'lock':
-        interface.acquire_lock(blocking = False)
+        if len(args.arguments) > 0 and args.arguments[0] == 'block':
+            interface.acquire_lock(blocking = True)
+        else:
+            interface.acquire_lock(blocking = False)
 
     elif args.command == 'release':
         interface.release_lock(force = True)
