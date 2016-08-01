@@ -175,7 +175,8 @@ class Dealer(object):
 
                 for replica in dataset.replicas:
                     site = replica.site
-                    site_business[site] = compute_site_business(site)
+                    if site in site_business:
+                        site_business[site] = compute_site_business(site)
 
                 # check if we should stop copying
                 if len(dataset.replicas) > dealer_config.max_replicas:
