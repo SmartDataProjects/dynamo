@@ -1,0 +1,14 @@
+#!/bin/bash
+
+if ! [ $DYNAMO_BASE ]
+then
+  echo "DYNAMO_BASE not set"
+  exit 1
+fi
+
+LOCKPATH=$(python -c "from detox.configuration import *;print activity_indicator")
+
+if [ -f $LOCKPATH ]
+then
+  pgrep -f detox > /dev/null || rm $LOCKPATH
+fi
