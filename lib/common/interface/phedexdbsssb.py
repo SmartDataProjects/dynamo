@@ -349,8 +349,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         
         for entry in source:
             name = entry['name']
-            if name == 'IB RelVal':
-                name = 'IB-RelVal'
 
             if name in groups:
                 continue

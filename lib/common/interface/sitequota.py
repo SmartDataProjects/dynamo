@@ -11,6 +11,7 @@ class SiteQuotaRetriever(object):
 
     def get_quota(self, site, group):
         group_name = group.name
+        # IntelROCCS replaces IB RelVal with IB-RelVal
         if group_name == 'IB RelVal':
             group_name = 'IB-RelVal'
 
