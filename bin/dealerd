@@ -5,6 +5,8 @@
 # v1.0                                                                       Y.Iiyama (Apr 19, 2016)
 # --------------------------------------------------------------------------------------------------
 
+TEST=$1
+
 CYCLES_PER_LOGFILE=10
 
 export DYNAMO_BASE=$(dirname $(cd $(dirname ${BASH_SOURCE[0]}); pwd))
@@ -38,7 +40,7 @@ do
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    $DYNAMO_BASE/bin/dealer --site T2_* T1_*_Disk --log-level INFO
+    $DYNAMO_BASE/bin/dealer --site T2_* T1_*_Disk $TEST --log-level INFO
 
     RC=$?
 

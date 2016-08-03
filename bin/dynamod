@@ -5,6 +5,8 @@
 # v1.0                                                                       Y.Iiyama (Apr 19, 2016)
 # --------------------------------------------------------------------------------------------------
 
+TEST=$1
+
 HOURS_PER_LOGFILE=12
 
 export DYNAMO_BASE=$(dirname $(cd $(dirname ${BASH_SOURCE[0]}); pwd))
@@ -56,11 +58,11 @@ do
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    $DYNAMO_BASE/bin/dynamo $APPLICATIONS $OPTIONS --log-level INFO
+    $DYNAMO_BASE/bin/dynamo $APPLICATIONS $OPTIONS $TEST --log-level INFO
     RC=$?
     if [[ $APPLICATIONS =~ detox ]] && [ $RC -eq 0 ]
     then 
-      $DYNAMO_BASE/bin/dynamo detox --site T0_CH_CERN_Disk --detox-policy-stack DataOps:locked:static --log-level INFO     
+      $DYNAMO_BASE/bin/dynamo detox --site T0_CH_CERN_Disk --detox-policy-stack DataOps:locked:static $TEST --log-level INFO
       RC=$?
     fi
 

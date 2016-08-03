@@ -1,10 +1,7 @@
 #!/bin/bash
 
-if ! [ $DYNAMO_BACKUP_PATH ]
-then
-  echo "DYNAMO_BACKUP_PATH is not set."
-  exit 1
-fi
+DYNAMO_BASE=$(cd $(dirname $0)/..; pwd)
+source $DYNAMO_BASE/etc/profile.d/init.sh
 
 RECENT=$(date -d "12 hours ago" +%Y%m%d%H%M%S)
 OLD=$(date -d "1 week ago" +%Y%m%d%H%M%S)
@@ -19,9 +16,9 @@ do
     LIB=common/interface/history.py
   fi
 
-  LATEST=$(ls $DYNAMO_BACKUP_PATH/${DB}* | tail -n 1)
-  LATEST_TAG=$(echo $LATEST | sed "s/.*$DB_\(.*\)\.sql\.gz/\1/")
-  if [ $LATEST_TAG -ge $RECENT ]
+  LATEST=$(ls $DYNAMO_BACKUP_PATH/${DB}_* 2>/dev/null | tail -n 1)
+  LATEST_TAG=$(echo $LATEST | sed 's/.*'$DB'_\(.*\)\.sql\.gz/\1/')
+  if [ $LATEST_TAG ] && [ $LATEST_TAG -ge $RECENT ]
   then
     echo "Backup ${DB}_${LATEST_TAG} was already taken recently."
     continue
@@ -39,9 +36,9 @@ do
 
   $DYNAMO_BASE/bin/execlib $LIB release
 
-  for BACKUP in $(ls $DYNAMO_BACKUP_PATH/${DB}*)
+  for BACKUP in $(ls $DYNAMO_BACKUP_PATH/${DB}_* 2>/dev/null)
   do
-    BACKUP_TAG=$(echo $BACKUP | sed "s/.*$DB_\(.*\)\.sql\.gz/\1/")
+    BACKUP_TAG=$(echo $BACKUP | sed 's/.*'$DB'_\(.*\)\.sql\.gz/\1/')
     [ $BACKUP_TAG -lt $OLD ] && rm $BACKUP
   done
 done
