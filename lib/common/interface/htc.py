@@ -27,17 +27,22 @@ class HTCondor(object):
                 break
             except IOError:
                 attempt += 1
-                logger.error('Collector query failed: %s', str(sys.exc_info()[0]))
+                logger.warning('Collector query failed: %s', str(sys.exc_info()[0]))
                 if attempt == 10:
-                    raise
+                    logger.error('Communication with the collector failed. We have no information of the condor pool.')
+                    self._schedds = []
+                    return
 
-        self._schedds = [htcondor.Schedd(ad) for ad in schedd_ads]
+        self._schedds = []
 
-        for schedd, ad in zip(self._schedds, schedd_ads):
+        for ad in schedd_ads:
+            schedd = htcondor.Schedd(ad)
             matches = re.match('<([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):([0-9]+)', ad['ScheddIpAddr'])
             # schedd does not have an ipaddr attribute natively, but we can assign it
             schedd.ipaddr = matches.group(1)
             schedd.host = socket.getnameinfo((matches.group(1), int(matches.group(2))), socket.AF_INET)[0] # socket.getnameinfo(*, AF_INET) returns a (host, port) 2-tuple
+
+            self._schedds.append(schedd)
 
         logger.info('Found schedds: %s', ', '.join(['%s (%s)' % (schedd.host, schedd.ipaddr) for schedd in self._schedds]))
 
@@ -51,18 +56,19 @@ class HTCondor(object):
         classads = []
 
         for schedd in self._schedds:
-            attempt = 0
             while True:
                 try:
                     ads = schedd.query(constraint, attributes)
                     break
                 except IOError:
                     attempt += 1
-                    logger.info('IOError in communicating with schedd %s. Trying again.', schedd.ipaddr)
+                    logger.warning('IOError in communicating with schedd %s. Trying again.', schedd.ipaddr)
                     if attempt == 10:
-                        raise
+                        logger.error('Schedd %s did not respond.', schedd.ipaddr)
+                        ads = []
+                        break
                 
-            classads += ads
+            classads.extend(ads)
 
         logger.info('HTCondor returned %d classads', len(classads))
 
