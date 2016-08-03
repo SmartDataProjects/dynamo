@@ -15,7 +15,7 @@
 # mod_ssl needs a pass-phrase from the user.
 INITLOG_ARGS=""
 
-PROG='_DYNAMO_BASE_/bin/dealer(| .*)$' # pgrep pattern of the main program
+PROG=_DYNAMO_BASE_/bin/dealer # pgrep pattern of the main program
 EXECUTABLE=dealerd
 TARGET=_DYNAMO_BASE_/bin/dealerd
 

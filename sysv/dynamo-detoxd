@@ -16,7 +16,7 @@
 # mod_ssl needs a pass-phrase from the user.
 INITLOG_ARGS=""
 
-PROG='_DYNAMO_BASE_/bin/detox(| .*)$' # pgrep pattern of the main program
+PROG=_DYNAMO_BASE_/bin/detox # pgrep pattern of the main program
 EXECUTABLE=detoxd # executable this script spawns
 TARGET=_DYNAMO_BASE_/bin/detoxd # full path to the executable
 
