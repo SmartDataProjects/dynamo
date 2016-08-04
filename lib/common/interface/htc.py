@@ -55,6 +55,7 @@ class HTCondor(object):
 
         classads = []
 
+        attempt = 0
         for schedd in self._schedds:
             while True:
                 try:
