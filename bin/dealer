@@ -91,14 +91,16 @@ group = inventory_manager.groups['AnalysisOps']
 
 site_occupancy = lambda site: site.storage_occupancy(group, physical = False)
 
-in_partition = lambda replica: replica.effective_owner() == group
+def in_analysisops(replica):
+    owner = replica.effective_owner()
+    return owner is not None and owner.name == 'AnalysisOps'
 
 included_sites = None
 if len(args.included_sites) != 0:
     # form a regexp (?:pattern1|pattern2|..)
     included_sites = re.compile('(?:' + '|'.join(map(fnmatch.translate, args.included_sites)) + ')')
 
-policy = DealerPolicy(site_occupancy, partition = 'AnalysisOps', in_partition = in_partition, group = group, included_sites = included_sites)
+policy = DealerPolicy(site_occupancy, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, included_sites = included_sites)
 
 dealer.set_policy(policy)
 
