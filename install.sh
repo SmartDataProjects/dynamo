@@ -38,6 +38,8 @@ $DYNAMO_BASE/web/install.sh
 cd $DYNAMO_BASE/policies
 TAG=$(cat $DYNAMO_BASE/etc/policies.tag)
 echo "Checking out policies tag $TAG"
+git checkout master
+git pull origin
 git checkout $TAG 2> /dev/null
 cd - > /dev/null
 
