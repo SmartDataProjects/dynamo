@@ -33,7 +33,7 @@ $DYNAMO_BASE/web/install.sh
 
 # POLICIES
 [ -e $DYNAMO_BASE/policies ] || git clone https://github.com/SmartDataProjects/dynamo-policies.git $DYNAMO_BASE/policies
-ln -s $DYNAMO_BASE/policies/detoxpolicies $DYNAMO_BASE/lib/detox/policies
+[ -L $DYNAMO_BASE/lib/detox/policies ] || ln -s $DYNAMO_BASE/policies/detoxpolicies $DYNAMO_BASE/lib/detox/policies
 
 cd $DYNAMO_BASE/policies
 TAG=$(cat $DYNAMO_BASE/etc/policies.tag)
