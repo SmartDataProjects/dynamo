@@ -891,15 +891,21 @@ if __name__ == '__main__':
         if len(args.options) < 3 or \
                 not re.match('T[0-3]_.*', args.options[0]) or \
                 not re.match('/[^/]+/[^/]+/[^/]+', args.options[1]):
-            print 'Arguments: site dataset comment'
+            print 'Arguments: site dataset [group] comment'
             sys.exit(1)
 
-        comments = ' '.join(args.options[2:])
+        if args.options[2] in ['AnalysisOps', 'DataOps', 'FacOps']:
+            group = Group(args.options[2])
+            icom = 3
+        else:
+            group = Group('AnalysisOps')
+            icom = 2
+
+        comments = ' '.join(args.options[icom:])
 
         site = Site(args.options[0])
         dataset = Dataset(args.options[1])
         dataset_replica = DatasetReplica(dataset, site)
-        group = Group('AnalysisOps')
 
         if command == 'delete':
             interface.schedule_deletion(dataset_replica, comments = comments)
