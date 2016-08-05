@@ -2,10 +2,16 @@
 
 include_once(__DIR__ . '/../common/init_db.php');
 
+$operation = 'deletion';
+
+if (isset($TESTMODE) && $TESTMODE)
+  $operation = 'deletion_test';
+
 if (isset($_REQUEST['getPartitions']) && $_REQUEST['getPartitions']) {
   $data = array();
   
-  $stmt = $history_db->prepare('SELECT `id`, `name` FROM `partitions` ORDER BY `id`');
+  $stmt = $history_db->prepare('SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `runs` INNER JOIN `partitions` ON `partitions`.`id` = `runs`.`partition_id` WHERE `runs`.`operation` LIKE ? ORDER BY `partitions`.`id`');
+  $stmt->bind_param('s', $operation);
   $stmt->bind_result($id, $name);
   $stmt->execute();
   while ($stmt->fetch())
@@ -19,10 +25,6 @@ if (isset($_REQUEST['getPartitions']) && $_REQUEST['getPartitions']) {
 $cycle = 0;
 $timestamp = '';
 $partition_id = 0;
-$operation = 'deletion';
-
-if (isset($TESTMODE) && $TESTMODE)
-  $operation = 'deletion_test';
 
 if (isset($_REQUEST['cycleNumber'])) {
   $cycle = 0 + $_REQUEST['cycleNumber'];
