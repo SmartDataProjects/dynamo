@@ -16,7 +16,7 @@ class ReplicaInfoSourceInterface(object):
 
     def find_tape_copies(self, datasets):
         """
-        Set on_tape properties of datasets with on_tape = False.
+        Set on_tape properties of datasets with on_tape != TAPE_FULL.
         """
         pass
 

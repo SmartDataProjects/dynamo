@@ -560,8 +560,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         # Loop over datasets not on tape
         for dataset in datasets.values():
-            # on_tape is False by default
-            if dataset.on_tape or dataset.status == Dataset.STAT_IGNORED:
+            # on_tape is TAPE_NONE by default
+            if dataset.on_tape == Dataset.TAPE_FULL or dataset.status == Dataset.STAT_IGNORED:
                 continue
 
             dataset_chunks[-1].append(dataset)
@@ -578,8 +578,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         # Loop again and fill datasets
         for dataset in datasets.values():
-            if dataset.on_tape or dataset.status == Dataset.STAT_IGNORED:
+            if dataset.on_tape == Dataset.TAPE_FULL or dataset.status == Dataset.STAT_IGNORED:
                 continue
+
+            dataset.on_tape = Dataset.TAPE_NONE
 
             try:
                 on_tape = set(blocks_on_tape[dataset.name])
@@ -587,7 +589,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 continue
 
             dataset_blocks = set(b.name for b in dataset.blocks)
-            dataset.on_tape = (dataset_blocks == on_tape)
+            if dataset_blocks == on_tape:
+                dataset.on_tape = Dataset.TAPE_FULL
+            else:
+                # tape subscription is made, but is not complete
+                dataset.on_tape = Dataset.TAPE_PART
 
     def set_dataset_details(self, datasets, skip_valid = False): #override (DatasetInfoSourceInterface)
         """

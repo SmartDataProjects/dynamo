@@ -21,6 +21,7 @@ class Dataset(object):
     # Starting from 1 to play better with MySQL
     TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, 10)
     STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, 8)
+    TAPE_NONE, TAPE_PART, TAPE_FULL = range(3)
 
     @staticmethod
     def data_type_name(arg):
@@ -56,7 +57,7 @@ class Dataset(object):
         else:
             return arg
 
-    def __init__(self, name, status = STAT_UNKNOWN, on_tape = False, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0, is_open = True):
+    def __init__(self, name, status = STAT_UNKNOWN, on_tape = TAPE_NONE, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0, is_open = True):
         self.name = name
         self.status = status
         self.on_tape = on_tape
