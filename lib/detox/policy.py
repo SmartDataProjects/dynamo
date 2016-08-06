@@ -1,7 +1,74 @@
+import re
+import fnmatch
 import logging
 import collections
+import subprocess
+
+import detox.policies.expressions as expressions
 
 logger = logging.getLogger(__name__)
+
+class ConfigurationError(Exception):
+    pass
+
+class BinaryExpr(object):
+    def __init__(self, lhs, op, rhs):
+        self.lhs = lhs
+        self.rhs = rhs
+        if op == '==':
+            self._call = lambda r, d: self.lhs(r, d) == self.rhs
+        elif op == '!=':
+            self._call = lambda r, d: self.lhs(r, d) != self.rhs
+        elif op == '<':
+            self._call = lambda r, d: self.lhs(r, d) < self.rhs
+        elif op == '>':
+            self._call = lambda r, d: self.lhs(r, d) > self.rhs
+        else:
+            logger.error('Unknown operator %s', op)
+            raise ConfigurationError()
+
+    def __call__(self, r, d):
+        return self._call(r, d)
+
+class PatternMatch(object):
+    def __init__(self, lhs, pattern, match):
+        if '*' in pattern:
+            self.pattern = re.compile(fnmatch.translate(pattern))
+            if match:
+                self._call = lambda r, d: self.pattern.match(lhs(r, d)) is not None
+            else:
+                self._call = lambda r, d: self.pattern.match(lhs(r, d)) is None
+
+        else:
+            self.pattern = pattern
+            if match:
+                self._call = lambda r, d: lhs(r, d) == self.pattern
+            else:
+                self._call = lambda r, d: lhs(r, d) != self.pattern
+
+    def __call__(self, r, d):
+        return self._call(r, d)
+
+class PolicyLine(object):
+    """
+    Call this Policy when fixing the terminology.
+    AND-chained list of predicates.
+    """
+
+    def __init__(self, decision, text):
+        self.predicates = []
+        self.decision = decision
+        self.text = text
+
+    def add_predicate(self, pred):
+        self.predicates.append(pred)
+
+    def __call__(self, replica, dataset_demand):
+        for pred in self.predicates:
+            if not pred(replica, dataset_demand):
+                return
+            
+        return replica, self.decision, self.text
 
 class Policy(object):
     """
@@ -14,6 +81,100 @@ class Policy(object):
     DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(1, 4)
     DECISION_STR = {DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
     ST_ITERATIVE, ST_STATIC, ST_GREEDY = range(3)
+
+    @staticmethod
+    def parse_rules(lines):
+        rules = []
+        default_decision = None
+
+        for line in lines:
+            if default_decision is not None:
+                logger.error('Invalid policy lines after default decision.')
+                raise ConfigurationError()
+
+            words = line.split()
+            if words[0] == 'Protect':
+                decision = Policy.DEC_PROTECT
+            else:
+                decision = Policy.DEC_DELETE
+
+            if len(words) == 1:
+                default_decision = decision
+                continue
+
+            policy_line = PolicyLine(decision, line)
+
+            predicates = ' '.join(words[2:]).split(' and ')
+
+            for predicate in predicates:
+                words = predicate.split()
+
+                expr = words[0]
+
+                try:
+                    expr_def = expressions.expressions[expr]
+                except KeyError:
+                    logger.error('Invalid expression %s', expr)
+                    raise ConfigurationError()
+
+                varmap, vtype = expr_def[:2]
+
+                if vtype == expressions.BOOL_TYPE:
+                    policy_line.add_predicate(varmap)
+                    if len(words) > 1:
+                        logger.error('Invalid bool-type expression %s', predicate)
+                        raise ConfigurationError()
+
+                    continue
+
+                if len(words) == 1:
+                    logger.error('RHS for expression %s missing', expr)
+                    raise ConfigurationError()
+
+                operator = words[1]
+
+                if vtype == expressions.NUMERIC_TYPE:
+                    if len(expr_def) > 2:
+                        rhs = expr_def[2](words[2])
+                    else:
+                        rhs = float(words[2])
+
+                    policy_line.add_predicate(BinaryExpr(varmap, operator, rhs))
+
+                elif vtype == expressions.TEXT_TYPE:
+                    if operator == '==':
+                        match = True
+                    elif operator == '!=':
+                        match = False
+                    else:
+                        logger.error('Invalid operator for TEXT_TYPE: %s', operator)
+                        raise ConfigurationError()
+
+                    policy_line.add_predicate(PatternMatch(varmap, words[2], match))
+                
+                elif vtype == expressions.TIME_TYPE:
+                    rhs_expr = ' '.join(words[2:])
+                    proc = subprocess.Popen(['date', '-d', rhs_expr, '+%s'], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+                    out, err = proc.communicate()
+                    if err != '':
+                        logger.error('Invalid time expression %s', rhs_expr)
+                        raise ConfigurationError()
+
+                    try:
+                        rhs = float(out.strip())
+                    except:
+                        logger.error('Invalid time expression %s', rhs_expr)
+                        raise ConfigurationError()
+
+                    policy_line.add_predicate(BinaryExpr(varmap, operator, rhs))
+
+            rules.append(policy_line)
+
+        if default_decision is None:
+            logger.error('Default decision not given.')
+            raise ConfigurationError()
+
+        return default_decision, rules
 
     def __init__(self, default, rules, strategy, quotas, partition = '', site_requirement = None, replica_requirement = None):
         self.default_decision = default # decision

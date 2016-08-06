@@ -95,8 +95,15 @@ if len(args.included_sites) != 0:
 partitions = []
 
 for stack_spec in args.stacks:
-    partition, stack_name, strategy_str = stack_spec.split(':')
+    stackdef = stack_spec.split(':')
 
+    if len(stackdef) == 2:
+        partition, strategy_str = stackdef
+        stack_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + partition + '.txt'
+
+    else:
+        partition, stack_path, strategy_str = stackdef
+        
     try:
         strategy = eval('Policy.ST_' + strategy_str.upper())
     except NameError:
@@ -105,15 +112,16 @@ for stack_spec in args.stacks:
 
     partitions.append(partition)
 
-    if not stack_name.endswith('.py'):
-        stack_name += '.py'
+    with open(stack_path) as stack_source:
+        stack_lines = map(str.strip, stack_source.read().split('\n'))
+        il = 0
+        while il != len(stack_lines):
+            if stack_lines[il] == '' or stack_lines[il].startswith('#'):
+                stack_lines.pop(il)
+            else:
+                il += 1
 
-    # if the file does not exist, it's probably in policies/detoxstacks
-    if not os.path.exists(stack_name):
-        stack_name = os.environ['DYNAMO_BASE'] + '/policies/detoxstacks/' + stack_name
-
-    # imports "default" and "rule_stack"
-    execfile(stack_name)
+    default, rule_stack = Policy.parse_rules(stack_lines)
 
     # currently partition = group
     group = inventory_manager.groups[partition]
