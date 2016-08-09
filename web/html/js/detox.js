@@ -4,6 +4,17 @@ var previousCycle = 0;
 var currentPartition = 0;
 var currentNorm = 'relative';
 
+var summary = {
+    'bars': null,
+    'yscale': null,
+    'xorigin': 6,
+    'yorigin': 74,
+    'xmax': 100 - 6,
+    'ymax': 62
+};
+
+var siteDetails;
+
 function initPage(cycleNumber, partitionId)
 {
     var jaxData = {
@@ -36,8 +47,9 @@ function setupSiteDetails(siteData)
     // set up tables for individual sites
 
     d3.select('#details').selectAll('.siteDetails').remove();
-    
-    var siteDetails = d3.select('#details').selectAll('.siteDetails')
+
+    // global variable
+    siteDetails = d3.select('#details').selectAll('.siteDetails')
         .data(siteData)
         .enter()
         .append('article').classed('siteDetails', true)
@@ -90,7 +102,7 @@ function setupSiteDetails(siteData)
 
     d3.select(window).on('resize', padTables);
 
-    tableBox.append('div')
+    tableBox.append('div').classed('loadSiteData', true)
         .style({'width': '20%', 'margin': '10px 40% 0 40%', 'cursor': 'pointer', 'text-decoration': 'underline', 'text-align': 'center'})
         .text('Load site data')
         .on('click', function (d) { d3.select(this).remove(); loadSiteTable(d.name); });
@@ -172,39 +184,33 @@ function displaySummary(data)
         .attr('viewBox', '0 0 ' + (100 * gxscale) + ' 100')
         .style({'width': '100%', 'height': '100%'});
 
-    var xorigin = 6;
-    var yorigin = 74;
-    var xmax = 100 - xorigin;
-    var ymarginTop = 12;
-    var ymarginBottom = 100 - yorigin;
-    var ymax = yorigin - ymarginTop;
-
     var xmapping = d3.scale.ordinal()
         .domain(data.siteData.map(function (v) { return v.name; }))
-        .rangePoints([0, gxnorm(xmax)], 1);
+        .rangePoints([0, gxnorm(summary.xmax)], 1);
 
-    var xspace = gxnorm(xmax / data.siteData.length);
+    var xspace = gxnorm(summary.xmax / data.siteData.length);
 
-    var yscale = d3.scale.linear();
+    // global variable
+    summary.yscale = d3.scale.linear();
 
     var ynorm;
 
     var titleRelative = summaryGraph.append('text')
-        .attr({'font-size': 3, 'x': gxnorm(xorigin + 3), 'y': 4})
+        .attr({'font-size': 3, 'x': gxnorm(summary.xorigin + 3), 'y': 4})
         .text('Normalized site usage');
 
     var selectRelative = summaryGraph.append('circle')
-        .attr({'cx': gxnorm(xorigin + 2), 'cy': 3, 'r': 1, 'stroke': 'black', 'stroke-width': 0.3, 'fill': 'white'});
+        .attr({'cx': gxnorm(summary.xorigin + 2), 'cy': 3, 'r': 1, 'stroke': 'black', 'stroke-width': 0.3, 'fill': 'white'});
 
     var titleAbsolute = summaryGraph.append('text')
-        .attr({'font-size': 3, 'x': gxnorm(xorigin + 3), 'y': 8})
+        .attr({'font-size': 3, 'x': gxnorm(summary.xorigin + 3), 'y': 8})
         .text('Absolute data volume');
 
     var selectAbsolute = summaryGraph.append('circle')
-        .attr({'cx': gxnorm(xorigin + 2), 'cy': 7, 'r': 1, 'stroke': 'black', 'stroke-width': 0.3, 'fill': 'white'});
+        .attr({'cx': gxnorm(summary.xorigin + 2), 'cy': 7, 'r': 1, 'stroke': 'black', 'stroke-width': 0.3, 'fill': 'white'});
 
     var eye = summaryGraph.append('circle')
-        .attr({'fill': 'black', 'cx': gxnorm(xorigin + 2), 'r': 0.6});
+        .attr({'fill': 'black', 'cx': gxnorm(summary.xorigin + 2), 'r': 0.6});
 
     if (currentNorm == 'relative') {
         eye.attr('cy', 3);
@@ -214,10 +220,10 @@ function displaySummary(data)
         titleAbsolute.style('cursor', 'pointer')
             .attr('onclick', 'loadSummary(currentCycle, currentPartition, \'absolute\');');
 
-        yscale.domain([0, 1.25])
-            .range([ymax, 0]);
+        summary.yscale.domain([0, 1.25])
+            .range([summary.ymax, 0]);
 
-        ynorm = function (d, key) { if (d.quota == 0.) return 0.; else return ymax - yscale(d[key] / d.quota); }
+        ynorm = function (d, key) { if (d.quota == 0.) return 0.; else return summary.ymax - summary.yscale(d[key] / d.quota); }
     }
     else {
         eye.attr('cy', 7);
@@ -227,10 +233,10 @@ function displaySummary(data)
         titleRelative.style('cursor', 'pointer')
             .attr('onclick', 'loadSummary(currentCycle, currentPartition, \'relative\');');
 
-        yscale.domain([0, d3.max(data.siteData, function (d) { return Math.max(d.protect + d.keep + d.delete, d.protectPrev + d.keepPrev) / 1000.; }) * 1.25])
-            .range([ymax, 0]);
+        summary.yscale.domain([0, d3.max(data.siteData, function (d) { return Math.max(d.protect + d.keep + d.delete, d.protectPrev + d.keepPrev) / 1000.; }) * 1.25])
+            .range([summary.ymax, 0]);
 
-        ynorm = function (d, key) { return (ymax - yscale(d[key])) / 1000.; }
+        ynorm = function (d, key) { return (summary.ymax - summary.yscale(d[key])) / 1000.; }
     }
 
     var xaxis = d3.svg.axis()
@@ -239,12 +245,12 @@ function displaySummary(data)
         .tickSize(0, 0);
 
     var yaxis = d3.svg.axis()
-        .scale(yscale)
+        .scale(summary.yscale)
         .orient('left')
         .tickSize(1, 0);
 
     var gxaxis = summaryGraph.append('g').classed('axis', true)
-        .attr('transform', 'translate(' + gxnorm(xorigin) + ',' + yorigin + ')')
+        .attr('transform', 'translate(' + gxnorm(summary.xorigin) + ',' + summary.yorigin + ')')
         .call(xaxis);
 
     var siteStatus = {};
@@ -264,7 +270,7 @@ function displaySummary(data)
         .attr({'fill': 'none', 'stroke': 'black', 'stroke-width': 0.2});
 
     var gyaxis = summaryGraph.append('g').classed('axis', true)
-        .attr('transform', 'translate(' + gxnorm(xorigin) + ',' + ymarginTop + ')')
+        .attr('transform', 'translate(' + gxnorm(summary.xorigin) + ',' + (summary.yorigin - summary.ymax) + ')')
         .call(yaxis);
 
     gyaxis.selectAll('.tick text')
@@ -277,28 +283,28 @@ function displaySummary(data)
         .attr({'fill': 'none', 'stroke': 'black', 'stroke-width': 0.2});
 
     var content = summaryGraph.append('g').classed('content', true)
-        .attr('transform', 'translate(' + gxnorm(xorigin) + ',' + yorigin + ')');
+        .attr('transform', 'translate(' + gxnorm(summary.xorigin) + ',' + summary.yorigin + ')');
 
     if (currentNorm == 'relative') {
         content.append('line').classed('refMarker', true)
-            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax / 1.25, 'y2': -ymax / 1.25});
+            .attr({'x1': 0, 'x2': gxnorm(summary.xmax), 'y1': -summary.ymax / 1.25, 'y2': -summary.ymax / 1.25});
 
         content.selectAll('.gridLine')
             .data([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.1])
             .enter()
             .append('line').classed('gridLine', true)
-            .attr({'x1': 0, 'x2': gxnorm(xmax), 'stroke-dasharray': '0.2,0.2', 'stroke-width': 0.2, 'stroke': 'silver'})
-            .attr('y1', function (d) { return -ymax * d / 1.25; })
-            .attr('y2', function (d) { return -ymax * d / 1.25; });
+            .attr({'x1': 0, 'x2': gxnorm(summary.xmax), 'stroke-dasharray': '0.2,0.2', 'stroke-width': 0.2, 'stroke': 'silver'})
+            .attr('y1', function (d) { return -summary.ymax * d / 1.25; })
+            .attr('y2', function (d) { return -summary.ymax * d / 1.25; });
 
         content.append('line').classed('refMarker', true)
-            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 1 / 1.25, 'y2': -ymax * 1 / 1.25, 'stroke-width': 0.2, 'stroke': 'black'});
+            .attr({'x1': 0, 'x2': gxnorm(summary.xmax), 'y1': -summary.ymax * 1 / 1.25, 'y2': -summary.ymax * 1 / 1.25, 'stroke-width': 0.2, 'stroke': 'black'});
 
         content.append('line').classed('refMarker', true)
-            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 0.9 / 1.25, 'y2': -ymax * 0.9 / 1.25, 'stroke-width': 0.2, 'stroke': 'darkorange'});
+            .attr({'x1': 0, 'x2': gxnorm(summary.xmax), 'y1': -summary.ymax * 0.9 / 1.25, 'y2': -summary.ymax * 0.9 / 1.25, 'stroke-width': 0.2, 'stroke': 'darkorange'});
 
         content.append('line').classed('refMarker', true)
-            .attr({'x1': 0, 'x2': gxnorm(xmax), 'y1': -ymax * 0.85 / 1.25, 'y2': -ymax * 0.85 / 1.25, 'stroke-width': 0.2, 'stroke': 'silver'});
+            .attr({'x1': 0, 'x2': gxnorm(summary.xmax), 'y1': -summary.ymax * 0.85 / 1.25, 'y2': -summary.ymax * 0.85 / 1.25, 'stroke-width': 0.2, 'stroke': 'silver'});
     }
     else {
         gyaxis.append('text')
@@ -314,8 +320,6 @@ function displaySummary(data)
         .attr('onclick', function (d) { return 'd3.select(\'#' + d.name + '\').node().scrollIntoView();'; })
         .style('cursor', 'pointer');
 
-    var y = ynorm(data.siteData[0], 'protect');
-
     barPrev.append('rect').classed('protectPrev barComponent', true)
         .attr('transform', function (d) { return 'translate(0,-' + ynorm(d, 'protectPrev') + ')'; })
         .attr('height', function (d) { return ynorm(d, 'protectPrev')})
@@ -328,18 +332,19 @@ function displaySummary(data)
 
     barPrev.append('rect').classed('keepPrev barComponent', true)
         .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d, 'protectPrev') + ynorm(d, 'keepPrev')) + ')'; })
-        .attr('height', function (d) { return ynorm(d, 'keepPrev')});
+        .attr('height', function (d) { return ynorm(d, 'keepPrev'); });
 
-    var barNew = content.selectAll('.barNew')
+    // global variable
+    summary.bars = content.selectAll('.barNew')
         .data(data.siteData)
         .enter().append('g').classed('barNew', true)
         .attr('transform', function (d) { return 'translate(' + (xmapping(d.name) + xspace * 0.025) + ',0)'; })
         .attr('onclick', function (d) { return 'd3.select(\'#' + d.name + '\').node().scrollIntoView();'; })
         .style('cursor', 'pointer');
 
-    barNew.append('rect').classed('protect barComponent', true)
+    summary.bars.append('rect').classed('protect barComponent', true)
         .attr('transform', function (d) { return 'translate(0,-' + ynorm(d, 'protect') + ')'; })
-        .attr('height', function (d) { return ynorm(d, 'protect')})
+        .attr('height', function (d) { return ynorm(d, 'protect'); })
         .each(function (d) {
                 if (d.protect > d.quota)
                     this.style.fill = '#ff0000';
@@ -347,13 +352,13 @@ function displaySummary(data)
                     this.style.fill = '#ff8800';
             });
 
-    barNew.append('rect').classed('keep barComponent', true)
+    summary.bars.append('rect').classed('keep barComponent', true)
         .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d, 'protect') + ynorm(d, 'keep')) + ')'; })
-        .attr('height', function (d) { return ynorm(d, 'keep')});
+        .attr('height', function (d) { return ynorm(d, 'keep'); });
 
-    barNew.append('rect').classed('delete barComponent', true)
+    summary.bars.append('rect').classed('delete barComponent', true)
         .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d, 'protect') + ynorm(d, 'keep') + ynorm(d, 'delete')) + ')'; })
-        .attr('height', function (d) { return ynorm(d, 'delete')});
+        .attr('height', function (d) { return ynorm(d, 'delete'); });
 
     content.selectAll('.barComponent')
         .attr('width', xspace * 0.3);
@@ -433,28 +438,13 @@ function padTables()
     table.select('tr.reasonCol').style('width', (tableNode.clientWidth * 0.25) + 'px');
 }
 
-function displayDetails(siteData)
+function addTableRows(table, tbodyClass, data)
 {
-    var block = d3.select('#' + siteData.name);
-
-    var tableBox = block.select('.siteTableBox');
-    var table = block.select('.siteTable');
-    
-    if (siteData.datasets.length == 0) {
-        table.remove();
-        tableBox.style({'height': '82px', 'font-size': '108px;', 'text-align': 'center', 'padding-top': '150px', 'font-weight': '500'})
-            .text('Empty');
-
-        return;
-    }
-
-    tableBox.style('height', '700px');
-    
-    var tbody = table.append('tbody')
-        .style({'height': '656px', 'overflow-y': 'auto', 'overflow-x': 'hidden'});
+    var tbody = table.append('tbody').classed(tbodyClass, true)
+        .style({'overflow-y': 'auto', 'overflow-x': 'hidden'});
 
     var row = tbody.selectAll('tr')
-        .data(siteData.datasets)
+        .data(data)
         .enter()
         .append('tr')
         .each(function (d, i) { if (i % 2 == 1) d3.select(this).classed('odd', true); });
@@ -472,6 +462,153 @@ function displayDetails(siteData)
         .text(function (d) { return d.decision; });
     row.append('td').classed('reasonCol', true)
         .text(function (d) { return d.reason; });
+
+    return tbody;
+}
+
+function displayDetails(siteData)
+{
+    var block = d3.select('#' + siteData.name);
+
+    var tableBox = block.select('.siteTableBox');
+    var table = block.select('.siteTable');
+    
+    if (siteData.datasets.length == 0) {
+        table.remove();
+        tableBox.style({'height': '82px', 'font-size': '108px;', 'text-align': 'center', 'padding-top': '150px', 'font-weight': '500'})
+            .text('Empty');
+
+        return;
+    }
+
+    tableBox.style('height', '700px');
+    
+    var tbody = addTableRows(table, 'full', siteData.datasets);
+    tbody.style('height', '656px');
+}
+
+function displayDatasetSearch(data)
+{
+    // data: [name: name, datasets: [{name: name, size: size, decision: dec, reason: reason}]]
+
+    // Add bars corresponding to searched datasets to the summary graph
+    var ynorm;
+
+    if (currentNorm == 'relative')
+        ynorm = function (d, val) { if (d.quota == 0.) return 0.; else return summary.ymax - summary.yscale(val / d.quota); }
+    else
+        ynorm = function (d, val) { return (summary.ymax - summary.yscale(val)) / 1000.; }
+
+    summary.bars.each(function (d) {
+            var x = 0;
+            while (x != data.length) {
+                if (d.name == data[x].name)
+                    break;
+                x += 1;
+            }
+
+            if (x == data.length)
+                return;
+
+            var siteDatasets = data[x].datasets;
+
+            var protectTotal = 0;
+            var keepTotal = 0;
+            var deleteTotal = 0;
+            for (var x in siteDatasets) {
+                var dataset = siteDatasets[x];
+                if (dataset.decision == 'protect')
+                    protectTotal += dataset.size;
+                else if (dataset.decision == 'keep')
+                    keepTotal += dataset.size;
+                else
+                    deleteTotal += dataset.size;
+            }
+            protectTotal /= 1000.;
+            keepTotal /= 1000.;
+            deleteTotal /= 1000.;
+
+            var bar = d3.select(this);
+            var barWidth = bar.select('.barComponent').attr('width');
+
+            if (protectTotal > 0) {
+                bar.append('rect')
+                    .classed('searched barComponent', true)
+                    .attr('transform', function (d) { return 'translate(0,-' + ynorm(d, protectTotal) + ')'; })
+                    .attr('height', function (d) { return ynorm(d, protectTotal); })
+                    .attr('width', barWidth);
+            }
+
+            if (keepTotal > 0) {
+                var offset = d3.transform(bar.select('.protect').attr('transform')).translate[1];
+                bar.append('rect')
+                    .classed('searched barComponent', true)
+                    .attr('transform', function (d) { return 'translate(0,' + (offset - ynorm(d, keepTotal)) + ')'; })
+                    .attr('height', function (d) { return ynorm(d, keepTotal); })
+                    .attr('width', barWidth);
+            }
+
+            if (deleteTotal > 0) {
+                var offset = d3.transform(bar.select('.keep').attr('transform')).translate[1];
+                bar.append('rect')
+                    .classed('searched barComponent', true)
+                    .attr('transform', function (d) { return 'translate(0,' + (offset - ynorm(d, deleteTotal)) + ')'; })
+                    .attr('height', function (d) { return ynorm(d, deleteTotal); })
+                    .attr('width', barWidth);
+            }
+
+        });
+
+    // Hide sites that do not have the datasets and print tables containing only the searched datasets
+    siteDetails.each(function (d) {
+            var x = 0;
+            while (x != data.length) {
+                if (d.name == data[x].name)
+                    break;
+                x += 1;
+            }
+
+            if (x == data.length) {
+                this.style.display = 'none';
+                return;
+            }
+
+            var siteDatasets = data[x].datasets;
+
+            var tableBox = d3.select(this).select('.siteTableBox');
+            tableBox.select('div.loadSiteData').style('display', 'none');
+            tableBox.select('tbody.full').style('display', 'none');
+
+            var tbody = addTableRows(tableBox.select('table'), 'searched', siteDatasets);
+            var tbodyHeight = tbody.node().clientHeight;
+            if (tbodyHeight > 656) {
+                tbody.style('height', '656px');
+                tableBox.style('height', '700px');
+            }
+            else
+                tableBox.style('height', (tbodyHeight + 44) + 'px');
+        });
+
+    if (data.length == 0) {
+        d3.select('#details').append('div').classed('searchResult', true)
+            .style({'text-align': 'center', 'font-size': '18px', 'margin-bottom': '10px'})
+            .text('No replica was found.');
+    }
+}
+
+function resetDatasetSearch()
+{
+    d3.selectAll('#summaryGraph rec.searched').remove();
+    d3.selectAll('#details div.searchResult').remove();
+
+    siteDetails.style('display', 'block');
+    var tableBox = siteDetails.select('.siteTableBox');
+    if (tableBox.select('div.loadSiteData').style('display', 'block').size() != 0)
+        tableBox.style('height', '82px');
+    else if (tableBox.select('tbody.full').style('display', 'block').size() != 0)
+        tableBox.style('height', '700px');
+
+    tableBox.select('tbody.searched').remove();
 }
 
 function loadSummary(cycleNumber, partitionId, summaryNorm)
@@ -511,7 +648,7 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
 
 function loadSiteTable(name)
 {
-    var spinner = new Spinner({'scale': 5, 'corners': 0, 'width': 2, 'position': 'relative'});
+    var spinner = new Spinner({'scale': 5, 'corners': 0, 'width': 2, 'position': 'absolute'});
     spinner.spin();
     $('#' + name + ' .siteTableBox').append($(spinner.el));
 
@@ -525,6 +662,32 @@ function loadSiteTable(name)
 
     $.get(window.location.href, inputData, function (data, textStatus, jqXHR) {
             displayDetails(data);
+            spinner.stop();
+    }, 'json');
+}
+
+function findDataset()
+{
+    resetDatasetSearch();
+
+    var datasetName = $('#datasetSearch').val();
+
+    if ($.trim(datasetName) == '')
+        return;
+
+    var spinner = new Spinner({'scale': 5, 'corners': 0, 'width': 2, 'position': 'absolute'});
+    spinner.spin();
+    $('#summaryGraphBox').append($(spinner.el));
+
+    var inputData = {
+        'searchDataset': 1,
+        'cycleNumber': currentCycle,
+        'partitionId': currentPartition,
+        'datasetName': datasetName
+    };
+
+    $.get(window.location.href, inputData, function (data, textStatus, jqXHR) {
+            displayDatasetSearch(data);
             spinner.stop();
     }, 'json');
 }

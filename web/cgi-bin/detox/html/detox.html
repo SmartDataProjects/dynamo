@@ -30,6 +30,9 @@
       </div>
     </header>
     <main id="main">
+      <nav id="datasetSearchNav">
+        Find dataset: <input type="text" id="datasetSearch" size="50" onkeypress="if (event.keyCode == 13) findDataset();"> <input type="button" value="Search" onclick="findDataset()">
+      </nav>
       <nav id="partitions">
       </nav>
       <div id="contents">

@@ -60,6 +60,48 @@ if ($cycle == 0) {
   $stmt->close();
 }
 
+if (isset($_REQUEST['searchDataset']) && $_REQUEST['searchDataset']) {
+  $dataset_pattern = str_replace('*', '%', $_REQUEST['datasetName']);
+
+  // existing replicas
+  $query = 'SELECT st.`name`, ds.`name`, sn.`size` * 1.e-9, dl.`decision`, dl.`reason`';
+  $query .= ' FROM `deletion_decisions` AS dl';
+  $query .= ' INNER JOIN `replica_snapshots` AS sn ON sn.`id` = dl.`snapshot_id`';
+  $query .= ' INNER JOIN `datasets` AS ds ON ds.`id` = sn.`dataset_id`';
+  $query .= ' INNER JOIN `sites` AS st ON st.`id` = sn.`site_id`';
+  $query .= ' WHERE dl.`run_id` = ? AND ds.`name` LIKE ?';
+  $query .= ' ORDER BY st.`name`';
+
+  $stmt = $history_db->prepare($query);
+  $stmt->bind_param('is', $cycle, $dataset_pattern);
+  $stmt->bind_result($site_name, $dataset_name, $size, $decision, $reason);
+  $stmt->execute();
+
+  $json = '[';
+
+  $sname = '';
+  while ($stmt->fetch()) {
+    if ($site_name != $sname) {
+      if (strlen($json) != 1)
+        $json .= ']},';
+
+      $sname = $site_name;
+      $json .= '{"name":"' . $sname . '","datasets":[';
+    }
+    else
+      $json .= ',';
+
+    $json .= sprintf('{"name":"%s","size":%f,"decision":"%s","reason":"%s"}', $dataset_name, $size, $decision, $reason);
+  }
+  if (strlen($json) != 1)
+    $json .= ']}';
+  $json .= ']';
+  $stmt->close();
+
+  echo $json;
+  exit(0);  
+}
+
 $stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` > ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` ASC LIMIT 1');
 $stmt->bind_param('iis', $cycle, $partition_id, $operation);
 $stmt->bind_result($next_cycle);

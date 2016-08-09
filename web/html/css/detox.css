@@ -38,6 +38,12 @@ div.cycleLink {
     width: 100%;
 }
 
+#datasetSearchNav {
+    width: 100%;
+    height: 40px;
+    text-align: right;
+}
+
 #partitions {
     width: 100%;
     height: 38px;
@@ -95,24 +101,28 @@ rect.outline {
     stroke-width: 0.1
 }
 
-.protect {
+rect.protect, circle.protect {
     fill: #4444ff;
 }
 
-.keep {
+rect.keep, circle.keep {
     fill: #44ff44;
 }
 
-.delete {
+rect.delete, circle.delete {
     fill: #88ffff;
 }
 
-.protectPrev {
+rect.protectPrev, circle.protectPrev {
     fill: #aaaaff;
 }
 
-.keepPrev {
+rect.keepPrev, circle.keepPrev {
     fill: #aaffaa;
+}
+
+rect.searched, circle.searched {
+    fill: #ff00ff;
 }
 
 .graphAxis {

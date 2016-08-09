@@ -6,6 +6,9 @@ $mycnf = file('/etc/my.cnf');
 $db_conf = array();
 $in_block = false;
 foreach ($mycnf as $line) {
+  if (trim($line) == '')
+    continue;
+
   if (strpos($line, '[' . $db_conf_name . ']') !== false) {
     $in_block = true;
     continue;
