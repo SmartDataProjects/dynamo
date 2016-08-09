@@ -46,12 +46,19 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         catalogs = {} # {dataset: [block]}. Content can be empty if inclusive deletion is desired.
 
         dataset = dataset_replica.dataset
-        catalogs[dataset] = {}
+        replica_blocks = [r.block for r in dataset_replica.block_replicas]
+
+        if set(replica_blocks) == set(dataset.blocks):
+            catalogs[dataset] = []
+            level = 'dataset'
+        else:
+            catalogs[dataset] = replica_blocks
+            level = 'block'
 
         options = {
             'node': dataset_replica.site.name,
             'data': self._form_catalog_xml(catalogs),
-            'level': 'dataset',
+            'level': level,
             'priority': 'low',
             'move': 'n',
             'static': 'n',
@@ -64,8 +71,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         if comments:
             options['comments'] = comments
 
-        if config.read_only:
+        if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug('schedule_copy  subscribe: %s', str(options))
+
+        if config.read_only:
             return
 
         if is_test:
@@ -88,13 +97,22 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         def run_subscription_request(site, replica_list):
             catalogs = {}
 
+            level = 'dataset'
+
             for drep in replica_list:
-                catalogs[drep.dataset] = []
+                dataset = drep.dataset
+                replica_blocks = [r.block for r in drep.block_replicas]
+
+                if set(replica_blocks) == set(dataset.blocks):
+                    catalogs[dataset] = []
+                else:
+                    catalogs[dataset] = replica_blocks
+                    level = 'block'
 
             options = {
                 'node': site.name,
                 'data': self._form_catalog_xml(catalogs),
-                'level': 'dataset',
+                'level': level,
                 'priority': 'low',
                 'move': 'n',
                 'static': 'n',
@@ -107,8 +125,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             if comments:
                 options['comments'] = comments
 
-            if config.read_only:
+            if logger.getEffectiveLevel() == logging.DEBUG:
                 logger.debug('schedule_copies  subscribe: %s', str(options))
+
+            if config.read_only:
                 return
 
             if is_test:
@@ -857,6 +877,7 @@ if __name__ == '__main__':
     parser.add_argument('--method', '-m', dest = 'method', metavar = 'METHOD', default = 'GET', help = 'HTTP method.')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
     parser.add_argument('--raw', '-A', dest = 'raw_output', action = 'store_true', help = 'Print RAW PhEDEx response.')
+    parser.add_argument('--test', '-T', dest = 'is_test', action = 'store_true', help = 'Test mode for commands delete and subscribe.')
 
     args = parser.parse_args()
     sys.argv = []
@@ -882,36 +903,64 @@ if __name__ == '__main__':
     if command == 'delete' or command == 'subscribe':
         method = POST
 
-        if args.phedex_url == config.phedex.url_base or 'prod' in args.phedex_url:
+        if not args.is_test and (args.phedex_url == config.phedex.url_base or 'prod' in args.phedex_url):
             print 'Are you sure you want to run this command on a prod instance? [Y/n]'
             response = sys.stdin.readline().strip()
             if response != 'Y':
                 sys.exit(0)
 
-        if len(args.options) < 3 or \
-                not re.match('T[0-3]_.*', args.options[0]) or \
-                not re.match('/[^/]+/[^/]+/[^/]+', args.options[1]):
-            print 'Arguments: site dataset [group] comment'
+        if not re.match('T[0-3]_.*', args.options[0]):
+            print 'Arguments: site [group] dataset[#block] [dataset[#block] ..]comment'
             sys.exit(1)
 
-        if args.options[2] in ['AnalysisOps', 'DataOps', 'FacOps']:
-            group = Group(args.options[2])
-            icom = 3
+        iopt = 0
+
+        site = Site(args.options[iopt])
+        iopt += 1
+
+        if not re.match('/[^/]+/[^/]+/[^/]+', args.options[iopt]):
+            group = Group(args.options[iopt])
+            iopt += 1
         else:
             group = Group('AnalysisOps')
-            icom = 2
 
-        comments = ' '.join(args.options[icom:])
+        replicas = []
+        while True:
+            if iopt == len(args.options):
+                print 'Arguments: site [group] dataset[#block] [dataset[#block] ..] comment'
+                sys.exit(1)
 
-        site = Site(args.options[0])
-        dataset = Dataset(args.options[1])
-        dataset_replica = DatasetReplica(dataset, site)
+            if not re.match('/[^/]+/[^/]+/[^/]+', args.options[iopt]):
+                break
+
+            obj_name = args.options[iopt]
+            iopt += 1
+            
+            if '#' in obj_name:
+                dataset_name, block_name = obj_name.split('#')
+            else:
+                dataset_name = obj_name
+
+            try:
+                dataset_replica = next(replica for replica in replicas if replica.dataset.name == dataset_name)
+            except StopIteration:
+                dataset = Dataset(dataset_name)
+                dataset_replica = DatasetReplica(dataset, site)
+                replicas.append(dataset_replica)
+
+            if '#' in obj_name:
+                block = Block(Block.translate_name(block_name), dataset, 0, 0, False)
+                # don't add the block to dataset (otherwise will become a dataset-level operation)
+                block_replica = BlockReplica(block, site, group, True, False, 0)
+                dataset_replica.block_replicas.append(block_replica)
+
+        comments = ' '.join(args.options[iopt:])
 
         if command == 'delete':
-            interface.schedule_deletion(dataset_replica, comments = comments)
+            interface.schedule_deletions(replicas, comments = comments, is_test = args.is_test)
 
         elif command == 'subscribe':
-            interface.schedule_copy(dataset_replica, group, comments = comments)
+            interface.schedule_copies(replicas, group, comments = comments, is_test = args.is_test)
 
         sys.exit(0)
 
