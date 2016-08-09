@@ -176,7 +176,7 @@ class Policy(object):
 
         return default_decision, rules
 
-    def __init__(self, default, rules, strategy, quotas, partition = '', site_requirement = None, replica_requirement = None):
+    def __init__(self, default, rules, strategy, quotas, partition = '', site_requirement = None, replica_requirement = None, candidate_sort = None):
         self.default_decision = default # decision
         self.rules = rules # [rule]
         self.strategy = strategy # one of ST_ enums
@@ -188,6 +188,11 @@ class Policy(object):
         # dataset return values: 1->drep is in partition, 0->drep is not in partition, -1->drep is partially in partition
         self.replica_requirement = replica_requirement
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
+        # sorted_list_of_replicas(list_of_(replica, demand))
+        if candidate_sort is None:
+            self.candidate_sort = lambda r_d: [r for r, d in sorted(replicas_demands, key = lambda (r, d): d.global_usage_rank)]
+        else:
+            self.candidate_sort = candidate_sort
 
     def partition_replicas(self, datasets):
         """
@@ -297,10 +302,4 @@ class Policy(object):
         return result
 
     def sort_deletion_candidates(self, replicas_demands):
-        """
-        Rank and sort replicas in decreasing order of deletion priority.
-        The last item in the list should be the first replica to be deleted.
-        """
-
-        sorted_list = sorted(replicas_demands, key = lambda (r, d): d.global_usage_rank)
-        return [replica for replica, demand in sorted_list]
+        return self.candidate_sort(replica_demands)
