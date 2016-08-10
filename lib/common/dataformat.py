@@ -21,7 +21,7 @@ class Dataset(object):
     # Starting from 1 to play better with MySQL
     TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, 10)
     STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, 8)
-    TAPE_NONE, TAPE_PART, TAPE_FULL = range(3)
+    TAPE_NONE, TAPE_FULL, TAPE_PARTIAL = range(3)
 
     @staticmethod
     def data_type_name(arg):

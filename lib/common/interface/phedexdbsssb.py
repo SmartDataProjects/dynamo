@@ -593,7 +593,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset.on_tape = Dataset.TAPE_FULL
             else:
                 # tape subscription is made, but is not complete
-                dataset.on_tape = Dataset.TAPE_PART
+                dataset.on_tape = Dataset.TAPE_PARTIAL
 
     def set_dataset_details(self, datasets, skip_valid = False): #override (DatasetInfoSourceInterface)
         """
