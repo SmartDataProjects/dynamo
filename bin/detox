@@ -104,7 +104,7 @@ for stack_spec in args.stacks:
         stack_path, strategy_str = policy_cfg.split(':')
     else:
         stack_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + partition + '.txt'
-        strategy_str = policy_cfg.split(':')
+        strategy_str = policy_cfg
 
     if len(stackdef) > 2:
         ranking = stackdef[2]

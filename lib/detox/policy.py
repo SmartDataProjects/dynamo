@@ -190,7 +190,7 @@ class Policy(object):
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
         # sorted_list_of_replicas(list_of_(replica, demand))
         if candidate_sort is None:
-            self.candidate_sort = lambda r_d: [r for r, d in sorted(replicas_demands, key = lambda (r, d): d.global_usage_rank)]
+            self.candidate_sort = lambda r_d: [r for r, d in sorted(r_d, key = lambda (r, d): d.global_usage_rank)]
         else:
             self.candidate_sort = candidate_sort
 
@@ -302,4 +302,4 @@ class Policy(object):
         return result
 
     def sort_deletion_candidates(self, replicas_demands):
-        return self.candidate_sort(replica_demands)
+        return self.candidate_sort(replicas_demands)
