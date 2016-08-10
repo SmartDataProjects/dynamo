@@ -70,6 +70,7 @@ class Dataset(object):
         self.blocks = []
         self.replicas = []
         self.requests = []
+        self.demand = None
 
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
@@ -93,6 +94,7 @@ class Dataset(object):
 
         # by removing the dataset replicas, the block replicas should become deletable (site->blockrep link is cut)
         self.replicas = []
+        self.demand = None
         self.blocks = []
 
     def size(self):

@@ -110,7 +110,7 @@ class Detox(object):
             while True:
                 iteration += 1
     
-                eval_results = parallel_exec(lambda r: policy.evaluate(r, self.demand_manager.dataset_demands[r.dataset]), all_replicas, per_thread = 100)
+                eval_results = parallel_exec(lambda r: policy.evaluate(r), all_replicas, per_thread = 100)
     
                 deletion_candidates = {} # {replica: reason}
     
@@ -166,7 +166,7 @@ class Detox(object):
                     # Delete the replicas site-by-site in the order given by the policy until the site does not need any more deletion.
     
                     for site in target_sites:
-                        sorted_candidates = policy.sort_deletion_candidates([(rep, self.demand_manager.dataset_demands[rep.dataset]) for rep in deletion_candidates if rep.site == site])
+                        sorted_candidates = policy.sort_deletion_candidates([rep for rep in deletion_candidates if rep.site == site])
                         # from the least desirable (to delete) to the most
     
                         while len(sorted_candidates) != 0:
@@ -272,7 +272,7 @@ class Detox(object):
         else:
             target_site = random.choice(candidate_sites)
 
-        sorted_candidates = policy.sort_deletion_candidates([(rep, self.demand_manager.dataset_demands[rep.dataset]) for rep in candidate_list if rep.site == target_site])
+        sorted_candidates = policy.sort_deletion_candidates([rep for rep in candidate_list if rep.site == target_site])
         # from the least desirable (to delete) to the most
 
         if policy.quotas[target_site] == 0:

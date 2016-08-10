@@ -80,7 +80,7 @@ class Dealer(object):
         for dataset in self.inventory_manager.datasets.values():
             for replica in dataset.replicas:
                 if policy.in_partition(replica):
-                    datasets.append((dataset, self.demand_manager.dataset_demands[dataset].request_weight))
+                    datasets.append((dataset, dataset.demand.request_weight))
                     break
 
         datasets.sort(key = lambda (dataset, popularity): popularity, reverse = True)

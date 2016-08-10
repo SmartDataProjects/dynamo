@@ -16,38 +16,38 @@ class BinaryExpr(object):
         self.lhs = lhs
         self.rhs = rhs
         if op == '==':
-            self._call = lambda r, d: self.lhs(r, d) == self.rhs
+            self._call = lambda r: self.lhs(r) == self.rhs
         elif op == '!=':
-            self._call = lambda r, d: self.lhs(r, d) != self.rhs
+            self._call = lambda r: self.lhs(r) != self.rhs
         elif op == '<':
-            self._call = lambda r, d: self.lhs(r, d) < self.rhs
+            self._call = lambda r: self.lhs(r) < self.rhs
         elif op == '>':
-            self._call = lambda r, d: self.lhs(r, d) > self.rhs
+            self._call = lambda r: self.lhs(r) > self.rhs
         else:
             logger.error('Unknown operator %s', op)
             raise ConfigurationError()
 
-    def __call__(self, r, d):
-        return self._call(r, d)
+    def __call__(self, r):
+        return self._call(r)
 
 class PatternMatch(object):
     def __init__(self, lhs, pattern, match):
         if '*' in pattern:
             self.pattern = re.compile(fnmatch.translate(pattern))
             if match:
-                self._call = lambda r, d: self.pattern.match(lhs(r, d)) is not None
+                self._call = lambda r: self.pattern.match(lhs(r)) is not None
             else:
-                self._call = lambda r, d: self.pattern.match(lhs(r, d)) is None
+                self._call = lambda r: self.pattern.match(lhs(r)) is None
 
         else:
             self.pattern = pattern
             if match:
-                self._call = lambda r, d: lhs(r, d) == self.pattern
+                self._call = lambda r: lhs(r) == self.pattern
             else:
-                self._call = lambda r, d: lhs(r, d) != self.pattern
+                self._call = lambda r: lhs(r) != self.pattern
 
-    def __call__(self, r, d):
-        return self._call(r, d)
+    def __call__(self, replica):
+        return self._call(replica)
 
 class PolicyLine(object):
     """
@@ -63,9 +63,9 @@ class PolicyLine(object):
     def add_predicate(self, pred):
         self.predicates.append(pred)
 
-    def __call__(self, replica, dataset_demand):
+    def __call__(self, replica):
         for pred in self.predicates:
-            if not pred(replica, dataset_demand):
+            if not pred(replica):
                 return
             
         return replica, self.decision, self.text
@@ -196,7 +196,7 @@ class Policy(object):
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
         # sorted_list_of_replicas(list_of_(replica, demand))
         if candidate_sort is None:
-            self.candidate_sort = lambda r_d: [r for r, d in sorted(r_d, key = lambda (r, d): d.global_usage_rank)]
+            self.candidate_sort = lambda replicas: sorted(replicas, key = lambda r: r.dataset.demand.global_usage_rank)
         else:
             self.candidate_sort = candidate_sort
 
@@ -297,9 +297,9 @@ class Policy(object):
         else:
             return self.site_requirement(site, self.partition, initial)
 
-    def evaluate(self, replica, dataset_demand):
+    def evaluate(self, replica):
         for rule in self.rules:
-            result = rule(replica, dataset_demand)
+            result = rule(replica)
             if result is not None:
                 break
         else:
@@ -307,5 +307,5 @@ class Policy(object):
 
         return result
 
-    def sort_deletion_candidates(self, replicas_demands):
-        return self.candidate_sort(replicas_demands)
+    def sort_deletion_candidates(self, replicas):
+        return self.candidate_sort(replicas)

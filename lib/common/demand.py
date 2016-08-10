@@ -40,8 +40,6 @@ class DemandManager(object):
         self.last_requests_update = None
         self.time_today = 0.
 
-        self.dataset_demands = {}
-
     def load(self, inventory):
         sites = inventory.sites.values()
         groups = inventory.groups.values()
@@ -160,25 +158,22 @@ class DemandManager(object):
         self.store.save_dataset_requests(inventory.datasets.values())
 
     def setup_demands(self, inventory):
-        self.dataset_demands = {}
         now = time.time()
         
         time_bins = [(now - b[0], b[1]) for b in config.demand.weight_time_bins]
 
         for dataset in inventory.datasets.values():
-            demand = DatasetDemand(required_copies = 1)
-
-            self.dataset_demands[dataset] = demand
+            dataset.demand = DatasetDemand(required_copies = 1)
 
             # set the required number of copies using special rules
             for rule in config.demand.required_copies_def:
                 r = rule(dataset)
                 if r >= 0:
-                    demand.required_copies = r
+                    dataset.demand.required_copies = r
                     break
 
             try:
-                demand.locked_blocks = self.lock.locked_blocks[dataset]
+                dataset.demand.locked_blocks = self.lock.locked_blocks[dataset]
             except KeyError:
                 pass
 
@@ -203,7 +198,7 @@ class DemandManager(object):
 
                 request_weight += weight
 
-            demand.request_weight = request_weight
+            dataset.demand.request_weight = request_weight
 
             if len(dataset.replicas) != 0:
                 # set the usage rank
@@ -240,10 +235,10 @@ class DemandManager(object):
     
                 global_rank /= len(dataset.replicas)
     
-                demand.global_usage_rank = global_rank
+                dataset.demand.global_usage_rank = global_rank
 
             else:
-                demand.global_usage_rank = 0.
+                dataset.demand.global_usage_rank = 0.
 
 
 if __name__ == '__main__':
