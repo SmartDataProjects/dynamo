@@ -44,7 +44,7 @@ do
     RC=$?
     if [ $RC -eq 0 ]
     then
-      $DYNAMO_BASE/bin/detox --site T0_CH_CERN_Disk --policy-stack DataOps:locked:static $TEST --log-level INFO
+      $DYNAMO_BASE/bin/detox --site T0_CH_CERN_Disk --policy-stack 'DataOps/static' $TEST --log-level INFO
       RC=$?
     fi
 

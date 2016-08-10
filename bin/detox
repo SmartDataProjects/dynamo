@@ -102,6 +102,8 @@ for stack_spec in args.stacks:
 
     if ':' in policy_cfg:
         stack_path, strategy_str = policy_cfg.split(':')
+        if '/' not in stack_path:
+            stack_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + stack_path + '.txt'
     else:
         stack_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + partition + '.txt'
         strategy_str = policy_cfg
