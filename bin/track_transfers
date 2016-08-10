@@ -5,12 +5,24 @@ import os
 import time
 import rrdtool
 import selinux
+import subprocess
 
 import common.configuration as config
 import common.interface.classes as classes
+import common.interface.merger_rrd as merger_rrd
 
-rrd_dir = config.path.data + '/track_transfers'
+from glob import glob
+
+rrd_dir = config.paths.data + '/track_transfers'
+sites = glob(rrd_dir+'/*')
+
 interval = 1800
+
+graphDefs = [
+    '--width=400', '--height=300', '--full-size-mode',
+    '--vertical-label=CopyStatus',
+    '--lower-limit=0',
+]  
 
 try:
     os.makedirs(rrd_dir)
@@ -18,6 +30,8 @@ except:
     pass
 
 request_ids = []
+
+partition = 'AnalysisOps'
 
 try:
     source_path = sys.argv[1]
@@ -28,28 +42,45 @@ try:
 except:
     history = classes.default_interface['history']()
 
-    records = history.get_incomplete_copies()
-
+    records = history.get_incomplete_copies(partition)
+    
     for record in records:
         request_ids.append(record.operation_id)
-
+        
 copy = classes.default_interface['copy']()
 
 timestamp = int(time.time()) / interval * interval
 
+counter = 0
+
 for request_id in request_ids:
+    
     status = copy.copy_status(request_id)
 
     for (site, dataset), (last_update, total, copied) in status.items():
-        rrd_file = rrd_dir + '/' + site + dataset.replace('/', '+') + '.rrd'
-
+        rrd_filepath = rrd_dir + '/' + site
+        tmp = rrd_dir + '/' + site + '/'  +  dataset.replace('/', '+') + '.rrd'
+        rrd_file = tmp.replace('+','',1)
+        
+                
+        if not os.path.exists(rrd_filepath):
+            # Create path corresponding to site
+            subprocess.call("mkdir %s" % rrd_filepath, shell=True)
+        
         if not os.path.exists(rrd_file):
             # RRD does not exist yet
             start = (int(time.time()) / interval - 1) * interval
+            timestamp_id = start
+
+            # let rrd file start at timestamp corresponding to creation of transfer request
+            for record in records:
+                if record.operation_id == request_id:
+                    timestamp_id = record.timestamp
+
             rrdtool.create(rrd_file, '--start', str(start), '--step', str(interval),
-                'DS:copied:GAUGE:%d:0:U' % (interval * 2),
-                'DS:total:GAUGE:%d:0:U' % (interval * 2),
-                'RRA:LAST:0:1:%d' % (3600 / interval * 24 * 7))
+                'DS:copied:GAUGE:%d:0:U' % (interval * 48),
+                'DS:total:GAUGE:%d:0:U' % (interval * 48),
+                'RRA:LAST:0:1:%i' % int((time.time()-timestamp_id)/1800)    )
 
             # data source
             #  DS:<name>:<type>:<heartbeat>:<min>:<max>
@@ -68,5 +99,45 @@ for request_id in request_ids:
 
         try:
             rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
+            
+            # Creating a copy status plot for each dataset
+            rrdtool.graph('%s/monitoring/dataset_%s.png' % (rrd_dir , rrd_file.rsplit('.',1)[0].rsplit('/',1)[1]), '--width=400', '--height=300', '--full-size-mode', '--vertical-label=CopyStatus', '--lower-limit=0', '--title=%s' % rrd_file.rsplit('.',1)[0].rsplit('/',1)[1], 'DEF:copied=%s:copied:LAST' % rrd_file, 'DEF:total=%s:total:LAST' % rrd_file, 'AREA:copied#aaffcc:Copied', 'LINE2:total#FF0000:Total')
         except:
             pass
+
+    counter = counter +1    
+        
+    if counter > 1:
+        break
+
+# Create overviews for different sites
+for site in sites:
+    rrd_files = [f for f in os.listdir(site)]
+
+    rrd_defstring = ""
+    rrd_cdefstring = ""
+    rrd_cdefcopstring = "CDEF:copied="
+    rrd_cdeftotstring = "CDEF:total="
+
+    # massaging the DEF and CDEF strings 
+    for rrd_file in rrd_files:
+        if rrd_files.index(rrd_file) == 0:
+            rrd_defstring = 'DEF:copied%s=%s/%s:copied:LAST DEF:total%s=%s/%s:total:LAST' % (rrd_files.index(rrd_file) , site , rrd_file , rrd_files.index(rrd_file) , site , rrd_file)        
+            rrd_cdefcopstring = rrd_cdefcopstring + "copied%s" % rrd_files.index(rrd_file) 
+            rrd_cdeftotstring = rrd_cdeftotstring + "total%s" % rrd_files.index(rrd_file) 
+        else:
+            rrd_defstring = rrd_defstring + " " + 'DEF:copied%s=%s/%s:copied:LAST DEF:total%s=%s/%s:total:LAST' % (rrd_files.index(rrd_file) , site , rrd_file , rrd_files.index(rrd_file) , site , rrd_file)
+            rrd_cdefcopstring = rrd_cdefcopstring + ",copied%s,+" % rrd_files.index(rrd_file) 
+            rrd_cdeftotstring = rrd_cdeftotstring + ",total%s,+" % rrd_files.index(rrd_file) 
+
+    rrd_cdefstring = rrd_cdefcopstring + " " + rrd_cdeftotstring
+    rrd_string = rrd_defstring + " " + rrd_cdefstring
+    
+    # creating the final argument list
+    rrd_arglist = graphDefs + rrd_string.split()
+
+    # plotting
+    try:
+        rrdtool.graph('%s/monitoring/site_%s.png' % (rrd_dir , site.rsplit('/',1)[1]),  *tuple(['--title=%s' % site.rsplit('/',1)[1]] + rrd_arglist + ['AREA:copied#aaffcc:Copied'] +['LINE2:total#FF0000:Total']))
+    except:
+        pass
