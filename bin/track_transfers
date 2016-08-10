@@ -52,8 +52,6 @@ copy = classes.default_interface['copy']()
 
 timestamp = int(time.time()) / interval * interval
 
-counter = 0
-
 for request_id in request_ids:
     
     status = copy.copy_status(request_id)
@@ -106,10 +104,6 @@ for request_id in request_ids:
         except:
             pass
 
-    counter = counter +1    
-        
-    if counter > 1:
-        break
 
 # Create overviews for different sites
 for site in sites:
