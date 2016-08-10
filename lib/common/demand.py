@@ -163,14 +163,7 @@ class DemandManager(object):
         time_bins = [(now - b[0], b[1]) for b in config.demand.weight_time_bins]
 
         for dataset in inventory.datasets.values():
-            dataset.demand = DatasetDemand(required_copies = 1)
-
-            # set the required number of copies using special rules
-            for rule in config.demand.required_copies_def:
-                r = rule(dataset)
-                if r >= 0:
-                    dataset.demand.required_copies = r
-                    break
+            dataset.demand = DatasetDemand()
 
             try:
                 dataset.demand.locked_blocks = self.lock.locked_blocks[dataset]

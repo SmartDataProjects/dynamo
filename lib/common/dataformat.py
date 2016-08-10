@@ -558,8 +558,7 @@ BlockReplica.clone = _BlockReplica_clone
 class DatasetDemand(object):
     """Represents information on dataset demand."""
 
-    def __init__(self, required_copies = 1, request_weight = -1., global_usage_rank = 0):
-        self.required_copies = required_copies
+    def __init__(self, request_weight = -1., global_usage_rank = 0):
         self.request_weight = request_weight
         self.global_usage_rank = global_usage_rank
         self.locked_blocks = []
