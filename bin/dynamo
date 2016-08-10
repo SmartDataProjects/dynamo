@@ -34,7 +34,7 @@ parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', defaul
 parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls', default = '', help = 'DeletionInterface class.')
 parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
-parser.add_argument('--detox-policy-stack', '-p', metavar = 'STACKS', dest = 'detox_stacks', nargs = '+', default = ['AnalysisOps:minimum_copies:iterative', 'DataOps:locked:static'], help = 'Name of the policy stack. Syntax is <group>:<path>.py:strategy. The python file should define variables default and rule_stack. Options for strategy are\n iterative\n static\n greedy.')
+parser.add_argument('--detox-policy-stack', '-p', metavar = 'STACKS', dest = 'detox_stacks', nargs = '+', default = ['AnalysisOps/iterative', 'DataOps/static'], help = 'Name of the policy stack. Syntax is <partition>/[<path>:]strategy[/ranking]. If no path is given, policy stack is taken from DYNAMO_BASE/policies/detox/<partition>.txt. If a relative path is provided, a file is searched for in policies/detoxstacks. Recognized strategies are "iterative", "static", and "greedy". Recognized ranking are global-rank (default) and last_update.')
 parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'included_sites', nargs = '+', default = [], help = 'List of sites to include. If not specified, all sites in inventory are included. Wildcard is allowed.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
@@ -101,7 +101,21 @@ if 'detox' in args.module:
     detox_partitions = []
     
     for stack_spec in args.detox_stacks:
-        partition, stack_name, strategy_str = stack_spec.split(':')
+        stackdef = stack_spec.split('/')
+
+        partition = stackdef[0]
+        policy_cfg = stackdef[1]
+
+        if ':' in policy_cfg:
+            stack_path, strategy_str = policy_cfg.split(':')
+        else:
+            stack_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + partition + '.txt'
+            strategy_str = policy_cfg
+
+        if len(stackdef) > 2:
+            ranking = stackdef[2]
+        else:
+            ranking = 'global-rank'
 
         try:
             strategy = eval('Policy.ST_' + strategy_str.upper())
@@ -111,15 +125,16 @@ if 'detox' in args.module:
     
         detox_partitions.append(partition)
 
-        if not stack_name.endswith('.py'):
-            stack_name += '.py'
+        with open(stack_path) as stack_source:
+            stack_lines = map(str.strip, stack_source.read().split('\n'))
+            il = 0
+            while il != len(stack_lines):
+                if stack_lines[il] == '' or stack_lines[il].startswith('#'):
+                    stack_lines.pop(il)
+                else:
+                    il += 1
     
-        # if the file does not exist, it's probably in policies/detoxstacks
-        if not os.path.exists(stack_name):
-            stack_name = os.environ['DYNAMO_BASE'] + '/policies/detoxstacks/' + stack_name
-    
-        # imports "default" and "rule_stack"
-        execfile(stack_name)
+        default, rule_stack = Policy.parse_rules(stack_lines)
     
         # currently partition = group
         group = inventory_manager.groups[partition]
@@ -133,8 +148,14 @@ if 'detox' in args.module:
         elif strategy == Policy.ST_GREEDY:
             # True as long as the group has a nonzero quota
             site_requirement = NonzeroQuota(group, included_sites)
+
+        if ranking == 'last_update':
+            # last element goes first
+            candidate_sort = lambda r_d: [r for r, d in sorted(replicas_demands, key = lambda (r, d): r.dataset.last_update, reverse = True)]
+        else:
+            candidate_sort = None # use the default (global usage rank)
     
-        policy = Policy(default, rule_stack, strategy, quotas, partition = partition, site_requirement = site_requirement, replica_requirement = BelongsTo(group))
+        policy = Policy(default, rule_stack, strategy, quotas, partition = partition, site_requirement = site_requirement, replica_requirement = BelongsTo(group), candidate_sort = candidate_sort)
     
         detox.set_policy(policy)
 
