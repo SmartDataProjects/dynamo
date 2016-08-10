@@ -102,9 +102,15 @@ class Policy(object):
                 default_decision = decision
                 continue
 
-            policy_line = PolicyLine(decision, line)
+            if words[1] != 'if':
+                logger.error('Invalid policy line %s', line)
+                raise ConfigurationError()
 
-            predicates = ' '.join(words[2:]).split(' and ')
+            condition = ' '.join(words[2:])
+
+            policy_line = PolicyLine(decision, condition)
+
+            predicates = condition.split(' and ')
 
             for predicate in predicates:
                 words = predicate.split()
