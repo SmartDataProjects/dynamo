@@ -15,6 +15,7 @@ from glob import glob
 
 rrd_dir = config.paths.data + '/track_transfers'
 sites = glob(rrd_dir+'/*')
+sites.remove('/var/spool/dynamo/track_transfers/monitoring')
 
 interval = 1800
 
