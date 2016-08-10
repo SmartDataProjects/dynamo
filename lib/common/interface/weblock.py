@@ -5,6 +5,7 @@ import time
 
 from common.interface.lock import ReplicaLockInterface
 from common.interface.webservice import RESTService
+from common.dataformat import Block
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -58,11 +59,13 @@ class WebReplicaLockInterface(ReplicaLockInterface):
                 # simple list of datasets
                 for dataset_name in data:
                     if dataset_name is None:
+                        logger.debug('Dataset name None found in %s', source.url_base)
                         continue
 
                     try:
                         dataset = inventory.datasets[dataset_name]
                     except KeyError:
+                        logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                         continue
 
                     for dataset_replica in dataset.replicas:
@@ -73,11 +76,13 @@ class WebReplicaLockInterface(ReplicaLockInterface):
                 # data['result'] -> simple list of datasets
                 for dataset_name in data['result']:
                     if dataset_name is None:
+                        logger.debug('Dataset name None found in %s', source.url_base)
                         continue
 
                     try:
                         dataset = inventory.datasets[dataset_name]
                     except KeyError:
+                        logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                         continue
 
                     for dataset_replica in dataset.replicas:
@@ -86,24 +91,60 @@ class WebReplicaLockInterface(ReplicaLockInterface):
                 
             elif content_type == WebReplicaLockInterface.SITE_TO_DATASETS:
                 # data = {site: {dataset: info}}
-                for site_name, datasets in data.items():
+                for site_name, objects in data.items():
                     try:
                         site = inventory.sites[site_name]
                     except KeyError:
+                        logger.debug('Unknown site %s in %s', site_name, source.url_base)
                         continue
 
-                    for dataset_name, info in datasets.items():
+                    for object_name, info in objects.items():
                         if not info['lock']:
+                            logger.debug('Object %s is not locked at %s', object_name, site_name)
                             continue
 
-                        try:
-                            dataset = inventory.datasets[dataset_name]
-                        except KeyError:
-                            continue
+                        if '#' in object_name:
+                            dataset_name, block_real_name = object_name.split('#')
+                            block_name = Block.translate_name(block_real_name)
+                            try:
+                                dataset = inventory.datasets[dataset_name]
+                            except KeyError:
+                                logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
+                                continue
+
+                            block = dataset.find_block(block_name)
+                            if block is None:
+                                logger.debug('Unknown block %s of %s in %s', block_real_name, dataset_name, source.url_base)
+                                continue
+
+                            locked_blocks = [block]
+
+                        else:                                
+                            try:
+                                dataset = inventory.datasets[dataset_name]
+                            except KeyError:
+                                logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
+                                continue
+
+                            locked_blocks = dataset.blocks
 
                         replica = dataset.find_replica(site)
                         if replica is None:
+                            logger.debug('Replica of %s is not at %s in %s', dataset_name, site_name, source.url_base)
                             continue
 
                         for block_replica in replica.block_replicas:
-                            self.locked_blocks[dataset].append(block_replica)
+                            if block_replica.block in locked_blocks:
+                                self.locked_blocks[dataset].append(block_replica)
+
+if __name__ == '__main__':
+    # Unit test
+
+    logger.setLevel(logging.DEBUG)
+
+    from common.inventory import InventoryManager
+
+    inventory = InventoryManager()
+    locks = WebReplicaLockInterface()
+
+    locks.update(inventory)
