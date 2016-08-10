@@ -109,8 +109,11 @@ if 'detox' in args.module:
         if ':' in policy_cfg:
             stack_path, strategy_str = policy_cfg.split(':')
         else:
-            stack_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + partition + '.txt'
+            stack_path = partition
             strategy_str = policy_cfg
+
+        if '/' not in stack_path:
+            stack_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + stack_path + '.txt'
 
         if len(stackdef) > 2:
             ranking = stackdef[2]

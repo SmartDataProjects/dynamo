@@ -94,7 +94,7 @@ class Dealer(object):
 
         self.history.close_copy_run(run_number)
 
-        logger.info('Finished dealer run at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
+        logger.info('Finished dealer run at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
 
     def determine_copies(self, sites, datasets, policy, pending_volumes):
         """
