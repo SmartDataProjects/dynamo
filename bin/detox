@@ -13,7 +13,7 @@ from common.demand import DemandManager
 import common.interface.classes as classes
 from detox.main import Detox
 from detox.policy import Policy
-from detox.policies.partitioning import BelongsTo
+from detox.partitioning import BelongsTo
 import detox.configuration as detox_config
 import common.configuration as config
 

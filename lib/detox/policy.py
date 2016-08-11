@@ -4,8 +4,8 @@ import logging
 import collections
 import subprocess
 
-from detox.policies.variables import replica_vardefs
-from detox.policies.condition import ReplicaCondition, SiteCondition
+from detox.variables import replica_vardefs
+from detox.condition import ReplicaCondition, SiteCondition
 
 logger = logging.getLogger(__name__)
 
