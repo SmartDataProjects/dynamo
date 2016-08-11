@@ -85,10 +85,7 @@ class Detox(object):
             # Sites not in READY state or in IGNORE activity state are hard-coded to not be considered.
             target_sites = set()
             for site in self.inventory_manager.sites.values():
-                if site.status != Site.STAT_READY or site.active == Site.ACT_IGNORE:
-                    continue
-
-                if policy.need_deletion(site, initial = True):
+                if policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
                     target_sites.add(site)
     
             logger.info('Identifying dataset replicas in the partition.')
@@ -159,7 +156,7 @@ class Detox(object):
     
                     # update the list of target sites
                     for site in self.inventory_manager.sites.values():
-                        if site in target_sites and not policy.need_deletion(site):
+                        if site in target_sites and policy.stop_condition.match(site):
                             target_sites.remove(site)
     
                 elif policy.strategy == Policy.ST_STATIC:
@@ -173,7 +170,7 @@ class Detox(object):
                             replica = sorted_candidates.pop()
                             self.inventory_manager.unlink_datasetreplica(replica)
                             deleted[replica] = deletion_candidates[replica]
-                            if not policy.need_deletion(site):
+                            if policy.stop_condition.match(site):
                                 break
     
                         for replica in sorted_candidates:

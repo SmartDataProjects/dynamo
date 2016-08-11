@@ -4,8 +4,8 @@ import logging
 import collections
 import subprocess
 
-from detox.policies.expressions import replica_vardefs
-from detox.policies.condition import Condition
+from detox.policies.variables import replica_vardefs
+from detox.policies.condition import ReplicaCondition, SiteCondition
 
 logger = logging.getLogger(__name__)
 
@@ -68,14 +68,14 @@ class Policy(object):
                     il += 1
 
         self.target_site_def = None
-        self.site_trigger = None
-        self.site_release = None
+        self.deletion_trigger = None
+        self.stop_condition = None
         self.rules = []
         self.default_decision = -1
         self.strategy = -1
         self.candidate_sort = None
 
-        LINE_SITE_TARGET, LINE_SITE_TRIGGER, LINE_SITE_RELEASE, LINE_POLICY, LINE_STRATEGY = range(4)
+        LINE_SITE_TARGET, LINE_DELETION_TRIGGER, LINE_STOP_CONDITION, LINE_POLICY, LINE_STRATEGY = range(5)
 
         for line in lines:
             line_type = -1
@@ -84,9 +84,9 @@ class Policy(object):
             if words[0] == 'On':
                 line_type = LINE_SITE_TARGET
             elif words[0] == 'When':
-                line_type = LINE_SITE_TRIGGER
+                line_type = LINE_DELETION_TRIGGER
             elif words[0] == 'Until':
-                line_type = LINE_SITE_RELEASE
+                line_type = LINE_STOP_CONDITION
             elif words[0] == 'Strategy':
                 line_type = LINE_STRATEGY
             elif words[0] == 'Protect':
@@ -108,30 +108,30 @@ class Policy(object):
             if line_type == LINE_STRATEGY:
                 self.strategy = eval('Policy.ST_' + words[1].upper())
 
-                if words[3] != 'order' or words[4] != 'by':
+                if words[2] != 'order' or words[3] != 'by':
                     raise ConfigurationError(line)
 
-                sortkey = replica_vardefs[words[5]][0]
+                sortkey = replica_vardefs[words[4]][0]
                 self.candidate_sort = lambda replicas: sorted(replicas, key = sortkey)
 
             else:
-                cond_text = ' '.join(words[2:])
+                cond_text = ' '.join(words[1:])
 
                 if line_type == LINE_SITE_TARGET:
                     self.target_site_def = SiteCondition(cond_text, self.partition)
 
-                elif line_type == LINE_SITE_TRIGGER:
-                    self.site_trigger = SiteCondition(cond_text, self.partition)
+                elif line_type == LINE_DELETION_TRIGGER:
+                    self.deletion_trigger = SiteCondition(cond_text, self.partition)
 
-                elif line_type == LINE_SITE_RELEASE:
-                    self.site_release = SiteCondition(cond_text, self.partition)
+                elif line_type == LINE_STOP_CONDITION:
+                    self.stop_condition = SiteCondition(cond_text, self.partition)
 
                 elif line_type == LINE_POLICY:
                     self.rules.append(PolicyLine(ReplicaCondition(cond_text), decision, cond_text))
 
         if self.target_site_def is None:
             raise ConfigurationError('Target site definition missing.')
-        if self.site_trigger is None or site_release is None:
+        if self.deletion_trigger is None or self.stop_condition is None:
             raise ConfigurationError('Deletion trigger and release expressions are missing.')
         if self.default_decision == -1:
             raise ConfigurationError('Default decision not given.')
@@ -231,11 +231,8 @@ class Policy(object):
                 replica.block_replicas.append(block_replica)
                 site.add_block_replica(block_replica)
 
-    def need_deletion(self, site, initial = False):
-        if self.site_requirement is None:
-            return True
-        else:
-            return self.site_requirement(site, self.partition, initial)
+    def no_more_deletion(self, site):
+        return self.stop_condition.match(site)
 
     def evaluate(self, replica):
         for rule in self.rules:
