@@ -13,8 +13,7 @@ from common.demand import DemandManager
 import common.interface.classes as classes
 from detox.main import Detox
 from detox.policy import Policy
-from detox.policies.site import NonzeroQuota, GroupOccupancy
-from detox.policies.replica import BelongsTo
+from detox.policies.partitioning import BelongsTo
 import detox.configuration as detox_config
 from dealer.main import Dealer
 from dealer.policy import DealerPolicy
@@ -34,7 +33,7 @@ parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', defaul
 parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls', default = '', help = 'DeletionInterface class.')
 parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
-parser.add_argument('--detox-policy-stack', '-p', metavar = 'STACKS', dest = 'detox_stacks', nargs = '+', default = ['AnalysisOps/iterative', 'DataOps/static'], help = 'Name of the policy stack. Syntax is <partition>/[<path>:]strategy[/ranking]. If no path is given, policy stack is taken from DYNAMO_BASE/policies/detox/<partition>.txt. If a relative path is provided, a file is searched for in policies/detoxstacks. Recognized strategies are "iterative", "static", and "greedy". Recognized ranking are global-rank (default) and last_update.')
+parser.add_argument('--detox-partition', '-p', metavar = 'PARTITIONS', dest = 'detox_partitions', nargs = '+', default = ['AnalysisOps', 'DataOps'], help = 'Name of the detox partitions. Syntax is <partition>[:<path>]. If no path is given, policy stack is taken from DYNAMO_BASE/policies/detox/<partition>.txt.')
 parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'included_sites', nargs = '+', default = [], help = 'List of sites to include. If not specified, all sites in inventory are included. Wildcard is allowed.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
@@ -100,65 +99,26 @@ if 'detox' in args.module:
     
     detox_partitions = []
     
-    for stack_spec in args.detox_stacks:
-        stackdef = stack_spec.split('/')
+    for part_spec in args.detox_partitions:
+        partdef = part_spec.split(':')
 
-        partition = stackdef[0]
-        policy_cfg = stackdef[1]
-
-        if ':' in policy_cfg:
-            stack_path, strategy_str = policy_cfg.split(':')
+        partition = partdef[0]
+        if len(partdef) > 1:
+            def_path = partdef[1]
         else:
-            stack_path = partition
-            strategy_str = policy_cfg
+            def_path = partition
 
-        if '/' not in stack_path:
-            stack_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + stack_path + '.txt'
+        if '/' not in def_path:
+            def_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + def_path + '.txt'
 
-        if len(stackdef) > 2:
-            ranking = stackdef[2]
-        else:
-            ranking = 'global-rank'
-
-        try:
-            strategy = eval('Policy.ST_' + strategy_str.upper())
-        except NameError:
-            print 'Unknown strategy', strategy_str
-            sys.exit(1)
-    
         detox_partitions.append(partition)
 
-        with open(stack_path) as stack_source:
-            stack_lines = map(str.strip, stack_source.read().split('\n'))
-            il = 0
-            while il != len(stack_lines):
-                if stack_lines[il] == '' or stack_lines[il].startswith('#'):
-                    stack_lines.pop(il)
-                else:
-                    il += 1
-    
-        default, rule_stack = Policy.parse_rules(stack_lines)
-    
         # currently partition = group
         group = inventory_manager.groups[partition]
         quotas = dict([(site, site.group_quota(group)) for site in inventory_manager.sites.values()])
 
-        if strategy == Policy.ST_ITERATIVE or strategy == Policy.ST_STATIC:
-            # Return true if the site is overused for a given partition.
-            # Currently partition and group names are identical.
-            site_requirement = GroupOccupancy(group, included_sites)
-
-        elif strategy == Policy.ST_GREEDY:
-            # True as long as the group has a nonzero quota
-            site_requirement = NonzeroQuota(group, included_sites)
-
-        if ranking == 'last_update':
-            # last element goes first
-            candidate_sort = lambda r_d: [r for r, d in sorted(replicas_demands, key = lambda (r, d): r.dataset.last_update, reverse = True)]
-        else:
-            candidate_sort = None # use the default (global usage rank)
-    
-        policy = Policy(default, rule_stack, strategy, quotas, partition = partition, site_requirement = site_requirement, replica_requirement = BelongsTo(group), candidate_sort = candidate_sort)
+        with open(def_path) as policy_def:    
+            policy = Policy(partition, quotas, BelongsTo(group), policy_def)
     
         detox.set_policy(policy)
 

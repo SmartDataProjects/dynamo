@@ -4,50 +4,20 @@ import logging
 import collections
 import subprocess
 
-import detox.policies.expressions as expressions
+from detox.policies.expressions import replica_vardefs
+from detox.policies.condition import Condition
 
 logger = logging.getLogger(__name__)
 
 class ConfigurationError(Exception):
-    pass
-
-class BinaryExpr(object):
-    def __init__(self, lhs, op, rhs):
-        self.lhs = lhs
-        self.rhs = rhs
-        if op == '==':
-            self._call = lambda r: self.lhs(r) == self.rhs
-        elif op == '!=':
-            self._call = lambda r: self.lhs(r) != self.rhs
-        elif op == '<':
-            self._call = lambda r: self.lhs(r) < self.rhs
-        elif op == '>':
-            self._call = lambda r: self.lhs(r) > self.rhs
+    def __init__(self, *args):
+        if len(args) != 0:
+            self.str = args[0] % args[1:]
         else:
-            logger.error('Unknown operator %s', op)
-            raise ConfigurationError()
+            self.str = ''
 
-    def __call__(self, r):
-        return self._call(r)
-
-class PatternMatch(object):
-    def __init__(self, lhs, pattern, match):
-        if '*' in pattern:
-            self.pattern = re.compile(fnmatch.translate(pattern))
-            if match:
-                self._call = lambda r: self.pattern.match(lhs(r)) is not None
-            else:
-                self._call = lambda r: self.pattern.match(lhs(r)) is None
-
-        else:
-            self.pattern = pattern
-            if match:
-                self._call = lambda r: lhs(r) == self.pattern
-            else:
-                self._call = lambda r: lhs(r) != self.pattern
-
-    def __call__(self, replica):
-        return self._call(replica)
+    def __str__(self):
+        return repr(self.str)
 
 class PolicyLine(object):
     """
@@ -55,26 +25,20 @@ class PolicyLine(object):
     AND-chained list of predicates.
     """
 
-    def __init__(self, decision, text):
-        self.predicates = []
+    def __init__(self, condition, decision, text):
+        self.condition = condition
         self.decision = decision
         self.text = text
 
-    def add_predicate(self, pred):
-        self.predicates.append(pred)
-
     def __call__(self, replica):
-        for pred in self.predicates:
-            if not pred(replica):
-                return
-            
-        return replica, self.decision, self.text
+        if self.condition.match(replica):
+            return replica, self.decision, self.text
 
 class Policy(object):
     """
     Responsible for partitioning the replicas, setting quotas and activating deletion on sites, and making deletion decisions on replicas.
     The core of the object is a stack of rules (specific rules first) with a fall-back default decision.
-    A rule is a callable object with (replica, demand_manager) as arguments that returns None or (replica, decision, reason)
+    A rule is a callable object that takes a dataset replica as an argument and returns None or (replica, decision, reason)
     """
 
     # do not change order - used by history records
@@ -82,123 +46,99 @@ class Policy(object):
     DECISION_STR = {DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
     ST_ITERATIVE, ST_STATIC, ST_GREEDY = range(3)
 
-    @staticmethod
-    def parse_rules(lines):
-        rules = []
-        default_decision = None
-
-        for line in lines:
-            if default_decision is not None:
-                logger.error('Invalid policy lines after default decision.')
-                raise ConfigurationError()
-
-            words = line.split()
-            if words[0] == 'Protect':
-                decision = Policy.DEC_PROTECT
-            else:
-                decision = Policy.DEC_DELETE
-
-            if len(words) == 1:
-                default_decision = decision
-                continue
-
-            if words[1] != 'if':
-                logger.error('Invalid policy line %s', line)
-                raise ConfigurationError()
-
-            condition = ' '.join(words[2:])
-
-            policy_line = PolicyLine(decision, condition)
-
-            predicates = condition.split(' and ')
-
-            for predicate in predicates:
-                words = predicate.split()
-
-                expr = words[0]
-
-                try:
-                    expr_def = expressions.expressions[expr]
-                except KeyError:
-                    logger.error('Invalid expression %s', expr)
-                    raise ConfigurationError()
-
-                varmap, vtype = expr_def[:2]
-
-                if vtype == expressions.BOOL_TYPE:
-                    policy_line.add_predicate(varmap)
-                    if len(words) > 1:
-                        logger.error('Invalid bool-type expression %s', predicate)
-                        raise ConfigurationError()
-
-                    continue
-
-                if len(words) == 1:
-                    logger.error('RHS for expression %s missing', expr)
-                    raise ConfigurationError()
-
-                operator = words[1]
-
-                if vtype == expressions.NUMERIC_TYPE:
-                    if len(expr_def) > 2:
-                        rhs = expr_def[2](words[2])
-                    else:
-                        rhs = float(words[2])
-
-                    policy_line.add_predicate(BinaryExpr(varmap, operator, rhs))
-
-                elif vtype == expressions.TEXT_TYPE:
-                    if operator == '==':
-                        match = True
-                    elif operator == '!=':
-                        match = False
-                    else:
-                        logger.error('Invalid operator for TEXT_TYPE: %s', operator)
-                        raise ConfigurationError()
-
-                    policy_line.add_predicate(PatternMatch(varmap, words[2], match))
-                
-                elif vtype == expressions.TIME_TYPE:
-                    rhs_expr = ' '.join(words[2:])
-                    proc = subprocess.Popen(['date', '-d', rhs_expr, '+%s'], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
-                    out, err = proc.communicate()
-                    if err != '':
-                        logger.error('Invalid time expression %s', rhs_expr)
-                        raise ConfigurationError()
-
-                    try:
-                        rhs = float(out.strip())
-                    except:
-                        logger.error('Invalid time expression %s', rhs_expr)
-                        raise ConfigurationError()
-
-                    policy_line.add_predicate(BinaryExpr(varmap, operator, rhs))
-
-            rules.append(policy_line)
-
-        if default_decision is None:
-            logger.error('Default decision not given.')
-            raise ConfigurationError()
-
-        return default_decision, rules
-
-    def __init__(self, default, rules, strategy, quotas, partition = '', site_requirement = None, replica_requirement = None, candidate_sort = None):
-        self.default_decision = default # decision
-        self.rules = rules # [rule]
-        self.strategy = strategy # one of ST_ enums
+    def __init__(self, partition, quotas, partitioning, lines):
         self.quotas = quotas # {site: quota}
         self.partition = partition
-        # bool(site, partition, initial). initial: check deletion should be triggered.
-        self.site_requirement = site_requirement
         # An object with two methods dataset = int(DatasetReplica), block = bool(BlockReplica).
         # dataset return values: 1->drep is in partition, 0->drep is not in partition, -1->drep is partially in partition
-        self.replica_requirement = replica_requirement
+        self.partitioning = partitioning
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
-        # sorted_list_of_replicas(list_of_(replica, demand))
-        if candidate_sort is None:
-            self.candidate_sort = lambda replicas: sorted(replicas, key = lambda r: r.dataset.demand.global_usage_rank)
-        else:
-            self.candidate_sort = candidate_sort
+
+        self.parse_rules(lines)
+
+    def parse_rules(self, lines):
+        if type(lines) is file:
+            conf = lines
+            lines = map(str.strip, conf.read().split('\n'))
+            il = 0
+            while il != len(lines):
+                if lines[il] == '' or lines[il].startswith('#'):
+                    lines.pop(il)
+                else:
+                    il += 1
+
+        self.target_site_def = None
+        self.site_trigger = None
+        self.site_release = None
+        self.rules = []
+        self.default_decision = -1
+        self.strategy = -1
+        self.candidate_sort = None
+
+        LINE_SITE_TARGET, LINE_SITE_TRIGGER, LINE_SITE_RELEASE, LINE_POLICY, LINE_STRATEGY = range(4)
+
+        for line in lines:
+            line_type = -1
+
+            words = line.split()
+            if words[0] == 'On':
+                line_type = LINE_SITE_TARGET
+            elif words[0] == 'When':
+                line_type = LINE_SITE_TRIGGER
+            elif words[0] == 'Until':
+                line_type = LINE_SITE_RELEASE
+            elif words[0] == 'Strategy':
+                line_type = LINE_STRATEGY
+            elif words[0] == 'Protect':
+                decision = Policy.DEC_PROTECT
+                line_type = LINE_POLICY
+            elif words[0] == 'Delete':
+                decision = Policy.DEC_DELETE
+                line_type = LINE_POLICY
+            else:
+                raise ConfigurationError(line)
+
+            if len(words) == 1:
+                if line_type == LINE_POLICY:
+                    self.default_decision = decision
+                    continue
+                else:
+                    raise ConfigurationError(line)
+
+            if line_type == LINE_STRATEGY:
+                self.strategy = eval('Policy.ST_' + words[1].upper())
+
+                if words[3] != 'order' or words[4] != 'by':
+                    raise ConfigurationError(line)
+
+                sortkey = replica_vardefs[words[5]][0]
+                self.candidate_sort = lambda replicas: sorted(replicas, key = sortkey)
+
+            else:
+                cond_text = ' '.join(words[2:])
+
+                if line_type == LINE_SITE_TARGET:
+                    self.target_site_def = SiteCondition(cond_text, self.partition)
+
+                elif line_type == LINE_SITE_TRIGGER:
+                    self.site_trigger = SiteCondition(cond_text, self.partition)
+
+                elif line_type == LINE_SITE_RELEASE:
+                    self.site_release = SiteCondition(cond_text, self.partition)
+
+                elif line_type == LINE_POLICY:
+                    self.rules.append(PolicyLine(ReplicaCondition(cond_text), decision, cond_text))
+
+        if self.target_site_def is None:
+            raise ConfigurationError('Target site definition missing.')
+        if self.site_trigger is None or site_release is None:
+            raise ConfigurationError('Deletion trigger and release expressions are missing.')
+        if self.default_decision == -1:
+            raise ConfigurationError('Default decision not given.')
+        if self.strategy == -1:
+            raise ConfiguraitonError('Strategy is not specified.')
+        if self.candidate_sort is None:
+            raise ConfiguraitonError('Deletion candidate sorting is not specified.')
 
     def partition_replicas(self, datasets):
         """
@@ -209,7 +149,7 @@ class Policy(object):
 
         all_replicas = []
 
-        if self.replica_requirement is None:
+        if self.partitioning is None:
             # all replicas are in
             for dataset in datasets:
                 all_replicas.extend(dataset.replicas)
@@ -228,7 +168,7 @@ class Policy(object):
                 replica = dataset.replicas[ir]
                 site = replica.site
 
-                partitioning = self.replica_requirement.dataset(replica)
+                partitioning = self.partitioning.dataset(replica)
 
                 if partitioning > 0:
                     # this replica is fully in partition
@@ -249,7 +189,7 @@ class Policy(object):
                     block_replicas = []
                     not_in_partition = []
                     for block_replica in replica.block_replicas:
-                        if self.replica_requirement.block(block_replica):
+                        if self.partitioning.block(block_replica):
                             site_block_replicas.append(block_replica)
                             block_replicas.append(block_replica)
                         else:

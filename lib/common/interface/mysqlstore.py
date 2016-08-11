@@ -215,7 +215,7 @@ class MySQLStore(LocalStoreInterface):
 #
 #        for site in site_list:
 #            for group in group_list:
-#                if site.group_present(group)
+#                if site.group_present(group):
 #                    logger.info('Setting quota for %s on %s to %d', group.name, site.name, int(site.storage / len(group_list)))
 #                    site.set_group_quota(group, int(site.storage / len(group_list)))
 

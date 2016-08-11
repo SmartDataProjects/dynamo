@@ -324,7 +324,14 @@ class Site(object):
             return index
 
     def group_present(self, group):
-        return (group in self._group_keys)
+        if type(group) is str:
+            try:
+                return next(g for g in self._group_keys if g.name == group)
+            except:
+                return None
+        else:
+            if group in self._group_keys:
+                return group
 
     def add_block_replica(self, replica):
         self._block_replicas.append(replica)
