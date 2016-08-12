@@ -117,7 +117,7 @@ class Detox(object):
                         protected[replica] = reason
     
                     elif replica.site not in target_sites:
-                        kept[replica] = 'Site does not need deletion.'
+                        kept[replica] = reason
     
                     else:
                         deletion_candidates[replica] = reason
@@ -174,7 +174,7 @@ class Detox(object):
                                 break
     
                         for replica in sorted_candidates:
-                            kept[replica] = 'Site does not need deletion.'
+                            kept[replica] = deletion_candidates[replica]
     
                     break
     
@@ -187,6 +187,10 @@ class Detox(object):
                         self.inventory_manager.unlink_datasetreplica(replica)
     
                     break
+
+            for rule in policy.rules:
+                if hasattr(rule, 'has_match') and not rule.has_match:
+                    logger.warning('Policy %s had no matching replica.' % str(rule))
     
             # save replica snapshots and all deletion decisions
             logger.info('Saving deletion decisions.')
@@ -273,13 +277,13 @@ class Detox(object):
         # from the least desirable (to delete) to the most
 
         if policy.quotas[target_site] == 0:
-            return [sorted_candidates[-1]]
+            return [sorted_candidates[0]]
 
         else:
             selected_replicas = []
             selected_volume = 0.
             while len(sorted_candidates) and selected_volume / policy.quotas[target_site] < detox_config.deletion_per_iteration:
-                replica = sorted_candidates.pop()
+                replica = sorted_candidates.pop(0)
                 selected_replicas.append(replica)
                 selected_volume += replica.size() * 1.e-12
 
