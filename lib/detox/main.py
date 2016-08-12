@@ -87,7 +87,7 @@ class Detox(object):
             for site in self.inventory_manager.sites.values():
                 if policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
                     target_sites.add(site)
-    
+
             logger.info('Identifying dataset replicas in the partition.')
     
             # "partition" as a verb - selecting only the blockreps in the partition

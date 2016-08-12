@@ -59,7 +59,7 @@ class Negate(UnaryExpr):
         return not self.vmap(obj)
 
 class BinaryExpr(Predicate):
-    operators = ['==', '!=', '<', '>', '=~', '!~']
+    operators = ['==', '!=', '<', '>']
 
     @staticmethod
     def get(vardef, op, rhs_expr):
@@ -71,10 +71,6 @@ class BinaryExpr(Predicate):
             return Lt(vardef, rhs_expr)
         elif op == '>':
             return Gt(vardef, rhs_expr)
-        elif op == '=~':
-            return Match(vardef, rhs_expr)
-        elif op == '!~':
-            return Unmatch(vardef, rhs_expr)
         else:
             raise InvalidOperator(op)
 
@@ -86,7 +82,10 @@ class BinaryExpr(Predicate):
         elif self.vtype == variables.NUMERIC_TYPE:
             self.rhs = float(rhs_expr)
         elif self.vtype == variables.TEXT_TYPE:
-            self.rhs = rhs_expr
+            if '*' in rhs_expr:
+                self.rhs = re.compile(fnmatch.translate(rhs_expr))
+            else:
+                self.rhs = rhs_expr
         elif self.vtype == variables.TIME_TYPE:
             proc = subprocess.Popen(['date', '-d', rhs_expr, '+%s'], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
             out, err = proc.communicate()
@@ -99,12 +98,28 @@ class BinaryExpr(Predicate):
                 raise InvalidExpression('Invalid time expression %s' % rhs_expr)
 
 class Eq(BinaryExpr):
+    def __init__(self, vardef, rhs_expr):
+        BinaryExpr.__init__(self, vardef, rhs_expr)
+
+        if type(self.rhs) is re._pattern_type:
+            self._call = lambda obj: self.rhs.match(self.vmap(obj)) is not None
+        else:
+            self._call = lambda obj: self.vmap(obj) == self.rhs
+
     def __call__(self, obj):
-        return self.vmap(obj) == self.rhs
+        return self._call(obj)
 
 class Neq(BinaryExpr):
+    def __init__(self, vardef, rhs_expr):
+        BinaryExpr.__init__(self, vardef, rhs_expr)
+
+        if type(self.rhs) is re._pattern_type:
+            self._call = lambda obj: self.rhs.match(self.vmap(obj)) is None
+        else:
+            self._call = lambda obj: self.vmap(obj) != self.rhs
+
     def __call__(self, obj):
-        return self.vmap(obj) != self.rhs
+        return self._call(obj)
 
 class Lt(BinaryExpr):
     def __call__(self, obj):
@@ -158,12 +173,30 @@ class SetExpr(Predicate):
         if not matches:
             raise InvalidExpression(elems_expr)
 
-        self.elems = set(matches.group(1).split())
+        elems = matches.group(1).split()
+
+        try:
+            if self.vtype == variables.NUMERIC_TYPE:
+                self.elems = map(int, elems)
+            elif self.vtype == variables.TEXT_TYPE:
+                self.elems = map(lambda s: re.compile(fnmatch.translate(s)), elems)
+            else:
+                raise Exception()
+        except:
+            raise InvalidExpression(matches.group(1))
 
 class In(SetExpr):
     def __call__(self, obj):
-        return self.vmap(obj) in self.elems
+        if self.vtype == variables.NUMERIC_TYPE:
+            return self.vmap(obj) in self.elems
+        else:
+            v = self.vmap(obj)
+            try:
+                next(e for e in self.elems if e.match(v))
+                return True
+            except StopIteration:
+                return False
 
 class Notin(SetExpr):
     def __call__(self, obj):
-        return self.vmap(obj) not in self.elems
+        return not In.__call__(self, obj)
