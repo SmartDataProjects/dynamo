@@ -75,9 +75,13 @@ class Dataset(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset %s (status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, #blocks=%d, replicas=%s)' % \
+        return 'Dataset(%s, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, blocks=%s, replicas=%s)' % \
             (self.name, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
-            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), len(self.blocks), replica_sites)
+            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), str(self.blocks), replica_sites)
+
+    def __repr__(self):
+        return 'Dataset(\'%s\', status=%d, on_tape=%d, data_type=%d, software_version=%s, last_update=%d, is_open=%s)' % \
+            (self.name, self.status, self.on_tape, self.data_type, str(self.software_version), self.last_update, str(self.is_open))
 
     def unlink(self):
         # unlink objects to avoid ref cycles - should be called when this dataset is absolutely not needed
@@ -152,6 +156,9 @@ def _Block_translate_name(name_str):
     # block name format: [8]-[4]-[4]-[4]-[12] where [n] is an n-digit hex.
     return int(name_str.replace('-', ''), 16)
 
+def _Block___str__(self):
+    return 'Block %s#%s (size=%d, num_files=%d, is_open=%s)' % (self.dataset.name, self.real_name(), self.size, self.num_files, self.is_open)
+
 def _Block_real_name(self):
     full_string = hex(self.name).replace('0x', '')[:-1] # last character is 'L'
     if len(full_string) < 32:
@@ -179,6 +186,7 @@ def _Block_clone(self, dataset = None, size = None, num_files = None, is_open = 
     )
 
 Block.translate_name = staticmethod(_Block_translate_name)
+Block.__str__ = _Block___str__
 Block.real_name = _Block_real_name
 Block.find_replica = _Block_find_replica
 Block.clone = _Block_clone
@@ -253,6 +261,34 @@ class Site(object):
         else:
             return arg
 
+    @staticmethod
+    def activestate_val(arg):
+        if type(arg) is str:
+            arg = arg.lower()
+            if arg == 'ignore':
+                return Site.ACT_IGNORE
+            elif arg == 'available':
+                return Site.ACT_AVAILABLE
+            elif arg == 'nocopy':
+                return Site.ACT_NOCOPY
+
+        else:
+            return arg
+
+    @staticmethod
+    def activestate_name(arg):
+        if type(arg) is int:
+            if arg == Site.ACT_IGNORE:
+                return 'ignore'
+            elif arg == Site.ACT_AVAILABLE:
+                return 'available'
+            elif arg == Site.ACT_NOCOPY:
+                return 'nocopy'
+
+        else:
+            return arg
+        
+
     def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN, active = ACT_AVAILABLE):
         self.name = name
         self.host = host
@@ -289,8 +325,12 @@ class Site(object):
         self._group_keys = {}
 
     def __str__(self):
-        return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s)' % \
-            (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu, Site.status_name(self.status))
+        return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s, active=%s)' % \
+            (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu, Site.status_name(self.status), Site.activestate_name(self.active))
+
+    def __repr__(self):
+        return 'Site(\'%s\', host=\'%s\', storage_type=%d, backend=\'%s\', storage=%d, cpu=%f, status=%d, active=%d)' % \
+            (self.name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status, self.active)
 
     def find_dataset_replica(self, dataset):
         try:
@@ -433,6 +473,9 @@ class Group(object):
     def __str__(self):
         return 'Group %s' % self.name
 
+    def __repr__(self):
+        return 'Group(\'%s\')' % self.name
+
 
 class DatasetReplica(object):
     """Represents a dataset replica. Combines dataset and site information."""
@@ -466,11 +509,21 @@ class DatasetReplica(object):
 
     def __str__(self):
         return 'DatasetReplica {site}:{dataset} (group={group}, is_complete={is_complete}, is_custodial={is_custodial},' \
-            ' #block_replicas={num_block_replicas}, #accesses[LOCAL]={num_local_accesses}, #accesses[REMOTE]={num_remote_accesses})'.format(
+            ' block_replicas={block_replicas}, #accesses[LOCAL]={num_local_accesses}, #accesses[REMOTE]={num_remote_accesses})'.format(
                 site = self.site.name, dataset = self.dataset.name, group = self.group.name if self.group is not None else None, is_complete = self.is_complete,
                 is_custodial = self.is_custodial,
-                num_block_replicas = len(self.block_replicas), num_local_accesses = len(self.accesses[DatasetReplica.ACC_LOCAL]),
+                block_replicas = str(self.block_replicas), num_local_accesses = len(self.accesses[DatasetReplica.ACC_LOCAL]),
                 num_remote_accesses = len(self.accesses[DatasetReplica.ACC_REMOTE]))
+
+    def __repr__(self):
+        rep = 'DatasetReplica(%s,\n' % repr(self.dataset)
+        rep += '    %s,\n' % repr(self.site)
+        rep += '    group=%s,\n' % repr(self.group)
+        rep += '    is_complete=%s,\n' % str(self.is_complete)
+        rep += '    is_custodial=%s,\n' % str(self.is_custodial)
+        rep += '    last_block_created=%d)' % self.last_block_created
+
+        return rep
 
     def clone(self, block_replicas = True): # Create a detached clone. Detached in the sense that it is not linked from dataset or site.
         replica = DatasetReplica(dataset = self.dataset, site = self.site, group = self.group, is_complete = self.is_complete, is_custodial = self.is_custodial, last_block_created = self.last_block_created)
