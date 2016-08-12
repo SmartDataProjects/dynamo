@@ -710,7 +710,15 @@ class MySQLStore(LocalStoreInterface):
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
         mapping = lambda (did, r): (block_to_id[r.block], self._sites_to_ids[r.site], self._groups_to_ids[r.group] if r.group else 0, r.is_complete, r.is_custodial)
 
-        self._mysql.insert_many('block_replicas_new', fields, mapping, blockreps_to_write, do_update = False)
+        try:
+            self._mysql.insert_many('block_replicas_new', fields, mapping, blockreps_to_write, do_update = False)
+        except:
+            # Unknown error occurred Aug 12 - trying to debug
+            with open('/var/log/dynamo/block_replicas_new.dump', 'w') as dump:
+                for did, r in blockreps_to_write:
+                    dump.write('%d %s\n' % (did, str(r)))
+
+            raise
 
         del blockreps_to_write
 
