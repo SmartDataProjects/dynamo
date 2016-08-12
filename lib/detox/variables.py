@@ -30,8 +30,6 @@ replica_vardefs = {
     'dataset.last_update': (lambda r: r.dataset.last_update, TIME_TYPE),
     'dataset.num_full_disk_copy': (lambda r: sum(1 for rep in r.dataset.replicas if rep.is_full()), NUMERIC_TYPE),
     'dataset.usage_rank': (lambda r: r.dataset.demand.global_usage_rank, NUMERIC_TYPE),
-    'site.status': (lambda r: r.site.status, NUMERIC_TYPE, lambda v: eval('Site.STAT_' + v)),
-    'site.active': (lambda r: r.site.active, NUMERIC_TYPE, lambda v: eval('Site.ACT_' + v)),
     'replica.incomplete': (replica_incomplete, BOOL_TYPE),
     'replica.last_block_created': (lambda r: r.last_block_created, TIME_TYPE),
     'replica.num_access': (lambda r: len(r.accesses[DatasetReplica.ACC_LOCAL]) + len(r.accesses[DatasetReplica.ACC_REMOTE]), NUMERIC_TYPE),

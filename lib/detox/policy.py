@@ -29,9 +29,14 @@ class PolicyLine(object):
         self.condition = condition
         self.decision = decision
         self.text = text
+        self.has_match = False
+
+    def __str__(self):
+        return self.text
 
     def __call__(self, replica):
         if self.condition.match(replica):
+            self.has_match = True
             return replica, self.decision, self.text
 
 class Policy(object):
@@ -75,7 +80,7 @@ class Policy(object):
         self.strategy = -1
         self.candidate_sort = None
 
-        LINE_SITE_TARGET, LINE_DELETION_TRIGGER, LINE_STOP_CONDITION, LINE_POLICY, LINE_STRATEGY = range(5)
+        LINE_SITE_TARGET, LINE_DELETION_TRIGGER, LINE_STOP_CONDITION, LINE_POLICY, LINE_STRATEGY, LINE_ORDER = range(6)
 
         for line in lines:
             line_type = -1
@@ -89,6 +94,8 @@ class Policy(object):
                 line_type = LINE_STOP_CONDITION
             elif words[0] == 'Strategy':
                 line_type = LINE_STRATEGY
+            elif words[0] == 'Order':
+                line_type = LINE_ORDER
             elif words[0] == 'Protect':
                 decision = Policy.DEC_PROTECT
                 line_type = LINE_POLICY
@@ -108,11 +115,16 @@ class Policy(object):
             if line_type == LINE_STRATEGY:
                 self.strategy = eval('Policy.ST_' + words[1].upper())
 
-                if words[2] != 'order' or words[3] != 'by':
-                    raise ConfigurationError(line)
+            elif line_type == LINE_ORDER:
+                if words[1] == 'increasing':
+                    reverse = False
+                elif words[1] == 'decreasing':
+                    reverse = True
+                else:
+                    raise ConfigurationError(words[1])
 
-                sortkey = replica_vardefs[words[4]][0]
-                self.candidate_sort = lambda replicas: sorted(replicas, key = sortkey)
+                sortkey = replica_vardefs[words[2]][0]
+                self.candidate_sort = lambda replicas: sorted(replicas, key = sortkey, reverse = reverse)
 
             else:
                 cond_text = ' '.join(words[1:])
