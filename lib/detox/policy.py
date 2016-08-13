@@ -30,14 +30,33 @@ class PolicyLine(object):
         self.decision = decision
         self.text = text
         self.has_match = False
+        if self.condition.static:
+            self.cached_result = {}
 
     def __str__(self):
         return self.text
 
     def __call__(self, replica):
+        if self.condition.static:
+            try:
+                res = self.cached_result[replica]
+                if not res:
+                    return None
+                else:
+                    return replica, res[0], res[1]
+
+            except KeyError:
+                pass
+
         if self.condition.match(replica):
             self.has_match = True
+            if self.condition.static:
+                self.cached_result[replica] = (self.decision, self.text)
+
             return replica, self.decision, self.text
+        else:
+            if self.condition.static:
+                self.cached_result[replica] = False
 
 class Policy(object):
     """
@@ -49,7 +68,6 @@ class Policy(object):
     # do not change order - used by history records
     DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(1, 4)
     DECISION_STR = {DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
-    ST_ITERATIVE, ST_STATIC, ST_GREEDY = range(3)
 
     def __init__(self, partition, quotas, partitioning, lines):
         self.quotas = quotas # {site: quota}
@@ -59,6 +77,7 @@ class Policy(object):
         self.partitioning = partitioning
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
 
+        self.static_optimization = True
         self.parse_rules(lines)
 
     def parse_rules(self, lines):
@@ -77,10 +96,9 @@ class Policy(object):
         self.stop_condition = None
         self.rules = []
         self.default_decision = -1
-        self.strategy = -1
         self.candidate_sort = None
 
-        LINE_SITE_TARGET, LINE_DELETION_TRIGGER, LINE_STOP_CONDITION, LINE_POLICY, LINE_STRATEGY, LINE_ORDER = range(6)
+        LINE_SITE_TARGET, LINE_DELETION_TRIGGER, LINE_STOP_CONDITION, LINE_POLICY, LINE_ORDER = range(5)
 
         for line in lines:
             line_type = -1
@@ -92,8 +110,6 @@ class Policy(object):
                 line_type = LINE_DELETION_TRIGGER
             elif words[0] == 'Until':
                 line_type = LINE_STOP_CONDITION
-            elif words[0] == 'Strategy':
-                line_type = LINE_STRATEGY
             elif words[0] == 'Order':
                 line_type = LINE_ORDER
             elif words[0] == 'Protect':
@@ -112,10 +128,7 @@ class Policy(object):
                 else:
                     raise ConfigurationError(line)
 
-            if line_type == LINE_STRATEGY:
-                self.strategy = eval('Policy.ST_' + words[1].upper())
-
-            elif line_type == LINE_ORDER:
+            if line_type == LINE_ORDER:
                 if words[1] == 'increasing':
                     reverse = False
                 elif words[1] == 'decreasing':
@@ -141,14 +154,18 @@ class Policy(object):
                 elif line_type == LINE_POLICY:
                     self.rules.append(PolicyLine(ReplicaCondition(cond_text), decision, cond_text))
 
+        for rule in self.rules:
+            if not rule.condition.static:
+                logger.info('Condition %s is dynamic. Turning off static policy evaluation.', str(rule.condition))
+                self.static_optimization = False
+                break
+
         if self.target_site_def is None:
             raise ConfigurationError('Target site definition missing.')
         if self.deletion_trigger is None or self.stop_condition is None:
             raise ConfigurationError('Deletion trigger and release expressions are missing.')
         if self.default_decision == -1:
             raise ConfigurationError('Default decision not given.')
-        if self.strategy == -1:
-            raise ConfiguraitonError('Strategy is not specified.')
         if self.candidate_sort is None:
             raise ConfiguraitonError('Deletion candidate sorting is not specified.')
 
@@ -243,9 +260,6 @@ class Policy(object):
                 replica.block_replicas.append(block_replica)
                 site.add_block_replica(block_replica)
 
-    def no_more_deletion(self, site):
-        return self.stop_condition.match(site)
-
     def evaluate(self, replica):
         for rule in self.rules:
             result = rule(replica)
@@ -255,6 +269,3 @@ class Policy(object):
             return replica, self.default_decision, 'Policy default'
 
         return result
-
-    def sort_deletion_candidates(self, replicas):
-        return self.candidate_sort(replicas)

@@ -85,7 +85,7 @@ class Detox(object):
             # Sites not in READY state or in IGNORE activity state are hard-coded to not be considered.
             target_sites = set()
             for site in self.inventory_manager.sites.values():
-                if policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
+                if policy.quotas[site] != 0. and policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
                     target_sites.add(site)
 
             logger.info('Identifying dataset replicas in the partition.')
@@ -101,6 +101,8 @@ class Detox(object):
             protected = {} # {replica: reason}
             deleted = {}
             kept = {}
+
+            protected_fraction = collections.defaultdict(float) # {site: protected size}
     
             iteration = 0
     
@@ -115,6 +117,7 @@ class Detox(object):
                     if decision == Policy.DEC_PROTECT:
                         all_replicas.remove(replica)
                         protected[replica] = reason
+                        protected_fraction[replica.site] += replica.size() / policy.quotas[replica.site]
     
                     elif replica.site not in target_sites:
                         kept[replica] = reason
@@ -124,7 +127,7 @@ class Detox(object):
     
                 del eval_results
     
-                if policy.strategy == Policy.ST_ITERATIVE:
+                if not policy.static_optimization:
                     logger.info('Iteration %d', iteration)
     
                 logger.info(' %d dataset replicas in deletion candidates', len(deletion_candidates))
@@ -137,57 +140,57 @@ class Detox(object):
                     logger.debug('Deletion list:')
                     logger.debug(pprint.pformat(['%s:%s' % (rep.site.name, rep.dataset.name) for rep in deletion_candidates.keys()]))
     
-                if policy.strategy == Policy.ST_ITERATIVE:
+                if not policy.static_optimization:
                     # Pick out the replicas to delete in this iteration, unlink the replicas, and update the list of target sites.
-    
-                    iter_deletion = self.select_replicas(policy, deletion_candidates.keys(), protected.keys())
-    
-                    if logger.getEffectiveLevel() == logging.DEBUG:
-                        for replica in iter_deletion:
-                            logger.debug('Selected replica: %s %s', replica.site.name, replica.dataset.name)
-    
-                    for replica in iter_deletion:
-                        deleted[replica] = deletion_candidates[replica]
-    
-                        # take out replicas from inventory
-                        # we will not consider deleted replicas    
+
+                    candidate_list = deletion_candidates.keys()
+                    candidate_sites = list(set(rep.site for rep in candidate_list))
+            
+                    if len(protected) != 0:
+                        # find the site with the highest protected fraction
+                        target_site = max(candidate_sites, key = lambda site: protected_fraction[site])
+                    else:
+                        target_site = random.choice(candidate_sites)
+
+                    deleted_volume = 0.
+                    stop_condition = lambda s: policy.stop_condition.match(s) or deleted_volume / policy.quotas[s] > detox_config.deletion_per_iteration
+
+                else:
+                    stop_condition = lambda s: policy.stop_condition.match(s)
+
+                for site in target_sites:
+                    if not policy.static_optimization and site != target_site:
+                        continue
+
+                    sorted_candidates = policy.candidate_sort([rep for rep in deletion_candidates if rep.site == site])
+
+                    while len(sorted_candidates) != 0 and not stop_condition(site):
+                        replica = sorted_candidates.pop(0)
+
+                        # take out replicas from inventory and from the list of considered replicas
                         self.inventory_manager.unlink_datasetreplica(replica)
-                        all_replicas.remove(replica)
-    
-                    # update the list of target sites
-                    for site in self.inventory_manager.sites.values():
-                        if site in target_sites and policy.stop_condition.match(site):
-                            target_sites.remove(site)
-    
-                elif policy.strategy == Policy.ST_STATIC:
-                    # Delete the replicas site-by-site in the order given by the policy until the site does not need any more deletion.
-    
-                    for site in target_sites:
-                        sorted_candidates = policy.sort_deletion_candidates([rep for rep in deletion_candidates if rep.site == site])
-                        # from the least desirable (to delete) to the most
-    
-                        while len(sorted_candidates) != 0:
-                            replica = sorted_candidates.pop()
-                            self.inventory_manager.unlink_datasetreplica(replica)
-                            deleted[replica] = deletion_candidates[replica]
-                            if policy.stop_condition.match(site):
-                                break
-    
+
+                        deleted[replica] = deletion_candidates[replica]
+                        
+                        if not policy.static_optimization:
+                            all_replicas.remove(replica)
+                            deleted_volume += replica.size() * 1.e-12
+
+                        if logger.getEffectiveLevel() == logging.DEBUG:
+                            logger.debug('Deleting replica: %s', str(replica))
+
+                    if policy.static_optimization:
                         for replica in sorted_candidates:
                             kept[replica] = deletion_candidates[replica]
-    
-                    break
-    
-                elif policy.strategy == Policy.ST_GREEDY:
-                    # Delete all candidates.
-    
-                    deleted = deletion_candidates
-    
-                    for replica in deleted.keys():
-                        self.inventory_manager.unlink_datasetreplica(replica)
-    
-                    break
 
+                        break
+    
+                    else:
+                        # update the list of target sites
+                        for site in list(target_sites):
+                            if policy.stop_condition.match(site):
+                                target_sites.remove(site)
+    
             for rule in policy.rules:
                 if hasattr(rule, 'has_match') and not rule.has_match:
                     logger.warning('Policy %s had no matching replica.' % str(rule))
@@ -251,43 +254,6 @@ class Detox(object):
             sigint.unblock()
 
             logger.info('Done deleting %d replicas (%.1f TB) from %s.', len(replica_list), total_size * 1.e-12, site.name)
-
-    def select_replicas(self, policy, candidate_list, protection_list):
-        """
-        Select one dataset replica to delete out of all deletion candidates.
-        """
-
-        if len(candidate_list) == 0:
-            return {}
-
-        candidate_sites = list(set(rep.site for rep in candidate_list))
-
-        if len(protection_list) != 0:
-            protection_by_site = dict([(site, 0.) for site in candidate_sites])
-            for replica in protection_list:
-                if replica.site in candidate_sites:
-                    protection_by_site[replica.site] += replica.size()
-
-            # find the site with the highest protected fraction
-            target_site = max(candidate_sites, key = lambda site: 0 if policy.quotas[site] == 0 else protection_by_site[site] / policy.quotas[site])
-        else:
-            target_site = random.choice(candidate_sites)
-
-        sorted_candidates = policy.sort_deletion_candidates([rep for rep in candidate_list if rep.site == target_site])
-        # from the least desirable (to delete) to the most
-
-        if policy.quotas[target_site] == 0:
-            return [sorted_candidates[0]]
-
-        else:
-            selected_replicas = []
-            selected_volume = 0.
-            while len(sorted_candidates) and selected_volume / policy.quotas[target_site] < detox_config.deletion_per_iteration:
-                replica = sorted_candidates.pop(0)
-                selected_replicas.append(replica)
-                selected_volume += replica.size() * 1.e-12
-
-            return selected_replicas
 
 
 if __name__ == '__main__':

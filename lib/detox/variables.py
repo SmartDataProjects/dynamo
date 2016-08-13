@@ -36,6 +36,9 @@ replica_vardefs = {
     'replica.has_locked_block': (replica_has_locked_block, BOOL_TYPE)
 }
 
+# Variables that may change their values during a single program execution
+replica_dynamic_variables = ['dataset.num_full_disk_copy']
+
 # Site variable definition must be a generator of a function
 # Generator takes a partition as an argument and the return function takes a site as an argument
 def partition_occupancy_comp(partition):
@@ -63,5 +66,7 @@ site_vardefs = {
     'site.status': (lambda p: lambda s: s.status, NUMERIC_TYPE, lambda v: eval('Site.STAT_' + v)),
     'site.active': (lambda p: lambda s: s.active, NUMERIC_TYPE, lambda v: eval('Site.ACT_' + v)),
     'site.occupancy': (partition_occupancy_comp, NUMERIC_TYPE),
-    'site.quota': (partition_quota, NUMERIC_TYPE)
+    'site.quota': (partition_quota, NUMERIC_TYPE),
+    'never': (lambda p: lambda s: False, BOOL_TYPE),
+    'always': (lambda p: lambda s: True, BOOL_TYPE)
 }
