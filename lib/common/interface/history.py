@@ -111,7 +111,7 @@ class TransactionHistoryInterface(object):
 
         self._do_recover_from(tag)
 
-    def new_copy_run(self, partition, is_test = False):
+    def new_copy_run(self, partition, policy_version, is_test = False):
         """
         Set up a new copy/deletion run for the partition.
         """
@@ -122,13 +122,13 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            run_number = self._do_new_run(HistoryRecord.OP_COPY, partition, is_test)
+            run_number = self._do_new_run(HistoryRecord.OP_COPY, partition, policy_version, is_test)
         finally:
             self.release_lock()
 
         return run_number
 
-    def new_deletion_run(self, partition, is_test = False):
+    def new_deletion_run(self, partition, policy_version, is_test = False):
         """
         Set up a new copy/deletion run for the partition.
         """
@@ -139,7 +139,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            run_number = self._do_new_run(HistoryRecord.OP_DELETE, partition, is_test)
+            run_number = self._do_new_run(HistoryRecord.OP_DELETE, partition, policy_version, is_test)
         finally:
             self.release_lock()
 

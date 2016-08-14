@@ -76,7 +76,7 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_recover_from(self, tag): #override
         self._mysql.recover_from(tag)
 
-    def _do_new_run(self, operation, partition, is_test): #override
+    def _do_new_run(self, operation, partition, policy_version, is_test): #override
         part_ids = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
         if len(part_ids) == 0:
             part_id = self._mysql.query('INSERT INTO `partitions` (`name`) VALUES (%s)', partition)
@@ -94,7 +94,7 @@ class MySQLHistory(TransactionHistoryInterface):
             else:
                 operation_str = 'deletion'
 
-        return self._mysql.query('INSERT INTO `runs` (`operation`, `partition_id`, `time_start`) VALUES (%s, %s, FROM_UNIXTIME(%s))', operation_str, part_id, time.time())
+        return self._mysql.query('INSERT INTO `runs` (`operation`, `partition_id`, `policy_version`, `time_start`) VALUES (%s, %s, %s, FROM_UNIXTIME(%s))', operation_str, part_id, policy_version, time.time())
 
     def _do_close_run(self, operation, run_number): #override
         self._mysql.query('UPDATE `runs` SET `time_end` = FROM_UNIXTIME(%s) WHERE `id` = %s', time.time(), run_number)

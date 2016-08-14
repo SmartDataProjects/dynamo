@@ -90,6 +90,9 @@ if len(args.included_sites) != 0:
     # form a regexp (?:pattern1|pattern2|..)
     included_sites = re.compile('(?:' + '|'.join(map(fnmatch.translate, args.included_sites)) + ')')
 
+with open(os.environ['DYNAMO_BASE'] + '/etc/policies.tag') as tag:
+    policy_version = tag.read().strip()
+
 if 'detox' in args.module:
     # Main detox object
     
@@ -118,7 +121,7 @@ if 'detox' in args.module:
         quotas = dict([(site, site.group_quota(group)) for site in inventory_manager.sites.values()])
 
         with open(def_path) as policy_def:    
-            policy = Policy(partition, quotas, BelongsTo(group), policy_def)
+            policy = Policy(partition, quotas, BelongsTo(group), policy_def, policy_version)
     
         detox.set_policy(policy)
 
@@ -135,7 +138,7 @@ if 'dealer' in args.module:
         owner = replica.effective_owner()
         return owner is not None and owner.name == 'AnalysisOps'
     
-    policy = DealerPolicy(site_occupancy, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, included_sites = included_sites)
+    policy = DealerPolicy(site_occupancy, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, included_sites = included_sites, version = policy_version)
     
     dealer.set_policy(policy)
 

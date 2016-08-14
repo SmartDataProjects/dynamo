@@ -68,7 +68,7 @@ class Detox(object):
             policy = self.policies[partition]
     
             # fetch the copy/deletion run number
-            run_number = self.history.new_deletion_run(partition, is_test = is_test)
+            run_number = self.history.new_deletion_run(partition, policy.version, is_test = is_test)
     
             logger.info('Preparing deletion run %d', run_number)
     

@@ -69,7 +69,7 @@ class Policy(object):
     DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(1, 4)
     DECISION_STR = {DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
 
-    def __init__(self, partition, quotas, partitioning, lines):
+    def __init__(self, partition, quotas, partitioning, lines, version):
         self.quotas = quotas # {site: quota}
         self.partition = partition
         # An object with two methods dataset = int(DatasetReplica), block = bool(BlockReplica).
@@ -79,6 +79,8 @@ class Policy(object):
 
         self.static_optimization = True
         self.parse_rules(lines)
+
+        self.version = version
 
     def parse_rules(self, lines):
         if type(lines) is file:

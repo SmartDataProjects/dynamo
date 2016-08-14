@@ -1,6 +1,7 @@
 var currentCycle = 0;
 var nextCycle = 0;
 var previousCycle = 0;
+var latestCycle = 0;
 var currentPartition = 0;
 var currentNorm = 'relative';
 
@@ -22,11 +23,33 @@ function initPage(cycleNumber, partitionId)
         'data': {'getPartitions': 1},
         'success': function (data, textStatus, jqXHR) { setPartitions(data); },
         'dataType': 'json',
-        'async': false};
+        'async': false
+    };
 
     $.ajax(jaxData);
     
     loadSummary(cycleNumber, partitionId, currentNorm);
+
+    if (window.location.href.indexOf('cycleNumber') < 0)
+        latestCycle = currentCycle;
+
+    setInterval(checkUpdates, 300000);
+}
+
+function checkUpdates()
+{
+    if (window.location.href.indexOf('cycleNumber') > 0 || currentCycle != latestCycle)
+        return;
+
+    var jaxData = {
+        'url': window.location.href,
+        'data': {'checkUpdate': 1, 'partitionId': currentPartition},
+        'success': function (latest, textStatus, jqXHR) { processUpdates(latest); },
+        'dataType': 'json',
+        'async': false
+    };
+
+    $.ajax(jaxData);
 }
 
 function setPartitions(data)
@@ -40,6 +63,18 @@ function setPartitions(data)
         .on('click', function (d) { window.location.assign(window.location.protocol + '//' + window.location.hostname + window.location.pathname + '?partitionId=' + d.id); });
 
     partitionsNav.select(':last-child').classed('last', true);
+}
+
+function processUpdates(latest)
+{
+    if (latest == latestCycle)
+        return;
+
+    latestCycle = latest;
+    d3.select('#cycleHeader').append('div')
+        .text('New cycle ' + latest + ' is available')
+        .style({'cursor': 'pointer', 'font-size': '18px'})
+        .on('click', function () { window.location.assign(window.location.protocol + '//' + window.location.hostname + window.location.pathname + '?partitionId=' + currentPartition); });
 }
 
 function setupSiteDetails(siteData)
@@ -161,8 +196,17 @@ function sortTableBy(siteName, column, direction)
 
 function displaySummary(data)
 {
-    d3.select('#cycleNumber').text(data.cycleNumber);
-    d3.select('#cycleTimestamp').text(data.cycleTimestamp);
+    var cycleHeader = d3.select('#cycleHeader');
+    cycleHeader.append('span').text('Cycle ' + data.cycleNumber + ' (Policy ');
+    if (data.cyclePolicy != '') {
+        cycleHeader.append('span').text(data.cyclePolicy)
+            .classed('clickable', true)
+            .on('click', function () { window.open('https://github.com/SmartDataProjects/dynamo-policies/tree/' + this.textContent); });
+    }
+    else {
+        cycleHeader.append('span').text('unknown');
+    }
+    cycleHeader.append('span').text(', ' + data.cycleTimestamp + ')');
 
     if (data.siteData.length == 0)
         return;
@@ -223,7 +267,7 @@ function displaySummary(data)
         summary.yscale.domain([0, 1.25])
             .range([summary.ymax, 0]);
 
-        ynorm = function (d, key) { if (d.quota == 0.) return 0.; else return summary.ymax - summary.yscale(d[key] / d.quota); }
+        ynorm = function (value, quota) { if (quota == 0.) return 0.; else return summary.ymax - summary.yscale(value / quota); }
     }
     else {
         eye.attr('cy', 7);
@@ -233,10 +277,10 @@ function displaySummary(data)
         titleRelative.style('cursor', 'pointer')
             .attr('onclick', 'loadSummary(currentCycle, currentPartition, \'relative\');');
 
-        summary.yscale.domain([0, d3.max(data.siteData, function (d) { return Math.max(d.protect + d.keep + d.delete, d.protectPrev + d.keepPrev) / 1000.; }) * 1.25])
+        summary.yscale.domain([0, d3.max(data.siteData, function (d) { return Math.max(d.protect + d.keep + d.delete, d.protectPrev + d.keepPrev, d.quota) / 1000.; }) * 1.1])
             .range([summary.ymax, 0]);
 
-        ynorm = function (d, key) { return (summary.ymax - summary.yscale(d[key])) / 1000.; }
+        ynorm = function (value, quota) { return (summary.ymax - summary.yscale(value)) / 1000.; }
     }
 
     var xaxis = d3.svg.axis()
@@ -285,31 +329,56 @@ function displaySummary(data)
     var content = summaryGraph.append('g').classed('content', true)
         .attr('transform', 'translate(' + gxnorm(summary.xorigin) + ',' + summary.yorigin + ')');
 
+    var gridLine = content.selectAll('.gridLine')
+        .data(summary.yscale.ticks())
+        .enter()
+        .append('line').classed('gridLine', true)
+        .attr({'x1': 0, 'x2': gxnorm(summary.xmax), 'stroke-dasharray': '0.2,0.2', 'stroke-width': 0.2, 'stroke': 'silver'});
+
     if (currentNorm == 'relative') {
-        content.append('line').classed('refMarker', true)
-            .attr({'x1': 0, 'x2': gxnorm(summary.xmax), 'y1': -summary.ymax / 1.25, 'y2': -summary.ymax / 1.25});
+        gridLine
+            .attr('y1', function (d) { return -ynorm(d, 1.0); })
+            .attr('y2', function (d) { return -ynorm(d, 1.0); });
 
-        content.selectAll('.gridLine')
-            .data([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.1])
+        var refMarkers = content.selectAll('.refMarker')
+            .data([1.0, 0.9, 0.85])
             .enter()
-            .append('line').classed('gridLine', true)
-            .attr({'x1': 0, 'x2': gxnorm(summary.xmax), 'stroke-dasharray': '0.2,0.2', 'stroke-width': 0.2, 'stroke': 'silver'})
-            .attr('y1', function (d) { return -summary.ymax * d / 1.25; })
-            .attr('y2', function (d) { return -summary.ymax * d / 1.25; });
+            .append('line').classed('refMarker', true)
+            .attr({'x1': 0, 'x2': gxnorm(summary.xmax)})
+            .attr('y1', function (d) { return -ynorm(d, 1.0); })
+            .attr('y2', function (d) { return -ynorm(d, 1.0); });
 
-        content.append('line').classed('refMarker', true)
-            .attr({'x1': 0, 'x2': gxnorm(summary.xmax), 'y1': -summary.ymax * 1 / 1.25, 'y2': -summary.ymax * 1 / 1.25, 'stroke-width': 0.2, 'stroke': 'black'});
-
-        content.append('line').classed('refMarker', true)
-            .attr({'x1': 0, 'x2': gxnorm(summary.xmax), 'y1': -summary.ymax * 0.9 / 1.25, 'y2': -summary.ymax * 0.9 / 1.25, 'stroke-width': 0.2, 'stroke': 'darkorange'});
-
-        content.append('line').classed('refMarker', true)
-            .attr({'x1': 0, 'x2': gxnorm(summary.xmax), 'y1': -summary.ymax * 0.85 / 1.25, 'y2': -summary.ymax * 0.85 / 1.25, 'stroke-width': 0.2, 'stroke': 'silver'});
+        d3.select(refMarkers[0][0]).classed('quota', true);
+        d3.select(refMarkers[0][1]).classed('trigger', true);
+        d3.select(refMarkers[0][2]).classed('target', true);
     }
     else {
         gyaxis.append('text')
             .attr({'transform': 'translate(' + gxnorm(-2) + ',-2)', 'font-size': 3})
             .text('PB');
+
+        gridLine
+            .attr('y1', function (d) { return -ynorm(d * 1000., 1.0); })
+            .attr('y2', function (d) { return -ynorm(d * 1000., 1.0); });
+
+        var refMarkers = content.selectAll('.refMarkers')
+            .data(data.siteData)
+            .enter()
+            .append('g').classed('refMarkers', true)
+            .attr('transform', function (d) { return 'translate(' + xmapping(d.name) + ',0)'; });
+
+        refMarkers.append('line').classed('refMarker quota', true)
+            .attr('y1', function (d) { return -ynorm(d.quota); })
+            .attr('y2', function (d) { return -ynorm(d.quota); });
+        refMarkers.append('line').classed('refMarker trigger', true)
+            .attr('y1', function (d) { return -ynorm(d.quota * 0.9); })
+            .attr('y2', function (d) { return -ynorm(d.quota * 0.9); });
+        refMarkers.append('line').classed('refMarker target', true)
+            .attr('y1', function (d) { return -ynorm(d.quota * 0.85); })
+            .attr('y2', function (d) { return -ynorm(d.quota * 0.85); });
+
+        refMarkers.selectAll('.refMarker')
+            .attr({'x1': -xspace * 0.5, 'x2': xspace * 0.5});
     }
 
     var barPrev = content.selectAll('.barPrev')
@@ -321,8 +390,8 @@ function displaySummary(data)
         .style('cursor', 'pointer');
 
     barPrev.append('rect').classed('protectPrev barComponent', true)
-        .attr('transform', function (d) { return 'translate(0,-' + ynorm(d, 'protectPrev') + ')'; })
-        .attr('height', function (d) { return ynorm(d, 'protectPrev')})
+        .attr('transform', function (d) { return 'translate(0,-' + ynorm(d.protectPrev, d.quota) + ')'; })
+        .attr('height', function (d) { return ynorm(d.protectPrev, d.quota)})
         .each(function (d) {
                 if (d.protectPrev > d.quota)
                     this.style.fill = '#ff8888';
@@ -331,8 +400,8 @@ function displaySummary(data)
             });
 
     barPrev.append('rect').classed('keepPrev barComponent', true)
-        .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d, 'protectPrev') + ynorm(d, 'keepPrev')) + ')'; })
-        .attr('height', function (d) { return ynorm(d, 'keepPrev'); });
+        .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d.protectPrev, d.quota) + ynorm(d.keepPrev, d.quota)) + ')'; })
+        .attr('height', function (d) { return ynorm(d.keepPrev, d.quota); });
 
     // global variable
     summary.bars = content.selectAll('.barNew')
@@ -343,8 +412,8 @@ function displaySummary(data)
         .style('cursor', 'pointer');
 
     summary.bars.append('rect').classed('protect barComponent', true)
-        .attr('transform', function (d) { return 'translate(0,-' + ynorm(d, 'protect') + ')'; })
-        .attr('height', function (d) { return ynorm(d, 'protect'); })
+        .attr('transform', function (d) { return 'translate(0,-' + ynorm(d.protect, d.quota) + ')'; })
+        .attr('height', function (d) { return ynorm(d.protect, d.quota); })
         .each(function (d) {
                 if (d.protect > d.quota)
                     this.style.fill = '#ff0000';
@@ -353,12 +422,12 @@ function displaySummary(data)
             });
 
     summary.bars.append('rect').classed('keep barComponent', true)
-        .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d, 'protect') + ynorm(d, 'keep')) + ')'; })
-        .attr('height', function (d) { return ynorm(d, 'keep'); });
+        .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d.protect, d.quota) + ynorm(d.keep, d.quota)) + ')'; })
+        .attr('height', function (d) { return ynorm(d.keep, d.quota); });
 
     summary.bars.append('rect').classed('delete barComponent', true)
-        .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d, 'protect') + ynorm(d, 'keep') + ynorm(d, 'delete')) + ')'; })
-        .attr('height', function (d) { return ynorm(d, 'delete'); });
+        .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d.protect, d.quota) + ynorm(d.keep, d.quota) + ynorm(d.delete, d.quota)) + ')'; })
+        .attr('height', function (d) { return ynorm(d.delete, d.quota); });
 
     content.selectAll('.barComponent')
         .attr('width', xspace * 0.3);
@@ -370,7 +439,7 @@ function displaySummary(data)
         .each(function (d) {
                 if (d.status == 0) {
                     var mask = d3.select(this);
-                    var height = ynorm(d, 'protect') + ynorm(d, 'keep') + ynorm(d, 'delete');
+                    var height = ynorm(d.protect, d.quota) + ynorm(d.keep, d.quota) + ynorm(d.delete, d.quota);
                     mask.append('rect')
                         .attr('transform', 'translate(0,-' + height + ')')
                         .attr({'width': xspace * 0.65, 'height': height, 'fill': 'dimgrey', 'fill-opacity': 0.5});

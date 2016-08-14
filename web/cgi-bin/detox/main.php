@@ -23,14 +23,15 @@ if (isset($_REQUEST['getPartitions']) && $_REQUEST['getPartitions']) {
 }
 
 $cycle = 0;
+$policy_version = '';
 $timestamp = '';
 $partition_id = 0;
 
 if (isset($_REQUEST['cycleNumber'])) {
   $cycle = 0 + $_REQUEST['cycleNumber'];
-  $stmt = $history_db->prepare('SELECT `partition_id`, `time_start` FROM `runs` WHERE `id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ?');
+  $stmt = $history_db->prepare('SELECT `partition_id`, `policy_version`, `time_start` FROM `runs` WHERE `id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ?');
   $stmt->bind_param('is', $cycle, $operation);
-  $stmt->bind_result($partition_id, $timestamp);
+  $stmt->bind_result($partition_id, $policy_version, $timestamp);
   $stmt->execute();
   if (!$stmt->fetch())
     $cycle = 0;
@@ -52,12 +53,17 @@ if ($cycle == 0) {
   if ($partition_id == 0)
     $partition_id = 1;
 
-  $stmt = $history_db->prepare('SELECT `id`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` DESC LIMIT 1');
+  $stmt = $history_db->prepare('SELECT `id`, `policy_version`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` DESC LIMIT 1');
   $stmt->bind_param('is', $partition_id, $operation);
-  $stmt->bind_result($cycle, $timestamp);
+  $stmt->bind_result($cycle, $policy_version, $timestamp);
   $stmt->execute();
   $stmt->fetch();
   $stmt->close();
+}
+
+if (isset($_REQUEST['checkUpdate']) && $_REQUEST['checkUpdate']) {
+  echo $cycle;
+  exit(0);
 }
 
 if (isset($_REQUEST['searchDataset']) && $_REQUEST['searchDataset']) {
@@ -126,6 +132,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
   $data['cycleNumber'] = $cycle;
   $data['previousCycle'] = $prev_cycle;
   $data['nextCycle'] = $next_cycle;
+  $data['cyclePolicy'] = $policy_version;
   $data['cycleTimestamp'] = $timestamp;
   $data['partition'] = $partition_id;
 
@@ -133,15 +140,6 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     $index_to_id = array();
     $site_names = array();
     
-    $stmt = $history_db->prepare('SELECT `id`, `name` FROM `sites` ORDER BY `name`');
-    $stmt->bind_result($id, $name);
-    $stmt->execute();
-    while ($stmt->fetch()) {
-      $index_to_id[] = $id;
-      $site_names[$id] = $name;
-    }
-    $stmt->close();
-
     $quotas = array();
     $stmt = $history_db->prepare('SELECT `site_id`, `quota` FROM `quota_snapshots` WHERE `partition_id` = ? AND `run_id` <= ? ORDER BY `run_id` DESC');
     $stmt->bind_param('ii', $partition_id, $cycle);
@@ -155,6 +153,21 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
 
       if (count($quotas) == count($data['sites']))
         break;
+    }
+    $stmt->close();
+
+    foreach (array_keys($quotas) as $site_id) {
+      if ($quotas[$site_id] == 0)
+        unset($quotas[$site_id]);
+    }
+
+    $query = sprintf('SELECT `id`, `name` FROM `sites` WHERE `id` IN (%s) ORDER BY `name`', implode(',', array_keys($quotas)));
+    $stmt = $history_db->prepare($query);
+    $stmt->bind_result($id, $name);
+    $stmt->execute();
+    while ($stmt->fetch()) {
+      $index_to_id[] = $id;
+      $site_names[$id] = $name;
     }
     $stmt->close();
 

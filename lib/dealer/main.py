@@ -47,7 +47,7 @@ class Dealer(object):
 
         policy = self.policies[partition]
 
-        run_number = self.history.new_copy_run(partition, is_test = is_test)
+        run_number = self.history.new_copy_run(partition, policy.version, is_test = is_test)
 
         # update site and dataset lists
         # take a snapshot of site status

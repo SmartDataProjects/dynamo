@@ -125,6 +125,22 @@ rect.searched, circle.searched {
     fill: #ff00ff;
 }
 
+line.refMarker {
+    stroke-width: 0.2;
+}
+
+line.refMarker.quota {
+    stroke: black;
+}
+
+line.refMarker.trigger {
+    stroke: darkorange;
+}
+
+line.refMarker.target {
+    stroke: silver;
+}
+
 .graphAxis {
     stroke: black;
     stroke-width: 0.5;
