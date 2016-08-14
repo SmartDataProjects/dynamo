@@ -211,13 +211,13 @@ class Dealer(object):
             copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, policy.group, comments = self.copy_message, is_test = is_test)
             # copy_mapping .. {operation_id: (approved, [replica])}
     
-            for operation_id, (approved, replicas) in copy_mapping.items():
+            for operation_id, (approved, op_replicas) in copy_mapping.items():
                 if approved and not is_test:
-                    self.inventory_manager.store.add_dataset_replicas(replicas)
+                    self.inventory_manager.store.add_dataset_replicas(op_replicas)
     
-                size = sum([r.size(physical = False) for r in replicas]) # this is not group size but the total size on disk
+                size = sum([r.size(physical = False) for r in op_replicas]) # this is not group size but the total size on disk
 
-                self.history.make_copy_entry(run_number, site, operation_id, approved, [r.dataset for r in replicas], size)
+                self.history.make_copy_entry(run_number, site, operation_id, approved, [r.dataset for r in op_replicas], size)
 
 
 if __name__ == '__main__':
