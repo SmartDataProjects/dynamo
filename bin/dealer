@@ -9,13 +9,11 @@ import fnmatch
 
 from argparse import ArgumentParser
 
-parser = ArgumentParser(description = 'Detox')
+parser = ArgumentParser(description = 'Dealer')
 parser.add_argument('--store', '-i', metavar = 'CLASS', dest = 'store_cls', default = '', help = 'Store backend class.')
 parser.add_argument('--site-source', '-s', metavar = 'CLASS', dest = 'site_source_cls', default = '', help = 'SiteInfoSourceInterface class.')
 parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class.')
 parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class.')
-parser.add_argument('--access-history', '-a', metavar = 'CLASS', dest = 'access_history_cls', default = '', help = 'AccessHistoryInterface backend class.')
-parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', default = '', help = 'LockInterface class.')
 parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'included_sites', nargs = '+', default = [], help = 'List of sites to include. If not specified, all sites in inventory are included. Wildcard is allowed.')
@@ -74,7 +72,7 @@ for cls in ['copy']:
 transaction_manager = TransactionManager(**kwd)
 
 kwd = {}
-for cls in ['store', 'access_history', 'lock']:
+for cls in ['store']:
     clsname = getattr(args, cls + '_cls')
     if clsname == '':
         kwd[cls + '_cls'] = classes.default_interface[cls]
