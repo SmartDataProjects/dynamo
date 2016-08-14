@@ -424,7 +424,7 @@ class MySQLStore(LocalStoreInterface):
 
         # pick up all accesses that are less than 1 year old
         # old accesses will eb removed automatically next time the access information is saved from memory
-        accesses = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses`, `cputime` FROM `dataset_accesses` WHERE `date` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY `dataset_id`, `site_id`, `date`')
+        accesses = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses`, `cputime` FROM `dataset_accesses` WHERE `date` > DATE_SUB(NOW(), INTERVAL 2 YEAR) ORDER BY `dataset_id`, `site_id`, `date`')
 
         # little speedup by not repeating lookups for the same replica
         current_dataset_id = 0
