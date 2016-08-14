@@ -78,12 +78,15 @@ class Dealer(object):
         # all datasets that the policy considers
         datasets = []
         for dataset in self.inventory_manager.datasets.values():
+            if dataset.demand.request_weight <= 0.:
+                continue
+
             for replica in dataset.replicas:
                 if policy.in_partition(replica):
-                    datasets.append((dataset, dataset.demand.request_weight))
+                    datasets.append(dataset)
                     break
 
-        datasets.sort(key = lambda (dataset, popularity): popularity, reverse = True)
+        datasets.sort(key = lambda dataset: dataset.demand.request_weight, reverse = True)
 
         self.history.save_dataset_popularity(run_number, datasets)
 
@@ -106,23 +109,16 @@ class Dealer(object):
         
         copy_list = dict([(site, []) for site in sites]) # site -> [new_replica]
 
-        demand_map = dict(datasets) # {dataset: popularity}
-
         def compute_site_business(site):
             business = 0.
     
             for replica in site.dataset_replicas:
                 dataset = replica.dataset
-                try:
-                    popularity = demand_map[dataset]
-                except KeyError:
-                    continue
-
-                if popularity > 0.:
+                if dataset.demand.request_weight > 0.:
                     # total capability of the sites this dataset is at
                     total_cpu = sum([r.site.cpu for r in dataset.replicas])
                     # w * N * (site cpu / total cpu); normalized by site cpu
-                    business += popularity * dataset.num_files() / total_cpu
+                    business += dataset.demand.request_weight * dataset.num_files() / total_cpu
 
             return business
 
@@ -138,7 +134,7 @@ class Dealer(object):
             site_occupancy[site] = policy.site_occupancy(site)
 
         # now go through datasets sorted by weight / #replicas
-        for dataset, popularity in datasets:
+        for dataset in datasets:
 
             dataset_size = dataset.size() * 1.e-12
 
@@ -150,7 +146,7 @@ class Dealer(object):
 
             global_stop = False
 
-            while popularity / len(dataset.replicas) > dealer_config.request_to_replica_threshold:
+            while dataset.demand.request_weight / len(dataset.replicas) > dealer_config.request_to_replica_threshold:
                 sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
 
                 try:

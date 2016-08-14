@@ -347,7 +347,7 @@ class TransactionHistoryInterface(object):
 
         return decisions
 
-    def save_dataset_popularity(self, run_number, popularities):
+    def save_dataset_popularity(self, run_number, datasets):
         """
         Second argument popularities is a list [(dataset, popularity_score)].
         """
@@ -358,7 +358,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_dataset_popularity(run_number, popularities)
+            self._do_save_dataset_popularity(run_number, datasets)
         finally:
             self.release_lock()
 
