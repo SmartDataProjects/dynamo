@@ -131,6 +131,7 @@ if 'dealer' in args.module:
     dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history)
 
     group = inventory_manager.groups['AnalysisOps']
+    quotas = dict([(site, site.group_quota(group)) for site in inventory_manager.sites.values()])
     
     site_occupancy = lambda site: site.storage_occupancy(inventory_manager.groups['AnalysisOps'], physical = False)
 
@@ -138,7 +139,7 @@ if 'dealer' in args.module:
         owner = replica.effective_owner()
         return owner is not None and owner.name == 'AnalysisOps'
     
-    policy = DealerPolicy(site_occupancy, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, included_sites = included_sites, version = policy_version)
+    policy = DealerPolicy(site_occupancy, quotas, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, included_sites = included_sites, version = policy_version)
     
     dealer.set_policy(policy)
 

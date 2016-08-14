@@ -140,7 +140,9 @@ class Dealer(object):
         # now go through datasets sorted by weight / #replicas
         for dataset, popularity in datasets:
 
-            if dataset.size() * 1.e-12 > dealer_config.max_dataset_size:
+            dataset_size = dataset.size() * 1.e-12
+
+            if dataset_size > dealer_config.max_dataset_size:
                 continue
 
             if len(dataset.replicas) > dealer_config.max_replicas:
@@ -153,6 +155,8 @@ class Dealer(object):
 
                 try:
                     destination_site = next(dest for dest, njob in sorted_sites if \
+                        policy.quotas[dest] != 0 and \
+                        site_occupancy[dest] + dataset_size / policy.quotas[dest] < 1. and \
                         site_occupancy[dest] < config.target_site_occupancy * dealer_config.overflow_factor and \
                         pending_volumes[dest] < dealer_config.max_copy_per_site and \
                         dest.find_dataset_replica(dataset) is None
@@ -168,7 +172,7 @@ class Dealer(object):
 
                 copy_list[destination_site].append(new_replica)
 
-                pending_volumes[destination_site] += dataset.size() * 1.e-12
+                pending_volumes[destination_site] += dataset_size
     
                 # recompute site properties
                 site_occupancy[destination_site] = policy.site_occupancy(site)

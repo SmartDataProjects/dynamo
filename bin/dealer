@@ -91,6 +91,7 @@ with open(os.environ['DYNAMO_BASE'] + '/etc/policies.tag') as tag:
     policy_version = tag.read().strip()
 
 group = inventory_manager.groups['AnalysisOps']
+quotas = dict([(site, site.group_quota(group)) for site in inventory_manager.sites.values()])
 
 site_occupancy = lambda site: site.storage_occupancy(group, physical = False)
 
@@ -103,7 +104,7 @@ if len(args.included_sites) != 0:
     # form a regexp (?:pattern1|pattern2|..)
     included_sites = re.compile('(?:' + '|'.join(map(fnmatch.translate, args.included_sites)) + ')')
 
-policy = DealerPolicy(site_occupancy, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, included_sites = included_sites, version = policy_version)
+policy = DealerPolicy(site_occupancy, quotas, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, included_sites = included_sites, version = policy_version)
 
 dealer.set_policy(policy)
 
