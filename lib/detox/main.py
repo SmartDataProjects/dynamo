@@ -117,7 +117,9 @@ class Detox(object):
                     if decision == Policy.DEC_PROTECT:
                         all_replicas.remove(replica)
                         protected[replica] = reason
-                        protected_fraction[replica.site] += replica.size() / policy.quotas[replica.site]
+                        quota = policy.quotas[replica.site]
+                        if quota != 0.:
+                            protected_fraction[replica.site] += replica.size() / quota
     
                     elif replica.site not in target_sites:
                         kept[replica] = reason
@@ -182,14 +184,14 @@ class Detox(object):
                     if policy.static_optimization:
                         for replica in sorted_candidates:
                             kept[replica] = deletion_candidates[replica]
-
-                        break
     
-                    else:
-                        # update the list of target sites
-                        for site in list(target_sites):
-                            if policy.stop_condition.match(site):
-                                target_sites.remove(site)
+                if policy.static_optimization:
+                    break
+                else:
+                    # update the list of target sites
+                    for site in list(target_sites):
+                        if policy.stop_condition.match(site):
+                            target_sites.remove(site)
     
             for rule in policy.rules:
                 if hasattr(rule, 'has_match') and not rule.has_match:
