@@ -171,20 +171,6 @@ class MySQLStore(LocalStoreInterface):
 
         logger.info('Loaded data for %d sites.', len(sites))
 
-#        mean_storage = sum([s.storage for s in site_list]) / len(filter(lambda s: s.storage != 0., site_list))
-#        mean_cpu = sum([s.cpu for s in site_list]) / len(filter(lambda s: s.cpu != 0., site_list))
-        mean_storage = 500
-        mean_cpu = 2.
-
-        for site in site_list:
-            if site.storage == 0.:
-                logger.info('Setting storage for %s to mean %f', site.name, mean_storage)
-                site.storage = mean_storage
-
-            if site.cpu == 0.:
-                logger.info('Setting CPU for %s to mean %f', site.name, mean_cpu)
-                site.cpu = mean_cpu
-
         # Load groups
         group_list = []
 
