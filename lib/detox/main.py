@@ -85,14 +85,15 @@ class Detox(object):
             # Sites not in READY state or in IGNORE activity state are hard-coded to not be considered.
             target_sites = set()
             for site in self.inventory_manager.sites.values():
-                if policy.quotas[site] != 0. and policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
+                if site in policy.quotas and policy.quotas[site] != 0. and policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
                     target_sites.add(site)
 
             logger.info('Identifying dataset replicas in the partition.')
-    
+
             # "partition" as a verb - selecting only the blockreps in the partition
+            # will also select out replicas on sites with quotas
             all_replicas = policy.partition_replicas(self.inventory_manager.datasets.values())
-    
+
             # take a snapshot of current replicas
             self.history.save_replicas(run_number, all_replicas)
     
@@ -117,9 +118,7 @@ class Detox(object):
                     if decision == Policy.DEC_PROTECT:
                         all_replicas.remove(replica)
                         protected[replica] = reason
-                        quota = policy.quotas[replica.site]
-                        if quota != 0.:
-                            protected_fraction[replica.site] += replica.size() / quota
+                        protected_fraction[replica.site] += replica.size() / policy.quotas[replica.site]
     
                     elif replica.site not in target_sites:
                         kept[replica] = reason
@@ -204,6 +203,7 @@ class Detox(object):
             logger.info('Committing deletion.')
             self.commit_deletions(run_number, policy, deleted.keys(), is_test)
     
+            logger.info('Restoring inventory state.')
             policy.restore_replicas()
     
             # remove datasets that lost replicas

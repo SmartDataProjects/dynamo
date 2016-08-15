@@ -232,7 +232,7 @@ class MySQLHistory(TransactionHistoryInterface):
         # find outdated quotas
         result = self._mysql.query('SELECT s.`id`, s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE q.`partition_id` = %s AND q.`run_id` <= %s ORDER BY q.`run_id` DESC', partition_id, run_number)
 
-        for site_id, site_name, quota in result:
+        for site_id, site_name, stored_quota in result:
             if site_id in checked_sites:
                 continue
             
@@ -243,14 +243,19 @@ class MySQLHistory(TransactionHistoryInterface):
             except KeyError:
                 continue
 
-            if quota != quotas[site]:
-                quota_updates.append((site_id, partition_id, run_number, quotas[site]))
+            try:
+                quota = quotas[site]
+            except KeyError:
+                continue
+
+            if stored_quota != quota:
+                quota_updates.append((site_id, partition_id, run_number, quota))
 
         # insert quotas for sites not in the table
-        for site in inventory.sites.values():
+        for site, quota in quotas.items():
             site_id = self._site_id_map[site.name]
             if site_id not in checked_sites:
-                quota_updates.append((site_id, partition_id, run_number, quotas[site]))
+                quota_updates.append((site_id, partition_id, run_number, quota))
 
         fields = ('site_id', 'partition_id', 'run_id', 'quota')
         self._mysql.insert_many('quota_snapshots', fields, lambda u: u, quota_updates)

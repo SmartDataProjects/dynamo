@@ -135,6 +135,9 @@ class Policy(object):
                     reverse = False
                 elif words[1] == 'decreasing':
                     reverse = True
+                elif words[1] == 'none':
+                    self.candidate_sort = lambda replicas: replicas
+                    continue
                 else:
                     raise ConfigurationError(words[1])
 
@@ -183,7 +186,7 @@ class Policy(object):
         if self.partitioning is None:
             # all replicas are in
             for dataset in datasets:
-                all_replicas.extend(dataset.replicas)
+                all_replicas.extend([replica for replica in dataset.replicas if replica.site in self.quotas and self.quotas[replica.site] != 0.])
                 
             return all_replicas
 
@@ -198,6 +201,10 @@ class Policy(object):
             while ir != len(dataset.replicas):
                 replica = dataset.replicas[ir]
                 site = replica.site
+
+                if site not in self.quotas or self.quotas[site] == 0.:
+                    ir += 1
+                    continue
 
                 partitioning = self.partitioning.dataset(replica)
 

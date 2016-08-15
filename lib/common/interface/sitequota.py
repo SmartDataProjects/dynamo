@@ -1,4 +1,5 @@
 from common.interface.mysql import MySQL
+from common.dataformat import Site
 
 class SiteQuotaRetriever(object):
     """
@@ -10,6 +11,9 @@ class SiteQuotaRetriever(object):
         self._mysql = MySQL(config_file = '/etc/my.cnf', config_group = 'mysql-ddm', db = 'IntelROCCS')
 
     def get_quota(self, site, group):
+        if site.name.endswith('_MSS'):
+            return 1000000
+
         group_name = group.name
         # IntelROCCS replaces IB RelVal with IB-RelVal
         if group_name == 'IB RelVal':
@@ -23,9 +27,12 @@ class SiteQuotaRetriever(object):
         return entry[0]
 
     def get_status(self, site):
+        if site.name.endswith('_MSS'):
+            return Site.ACT_NOCOPY
+
         entry = self._mysql.query('SELECT `Status` FROM `Sites` WHERE `SiteName` LIKE %s', site.name)
 
         if len(entry) == 0:
-            return 0
+            return Site.ACT_IGNORE
 
         return entry[0]
