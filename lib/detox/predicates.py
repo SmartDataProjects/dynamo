@@ -82,7 +82,7 @@ class BinaryExpr(Predicate):
         elif self.vtype == variables.NUMERIC_TYPE:
             self.rhs = float(rhs_expr)
         elif self.vtype == variables.TEXT_TYPE:
-            if '*' in rhs_expr:
+            if '*' in rhs_expr or '?' in rhs_expr:
                 self.rhs = re.compile(fnmatch.translate(rhs_expr))
             else:
                 self.rhs = rhs_expr
