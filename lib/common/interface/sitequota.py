@@ -12,7 +12,7 @@ class SiteQuotaRetriever(object):
 
     def get_quota(self, site, group):
         if site.name.endswith('_MSS'):
-            return 1000000
+            return 18000
 
         group_name = group.name
         # IntelROCCS replaces IB RelVal with IB-RelVal
