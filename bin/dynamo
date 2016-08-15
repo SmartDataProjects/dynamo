@@ -33,7 +33,7 @@ parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', defaul
 parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls', default = '', help = 'DeletionInterface class.')
 parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
-parser.add_argument('--detox-partition', '-p', metavar = 'PARTITIONS', dest = 'detox_partitions', nargs = '+', default = ['AnalysisOps', 'DataOps'], help = 'Name of the detox partitions. Syntax is <partition>[:<path>]. If no path is given, policy stack is taken from DYNAMO_BASE/policies/detox/<partition>.txt.')
+parser.add_argument('--detox-partition', '-p', metavar = 'PARTITIONS', dest = 'detox_partitions', nargs = '+', default = ['AnalysisOps', 'DataOps', 'RelVal'], help = 'Name of the detox partitions. Syntax is <partition>[:<definition name>]. Definition name is translated to path DYNAMO_BASE/policies/detox/<partition>.txt. If none is given, partition name is used.')
 parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'included_sites', nargs = '+', default = [], help = 'List of sites to include. If not specified, all sites in inventory are included. Wildcard is allowed.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
@@ -85,8 +85,9 @@ demand_manager = DemandManager(**kwd)
 
 history = classes.default_interface['history']()
 
-included_sites = None
-if len(args.included_sites) != 0:
+if len(args.included_sites) == 0:
+    included_sites = re.compile('.*')
+else:
     # form a regexp (?:pattern1|pattern2|..)
     included_sites = re.compile('(?:' + '|'.join(map(fnmatch.translate, args.included_sites)) + ')')
 
@@ -107,18 +108,24 @@ if 'detox' in args.module:
 
         partition = partdef[0]
         if len(partdef) > 1:
-            def_path = partdef[1]
+            def_name = partdef[1]
         else:
-            def_path = partition
-
-        if '/' not in def_path:
-            def_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + def_path + '.txt'
+            def_name = partition
+    
+        def_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + def_name + '.txt'
 
         detox_partitions.append(partition)
 
-        # currently partition = group
-        group = inventory_manager.groups[partition]
-        quotas = dict([(site, site.group_quota(group)) for site in inventory_manager.sites.values()])
+        # currently partition = group except for tapes
+        if 'Tape' in partition:
+            group_name = partition[:partition.find('Tape')]
+            all_sites = [site for site in inventory_manager.sites.values() if site.name.endswith('_MSS')]
+        else:
+            group_name = partition
+            all_sites = [site for site in inventory_manager.sites.values() if not site.name.endswith('_MSS')]
+
+        group = inventory_manager.groups[group_name]
+        quotas = dict([(site, site.group_quota(group)) for site in all_sites if included_sites.match(site.name)])
 
         with open(def_path) as policy_def:    
             policy = Policy(partition, quotas, BelongsTo(group), policy_def, policy_version)

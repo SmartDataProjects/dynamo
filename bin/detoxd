@@ -1,8 +1,6 @@
 #!/bin/bash
 # --------------------------------------------------------------------------------------------------
 # Process to run detox periodically.
-#
-# v1.0                                                                       Y.Iiyama (Apr 19, 2016)
 # --------------------------------------------------------------------------------------------------
 
 TEST=$1
@@ -25,7 +23,7 @@ do
   exec 1>$LOG
   exec 2>&1
 
-  if [ $(du -mc $DYNAMO_LOGDIR/detox-* 2>/dev/null | awk '/total/ {print $1}') -gt 10000 ] # logs exceeding 10 GB
+  if [ $(du -mc $DYNAMO_LOGDIR/detox-* 2>/dev/null | awk '/total/ {print $1}') -gt 1000 ] # logs exceeding 1 GB
   then
     find $DYNAMO_LOGDIR -name detox-* -mtime 1 -delete
   fi
@@ -40,13 +38,8 @@ do
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
 
-    $DYNAMO_BASE/bin/detox --force-inventory-update --site T2_* T1_*_Disk $TEST --log-level INFO
+    $DYNAMO_BASE/bin/detox --force-inventory-update $TEST --log-level INFO
     RC=$?
-    if [ $RC -eq 0 ]
-    then
-      $DYNAMO_BASE/bin/detox --site T0_CH_CERN_Disk --policy-stack 'DataOps/static' $TEST --log-level INFO
-      RC=$?
-    fi
 
     if [ $RC -ne 0 ] && [ $RC -ne 130 ]
     then

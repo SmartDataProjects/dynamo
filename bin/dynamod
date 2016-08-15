@@ -1,8 +1,6 @@
 #!/bin/bash
 # --------------------------------------------------------------------------------------------------
 # Process to run detox/dealer periodically.
-#
-# v1.0                                                                       Y.Iiyama (Apr 19, 2016)
 # --------------------------------------------------------------------------------------------------
 
 TEST=$1
@@ -25,7 +23,7 @@ do
   exec 1>$LOG
   exec 2>&1
 
-  if [ $(du -mc $DYNAMO_LOGDIR/dynamo-* 2>/dev/null | awk '/total/ {print $1}') -gt 10000 ] # logs exceeding 10 GB
+  if [ $(du -mc $DYNAMO_LOGDIR/dynamo-* 2>/dev/null | awk '/total/ {print $1}') -gt 1000 ] # logs exceeding 1 GB
   then
     find $DYNAMO_LOGDIR -name dynamo-* -mtime 1 -delete
   fi
@@ -34,7 +32,7 @@ do
   IHOUR=0
   while [ $IHOUR -lt $HOURS_PER_LOGFILE ]
   do
-    OPTIONS="--site T2_* T1_*_Disk"
+    OPTIONS=""
     APPLICATIONS=""
     if [ $(($IHOUR%$DYNAMO_DETOX_INTERVAL)) -eq 0 ]
     then
@@ -60,11 +58,6 @@ do
 
     $DYNAMO_BASE/bin/dynamo $APPLICATIONS $OPTIONS $TEST --log-level INFO
     RC=$?
-    if [[ $APPLICATIONS =~ detox ]] && [ $RC -eq 0 ]
-    then 
-      $DYNAMO_BASE/bin/dynamo detox --site T0_CH_CERN_Disk --detox-policy-stack 'DataOps/static' $TEST --log-level INFO
-      RC=$?
-    fi
 
     if [ $RC -ne 0 ] && [ $RC -ne 130 ]
     then
@@ -93,7 +86,7 @@ do
     if [[ $APPLICATIONS =~ detox ]]
     then
       # test run to produce sites info
-      $DYNAMO_BASE/bin/dynamo $APPLICATIONS --test-run --detox-policy-stack 'caf-comm/MinimumCopies:static' 'caf-alca/MinimumCopies:static' 'local/MinimumCopies:iterative' 'IB RelVal/MinimumCopies:static' --log-level INFO
+      $DYNAMO_BASE/bin/dynamo $APPLICATIONS --test-run --detox-partition 'caf-comm:MinimumCopies' 'caf-alca:MinimumCopies' 'local:MinimumCopies' 'IB RelVal:MinimumCopies' --log-level INFO
     fi
 
     $DYNAMO_BASE/bin/execlib common/interface/history.py clean last
