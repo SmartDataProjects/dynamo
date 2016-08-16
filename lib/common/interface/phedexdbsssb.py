@@ -606,10 +606,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             dataset.on_tape = Dataset.TAPE_NONE
 
-            try:
-                on_tape = set(blocks_on_tape[dataset.name])
-            except KeyError:
+            if dataset.name not in blocks_on_tape:
                 continue
+
+            on_tape = set(blocks_on_tape[dataset.name])
 
             dataset_blocks = set(b.name for b in dataset.blocks)
             if dataset_blocks == on_tape:
