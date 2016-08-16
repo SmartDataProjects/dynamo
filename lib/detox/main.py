@@ -101,11 +101,15 @@ class Detox(object):
     
             protected = {} # {replica: reason}
             deleted = {}
-            kept = {}
 
             protected_fraction = collections.defaultdict(float) # {site: protected size}
     
             iteration = 0
+            if policy.static_optimization:
+                stop_condition = lambda s: policy.stop_condition.match(s)
+            else:
+                iteration_delete_volume = 0.
+                stop_condition = lambda s: policy.stop_condition.match(s) or iteration_delete_volume / policy.quotas[s] > detox_config.deletion_per_iteration
     
             while True:
                 iteration += 1
@@ -120,13 +124,8 @@ class Detox(object):
                         protected[replica] = reason
                         protected_fraction[replica.site] += replica.size() / policy.quotas[replica.site]
     
-                    elif replica.site not in target_sites:
-                        kept[replica] = reason
-    
-                    else:
+                    elif replica.site in target_sites:
                         deletion_candidates[replica] = reason
-    
-                del eval_results
     
                 if not policy.static_optimization:
                     logger.info('Iteration %d', iteration)
@@ -153,11 +152,7 @@ class Detox(object):
                     else:
                         target_site = random.choice(candidate_sites)
 
-                    deleted_volume = 0.
-                    stop_condition = lambda s: policy.stop_condition.match(s) or deleted_volume / policy.quotas[s] > detox_config.deletion_per_iteration
-
-                else:
-                    stop_condition = lambda s: policy.stop_condition.match(s)
+                    iteration_delete_volume = 0.
 
                 for site in target_sites:
                     if not policy.static_optimization and site != target_site:
@@ -165,8 +160,10 @@ class Detox(object):
 
                     sorted_candidates = policy.candidate_sort([rep for rep in deletion_candidates if rep.site == site])
 
-                    while len(sorted_candidates) != 0 and not stop_condition(site):
-                        replica = sorted_candidates.pop(0)
+                    icand = 0
+                    while icand != len(sorted_candidates) and not stop_condition(site):
+                        replica = sorted_candidates[icand]
+                        icand += 1
 
                         # take out replicas from inventory and from the list of considered replicas
                         self.inventory_manager.unlink_datasetreplica(replica)
@@ -175,22 +172,24 @@ class Detox(object):
                         
                         if not policy.static_optimization:
                             all_replicas.remove(replica)
-                            deleted_volume += replica.size() * 1.e-12
+                            iteration_delete_volume += replica.size() * 1.e-12
 
                         if logger.getEffectiveLevel() == logging.DEBUG:
                             logger.debug('Deleting replica: %s', str(replica))
 
-                    if policy.static_optimization:
-                        for replica in sorted_candidates:
-                            kept[replica] = deletion_candidates[replica]
-    
                 if policy.static_optimization:
                     break
-                else:
-                    # update the list of target sites
-                    for site in list(target_sites):
-                        if policy.stop_condition.match(site):
-                            target_sites.remove(site)
+
+                # update the list of target sites
+                for site in list(target_sites):
+                    if policy.stop_condition.match(site):
+                        target_sites.remove(site)
+
+            kept = {}
+            # remaining replicas not in protected or deleted are kept
+            for replica, decision, reason in eval_results:
+                if decision != Policy.DEC_PROTECT and replica not in deleted:
+                    kept[replica] = reason
     
             for rule in policy.rules:
                 if hasattr(rule, 'has_match') and not rule.has_match:
