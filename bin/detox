@@ -15,6 +15,7 @@ from detox.main import Detox
 from detox.policy import Policy
 from detox.partitioning import BelongsTo
 import detox.configuration as detox_config
+from common.dataformat import Site
 import common.configuration as config
 
 from argparse import ArgumentParser
@@ -113,10 +114,10 @@ for part_spec in args.partitions:
     # currently partition = group except for tapes
     if 'Tape' in partition:
         group_name = partition[:partition.find('Tape')]
-        all_sites = [site for site in inventory_manager.sites.values() if site.name.endswith('_MSS')]
+        all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_MSS]
     else:
         group_name = partition
-        all_sites = [site for site in inventory_manager.sites.values() if not site.name.endswith('_MSS')]
+        all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_DISK]
 
     group = inventory_manager.groups[group_name]
     quotas = dict([(site, site.group_quota(group)) for site in all_sites if included_sites.match(site.name)])

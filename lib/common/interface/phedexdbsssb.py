@@ -539,7 +539,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # Data retrieval was split in groups. Now merge the group information.
         for site in all_sites:
             for replica in site.dataset_replicas:
-                if site.name.endswith('_MSS') and replica.is_full():
+                if site.storage_type == Site.TYPE_MSS and replica.is_full():
                     replica.dataset.on_tape = Dataset.TAPE_FULL
 
                 for block_replica in replica.block_replicas:
