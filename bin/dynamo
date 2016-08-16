@@ -33,7 +33,7 @@ parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', defaul
 parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls', default = '', help = 'DeletionInterface class.')
 parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
-parser.add_argument('--detox-partition', '-p', metavar = 'PARTITIONS', dest = 'detox_partitions', nargs = '+', default = ['AnalysisOps', 'DataOps', 'RelVal'], help = 'Name of the detox partitions. Syntax is <partition>[:<definition name>]. Definition name is translated to path DYNAMO_BASE/policies/detox/<partition>.txt. If none is given, partition name is used.')
+parser.add_argument('--detox-partition', '-p', metavar = 'PARTITIONS', dest = 'detox_partitions', nargs = '+', default = ['AnalysisOps', 'DataOps'], help = 'Name of the detox partitions. Syntax is <partition>[:<definition name>]. Definition name is translated to path DYNAMO_BASE/policies/detox/<partition>.txt. If none is given, partition name is used.')
 parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'included_sites', nargs = '+', default = [], help = 'List of sites to include. If not specified, all sites in inventory are included. Wildcard is allowed.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
