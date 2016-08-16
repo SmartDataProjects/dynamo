@@ -417,7 +417,7 @@ function displaySummary(data)
         .each(function (d) {
                 if (d.protect > d.quota)
                     this.style.fill = '#ff0000';
-                else if (d.protectPrev > d.quota * 0.9)
+                else if (d.protect > d.quota * 0.9)
                     this.style.fill = '#ff8800';
             });
 
@@ -450,9 +450,9 @@ function displaySummary(data)
         .attr('transform', 'translate(' + gxnorm(52) + ', 0)');
 
     var lineLegendContents =
-        [{'title': 'Quota', 'stroke': 'black', 'position': '(0,3.5)'},
-         {'title': 'Deletion trigger', 'stroke': 'darkorange', 'position': '(0,7.5)'},
-         {'title': 'Target occupancy', 'stroke': 'silver', 'position': '(0,11.5)'}];
+        [{'cls': 'quota', 'title': 'Quota', 'position': '(0,3.5)'},
+         {'cls': 'trigger', 'title': 'Deletion trigger', 'position': '(0,7.5)'},
+         {'cls': 'target', 'title': 'Target occupancy', 'position': '(0,11.5)'}];
 
     var lineLegendEntries = lineLegend.selectAll('g')
         .data(lineLegendContents)
@@ -461,9 +461,9 @@ function displaySummary(data)
         .attr('transform', function (d) { return 'translate' + d.position });
 
     lineLegendEntries.append('line')
+        .attr('class', function (d) { return d.cls; })
         .classed('refMarker', true)
-        .attr({'x1': 0, 'x2': gxnorm(2), 'y1': 1, 'y2': 1, 'stroke-width': 0.2})
-        .attr('stroke', function (d) { return d.stroke; });
+        .attr({'x1': 0, 'x2': gxnorm(2), 'y1': 1, 'y2': 1});
 
     lineLegendEntries.append('text')
         .attr({'font-size': 2, 'dx': gxnorm(3), 'dy': 2})
