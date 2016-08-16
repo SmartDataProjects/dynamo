@@ -28,6 +28,7 @@ replica_vardefs = {
     'dataset.status': (lambda r: r.dataset.status, NUMERIC_TYPE, lambda v: eval('Dataset.STAT_' + v)),
     'dataset.on_tape': (lambda r: r.dataset.on_tape, NUMERIC_TYPE, lambda v: eval('Dataset.TAPE_' + v)),
     'dataset.last_update': (lambda r: r.dataset.last_update, TIME_TYPE),
+    'dataset.last_used': (lambda r: max(r.dataset.last_update, r.last_access()), TIME_TYPE),
     'dataset.num_full_disk_copy': (lambda r: sum(1 for rep in r.dataset.replicas if rep.site.storage_type == Site.TYPE_DISK and rep.is_full()), NUMERIC_TYPE),
     'dataset.usage_rank': (lambda r: r.dataset.demand.global_usage_rank, NUMERIC_TYPE),
     'replica.incomplete': (replica_incomplete, BOOL_TYPE),
@@ -38,6 +39,13 @@ replica_vardefs = {
 
 # Variables that may change their values during a single program execution
 replica_dynamic_variables = ['dataset.num_full_disk_copy']
+
+# Variables that use dataset replica accesses
+replica_access_variables = ['dataset.last_used', 'dataset.usage_rank', 'replica.num_access']
+# Variables that use dataset requests
+replica_request_variables = []
+# Variables that use locks
+replica_lock_variables = ['replica.has_locked_block']
 
 # Site variable definition must be a generator of a function
 # Generator takes a partition as an argument and the return function takes a site as an argument

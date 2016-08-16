@@ -4,7 +4,7 @@ import logging
 import collections
 import subprocess
 
-from detox.variables import replica_vardefs
+from detox.variables import replica_vardefs, replica_access_variables, replica_request_variables, replica_lock_variables
 from detox.condition import ReplicaCondition, SiteCondition
 
 logger = logging.getLogger(__name__)
@@ -78,6 +78,9 @@ class Policy(object):
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
 
         self.static_optimization = True
+        self.uses_accesses = False
+        self.uses_requests = False
+        self.uses_locks = False
         self.parse_rules(lines)
 
         self.version = version
@@ -141,6 +144,13 @@ class Policy(object):
                 else:
                     raise ConfigurationError(words[1])
 
+                if words[2] in replica_access_variables:
+                    self.uses_accesses = True
+                if words[2] in replica_request_variables:
+                    self.uses_requests = True
+                if words[2] in replica_lock_variables:
+                    self.uses_locks = True
+
                 sortkey = replica_vardefs[words[2]][0]
                 self.candidate_sort = lambda replicas: sorted(replicas, key = sortkey, reverse = reverse)
 
@@ -159,12 +169,6 @@ class Policy(object):
                 elif line_type == LINE_POLICY:
                     self.rules.append(PolicyLine(ReplicaCondition(cond_text), decision, cond_text))
 
-        for rule in self.rules:
-            if not rule.condition.static:
-                logger.info('Condition %s is dynamic. Turning off static policy evaluation.', str(rule.condition))
-                self.static_optimization = False
-                break
-
         if self.target_site_def is None:
             raise ConfigurationError('Target site definition missing.')
         if self.deletion_trigger is None or self.stop_condition is None:
@@ -173,6 +177,27 @@ class Policy(object):
             raise ConfigurationError('Default decision not given.')
         if self.candidate_sort is None:
             raise ConfiguraitonError('Deletion candidate sorting is not specified.')
+
+        for cond in [self.target_site_def, self.deletion_trigger, self.stop_condition]:
+            if cond.uses_accesses:
+                self.uses_accesses = True
+            if cond.uses_requests:
+                self.uses_requests = True
+            if cond.uses_locks:
+                self.uses_locks = True
+
+        for rule in self.rules:
+            if not rule.condition.static:
+                logger.info('Condition %s is dynamic. Turning off static policy evaluation.', str(rule.condition))
+                self.static_optimization = False
+                break
+
+            if rule.condition.uses_accesses:
+                self.uses_accesses = True
+            if rule.condition.uses_requests:
+                self.uses_requests = True
+            if rule.condition.uses_locks:
+                self.uses_locks = True
 
     def partition_replicas(self, datasets):
         """

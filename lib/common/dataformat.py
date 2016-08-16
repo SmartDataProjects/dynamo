@@ -599,6 +599,15 @@ class DatasetReplica(object):
         except StopIteration:
             return None
 
+    def last_access(self):
+        try:
+            last_datetime = max(replica.accesses[DatasetReplica.ACC_LOCAL].keys() + replica.accesses[DatasetReplica.ACC_REMOTE].keys())
+        except:
+            return 0
+
+        return time.mktime(last_datetime.utctimetuple())
+
+
 # Block and BlockReplica implemented as tuples to reduce memory footprint
 BlockReplica = collections.namedtuple('BlockReplica', ['block', 'site', 'group', 'is_complete', 'is_custodial', 'size'])
 

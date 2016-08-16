@@ -62,10 +62,10 @@ class Detox(object):
                 pass
 
         try:
-            self.demand_manager.update(self.inventory_manager, accesses = True, requests = False, locks = True)
-            self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
-    
             policy = self.policies[partition]
+
+            self.demand_manager.update(self.inventory_manager, accesses = policy.uses_accesses, requests = policy.uses_requests, locks = policy.uses_locks)
+            self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
     
             # fetch the copy/deletion run number
             run_number = self.history.new_deletion_run(partition, policy.version, is_test = is_test)

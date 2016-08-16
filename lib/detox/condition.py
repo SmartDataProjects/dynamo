@@ -1,6 +1,6 @@
 import logging
 
-from detox.variables import replica_vardefs, replica_dynamic_variables, site_vardefs
+from detox.variables import replica_vardefs, replica_dynamic_variables, replica_access_variables, replica_request_variables, replica_lock_variables, site_vardefs
 from detox.predicates import Predicate, InvalidExpression
 
 logger = logging.getLogger(__name__)
@@ -8,6 +8,9 @@ logger = logging.getLogger(__name__)
 class Condition(object):
     def __init__(self, text):
         self.static = True
+        self.uses_accesses = False
+        self.uses_requests = False
+        self.uses_locks = False
         self.text = text
         self.predicates = []
 
@@ -24,6 +27,14 @@ class Condition(object):
             # we can optimize execution if all predicates are based on static variables
             if expr in replica_dynamic_variables:
                 self.static = False
+
+            # flags to determine which demand information should be updated
+            if expr in replica_access_variables:
+                self.uses_accesses = False
+            if expr in replica_request_variables:
+                self.uses_requests = False
+            if expr in replica_lock_variables:
+                self.uses_locks = False
 
             try:
                 vardef = self.get_vardef(expr)
