@@ -45,6 +45,3 @@ cd - > /dev/null
 
 # CRONTAB
 sed -i "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/etc/crontab | crontab
-
-# DATABASE UPDATE
-echo 'ALTER TABLE `runs` ADD `policy_version` VARCHAR( 16 ) NOT NULL DEFAULT '"''"' AFTER `partition_id` ;' | mysql --defaults-group-suffix=-dynamo -D dynamohistory
