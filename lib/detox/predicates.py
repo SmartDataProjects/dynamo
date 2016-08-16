@@ -59,7 +59,7 @@ class Negate(UnaryExpr):
         return not self.vmap(obj)
 
 class BinaryExpr(Predicate):
-    operators = ['==', '!=', '<', '>']
+    operators = ['==', '!=', '<', '>', 'older_than', 'newer_than']
 
     @staticmethod
     def get(vardef, op, rhs_expr):
@@ -67,9 +67,9 @@ class BinaryExpr(Predicate):
             return Eq(vardef, rhs_expr)
         elif op == '!=':
             return Neq(vardef, rhs_expr)
-        elif op == '<':
+        elif op == '<' or op == 'older_than':
             return Lt(vardef, rhs_expr)
-        elif op == '>':
+        elif op == '>' or op == 'newer_than':
             return Gt(vardef, rhs_expr)
         else:
             raise InvalidOperator(op)
