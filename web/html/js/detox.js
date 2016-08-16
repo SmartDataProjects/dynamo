@@ -447,11 +447,12 @@ function displaySummary(data)
             });
 
     var lineLegend = summaryGraph.append('g').classed('lineLegend', true)
-        .attr('transform', 'translate(' + gxnorm(56) + ', 0)');
+        .attr('transform', 'translate(' + gxnorm(52) + ', 0)');
 
     var lineLegendContents =
-        [{'title': 'Deletion trigger', 'stroke': 'darkorange', 'position': '(0,3.5)'},
-         {'title': 'Target occupancy', 'stroke': 'silver', 'position': '(0,7.5)'}];
+        [{'title': 'Quota', 'stroke': 'black', 'position': '(0,3.5)'},
+         {'title': 'Deletion trigger', 'stroke': 'darkorange', 'position': '(0,7.5)'},
+         {'title': 'Target occupancy', 'stroke': 'silver', 'position': '(0,11.5)'}];
 
     var lineLegendEntries = lineLegend.selectAll('g')
         .data(lineLegendContents)
