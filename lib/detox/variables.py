@@ -28,7 +28,7 @@ replica_vardefs = {
     'dataset.status': (lambda r: r.dataset.status, NUMERIC_TYPE, lambda v: eval('Dataset.STAT_' + v)),
     'dataset.on_tape': (lambda r: r.dataset.on_tape, NUMERIC_TYPE, lambda v: eval('Dataset.TAPE_' + v)),
     'dataset.last_update': (lambda r: r.dataset.last_update, TIME_TYPE),
-    'dataset.num_full_disk_copy': (lambda r: sum(1 for rep in r.dataset.replicas if rep.is_full()), NUMERIC_TYPE),
+    'dataset.num_full_disk_copy': (lambda r: sum(1 for rep in r.dataset.replicas if rep.site.storage_type == Site.TYPE_DISK and rep.is_full()), NUMERIC_TYPE),
     'dataset.usage_rank': (lambda r: r.dataset.demand.global_usage_rank, NUMERIC_TYPE),
     'replica.incomplete': (replica_incomplete, BOOL_TYPE),
     'replica.last_block_created': (lambda r: r.last_block_created, TIME_TYPE),
