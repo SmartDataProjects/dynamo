@@ -303,7 +303,7 @@ class MySQLStore(LocalStoreInterface):
                 rep = DatasetReplica(dataset, site, group = group, is_complete = (completion != 'incomplete'), is_custodial = is_custodial, last_block_created = last_block_created)
     
                 dataset.replicas.append(rep)
-                site.dataset_replicas.append(rep)
+                site.dataset_replicas.add(rep)
 
             del dataset_replicas
 

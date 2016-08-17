@@ -478,7 +478,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                                 dataset.replicas.append(dataset_replica)
 
-                                site.dataset_replicas.append(dataset_replica)
+                                site.dataset_replicas.add(dataset_replica)
     
                             if replica_entry['time_update'] > dataset_replica.last_block_created:
                                 dataset_replica.last_block_created = replica_entry['time_update']
@@ -538,7 +538,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         logger.info('Merging dataset information.')
         # Data retrieval was split in groups. Now merge the group information.
         for site in all_sites:
-            for replica in site.dataset_replicas:
+            for replica in list(site.dataset_replicas):
                 if site.storage_type == Site.TYPE_MSS and replica.is_full():
                     replica.dataset.on_tape = Dataset.TAPE_FULL
 

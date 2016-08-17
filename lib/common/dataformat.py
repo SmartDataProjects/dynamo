@@ -300,9 +300,9 @@ class Site(object):
 
         self.active = active
 
-        self.dataset_replicas = []
+        self.dataset_replicas = set()
 
-        self._block_replicas = []
+        self._block_replicas = set()
         self._group_keys = {} # {group: index}
         self._group_quota = [] # in TB
         self._occupancy_projected = [] # cached sum of block sizes
@@ -310,7 +310,12 @@ class Site(object):
 
     def unlink(self):
         # unlink objects to avoid ref cycles - should be called when this site is absolutely not needed
-        for replica in self.dataset_replicas:
+        while True:
+            try:
+                replica = self.dataset_replicas.pop()
+            except KeyError:
+                break
+
             replica.dataset.replicas.remove(replica)
             replica.dataset = None
             replica.site = None
@@ -319,8 +324,7 @@ class Site(object):
 
             replica.block_replicas = []
 
-        self.dataset_replicas = []
-        self._block_replicas = []
+        self._block_replicas.clear()
 
         self._group_keys = {}
 
@@ -333,11 +337,12 @@ class Site(object):
             (self.name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status, self.active)
 
     def find_dataset_replica(self, dataset):
+        # very inefficient operation
         try:
             if type(dataset) is Dataset:
-                return next(d for d in self.dataset_replicas if d.dataset == dataset)
+                return next(d for d in list(self.dataset_replicas) if d.dataset == dataset)
             else:
-                return next(d for d in self.dataset_replicas if d.dataset.name == dataset)
+                return next(d for d in list(self.dataset_replicas) if d.dataset.name == dataset)
 
         except StopIteration:
             return None
@@ -345,9 +350,9 @@ class Site(object):
     def find_block_replica(self, block):
         try:
             if type(block) is Block:
-                return next(b for b in self._block_replicas if b.block == block)
+                return next(b for b in list(self._block_replicas) if b.block == block)
             else:
-                return next(b for b in self._block_replicas if b.block.name == block)
+                return next(b for b in list(self._block_replicas) if b.block.name == block)
 
         except StopIteration:
             return None
@@ -374,7 +379,7 @@ class Site(object):
                 return group
 
     def add_block_replica(self, replica):
-        self._block_replicas.append(replica)
+        self._block_replicas.add(replica)
         index = self._group_key(replica.group)
 
         self._occupancy_projected[index] += replica.block.size
@@ -393,14 +398,15 @@ class Site(object):
         self._occupancy_physical[index] -= replica.size
 
     def clear_block_replicas(self):
-        self._block_replicas = []
+        self._block_replicas.clear()
 
         for index in self._group_keys.values():
             self._occupancy_projected[index] = 0
             self._occupancy_physical[index] = 0
 
     def set_block_replicas(self, replicas):
-        self._block_replicas = replicas
+        self._block_replicas.clear()
+        self._block_replicas.update(replicas)
 
         for group, index in self._group_keys.items():
             self._occupancy_projected[index] = sum(r.block.size for r in replicas if r.group == group)

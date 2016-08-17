@@ -270,7 +270,7 @@ class Policy(object):
                     ir += 1
 
         for site, dataset_replicas in site_all_dataset_replicas.items():
-            site.dataset_replicas = dataset_replicas
+            site.dataset_replicas = set(dataset_replicas)
 
         for site, block_replicas in site_all_block_replicas.items():
             site.set_block_replicas(block_replicas)
@@ -288,7 +288,7 @@ class Policy(object):
                 dataset.replicas.append(replica)
 
             if replica not in site.dataset_replicas:
-                site.dataset_replicas.append(replica)
+                site.dataset_replicas.add(replica)
 
             for block_replica in block_replicas:
                 replica.block_replicas.append(block_replica)

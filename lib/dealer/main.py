@@ -112,7 +112,7 @@ class Dealer(object):
         def compute_site_business(site):
             business = 0.
     
-            for replica in site.dataset_replicas:
+            for replica in list(site.dataset_replicas):
                 dataset = replica.dataset
                 if dataset.demand.request_weight > 0.:
                     # total capability of the sites this dataset is at
