@@ -206,12 +206,12 @@ class Policy(object):
         Return the list of all dataset replicas in the partition.
         """
 
-        all_replicas = []
+        all_replicas = set()
 
         if self.partitioning is None:
             # all replicas are in
             for dataset in datasets:
-                all_replicas.extend([replica for replica in dataset.replicas if replica.site in self.quotas and self.quotas[replica.site] != 0.])
+                all_replicas.update([replica for replica in dataset.replicas if replica.site in self.quotas and self.quotas[replica.site] != 0.])
                 
             return all_replicas
 
@@ -266,7 +266,7 @@ class Policy(object):
                 if len(replica.block_replicas) == 0:
                     dataset.replicas.pop(ir)
                 else:
-                    all_replicas.append(replica)
+                    all_replicas.add(replica)
                     ir += 1
 
         for site, dataset_replicas in site_all_dataset_replicas.items():

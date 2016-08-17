@@ -95,7 +95,7 @@ class Detox(object):
             all_replicas = policy.partition_replicas(self.inventory_manager.datasets.values())
 
             # take a snapshot of current replicas
-            self.history.save_replicas(run_number, all_replicas)
+            self.history.save_replicas(run_number, list(all_replicas))
     
             logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(all_replicas))
     
@@ -114,9 +114,9 @@ class Detox(object):
             while True:
                 iteration += 1
     
-                eval_results = parallel_exec(lambda r: policy.evaluate(r), all_replicas, per_thread = 100)
+                eval_results = parallel_exec(lambda r: policy.evaluate(r), list(all_replicas), per_thread = 100)
     
-                deletion_candidates = {} # {replica: reason}
+                deletion_candidates = collections.defaultdict(dict) # {site: {replica: reason}}
     
                 for replica, decision, reason in eval_results:
                     if decision == Policy.DEC_PROTECT:
@@ -125,26 +125,21 @@ class Detox(object):
                         protected_fraction[replica.site] += replica.size() / policy.quotas[replica.site]
     
                     elif replica.site in target_sites:
-                        deletion_candidates[replica] = reason
+                        deletion_candidates[replica.site][replica] = reason
     
                 if not policy.static_optimization:
                     logger.info('Iteration %d', iteration)
     
-                logger.info(' %d dataset replicas in deletion candidates', len(deletion_candidates))
+                logger.info(' %d dataset replicas in deletion candidates', sum(len(d) for d in deletion_candidates.values()))
                 logger.info(' %d dataset replicas in protection list', len(protected))
     
                 if len(deletion_candidates) == 0:
                     break
     
-                if logger.getEffectiveLevel() == logging.DEBUG:
-                    logger.debug('Deletion list:')
-                    logger.debug(pprint.pformat(['%s:%s' % (rep.site.name, rep.dataset.name) for rep in deletion_candidates.keys()]))
-    
                 if not policy.static_optimization:
                     # Pick out the replicas to delete in this iteration, unlink the replicas, and update the list of target sites.
 
-                    candidate_list = deletion_candidates.keys()
-                    candidate_sites = list(set(rep.site for rep in candidate_list))
+                    candidate_sites = deletion_candidates.keys()
             
                     if len(protected) != 0:
                         # find the site with the highest protected fraction
@@ -158,7 +153,12 @@ class Detox(object):
                     if not policy.static_optimization and site != target_site:
                         continue
 
-                    sorted_candidates = policy.candidate_sort([rep for rep in deletion_candidates if rep.site == site])
+                    if site not in deletion_candidates:
+                        continue
+
+                    site_candidates = deletion_candidates[site]
+
+                    sorted_candidates = policy.candidate_sort(site_candidates.keys())
 
                     for replica in sorted_candidates:
                         if stop_condition(site):
@@ -167,7 +167,7 @@ class Detox(object):
                         # take out replicas from inventory and from the list of considered replicas
                         self.inventory_manager.unlink_datasetreplica(replica)
 
-                        deleted[replica] = deletion_candidates.pop(replica)
+                        deleted[replica] = site_candidates[replica]
                         
                         if not policy.static_optimization:
                             all_replicas.remove(replica)
