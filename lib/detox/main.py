@@ -249,6 +249,7 @@ class Detox(object):
                 deletion_mapping.update(self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = self.deletion_message, is_test = is_test))
 
             total_size = 0
+            num_deleted = 0
 
             for deletion_id, (approved, replicas) in deletion_mapping.items():
                 if approved and not is_test:
@@ -263,10 +264,11 @@ class Detox(object):
 
                 self.history.make_deletion_entry(run_number, site, deletion_id, approved, [r.dataset for r in replicas], size)
                 total_size += size
+                num_deleted += len(replicas)
 
             sigint.unblock()
 
-            logger.info('Done deleting %d replicas (%.1f TB) from %s.', len(replica_list), total_size * 1.e-12, site.name)
+            logger.info('Done deleting %d replicas (%.1f TB) from %s.', num_deleted, total_size * 1.e-12, site.name)
 
 
 if __name__ == '__main__':
