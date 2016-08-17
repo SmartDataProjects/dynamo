@@ -113,14 +113,19 @@ for part_spec in args.partitions:
 
     # currently partition = group except for tapes
     if 'Tape' in partition:
-        group_name = partition[:partition.find('Tape')]
+        group = inventory_manager.groups[partition[:partition.find('Tape')]]
         all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_MSS]
+    elif partition == 'Unsubscribed':
+        group = None
+        all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_DISK]
     else:
-        group_name = partition
+        group = inventory_manager.groups[partition]
         all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_DISK]
 
-    group = inventory_manager.groups[group_name]
-    quotas = dict([(site, site.group_quota(group)) for site in all_sites if included_sites.match(site.name)])
+    if group:
+        quotas = dict([(site, site.group_quota(group)) for site in all_sites if included_sites.match(site.name)])
+    else:
+        quotas = dict([(site, 1.) for site in all_sites if included_sites.match(site.name)])
 
     with open(def_path) as policy_def:
         policy = Policy(partition, quotas, BelongsTo(group), policy_def, policy_version)

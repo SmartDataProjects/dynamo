@@ -397,7 +397,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             if len(site_list) == 1:
                 logger.debug('Fetching replica info on %s.', site_list[0].name)
 
-            options = ['subscribed=y', 'show_dataset=y']
+            options = ['show_dataset=y']
             for site in site_list:
                 options.append('node=' + site.name)
 
