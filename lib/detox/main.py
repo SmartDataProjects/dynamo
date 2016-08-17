@@ -233,8 +233,21 @@ class Detox(object):
 
             sigint.block()
 
-            deletion_mapping = self.transaction_manager.deletion.schedule_deletions(replica_list, comments = self.deletion_message, is_test = is_test)
-            # deletion_mapping .. {deletion_id: (approved, [replicas])}
+            deletion_mapping = {} #{deletion_id: (approved, [replicas])}
+
+            while len(replica_list) != 0:
+                list_chunk = []
+                deletion_size = 0
+                while deletion_size * 1.e-12 < detox_config.deletion_volume_per_request:
+                    try:
+                        replica = replica_list.pop()
+                    except IndexError:
+                        break
+
+                    list_chunk.append(replica)
+                    deletion_size += replica.size()
+
+                deletion_mapping.update(self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = self.deletion_message, is_test = is_test))
 
             total_size = 0
 
