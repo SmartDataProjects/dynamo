@@ -160,15 +160,14 @@ class Detox(object):
 
                     sorted_candidates = policy.candidate_sort([rep for rep in deletion_candidates if rep.site == site])
 
-                    icand = 0
-                    while icand != len(sorted_candidates) and not stop_condition(site):
-                        replica = sorted_candidates[icand]
-                        icand += 1
+                    for replica in sorted_candidates:
+                        if stop_condition(site):
+                            break
 
                         # take out replicas from inventory and from the list of considered replicas
                         self.inventory_manager.unlink_datasetreplica(replica)
 
-                        deleted[replica] = deletion_candidates[replica]
+                        deleted[replica] = deletion_candidates.pop(replica)
                         
                         if not policy.static_optimization:
                             all_replicas.remove(replica)
