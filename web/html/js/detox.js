@@ -197,6 +197,7 @@ function sortTableBy(siteName, column, direction)
 function displaySummary(data)
 {
     var cycleHeader = d3.select('#cycleHeader');
+    cycleHeader.selectAll('span').remove();
     cycleHeader.append('span').text('Cycle ' + data.cycleNumber + ' (Policy ');
     if (data.cyclePolicy != '') {
         cycleHeader.append('span').text(data.cyclePolicy)
@@ -447,7 +448,7 @@ function displaySummary(data)
             });
 
     var lineLegend = summaryGraph.append('g').classed('lineLegend', true)
-        .attr('transform', 'translate(' + gxnorm(52) + ', 0)');
+        .attr('transform', 'translate(' + gxnorm(50) + ', 0)');
 
     var lineLegendContents =
         [{'cls': 'quota', 'title': 'Quota', 'position': '(0,3.5)'},
@@ -470,14 +471,38 @@ function displaySummary(data)
         .text(function (d) { return d.title; });
 
     var legend = summaryGraph.append('g').classed('legend', true)
-        .attr('transform', 'translate(' + gxnorm(68) + ', 0)');
+        .attr('transform', 'translate(' + gxnorm(64) + ', 0)');
+
+    var total_deleted = 0;
+    var total_kept = 0;
+    var total_protected = 0;
+    for (var x in data.siteData) {
+        total_deleted += data.siteData[x].delete;
+        total_kept += data.siteData[x].keep;
+        total_protected += data.siteData[x].protect;
+    }
+    var title_deleted = 'Deleted (';
+    var title_kept = 'Kept (';
+    var title_protected = 'Protected (';
+    if (total_deleted < 100)
+        title_deleted += total_deleted.toFixed(1) + ' TB)';
+    else
+        title_deleted += (total_deleted * 1.e-3).toFixed(1) + ' PB)';
+    if (total_kept < 100)
+        title_kept += total_kept.toFixed(1) + ' TB)';
+    else
+        title_kept += (total_kept * 1.e-3).toFixed(1) + ' PB)';
+    if (total_protected < 100)
+        title_protected += total_protected.toFixed(1) + ' TB)';
+    else
+        title_protected += (total_protected * 1.e-3).toFixed(1) + ' PB)';
 
     var legendContents =
-        [{'cls': 'delete', 'title': 'Deleted', 'position': '(0,3.5)'},
-         {'cls': 'keep', 'title': 'Kept', 'position': '(0,7.5)'},
-         {'cls': 'protect', 'title': 'Protected', 'position': '(0,11.5)'},
-         {'cls': 'keepPrev', 'title': 'Kept in previous cycle', 'position': '(' + gxnorm(10) + ',3.5)'},
-         {'cls': 'protectPrev', 'title': 'Protected in previous cycle', 'position': '(' + gxnorm(10) + ',7.5)'}];
+        [{'cls': 'delete', 'title': title_deleted, 'position': '(0,3.5)'},
+         {'cls': 'keep', 'title': title_kept, 'position': '(0,7.5)'},
+         {'cls': 'protect', 'title': title_protected, 'position': '(0,11.5)'},
+         {'cls': 'keepPrev', 'title': 'Kept in previous cycle', 'position': '(' + gxnorm(16) + ',3.5)'},
+         {'cls': 'protectPrev', 'title': 'Protected in previous cycle', 'position': '(' + gxnorm(16) + ',7.5)'}];
 
     var legendEntries = legend.selectAll('g')
         .data(legendContents)
@@ -714,6 +739,16 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
                 spinner.stop();
                 setupSiteDetails(data.siteData);
             }, 'dataType': 'json', 'async': false});
+
+    if (previousCycle == 0)
+        d3.select('#previous').classed('clickable', false).on('click', null);
+    else
+        d3.select('#previous').classed('clickable', true).on('click', function () { loadSummary(previousCycle, currentPartition, currentNorm); });
+
+    if (nextCycle == 0)
+        d3.select('#next').classed('clickable', false).on('click', null);
+    else
+        d3.select('#next').classed('clickable', true).on('click', function () { loadSummary(nextCycle, currentPartition, currentNorm); });
 }
 
 function loadSiteTable(name)
