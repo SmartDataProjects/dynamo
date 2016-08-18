@@ -160,7 +160,7 @@ class MySQLHistory(TransactionHistoryInterface):
             if status == site.status and active == site.active:
                 keep_status.append(site_name)
             else:
-                update_status[site_name] = (active, site.status)
+                update_status[site_name] = (site.active, site.status)
 
         for site_name, site in inventory.sites.items():
             if site_name not in update_status and site_name not in keep_status:
@@ -259,6 +259,15 @@ class MySQLHistory(TransactionHistoryInterface):
 
         fields = ('site_id', 'partition_id', 'run_id', 'quota')
         self._mysql.insert_many('quota_snapshots', fields, lambda u: u, quota_updates)
+
+    def _do_save_conditions(self, policies):
+        for policy in policies:
+            text = re.sub('\s+', ' ', policy.condition.text)
+            ids = self._mysql.query('SELECT `id` FROM `policy_conditions` WHERE `text` LIKE %s', text)
+            if len(ids) == 0:
+                policy.condition_id = self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
+            else:
+                policy.condition_id = ids[0]
 
     def _do_save_replicas(self, run_number, replicas): #override
         """

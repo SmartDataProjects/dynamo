@@ -25,16 +25,18 @@ class PolicyLine(object):
     AND-chained list of predicates.
     """
 
-    def __init__(self, condition, decision, text):
-        self.condition = condition
+    def __init__(self, decision, text):
+        self.condition = ReplicaCondition(text)
         self.decision = decision
-        self.text = text
         self.has_match = False
         if self.condition.static:
             self.cached_result = {}
 
+        # filled by history interface
+        self.condition_id = 0
+
     def __str__(self):
-        return self.text
+        return self.condition.text
 
     def __call__(self, replica):
         if self.condition.static:
@@ -51,9 +53,9 @@ class PolicyLine(object):
         if self.condition.match(replica):
             self.has_match = True
             if self.condition.static:
-                self.cached_result[replica] = (self.decision, self.text)
+                self.cached_result[replica] = (self.decision, self.condition_id)
 
-            return replica, self.decision, self.text
+            return replica, self.decision, self.condition_id
         else:
             if self.condition.static:
                 self.cached_result[replica] = False
@@ -170,7 +172,7 @@ class Policy(object):
                     self.stop_condition = SiteCondition(cond_text, self.partition)
 
                 elif line_type == LINE_POLICY:
-                    self.rules.append(PolicyLine(ReplicaCondition(cond_text), decision, cond_text))
+                    self.rules.append(PolicyLine(decision, cond_text))
 
         if self.target_site_def is None:
             raise ConfigurationError('Target site definition missing.')

@@ -64,6 +64,8 @@ class Detox(object):
         try:
             policy = self.policies[partition]
 
+            self.history.save_conditions(policy.rules)
+
             self.demand_manager.update(self.inventory_manager, accesses = policy.uses_accesses, requests = policy.uses_requests, locks = policy.uses_locks)
             self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
     

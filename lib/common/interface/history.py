@@ -287,6 +287,21 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
+    def save_conditions(self, policies):
+        """
+        Save policy conditions.
+        """
+
+        if config.read_only:
+            logger.info('save_conditions')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_conditions(policies)
+        finally:
+            self.release_lock()
+
     def save_replicas(self, run_number, replicas):
         """
         Update replica snapshots.
