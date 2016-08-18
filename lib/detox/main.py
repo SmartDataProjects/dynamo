@@ -105,14 +105,12 @@ class Detox(object):
             protected_fraction = collections.defaultdict(float) # {site: protected size}
     
             iteration = 0
-            if policy.static_optimization:
-                stop_condition = lambda s: policy.stop_condition.match(s)
-            else:
-                iteration_delete_volume = 0.
-                stop_condition = lambda s: policy.stop_condition.match(s) or iteration_delete_volume / policy.quotas[s] > detox_config.deletion_per_iteration
     
             while True:
                 iteration += 1
+
+                if not policy.static_optimization:
+                    logger.info('Iteration %d', iteration)
     
                 eval_results = parallel_exec(lambda r: policy.evaluate(r), list(all_replicas), per_thread = 100)
     
@@ -123,61 +121,40 @@ class Detox(object):
                         all_replicas.remove(replica)
                         protected[replica] = reason
                         protected_fraction[replica.site] += replica.size() / policy.quotas[replica.site]
+
+                    elif decision == Policy.DEC_DELETE_UNCONDITIONAL:
+                        self.inventory_manager.unlink_datasetreplica(replica)
+                        all_replicas.remove(replica)
+                        deleted[replica] = reason
     
                     elif replica.site in target_sites:
                         deletion_candidates[replica.site][replica] = reason
     
-                if not policy.static_optimization:
-                    logger.info('Iteration %d', iteration)
-    
                 logger.info(' %d dataset replicas in deletion candidates', sum(len(d) for d in deletion_candidates.values()))
                 logger.info(' %d dataset replicas in protection list', len(protected))
-    
+
                 if len(deletion_candidates) == 0:
                     break
-    
-                if not policy.static_optimization:
-                    # Pick out the replicas to delete in this iteration, unlink the replicas, and update the list of target sites.
-
-                    candidate_sites = deletion_candidates.keys()
-            
-                    if len(protected) != 0:
-                        # find the site with the highest protected fraction
-                        target_site = max(candidate_sites, key = lambda site: protected_fraction[site])
-                    else:
-                        target_site = random.choice(candidate_sites)
-
-                    iteration_delete_volume = 0.
-
-                for site in target_sites:
-                    if not policy.static_optimization and site != target_site:
-                        continue
-
-                    if site not in deletion_candidates:
-                        continue
-
-                    site_candidates = deletion_candidates[site]
-
-                    sorted_candidates = policy.candidate_sort(site_candidates.keys())
-
-                    for replica in sorted_candidates:
-                        if stop_condition(site):
-                            break
-
-                        # take out replicas from inventory and from the list of considered replicas
-                        self.inventory_manager.unlink_datasetreplica(replica)
-
-                        deleted[replica] = site_candidates[replica]
-                        
-                        if not policy.static_optimization:
-                            all_replicas.remove(replica)
-                            iteration_delete_volume += replica.size() * 1.e-12
-
-                        if logger.getEffectiveLevel() == logging.DEBUG:
-                            logger.debug('Deleting replica: %s', str(replica))
 
                 if policy.static_optimization:
+                    deleted.update(self.determine_deletions(target_sites, deletion_candidates, policy))
                     break
+
+                # iterative deletion happens one site at a time
+                candidate_sites = deletion_candidates.keys()
+        
+                if len(protected) != 0:
+                    # find the site with the highest protected fraction
+                    target_site = max(candidate_sites, key = lambda site: protected_fraction[site])
+                else:
+                    target_site = random.choice(candidate_sites)
+
+                iter_deletion = self.determine_deletions([target_site], deletion_candidates, policy)
+
+                for replica in iter_deletion:
+                    all_replicas.remove(replica)
+
+                deleted.update(iter_deletion)
 
                 # update the list of target sites
                 for site in list(target_sites):
@@ -220,6 +197,37 @@ class Detox(object):
                 os.remove(detox_config.activity_indicator)
 
         logger.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
+
+    def determine_deletions(self, target_sites, deletion_candidates, policy):
+        for site in target_sites:
+            if site not in deletion_candidates:
+                continue
+
+            site_candidates = deletion_candidates[site]
+
+            sorted_candidates = policy.candidate_sort(site_candidates.keys())
+
+            deleted = {}
+            deleted_volume = 0.
+
+            for replica in sorted_candidates:
+                if policy.stop_condition.match(site):
+                    break
+
+                if logger.getEffectiveLevel() == logging.DEBUG:
+                    logger.debug('Deleting replica: %s', str(replica))
+
+                # take out replicas from inventory and from the list of considered replicas
+                self.inventory_manager.unlink_datasetreplica(replica)
+
+                deleted[replica] = site_candidates[replica]
+                
+                if not policy.static_optimization:
+                    deleted_volume += replica.size() * 1.e-12
+                    if deleted_volume / policy.quotas[site] > detox_config.deletion_per_iteration:
+                        break
+
+            return deleted
 
     def commit_deletions(self, run_number, policy, deletion_list, is_test):
         sites = set(r.site for r in deletion_list)

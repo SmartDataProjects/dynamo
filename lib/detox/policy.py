@@ -67,7 +67,7 @@ class Policy(object):
 
     # do not change order - used by history records
     DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(1, 4)
-    DECISION_STR = {DEC_DELETE: 'DELETE', DEC_KEEP: 'KEEP', DEC_PROTECT: 'PROTECT'}
+    DEC_DELETE_UNCONDITIONAL = 4
 
     def __init__(self, partition, quotas, partitioning, lines, version):
         self.quotas = quotas # {site: quota}
@@ -122,6 +122,9 @@ class Policy(object):
                 line_type = LINE_POLICY
             elif words[0] == 'Delete':
                 decision = Policy.DEC_DELETE
+                line_type = LINE_POLICY
+            elif words[0] == 'AlwaysDelete':
+                decision = Policy.DEC_DELETE_UNCONDITIONAL
                 line_type = LINE_POLICY
             else:
                 raise ConfigurationError(line)
