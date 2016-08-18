@@ -160,7 +160,7 @@ class MySQLHistory(TransactionHistoryInterface):
             if status == site.status and active == site.active:
                 keep_status.append(site_name)
             else:
-                update_status[site_name] = (active, site.status)
+                update_status[site_name] = (site.active, site.status)
 
         for site_name, site in inventory.sites.items():
             if site_name not in update_status and site_name not in keep_status:
