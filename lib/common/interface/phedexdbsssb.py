@@ -426,7 +426,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     dataset.is_open = (dataset_entry['is_open'] == 'y')
 
                     for block_entry in dataset_entry['block']:
-                        block_name = Block.translate_name(block_entry['name'].replace(ds_name + '#', ''))
+                        try:
+                            block_name = Block.translate_name(block_entry['name'].replace(ds_name + '#', ''))
+                        except:
+                            logger.error('Invalid block name %s in blockreplicas', ds_name)
+                            continue
 
                         block = None
                         if not new_dataset:
@@ -570,9 +574,13 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             for block_entry in source:
                 name = block_entry['name']
                 ds_name = name[:name.find('#')]
-                block_name = name[name.find('#') + 1:]
+                try:
+                    block_name = Block.translate_name(name[name.find('#') + 1:])
+                except:
+                    logger.error('Invalid block name %s in blockreplicasummary', name)
+                    continue
 
-                on_tape[ds_name].append(Block.translate_name(block_name))
+                on_tape[ds_name].append(block_name)
 
             with lock:
                 for ds_name, block_names in on_tape.items():
@@ -673,7 +681,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     dataset.is_open = (ds_entry['is_open'] == 'y')
     
                     for block_entry in ds_entry['block']:
-                        block_name = Block.translate_name(block_entry['name'].replace(dataset.name + '#', ''))
+                        try:
+                            block_name = Block.translate_name(block_entry['name'].replace(dataset.name + '#', ''))
+                        except:
+                            logger.error('Invalid block name %s in data', block_name)
+                            continue
     
                         block = dataset.find_block(block_name)
     
