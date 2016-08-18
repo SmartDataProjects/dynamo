@@ -517,7 +517,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
 
         all_sites = [site for name, site in sites.items() if fnmatch.fnmatch(name, site_filt)]
-        gname_list = [name for name in groups.keys() if fnmatch.fnmatch(name, group_filt)]
+        gname_list = [name for name in groups.keys() if fnmatch.fnmatch(name, group_filt)] + [None]
 
         if dataset_filt == '/*/*/*' or dataset_filt == '' or dataset_filt == '*':
             items = []
