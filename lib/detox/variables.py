@@ -24,11 +24,11 @@ def replica_has_locked_block(replica):
     return False
 
 def replica_dataset_release(replica):
-    release = replica.dataset.software_release
-    if release[3] == '':
-        return '%d_%d_%d' % release[:3]
+    version = replica.dataset.software_version
+    if version[3] == '':
+        return '%d_%d_%d' % version[:3]
     else:
-        return '%d_%d_%d_%s' % release
+        return '%d_%d_%d_%s' % version
 
 replica_vardefs = {
     'dataset.name': (lambda r: r.dataset.name, TEXT_TYPE),
