@@ -3,6 +3,7 @@ import socket
 import logging
 import time
 import collections
+import array
 
 from common.interface.history import TransactionHistoryInterface
 from common.interface.mysql import MySQL
@@ -23,7 +24,6 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._site_id_map = {}
         self._dataset_id_map = {}
-        self._replica_snapshot_ids = {} # (site, dataset) -> snapshot id
 
     def _do_acquire_lock(self, blocking): #override
         while True:
@@ -133,73 +133,54 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, `size_deleted` = %s, `last_update` = FROM_UNIXTIME(%s) WHERE `id` = %s', deletion_record.approved, deletion_record.done, deletion_record.last_update, deletion_record.operation_id)
 
     def _do_save_sites(self, run_number, inventory): #override
-        if len(self._site_id_map) == 0:
-            self._make_site_id_map()
+        for site in inventory.sites.values():
+            # site statuses are packed in 32-bit words with run(24)-active(4)-status(4)
+            st_arr = array.array('I', [])
 
-        sites_to_insert = []
-        for site_name in inventory.sites.keys():
-            if site_name not in self._site_id_map:
-                sites_to_insert.append(site_name)
+            record = self._mysql.query('SELECT `id`, `status` FROM `sites` WHERE `name` LIKE %s', site.name)
 
-        if len(sites_to_insert) != 0:
-            self._mysql.insert_many('sites', ('name',), lambda n: (n,), sites_to_insert)
-            self._make_site_id_map()
+            if len(record) == 0:
+                st_arr.append((run_number << 8) + (site.active << 4) + site.status)
+                self._mysql.query('INSERT INTO `sites` (`name`, `status`) SET (%s, %s)', site.name, st_arr.tostring())
 
-        update_status = {} #site_name -> status
-        keep_status = [] #site_names
-
-        for site_name, active, status in self._mysql.query('SELECT `sites`.`name`, sn.`active`, 0 + sn.`status` FROM `site_status_snapshots` AS sn INNER JOIN `sites` ON `sites`.`id` = sn.`site_id` ORDER BY `run_id` DESC'):
-            if site_name in update_status or site_name in keep_status:
-                continue
-
-            try:
-                site = inventory.sites[site_name]
-            except KeyError:
-                continue
-
-            if status == site.status and active == site.active:
-                keep_status.append(site_name)
             else:
-                update_status[site_name] = (site.active, site.status)
+                site_id, status_blob = record[0]
 
-        for site_name, site in inventory.sites.items():
-            if site_name not in update_status and site_name not in keep_status:
-                update_status[site_name] = (site.active, site.status)
+                st_arr.fromstring(status_blob)
 
-        fields = ('site_id', 'run_id', 'active', 'status')
-        mapping = lambda (site_name, (active, status)): (self._site_id_map[site_name], run_number, active, status)
-        self._mysql.insert_many('site_status_snapshots', fields, mapping, update_status.items())
+                active = (st_arr[-1] >> 4) & 0xf
+                status = st_arr[-1] & 0xf
+
+                if active != site.active or status != site.status:
+                    st_arr.insert(irun, (run_number << 8) + (site.active << 4) + site.status)
+                    self._mysql.query('UPDATE `sites` SET `status` = %s WHERE `id` = %s', st_arr.tostring(), site_id)
 
     def _do_get_sites(self, run_number): #override
         partition_id = self._mysql.query('SELECT `partition_id` FROM runs WHERE `id` = %s', run_number)[0]
+        quota_blob_map = dict(self._mysql.query('SELECT `site_id`, `quotas` FROM `partition_quotas` WHERE `partition_id` = %s', partition_id))
 
         sites_dict = {}
 
-        query = 'SELECT s.`name`, st.`active`, st.`status` FROM `sites` AS s'
-        query += ' INNER JOIN `site_status_snapshots` AS st ON st.`site_id` = s.`id`'
-        query += ' WHERE st.`run_id` <= %d' % run_number
-        query += ' ORDER BY s.`id`, st.`run_id`'
-        status = self._mysql.query(query)
+        # site quotas are packed in 64-bit words with run(32)-quota(32)
+        # site statuses are packed in 32-bit words with run(24)-active(4)-status(4)
+        q_arr = array.array('L', [])
+        st_arr = array.array('I', [])
 
-        query = 'SELECT s.`name`, q.`quota` FROM `sites` AS s'
-        query += ' INNER JOIN `quota_snapshots` AS q on q.`site_id` = s.`id`'
-        query += ' WHERE q.`partition_id` = %d AND q.`run_id` <= %d' % (partition_id, run_number)
-        query += ' ORDER BY s.`id`, q.`run_id`'
-        quota = self._mysql.query(query)
-
-        for site_name, site_active, site_status in status:
-            if site_name in sites_dict:
-                continue
-
+        for site_id, site_name, status_blob in self._mysql.query('SELECT `id`, `name`, `status` FROM `sites`'):
             try:
-                site_quota = next(q for n, q in quota if n == site_name)
-            except StopIteration:
-                continue
+                q_arr.fromstring(quota_blob_map[site_id])
+                quota = q_arr[-1] & 0xffffffff
 
-            sites_dict[site_name] = (site_active, site_status, site_quota)
+            except KeyError:
+                quota = 0
+                
+            st_arr.fromstring(status_blob)
+            active = (st_arr[-1] >> 4) & 0xf
+            status = st_arr[-1] & 0xf
+
+            sites_dict[site_name] = (active, status, quota)
 
         return sites_dict
-            
 
     def _do_save_datasets(self, run_number, inventory): #override
         if len(self._dataset_id_map) == 0:
@@ -216,49 +197,31 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('datasets', ('name',), lambda n: (n,), datasets_to_insert)
         self._make_dataset_id_map()
 
-    def _do_save_quotas(self, run_number, partition, quotas, inventory): #override
+    def _do_save_quotas(self, run_number, quotas, inventory): #override
         if len(self._site_id_map) == 0:
             self._make_site_id_map()
 
-        quota_updates = []
+        partition_id = self._mysql.query('SELECT `partition_id` FROM runs WHERE `id` = %s', run_number)[0]
 
-        res = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
-        if len(res) == 0:
-            return
+        select_query = 'SELECT `quotas` FROM `partition_quotas` WHERE `site_id` = %s AND `partition_id` = {partition_id}'.format(partition_id = partition_id)
 
-        partition_id = res[0]
-        checked_sites = []
-
-        # find outdated quotas
-        result = self._mysql.query('SELECT s.`id`, s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE q.`partition_id` = %s AND q.`run_id` <= %s ORDER BY q.`run_id` DESC', partition_id, run_number)
-
-        for site_id, site_name, stored_quota in result:
-            if site_id in checked_sites:
-                continue
-            
-            checked_sites.append(site_id)
-
-            try:
-                site = inventory.sites[site_name]
-            except KeyError:
-                continue
-
-            try:
-                quota = quotas[site]
-            except KeyError:
-                continue
-
-            if stored_quota != quota:
-                quota_updates.append((site_id, partition_id, run_number, quota))
-
-        # insert quotas for sites not in the table
         for site, quota in quotas.items():
+            # site is expected to exist in history record at this point
             site_id = self._site_id_map[site.name]
-            if site_id not in checked_sites:
-                quota_updates.append((site_id, partition_id, run_number, quota))
+                
+            q_arr = array.array('L', [])
+            record = self._mysql.query(select_query, site_id)
 
-        fields = ('site_id', 'partition_id', 'run_id', 'quota')
-        self._mysql.insert_many('quota_snapshots', fields, lambda u: u, quota_updates)
+            if len(record) == 0:
+                q_arr.append((run_number << 32) + quota)
+                self._mysql.query('INSERT INTO `partition_quotas` (`site_id`, `partition_id`, `quotas`) VALUES (%s, %s, %s)', site_id, partition_id, q_arr.tostring())
+
+            else:
+                q = q_arr[-1] & 0xffffffff
+
+                if q != quota:
+                    q_arr.insert(irun, (run_number << 32) + quota)
+                    self._mysql.query('UPDATE `partition_quotas` SET `quotas` = %s WHERE `site_id` = %s AND `partition_id` = %s', st_arr.tostring(), site_id, partition_id)
 
     def _do_save_conditions(self, policies):
         for policy in policies:
@@ -270,152 +233,127 @@ class MySQLHistory(TransactionHistoryInterface):
                 policy.condition_id = ids[0]
 
     def _do_save_replicas(self, run_number, replicas): #override
-        """
-        1. Compare the list of sites and datasets in the history database to the list of replicas in the argument.
-           If a replica is not found in the database, pass it to new_replicas. If database has an extra entry, pass it to snapshots_to_remove.
-        2. Move snapshots in snapshots_to_remove (all past entries) to deleted_replica_snapshots. Insert an entry to this table with the current run number and size 0.
-        3. Compare the latest snapshots to the list of replicas in the argument.
-           If the sizes differ, add the replica to replicas_to_update. If not, add to replica_snapshot_ids.
-        4. Insert updated information to replica_snapshots. Update replica_snapshot_ids.
-        """
-        # find the latest snapshots for all replicas in record
-        self._replica_snapshot_ids = {} # (site, dataset) -> snapshot id, cannot be used across partitions
-
         # (site_id, dataset_id) -> replica in inventory
         indices_to_replicas = self._make_replica_map(replicas)
 
-        # find new replicas with no snapshots
-        new_replicas = {} # index -> (replica, size)
+        operation, partition_id = self._mysql.query('SELECT `operation`, `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
 
-        partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
+        sz_arr = array.array('L', [])
 
-        # all snapshotted replicas in the partition with nonzero size
-        in_record = self._mysql.query('SELECT DISTINCT `site_id`, `dataset_id` FROM `replica_snapshots` WHERE `run_id` <= %s AND `run_id` IN (SELECT `id` FROM `runs` WHERE `partition_id` = %s) ORDER BY `site_id` ASC, `dataset_id` ASC', run_number, partition_id)
-        # replicas in inventory
-        current = sorted(indices_to_replicas.keys())
+        # updating replicas in record with deleted = 0
+        for site_id, dataset_id, sizes_blob in self._mysql.query('SELECT `site_id`, `dataset_id`, `sizes` FROM `replicas` WHERE `partition_id` = %s AND `deleted` = 0', partition_id):
+            index = (site_id, dataset_id)
+            sz_arr.fromstring(sizes_blob)
 
-        snapshots_to_remove = []
-        num_overlap = 0
+            try:
+                replica = indices_to_replicas.pop(index)
+            except KeyError:
+                sz_arr.append((run_number << 32))
+                self._mysql.query('UPDATE `replicas` SET `deleted` = 1, `sizes` = %s WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s', sz_arr.tostring(), site_id, dataset_id, partition_id)
 
-        irec = 0
-        icur = 0
-        while irec != len(in_record) and icur != len(current):
-            recidx = tuple(map(int, in_record[irec]))
-            curidx = current[icur]
-
-            if recidx < curidx:
-                # replica not in the current inventory -> deleted
-                snapshots_to_remove.append(recidx)
-                irec += 1
-            elif recidx > curidx:
-                # no snapshot in record -> new replica
-                replica = indices_to_replicas[curidx]
-                new_replicas[curidx] = (replica, replica.size())
-                icur += 1
-            else:
-                num_overlap += 1
-                irec += 1
-                icur += 1
-
-        while irec != len(in_record):
-            # remaining snapshots must all be deleted
-            recidx = tuple(map(int, in_record[irec]))
-            snapshots_to_remove.append(recidx)
-            irec += 1
-
-        while icur != len(current):
-            # remaining replicas are all new
-            curidx = current[icur]
-            replica = indices_to_replicas[curidx]
-            new_replicas[curidx] = (replica, replica.size())
-            icur += 1
-
-        # move the entries for deleted replicas
-        # first insert the "deletion entry (size 0)" to replica_snapshots so that unique ids are assigned to these entries too
-        self._mysql.insert_many('replica_snapshots', ('site_id', 'dataset_id', 'run_id', 'size'), lambda idx: (idx[0], idx[1], run_number, 0), snapshots_to_remove, do_update = False)
-        # then move the entire set of entries to deleted_replica_snapshots
-        self._mysql.execute_many('INSERT INTO `deleted_replica_snapshots` SELECT * FROM `replica_snapshots`', ('site_id', 'dataset_id'), snapshots_to_remove)
-        self._mysql.delete_many('replica_snapshots', ('site_id', 'dataset_id'), snapshots_to_remove)
-
-        # now loop over the snapshots again and find the latest snapshots / update the outdated
-
-        replicas_to_update = {} # index -> (replica, size)
-
-        snapshots = self._mysql.query('SELECT `id`, `site_id`, `dataset_id`, `size` FROM `replica_snapshots` WHERE `run_id` <= %s AND `run_id` IN (SELECT `id` FROM `runs` WHERE `partition_id` = %s) ORDER BY `site_id` ASC, `dataset_id` ASC, `run_id` DESC', run_number, partition_id)
-
-        _index = (0, 0)
-
-        for snapshot_id, site_id, dataset_id, size in snapshots:
-            index = (int(site_id), int(dataset_id))
-            if index == _index:
-                # skipping to next replica
                 continue
 
-            _index = index
+            current_size = int(round(replica.size() * 1.e-6))
 
-            replica = indices_to_replicas[index]
-            repkey = (replica.site, replica.dataset)
-            
-            replica_size = replica.size() # passed replica is flagged "partial" if actually partial or not fully in the partition -> will add block replica sizes
-            if replica_size != int(size):
-                replicas_to_update[index] = (replica, replica_size)
-            else:
-                self._replica_snapshot_ids[repkey] = int(snapshot_id)
+            if (sz_arr[-1] & 0xffffffff) == current_size:
+                continue
+                
+            sz_arr.append((run_number << 32) + current_size)
 
-        indices_to_replicas = None
+            self._mysql.query('UPDATE `replicas` SET `deleted` = 0, `sizes` = %s WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s', sz_arr.tostring(), site_id, dataset_id, partition_id)
 
-        # append contents of new_replicas
-        replicas_to_update.update(new_replicas)
-        new_replicas = None
+        # updating replicas that were deleted but resurrected
+        for site_id, dataset_id, sizes_blob in self._mysql.select_many('replicas', ('site_id', 'dataset_id', 'sizes'), ('site_id', 'dataset_id'), indices_to_replicas.keys(), additional_conditions = ['`partition_id` = %d' % partition_id, '`deleted` = 1']):
+            replica = indices_to_replicas.pop(index)
 
-        if len(replicas_to_update) != 0:
-            fields = ('site_id', 'dataset_id', 'run_id', 'size')
-            mapping = lambda (index, (replica, replica_size)): (index[0], index[1], run_number, replica_size)
-    
-            self._mysql.insert_many('replica_snapshots', fields, mapping, replicas_to_update.items())
-    
-            # finally fetch the ids of the snapshots added here
-            for snapshot_id, site_id, dataset_id in self._mysql.query('SELECT `id`, `site_id`, `dataset_id` FROM `replica_snapshots` WHERE `run_id` = %s', run_number):
-                replica, replica_size = replicas_to_update[(int(site_id), int(dataset_id))]
-                self._replica_snapshot_ids[(replica.site, replica.dataset)] = int(snapshot_id)
+            current_size = int(round(replica.size() * 1.e-6))
+
+            if (sz_arr[-1] & 0xffffffff) == current_size:
+                continue
+                
+            sz_arr.append((run_number << 32) + current_size)
+
+            self._mysql.query('UPDATE `replicas` SET `deleted` = 0, `sizes` = %s WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s', sz_arr.tostring(), site_id, dataset_id, partition_id)
+
+        # inserting new replicas
+        sz_arr = array.array('L', [])
+        def size_to_string(size):
+            sz_arr[0] = (run_number << 32) + size
+            return sz_arr.tostring()
+
+        fields = ('site_id', 'dataset_id', 'partition_id', 'deleted', 'sizes')
+        mapping = lambda (index, replica): (index[0], index[1], partition_id, 0, size_to_string(int(round(replica.size() * 1.e-6))))
+        self._mysql.insert_many('replicas', fields, mapping, indices_to_replicas.items())
 
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
 
-    def _do_save_deletion_decisions(self, run_number, protected, deleted, kept): #override
-        fields = ('run_id', 'snapshot_id', 'decision', 'reason')
+    def _do_save_deletion_decisions(self, run_number, decisions, delete_val): #override
+        partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
 
-        mapping = lambda (rep, reason): (run_number, self._replica_snapshot_ids[(rep.site, rep.dataset)], 'protect', MySQL.escape_string(reason))
-        self._mysql.insert_many('deletion_decisions', fields, mapping, protected.items())
+        indices_to_replicas = self._make_replica_map(protected.keys() + deleted.keys() + kept.keys())
 
-        mapping = lambda (rep, reason): (run_number, self._replica_snapshot_ids[(rep.site, rep.dataset)], 'delete', MySQL.escape_string(reason))
-        self._mysql.insert_many('deletion_decisions', fields, mapping, deleted.items())
+        dec_arr = array.array('L', [])
 
-        mapping = lambda (rep, reason): (run_number, self._replica_snapshot_ids[(rep.site, rep.dataset)], 'keep', MySQL.escape_string(reason))
-        self._mysql.insert_many('deletion_decisions', fields, mapping, kept.items())
+        for site_id, dataset_id, decisions_blob in self._mysql.query('SELECT `site_id`, `dataset_id`, `deletion_decisions` FROM `replicas` WHERE `partition_id` = %s AND `deleted` = 0', partition_id):
+            replica = indices_to_replicas[(site_id, dataset_id)]
+            try:
+                decision, condition_id = decisions[replica]
+            except KeyError:
+                # should not happen, but we can just set deleted to 1
+                sizes_blob = self._mysql.query('SELECT `sizes` FROM `replicas` WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s', site_id, dataset_id, partition_id)[0]
+                sz_arr = array.array('L', [])
+                sz_arr.fromstring(sizes_blob)
+                sz_arr.append(run_number << 32)
+                
+                self._mysql.query('UPDATE `replicas` SET `deleted` = 1, `sizes` = %s WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s', sz_arr.tostring(), site_id, dataset_id, partition_id)
+                continue
+
+            dec_arr.fromstring(decisions_blob)
+
+            if len(dec_arr) == 0 or ((dec_arr[-1] >> 32) & 0x3) != decision or (dec_arr[-1] & 0xffffffff) != condition_id:
+                dec_arr.append((run_number << 34) + (decision << 32) + condition_id)
+                query = 'UPDATE `replicas` SET `deletion_decisions` = %s'
+                if decision == delete_val:
+                    query += ', `deleted` = 1'
+                query += ' WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s'
+
+                self._mysql.query(query, dec_arr.tostring(), site_id, dataset_id, partition_id)
 
     def _do_get_deletion_decisions(self, run_number, size_only): #override
+        partition_id = self._mysql.query('SELECT `operation`, `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
+
+        sz_arr = array.array('L', [])
+        dec_arr = array.array('L', [])
         if size_only:
-            query = 'SELECT s.`name`, d.`decision`, SUM(sn.`size`) * 1.e-12 FROM `deletion_decisions` AS d'
-            query += ' INNER JOIN `replica_snapshots` AS sn ON sn.`id` = d.`snapshot_id`'
-            query += ' INNER JOIN `sites` AS s ON s.`id` = sn.`site_id`'
-            query += ' WHERE d.`run_id` = %d' % run_number
-            query += ' GROUP BY s.`id`, d.`decision` ORDER BY s.`id`, d.`decision`'
+            tmp_dict = {}
+            
+            query = 'SELECT s.`name`, r.`sizes`, r.`deletion_decisions` FROM `replicas` AS r'
+            query += ' INNER JOIN `sites` AS s ON s.`id` = r.`site_id`'
+            query += ' WHERE r.`partition_id` = %s'
+            for site_name, sizes_blob, decisions_blob in self._mysql.query(query, partition_id):
+                sz_arr.fromstring(sizes_blob)
+                dec_arr.fromstring(decisions_blob)
 
-            result = self._mysql.query(query)
+                for word in sz_arr:
+                    if (word >> 32) > run_number:
+                        break
+                    size = (word & 0xffffffff)
 
-            tmp_dict = collections.defaultdict(dict)
+                for word in dec_arr:
+                    if (word >> 34) > run_number:
+                        break
+                    decision = (word >> 32) & 0x3
 
-            for site_name, decision, size in result:
-                tmp_dict[site_name][decision] = size
+                if site_name not in tmp_dict:
+                    # cannot be fully agnostic about decision values here
+                    tmp_dict[site_name] = {1: 0, 2: 0, 3: 0}
+
+                tmp_dict[site_name][decision] += size
 
             product = {}
             for site_name, tmp_cont in tmp_dict.items():
-                for dec in ['protect', 'delete', 'keep']:
-                    if dec not in tmp_cont:
-                        tmp_cont[dec] = 0
-
-                product[site_name] = (tmp_cont['protect'], tmp_cont['delete'], tmp_cont['keep'])
+                product[site_name] = (tmp_cont[1], tmp_cont[2], tmp_cont[3])
 
             return product
 
@@ -450,28 +388,6 @@ class MySQLHistory(TransactionHistoryInterface):
                 current_copy_id = copy_id
 
             record.replicas.append(HistoryRecord.CopiedReplica(dataset_name = id_to_dataset[dataset_id]))
-
-        return id_to_record.values()
-
-    def _do_get_incomplete_deletions(self): #override
-        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_deleted`, UNIX_TIMESTAMP(h.`last_update`) FROM `deletion_requests` AS h INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`size` != h.`size_deleted`')
-        
-        id_to_record = {}
-        for eid, timestamp, approved, site_name, size, size_deleted, last_update in history_entries:
-            id_to_record[eid] = HistoryRecord(HistoryRecord.OP_DELETE, eid, site_name, timestamp = timestamp, approved = approved, size = size, done = size_deleted, last_update = last_update)
-
-        id_to_dataset = dict(self._mysql.query('SELECT `id`, `name` FROM `datasets`'))
-        id_to_site = dict(self._mysql.query('SELECT `id`, `name` FROM `sites`'))
-
-        replicas = self._mysql.select_many('deleted_replicas', ('deletion_id', 'dataset_id'), 'deletion_id', ['%d' % i for i in id_to_record.keys()])
-
-        current_deletion_id = 0
-        for deletion_id, dataset_id in replicas:
-            if deletion_id != current_deletion_id:
-                record = id_to_record[deletion_id]
-                current_deletion_id = deletion_id
-
-            record.replicas.append(HistoryRecord.DeletedReplica(dataset_name = id_to_dataset[dataset_id]))
 
         return id_to_record.values()
 
@@ -541,4 +457,3 @@ class MySQLHistory(TransactionHistoryInterface):
             indices_to_replicas[(site_id, dataset_id)] = replica
 
         return indices_to_replicas
-

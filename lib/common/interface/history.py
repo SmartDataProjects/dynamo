@@ -272,7 +272,7 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def save_quotas(self, run_number, partition, quotas, inventory):
+    def save_quotas(self, run_number, quotas, inventory):
         """
         Update quota snapshots.
         """
@@ -283,7 +283,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_quotas(run_number, partition, quotas, inventory)
+            self._do_save_quotas(run_number, quotas, inventory)
         finally:
             self.release_lock()
 
@@ -332,10 +332,10 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
       
-    def save_deletion_decisions(self, run_number, protected, deleted, kept):
+    def save_deletion_decisions(self, run_number, decisions, delete_val):
         """
         Save decisions and their reasons for all replicas.
-        Arguments protected, deleted, and kept are all dict {replica: reason}
+        Argument decisions is {replica: (decision, condition_id)}
         """
 
         if config.read_only:
@@ -344,7 +344,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_deletion_decisions(run_number, protected, deleted, kept)
+            self._do_save_deletion_decisions(run_number, decisions, delete_val)
         finally:
             self.release_lock()
 
@@ -386,16 +386,6 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
         return copies
-
-    def get_incomplete_deletions(self):
-        self.acquire_lock()
-        try:
-            # list of HistoryRecords
-            deletions = self._do_get_incomplete_deletions()
-        finally:
-            self.release_lock()
-
-        return deletions
 
     def get_site_name(self, operation_id):
         self.acquire_lock()

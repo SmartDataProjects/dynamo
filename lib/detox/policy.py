@@ -41,24 +41,20 @@ class PolicyLine(object):
     def __call__(self, replica):
         if self.condition.static:
             try:
-                res = self.cached_result[replica]
-                if not res:
-                    return None
-                else:
-                    return replica, res[0], res[1]
-
+                return self.cached_result[replica]
             except KeyError:
                 pass
 
         if self.condition.match(replica):
             self.has_match = True
+            result = (replica, self.decision, self.condition_id)
             if self.condition.static:
-                self.cached_result[replica] = (self.decision, self.condition_id)
+                self.cached_result[replica] = result
 
-            return replica, self.decision, self.condition_id
+            return result
         else:
             if self.condition.static:
-                self.cached_result[replica] = False
+                self.cached_result[replica] = None
 
 class Policy(object):
     """
@@ -305,6 +301,6 @@ class Policy(object):
             if result is not None:
                 break
         else:
-            return replica, self.default_decision, 'Policy default'
+            return replica, self.default_decision, 0
 
         return result

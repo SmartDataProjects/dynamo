@@ -77,7 +77,7 @@ class Detox(object):
             self.history.save_sites(run_number, self.inventory_manager)
             self.history.save_datasets(run_number, self.inventory_manager)
             # take snapshots of quotas if updated
-            self.history.save_quotas(run_number, partition, policy.quotas, self.inventory_manager)
+            self.history.save_quotas(run_number, policy.quotas, self.inventory_manager)
     
             logger.info('Identifying target sites.')
     
@@ -99,7 +99,7 @@ class Detox(object):
     
             logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(all_replicas))
     
-            protected = {} # {replica: reason}
+            protected = {} # {replica: condition_id}
             deleted = {}
 
             protected_fraction = collections.defaultdict(float) # {site: protected size}
@@ -114,21 +114,21 @@ class Detox(object):
     
                 eval_results = parallel_exec(lambda r: policy.evaluate(r), list(all_replicas), per_thread = 100)
     
-                deletion_candidates = collections.defaultdict(dict) # {site: {replica: reason}}
+                deletion_candidates = collections.defaultdict(dict) # {site: {replica: condition_id}}
     
-                for replica, decision, reason in eval_results:
+                for replica, decision, condition in eval_results:
                     if decision == Policy.DEC_PROTECT:
                         all_replicas.remove(replica)
-                        protected[replica] = reason
+                        protected[replica] = condition
                         protected_fraction[replica.site] += replica.size() / policy.quotas[replica.site]
 
                     elif decision == Policy.DEC_DELETE_UNCONDITIONAL:
                         self.inventory_manager.unlink_datasetreplica(replica)
                         all_replicas.remove(replica)
-                        deleted[replica] = reason
+                        deleted[replica] = condition
     
                     elif replica.site in target_sites:
-                        deletion_candidates[replica.site][replica] = reason
+                        deletion_candidates[replica.site][replica] = condition
     
                 logger.info(' %d dataset replicas in deletion candidates', sum(len(d) for d in deletion_candidates.values()))
                 logger.info(' %d dataset replicas in protection list', len(protected))
@@ -163,9 +163,9 @@ class Detox(object):
 
             kept = {}
             # remaining replicas not in protected or deleted are kept
-            for replica, decision, reason in eval_results:
+            for replica, decision, condition in eval_results:
                 if decision != Policy.DEC_PROTECT and replica not in deleted:
-                    kept[replica] = reason
+                    kept[replica] = condition
     
             for rule in policy.rules:
                 if hasattr(rule, 'has_match') and not rule.has_match:
@@ -173,7 +173,15 @@ class Detox(object):
     
             # save replica snapshots and all deletion decisions
             logger.info('Saving deletion decisions.')
-            self.history.save_deletion_decisions(run_number, protected, deleted, kept)
+            decisions = {}
+            for replica, condition_id in protected.items():
+                decisions[replica] = (Policy.DEC_PROTECT, condition_id)
+            for replica, condition_id in deleted.items():
+                decisions[replica] = (Policy.DEC_DELETE, condition_id)
+            for replica, condition_id in kept.items():
+                decisions[replica] = (Policy.DEC_KEEP, condition_id)
+
+            self.history.save_deletion_decisions(run_number, decisions, Policy.DEC_DELETE)
     
             logger.info('Committing deletion.')
             self.commit_deletions(run_number, policy, deleted.keys(), is_test, comment)

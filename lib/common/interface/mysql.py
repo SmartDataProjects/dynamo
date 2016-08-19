@@ -3,6 +3,7 @@ Generic MySQL interface (for an interface).
 """
 
 import MySQLdb
+import MySQLdb.converters
 import sys
 import logging
 import time
@@ -149,23 +150,12 @@ class MySQL(object):
         if do_update:
             sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join(['`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields])
 
-        # determine which columns are string types
-        templates = []
-        for ifield, val in enumerate(mapping(objects[0])):
-            if type(val) is str:
-                templates.append('\'{%d}\'' % ifield)
-            else:
-                templates.append('{%d}' % ifield)
-
-        template = '(%s)' % (','.join(templates))
-        # in the end template string looks like "({0},'{1}',{2})"
-        # template.format(*tuple) will fill in the placeholders in order
-
-        cursor = self._connection.cursor()
+        template = '(' + ','.join(['%s'] * len(fields)) + ')'
+        # template = (%s, %s, ...)
 
         values = ''
         for obj in objects:
-            values += template.format(*mapping(obj))
+            values += template % MySQLdb.escape(mapping(obj), MySQLdb.converters.conversions)
             
             # MySQL allows queries up to 1M characters
             if len(values) > config.mysql.max_query_len or obj == objects[-1]:

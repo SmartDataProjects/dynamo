@@ -90,9 +90,6 @@ class ASCIIHistory(TransactionHistoryInterface):
         for record in records:
             record.timestamp = timestamps[record.operation_id]
 
-    def _do_get_incomplete_deletions(self): #override
-        return []
-
     def _do_get_site_name(self, operation_id): #override
         with open(self.copy_requests_path) as requests:
             for line in requests:
