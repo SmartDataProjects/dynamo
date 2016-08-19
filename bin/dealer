@@ -17,6 +17,7 @@ parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica
 parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'included_sites', nargs = '+', default = [], help = 'List of sites to include. If not specified, all sites in inventory are included. Wildcard is allowed.')
+parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual copy requests, do not save anything to local storage.')
@@ -50,6 +51,20 @@ import common.configuration as config
 
 if args.dry_run:
     config.read_only = True
+
+elif not args.comment:
+    if os.path.exists('/var/run/dynamod.pid'):
+        with open('/var/run/dynamod.pid') as pidfile:
+            ppid = int(pidfile.read())
+    elif os.path.exists('/var/run/dealerd.pid'):
+        with open('/var/run/dealerd.pid') as pidfile:
+            ppid = int(pidfile.read())
+    else:
+        ppid = 0
+
+    if ppid == 0 or os.getppid() != ppid:
+        print 'Non-dry run from command line requires a comment (-m).'
+        sys.exit(1)
 
 kwd = {}
 for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
@@ -111,4 +126,4 @@ dealer.set_policy(policy)
 if args.force_inventory_update:
     inventory_manager.update()
 
-dealer.run('AnalysisOps', is_test = args.test_run)
+dealer.run('AnalysisOps', is_test = args.test_run, comment = args.comment)

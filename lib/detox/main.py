@@ -25,8 +25,6 @@ class Detox(object):
 
         self.policies = {}
 
-        self.deletion_message = 'Dynamo -- Automatic Cache Release Request.'
-
     def set_policy(self, policy):
         """
         Can be called multiple times to set policies for different partitions.
@@ -34,7 +32,7 @@ class Detox(object):
 
         self.policies[policy.partition] = policy
 
-    def run(self, partition = '', is_test = False):
+    def run(self, partition = '', is_test = False, comment = ''):
         """
         Main executable.
         """
@@ -70,7 +68,7 @@ class Detox(object):
             self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
     
             # fetch the copy/deletion run number
-            run_number = self.history.new_deletion_run(partition, policy.version, is_test = is_test)
+            run_number = self.history.new_deletion_run(partition, policy.version, is_test = is_test, comment = comment)
     
             logger.info('Preparing deletion run %d', run_number)
     
@@ -178,7 +176,7 @@ class Detox(object):
             self.history.save_deletion_decisions(run_number, protected, deleted, kept)
     
             logger.info('Committing deletion.')
-            self.commit_deletions(run_number, policy, deleted.keys(), is_test)
+            self.commit_deletions(run_number, policy, deleted.keys(), is_test, comment)
     
             logger.info('Restoring inventory state.')
             policy.restore_replicas()
@@ -231,8 +229,13 @@ class Detox(object):
 
             return deleted
 
-    def commit_deletions(self, run_number, policy, deletion_list, is_test):
+    def commit_deletions(self, run_number, policy, deletion_list, is_test, comment):
         sites = set(r.site for r in deletion_list)
+
+        if not comment:
+            comment = 'Dynamo -- Automatic cache release request'
+            if policy.partition:
+                comment += ' for %s partition.' % policy.partition
 
         # now schedule deletion for each site
         for site in sorted(sites):
@@ -256,7 +259,7 @@ class Detox(object):
                     list_chunk.append(replica)
                     deletion_size += replica.size()
 
-                deletion_mapping.update(self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = self.deletion_message, is_test = is_test))
+                deletion_mapping.update(self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = comment, is_test = is_test))
 
             total_size = 0
             num_deleted = 0
