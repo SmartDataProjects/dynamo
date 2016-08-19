@@ -153,7 +153,7 @@ class MySQLStore(LocalStoreInterface):
         # Load sites
         site_list = []
 
-        sites = self._mysql.query('SELECT `name`, `host`, `storage_type`, `backend`, `storage`, `cpu`, `status` FROM `sites`')
+        sites = self._mysql.query('SELECT `name`, `host`, `storage_type`, `backend`, `storage`, `cpu`, `status`+0 FROM `sites`')
 
         for name, host, storage_type, backend, storage, cpu, status in sites:
             if type(site_filt) is str:
