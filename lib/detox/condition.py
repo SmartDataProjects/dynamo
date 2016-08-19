@@ -30,11 +30,11 @@ class Condition(object):
 
             # flags to determine which demand information should be updated
             if expr in replica_access_variables:
-                self.uses_accesses = False
+                self.uses_accesses = True
             if expr in replica_request_variables:
-                self.uses_requests = False
+                self.uses_requests = True
             if expr in replica_lock_variables:
-                self.uses_locks = False
+                self.uses_locks = True
 
             try:
                 vardef = self.get_vardef(expr)
