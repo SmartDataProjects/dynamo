@@ -581,11 +581,8 @@ class DatasetReplica(object):
         # simple majority
         counts = collections.defaultdict(int)
         for br in self.block_replicas:
-            counts[br.group] += 1
-
-        if len(counts) == 1:
-            # blocks solely owned by "None"
-            return counts.keys()[0]
+            if br.group is not None:
+                counts[br.group] += 1
 
         order = sorted(counts.items(), key = lambda (g, c): c, reverse = True)
 
