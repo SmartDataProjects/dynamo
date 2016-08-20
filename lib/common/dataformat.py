@@ -584,7 +584,9 @@ class DatasetReplica(object):
             if br.group is not None:
                 counts[br.group] += 1
 
-        if len(counts) == 1:
+        if len(counts) == 0:
+            return None
+        elif len(counts) == 1:
             return counts.keys()[0]
 
         order = sorted(counts.items(), key = lambda (g, c): c, reverse = True)
