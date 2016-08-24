@@ -2,6 +2,7 @@ import time
 import datetime
 import logging
 import collections
+import threading
 
 from common.interface.classes import default_interface
 from common.dataformat import Dataset, DatasetDemand, DatasetReplica
@@ -99,8 +100,12 @@ class DemandManager(object):
 
         local_accesses = collections.defaultdict(list)
 
+        lock = threading.Lock()
+
         def exec_get(site, date):
-            local_accesses[(site, date)].extend(self.access_history.get_local_accesses(site, date))
+            accesses = self.access_history.get_local_accesses(site, date)
+            with lock:
+                local_accesses[(site, date)].extend(accesses)
 
         parallel_exec(exec_get, sitesdates)
         del sitesdates

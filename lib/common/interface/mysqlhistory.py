@@ -3,7 +3,6 @@ import socket
 import logging
 import time
 import collections
-import array
 
 from common.interface.history import TransactionHistoryInterface
 from common.interface.mysql import MySQL
@@ -133,52 +132,69 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, `size_deleted` = %s, `last_update` = FROM_UNIXTIME(%s) WHERE `id` = %s', deletion_record.approved, deletion_record.done, deletion_record.last_update, deletion_record.operation_id)
 
     def _do_save_sites(self, run_number, inventory): #override
+        if len(self._site_id_map) == 0:
+            self._make_site_id_map()
+
+        sites_to_insert = []
+        for site_name in inventory.sites.keys():
+            if site_name not in self._site_id_map:
+                sites_to_insert.append(site_name)
+
+        if len(sites_to_insert) != 0:
+            self._mysql.insert_many('sites', ('name',), lambda n: (n,), sites_to_insert)
+            self._make_site_id_map()        
+
+        sites_in_record = set()
+
+        insert_query = 'INSERT INTO `site_status_snapshots` (`site_id`, `run_id`, `active`, `status`) VALUES (%s, {run_number}, %d, %d)'.format(run_number = run_number)
+
+        query = 'SELECT s.`name`, ss.`active`, ss.`status`+0 FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
+        query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
+        record = self._mysql.query(query)
+
+        sites_in_record = set()
+
+        for site_name, active, status in record:
+            try:
+                site = inventory.sites[site_name]
+            except KeyError:
+                continue
+
+            sites_in_record.add(site)
+
+            if site.active != active or site.status != status:
+                self._mysql.query(insert_query, self._site_id_map[site.name], site.active, site.status)
+
         for site in inventory.sites.values():
-            # site statuses are packed in 32-bit words with run(24)-active(4)-status(4)
-            st_arr = array.array('I', [])
-
-            record = self._mysql.query('SELECT `id`, `status` FROM `sites` WHERE `name` LIKE %s', site.name)
-
-            if len(record) == 0:
-                st_arr.append((run_number << 8) + (site.active << 4) + site.status)
-                self._mysql.query('INSERT INTO `sites` (`name`, `status`) SET (%s, %s)', site.name, st_arr.tostring())
-
-            else:
-                site_id, status_blob = record[0]
-
-                st_arr.fromstring(status_blob)
-
-                active = (st_arr[-1] >> 4) & 0xf
-                status = st_arr[-1] & 0xf
-
-                if active != site.active or status != site.status:
-                    st_arr.insert(irun, (run_number << 8) + (site.active << 4) + site.status)
-                    self._mysql.query('UPDATE `sites` SET `status` = %s WHERE `id` = %s', st_arr.tostring(), site_id)
+            if site not in sites_in_record:
+                self._mysql.query(insert_query, self._site_id_map[site.name], site.active, site.status)
 
     def _do_get_sites(self, run_number): #override
         partition_id = self._mysql.query('SELECT `partition_id` FROM runs WHERE `id` = %s', run_number)[0]
-        quota_blob_map = dict(self._mysql.query('SELECT `site_id`, `quotas` FROM `partition_quotas` WHERE `partition_id` = %s', partition_id))
+
+        query = 'SELECT s.`name`, ss.`active`, ss.`status` FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
+        query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
+        record = self._mysql.query(query)
+
+        status_map = dict([(site_name, (active, status)) for site_name, active, status in record])
+
+        query = 'SELECT s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id`'
+        query += ' WHERE q.`partition_id` = %d' % partition_id
+        query += ' AND q.`run_id` = (SELECT MAX(q2.`run`) FROM `quota_snapshots` AS q2 WHERE q2.`partition_id` = %d AND q2.`site_id` = q.`site_id` AND q2.`run_id` <= %d)' % (partition_id, run_number)
+
+        record = self._mysql.query(query)
+
+        quota_map = dict([(site_name, quota) for site_name, quota in record])
 
         sites_dict = {}
 
-        # site quotas are packed in 64-bit words with run(32)-quota(32)
-        # site statuses are packed in 32-bit words with run(24)-active(4)-status(4)
-        q_arr = array.array('L', [])
-        st_arr = array.array('I', [])
-
-        for site_id, site_name, status_blob in self._mysql.query('SELECT `id`, `name`, `status` FROM `sites`'):
+        for site_name, st in status_map.items():
             try:
-                q_arr.fromstring(quota_blob_map[site_id])
-                quota = q_arr[-1] & 0xffffffff
-
+                quota = quota_map[site_name]
             except KeyError:
                 quota = 0
-                
-            st_arr.fromstring(status_blob)
-            active = (st_arr[-1] >> 4) & 0xf
-            status = st_arr[-1] & 0xf
 
-            sites_dict[site_name] = (active, status, quota)
+            sites_dict[site_name] = st + (quota,)
 
         return sites_dict
 
@@ -203,25 +219,30 @@ class MySQLHistory(TransactionHistoryInterface):
 
         partition_id = self._mysql.query('SELECT `partition_id` FROM runs WHERE `id` = %s', run_number)[0]
 
-        select_query = 'SELECT `quotas` FROM `partition_quotas` WHERE `site_id` = %s AND `partition_id` = {partition_id}'.format(partition_id = partition_id)
+        insert_query = 'INSERT INTO `quota_snapshots` (`site_id`, `partition_id`, `run_id`, `quota`) VALUES (%s, {partition_id}, {run_number}, %s)'.format(partition_id = partition_id, run_number = run_number)
+
+        query = 'SELECT s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE'
+        query += ' q.`partition_id` = %d' % partition_id
+        query += ' AND q.`run_id` = (SELECT MAX(q2.`run`) FROM `quota_snapshots` AS q2 WHERE q2.`partition_id` = %d AND q2.`site_id` = q.`site_id` AND q2.`run_id` <= %d)' % (partition_id, run_number)
+
+        record = self._mysql.query(query)
+
+        sites_in_record = set()
+
+        for site_name, quota in record:
+            try:
+                site = inventory.sites[site_name]
+            except KeyError:
+                continue
+
+            sites_in_record.add(site)
+
+            if quota != quotas[site]:
+                self._mysql.query(insert_query, self._site_id_map[site.name], quota)
 
         for site, quota in quotas.items():
-            # site is expected to exist in history record at this point
-            site_id = self._site_id_map[site.name]
-                
-            q_arr = array.array('L', [])
-            record = self._mysql.query(select_query, site_id)
-
-            if len(record) == 0:
-                q_arr.append((run_number << 32) + quota)
-                self._mysql.query('INSERT INTO `partition_quotas` (`site_id`, `partition_id`, `quotas`) VALUES (%s, %s, %s)', site_id, partition_id, q_arr.tostring())
-
-            else:
-                q = q_arr[-1] & 0xffffffff
-
-                if q != quota:
-                    q_arr.insert(irun, (run_number << 32) + quota)
-                    self._mysql.query('UPDATE `partition_quotas` SET `quotas` = %s WHERE `site_id` = %s AND `partition_id` = %s', st_arr.tostring(), site_id, partition_id)
+            if site not in sites_in_record:
+                self._mysql.query(insert_query, self._site_id_map[site.name], quota)
 
     def _do_save_conditions(self, policies):
         for policy in policies:
@@ -234,98 +255,91 @@ class MySQLHistory(TransactionHistoryInterface):
 
     def _do_save_replicas(self, run_number, replicas): #override
         # (site_id, dataset_id) -> replica in inventory
-        indices_to_replicas = self._make_replica_map(replicas)
+        if len(self._site_id_map) == 0:
+            self._make_site_id_map()
+        if len(self._dataset_id_map) == 0:
+            self._make_dataset_id_map()
 
-        operation, partition_id = self._mysql.query('SELECT `operation`, `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
+        indices_to_replicas = {}
+        for replica in replicas:
+            indices_to_replicas[(self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name])] = replica
 
-        sz_arr = array.array('L', [])
+        partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
 
-        # updating replicas in record with deleted = 0
-        for site_id, dataset_id, sizes_blob in self._mysql.query('SELECT `site_id`, `dataset_id`, `sizes` FROM `replicas` WHERE `partition_id` = %s AND `deleted` = 0', partition_id):
+        insertions = []
+
+        query = 'SELECT t1.`site_id`, t1.`dataset_id`, t1.`size` FROM `replica_snapshots` AS t1 WHERE'
+        query += ' t1.`partition_id` = %d' % partition_id
+        query += ' AND t1.`size` != 0'
+        query += ' AND t1.`run_id` = (SELECT MAX(t2.`run_id`) FROM `replica_snapshots` AS t2 WHERE t2.`site_id` = t1.`site_id` AND t2.`dataset_id` = t1.`dataset_id`'
+        query += '  AND t2.`partition_id` = %d AND t2.`run_id` <= %d)' % (partition_id, run_number)
+
+        for site_id, dataset_id, size in self._mysql.query(query):
             index = (site_id, dataset_id)
-            sz_arr.fromstring(sizes_blob)
-
             try:
                 replica = indices_to_replicas.pop(index)
             except KeyError:
-                sz_arr.append((run_number << 32))
-                self._mysql.query('UPDATE `replicas` SET `deleted` = 1, `sizes` = %s WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s', sz_arr.tostring(), site_id, dataset_id, partition_id)
-
+                insertions.append((site_id, dataset_id, 0))
                 continue
 
-            current_size = int(round(replica.size() * 1.e-6))
+            if size != replica.size():
+                insertions.append((site_id, dataset_id, replica.size()))
 
-            if (sz_arr[-1] & 0xffffffff) == current_size:
-                continue
-                
-            sz_arr.append((run_number << 32) + current_size)
+        for index, replica in indices_to_replicas.items():
+            insertions.append((index[0], index[1], replica.size()))
 
-            self._mysql.query('UPDATE `replicas` SET `deleted` = 0, `sizes` = %s WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s', sz_arr.tostring(), site_id, dataset_id, partition_id)
-
-        # updating replicas that were deleted but resurrected
-        for site_id, dataset_id, sizes_blob in self._mysql.select_many('replicas', ('site_id', 'dataset_id', 'sizes'), ('site_id', 'dataset_id'), indices_to_replicas.keys(), additional_conditions = ['`partition_id` = %d' % partition_id, '`deleted` = 1']):
-            replica = indices_to_replicas.pop(index)
-
-            current_size = int(round(replica.size() * 1.e-6))
-
-            if (sz_arr[-1] & 0xffffffff) == current_size:
-                continue
-                
-            sz_arr.append((run_number << 32) + current_size)
-
-            self._mysql.query('UPDATE `replicas` SET `deleted` = 0, `sizes` = %s WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s', sz_arr.tostring(), site_id, dataset_id, partition_id)
-
-        # inserting new replicas
-        sz_arr = array.array('L', [])
-        def size_to_string(size):
-            sz_arr[0] = (run_number << 32) + size
-            return sz_arr.tostring()
-
-        fields = ('site_id', 'dataset_id', 'partition_id', 'deleted', 'sizes')
-        mapping = lambda (index, replica): (index[0], index[1], partition_id, 0, size_to_string(int(round(replica.size() * 1.e-6))))
-        self._mysql.insert_many('replicas', fields, mapping, indices_to_replicas.items())
+        fields = ('site_id', 'dataset_id', 'partition_id', 'run_id', 'size')
+        mapping = lambda (site_id, dataset_id, size): (site_id, dataset_id, partition_id, run_number, size)
+        self._mysql.insert_many('replica_snapshots', fields, mapping, insertions)
 
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
 
     def _do_save_deletion_decisions(self, run_number, decisions, delete_val): #override
+        if len(self._site_id_map) == 0:
+            self._make_site_id_map()
+        if len(self._dataset_id_map) == 0:
+            self._make_dataset_id_map()
+
         partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
 
-        indices_to_replicas = self._make_replica_map(protected.keys() + deleted.keys() + kept.keys())
+        indices_to_replicas = {}
+        for replica in decisions.keys():
+            indices_to_replicas[(self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name])] = replica
 
-        dec_arr = array.array('L', [])
+        # if select_many takes too long we'll have to dump all replicas
+        sqlbase = 'SELECT `site_id`, `dataset_id`, `decision`+0, `matched_condition` FROM `deletion_decisions` AS t1'
+        conditions = [
+            '`partition_id` = %d' % partition_id,
+            '`run_id` = (SELECT MAX(`run_id`) FROM `deletion_decisions` AS t2 WHERE t2.`site_id` = t1.`site_id` AND t2.`dataset_id` = t1.`dataset_id` AND t2.`partition_id` = %d AND t2.`run_id` <= %d)' % (partition_id, run_number)
+        ]
 
-        for site_id, dataset_id, decisions_blob in self._mysql.query('SELECT `site_id`, `dataset_id`, `deletion_decisions` FROM `replicas` WHERE `partition_id` = %s AND `deleted` = 0', partition_id):
-            replica = indices_to_replicas[(site_id, dataset_id)]
-            try:
-                decision, condition_id = decisions[replica]
-            except KeyError:
-                # should not happen, but we can just set deleted to 1
-                sizes_blob = self._mysql.query('SELECT `sizes` FROM `replicas` WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s', site_id, dataset_id, partition_id)[0]
-                sz_arr = array.array('L', [])
-                sz_arr.fromstring(sizes_blob)
-                sz_arr.append(run_number << 32)
-                
-                self._mysql.query('UPDATE `replicas` SET `deleted` = 1, `sizes` = %s WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s', sz_arr.tostring(), site_id, dataset_id, partition_id)
-                continue
+        record = self._mysql.execute_many(sqlbase, ('site_id', 'dataset_id'), indices_to_replicas.keys(), conditions)
 
-            dec_arr.fromstring(decisions_blob)
+        insertions = []
+        
+        for site_id, dataset_id, rec_decision, rec_condition_id in record:
+            replica = indices_to_replicas.pop((site_id, dataset_id))
+            decision, condition_id = decisions[replica]
 
-            if len(dec_arr) == 0 or ((dec_arr[-1] >> 32) & 0x3) != decision or (dec_arr[-1] & 0xffffffff) != condition_id:
-                dec_arr.append((run_number << 34) + (decision << 32) + condition_id)
-                query = 'UPDATE `replicas` SET `deletion_decisions` = %s'
-                if decision == delete_val:
-                    query += ', `deleted` = 1'
-                query += ' WHERE `site_id` = %s AND `dataset_id` = %s AND `partition_id` = %s'
+            if decision != rec_decisions or condition_id != rec_condition_id:
+                insertions.append((site_id, dataset_id, decision, condition_id))
 
-                self._mysql.query(query, dec_arr.tostring(), site_id, dataset_id, partition_id)
+        for index, replica in indices_to_replicas.items():
+            insertions.append(index + decisions[replica])
+
+        fields = ('site_id', 'dataset_id', 'partition_id', 'run_id', 'decision', 'matched_condition')
+        mapping = lambda (site_id, dataset_id, decision, condition_id): (site_id, dataset_id, partition_id, run_number, decision, condition_id)
+        self._mysql.insert_many('deletion_decisions', fields, mapping, insertions)
 
     def _do_get_deletion_decisions(self, run_number, size_only): #override
-        partition_id = self._mysql.query('SELECT `operation`, `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
+        partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
 
-        sz_arr = array.array('L', [])
-        dec_arr = array.array('L', [])
         if size_only:
+            query = 'SELECT s.`name`, dd.`sizes`, r.`deletion_decisions` FROM `replicas` AS r'
+            query += ' INNER JOIN `sites` AS s ON s.`id` = r.`site_id`'
+            query += ' WHERE r.`partition_id` = %s'
+
             tmp_dict = {}
             
             query = 'SELECT s.`name`, r.`sizes`, r.`deletion_decisions` FROM `replicas` AS r'
@@ -443,17 +457,5 @@ class MySQLHistory(TransactionHistoryInterface):
             self._dataset_id_map[name] = int(dataset_id)
 
     def _make_replica_map(self, replicas):
-        if len(self._site_id_map) == 0:
-            self._make_site_id_map()
-        if len(self._dataset_id_map) == 0:
-            self._make_dataset_id_map()
-
-        indices_to_replicas = {}
-        for replica in replicas:
-            dataset = replica.dataset
-            site = replica.site
-            dataset_id = self._dataset_id_map[dataset.name]
-            site_id = self._site_id_map[site.name]
-            indices_to_replicas[(site_id, dataset_id)] = replica
 
         return indices_to_replicas
