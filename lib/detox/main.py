@@ -199,6 +199,8 @@ class Detox(object):
         logger.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
 
     def determine_deletions(self, target_sites, deletion_candidates, policy):
+        deleted = {}
+
         for site in target_sites:
             if site not in deletion_candidates:
                 continue
@@ -207,7 +209,6 @@ class Detox(object):
 
             sorted_candidates = policy.candidate_sort(site_candidates.keys())
 
-            deleted = {}
             deleted_volume = 0.
 
             for replica in sorted_candidates:
@@ -227,7 +228,7 @@ class Detox(object):
                     if deleted_volume / policy.quotas[site] > detox_config.deletion_per_iteration:
                         break
 
-            return deleted
+        return deleted
 
     def commit_deletions(self, run_number, policy, deletion_list, is_test):
         sites = set(r.site for r in deletion_list)
