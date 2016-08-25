@@ -94,9 +94,6 @@ class Detox(object):
             # will also select out replicas on sites with quotas
             all_replicas = policy.partition_replicas(self.inventory_manager.datasets.values())
 
-            # take a snapshot of current replicas
-            self.history.save_replicas(run_number, list(all_replicas))
-    
             logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(all_replicas))
     
             protected = {} # {replica: condition_id}

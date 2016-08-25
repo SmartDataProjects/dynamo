@@ -302,21 +302,6 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def save_replicas(self, run_number, replicas):
-        """
-        Update replica snapshots.
-        """
-
-        if config.read_only:
-            logger.info('save_replicas')
-            return
-
-        self.acquire_lock()
-        try:
-            self._do_save_replicas(run_number, replicas)
-        finally:
-            self.release_lock()
-
     def save_copy_decisions(self, run_number, copies):
         """
         Save reasons for copy decisions? Still deciding what to do..

@@ -253,72 +253,72 @@ class MySQLHistory(TransactionHistoryInterface):
             else:
                 policy.condition_id = ids[0]
 
-    def _do_save_replicas(self, run_number, replicas): #override
-        # (site_id, dataset_id) -> replica in inventory
-        if len(self._site_id_map) == 0:
-            self._make_site_id_map()
-        if len(self._dataset_id_map) == 0:
-            self._make_dataset_id_map()
+    def _do_save_copy_decisions(self, run_number, copies): #override
+        pass
 
-        indices_to_replicas = {}
-        for replica in replicas:
-            indices_to_replicas[(self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name])] = replica
+    def _do_save_deletion_decisions(self, run_number, decisions, delete_val): #override
+        # First save the size snapshots of the replicas, which will be referenced when reconstructing the history.
+        # Decisions are saved only if they have changed from the last run
+
+        # (site_id, dataset_id) -> replica in inventory
+        indices_to_replicas = self._make_replica_map(decisions.keys())
 
         partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
 
+        query = 'SELECT t1.`site_id`, t1.`dataset_id`, t1.`size` FROM `replica_snapshots` AS t1'
+        query += ' WHERE t1.`partition_id` = %d' % partition_id
+        query += ' AND t1.`size` != 0'
+        query += ' AND t1.`run_id` = ('
+        query += '  SELECT MAX(t2.`run_id`) FROM `replica_snapshots` AS t2 WHERE t2.`site_id` = t1.`site_id` AND t2.`dataset_id` = t1.`dataset_id`'
+        query += '  AND t2.`partition_id` = %d AND t2.`run_id` <= %d' % (partition_id, run_number)
+        query += ' )'
+
+        in_record = set()
         insertions = []
 
-        query = 'SELECT t1.`site_id`, t1.`dataset_id`, t1.`size` FROM `replica_snapshots` AS t1 WHERE'
-        query += ' t1.`partition_id` = %d' % partition_id
-        query += ' AND t1.`size` != 0'
-        query += ' AND t1.`run_id` = (SELECT MAX(t2.`run_id`) FROM `replica_snapshots` AS t2 WHERE t2.`site_id` = t1.`site_id` AND t2.`dataset_id` = t1.`dataset_id`'
-        query += '  AND t2.`partition_id` = %d AND t2.`run_id` <= %d)' % (partition_id, run_number)
-
+        # existing replicas that changed size or disappeared
         for site_id, dataset_id, size in self._mysql.query(query):
             index = (site_id, dataset_id)
             try:
-                replica = indices_to_replicas.pop(index)
+                replica = indices_to_replicas[index]
             except KeyError:
                 insertions.append((site_id, dataset_id, 0))
                 continue
 
+            in_record.add(replica)
+
             if size != replica.size():
                 insertions.append((site_id, dataset_id, replica.size()))
 
+        # new replicas
         for index, replica in indices_to_replicas.items():
-            insertions.append((index[0], index[1], replica.size()))
+            if replica not in in_record:
+                insertions.append((index[0], index[1], replica.size()))
 
         fields = ('site_id', 'dataset_id', 'partition_id', 'run_id', 'size')
         mapping = lambda (site_id, dataset_id, size): (site_id, dataset_id, partition_id, run_number, size)
         self._mysql.insert_many('replica_snapshots', fields, mapping, insertions)
 
-    def _do_save_copy_decisions(self, run_number, copies): #override
-        pass
+        query = 'SELECT dd1.`site_id`, dd1.`dataset_id`, dd1.`decision`, dd1.`matched_condition` FROM `deletion_decisions` AS dd1'
+        query += ' INNER JOIN `replica_snapshots` AS rs1 ON (rs1.`site_id`, rs1.`partition_id`, rs1.`dataset_id`) = (dd1.`site_id`, dd1.`partition_id`, dd1.`dataset_id`)'
+        query += ' WHERE dd1.`partition_id` = %d' % partition_id
+        query += ' AND rs1.`size` != 0'
+        query += ' AND rs1.`run_id` = ('
+        query += '  SELECT MAX(rs2.`run_id`) FROM `replica_snapshots` AS rs2'
+        query += '   WHERE (rs2.`site_id`, rs2.`partition_id`, rs2.`dataset_id`) = (rs1.`site_id`, rs1.`partition_id`, rs1.`dataset_id`)'
+        query += '   AND rs2.`partition_id` = %d' % partition_id
+        query += '   AND rs2.`run_id` <= %d' % run_number
+        query += ' )'
+        query += ' AND dd1.`run_id` = ('
+        query += '  SELECT MAX(dd2.`run_id`) FROM `deletion_decisions` AS dd2'
+        query += '   WHERE (dd2.`site_id`, dd2.`partition_id`, dd2.`dataset_id`) = (dd1.`site_id`, dd1.`partition_id`, dd1.`dataset_id`)'
+        query += '   AND dd2.`partition_id` = %d' % partition_id
+        query += '   AND dd2.`run_id` <= %d' % run_number
+        query += ' )'
 
-    def _do_save_deletion_decisions(self, run_number, decisions, delete_val): #override
-        if len(self._site_id_map) == 0:
-            self._make_site_id_map()
-        if len(self._dataset_id_map) == 0:
-            self._make_dataset_id_map()
-
-        partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
-
-        indices_to_replicas = {}
-        for replica in decisions.keys():
-            indices_to_replicas[(self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name])] = replica
-
-        # if select_many takes too long we'll have to dump all replicas
-        sqlbase = 'SELECT `site_id`, `dataset_id`, `decision`+0, `matched_condition` FROM `deletion_decisions` AS t1'
-        conditions = [
-            '`partition_id` = %d' % partition_id,
-            '`run_id` = (SELECT MAX(`run_id`) FROM `deletion_decisions` AS t2 WHERE t2.`site_id` = t1.`site_id` AND t2.`dataset_id` = t1.`dataset_id` AND t2.`partition_id` = %d AND t2.`run_id` <= %d)' % (partition_id, run_number)
-        ]
-
-        record = self._mysql.execute_many(sqlbase, ('site_id', 'dataset_id'), indices_to_replicas.keys(), conditions)
-
-        insertions = []
+        in_record = set()
         
-        for site_id, dataset_id, rec_decision, rec_condition_id in record:
+        for site_id, dataset_id, rec_decision, rec_condition_id in self._mysql.query():
             replica = indices_to_replicas.pop((site_id, dataset_id))
             decision, condition_id = decisions[replica]
 
@@ -457,5 +457,13 @@ class MySQLHistory(TransactionHistoryInterface):
             self._dataset_id_map[name] = int(dataset_id)
 
     def _make_replica_map(self, replicas):
+        if len(self._site_id_map) == 0:
+            self._make_site_id_map()
+        if len(self._dataset_id_map) == 0:
+            self._make_dataset_id_map()
+
+        indices_to_replicas = {}
+        for replica in replicas:
+            indices_to_replicas[(self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name])] = replica
 
         return indices_to_replicas
