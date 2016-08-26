@@ -127,7 +127,7 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('deleted_replicas', ('deletion_id', 'dataset_id'), lambda did: (operation_id, did), dataset_ids)
 
     def _do_update_copy_entry(self, copy_record): #override
-        self._mysql.query('UPDATE `copy_requests` SET `approved` = %s, `size_copied` = %s, `last_update` = FROM_UNIXTIME(%s) WHERE `id` = %s', copy_record.approved, copy_record.done, copy_record.last_update, copy_record.operation_id)
+        self._mysql.query('UPDATE `copy_requests` SET `approved` = %s, `size` = %s, `size_copied` = %s, `last_update` = FROM_UNIXTIME(%s) WHERE `id` = %s', copy_record.approved, copy_record.size, copy_record.done, copy_record.last_update, copy_record.operation_id)
         
     def _do_update_deletion_entry(self, deletion_record): #override
         self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, `size_deleted` = %s, `last_update` = FROM_UNIXTIME(%s) WHERE `id` = %s', deletion_record.approved, deletion_record.done, deletion_record.last_update, deletion_record.operation_id)
@@ -423,7 +423,7 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('dataset_popularity_snapshots', fields, mapping, datasets)
 
     def _do_get_incomplete_copies(self, partition): #override
-        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_copied`, UNIX_TIMESTAMP(h.`last_update`) FROM `copy_requests` AS h INNER JOIN `runs` AS r ON r.`id` = h.`run_id` INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id` INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`id` > 0 AND p.`name` LIKE %s AND h.`size` != h.`size_copied`', partition)
+        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_copied`, UNIX_TIMESTAMP(h.`last_update`) FROM `copy_requests` AS h INNER JOIN `runs` AS r ON r.`id` = h.`run_id` INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id` INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`id` > 0 AND p.`name` LIKE %s AND h.`size` != h.`size_copied` AND h.`run_id` > 0', partition)
         
         id_to_record = {}
         for eid, timestamp, approved, site_name, size, size_copied, last_update in history_entries:
