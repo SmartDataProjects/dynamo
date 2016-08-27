@@ -56,8 +56,8 @@ class Detox(object):
                 else:
                     break
 
-            with open(detox_config.activity_indicator, 'w'):
-                pass
+            with open(detox_config.activity_indicator, 'w') as indicator:
+                indicator.write('Detox started: ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
 
         try:
             policy = self.policies[partition]
