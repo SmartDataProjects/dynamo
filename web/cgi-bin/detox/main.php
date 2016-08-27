@@ -245,26 +245,40 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
   else if ($_REQUEST['dataType'] == 'siteDetail') {
     $site_name = $_REQUEST['siteName'];
 
-    $data['name'] = $site_name;
+    $data['content'] = array('name' => $site_name, 'datasets' => array());
+    $datasets = &$data['content']['datasets'];
 
-    $data['datasets'] = array();
-
-    $query = 'SELECT d.`name`, r.`size` * 1.e-9, l.`decision`, p.`text`';
+    $query = 'SELECT d.`name`, r.`size` * 1.e-9, l.`decision`, l.`matched_condition`';
     $query .= ' FROM `replica_snapshot_cache` AS c';
     $query .= ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`';
     $query .= ' INNER JOIN `deletion_decisions` AS l ON l.`id` = c.`decision_id`';
     $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
     $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
-    $query .= ' INNER JOIN `policy_conditions` AS p ON p.`id` = l.`matched_condition`';
     $query .= ' WHERE c.`run_id` = ? AND s.`name` LIKE ?';
     $query .= ' ORDER BY r.`size` DESC';
 
+    $conditions = array();
+
     $stmt = $history_db->prepare($query);
     $stmt->bind_param('is', $cycle, $site_name);
-    $stmt->bind_result($name, $size, $decision, $reason);
+    $stmt->bind_result($name, $size, $decision, $condition_id);
+    $stmt->execute();
+    while ($stmt->fetch()) {
+      $datasets[] = array('name' => $name, 'size' => $size, 'decision' => $decision, 'conditionId' => $condition_id);
+      $condition_ids[] = $condition_id;
+    }
+    $stmt->close();
+
+    $data['conditions'] = array();
+
+    $condition_ids = array_unique($condition_ids);
+
+    $query = sprintf('SELECT `id`, `text` FROM `policy_conditions` WHERE `id` IN (%s)', implode(',', $condition_ids));
+    $stmt = $history_db->prepare($query);
+    $stmt->bind_result($condition_id, $text);
     $stmt->execute();
     while ($stmt->fetch())
-      $data['datasets'][] = array('name' => $name, 'size' => $size, 'decision' => $decision, 'reason' => $reason);
+      $data['conditions'][$condition_id] = $text;
     $stmt->close();
   }
 

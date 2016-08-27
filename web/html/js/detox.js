@@ -15,6 +15,7 @@ var summary = {
 };
 
 var siteDetails;
+var conditionTexts = {'0': 'No policy match'};
 
 function initPage(cycleNumber, partitionId)
 {
@@ -556,7 +557,7 @@ function addTableRows(table, tbodyClass, data)
         .style('width', (tableWidth * 0.05 - 1) + 'px')
         .text(function (d) { return d.decision; });
     row.append('td').classed('reasonCol', true)
-        .text(function (d) { return d.reason; });
+        .text(function (d) { return conditionTexts[d.conditionId]; });
 
     return tbody;
 }
@@ -728,8 +729,7 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
     var inputData = {
         'getData': 1,
         'dataType': 'summary',
-        'cycleNumber': cycleNumber,
-        'partitionId': partitionId
+        'cycleNumber': cycleNumber
     };
 
     $.ajax({'url': window.location.href, 'data': inputData, 'success': function (data, textStatus, jqXHR) {
@@ -761,12 +761,16 @@ function loadSiteTable(name)
         'getData': 1,
         'dataType': 'siteDetail',
         'cycleNumber': currentCycle,
-        'partitionId': currentPartition,
         'siteName': name
     };
 
     $.get(window.location.href, inputData, function (data, textStatus, jqXHR) {
-            displayDetails(data);
+            for (var cid in data.conditions) {
+                if (!(cid in conditionTexts))
+                    conditionTexts[cid] = data.conditions[cid];
+            }
+
+            displayDetails(data.content);
             spinner.stop();
     }, 'json');
 }
@@ -787,7 +791,6 @@ function findDataset()
     var inputData = {
         'searchDataset': 1,
         'cycleNumber': currentCycle,
-        'partitionId': currentPartition,
         'datasetName': datasetName
     };
 
