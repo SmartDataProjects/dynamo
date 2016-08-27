@@ -118,10 +118,11 @@ class Policy(object):
             elif words[0] == 'Protect':
                 decision = Policy.DEC_PROTECT
                 line_type = LINE_POLICY
-            elif words[0] == 'Delete':
+            elif words[0] == 'Dismiss':
+                # will be set to KEEP if deletion is not needed
                 decision = Policy.DEC_DELETE
                 line_type = LINE_POLICY
-            elif words[0] == 'AlwaysDelete':
+            elif words[0] == 'Delete':
                 decision = Policy.DEC_DELETE_UNCONDITIONAL
                 line_type = LINE_POLICY
             else:
