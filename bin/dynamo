@@ -44,6 +44,11 @@ parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run'
 args = parser.parse_args()
 sys.argv = []
 
+if os.path.exists('/var/run/dynamod.pid'):
+    with open('/var/run/dynamod.pid') as pidfile:
+        if os.getppid() == int(pidfile.read()):
+            config.daemon_mode = True
+
 log_level = getattr(logging, args.log_level.upper())
 
 if args.log_file:
@@ -54,19 +59,9 @@ else:
 if args.dry_run:
     config.read_only = True
 
-elif not args.comment:
-    if os.path.exists('/var/run/dynamod.pid'):
-        with open('/var/run/dynamod.pid') as pidfile:
-            ppid = int(pidfile.read())
-    elif os.path.exists('/var/run/detoxd.pid'):
-        with open('/var/run/detoxd.pid') as pidfile:
-            ppid = int(pidfile.read())
-    else:
-        ppid = 0
-
-    if ppid == 0 or os.getppid() != ppid:
-        print 'Non-dry run from command line requires a comment (-m).'
-        sys.exit(1)
+elif not args.comment and not config.daemon_mode:
+    print 'Non-dry run from command line requires a comment (-m).'
+    sys.exit(1)
 
 kwd = {}
 for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:

@@ -1,3 +1,4 @@
+import sys
 import logging
 import time
 import re
@@ -65,11 +66,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             'custodial': 'n',
             'group': group.name,
             'request_only': 'n',
-            'no_mail': 'n'
+            'no_mail': 'n',
+            'comments': comments
         }
-
-        if comments:
-            options['comments'] = comments
 
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug('schedule_copy  subscribe: %s', str(options))
@@ -90,8 +89,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             return int(result[0]['id'])
 
     def schedule_copies(self, replicas, group, comments = '', is_test = False): #override (CopyInterface)
-        all_datasets = list(set([r.dataset for r in replicas]))
-
         request_mapping = {}
 
         def run_subscription_request(site, replica_list):
@@ -119,11 +116,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 'custodial': 'n',
                 'group': group.name,
                 'request_only': 'n',
-                'no_mail': 'n'
+                'no_mail': 'n',
+                'comments': comments
             }
-
-            if comments:
-                options['comments'] = comments
 
             if logger.getEffectiveLevel() == logging.DEBUG:
                 logger.debug('schedule_copies  subscribe: %s', str(options))
@@ -170,6 +165,17 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         return request_mapping
 
     def schedule_deletion(self, replica, comments = '', is_test = False): #override (DeletionInterface)
+        if replica.site.storage_type == Site.TYPE_MSS:
+            if config.daemon_mode:
+                logger.warning('Deletion from MSS cannot be done in daemon mode.')
+                return None
+
+            print 'Deletion of', replica.dataset.name, 'from', replica.site.name, 'is requested. Are you sure? [Y/n]'
+            response = sys.stdin.readline().strip()
+            if response != 'Y':
+                logger.warning('Aborting.')
+                return None
+
         catalogs = {} # {dataset: [block]}. Content can be empty if inclusive deletion is desired.
 
         if type(replica) == DatasetReplica:
@@ -182,11 +188,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             'node': replica.site.name,
             'data': self._form_catalog_xml(catalogs),
             'level': 'dataset',
-            'rm_subscriptions': 'y'
+            'rm_subscriptions': 'y',
+            'comments': comments
         }
-
-        if comments:
-            options['comments'] = comments
 
         if config.read_only:
             logger.info('schedule_deletion  delete %d datasets', len(catalogs))
@@ -216,36 +220,47 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             return (request_id, True, [replica])
 
     def schedule_deletions(self, replica_list, comments = '', is_test = False): #override (DeletionInterface)
-        all_datasets = list(set([r.dataset for r in replica_list]))
-
         request_mapping = {}
 
-        def run_deletion_request(site, replicas_to_delete):
+        replicas_by_site = collections.defaultdict(list)
+        for replica in replica_list:
+            replicas_by_site[replica.site].append(replica)
+
+        for site, replica_list in replicas_by_site.items():
+            if site.storage_type == Site.TYPE_MSS:
+                if config.daemon_mode:
+                    logger.warning('Deletion from MSS cannot be done in daemon mode.')
+                    continue
+    
+                print 'Deletion from', site.name, 'is requested. Are you sure? [Y/n]'
+                response = sys.stdin.readline().strip()
+                if response != 'Y':
+                    logger.warning('Aborting.')
+                    continue
+
             catalogs = {}
 
-            for replica in replicas_to_delete:
+            for replica in replica_list:
                 catalogs[replica.dataset] = [block_replica.block for block_replica in replica.block_replicas]
 
             options = {
                 'node': site.name,
                 'data': self._form_catalog_xml(catalogs),
                 'level': 'dataset',
-                'rm_subscriptions': 'y'
+                'rm_subscriptions': 'y',
+                'comments': comments
             }
-
-            if comments:
-                options['comments'] = comments
 
             if config.read_only:
                 logger.debug('schedule_deletions  delete: %s', str(options))
-                return
+                continue
 
             if is_test:
                 request_id = -1
                 while request_id in request_mapping:
                     request_id -= 1
 
-                request_mapping[request_id] = (True, replicas_to_delete)
+                request_mapping[request_id] = (True, replica_list)
 
             else:
                 # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
@@ -257,7 +272,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                 request_id = int(result[0]['id']) # return value is a string
     
-                request_mapping[request_id] = (False, replicas_to_delete) # (completed, deleted_replicas)
+                request_mapping[request_id] = (False, replica_list) # (completed, deleted_replicas)
     
                 logger.warning('PhEDEx deletion request id: %d', request_id)
 
@@ -267,14 +282,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     logger.error('schedule_deletions  deletion approval failed.')
                     return
     
-                request_mapping[request_id] = (True, replicas_to_delete)
-
-        replicas_by_site = collections.defaultdict(list)
-        for replica in replica_list:
-            replicas_by_site[replica.site].append(replica)
-
-        for site, replica_list in replicas_by_site.items():
-            run_deletion_request(site, replica_list)
+                request_mapping[request_id] = (True, replica_list)
 
         return request_mapping
 
