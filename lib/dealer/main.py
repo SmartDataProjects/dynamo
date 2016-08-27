@@ -151,7 +151,7 @@ class Dealer(object):
                     destination_site = next(dest for dest, njob in sorted_sites if \
                         policy.quotas[dest] != 0 and \
                         site_occupancy[dest] + dataset_size / policy.quotas[dest] < 1. and \
-                        site_occupancy[dest] < config.target_site_occupancy * dealer_config.overflow_factor and \
+                        site_occupancy[dest] < dealer_config.target_site_occupancy * dealer_config.overflow_factor and \
                         pending_volumes[dest] < dealer_config.max_copy_per_site and \
                         dest.find_dataset_replica(dataset) is None
                     )
@@ -181,7 +181,7 @@ class Dealer(object):
                     logger.warning('%s has reached the maximum number of replicas allowed.', dataset.name)
                     break
     
-                if min(site_occupancy.values()) > config.target_site_occupancy:
+                if min(site_occupancy.values()) > dealer_config.target_site_occupancy:
                     logger.warning('All sites have exceeded target storage occupancy. No more copies will be made.')
                     global_stop = True
                     break
