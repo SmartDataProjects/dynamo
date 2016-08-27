@@ -364,6 +364,8 @@ class MySQLHistory(TransactionHistoryInterface):
             for decision in ['protect', 'delete', 'keep']:
                 volumes[decision] = dict(self._mysql.query(query, decision))
                 sites.update(set(volumes[decision].keys()))
+
+            self._mysql.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
                 
             product = {}
             for site_name in sites:
@@ -485,3 +487,7 @@ class MySQLHistory(TransactionHistoryInterface):
         query += ' )'
 
         self._mysql.query(query)
+
+        self._mysql.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
+
+        self._mysql.query('DELETE FROM `replica_snapshot_cache` WHERE `run_id` NOT IN (SELECT `run_id` FROM `replica_snapshot_cache_usage` WHERE `timestamp` > DATE_SUB(NOW(), INTERVAL 1 WEEK))')
