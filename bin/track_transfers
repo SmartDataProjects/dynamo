@@ -6,23 +6,51 @@ import time
 import rrdtool
 import selinux
 import subprocess
+import random
 
 import common.configuration as config
 import common.interface.classes as classes
 import common.interface.merger_rrd as merger_rrd
 
 from glob import glob
+from datetime import datetime, timedelta
+
+
+###############################################################
+####### This script will spit out png files monitoring ########
+####### the copy status through Phedex on three levels: #######
+####### -per replica, -per request, -per site #################
+#
+####### yiiyama@mit.edu, bmaier@mit.edu #######################
+###############################################################
+DEBUG = 0
+
+partition = 'AnalysisOps'
 
 rrd_dir = config.paths.data + '/track_transfers'
 sites = glob(rrd_dir+'/*')
 sites.remove('/var/spool/dynamo/track_transfers/monitoring')
+try:
+    sites.remove('/var/spool/dynamo/track_transfers/total.rrd')
+except:
+    pass
 
-interval = 1800
+# existing rrd and png files
+existing_rrds = glob(rrd_dir+'/*/*.rrd')
+existing_pngs = glob(rrd_dir+'/*/*.png')
 
+if DEBUG:
+    print existing_rrds 
+
+#Interval of the rrd file timestamps
+interval = 900
+
+#Defining some global properties
 graphDefs = [
     '--width=400', '--height=300', '--full-size-mode',
     '--vertical-label=CopyStatus',
     '--lower-limit=0',
+    '--watermark=github.com/SmartDataProjects/dynamo',
 ]  
 
 try:
@@ -30,9 +58,10 @@ try:
 except:
     pass
 
-request_ids = []
 
-partition = 'AnalysisOps'
+history = classes.default_interface['history']()
+
+request_ids = []
 
 try:
     source_path = sys.argv[1]
@@ -41,27 +70,85 @@ try:
             request_ids.append(int(line.strip()))
 
 except:
-    history = classes.default_interface['history']()
-
-    records = history.get_incomplete_copies(partition)
-    
+    records = history.get_incomplete_copies(partition)    
     for record in records:
         request_ids.append(record.operation_id)
-        
+
+
+if DEBUG:
+    print 'Incomplete copies at the moment: ', len(request_ids) 
+
 copy = classes.default_interface['copy']()
 
 timestamp = int(time.time()) / interval * interval
 
-for request_id in request_ids:
+incomplete_replicas_rrd = []
+incomplete_replicas_png = []
+
+#Keeping track of total volume
+total_volume = 0
+copied_volume = 0
+total_rrdfile = rrd_dir+'/total.rrd'
+
+
+start = (int(time.time()) / interval - 1) * interval
+
+if not os.path.exists(total_rrdfile):
     
+    rrdtool.create(total_rrdfile, '--start', str(start), '--step', str(interval),
+                   'DS:copied:GAUGE:%d:0:U' % (interval * 800),
+                   'DS:total:GAUGE:%d:0:U' % (interval * 800),
+                   #'RRA:LAST:0:1:%i' % int((time.time()-timestamp_id)/60)    )
+                   'RRA:LAST:0:1:%i' % (3600*24*7)    )
+            #       'RRA:LAST:0:1:%i' % 360    )
+
+
+
+#now create new rrd files and create pngs
+counter = 0
+
+for record in records:
+
+    request_id = record.operation_id
+#   Debug area
+    counter = counter + 1
+    #if counter > 3:
+    #    break
+    
+    if DEBUG:
+        print request_id #Debug   
+#   End of debug area
+
     status = copy.copy_status(request_id)
 
-    for (site, dataset), (last_update, total, copied) in status.items():
+    #tracking of the request status
+    request_still_existing = 0
+
+    request_total = 0
+    request_copied = 0
+    replicas_in_request = []
+    replica_total_sizes = []
+    
+
+    rrd_defstring = ""
+    rrd_cdefstring = ""
+    rrd_cdefcopstring = "CDEF:copied="
+    rrd_cdeftotstring = "CDEF:total="
+
+    
+    for (site, dataset), (total, copied, last_update) in status.items():
+
+        request_still_existing = 1
+        
+        replica_total_sizes.append(total)
+        
         rrd_filepath = rrd_dir + '/' + site
         tmp = rrd_dir + '/' + site + '/'  +  dataset.replace('/', '+') + '.rrd'
         rrd_file = tmp.replace('+','',1)
-        
-                
+        png_file = '%s/monitoring/replica__%s__%s.png' % (rrd_dir , site , rrd_file.rsplit('.',1)[0].rsplit('/',1)[1])
+        incomplete_replicas_rrd.append(rrd_file)
+        incomplete_replicas_png.append(png_file)
+         
         if not os.path.exists(rrd_filepath):
             # Create path corresponding to site
             subprocess.call("mkdir %s" % rrd_filepath, shell=True)
@@ -76,10 +163,13 @@ for request_id in request_ids:
                 if record.operation_id == request_id:
                     timestamp_id = record.timestamp
 
+            # write rrd file
             rrdtool.create(rrd_file, '--start', str(start), '--step', str(interval),
-                'DS:copied:GAUGE:%d:0:U' % (interval * 48),
-                'DS:total:GAUGE:%d:0:U' % (interval * 48),
-                'RRA:LAST:0:1:%i' % int((time.time()-timestamp_id)/1800)    )
+                'DS:copied:GAUGE:%d:0:U' % (interval * 800),
+                'DS:total:GAUGE:%d:0:U' % (interval * 800),
+#                'RRA:LAST:0:1:%i' % int((time.time()-timestamp_id)/60)    )
+                'RRA:LAST:0:1:%i' % (3600*24*7)    )           
+             #   'RRA:LAST:0:1:%i' % 360    )
 
             # data source
             #  DS:<name>:<type>:<heartbeat>:<min>:<max>
@@ -97,15 +187,98 @@ for request_id in request_ids:
             selinux.chcon(rrd_file, 'unconfined_u:object_r:httpd_var_run_t:s0')
 
         try:
+            #keeping track of the request status
+            replicas_in_request.append(rrd_file)
+            request_total = request_total + total
+            request_copied = request_copied + copied            
+
+            #massaging the DEF and CDEF strings  
+            if len(replicas_in_request)==1:
+                rrd_defstring = 'DEF:copied%s=%s:copied:LAST DEF:total%s=%s:total:LAST' % (len(replicas_in_request) , rrd_file , len(replicas_in_request) , rrd_file)
+                rrd_cdefcopstring = rrd_cdefcopstring + "copied%s" % len(replicas_in_request)
+                rrd_cdeftotstring = rrd_cdeftotstring + "total%s" % len(replicas_in_request)
+            else:
+                rrd_defstring = rrd_defstring + " " + 'DEF:copied%s=%s:copied:LAST DEF:total%s=%s:total:LAST' % (len(replicas_in_request), rrd_file , len(replicas_in_request) , rrd_file)
+                rrd_cdefcopstring = rrd_cdefcopstring + ",copied%s,+" % len(replicas_in_request)
+                rrd_cdeftotstring = rrd_cdeftotstring + ",total%s,+" % len(replicas_in_request)
+
             rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
-            
             # Creating a copy status plot for each dataset
-            rrdtool.graph('%s/monitoring/dataset_%s.png' % (rrd_dir , rrd_file.rsplit('.',1)[0].rsplit('/',1)[1]), '--width=400', '--height=300', '--full-size-mode', '--vertical-label=CopyStatus', '--lower-limit=0', '--title=%s' % rrd_file.rsplit('.',1)[0].rsplit('/',1)[1], 'DEF:copied=%s:copied:LAST' % rrd_file, 'DEF:total=%s:total:LAST' % rrd_file, 'AREA:copied#aaffcc:Copied', 'LINE2:total#FF0000:Total')
+            rrdtool.graph('%s/monitoring/replica__%s__%s.png' % (rrd_dir , site , rrd_file.rsplit('.',1)[0].rsplit('/',1)[1]),'--width=400', '--height=300', '--full-size-mode', '--vertical-label=CopyStatus', '--lower-limit=0', '--watermark=github.com/SmartDataProjects/dynamo','--title=%s' % rrd_file.rsplit('.',1)[0].rsplit('/',1)[1], 'DEF:copied=%s:copied:LAST' % rrd_file, 'DEF:total=%s:total:LAST' % rrd_file, 'AREA:copied#aaffcc:Copied \l', 'LINE2:total#FF0000:Total \l','COMMENT:ID %s, created on %s'% (request_id, str(time.ctime(record.timestamp)).replace(':','\:')))
+            
         except:
             pass
 
+    rrd_cdefstring = rrd_cdefcopstring + " " + rrd_cdeftotstring       
+    rrd_string = rrd_defstring + " " + rrd_cdefstring
+    rrd_arglist = graphDefs + rrd_string.split()
 
-# Create overviews for different sites
+    if DEBUG:
+        print 'NUMBER OF REPLICAS: ', len(replicas_in_request)
+        print 'Request copied: ', request_copied
+        print 'Request total: ', request_total
+            
+    # update history DB
+    if request_still_existing == 1:
+        record.done = request_copied
+        record.size = request_total
+    else:
+        record.done = record.size
+
+    record.last_update = time.time()
+    history.update_copy_entry(record)
+
+    if DEBUG:
+        print 'Request still existing? ', request_still_existing 
+        print 'Size: ', record.size
+        print 'Copied: ', record.done
+
+    total_volume = total_volume + record.size
+    copied_volume = copied_volume + record.done
+
+    rrd_arglist.append('AREA:copied#aaffcc:Copied \l')
+    rrd_arglist.append('LINE2:total#FF0000:Total \l')
+
+    l2 = sorted(range(len(replica_total_sizes)),key=lambda x:replica_total_sizes[x],reverse=True)
+
+    #List copied status of single datasets within the request
+    if len(replicas_in_request) > 1:
+        for i in range(len(replicas_in_request)):
+            rrd_arglist.append('LINE2:copied%s#%06x:Replica with total share of %s %% \l' % ( (l2[i]+1), random.randint(0, 0xFFFFFF),   ( 100*replica_total_sizes[l2[i]]/request_total )   ))
+
+    rrd_arglist.append('COMMENT:Request created on %s \l' % str(time.ctime(record.timestamp)).replace(':','\:'))
+
+    # plotting
+    try:
+        rrdtool.graph('%s/monitoring/request__%s__%s.png' % (rrd_dir , record.site_name, request_id),  *tuple(['--title=Request %s' % request_id] + rrd_arglist ))
+    except:
+        pass
+
+
+# deletion part - first delete rrd files of completed requests that are older than one week, since we do not want them to be a part of the graphs anymore 
+
+older_than = datetime.now() - timedelta(days=5)
+
+for existing_rrd in existing_rrds:
+
+    filetime = datetime.fromtimestamp(os.path.getmtime(existing_rrd))
+
+    if existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
+        #delete pngs and rrd files
+        subprocess.call("rm -f %s" % existing_rrd, shell=True) 
+
+for existing_png in existing_pngs:
+
+    filetime = datetime.fromtimestamp(os.path.getmtime(existing_png))
+
+    if existing_png not in incomplete_replicas_png and filetime < older_than:
+        #delete pngs and rrd files
+        subprocess.call("rm -f %s" % existing_png, shell=True) 
+
+##
+## Create overviews for different sites
+##
+
 for site in sites:
     rrd_files = [f for f in os.listdir(site)]
 
@@ -114,7 +287,7 @@ for site in sites:
     rrd_cdefcopstring = "CDEF:copied="
     rrd_cdeftotstring = "CDEF:total="
 
-    # massaging the DEF and CDEF strings 
+    #massaging the DEF and CDEF strings 
     for rrd_file in rrd_files:
         if rrd_files.index(rrd_file) == 0:
             rrd_defstring = 'DEF:copied%s=%s/%s:copied:LAST DEF:total%s=%s/%s:total:LAST' % (rrd_files.index(rrd_file) , site , rrd_file , rrd_files.index(rrd_file) , site , rrd_file)        
@@ -126,13 +299,34 @@ for site in sites:
             rrd_cdeftotstring = rrd_cdeftotstring + ",total%s,+" % rrd_files.index(rrd_file) 
 
     rrd_cdefstring = rrd_cdefcopstring + " " + rrd_cdeftotstring
+    
+    #final rrd_string
     rrd_string = rrd_defstring + " " + rrd_cdefstring
     
-    # creating the final argument list
+    #creating the final argument list
     rrd_arglist = graphDefs + rrd_string.split()
+    #done massaging
 
     # plotting
     try:
-        rrdtool.graph('%s/monitoring/site_%s.png' % (rrd_dir , site.rsplit('/',1)[1]),  *tuple(['--title=%s' % site.rsplit('/',1)[1]] + rrd_arglist + ['AREA:copied#aaffcc:Copied'] +['LINE2:total#FF0000:Total']))
+        rrdtool.graph('%s/monitoring/site__%s.png' % (rrd_dir , site.rsplit('/',1)[1]), '--start=%d' % (time.time() - 3600 * 24 * 4), *tuple(['--title=%s' % site.rsplit('/',1)[1]] + rrd_arglist + ['AREA:copied#aaffcc:Copied \l'] +['LINE2:total#FF0000:Total \l'] + ['COMMENT:Replicas being copied\: %s ' % str(len(rrd_files))]))
     except:
         pass
+
+
+##
+## Total png
+##
+try:
+    rrdtool.update(total_rrdfile, '%d:%d:%d' % (timestamp, copied_volume, total_volume))
+    rrdtool.graph('%s/monitoring/total.png' % rrd_dir,'--start=%d' % (time.time() - 3600 * 24 * 4),'--width=400', '--height=300', '--full-size-mode', '--vertical-label=CopyStatus', '--lower-limit=0', '--watermark=github.com/SmartDataProjects/dynamo', '--title=Total volume', 'DEF:copied=%s:copied:LAST' % total_rrdfile, 'DEF:total=%s:total:LAST' % total_rrdfile, 'AREA:copied#aaffcc:Copied \l', 'LINE2:total#FF0000:Total \l', 'COMMENT:Incomplete requests\: %s' % str(len(request_ids)))
+except:
+    pass
+
+
+##
+## Copying pngs to the /var/www location
+##
+
+subprocess.call("rm /var/www/html/dynamo/dealermon/monitoring/*.png", shell=True)
+subprocess.call("cp /var/spool/dynamo/track_transfers/monitoring/*.png /var/www/html/dynamo/dealermon/monitoring/", shell=True)
