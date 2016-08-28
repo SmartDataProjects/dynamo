@@ -62,6 +62,10 @@ class Detox(object):
         try:
             policy = self.policies[partition]
 
+            if not policy.static_optimization and sum(1 for q in policy.quotas.values() if q < 0.) != 0:
+                logger.error('Positive quota for all sites is required for partition %s.', partition)
+                return
+
             self.history.save_conditions(policy.rules)
 
             self.demand_manager.update(self.inventory_manager, accesses = policy.uses_accesses, requests = policy.uses_requests, locks = policy.uses_locks)
@@ -104,9 +108,8 @@ class Detox(object):
             iteration = 0
     
             while True:
-                iteration += 1
-
                 if not policy.static_optimization:
+                    iteration += 1
                     logger.info('Iteration %d', iteration)
     
                 eval_results = parallel_exec(lambda r: policy.evaluate(r), list(all_replicas), per_thread = 100)
@@ -117,7 +120,8 @@ class Detox(object):
                     if decision == Policy.DEC_PROTECT:
                         all_replicas.remove(replica)
                         protected[replica] = condition
-                        protected_fraction[replica.site] += replica.size() / policy.quotas[replica.site]
+                        if not policy.static_optimization:
+                            protected_fraction[replica.site] += replica.size() / policy.quotas[replica.site]
 
                     elif decision == Policy.DEC_DELETE_UNCONDITIONAL:
                         self.inventory_manager.unlink_datasetreplica(replica)

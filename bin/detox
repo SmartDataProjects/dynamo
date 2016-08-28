@@ -122,7 +122,6 @@ for part_spec in args.partitions:
 
     partitions.append(partition)
 
-    # currently partition = group except for tapes
     if partition == 'Tape':
         group = None
         partitioning = None
@@ -139,7 +138,7 @@ for part_spec in args.partitions:
     if group:
         quotas = dict([(site, site.group_quota(group)) for site in all_sites if included_sites.match(site.name)])
     else:
-        quotas = dict([(site, 1.) for site in all_sites if included_sites.match(site.name)])
+        quotas = dict([(site, -1.) for site in all_sites if included_sites.match(site.name)])
 
     with open(def_path) as policy_def:
         policy = Policy(partition, quotas, partitioning, policy_def, policy_version)

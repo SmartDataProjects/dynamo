@@ -2,6 +2,7 @@ import os
 import socket
 import logging
 import time
+import re
 import collections
 
 from common.interface.history import TransactionHistoryInterface
@@ -93,7 +94,7 @@ class MySQLHistory(TransactionHistoryInterface):
             else:
                 operation_str = 'deletion'
 
-        return self._mysql.query('INSERT INTO `runs` (`operation`, `partition_id`, `policy_version`, `comment`, `time_start`) VALUES (%s, %s, %s, FROM_UNIXTIME(%s))', operation_str, part_id, policy_version, comment, time.time())
+        return self._mysql.query('INSERT INTO `runs` (`operation`, `partition_id`, `policy_version`, `comment`, `time_start`) VALUES (%s, %s, %s, %s, NOW())', operation_str, part_id, policy_version, comment)
 
     def _do_close_run(self, operation, run_number): #override
         self._mysql.query('UPDATE `runs` SET `time_end` = FROM_UNIXTIME(%s) WHERE `id` = %s', time.time(), run_number)
@@ -146,7 +147,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         sites_in_record = set()
 
-        insert_query = 'INSERT INTO `site_status_snapshots` (`site_id`, `run_id`, `active`, `status`) VALUES (%s, {run_number}, %d, %d)'.format(run_number = run_number)
+        insert_query = 'INSERT INTO `site_status_snapshots` (`site_id`, `run_id`, `active`, `status`) VALUES (%s, {run_number}, %s, %s)'.format(run_number = run_number)
 
         query = 'SELECT s.`name`, ss.`active`, ss.`status`+0 FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
         query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
@@ -223,7 +224,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         query = 'SELECT s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE'
         query += ' q.`partition_id` = %d' % partition_id
-        query += ' AND q.`run_id` = (SELECT MAX(q2.`run`) FROM `quota_snapshots` AS q2 WHERE q2.`partition_id` = %d AND q2.`site_id` = q.`site_id` AND q2.`run_id` <= %d)' % (partition_id, run_number)
+        query += ' AND q.`run_id` = (SELECT MAX(q2.`run_id`) FROM `quota_snapshots` AS q2 WHERE q2.`partition_id` = %d AND q2.`site_id` = q.`site_id` AND q2.`run_id` <= %d)' % (partition_id, run_number)
 
         record = self._mysql.query(query)
 
@@ -267,7 +268,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         # (site_id, dataset_id) -> replica in inventory
         indices_to_replicas = {}
-        for replica in replicas:
+        for replica in decisions.keys():
             indices_to_replicas[(self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name])] = replica
 
         partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
@@ -325,11 +326,13 @@ class MySQLHistory(TransactionHistoryInterface):
         query += '   AND dd2.`run_id` <= %d' % run_number
         query += ' )'
 
-        for site_id, dataset_id, rec_decision, rec_condition_id in self._mysql.query():
+        insertions = []
+
+        for site_id, dataset_id, rec_decision, rec_condition_id in self._mysql.query(query):
             replica = indices_to_replicas.pop((site_id, dataset_id))
             decision, condition_id = decisions[replica]
 
-            if decision != rec_decisions or condition_id != rec_condition_id:
+            if decision != rec_decision or condition_id != rec_condition_id:
                 insertions.append((site_id, dataset_id, decision, condition_id))
 
         # replicas with no past decision entries

@@ -126,19 +126,26 @@ if 'detox' in args.module:
 
         detox_partitions.append(partition)
 
-        # currently partition = group except for tapes
-        if 'Tape' in partition:
-            group_name = partition[:partition.find('Tape')]
+        if partition == 'Tape':
+            group = None
+            partitioning = None
             all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_MSS]
+        elif partition == 'Unsubscribed':
+            group = None
+            partitioning = BelongsTo(None)
+            all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_DISK]
         else:
-            group_name = partition
+            group = inventory_manager.groups[partition]
+            partitioning = BelongsTo(group)
             all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_DISK]
 
-        group = inventory_manager.groups[group_name]
-        quotas = dict([(site, site.group_quota(group)) for site in all_sites if included_sites.match(site.name)])
+        if group:
+            quotas = dict([(site, site.group_quota(group)) for site in all_sites if included_sites.match(site.name)])
+        else:
+            quotas = dict([(site, -1.) for site in all_sites if included_sites.match(site.name)])
 
         with open(def_path) as policy_def:    
-            policy = Policy(partition, quotas, BelongsTo(group), policy_def, policy_version)
+            policy = Policy(partition, quotas, partitioning, policy_def, policy_version)
     
         detox.set_policy(policy)
 

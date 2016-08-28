@@ -23,16 +23,16 @@ class PopDB(AccessHistoryInterface):
         elif site.name.startswith('T1') and site.name.count('_') > 2:
             nameparts = site.name.split('_')
             sitename = '_'.join(nameparts[:3])
-            service = 'popularity'
+            service = 'popularity/DSStatInTimeWindow/' # wtf
         elif site.name == 'T2_CH_CERN':
             sitename = site.name
-            service = 'xrdpopularity'
+            service = 'xrdpopularity/DSStatInTimeWindow'
         else:
             sitename = site.name
-            service = 'popularity'
+            service = 'popularity/DSStatInTimeWindow/'
 
         datestr = date.strftime('%Y-%m-%d')
-        result = self._make_request(service + '/DSStatInTimeWindow/', ['sitename=' + sitename, 'tstart=' + datestr, 'tstop=' + datestr])
+        result = self._make_request(service, ['sitename=' + sitename, 'tstart=' + datestr, 'tstop=' + datestr])
 
         accesses = []
 
@@ -74,6 +74,13 @@ if __name__== '__main__':
     popdb = PopDB()
 
     if args.command == 'dsstat':
-        result = popdb._make_request('popularity/DSStatInTimeWindow/', args.options)
+        service = 'popularity'
+        for opt in args.options:
+            if 'sitename=' in opt:
+                sitename = opt[opt.find('=') + 1:]
+                if sitename == 'T2_CH_CERN':
+                    service = 'xrdpopularity'
+
+        result = popdb._make_request(service + '/DSStatInTimeWindow', args.options)
 
     pprint.pprint(result)
