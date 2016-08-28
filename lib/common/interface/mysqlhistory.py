@@ -481,7 +481,7 @@ class MySQLHistory(TransactionHistoryInterface):
             query += ' SELECT %d, dd1.`site_id`, dd1.`dataset_id`, rs1.`id`, dd1.`id` FROM `deletion_decisions` AS dd1, `replica_size_snapshots` AS rs1' % run_number
             query += ' WHERE (dd1.`site_id`, dd1.`partition_id`, dd1.`dataset_id`) = (rs1.`site_id`, rs1.`partition_id`, rs1.`dataset_id`)'
             query += ' AND dd1.`partition_id` = %d' % partition_id
-            query += ' AND rs1.`size` != 0'
+            query += ' AND rs1.`size` IS NOT NULL'
             query += ' AND rs1.`run_id` = ('
             query += '  SELECT MAX(rs2.`run_id`) FROM `replica_size_snapshots` AS rs2'
             query += '  WHERE (rs2.`site_id`, rs2.`partition_id`, rs2.`dataset_id`) = (rs1.`site_id`, rs1.`partition_id`, rs1.`dataset_id`)'
