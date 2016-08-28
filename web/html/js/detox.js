@@ -99,8 +99,9 @@ function setupSiteDetails(siteData)
                     d.delete.toFixed(1) + ' TB Delete, ' +
                     d.keep.toFixed(1) + ' TB Keep, ' +
                     d.protect.toFixed(1) + ' TB Protect, ' +
-                    (d.delete + d.keep + d.protect).toFixed(1) + ' TB Total / ' +
-                    'Quota ' + d.quota + ' TB)';
+                    (d.delete + d.keep + d.protect).toFixed(1) + ' TB Total';
+                if (d.quota >= 0.)
+                    text += ' / Quota ' + d.quota + ' TB)';
                 return text;
             });
 
@@ -258,6 +259,15 @@ function displaySummary(data)
     var eye = summaryGraph.append('circle')
         .attr({'fill': 'black', 'cx': gxnorm(summary.xorigin + 2), 'r': 0.6});
 
+    var onlyAbsolute = false;
+    for (var s in data.siteData) {
+        if (data.siteData[s].quota < 0) {
+            currentNorm = "absolute";
+            onlyAbsolute = true;
+            break;
+        }
+    }
+
     if (currentNorm == 'relative') {
         eye.attr('cy', 3);
 
@@ -274,10 +284,12 @@ function displaySummary(data)
     else {
         eye.attr('cy', 7);
 
-        selectRelative.attr('onclick', 'loadSummary(currentCycle, currentPartition, \'relative\');');
+        if (!onlyAbsolute) {
+            selectRelative.attr('onclick', 'loadSummary(currentCycle, currentPartition, \'relative\');');
 
-        titleRelative.style('cursor', 'pointer')
-            .attr('onclick', 'loadSummary(currentCycle, currentPartition, \'relative\');');
+            titleRelative.style('cursor', 'pointer')
+                .attr('onclick', 'loadSummary(currentCycle, currentPartition, \'relative\');');
+        }
 
         summary.yscale.domain([0, d3.max(data.siteData, function (d) { return Math.max(d.protect + d.keep + d.delete, d.protectPrev + d.keepPrev, d.quota) / 1000.; }) * 1.1])
             .range([summary.ymax, 0]);
@@ -367,17 +379,20 @@ function displaySummary(data)
             .data(data.siteData)
             .enter()
             .append('g').classed('refMarkers', true)
-            .attr('transform', function (d) { return 'translate(' + xmapping(d.name) + ',0)'; });
+            .attr('transform', function (d) { return 'translate(' + xmapping(d.name) + ',0)'; })
+            .each(function (d) {
+                    if (d.quota < 0)
+                        return;
 
-        refMarkers.append('line').classed('refMarker quota', true)
-            .attr('y1', function (d) { return -ynorm(d.quota); })
-            .attr('y2', function (d) { return -ynorm(d.quota); });
-        refMarkers.append('line').classed('refMarker trigger', true)
-            .attr('y1', function (d) { return -ynorm(d.quota * 0.9); })
-            .attr('y2', function (d) { return -ynorm(d.quota * 0.9); });
-        refMarkers.append('line').classed('refMarker target', true)
-            .attr('y1', function (d) { return -ynorm(d.quota * 0.85); })
-            .attr('y2', function (d) { return -ynorm(d.quota * 0.85); });
+                    d3.select(this).append('line').classed('refMarker quota', true)
+                    .attr({'y1': -ynorm(d.quota), 'y2': -ynorm(d.quota)});
+
+                    d3.select(this).append('line').classed('refMarker trigger', true)
+                    .attr({'y1': -ynorm(d.quota * 0.9), 'y2': -ynorm(d.quota * 0.9)});
+
+                    d3.select(this).append('line').classed('refMarker target', true)
+                    .attr({'y1': -ynorm(d.quota * 0.85), 'y2': -ynorm(d.quota * 0.85)});
+                });
 
         refMarkers.selectAll('.refMarker')
             .attr({'x1': -xspace * 0.5, 'x2': xspace * 0.5});
@@ -395,6 +410,9 @@ function displaySummary(data)
         .attr('transform', function (d) { return 'translate(0,-' + ynorm(d.protectPrev, d.quota) + ')'; })
         .attr('height', function (d) { return ynorm(d.protectPrev, d.quota)})
         .each(function (d) {
+                if (d.quota < 0)
+                    return;
+
                 if (d.protectPrev > d.quota)
                     this.style.fill = '#ff8888';
                 else if (d.protectPrev > d.quota * 0.9)
@@ -417,6 +435,9 @@ function displaySummary(data)
         .attr('transform', function (d) { return 'translate(0,-' + ynorm(d.protect, d.quota) + ')'; })
         .attr('height', function (d) { return ynorm(d.protect, d.quota); })
         .each(function (d) {
+                if (d.quota < 0)
+                    return;
+
                 if (d.protect > d.quota)
                     this.style.fill = '#ff0000';
                 else if (d.protect > d.quota * 0.9)
@@ -451,7 +472,7 @@ function displaySummary(data)
     var lineLegend = summaryGraph.append('g').classed('lineLegend', true)
         .attr('transform', 'translate(' + gxnorm(50) + ', 0)');
 
-    var lineLegendContents =
+    var lineLegendContents = 
         [{'cls': 'quota', 'title': 'Quota', 'position': '(0,3.5)'},
          {'cls': 'trigger', 'title': 'Deletion trigger', 'position': '(0,7.5)'},
          {'cls': 'target', 'title': 'Target occupancy', 'position': '(0,11.5)'}];
@@ -557,7 +578,7 @@ function addTableRows(table, tbodyClass, data)
         .style('width', (tableWidth * 0.05 - 1) + 'px')
         .text(function (d) { return d.decision; });
     row.append('td').classed('reasonCol', true)
-        .text(function (d) { return conditionTexts[d.conditionId]; });
+        .text(function (d) { if ('reason' in d) return d.reason; else return conditionTexts[d.conditionId]; });
 
     return tbody;
 }
