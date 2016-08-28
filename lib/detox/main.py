@@ -174,15 +174,8 @@ class Detox(object):
     
             # save replica snapshots and all deletion decisions
             logger.info('Saving deletion decisions.')
-            decisions = {}
-            for replica, condition_id in protected.items():
-                decisions[replica] = (Policy.DEC_PROTECT, condition_id)
-            for replica, condition_id in deleted.items():
-                decisions[replica] = (Policy.DEC_DELETE, condition_id)
-            for replica, condition_id in kept.items():
-                decisions[replica] = (Policy.DEC_KEEP, condition_id)
 
-            self.history.save_deletion_decisions(run_number, decisions, Policy.DEC_DELETE)
+            self.history.save_deletion_decisions(run_number, deleted, kept, protected)
     
             logger.info('Committing deletion.')
             self.commit_deletions(run_number, policy, deleted.keys(), is_test, comment)

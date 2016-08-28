@@ -317,10 +317,9 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
       
-    def save_deletion_decisions(self, run_number, decisions, delete_val):
+    def save_deletion_decisions(self, run_number, deleted, kept, protected):
         """
         Save decisions and their reasons for all replicas.
-        Argument decisions is {replica: (decision, condition_id)}
         """
 
         if config.read_only:
@@ -329,7 +328,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_deletion_decisions(run_number, decisions, delete_val)
+            self._do_save_deletion_decisions(run_number, deleted, kept, protected)
         finally:
             self.release_lock()
 

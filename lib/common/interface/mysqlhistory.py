@@ -257,7 +257,7 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
 
-    def _do_save_deletion_decisions(self, run_number, decisions, delete_val): #override
+    def _do_save_deletion_decisions(self, run_number, deleted, kept, protected): #override
         # First save the size snapshots of the replicas, which will be referenced when reconstructing the history.
         # Decisions are saved only if they changed from the last run
 
@@ -268,15 +268,20 @@ class MySQLHistory(TransactionHistoryInterface):
 
         # (site_id, dataset_id) -> replica in inventory
         indices_to_replicas = {}
-        for replica in decisions.keys():
+        for replica in deleted.keys():
+            indices_to_replicas[(self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name])] = replica
+        for replica in kept.keys():
+            indices_to_replicas[(self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name])] = replica
+        for replica in protected.keys():
             indices_to_replicas[(self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name])] = replica
 
         partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
 
         # size snapshots
+        # size NULL means the replica is deleted
         query = 'SELECT t1.`site_id`, t1.`dataset_id`, t1.`size` FROM `replica_size_snapshots` AS t1'
         query += ' WHERE t1.`partition_id` = %d' % partition_id
-        query += ' AND t1.`size` != 0'
+        query += ' AND t1.`size` IS NOT NULL'
         query += ' AND t1.`run_id` = ('
         query += '  SELECT MAX(t2.`run_id`) FROM `replica_size_snapshots` AS t2 WHERE t2.`site_id` = t1.`site_id` AND t2.`dataset_id` = t1.`dataset_id`'
         query += '  AND t2.`partition_id` = %d AND t2.`run_id` <= %d' % (partition_id, run_number)
@@ -291,7 +296,8 @@ class MySQLHistory(TransactionHistoryInterface):
             try:
                 replica = indices_to_replicas[index]
             except KeyError:
-                insertions.append((site_id, dataset_id, 0))
+                # this replica is not in the inventory any more
+                insertions.append((site_id, dataset_id, None))
                 continue
 
             in_record.add(replica)
@@ -312,7 +318,7 @@ class MySQLHistory(TransactionHistoryInterface):
         query = 'SELECT dd1.`site_id`, dd1.`dataset_id`, dd1.`decision`, dd1.`matched_condition` FROM `deletion_decisions` AS dd1'
         query += ' INNER JOIN `replica_size_snapshots` AS rs1 ON (rs1.`site_id`, rs1.`partition_id`, rs1.`dataset_id`) = (dd1.`site_id`, dd1.`partition_id`, dd1.`dataset_id`)'
         query += ' WHERE dd1.`partition_id` = %d' % partition_id
-        query += ' AND rs1.`size` != 0'
+        query += ' AND rs1.`size` IS NOT NULL'
         query += ' AND rs1.`run_id` = ('
         query += '  SELECT MAX(rs2.`run_id`) FROM `replica_size_snapshots` AS rs2'
         query += '   WHERE (rs2.`site_id`, rs2.`partition_id`, rs2.`dataset_id`) = (rs1.`site_id`, rs1.`partition_id`, rs1.`dataset_id`)'
@@ -347,8 +353,7 @@ class MySQLHistory(TransactionHistoryInterface):
         self._fill_snapshot_cache(run_number)
 
     def _do_get_deletion_decisions(self, run_number, size_only): #override
-        if self._mysql.query('SELECT COUNT(*) FROM `replica_snapshot_cache` WHERE `run_id` = %s', run_number) is None:
-            self._fill_snapshot_cache(run_number)
+        self._fill_snapshot_cache(run_number)
 
         partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
 
@@ -469,28 +474,35 @@ class MySQLHistory(TransactionHistoryInterface):
             self._dataset_id_map[name] = int(dataset_id)
 
     def _fill_snapshot_cache(self, run_number):
-        partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
+        if self._mysql.query('SELECT COUNT(*) FROM `replica_snapshot_cache` WHERE `run_id` = %s', run_number) is None:
+            partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
+    
+            query = 'INSERT INTO `replica_snapshot_cache`'
+            query += ' SELECT %d, dd1.`site_id`, dd1.`dataset_id`, rs1.`id`, dd1.`id` FROM `deletion_decisions` AS dd1, `replica_size_snapshots` AS rs1' % run_number
+            query += ' WHERE (dd1.`site_id`, dd1.`partition_id`, dd1.`dataset_id`) = (rs1.`site_id`, rs1.`partition_id`, rs1.`dataset_id`)'
+            query += ' AND dd1.`partition_id` = %d' % partition_id
+            query += ' AND rs1.`size` != 0'
+            query += ' AND rs1.`run_id` = ('
+            query += '  SELECT MAX(rs2.`run_id`) FROM `replica_size_snapshots` AS rs2'
+            query += '  WHERE (rs2.`site_id`, rs2.`partition_id`, rs2.`dataset_id`) = (rs1.`site_id`, rs1.`partition_id`, rs1.`dataset_id`)'
+            query += '  AND rs2.`partition_id` = %d' % partition_id
+            query += '  AND rs2.`run_id` <= %d' % run_number
+            query += ' )'
+            query += ' AND dd1.`run_id` = ('
+            query += '  SELECT MAX(dd2.`run_id`) FROM `deletion_decisions` AS dd2'
+            query += '  WHERE (dd2.`site_id`, dd2.`partition_id`, dd2.`dataset_id`) = (dd1.`site_id`, dd1.`partition_id`, dd1.`dataset_id`)'
+            query += '  AND dd2.`partition_id` = %d' % partition_id
+            query += '  AND dd2.`run_id` <= %d' % run_number
+            query += ' )'
+    
+            self._mysql.query(query)
+    
+            self._mysql.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
 
-        query = 'INSERT INTO `replica_snapshot_cache`'
-        query += ' SELECT %d, dd1.`site_id`, dd1.`dataset_id`, rs1.`id`, dd1.`id` FROM `deletion_decisions` AS dd1, `replica_size_snapshots` AS rs1' % run_number
-        query += ' WHERE (dd1.`site_id`, dd1.`partition_id`, dd1.`dataset_id`) = (rs1.`site_id`, rs1.`partition_id`, rs1.`dataset_id`)'
-        query += ' AND dd1.`partition_id` = %d' % partition_id
-        query += ' AND rs1.`size` != 0'
-        query += ' AND rs1.`run_id` = ('
-        query += '  SELECT MAX(rs2.`run_id`) FROM `replica_size_snapshots` AS rs2'
-        query += '  WHERE (rs2.`site_id`, rs2.`partition_id`, rs2.`dataset_id`) = (rs1.`site_id`, rs1.`partition_id`, rs1.`dataset_id`)'
-        query += '  AND rs2.`partition_id` = %d' % partition_id
-        query += '  AND rs2.`run_id` <= %d' % run_number
-        query += ' )'
-        query += ' AND dd1.`run_id` = ('
-        query += '  SELECT MAX(dd2.`run_id`) FROM `deletion_decisions` AS dd2'
-        query += '  WHERE (dd2.`site_id`, dd2.`partition_id`, dd2.`dataset_id`) = (dd1.`site_id`, dd1.`partition_id`, dd1.`dataset_id`)'
-        query += '  AND dd2.`partition_id` = %d' % partition_id
-        query += '  AND dd2.`run_id` <= %d' % run_number
-        query += ' )'
+        num_deleted = self._mysql.query('DELETE FROM `replica_snapshot_cache` WHERE `run_id` NOT IN (SELECT `run_id` FROM `replica_snapshot_cache_usage` WHERE `timestamp` > DATE_SUB(NOW(), INTERVAL 1 WEEK))')
+        if num_deleted != 0:
+            self._mysql.query('OPTIMIZE TABLE `replica_snapshot_cache`')
 
-        self._mysql.query(query)
-
-        self._mysql.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
-
-        self._mysql.query('DELETE FROM `replica_snapshot_cache` WHERE `run_id` NOT IN (SELECT `run_id` FROM `replica_snapshot_cache_usage` WHERE `timestamp` > DATE_SUB(NOW(), INTERVAL 1 WEEK))')
+        num_deleted = self._mysql.query('DELETE FROM `replica_snapshot_cache_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
+        if num_deleted != 0:
+            self._mysql.query('OPTIMIZE TABLE `replica_snapshot_cache_usage`')
