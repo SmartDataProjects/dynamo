@@ -72,8 +72,11 @@ class MySQL(object):
         result = cursor.fetchall()
 
         if cursor.description is None:
-            # insert query
-            return cursor.lastrowid
+            if cursor.lastrowid != 0:
+                # insert query
+                return cursor.lastrowid
+            else:
+                return cursor.rowcount
 
         elif len(result) != 0 and len(result[0]) == 1:
             # single column requested
