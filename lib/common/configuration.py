@@ -22,7 +22,7 @@ mysqlhistory = Configuration()
 mysqlhistory.db_params = {
     'config_file': '/etc/my.cnf',
     'config_group': 'mysql-dynamo',
-    'db': 'dynamohistory_devel2'
+    'db': 'dynamohistory'
 }
 
 webservice = Configuration()

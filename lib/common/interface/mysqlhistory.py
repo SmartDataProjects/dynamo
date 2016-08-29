@@ -483,7 +483,7 @@ class MySQLHistory(TransactionHistoryInterface):
             self._dataset_id_map[name] = int(dataset_id)
 
     def _fill_snapshot_cache(self, run_number):
-        if self._mysql.query('SELECT COUNT(*) FROM `replica_snapshot_cache` WHERE `run_id` = %s', run_number) is None:
+        if self._mysql.query('SELECT COUNT(*) FROM `replica_snapshot_cache` WHERE `run_id` = %s', run_number)[0] == 0:
             partition_id = self._mysql.query('SELECT `partition_id` FROM `runs` WHERE `id` = %s', run_number)[0]
     
             query = 'INSERT INTO `replica_snapshot_cache`'
