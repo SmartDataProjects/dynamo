@@ -315,6 +315,14 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('replica_size_snapshots', fields, mapping, insertions)
 
         # deletion decisions
+        decisions = {}
+        for replica, condition_id in deleted.items():
+            decisions[replica] = ('delete', condition_id)
+        for replica, condition_id in kept.items():
+            decisions[replica] = ('keep', condition_id)
+        for replica, condition_id in protected.items():
+            decisions[replica] = ('protect', condition_id)
+
         query = 'SELECT dd1.`site_id`, dd1.`dataset_id`, dd1.`decision`, dd1.`matched_condition` FROM `deletion_decisions` AS dd1'
         query += ' INNER JOIN `replica_size_snapshots` AS rs1 ON (rs1.`site_id`, rs1.`partition_id`, rs1.`dataset_id`) = (dd1.`site_id`, dd1.`partition_id`, dd1.`dataset_id`)'
         query += ' WHERE dd1.`partition_id` = %d' % partition_id
@@ -336,6 +344,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         for site_id, dataset_id, rec_decision, rec_condition_id in self._mysql.query(query):
             replica = indices_to_replicas.pop((site_id, dataset_id))
+
             decision, condition_id = decisions[replica]
 
             if decision != rec_decision or condition_id != rec_condition_id:
