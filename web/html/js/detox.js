@@ -263,6 +263,8 @@ function displaySummary(data)
     for (var s in data.siteData) {
         if (data.siteData[s].quota < 0) {
             currentNorm = "absolute";
+            titleRelative.style('fill', '#808080');
+            selectRelative.attr('stroke', '#808080');
             onlyAbsolute = true;
             break;
         }

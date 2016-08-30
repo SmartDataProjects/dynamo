@@ -72,7 +72,7 @@ check_cache($cycle, $partition_id);
 if (isset($_REQUEST['searchDataset']) && $_REQUEST['searchDataset']) {
   $dataset_pattern = str_replace('*', '%', $_REQUEST['datasetName']);
 
-  $query = 'SELECT s.`name`, d.`name`, r.`size` * 1.e-9, l.`decision`, l.`reason`';
+  $query = 'SELECT s.`name`, d.`name`, r.`size` * 1.e-9, l.`decision`, l.`matched_condition`';
   $query .= ' FROM `replica_snapshot_cache` AS c';
   $query .= ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`';
   $query .= ' INNER JOIN `deletion_decisions` AS l ON l.`id` = c.`decision_id`';
@@ -82,7 +82,7 @@ if (isset($_REQUEST['searchDataset']) && $_REQUEST['searchDataset']) {
 
   $stmt = $history_db->prepare($query);
   $stmt->bind_param('is', $cycle, $dataset_pattern);
-  $stmt->bind_result($site_name, $dataset_name, $size, $decision, $reason);
+  $stmt->bind_result($site_name, $dataset_name, $size, $decision, $condition_id);
   $stmt->execute();
 
   $json = '[';
@@ -99,7 +99,7 @@ if (isset($_REQUEST['searchDataset']) && $_REQUEST['searchDataset']) {
     else
       $json .= ',';
 
-    $json .= sprintf('{"name":"%s","size":%f,"decision":"%s","reason":"%s"}', $dataset_name, $size, $decision, $reason);
+    $json .= sprintf('{"name":"%s","size":%f,"decision":"%s","conditionId":"%s"}', $dataset_name, $size, $decision, $condition_id);
   }
   if (strlen($json) != 1)
     $json .= ']}';
