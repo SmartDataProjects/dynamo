@@ -1,4 +1,3 @@
-import sys
 import logging
 import time
 import re
@@ -165,16 +164,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         return request_mapping
 
     def schedule_deletion(self, replica, comments = '', is_test = False): #override (DeletionInterface)
-        if replica.site.storage_type == Site.TYPE_MSS:
-            if config.daemon_mode:
-                logger.warning('Deletion from MSS cannot be done in daemon mode.')
-                return None
-
-            print 'Deletion of', replica.dataset.name, 'from', replica.site.name, 'is requested. Are you sure? [Y/n]'
-            response = sys.stdin.readline().strip()
-            if response != 'Y':
-                logger.warning('Aborting.')
-                return None
+        if replica.site.storage_type == Site.TYPE_MSS and config.daemon_mode:
+            logger.warning('Deletion from MSS cannot be done in daemon mode.')
+            return None
 
         catalogs = {} # {dataset: [block]}. Content can be empty if inclusive deletion is desired.
 
@@ -223,21 +215,17 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         request_mapping = {}
 
         replicas_by_site = collections.defaultdict(list)
+        has_mss = False
         for replica in replica_list:
             replicas_by_site[replica.site].append(replica)
+            if replica.site.storage_type == Site.TYPE_MSS:
+                has_mss = True
+
+        if has_mss and config.daemon_mode:
+            logger.warning('Deletion from MSS cannot be done in daemon mode.')
+            return {}
 
         for site, replica_list in replicas_by_site.items():
-            if site.storage_type == Site.TYPE_MSS:
-                if config.daemon_mode:
-                    logger.warning('Deletion from MSS cannot be done in daemon mode.')
-                    continue
-    
-                print 'Deletion from', site.name, 'is requested. Are you sure? [Y/n]'
-                response = sys.stdin.readline().strip()
-                if response != 'Y':
-                    logger.warning('Aborting.')
-                    continue
-
             catalogs = {}
 
             for replica in replica_list:
@@ -268,7 +256,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     result = self._make_phedex_request('delete', options, method = POST)
                 except:
                     logger.error('schedule_deletions  delete failed.')
-                    return
+                    return request_mapping
     
                 request_id = int(result[0]['id']) # return value is a string
     
@@ -280,7 +268,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
                 except:
                     logger.error('schedule_deletions  deletion approval failed.')
-                    return
+                    return request_mapping
     
                 request_mapping[request_id] = (True, replica_list)
 
