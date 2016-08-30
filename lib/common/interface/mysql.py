@@ -12,6 +12,11 @@ import traceback
 
 import common.configuration as config
 
+# Fix for some (newer) versions of MySQLdb
+from types import TupleType, ListType
+MySQLdb.converters.conversions[TupleType] = MySQLdb.converters.escape_sequence
+MySQLdb.converters.conversions[ListType] = MySQLdb.converters.escape_sequence
+
 logger = logging.getLogger(__name__)
 
 class MySQL(object):
@@ -53,7 +58,8 @@ class MySQL(object):
                     cursor.execute(sql, args)
                     break
                 except MySQLdb.OperationalError:
-                    last_except = sys.exc_info()[0]
+                    logger.error(str(sys.exc_info()[1]))
+                    last_except = sys.exc_info()[1]
                     # reconnect to server
                     cursor.close()
                     self._connection = MySQLdb.connect(**self._connection_parameters)
