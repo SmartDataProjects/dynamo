@@ -43,7 +43,7 @@ replica_vardefs = {
     'replica.last_used': (lambda r: max(r.dataset.last_update, r.last_access()), TIME_TYPE),
     'replica.num_access': (lambda r: len(r.accesses[DatasetReplica.ACC_LOCAL]) + len(r.accesses[DatasetReplica.ACC_REMOTE]), NUMERIC_TYPE),
     'replica.has_locked_block': (replica_has_locked_block, BOOL_TYPE),
-    'replica.group_name': (lambda r: r.group.name, TEXT_TYPE)
+    'replica.group_name': (lambda r: 'Null' if r.group is None else r.group.name, TEXT_TYPE)
 }
 
 # Variables that may change their values during a single program execution
