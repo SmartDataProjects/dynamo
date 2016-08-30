@@ -242,6 +242,17 @@ class Detox(object):
 
         # now schedule deletion for each site
         for site in sorted(sites):
+            if site.storage_type == Site.TYPE_MSS:
+                if config.daemon_mode:
+                    logger.warning('Deletion from MSS cannot be done in daemon mode.')
+                    continue
+            
+                print 'Deletion from', site.name, 'is requested. Are you sure? [Y/n]'
+                response = sys.stdin.readline().strip()
+                if response != 'Y':
+                    logger.warning('Aborting.')
+                    continue
+
             replica_list = [r for r in deletion_list if r.site == site]
 
             logger.info('Deleting %d replicas from %s.', len(replica_list), site.name)
@@ -261,8 +272,16 @@ class Detox(object):
 
                     list_chunk.append(replica)
                     deletion_size += replica.size()
-
-                deletion_mapping.update(self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = comment, is_test = is_test))
+                
+                chunk_record = self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = comment, is_test = is_test)
+                if is_test:
+                    # record deletion_id always starts from -1 and go negative
+                    for deletion_id, record in chunk_record.items():
+                        while deletion_id in deletion_mapping:
+                            deletion_id -= 1
+                        deletion_mapping[deletion_id] = record
+                else:
+                    deletion_mapping.update(chunk_record)
 
             total_size = 0
             num_deleted = 0
