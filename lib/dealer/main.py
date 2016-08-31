@@ -22,7 +22,7 @@ class Dealer(object):
     def set_policy(self, policy): # empty partition name -> default
         self.policies[policy.partition] = policy
 
-    def run(self, partition = '', is_test = False, comment):
+    def run(self, partition = '', is_test = False, comment = ''):
         """
         1. Update the inventory if necessary.
         2. Update popularity.
@@ -91,7 +91,7 @@ class Dealer(object):
         copy_list = self.determine_copies(target_sites, datasets, policy, pending_volumes)
 
         logger.info('Committing copy.')
-        self.commit_copies(run_number, policy, copy_list, is_test)
+        self.commit_copies(run_number, policy, copy_list, is_test, comment)
 
         self.history.close_copy_run(run_number)
 
