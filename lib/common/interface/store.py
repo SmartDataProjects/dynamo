@@ -554,7 +554,8 @@ if __name__ == '__main__':
                 print [s.name for s in sites]
 
         else:
-            print interface.list_snapshots()
+            for snapshot in interface.list_snapshots():
+                print snapshot
 
     elif args.command == 'show':
         if args.tag:

@@ -58,6 +58,13 @@ do
       then
         # this process is run as a daemon - send email and continue
         echo "Help! Dealer failed. Return code $RC. Check log $LOG on $HOSTNAME." | mailx -s "Dynamo error" t2lab@mit.edu
+
+        if [ $($DYNAMO_BASE/bin/execlib common/interface/store.py list snapshots | grep crash | wc -l) -ge 2 ]
+        then
+          echo "Two crash snapshots found. Likely this is a systematic problem. Exiting with code $RC."
+          exit $RC
+        fi
+
         echo "Re-entering cycle.. (see next log)"
         break
       else
