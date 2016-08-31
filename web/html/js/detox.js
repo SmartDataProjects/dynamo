@@ -199,7 +199,6 @@ function sortTableBy(siteName, column, direction)
 function displaySummary(data)
 {
     var cycleHeader = d3.select('#cycleHeader');
-    cycleHeader.selectAll('span').remove();
     cycleHeader.append('span').text('Cycle ' + data.cycleNumber + ' (Policy ');
     if (data.cyclePolicy != '') {
         cycleHeader.append('span').text(data.cyclePolicy)
@@ -210,6 +209,9 @@ function displaySummary(data)
         cycleHeader.append('span').text('unknown');
     }
     cycleHeader.append('span').text(', ' + data.cycleTimestamp + ')');
+
+    d3.select('#cycleComments')
+        .append('span').text(data.comment);
 
     if (data.siteData.length == 0)
         return;
@@ -741,6 +743,9 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
     
     d3.select('#partition' + partitionId)
         .classed('selected', true);
+
+    d3.select('#cycleHeader').selectAll('span').remove();
+    d3.select('#cycleComments').selectAll('span').remove();
 
     var box = d3.select('#summaryGraphBox');
     box.selectAll('*').remove();

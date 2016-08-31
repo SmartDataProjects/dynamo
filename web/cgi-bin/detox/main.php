@@ -25,14 +25,15 @@ if (isset($_REQUEST['getPartitions']) && $_REQUEST['getPartitions']) {
 
 $cycle = 0;
 $policy_version = '';
+$comment = '';
 $timestamp = '';
 $partition_id = 0;
 
 if (isset($_REQUEST['cycleNumber'])) {
   $cycle = 0 + $_REQUEST['cycleNumber'];
-  $stmt = $history_db->prepare('SELECT `partition_id`, `policy_version`, `time_start` FROM `runs` WHERE `id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ?');
+  $stmt = $history_db->prepare('SELECT `partition_id`, `policy_version`, `comment`, `time_start` FROM `runs` WHERE `id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ?');
   $stmt->bind_param('is', $cycle, $operation);
-  $stmt->bind_result($partition_id, $policy_version, $timestamp);
+  $stmt->bind_result($partition_id, $policy_version, $comment, $timestamp);
   $stmt->execute();
   if (!$stmt->fetch())
     $cycle = 0;
@@ -54,9 +55,9 @@ if ($cycle == 0) {
   if ($partition_id == 0)
     $partition_id = 1;
 
-  $stmt = $history_db->prepare('SELECT `id`, `policy_version`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` DESC LIMIT 1');
+  $stmt = $history_db->prepare('SELECT `id`, `policy_version`, `comment`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` DESC LIMIT 1');
   $stmt->bind_param('is', $partition_id, $operation);
-  $stmt->bind_result($cycle, $policy_version, $timestamp);
+  $stmt->bind_result($cycle, $policy_version, $comment, $timestamp);
   $stmt->execute();
   $stmt->fetch();
   $stmt->close();
@@ -135,6 +136,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
   $data['previousCycle'] = $prev_cycle;
   $data['nextCycle'] = $next_cycle;
   $data['cyclePolicy'] = $policy_version;
+  $data['comment'] = $comment;
   $data['cycleTimestamp'] = $timestamp;
   $data['partition'] = $partition_id;
 

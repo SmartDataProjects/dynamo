@@ -3,18 +3,25 @@
 }
 
 #cycle {
-    width: 50%;
+    width: 55%;
     height: 100%;
     float: right;
 }
 
 #cycleHeader {
-    font-size: 30px;
+    font-size: 25px;
     width: 100%;
-    height: 70%;
+    height: 40%;
     text-align: right;
     margin: 0 0 0 0;
 }
+
+#cycleComments {
+    width: 100%;
+    height: 30%;
+    text-align: right;
+    margin: 0 0 0 0;
+}    
 
 #cycles {
     width: 100%;
