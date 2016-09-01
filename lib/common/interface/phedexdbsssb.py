@@ -639,7 +639,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         for dataset in list(open_datasets):
             if len(dataset.blocks) == 0:
-                logger.info('get_datasets %s does not have any blocks and is removed.', dataset.name)
+                logger.debug('get_datasets %s does not have any blocks and is removed.', dataset.name)
                 datasets.pop(dataset.name)
                 dataset.unlink()
                 open_datasets.remove(dataset)
