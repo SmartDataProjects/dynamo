@@ -70,9 +70,11 @@ weblock.sources = [
 ]
 weblock.lock = 'https://cmst2.web.cern.ch/cmst2/unified/globallocks.json.lock'
 
+mss_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']
+
 inventory = Configuration()
-inventory.refresh_min = 21600 # 6 hours
-inventory.included_sites = ['T2_*', 'T1_*_Disk', 'T1_*_MSS', 'T0_CH_CERN_Disk', 'T0_CH_CERN_MSS']
+inventory.refresh_min = 43200 # 12 hours
+inventory.included_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
 inventory.excluded_sites = ['T2_CH_CERNBOX', 'T2_MY_UPM_BIRUNI', 'T1_US_FNAL_New_Disk']
 inventory.included_groups = [
     'AnalysisOps', 'DataOps', 'FacOps', 'IB RelVal', 'RelVal',

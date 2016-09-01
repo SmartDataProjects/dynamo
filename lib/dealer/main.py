@@ -1,6 +1,7 @@
 import time
 import datetime
 import collections
+import fnmatch
 import logging
 
 from common.dataformat import Dataset, DatasetReplica, Site
@@ -54,7 +55,10 @@ class Dealer(object):
 
         target_sites = []
         for site in self.inventory_manager.sites.values():
-            if policy.included_sites and not policy.included_sites.match(site.name):
+            for pattern in dealer_config.included_sites:
+                if fnmatch.fnmatch(site.name, pattern):
+                    break
+            else:
                 continue
 
             if site.status == Site.STAT_READY and site.active == Site.ACT_AVAILABLE:

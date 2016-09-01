@@ -34,7 +34,6 @@ parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls'
 parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--detox-partition', '-p', metavar = 'PARTITIONS', dest = 'detox_partitions', nargs = '+', default = ['AnalysisOps', 'DataOps', 'RelVal', 'Unsubscribed'], help = 'Name of the detox partitions. Syntax is <partition>[:<definition name>]. Definition name is translated to path DYNAMO_BASE/policies/detox/<partition>.txt. If none is given, partition name is used.')
-parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'included_sites', nargs = '+', default = [], help = 'List of sites to include. If not specified, all sites in inventory are included. Wildcard is allowed.')
 parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
@@ -95,12 +94,6 @@ demand_manager = DemandManager(**kwd)
 
 history = classes.default_interface['history']()
 
-if len(args.included_sites) == 0:
-    included_sites = re.compile('.*')
-else:
-    # form a regexp (?:pattern1|pattern2|..)
-    included_sites = re.compile('(?:' + '|'.join(map(fnmatch.translate, args.included_sites)) + ')')
-
 with open(os.environ['DYNAMO_BASE'] + '/etc/policies.tag') as tag:
     policy_version = tag.read().strip()
 
@@ -126,11 +119,7 @@ if 'detox' in args.module:
 
         detox_partitions.append(partition)
 
-        if partition == 'Tape':
-            group = None
-            partitioning = None
-            all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_MSS]
-        elif partition == 'Unsubscribed':
+        if partition == 'Unsubscribed':
             group = None
             partitioning = BelongsTo(None)
             all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_DISK]
@@ -140,9 +129,9 @@ if 'detox' in args.module:
             all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_DISK]
 
         if group:
-            quotas = dict([(site, site.group_quota(group)) for site in all_sites if included_sites.match(site.name)])
+            quotas = dict([(site, site.group_quota(group)) for site in all_sites])
         else:
-            quotas = dict([(site, -1.) for site in all_sites if included_sites.match(site.name)])
+            quotas = dict([(site, -1.) for site in all_sites])
 
         with open(def_path) as policy_def:    
             policy = Policy(partition, quotas, partitioning, policy_def, policy_version)
@@ -163,7 +152,7 @@ if 'dealer' in args.module:
         owner = replica.effective_owner()
         return owner is not None and owner.name == 'AnalysisOps'
     
-    policy = DealerPolicy(site_occupancy, quotas, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, included_sites = included_sites, version = policy_version)
+    policy = DealerPolicy(site_occupancy, quotas, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, version = policy_version)
     
     dealer.set_policy(policy)
 

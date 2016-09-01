@@ -16,7 +16,6 @@ parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset
 parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class.')
 parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
-parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'included_sites', nargs = '+', default = [], help = 'List of sites to include. If not specified, all sites in inventory are included. Wildcard is allowed.')
 parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
@@ -54,6 +53,7 @@ from dealer.main import Dealer
 from dealer.policy import DealerPolicy
 
 import common.configuration as config
+import dealer.configuration as dealer_config
 
 if args.dry_run:
     config.read_only = True
@@ -69,6 +69,8 @@ for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
         kwd[cls + '_cls'] = classes.default_interface[cls]
     else:
         kwd[cls + '_cls'] = getattr(classes, clsname)
+
+config.inventory.included_sites = dealer_config.included_sites
 
 inventory_manager = InventoryManager(**kwd)
 
@@ -110,12 +112,7 @@ def in_analysisops(replica):
     owner = replica.effective_owner()
     return owner is not None and owner.name == 'AnalysisOps'
 
-included_sites = None
-if len(args.included_sites) != 0:
-    # form a regexp (?:pattern1|pattern2|..)
-    included_sites = re.compile('(?:' + '|'.join(map(fnmatch.translate, args.included_sites)) + ')')
-
-policy = DealerPolicy(site_occupancy, quotas, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, included_sites = included_sites, version = policy_version)
+policy = DealerPolicy(site_occupancy, quotas, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, version = policy_version)
 
 dealer.set_policy(policy)
 

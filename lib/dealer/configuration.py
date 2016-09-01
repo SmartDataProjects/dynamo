@@ -1,5 +1,7 @@
 import common.configuration as common
 
+included_sites = ['T2_*', 'T1_*_Disk']
+
 demand_refresh_interval = 7200. # update demand if demand manager time_today is more than 7200 seconds ago
 
 max_dataset_size = 50. # Maximum dataset size to consider for copy in TB

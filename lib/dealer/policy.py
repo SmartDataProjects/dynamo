@@ -10,7 +10,7 @@ class DealerPolicy(object):
     Defined for each partition and implements the concrete conditions for copies.
     """
 
-    def __init__(self, site_occupancy, quotas, partition = '', in_partition = None, group = None, included_sites = None, version = ''):
+    def __init__(self, site_occupancy, quotas, partition = '', in_partition = None, group = None, version = ''):
         self.site_occupancy = site_occupancy # float(Site)
         self.quotas = quotas
         self.partition = partition
@@ -20,7 +20,5 @@ class DealerPolicy(object):
             self.in_partition = in_partition # bool(DatasetReplica)
 
         self.group = group
-
-        self.included_sites = included_sites # regexp for site name
 
         self.version = version
