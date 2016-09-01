@@ -70,7 +70,7 @@ for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
 # Include tape only if necessary
 for part in args.partitions:
     if part.startswith('Tape'):
-        config.included_sites += config.mss_sites
+        config.inventory.included_sites += config.mss_sites
 
 inventory_manager = InventoryManager(**kwd)
 
