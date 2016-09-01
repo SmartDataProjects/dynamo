@@ -169,7 +169,7 @@ class MySQLStore(LocalStoreInterface):
 
         self._set_site_ids(site_list)
 
-        logger.info('Loaded data for %d sites.', len(sites))
+        logger.info('Loaded data for %d sites.', len(site_list))
 
         # Load groups
         group_list = []
@@ -182,7 +182,7 @@ class MySQLStore(LocalStoreInterface):
 
         self._set_group_ids(group_list)
 
-        logger.info('Loaded data for %d groups.', len(groups))
+        logger.info('Loaded data for %d groups.', len(group_list))
 
 #        # Load site quotas
 #        quotas = self._mysql.query('SELECT `site_id`, `group_id`, `storage` FROM `quotas`')
@@ -234,7 +234,7 @@ class MySQLStore(LocalStoreInterface):
 
         self._set_dataset_ids(dataset_list)
 
-        logger.info('Loaded data for %d datasets.', len(datasets))
+        logger.info('Loaded data for %d datasets.', len(dataset_list))
 
         del datasets
 

@@ -740,7 +740,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         raise StopIteration()
 
                 except StopIteration:
-                    logger.info('set_dataset_details  Status of %s is unknown.', dataset.name)
+                    logger.debug('set_dataset_details  Status of %s is unknown.', dataset.name)
                     dataset.status = Dataset.STAT_UNKNOWN
                     dataset.data_type = Dataset.TYPE_UNKNOWN
                     continue
