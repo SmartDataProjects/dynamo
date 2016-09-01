@@ -5,11 +5,13 @@ $full_only = $physical;
 if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
   $selection = 'SELECT d.`name`, COUNT(dr.`site_id`) FROM `dataset_replicas` AS dr';
   $selection .= ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`';
+  $selection .= ' INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`';
   if (count($const_group) != 0)
     $selection .= ' INNER JOIN `groups` AS g ON g.`id` = dr.`group_id`';
 }
 else if ($categories == 'groups') {
   $selection = 'SELECT g.`name`, COUNT(dr.`site_id`) FROM `dataset_replicas` AS dr';
+  $selection .= ' INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`';
   $selection .= ' INNER JOIN `groups` AS g ON g.`id` = dr.`group_id`';
   if (strlen($const_campaign) != 0 || strlen($const_data_tier) != 0 || strlen($const_dataset))
     $selection .= ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`';
@@ -17,7 +19,7 @@ else if ($categories == 'groups') {
 
 $grouping = ' GROUP BY dr.`dataset_id`';
 
-$constraints = array();
+$constraints = array('s.`storage_type` NOT LIKE \'mss\'');
 if ($full_only)
   $constraints[] = 'dr.`completion` LIKE \'full\'';
 

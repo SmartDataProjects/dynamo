@@ -117,6 +117,8 @@ function fetch_size($selection, $constraint_base, $grouping) {
 
 /* CONSTRUCT QUERIES */
 
+$disk_only = 's.`storage_type` NOT LIKE \'mss\'';
+
 $join_d = ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`';
 $join_b = ' INNER JOIN `blocks` AS b on b.`dataset_id` = d.`id`';
 $join_s = ' INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`';
@@ -140,7 +142,7 @@ else if ($categories == 'groups') {
   $grouping = ' GROUP BY s.`id`, g.`id`';
 }
 
-$constraint_base = 'dr.`completion` LIKE \'full\' AND dr.`group_id` != 0';
+$constraint_base = 'dr.`completion` LIKE \'full\' AND dr.`group_id` != 0 AND ' . $disk_only;
 
 fetch_size($selection, $constraint_base, $grouping);
 
@@ -175,9 +177,9 @@ else if ($categories == 'groups') {
 }
 
 if ($physical) # only pick up the block full sizes for complete replicas
-  $constraint_base = 'br.`is_complete` = 1';
+  $constraint_base = 'br.`is_complete` = 1 AND ' . $disk_only;
 else
-  $constraint_base = '';
+  $constraint_base = $disk_only;
 
 fetch_size($selection, $constraint_base, $grouping);
 
@@ -215,7 +217,7 @@ if ($physical) {
     $grouping = ' GROUP BY s.`id`, g.`id`';
   }
 
-  fetch_size($selection, '', $grouping);
+  fetch_size($selection, $disk_only, $grouping);
 }
 
 ksort($site_usages);

@@ -81,6 +81,8 @@ function fetch_size($selection, $constraint_base, $grouping) {
 
 /* CONSTRUCT QUERIES */
 
+$disk_only = 's.`storage_type` NOT LIKE \'mss\'';
+
 $join_d = ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`';
 $join_b = ' INNER JOIN `blocks` AS b on b.`dataset_id` = d.`id`';
 $join_s = ' INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`';
@@ -89,8 +91,7 @@ $join_g = ' INNER JOIN `groups` AS g ON g.`id` = dr.`group_id`';
 if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
   $selection = 'SELECT d.`name`, SUM(d.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
   $selection .= $join_d;
-  if (strlen($const_site) != 0)
-    $selection .= $join_s;
+  $selection .= $join_s;
   if (count($const_group) != 0)
     $selection .= $join_g;
 
@@ -109,13 +110,12 @@ else if ($categories == 'groups') {
   $selection = 'SELECT g.`name`, SUM(d.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
   $selection .= $join_d;
   $selection .= $join_g;
-  if (strlen($const_site) != 0)
-    $selection .= $join_s;
+  $selection .= $join_s;
 
   $grouping = ' GROUP BY g.`id`';
 }
 
-$constraint_base = 'dr.`completion` LIKE \'full\' AND dr.`group_id` != 0';
+$constraint_base = 'dr.`completion` LIKE \'full\' AND dr.`group_id` != 0 AND ' . $disk_only;
 
 fetch_size($selection, $constraint_base, $grouping);
 
@@ -132,8 +132,7 @@ if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == '
   $selection = 'SELECT d.`name`, SUM(b.`size`) * 1.e-12 FROM `block_replicas` AS br';
   $selection .= $join_b;
   $selection .= $join_d;
-  if (strlen($const_site) != 0)
-    $selection .= $join_s;
+  $selection .= $join_s;
   if (count($const_group) != 0)
     $selection .= $join_g;
 
@@ -154,18 +153,17 @@ else if ($categories == 'groups') {
   $selection = 'SELECT g.`name`, SUM(b.`size`) * 1.e-12 FROM `block_replicas` AS br';
   $selection .= $join_b;
   $selection .= $join_g;
+  $selection .= $join_s;
   if (strlen($const_campaign) != 0 || strlen($const_data_tier) != 0 || strlen($const_dataset) != 0)
     $selection .= $join_d;
-  if (strlen($const_site) != 0)
-    $selection .= $join_s;
 
   $grouping = ' GROUP BY g.`id`';
 }
 
 if ($physical) # only pick up the block full sizes for complete replicas
-  $constraint_base = 'br.`is_complete` = 1';
+  $constraint_base = 'br.`is_complete` = 1 AND ' . $disk_only;
 else
-  $constraint_base = '';
+  $constraint_base = $disk_only;
 
 fetch_size($selection, $constraint_base, $grouping);
 
@@ -182,8 +180,7 @@ if ($physical) {
     $selection = 'SELECT d.`name`, SUM(brs.`size`) * 1.e-12 FROM `block_replica_sizes` AS brs';
     $selection .= $join_b;
     $selection .= $join_d;
-    if (strlen($const_site) != 0)
-      $selection .= $join_s;
+    $selection .= $join_s;
     if (count($const_group) != 0) {
       $selection .= $join_br;
       $selection .= $join_g;
@@ -209,17 +206,16 @@ if ($physical) {
     $selection = 'SELECT g.`name`, SUM(brs.`size`) * 1.e-12 FROM `block_replica_sizes` AS brs';
     $selection .= $join_br;
     $selection .= $join_g;
+    $selection .= $join_s;
     if (strlen($const_campaign) != 0 || strlen($const_data_tier) != 0 || strlen($const_dataset) != 0) {
       $selection .= $join_b;
       $selection .= $join_d;
     }
-    if (strlen($const_site) != 0)
-      $selection .= $join_s;
 
     $grouping = ' GROUP BY g.`id`';
   }
 
-  fetch_size($selection, '', $grouping);
+  fetch_size($selection, $disk_only, $grouping);
 }
 
 arsort($size_sums);
