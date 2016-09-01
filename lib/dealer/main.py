@@ -23,7 +23,7 @@ class Dealer(object):
     def set_policy(self, policy): # empty partition name -> default
         self.policies[policy.partition] = policy
 
-    def run(self, partition = '', is_test = False, comment = ''):
+    def run(self, partition = '', is_test = False, comment = '', auto_approval = True):
         """
         1. Update the inventory if necessary.
         2. Update popularity.
@@ -95,7 +95,7 @@ class Dealer(object):
         copy_list = self.determine_copies(target_sites, datasets, policy, pending_volumes)
 
         logger.info('Committing copy.')
-        self.commit_copies(run_number, policy, copy_list, is_test, comment)
+        self.commit_copies(run_number, policy, copy_list, is_test, comment, auto_approval)
 
         self.history.close_copy_run(run_number)
 
@@ -205,7 +205,7 @@ class Dealer(object):
 
         return copy_list
 
-    def commit_copies(self, run_number, policy, copy_list, is_test, comment):
+    def commit_copies(self, run_number, policy, copy_list, is_test, comment, auto_approval):
         if not comment:
             comment = 'Dynamo -- Automatic replication request'
             if policy.partition:
@@ -215,7 +215,7 @@ class Dealer(object):
             if len(replicas) == 0:
                 continue
 
-            copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, policy.group, comments = comment, is_test = is_test)
+            copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, policy.group, comments = comment, auto_approval = auto_approval, is_test = is_test)
             # copy_mapping .. {operation_id: (approved, [replica])}
     
             for operation_id, (approved, op_replicas) in copy_mapping.items():

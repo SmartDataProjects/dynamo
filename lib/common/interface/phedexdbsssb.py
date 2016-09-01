@@ -42,7 +42,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         self._last_request_time = 0
         self._last_request_url = ''
 
-    def schedule_copy(self, dataset_replica, group, comments = '', is_test = False): #override (CopyInterface)
+    def schedule_copy(self, dataset_replica, group, comments = '', auto_approval = True, is_test = False): #override (CopyInterface)
         catalogs = {} # {dataset: [block]}. Content can be empty if inclusive deletion is desired.
 
         dataset = dataset_replica.dataset
@@ -87,7 +87,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
             return int(result[0]['id'])
 
-    def schedule_copies(self, replicas, group, comments = '', is_test = False): #override (CopyInterface)
+    def schedule_copies(self, replicas, group, comments = '', auto_approval = True, is_test = False): #override (CopyInterface)
         request_mapping = {}
 
         def run_subscription_request(site, replica_list):
@@ -163,7 +163,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         return request_mapping
 
-    def schedule_deletion(self, replica, comments = '', is_test = False): #override (DeletionInterface)
+    def schedule_deletion(self, replica, comments = '', auto_approval = True, is_test = False): #override (DeletionInterface)
         if replica.site.storage_type == Site.TYPE_MSS and config.daemon_mode:
             logger.warning('Deletion from MSS cannot be done in daemon mode.')
             return None
@@ -203,15 +203,18 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             logger.warning('PhEDEx deletion request id: %d', request_id)
 
-            try:
-                result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': replica.site.name}, method = POST)
-            except:
-                logger.error('schedule_deletions  deletion approval failed.')
-                return (request_id, False, [replica])
+            return_value = (request_id, False, [replica])
 
-            return (request_id, True, [replica])
+            if auto_approval:
+                try:
+                    result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': replica.site.name}, method = POST)
+                    return_value = (request_id, True, [replica])
+                except:
+                    logger.error('schedule_deletions  deletion approval failed.')
 
-    def schedule_deletions(self, replica_list, comments = '', is_test = False): #override (DeletionInterface)
+            return return_value
+
+    def schedule_deletions(self, replica_list, comments = '', auto_approval = True, is_test = False): #override (DeletionInterface)
         request_mapping = {}
 
         replicas_by_site = collections.defaultdict(list)
@@ -256,7 +259,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     result = self._make_phedex_request('delete', options, method = POST)
                 except:
                     logger.error('schedule_deletions  delete failed.')
-                    return request_mapping
+                    continue
     
                 request_id = int(result[0]['id']) # return value is a string
     
@@ -264,14 +267,14 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                 logger.warning('PhEDEx deletion request id: %d', request_id)
 
-                try:
-                    result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
-                except:
-                    logger.error('schedule_deletions  deletion approval failed.')
-                    return request_mapping
+                if auto_approval:
+                    try:
+                        result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
+                        request_mapping[request_id] = (True, replica_list)
+                    except:
+                        logger.error('schedule_deletions  deletion approval failed.')
+                        continue
     
-                request_mapping[request_id] = (True, replica_list)
-
         return request_mapping
 
     def copy_status(self, request_id): #override (CopyInterface)

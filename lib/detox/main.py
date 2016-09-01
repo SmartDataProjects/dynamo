@@ -32,7 +32,7 @@ class Detox(object):
 
         self.policies[policy.partition] = policy
 
-    def run(self, partition = '', is_test = False, comment = ''):
+    def run(self, partition = '', is_test = False, comment = '', auto_approval = True):
         """
         Main executable.
         """
@@ -178,7 +178,7 @@ class Detox(object):
             self.history.save_deletion_decisions(run_number, deleted, kept, protected)
     
             logger.info('Committing deletion.')
-            self.commit_deletions(run_number, policy, deleted.keys(), is_test, comment)
+            self.commit_deletions(run_number, policy, deleted.keys(), is_test, comment, auto_approval)
     
             logger.info('Restoring inventory state.')
             policy.restore_replicas()
@@ -232,7 +232,7 @@ class Detox(object):
 
         return deleted
 
-    def commit_deletions(self, run_number, policy, deletion_list, is_test, comment):
+    def commit_deletions(self, run_number, policy, deletion_list, is_test, comment, auto_approval):
         sites = set(r.site for r in deletion_list)
 
         if not comment:
@@ -273,7 +273,7 @@ class Detox(object):
                     list_chunk.append(replica)
                     deletion_size += replica.size()
                 
-                chunk_record = self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = comment, is_test = is_test)
+                chunk_record = self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = comment, auto_approval = auto_approval, is_test = is_test)
                 if is_test:
                     # record deletion_id always starts from -1 and go negative
                     for deletion_id, record in chunk_record.items():

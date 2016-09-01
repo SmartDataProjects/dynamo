@@ -35,6 +35,7 @@ parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', defaul
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--detox-partition', '-p', metavar = 'PARTITIONS', dest = 'detox_partitions', nargs = '+', default = ['AnalysisOps', 'DataOps', 'RelVal', 'Unsubscribed'], help = 'Name of the detox partitions. Syntax is <partition>[:<definition name>]. Definition name is translated to path DYNAMO_BASE/policies/detox/<partition>.txt. If none is given, partition name is used.')
 parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
+parser.add_argument('--no-auto-approval', '-P', action = 'store_true', dest = 'no_auto_approval', help = 'Do not approve deletion and transfer requests automatically.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to local databases.')
@@ -162,7 +163,7 @@ if args.force_inventory_update:
 
 if 'detox' in args.module:
     for partition in detox_partitions:
-        detox.run(partition = partition, is_test = args.test_run, comment = args.comment)
+        detox.run(partition = partition, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
 
 if 'dealer' in args.module:
-    dealer.run(partition = 'AnalysisOps', is_test = args.test_run, comment = args.comment)
+    dealer.run(partition = 'AnalysisOps', is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)

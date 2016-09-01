@@ -6,7 +6,7 @@ class DeletionInterface(object):
     def __init__(self):
         pass
 
-    def schedule_deletion(self, replica, comments = '', is_test = False):
+    def schedule_deletion(self, replica, comments = '', auto_approval = True, is_test = False):
         """
         Schedule a deletion of the dataset or block replica.
         Returns (operation id, approved, [replicas])
@@ -14,7 +14,7 @@ class DeletionInterface(object):
 
         return None
 
-    def schedule_deletions(self, replica_list, comments = '', is_test = False):
+    def schedule_deletions(self, replica_list, comments = '', auto_approval = True, is_test = False):
         """
         Schedule a deletion of multiple replicas. Subclasses should implement the most efficient way
         according to available features.
@@ -23,7 +23,7 @@ class DeletionInterface(object):
 
         deletion_mapping = {}
         for replica in replica_list:
-            result = self.schedule_deletion(replica, comments = comments, is_test = is_test)
+            result = self.schedule_deletion(replica, comments = comments, auto_approval = auto_approval, is_test = is_test)
             if result is None:
                 continue
 
