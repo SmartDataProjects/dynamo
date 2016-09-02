@@ -146,10 +146,13 @@ class MySQLStore(LocalStoreInterface):
                 continue
 
             site_names.append(name)
-
+        
         return site_names
 
     def _do_load_data(self, site_filt, dataset_filt, load_replicas): #override
+        if type(site_filt) is list and len(site_filt) == 0:
+            return [], [], []
+
         # Load sites
         site_list = []
 
@@ -159,25 +162,23 @@ class MySQLStore(LocalStoreInterface):
         elif type(site_filt) is list:
             query += ' WHERE `name` IN (%s)' % (','.join('\'%s\'' % s for s in site_filt))
 
-        sites = self._mysql.query(query)
-
-        for name, host, storage_type, backend, storage, cpu, status in sites:
-
+        for name, host, storage_type, backend, storage, cpu, status in self._mysql.query(query):
             site = Site(name, host = host, storage_type = Site.storage_type_val(storage_type), backend = backend, storage = storage, cpu = cpu, status = status)
             site_list.append(site)
 
         self._set_site_ids(site_list)
 
-        sites_str = ','.join(['%d' % i for i in self._ids_to_sites.keys()])
-
         logger.info('Loaded data for %d sites.', len(site_list))
+
+        if len(site_list) == 0:
+            return [], [], []
+
+        sites_str = ','.join(['%d' % i for i in self._ids_to_sites.keys()])
 
         # Load groups
         group_list = []
 
-        groups = self._mysql.query('SELECT `name` FROM `groups`')
-
-        for name in groups:
+        for name in self._mysql.query('SELECT `name` FROM `groups`'):
             group = Group(name)
             group_list.append(group)
 
@@ -206,22 +207,16 @@ class MySQLStore(LocalStoreInterface):
 #                    logger.info('Setting quota for %s on %s to %d', group.name, site.name, int(site.storage / len(group_list)))
 #                    site.set_group_quota(group, int(site.storage / len(group_list)))
 
-        # Load software versions
-        software_version_map = {} # id -> version
-
-        versions = self._mysql.query('SELECT `id`, `cycle`, `major`, `minor`, `suffix` FROM `software_versions`')
-
-        for software_version_id, cycle, major, minor, suffix in versions:
-            software_version_map[software_version_id] = (cycle, major, minor, suffix)
-
-        logger.info('Loaded data for %d software versions.', len(versions))
-
-        del versions
+        # Load software versions - treat directly as tuples with id in first column
+        software_version_map = {0: None}
+        for vtuple in self._mysql.query('SELECT * FROM `software_versions`'):
+            software_version_map[vtuple[0]] = vtuple[1:]
 
         # Load datasets - only load ones with replicas on selected sites
         dataset_list = []
 
-        query = 'SELECT d.`name`, d.`status`+0, d.`on_tape`, d.`data_type`+0, d.`software_version_id`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open` FROM `datasets` AS d'
+        query = 'SELECT DISTINCT d.`name`, d.`status`+0, d.`on_tape`, d.`data_type`+0, d.`software_version_id`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
+        query += ' FROM `datasets` AS d'
         query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
         query += ' WHERE dr.`site_id` IN (%s)' % sites_str
         if dataset_filt != '/*/*/*' and dataset_filt != '':
@@ -229,8 +224,7 @@ class MySQLStore(LocalStoreInterface):
 
         for name, status, on_tape, data_type, software_version_id, last_update, is_open in self._mysql.query(query):
             dataset = Dataset(name, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update, is_open = (is_open == 1))
-            if software_version_id != 0:
-                dataset.software_version = software_version_map[software_version_id]
+            dataset.software_version = software_version_map[software_version_id]
 
             dataset_list.append(dataset)
 
@@ -244,7 +238,7 @@ class MySQLStore(LocalStoreInterface):
         # Load blocks
         block_map = {} # id -> block
 
-        query = 'SELECT b.`id`, b.`dataset_id`, b.`name`, b.`size`, b.`num_files`, b.`is_open` FROM `blocks` AS b'
+        query = 'SELECT DISTINCT b.`id`, b.`dataset_id`, b.`name`, b.`size`, b.`num_files`, b.`is_open` FROM `blocks` AS b'
         query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
         query += ' WHERE dr.`site_id` IN (%s)' % sites_str
@@ -252,11 +246,9 @@ class MySQLStore(LocalStoreInterface):
             query += ' AND d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%')
         query += ' ORDER BY b.`dataset_id`'
 
-        blocks = self._mysql.query(query)
-
         _dataset_id = 0
         dataset = None
-        for block_id, dataset_id, name, size, num_files, is_open in blocks:
+        for block_id, dataset_id, name, size, num_files, is_open in self._mysql.query(query):
             if dataset_id != _dataset_id:
                 dataset = self._ids_to_datasets[dataset_id]
                 _dataset_id = dataset_id
@@ -267,9 +259,7 @@ class MySQLStore(LocalStoreInterface):
 
             block_map[block_id] = block
 
-        logger.info('Loaded data for %d blocks.', len(blocks))
-
-        del blocks
+        logger.info('Loaded data for %d blocks.', len(block_map))
 
         if load_replicas:
             # Link datasets to sites
@@ -278,8 +268,8 @@ class MySQLStore(LocalStoreInterface):
             sql = 'SELECT `dataset_id`, `site_id`, `group_id`, `completion`, `is_custodial`, UNIX_TIMESTAMP(`last_block_created`) FROM `dataset_replicas`'
             sql += ' WHERE `site_id` IN (%s)' % sites_str
             if dataset_filt != '/*/*/*' and dataset_filt != '':
-                sql += 'AND `dataset_id` IN (%s)' % (','.join(['%d' % i for i in self._ids_to_datasets.keys()]))
-            sql += 'ORDER BY `dataset_id`'
+                sql += ' AND `dataset_id` IN (%s)' % (','.join(['%d' % i for i in self._ids_to_datasets.keys()]))
+            sql += ' ORDER BY `dataset_id`'
 
             dataset_replicas = self._mysql.query(sql)
 
@@ -308,8 +298,8 @@ class MySQLStore(LocalStoreInterface):
             # Link blocks to sites and groups
             condition = ' WHERE `site_id` IN (%s)' % sites_str
             if dataset_filt != '/*/*/*' and dataset_filt != '':
-                condition += '`block_id` IN (%s)' % (','.join(['%d' % i for i in block_map.keys()]))
-            condition += 'ORDER BY `block_id`, `site_id`'
+                condition += ' AND `block_id` IN (%s)' % (','.join(['%d' % i for i in block_map.keys()]))
+            condition += ' ORDER BY `block_id`, `site_id`'
 
             sql = 'SELECT `block_id`, `site_id`, `group_id`, `is_complete`, `is_custodial` FROM `block_replicas`'
 
@@ -363,6 +353,7 @@ class MySQLStore(LocalStoreInterface):
                     logger.warning('Found a block replica %s:%s#%s without a corresponding dataset replica', site.name, block.dataset.name, block.real_name())
 
             del block_replicas
+            del block_replica_sizes
 
             # For datasets with all replicas complete and not partial, block replica data is not saved on disk
             for dataset in dataset_list:
@@ -500,21 +491,17 @@ class MySQLStore(LocalStoreInterface):
 
     def _do_save_datasets(self, datasets): #override
         # insert/update software versions
-        # first, make the list of unique software versions (excluding defualt (0,0,0,''))
-        version_list = list(set([d.software_version for d in datasets if d.software_version[0] != 0]))
-        logger.info('Inserting/updating %d software versions.', len(version_list))
 
-        fields = ('cycle', 'major', 'minor', 'suffix')
+        version_map = {None: 0} # tuple -> id
+        for vtuple in self._mysql.query('SELECT * FROM `software_versions`'):
+            version_map[vtuple[1:]] = vtuple[0]
 
-        self._mysql.insert_many('software_versions', fields, lambda v: v, version_list) # version is already a tuple
-
-        del version_list
-
-        version_map = {(0, 0, 0, ''): 0} # tuple -> id
-        versions = self._mysql.query('SELECT `id`, `cycle`, `major`, `minor`, `suffix` FROM `software_versions`')
-
-        for version_id, cycle, major, minor, suffix in versions:
-            version_map[(cycle, major, minor, suffix)] = version_id
+        all_versions = set([d.software_version for d in datasets])
+        for v in all_versions:
+            if v not in version_map:
+                # id = 0 automatically generates the next id
+                new_id = self._mysql.query('INSERT INTO `software_versions` VALUES %s' % str((0,) + v))
+                version_map[v] = new_id
 
         # insert/update datasets
         logger.info('Inserting/updating %d datasets.', len(datasets))
