@@ -266,7 +266,7 @@ if __name__ == '__main__':
             config.inventory.included_sites = config.tape_sites
             break
         else:
-            config.inventory.included_sites += pattern
+            config.inventory.included_sites.append(pattern)
 
     manager = InventoryManager(**kwd)
 
