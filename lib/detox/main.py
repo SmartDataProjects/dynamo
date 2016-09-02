@@ -178,13 +178,13 @@ class Detox(object):
             self.history.save_deletion_decisions(run_number, deleted, kept, protected)
     
             logger.info('Committing deletion.')
-            self.commit_deletions(run_number, policy, deleted.keys(), is_test, comment, auto_approval)
+            deleted_replicas = self.commit_deletions(run_number, policy, deleted.keys(), is_test, comment, auto_approval)
     
             logger.info('Restoring inventory state.')
             policy.restore_replicas()
     
-            # remove datasets that lost replicas
-            for dataset in set([replica.dataset for replica in deleted.keys()]):
+            logger.info('Removing datasets with no replicas.')
+            for dataset in set([replica.dataset for replica in deleted_replicas]):
                 if len(dataset.replicas) == 0:
                     if not is_test:
                         self.inventory_manager.store.delete_dataset(dataset)
@@ -240,6 +240,8 @@ class Detox(object):
             if policy.partition:
                 comment += ' for %s partition.' % policy.partition
 
+        deleted_replicas = []
+
         # now schedule deletion for each site
         for site in sorted(sites):
             if site.storage_type == Site.TYPE_MSS:
@@ -294,6 +296,7 @@ class Detox(object):
                             # this replica was fully in the partition
                             # second arg is False because block replicas must be all gone by now
                             self.inventory_manager.store.delete_datasetreplica(replica, delete_blockreplicas = False)
+                            deleted_replicas.append(replica)
 
                 size = sum([r.size() for r in replicas])
 
@@ -304,6 +307,8 @@ class Detox(object):
             sigint.unblock()
 
             logger.info('Done deleting %d replicas (%.1f TB) from %s.', num_deleted, total_size * 1.e-12, site.name)
+
+        return deleted_replicas
 
 
 if __name__ == '__main__':
