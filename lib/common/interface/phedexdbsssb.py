@@ -652,7 +652,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # DBS 'datasetlist' query. Sets not just the status but also the dataset type.
         self._set_dataset_status_and_type(open_datasets)
 
-        release_unknown = [dataset for dataset in open_datasets if dataset.software_version[0] == 0]
+        release_unknown = [dataset for dataset in open_datasets if dataset.software_version is None]
 
         logger.info('set_dataset_details  Finding the software version for %d datasets.', len(release_unknown))
 

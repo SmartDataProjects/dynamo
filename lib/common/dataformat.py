@@ -57,7 +57,7 @@ class Dataset(object):
         else:
             return arg
 
-    def __init__(self, name, status = STAT_UNKNOWN, on_tape = TAPE_NONE, data_type = TYPE_UNKNOWN, software_version = (0, 0, 0, ''), last_update = 0, is_open = True):
+    def __init__(self, name, status = STAT_UNKNOWN, on_tape = TAPE_NONE, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True):
         self.name = name
         self.status = status
         self.on_tape = on_tape
@@ -75,9 +75,9 @@ class Dataset(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset(%s, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, blocks=%s, replicas=%s)' % \
+        return 'Dataset(\'%s\', status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, blocks=%s, replicas=%s)' % \
             (self.name, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
-            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), str(self.blocks), replica_sites)
+            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), str([b.real_name() for b in self.blocks]), replica_sites)
 
     def __repr__(self):
         return 'Dataset(\'%s\', status=%d, on_tape=%d, data_type=%d, software_version=%s, last_update=%d, is_open=%s)' % \
