@@ -69,10 +69,11 @@ for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
         kwd[cls + '_cls'] = getattr(classes, clsname)
 
 # Include tape only if necessary
-if 'Tape' in args.partitions:
-    if len(args.partitions) != 1:
-        print 'Tape deletion should be a single execution of its own.'
-        sys.exit(1)
+for part in args.partitions:
+    if part.startswith('Tape'):
+        if len(args.partitions) != 1:
+            print 'Tape deletion should be a single execution of its own.'
+            sys.exit(1)
 
     config.inventory.included_sites = config.tape_sites
 
