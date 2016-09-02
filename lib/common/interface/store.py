@@ -374,6 +374,21 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
+    def delete_datasets(self, datasets):
+        """
+        Delete datasets from persistent storage.
+        """
+
+        if config.read_only:
+            logger.debug('_do_delete_datasets()')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_delete_datasets(datasets)
+        finally:
+            self.release_lock()
+
     def delete_block(self, block):
         """
         Delete block from persistent storage.

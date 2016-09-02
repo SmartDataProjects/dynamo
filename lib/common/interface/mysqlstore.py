@@ -153,21 +153,22 @@ class MySQLStore(LocalStoreInterface):
         # Load sites
         site_list = []
 
-        sites = self._mysql.query('SELECT `name`, `host`, `storage_type`+0, `backend`, `storage`, `cpu`, `status`+0 FROM `sites`')
+        query = 'SELECT `name`, `host`, `storage_type`+0, `backend`, `storage`, `cpu`, `status`+0 FROM `sites`'
+        if type(site_filt) is str and site_filt != '*' and site_filt != '':
+            query += ' WHERE `name` LIKE \'%s\'' % site_filt.replace('*', '%')
+        elif type(site_filt) is list:
+            query += ' WHERE `name` IN (%s)' % (','.join('\'%s\'' % s for s in site_filt))
+
+        sites = self._mysql.query(query)
 
         for name, host, storage_type, backend, storage, cpu, status in sites:
-            if type(site_filt) is str:
-                if site_filt != '*' and not fnmatch.fnmatch(name, site_filt):
-                    continue
-
-            elif type(site_filt) is list:
-                if name not in site_filt:
-                    continue
 
             site = Site(name, host = host, storage_type = Site.storage_type_val(storage_type), backend = backend, storage = storage, cpu = cpu, status = status)
             site_list.append(site)
 
         self._set_site_ids(site_list)
+
+        sites_str = ','.join(['%d' % i for i in self._ids_to_sites.keys()])
 
         logger.info('Loaded data for %d sites.', len(site_list))
 
@@ -217,15 +218,16 @@ class MySQLStore(LocalStoreInterface):
 
         del versions
 
-        # Load datasets
+        # Load datasets - only load ones with replicas on selected sites
         dataset_list = []
 
-        datasets = self._mysql.query('SELECT `name`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`), `is_open` FROM `datasets`')
+        query = 'SELECT d.`name`, d.`status`+0, d.`on_tape`, d.`data_type`+0, d.`software_version_id`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open` FROM `datasets` AS d'
+        query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
+        query += ' WHERE dr.`site_id` IN (%s)' % sites_str
+        if dataset_filt != '/*/*/*' and dataset_filt != '':
+            query += ' AND d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%')
 
-        for name, status, on_tape, data_type, software_version_id, last_update, is_open in datasets:
-            if dataset_filt != '/*/*/*' and not fnmatch.fnmatch(name, dataset_filt):
-                continue
-
+        for name, status, on_tape, data_type, software_version_id, last_update, is_open in self._mysql.query(query):
             dataset = Dataset(name, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update, is_open = (is_open == 1))
             if software_version_id != 0:
                 dataset.software_version = software_version_map[software_version_id]
@@ -236,20 +238,21 @@ class MySQLStore(LocalStoreInterface):
 
         logger.info('Loaded data for %d datasets.', len(dataset_list))
 
-        del datasets
-
         if len(dataset_list) == 0:
             return site_list, group_list, dataset_list
 
         # Load blocks
         block_map = {} # id -> block
 
-        sql = 'SELECT `id`, `dataset_id`, `name`, `size`, `num_files`, `is_open` FROM `blocks`'
-        if dataset_filt != '/*/*/*':
-            sql += ' WHERE `dataset_id` IN (%s)' % (','.join(map(str, self._ids_to_datasets.keys())))
-        sql += ' ORDER BY `dataset_id`'
+        query = 'SELECT b.`id`, b.`dataset_id`, b.`name`, b.`size`, b.`num_files`, b.`is_open` FROM `blocks` AS b'
+        query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
+        query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
+        query += ' WHERE dr.`site_id` IN (%s)' % sites_str
+        if dataset_filt != '/*/*/*' and dataset_filt != '':
+            query += ' AND d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%')
+        query += ' ORDER BY b.`dataset_id`'
 
-        blocks = self._mysql.query(sql)
+        blocks = self._mysql.query(query)
 
         _dataset_id = 0
         dataset = None
@@ -273,16 +276,9 @@ class MySQLStore(LocalStoreInterface):
             logger.info('Linking datasets to sites.')
     
             sql = 'SELECT `dataset_id`, `site_id`, `group_id`, `completion`, `is_custodial`, UNIX_TIMESTAMP(`last_block_created`) FROM `dataset_replicas`'
-    
-            conditions = []
-            if site_filt != '*':
-                conditions.append('`site_id` IN (%s)' % (','.join(map(str, self._ids_to_sites.keys()))))
-            if dataset_filt != '/*/*/*':
-                conditions.append('`dataset_id` IN (%s)' % (','.join(map(str, self._ids_to_datasets.keys()))))
-    
-            if len(conditions) != 0:
-                sql += ' WHERE ' + ' AND '.join(conditions)
-
+            sql += ' WHERE `site_id` IN (%s)' % sites_str
+            if dataset_filt != '/*/*/*' and dataset_filt != '':
+                sql += 'AND `dataset_id` IN (%s)' % (','.join(['%d' % i for i in self._ids_to_datasets.keys()]))
             sql += 'ORDER BY `dataset_id`'
 
             dataset_replicas = self._mysql.query(sql)
@@ -310,29 +306,18 @@ class MySQLStore(LocalStoreInterface):
             logger.info('Linking blocks to sites.')
     
             # Link blocks to sites and groups
+            condition = ' WHERE `site_id` IN (%s)' % sites_str
+            if dataset_filt != '/*/*/*' and dataset_filt != '':
+                condition += '`block_id` IN (%s)' % (','.join(['%d' % i for i in block_map.keys()]))
+            condition += 'ORDER BY `block_id`, `site_id`'
+
             sql = 'SELECT `block_id`, `site_id`, `group_id`, `is_complete`, `is_custodial` FROM `block_replicas`'
-    
-            conditions = []
-            if site_filt != '*':
-                conditions.append('`site_id` IN (%s)' % (','.join(map(str, self._ids_to_sites.keys()))))
-            if dataset_filt != '/*/*/*':
-                conditions.append('`block_id` IN (%s)' % (','.join(map(str, block_map.keys()))))
-    
-            if len(conditions) != 0:
-                sql += ' WHERE ' + ' AND '.join(conditions)
 
-            sql += 'ORDER BY `block_id`, `site_id`'
-
-            block_replicas = self._mysql.query(sql)
+            block_replicas = self._mysql.query(sql + condition)
 
             sql = 'SELECT `block_id`, `site_id`, `size` FROM `block_replica_sizes`'
 
-            if len(conditions) != 0:
-                sql += ' WHERE ' + ' AND '.join(conditions)
-
-            sql += 'ORDER BY `block_id`, `site_id`'
-
-            block_replica_sizes = self._mysql.query(sql)
+            block_replica_sizes = self._mysql.query(sql + condition)
 
             _block_id = 0
             isize = 0
@@ -532,30 +517,23 @@ class MySQLStore(LocalStoreInterface):
             version_map[(cycle, major, minor, suffix)] = version_id
 
         # insert/update datasets
-        # since the dataset list can be large, it is faster to recreate the entire table than to update and clean.
         logger.info('Inserting/updating %d datasets.', len(datasets))
 
         if len(self._datasets_to_ids) == 0:
             # load up the latest dataset ids
             self._set_dataset_ids(datasets)
 
-        self._mysql.query('CREATE TABLE `datasets_new` LIKE `datasets`')
+        # instead of insert + on duplicate update, which will cost N x logN, we will create a temporary table, join, and update (N + N)
 
-        # separate the datasets into new and known (have id in table)
-        known_datasets = []
-        new_datasets = []
-        for dataset in datasets:
-            try:
-                dataset_id = self._datasets_to_ids[dataset]
-            except KeyError:
-                new_datasets.append(dataset)
-            else:
-                known_datasets.append((dataset, dataset_id))
+        self._mysql.query('CREATE TABLE `datasets_tmp` LIKE `datasets`')
+
+        # sort in memory so MySQL write is most efficient
+        tmp_insertions = sorted(self._ids_to_datasets.items())
 
         # datasets.size stored only for query speedup in inventory web interface
         fields = ('id', 'name', 'size', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
         # MySQL expects the local time for last_update
-        mapping = lambda (d, i): (
+        mapping = lambda (i, d): (
             i,
             d.name,
             d.size(),
@@ -567,68 +545,91 @@ class MySQLStore(LocalStoreInterface):
             1 if d.is_open else 0
         )
         
-        self._mysql.insert_many('datasets_new', fields, mapping, known_datasets, do_update = False)
+        self._mysql.insert_many('datasets_tmp', fields, mapping, tmp_insertions, do_update = False)
 
+        field_tuple = lambda t: '(' + ', '.join(['%s.`%s`' % (t, f) for f in fields[2:]]) + ')'
+
+        query = 'UPDATE `datasets` AS d1 INNER JOIN `datasets_tmp` AS d2 ON d1.`id` = d2.`id` SET'
+        query += ' ' + ', '.join(['d1.`{f}` = d2.`{f}`'.format(f = f) for f in fields[2:]])
+        query += ' WHERE ' + field_tuple('d1') + ' != ' + field_tuple('d2')
+
+        self._mysql.query(query)
+
+        self._mysql.query('DROP TABLE `datasets_tmp`')
+
+        known_datasets = set([d for i, d in tmp_insertions])
+        new_datasets = list(set(datasets) - known_datasets)
+
+        if len(new_datasets) != 0:
+            fields = ('name', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
+            # MySQL expects the local time for last_update
+            mapping = lambda d: (
+                d.name,
+                d.status,
+                d.on_tape,
+                d.data_type,
+                version_map[d.software_version],
+                time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update)),
+                1 if d.is_open else 0
+            )
+    
+            self._mysql.insert_many('datasets', fields, mapping, new_datasets, do_update = False)
+
+            # reload the dataset ids
+            self._set_dataset_ids(new_datasets, update = True)
+
+        del tmp_insertions
         del known_datasets
-
-        # at this point we should drop records that make reference to datasets that are not in the store any more
-        self._mysql.delete_not_in('dataset_replicas', 'dataset_id', ('id', 'datasets_new'))
-        self._mysql.delete_not_in('dataset_accesses', 'dataset_id', ('id', 'datasets_new'))
-        self._mysql.delete_not_in('dataset_requests', 'dataset_id', ('id', 'datasets_new'))
-
-        fields = ('name', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        # MySQL expects the local time for last_update
-        mapping = lambda d: (
-            d.name,
-            d.status,
-            d.on_tape,
-            d.data_type,
-            version_map[d.software_version],
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update)),
-            1 if d.is_open else 0
-        )
-
-        self._mysql.insert_many('datasets_new', fields, mapping, new_datasets, do_update = False)
-
-        self._mysql.query('RENAME TABLE `datasets` TO `datasets_old`')
-        self._mysql.query('RENAME TABLE `datasets_new` TO `datasets`')
-        self._mysql.query('DROP TABLE `datasets_old`')
-
-        # reload the dataset ids
-        self._set_dataset_ids(new_datasets, update = True)
-
         del new_datasets
 
         # insert/update blocks
+
+        # same strategy; write to temp and update
+        # this time however we don't want to create a block-to-id map
+        # which also means that we don't a priori know which blocks are in the DB already
+        # we therefore have to dump all blocks into a temporary table
+
         all_blocks = []
         for dataset in datasets:
             all_blocks.extend(dataset.blocks)
 
         logger.info('Inserting/updating %d blocks.', len(all_blocks))
 
-        self._mysql.query('CREATE TABLE `blocks_new` LIKE `blocks`')
+        # NOTE: here we rely on the assumption that block names are unique
 
-        fields = ('name', 'dataset_id', 'size', 'num_files', 'is_open')
+        self._mysql.query('CREATE TABLE `blocks_tmp` LIKE `blocks`')
+        # make block name the primary key
+        self._mysql.query('ALTER TABLE `blocks_tmp` DROP COLUMN `id`')
+
+        fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open')
         mapping = lambda b: (
-            b.real_name(),
             self._datasets_to_ids[b.dataset],
+            b.real_name(),
             b.size,
             b.num_files,
             1 if b.is_open else 0
         )
 
-        self._mysql.insert_many('blocks_new', fields, mapping, all_blocks, do_update = False)
+        self._mysql.insert_many('blocks_tmp', fields, mapping, all_blocks, do_update = False)
 
         del all_blocks
 
-        self._mysql.query('RENAME TABLE `blocks` TO `blocks_old`')
-        self._mysql.query('RENAME TABLE `blocks_new` TO `blocks`')
-        self._mysql.query('DROP TABLE `blocks_old`')
+        field_tuple = lambda t: '(' + ', '.join(['%s.`%s`' % (t, f) for f in fields[2:]]) + ')'
 
-        # at this point the block_ids may have changed
-        # truncate block_replicas and block_replica_sizes tables to avoid inconsistencies
-        self._mysql.query('TRUNCATE TABLE `block_replicas`')
-        self._mysql.query('TRUNCATE TABLE `block_replica_sizes`')
+        query = 'UPDATE `blocks` AS b1 INNER JOIN `blocks_tmp` AS b2 ON b1.`name` = b2.`name` SET'
+        query += ' ' + ', '.join(['b1.`{f}` = b2.`{f}`'.format(f = f) for f in fields[2:]])
+        query += ' WHERE ' + field_tuple('b1') + ' != ' + field_tuple('b2')
+
+        self._mysql.query(query)
+
+        # there can be rows in blocks_tmp that are not in blocks
+        query = 'INSERT INTO `blocks` (%s)' % (','.join(['`%s`' % f for f in fields]))
+        query += ' SELECT * FROM `blocks_tmp` WHERE `name` NOT IN (SELECT `name` FROM `blocks`)'
+        # using subquery is faster than left join + where right is null
+
+        self._mysql.query(query)
+
+        self._mysql.query('DROP TABLE `blocks_tmp`')
 
     def _do_save_replicas(self, sites, groups, datasets): #override
         # make name -> id maps for use later
@@ -807,8 +808,8 @@ class MySQLStore(LocalStoreInterface):
             
             if replica.is_full() and replica.group is not None:
                 # this is a complete replica. Remove block replica for this dataset replica.
-                self._mysql.delete_in('block_replicas', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id), additional_conditions = ['`site_id` = %d' % site_id])
-                self._mysql.delete_in('block_replica_sizes', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id), additional_conditions = ['`site_id` = %d' % site_id])
+                self._mysql.query('DELETE FROM br USING `block_replicas` AS br INNER JOIN `blocks` AS b ON b.`id` = br.`block_id` WHERE b.`dataset_id` = %s AND br.`site_id` = %s', dataset_id, site_id)
+                self._mysql.query('DELETE FROM brs USING `block_replica_sizes` AS brs INNER JOIN `blocks` AS b ON b.`id` = brs.`block_id` WHERE b.`dataset_id` = %s AND brs.`site_id` = %s', dataset_id, site_id)
                 continue
 
             block_ids = {}
@@ -837,15 +838,32 @@ class MySQLStore(LocalStoreInterface):
         except IndexError:
             return
 
-        self._mysql.delete_in('block_replicas', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id))
-        self._mysql.delete_in('block_replica_sizes', 'block_id', ('id', 'blocks', '`dataset_id` = %d' % dataset_id))
+        self._mysql.query('DELETE FROM br USING `block_replicas` AS br INNER JOIN `blocks` AS b ON b.`id` = br.`block_id` WHERE b.`dataset_id` = %s', dataset_id)
+        self._mysql.query('DELETE FROM brs USING `block_replica_sizes` AS brs INNER JOIN `blocks` AS b ON b.`id` = brs.`block_id` WHERE b.`dataset_id` = %s', dataset_id)
         self._mysql.query('DELETE FROM `blocks` WHERE `dataset_id` = %s', dataset_id)
         self._mysql.query('DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s', dataset_id)
         self._mysql.query('DELETE FROM `datasets` WHERE `id` = %s', dataset_id)
 
+    def _do_delete_datasets(self, datasets): #override
+        """
+        Delete everything related to the datasets
+        """
+        dataset_ids = self._mysql.select_many('datasets', 'id', 'name', ['\'%s\'' % d.name for d in datasets])
+
+        ids_str = ','.join(['%d' % i for i in dataset_ids])
+
+        self._mysql.query('DELETE FROM br USING `block_replicas` AS br INNER JOIN `blocks` AS b ON b.`id` = br.`block_id` WHERE b.`dataset_id` IN (%s)' % ids_str)
+        self._mysql.query('DELETE FROM brs USING `block_replica_sizes` AS brs INNER JOIN `blocks` AS b ON b.`id` = brs.`block_id` WHERE b.`dataset_id` IN (%s)' % ids_str)
+        self._mysql.query('DELETE FROM `blocks` WHERE `dataset_id` IN (%s)' % ids_str)
+        self._mysql.query('DELETE FROM `dataset_replicas` WHERE `dataset_id` IN (%s)' % ids_str)
+        self._mysql.query('DELETE FROM `datasets` WHERE `id` IN (%s)' % ids_str)
+
     def _do_delete_block(self, block): #override
+        query = 'SELECT b.`id` FROM `blocks` AS b INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
+        query += ' WHERE b.`name` LIKE %s AND d.`name` LIKE %s'
+
         try:
-            block_id = self._mysql.query('SELECT `id` FROM `blocks` WHERE `name` LIKE %s AND `dataset_id` IN (SELECT `id` FROM `datasets` WHERE `name` LIKE %s)', block.real_name(), block.dataset.name)[0]
+            block_id = self._mysql.query(query, block.real_name(), block.dataset.name)[0]
         except IndexError:
             return
 
@@ -861,8 +879,9 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.delete_in('dataset_replicas', 'dataset_id', dataset_ids, additional_conditions = ['site_id = %d' % site_id])
 
         if delete_blockreplicas:
-            self._mysql.delete_in('block_replicas', 'block_id', ('id', 'blocks', 'dataset_id', dataset_ids), additional_conditions = ['site_id = %d' % site_id])
-            self._mysql.delete_in('block_replica_sizes', 'block_id', ('id', 'blocks', 'dataset_id', dataset_ids), additional_conditions = ['site_id = %d' % site_id])
+            ids_str = ','.join(['%d' % i for i in dataset_ids])
+            self._mysql.query('DELETE FROM br USING `block_replicas` AS br INNER JOIN `blocks` AS b ON b.`id` = br.`block_id` WHERE b.`dataset_id` IN (%s) AND br.`site_id` = %d' % (ids_str, site_id))
+            self._mysql.query('DELETE FROM brs USING `block_replica_sizes` AS brs INNER JOIN `blocks` AS b ON b.`id` = brs.`block_id` WHERE b.`dataset_id` IN (%s) AND brs.`site_id` = %d' % (ids_str, site_id))
 
     def _do_delete_blockreplicas(self, replica_list): #override
         # Mass block replica deletion typically happens for a few sites and a few datasets.
@@ -891,16 +910,17 @@ class MySQLStore(LocalStoreInterface):
 
         for site, site_id in site_ids.items():
             replicas_on_site = [r for r in replica_list if r.site == site]
+            ids_str = ','.join(['%d' % dataset_ids[r.block.dataset] for r in replicas_on_site])
 
-            sql = 'DELETE FROM `block_replicas` WHERE `site_id` = %d' % site_id
-            sql += ' AND `block_id` IN'
-            sql += ' (SELECT `id` FROM `blocks` WHERE `dataset_id` IN (%s))' % ','.join(['%d' % dataset_ids[r.block.dataset] for r in replicas_on_site])
+            sql = 'DELETE FROM br USING `block_replicas` AS br'
+            sql += ' INNER JOIN `blocks` AS b ON b.`id` = br.`block_id`'
+            sql += ' WHERE br.`site_id` = %d AND b.`dataset_id` IN (%s)' % (site_id, ids_str)
 
             self._mysql.query(sql)
 
-            sql = 'DELETE FROM `block_replica_sizes` WHERE `site_id` = %d' % site_id
-            sql += ' AND `block_id` IN'
-            sql += ' (SELECT `id` FROM `blocks` WHERE `dataset_id` IN (%s))' % ','.join(['%d' % dataset_ids[r.block.dataset] for r in replicas_on_site])
+            sql = 'DELETE FROM brs USING `block_replica_sizes` AS brs'
+            sql += ' INNER JOIN `blocks` AS b ON b.`id` = brs.`block_id`'
+            sql += ' WHERE brs.`site_id` = %d AND b.`dataset_id` IN (%s)' % (site_id, ids_str)
 
             self._mysql.query(sql)
 
