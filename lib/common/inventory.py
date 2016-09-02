@@ -133,7 +133,7 @@ class InventoryManager(object):
             else:
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets, dataset_filt = dataset_filter)
 
-            # Take out datasets with no replicas
+            # Take out datasets and blocks with no replicas
             for dataset in self.datasets.values():
                 if len(dataset.replicas) == 0:
                     self.datasets.pop(dataset.name)
@@ -231,6 +231,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class to be used.')
     parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class to be used.')
     parser.add_argument('--dataset', '-d', metavar = 'EXPR', dest = 'dataset', default = '/*/*/*', help = 'Limit operation to datasets matching the expression.')
+    parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'sites', nargs = '+', default = ['@disk'], help = 'Site names or aggregate names (@disk, @tape, @all) to include.')
     parser.add_argument('--no-load', '-L', action = 'store_true', dest = 'no_load',  help = 'Do not load the existing inventory when updating.')
     parser.add_argument('--no-snapshot', '-S', action = 'store_true', dest = 'no_snapshot',  help = 'Do not make a snapshot of existing inventory when updating.')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
@@ -252,6 +253,20 @@ if __name__ == '__main__':
             kwd[cls + '_cls'] = classes.default_interface[cls]
         else:
             kwd[cls + '_cls'] = getattr(classes, clsname)
+
+    config.inventory.included_sites = []
+    for pattern in args.sites:
+        if pattern == '@all':
+            config.inventory.included_sites = config.mss_sites + config.disk_sites
+            break
+        elif pattern == '@disk':
+            config.inventory.included_sites = config.disk_sites
+            break
+        elif pattern == '@tape':
+            config.inventory.included_sites = config.tape_sites
+            break
+        else:
+            config.inventory.included_sites += pattern
 
     manager = InventoryManager(**kwd)
 
