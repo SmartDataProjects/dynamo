@@ -823,7 +823,12 @@ function findDataset()
     };
 
     $.get(window.location.href, inputData, function (data, textStatus, jqXHR) {
-            displayDatasetSearch(data);
+            for (var cid in data.conditions) {
+                if (!(cid in conditionTexts))
+                    conditionTexts[cid] = data.conditions[cid];
+            }
+
+            displayDatasetSearch(data.siteData);
             spinner.stop();
     }, 'json');
 }

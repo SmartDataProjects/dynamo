@@ -73,6 +73,8 @@ check_cache($cycle, $partition_id);
 if (isset($_REQUEST['searchDataset']) && $_REQUEST['searchDataset']) {
   $dataset_pattern = str_replace('*', '%', $_REQUEST['datasetName']);
 
+  $json = '{"siteData": [';
+
   $query = 'SELECT s.`name`, d.`name`, r.`size` * 1.e-9, l.`decision`, l.`matched_condition`';
   $query .= ' FROM `replica_snapshot_cache` AS c';
   $query .= ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`';
@@ -86,26 +88,42 @@ if (isset($_REQUEST['searchDataset']) && $_REQUEST['searchDataset']) {
   $stmt->bind_result($site_name, $dataset_name, $size, $decision, $condition_id);
   $stmt->execute();
 
-  $json = '[';
+  $condition_ids = array();
 
-  $sname = '';
+  $json_data = array();
+
   while ($stmt->fetch()) {
-    if ($site_name != $sname) {
-      if (strlen($json) != 1)
-        $json .= ']},';
+    if (!array_key_exists($site_name, $json_data))
+      $json_data[$site_name] = array();
 
-      $sname = $site_name;
-      $json .= '{"name":"' . $sname . '","datasets":[';
-    }
-    else
-      $json .= ',';
-
-    $json .= sprintf('{"name":"%s","size":%f,"decision":"%s","conditionId":"%s"}', $dataset_name, $size, $decision, $condition_id);
+    $json_data[$site_name][] = sprintf('{"name":"%s","size":%f,"decision":"%s","conditionId":"%s"}', $dataset_name, $size, $decision, $condition_id);
+    $condition_ids[] = $condition_id;
   }
-  if (strlen($json) != 1)
-    $json .= ']}';
-  $json .= ']';
   $stmt->close();
+
+  $json_texts = array();
+  foreach ($json_data as $site_name => $datasets)
+    $json_texts[] = sprintf('{"name": "%s", "datasets": [%s]}', $site_name, implode(',', $datasets));
+
+  $json .= implode(',', $json_texts);
+
+  $json .= '], "conditions": {';
+
+  $cond_pool = implode(',', array_unique($condition_ids));
+
+  $json_texts = array();
+
+  $query = sprintf('SELECT `id`, `text` FROM `policy_conditions` WHERE `id` IN (%s)', $cond_pool);
+
+  $stmt = $history_db->prepare($query);
+  $stmt->bind_result($condition_id, $text);
+  $stmt->execute();
+  while ($stmt->fetch())
+    $json_texts[] = sprintf('"%d": "%s"', $condition_id, $text);
+  $stmt->close();
+
+  $json .= implode(',', $json_texts);
+  $json .= '}}';
 
   echo $json;
   exit(0);  
