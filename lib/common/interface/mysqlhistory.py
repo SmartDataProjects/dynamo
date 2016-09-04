@@ -181,11 +181,9 @@ class MySQLHistory(TransactionHistoryInterface):
 
         query = 'SELECT s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id`'
         query += ' WHERE q.`partition_id` = %d' % partition_id
-        query += ' AND q.`run_id` = (SELECT MAX(q2.`run`) FROM `quota_snapshots` AS q2 WHERE q2.`partition_id` = %d AND q2.`site_id` = q.`site_id` AND q2.`run_id` <= %d)' % (partition_id, run_number)
+        query += ' AND q.`run_id` = (SELECT MAX(q2.`run_id`) FROM `quota_snapshots` AS q2 WHERE q2.`partition_id` = %d AND q2.`site_id` = q.`site_id` AND q2.`run_id` <= %d)' % (partition_id, run_number)
 
-        record = self._mysql.query(query)
-
-        quota_map = dict([(site_name, quota) for site_name, quota in record])
+        quota_map = dict(self._mysql.query(query))
 
         sites_dict = {}
 
@@ -371,11 +369,12 @@ class MySQLHistory(TransactionHistoryInterface):
             volumes = {}
             sites = set()
 
-            query = 'SELECT s.`name`, SUM(r.`size`) FROM `replica_snapshot_cache` AS c'
+            query = 'SELECT s.`name`, SUM(r.`size`) * 1.e-12 FROM `replica_snapshot_cache` AS c'
             query += ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`'
             query += ' INNER JOIN `deletion_decisions` AS d ON d.`id` = c.`decision_id`'
             query += ' INNER JOIN `sites` AS s ON s.`id` = r.`site_id`'
-            query += ' WHERE c.`run_id` = 800 AND d.`decision` LIKE %s'
+            query += ' WHERE c.`run_id` = %d' % run_number
+            query += ' AND d.`decision` LIKE %s'
             query += ' GROUP BY r.`site_id`'
 
             for decision in ['protect', 'delete', 'keep']:
