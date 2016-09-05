@@ -119,7 +119,8 @@ class WebReplicaLockInterface(ReplicaLockInterface):
 
                             locked_blocks = [block]
 
-                        else:                                
+                        else:
+                            dataset_name = object_name
                             try:
                                 dataset = inventory.datasets[dataset_name]
                             except KeyError:
