@@ -75,7 +75,7 @@ for part in args.partitions:
             print 'Tape deletion should be a single execution of its own.'
             sys.exit(1)
 
-    config.inventory.included_sites = config.tape_sites
+        config.inventory.included_sites = config.tape_sites
 
 inventory_manager = InventoryManager(**kwd)
 
