@@ -4,7 +4,8 @@ $site = $_REQUEST['site'];
 $site = str_replace('"', "", $site);
 #site = "T2_US_Florida";
 
-$pngpath = '/var/www/html/dynamo/dealermon';
+$localpath = '/var/www/html';
+$pngpath = $localpath . '/dynamo/dealermon';
 
 $html = '<html>' . "\n";
 $html .= '  <head>' . "\n";
@@ -59,7 +60,7 @@ foreach (glob($pngpath . "/monitoring/request__$site*.png") as $key=>$filename) 
   
 #  echo $key;
 
-  $filename = str_replace('/var/www/html/dealermon/','',$filename);
+  $filename = str_replace($localpath,'',$filename);
 
   if ($key == 0)
     $images .= '    <b>Requests</b>' . "\n"; 
@@ -72,7 +73,7 @@ foreach (glob($pngpath . "/monitoring/request__$site*.png") as $key=>$filename) 
 #$html .= '  <b>This text is bold</b>' . "\n";
 foreach (glob($pngpath . "/monitoring/replica__$site*.png") as $keys=>$filename) {
 
-  $filename = str_replace('/var/www/html/dealermon/','',$filename);  
+  $filename = str_replace($localpath,'',$filename);  
 
   if ($keys == 0)
     $images .= '    <b>Replicas</b>' . "\n"; 
