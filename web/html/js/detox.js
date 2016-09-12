@@ -719,7 +719,7 @@ function displayDatasetSearch(data)
 
 function resetDatasetSearch()
 {
-    d3.selectAll('#summaryGraph rec.searched').remove();
+    d3.selectAll('#summaryGraph rect.searched').remove();
     d3.selectAll('#details div.searchResult').remove();
 
     siteDetails.style('display', 'block');
