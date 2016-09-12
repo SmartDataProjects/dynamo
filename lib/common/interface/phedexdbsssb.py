@@ -313,7 +313,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
     def get_site_list(self, sites, filt = '*'): #override (SiteInfoSourceInterface)
         options = []
-        if type(filt) is str and len(filt) != 0:
+        if type(filt) is str and len(filt) != 0 and filt != '*':
             options = ['node=' + filt]
         elif type(filt) is list:
             options = ['node=%s' % s for s in filt]
