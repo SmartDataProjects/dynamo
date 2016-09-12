@@ -173,7 +173,9 @@ class MySQLStore(LocalStoreInterface):
         if len(site_list) == 0:
             return [], [], []
 
-        sites_str = ','.join(['%d' % i for i in self._ids_to_sites.keys()])
+        sites_str = ''
+        if site_filt == '*' or site_filt == '':
+            sites_str = ','.join(['%d' % i for i in self._ids_to_sites.keys()])
 
         # Load groups
         group_list = []
@@ -217,10 +219,15 @@ class MySQLStore(LocalStoreInterface):
 
         query = 'SELECT DISTINCT d.`name`, d.`status`+0, d.`on_tape`, d.`data_type`+0, d.`software_version_id`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
         query += ' FROM `datasets` AS d'
-        query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
-        query += ' WHERE dr.`site_id` IN (%s)' % sites_str
+        conditions = []
+        if sites_str:
+            query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
+            conditions.append('dr.`site_id` IN (%s)' % sites_str)
         if dataset_filt != '/*/*/*' and dataset_filt != '':
-            query += ' AND d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%')
+            conditions.append('d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%'))
+
+        if len(conditions) != 0:
+            query += ' WHERE ' + (' AND '.join(conditions))
 
         for name, status, on_tape, data_type, software_version_id, last_update, is_open in self._mysql.query(query):
             dataset = Dataset(name, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update, is_open = (is_open == 1))
@@ -240,10 +247,16 @@ class MySQLStore(LocalStoreInterface):
 
         query = 'SELECT DISTINCT b.`id`, b.`dataset_id`, b.`name`, b.`size`, b.`num_files`, b.`is_open` FROM `blocks` AS b'
         query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
-        query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
-        query += ' WHERE dr.`site_id` IN (%s)' % sites_str
+        conditions = []
+        if sites_str:
+            query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
+            conditions.append('dr.`site_id` IN (%s)' % sites_str)
         if dataset_filt != '/*/*/*' and dataset_filt != '':
-            query += ' AND d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%')
+            conditions.append('d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%'))
+
+        if len(conditions) != 0:
+            query += ' WHERE ' + (' AND '.join(conditions))
+
         query += ' ORDER BY b.`dataset_id`'
 
         _dataset_id = 0
@@ -266,9 +279,15 @@ class MySQLStore(LocalStoreInterface):
             logger.info('Linking datasets to sites.')
     
             sql = 'SELECT `dataset_id`, `site_id`, `group_id`, `completion`, `is_custodial`, UNIX_TIMESTAMP(`last_block_created`) FROM `dataset_replicas`'
-            sql += ' WHERE `site_id` IN (%s)' % sites_str
+            conditions = []
+            if sites_str:
+                conditions.append('`site_id` IN (%s)' % sites_str)
             if dataset_filt != '/*/*/*' and dataset_filt != '':
-                sql += ' AND `dataset_id` IN (%s)' % (','.join(['%d' % i for i in self._ids_to_datasets.keys()]))
+                conditions.append('`dataset_id` IN (%s)' % (','.join(['%d' % i for i in self._ids_to_datasets.keys()])))
+
+            if len(conditions) != 0:
+                sql += ' WHERE ' + (' AND '.join(conditions))
+
             sql += ' ORDER BY `dataset_id`'
 
             dataset_replicas = self._mysql.query(sql)
@@ -296,9 +315,16 @@ class MySQLStore(LocalStoreInterface):
             logger.info('Linking blocks to sites.')
     
             # Link blocks to sites and groups
-            condition = ' WHERE `site_id` IN (%s)' % sites_str
+            conditions = []
+            if sites_str:
+                conditions.append('`site_id` IN (%s)' % sites_str)
             if dataset_filt != '/*/*/*' and dataset_filt != '':
-                condition += ' AND `block_id` IN (%s)' % (','.join(['%d' % i for i in block_map.keys()]))
+                conditions.append('`block_id` IN (%s)' % (','.join(['%d' % i for i in block_map.keys()])))
+
+            condition = ''
+            if len(conditions) != 0:
+                condition = ' WHERE ' + (' AND '.join(conditions))
+
             condition += ' ORDER BY `block_id`, `site_id`'
 
             sql = 'SELECT `block_id`, `site_id`, `group_id`, `is_complete`, `is_custodial` FROM `block_replicas`'
