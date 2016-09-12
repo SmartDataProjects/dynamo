@@ -220,7 +220,7 @@ class MySQLStore(LocalStoreInterface):
         query = 'SELECT DISTINCT d.`name`, d.`status`+0, d.`on_tape`, d.`data_type`+0, d.`software_version_id`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
         query += ' FROM `datasets` AS d'
         conditions = []
-        if sites_str:
+        if load_replicas and sites_str:
             query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
             conditions.append('dr.`site_id` IN (%s)' % sites_str)
         if dataset_filt != '/*/*/*' and dataset_filt != '':
@@ -248,7 +248,7 @@ class MySQLStore(LocalStoreInterface):
         query = 'SELECT DISTINCT b.`id`, b.`dataset_id`, b.`name`, b.`size`, b.`num_files`, b.`is_open` FROM `blocks` AS b'
         query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         conditions = []
-        if sites_str:
+        if load_replicas and sites_str:
             query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
             conditions.append('dr.`site_id` IN (%s)' % sites_str)
         if dataset_filt != '/*/*/*' and dataset_filt != '':
