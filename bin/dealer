@@ -71,9 +71,16 @@ for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
     else:
         kwd[cls + '_cls'] = getattr(classes, clsname)
 
+kwd['load_data'] = False
+
 config.inventory.included_sites = dealer_config.included_sites
 
 inventory_manager = InventoryManager(**kwd)
+
+if args.force_inventory_update:
+    inventory_manager.load(load_replicas = False)
+else:
+    inventory_manager.load(load_replicas = True)
 
 kwd = {}
 for cls in ['copy']:

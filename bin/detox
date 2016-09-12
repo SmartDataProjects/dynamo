@@ -75,9 +75,17 @@ for part in args.partitions:
             print 'Tape deletion should be a single execution of its own.'
             sys.exit(1)
 
-        config.inventory.included_sites = config.tape_sites
+        # need to include all sites - otherwise no dataset will be loaded if only disk replicas are saved
+        config.inventory.included_sites = '*'
+
+kwd['load_data'] = False
 
 inventory_manager = InventoryManager(**kwd)
+
+if args.force_inventory_update:
+    inventory_manager.load(load_replicas = False)
+else:
+    inventory_manager.load(load_replicas = True)
 
 kwd = {}
 for cls in ['deletion']:
