@@ -76,6 +76,12 @@ for part in args.partitions:
             sys.exit(1)
 
         config.inventory.included_sites = config.tape_sites
+        
+        if not args.no_auto_approval:
+            print 'Auto-approval is turned on. Are you sure? [Y/n]'
+            if sys.stdin.readline().strip() != 'Y':
+                print 'Aborting.'
+                sys.exit(0)
 
 kwd['load_data'] = False
 
