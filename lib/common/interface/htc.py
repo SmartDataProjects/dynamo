@@ -56,8 +56,8 @@ class HTCondor(object):
 
         classads = []
 
-        attempt = 0
         for schedd in self._schedds:
+            attempt = 0
             while True:
                 try:
                     ads = schedd.query(constraint, attributes)
