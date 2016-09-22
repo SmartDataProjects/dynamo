@@ -549,7 +549,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 else:
                     items.append(([site], gname_list, ['/*/*/*']))
 
-            parallel_exec(exec_get, items, num_threads = min(64, len(items)), print_progress = True)
+            parallel_exec(exec_get, items, num_threads = min(64, len(items)), print_progress = True, timeout = 3600)
             del items
         else:
             exec_get(all_sites, gname_list, [dataset_filt])

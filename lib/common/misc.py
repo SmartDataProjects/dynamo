@@ -19,6 +19,7 @@ def timer(function):
 
     return function_timer
 
+
 def unicode2str(container):
     """
     Recursively convert unicode values in a nested container to strings.
@@ -54,8 +55,10 @@ def unicode2str(container):
 class FunctionWrapper(object):
     def __init__(self, function):
         self.function = function
+        self.time_started = 0
 
     def __call__(self, inputs, outputs, exception):
+        self.time_started = time.time()
         try:
             for args in inputs:
                 output = self.function(*args)
@@ -73,18 +76,27 @@ class ExceptionHolder(object):
         self.exception = exc
 
 
+class ThreadTimeout(RuntimeError):
+    pass
+
+
 class ThreadCollector(object):
-    def __init__(self, ntotal = 0):
+    def __init__(self, ntotal = 0, timeout = 0):
         self.outputs = []
         self.ntotal = ntotal
         self.ndone = 0
         self.watermark = 0
+        self.timeout = timeout
 
     def collect(self, threads):
         ith = 0
         while ith < len(threads):
             thread = threads[ith][0]
             if thread.is_alive():
+                if self.timeout > 0 and time.time() - thread.__target.time_started > self.timeout:
+                    logger.error('Thread ' + thread.name + ' timed out.')
+                    raise ThreadTimeout(thread.name)
+
                 ith += 1
                 continue
 
@@ -103,7 +115,7 @@ class ThreadCollector(object):
                     self.watermark += max(1, self.ntotal / 20)
 
 
-def parallel_exec(function, arguments, per_thread = 1, num_threads = config.num_threads, print_progress = False):
+def parallel_exec(function, arguments, per_thread = 1, num_threads = config.num_threads, print_progress = False, timeout = 0):
     """
     Execute function(*args) in up to num_threads parallel threads,
     for each entry args of arguments list.
@@ -120,9 +132,9 @@ def parallel_exec(function, arguments, per_thread = 1, num_threads = config.num_
 
     target = FunctionWrapper(function)
     if print_progress:
-        collector = ThreadCollector(len(arguments))
+        collector = ThreadCollector(len(arguments), timeout = timeout)
     else:
-        collector = ThreadCollector()
+        collector = ThreadCollector(timeout = timeout)
 
     # format the inputs: list (one element for one thread) of lists (arguments x per_thread) of tuples
     input_list = [[]]
@@ -153,6 +165,7 @@ def parallel_exec(function, arguments, per_thread = 1, num_threads = config.num_
         time.sleep(1)
 
     return collector.outputs
+
 
 class SigintHandler(object):
     """
