@@ -293,8 +293,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
 
     $data['requestIds'] = array();
 
-    //    $stmt = $history_db->prepare('SELECT `id` FROM `deletion_requests` WHERE `run_id` = ? AND `id` > 0');
-    $stmt = $history_db->prepare('SELECT `id` FROM `deletion_requests` WHERE `run_id` = ?');
+    $stmt = $history_db->prepare('SELECT `id` FROM `deletion_requests` WHERE `run_id` = ? AND `id` > 0');
     $stmt->bind_param('i', $cycle);
     $stmt->bind_result($request_id);
     $stmt->execute();
