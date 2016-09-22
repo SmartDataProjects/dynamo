@@ -29,7 +29,7 @@ parser.add_argument('--access-history', '-a', metavar = 'CLASS', dest = 'access_
 parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', default = '', help = 'LockInterface class.')
 parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls', default = '', help = 'DeletionInterface class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
-parser.add_argument('--partition', '-p', metavar = 'PARTITIONS', dest = 'partitions', nargs = '+', default = ['AnalysisOps', 'DataOps', 'RelVal', 'Unsubscribed'], help = 'Name of the partitions. Syntax is <partition>[:<definition name>]. Definition name is translated to path DYNAMO_BASE/policies/detox/<partition>.txt. If none is given, partition name is used.')
+parser.add_argument('--partition', '-p', metavar = 'PARTITIONS', dest = 'partitions', nargs = '+', default = ['AnalysisOps', 'DataOps', 'RelVal'], help = 'Name of the partitions. Syntax is <partition>[:<definition name>]. Definition name is translated to path DYNAMO_BASE/policies/detox/<partition>.txt. If none is given, partition name is used.')
 parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
 parser.add_argument('--no-auto-approval', '-P', action = 'store_true', dest = 'no_auto_approval', help = 'Do not approve deletion requests automatically.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')

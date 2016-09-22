@@ -96,6 +96,12 @@ do
       $DYNAMO_BASE/bin/dynamo detox --test-run --detox-partition 'caf-comm:MinimumCopies' 'caf-alca:MinimumCopies' 'local:MinimumCopies' 'IB RelVal:MinimumCopies' --log-level INFO
     fi
 
+    if [ $IHOUR -eq $HOURS_PER_LOGFILE ]
+    then
+      # Clean unsubscribed data once every HOURS_PER_LOGFILE cycles
+      $DYNAMO_BASE/bin/dynamo detox $TEST --detox-partition 'Unsubscribed' --log-level INFO
+    fi
+
     $DYNAMO_BASE/bin/execlib common/interface/history.py clean last
 
     if [ $RC -eq 130 ]
