@@ -109,24 +109,53 @@ if (isset($_REQUEST['searchDataset']) && $_REQUEST['searchDataset']) {
 
   $json .= '], "conditions": {';
 
-  $cond_pool = implode(',', array_unique($condition_ids));
-
   $json_texts = array();
 
-  $query = sprintf('SELECT `id`, `text` FROM `policy_conditions` WHERE `id` IN (%s)', $cond_pool);
+  if (count($condition_ids) != 0) {
+    $cond_pool = implode(',', array_unique($condition_ids));
 
-  $stmt = $history_db->prepare($query);
-  $stmt->bind_result($condition_id, $text);
-  $stmt->execute();
-  while ($stmt->fetch())
-    $json_texts[] = sprintf('"%d": "%s"', $condition_id, $text);
-  $stmt->close();
+    $query = sprintf('SELECT `id`, `text` FROM `policy_conditions` WHERE `id` IN (%s)', $cond_pool);
+
+    $stmt = $history_db->prepare($query);
+    $stmt->bind_result($condition_id, $text);
+    $stmt->execute();
+    while ($stmt->fetch())
+      $json_texts[] = sprintf('"%d": "%s"', $condition_id, $text);
+    $stmt->close();
+  }
 
   $json .= implode(',', $json_texts);
   $json .= '}}';
 
   echo $json;
   exit(0);  
+}
+else if (isset($_REQUEST['dumpDeletions']) && $_REQUEST['dumpDeletions']) {
+  $list = '';
+
+  $query = 'SELECT s.`name`, d.`name`, z.`size` * 1.e-9 FROM `deleted_replicas` AS r';
+  $query .= ' INNER JOIN `deletion_requests` AS q ON q.`id` = r.`deletion_id`';
+  $query .= ' INNER JOIN `sites` AS s ON s.`id` = q.`site_id`';
+  $query .= ' INNER JOIN `datasets` AS d ON d.`id` = r.`dataset_id`';
+  $query .= ' INNER JOIN `replica_snapshot_cache` AS c ON (c.`run_id`, c.`site_id`, c.`dataset_id`) = (q.`run_id`, q.`site_id`, r.`dataset_id`)';
+  $query .= ' INNER JOIN `replica_size_snapshots` AS z ON z.`id` = c.`size_snapshot_id`';
+  $query .= ' WHERE q.`run_id` = ?';
+  $query .= ' ORDER BY s.`name`, d.`name`';
+
+  $stmt = $history_db->prepare($query);
+  $stmt->bind_param('i', $cycle);
+  $stmt->bind_result($site, $dataset, $size);
+  $stmt->execute();
+  while ($stmt->fetch())
+    $list .= $site . "\t" . $dataset . "\t" . sprintf("%.2f", $size) . "\n";
+  $stmt->close();
+
+  header('Content-Disposition: attachment; filename="deletions_' . $cycle . '.txt"');
+  header('Content-Type: text/plain');
+  header('Content-Length: ' . strlen($list));
+  header('Connection: close');
+  echo $list;
+  exit(0);
 }
 
 $stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` > ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` ASC LIMIT 1');
@@ -261,6 +290,17 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
               'keepPrev' => 0. + $site_total['keepPrev'][$id]
               );
     }
+
+    $data['requestIds'] = array();
+
+    //    $stmt = $history_db->prepare('SELECT `id` FROM `deletion_requests` WHERE `run_id` = ? AND `id` > 0');
+    $stmt = $history_db->prepare('SELECT `id` FROM `deletion_requests` WHERE `run_id` = ?');
+    $stmt->bind_param('i', $cycle);
+    $stmt->bind_result($request_id);
+    $stmt->execute();
+    while ($stmt->fetch())
+      $data['requestIds'][] = $request_id;
+    $stmt->close();
   }
   else if ($_REQUEST['dataType'] == 'siteDetail') {
     $site_name = $_REQUEST['siteName'];

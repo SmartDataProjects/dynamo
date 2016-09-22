@@ -764,6 +764,7 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
                 nextCycle = data.nextCycle;
                 previousCycle = data.previousCycle;
                 displaySummary(data);
+                setDetailsLink(data);
                 spinner.stop();
                 setupSiteDetails(data.siteData);
             }, 'dataType': 'json', 'async': false});
@@ -777,6 +778,22 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
         d3.select('#next').classed('clickable', false).on('click', null);
     else
         d3.select('#next').classed('clickable', true).on('click', function () { loadSummary(nextCycle, currentPartition, currentNorm); });
+}
+
+function setDetailsLink(data)
+{
+    if (data.requestIds.length == 0) {
+        d3.select('#download').classed('clickable', false)
+            .on('click', null);
+        d3.select('#phedex').classed('clickable', false)
+            .on('click', null);
+    }
+    else {
+        d3.select('#download').classed('clickable', true)
+            .on('click', function () { downloadList(); });
+        d3.select('#phedex').classed('clickable', true)
+            .on('click', function () { window.open('https://cmsweb.cern.ch/phedex/prod/Request::View?request=' + data.requestIds.join('+')); });
+    }
 }
 
 function loadSiteTable(name)
@@ -832,3 +849,13 @@ function findDataset()
             spinner.stop();
     }, 'json');
 }
+
+function downloadList()
+{
+    var url = window.location.href;
+    url += 'dumpDeletions=1';
+    url += '&cycleNumber=' + currentCycle;
+    
+    window.location = url;
+}
+
