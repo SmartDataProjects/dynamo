@@ -455,26 +455,20 @@ if __name__ == '__main__':
         for record in incomplete_copies:
             updates = copy_interface.copy_status(record.operation_id)
 
-            last_update = max([last_update for last_update, total, copied in updates.values()])
-            if last_update > record.last_update:
+            # updates: {(site_name, dataset): (total_bytes, copied_bytes, time_update)}
+            
+            total = 0
+            copied = 0
+            for t, c, u in updates.values():
+                total += t
+                copied += c
+
+            if copied == total:
                 logger.info('Updating record for copy %d to %s.', record.operation_id, record.site_name)
         
-                record.last_update = last_update
-                record.done = sum(copied for last_update, total, copied in updates.values())
+                record.completed = True
+                record.size = total
                 interface.update_copy_entry(record)
-        
-        incomplete_deletions = interface.get_incomplete_deletions()
-        
-        for record in incomplete_deletions:
-            updates = deletion_interface.deletion_status(record.operation_id)
-
-            last_update = max([last_update for last_update, total, deleted in updates.values()])
-            if last_update > record.last_update:
-                logger.info('Updating record for deletion %d at %s.', record.operation_id, record.site_name)
-        
-                record.last_update = last_update
-                record.done = sum(deleted for last_update, total, deleted in updates.values())
-                interface.update_deletion_entry(record)
 
     elif args.command == 'check':
         operation = args.arguments[0]

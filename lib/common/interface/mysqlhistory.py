@@ -127,10 +127,10 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('deleted_replicas', ('deletion_id', 'dataset_id'), lambda did: (operation_id, did), dataset_ids)
 
     def _do_update_copy_entry(self, copy_record): #override
-        self._mysql.query('UPDATE `copy_requests` SET `approved` = %s, `size` = %s, `size_copied` = %s, `last_update` = FROM_UNIXTIME(%s) WHERE `id` = %s', copy_record.approved, copy_record.size, copy_record.done, copy_record.last_update, copy_record.operation_id)
+        self._mysql.query('UPDATE `copy_requests` SET `approved` = %s, `size` = %s, `completed` = %s WHERE `id` = %s', copy_record.approved, copy_record.size, copy_record.completed, copy_record.operation_id)
         
     def _do_update_deletion_entry(self, deletion_record): #override
-        self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, `size_deleted` = %s, `last_update` = FROM_UNIXTIME(%s) WHERE `id` = %s', deletion_record.approved, deletion_record.done, deletion_record.last_update, deletion_record.operation_id)
+        self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, `size` = %s WHERE `id` = %s', deletion_record.approved, deletion_record.size, deletion_record.operation_id)
 
     def _do_save_sites(self, run_number, inventory): #override
         if len(self._site_id_map) == 0:
@@ -409,11 +409,17 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('dataset_popularity_snapshots', fields, mapping, datasets)
 
     def _do_get_incomplete_copies(self, partition): #override
-        history_entries = self._mysql.query('SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`, h.`size_copied`, UNIX_TIMESTAMP(h.`last_update`) FROM `copy_requests` AS h INNER JOIN `runs` AS r ON r.`id` = h.`run_id` INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id` INNER JOIN `sites` AS s ON s.`id` = h.`site_id` WHERE h.`id` > 0 AND p.`name` LIKE %s AND h.`size` != h.`size_copied` AND h.`run_id` > 0', partition)
+        query = 'SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`'
+        query += ' FROM `copy_requests` AS h'
+        query += ' INNER JOIN `runs` AS r ON r.`id` = h.`run_id`'
+        query += ' INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id`'
+        query += ' INNER JOIN `sites` AS s ON s.`id` = h.`site_id`'
+        query += ' WHERE h.`id` > 0 AND p.`name` LIKE \'%s\' AND h.`completed` = 0 AND h.`run_id` > 0' % partition
+        history_entries = self._mysql.query(query)
         
         id_to_record = {}
-        for eid, timestamp, approved, site_name, size, size_copied, last_update in history_entries:
-            id_to_record[eid] = HistoryRecord(HistoryRecord.OP_COPY, eid, site_name, timestamp = timestamp, approved = approved, size = size, done = size_copied, last_update = last_update)
+        for eid, timestamp, approved, site_name, size in history_entries:
+            id_to_record[eid] = HistoryRecord(HistoryRecord.OP_COPY, eid, site_name, timestamp = timestamp, approved = approved, size = size)
 
         id_to_dataset = dict(self._mysql.query('SELECT `id`, `name` FROM `datasets`'))
         id_to_site = dict(self._mysql.query('SELECT `id`, `name` FROM `sites`'))

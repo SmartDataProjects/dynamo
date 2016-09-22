@@ -664,15 +664,14 @@ class HistoryRecord(object):
     CopiedReplica = collections.namedtuple('CopiedReplica', ['dataset_name'])
     DeletedReplica = collections.namedtuple('DeletedReplica', ['dataset_name'])
 
-    def __init__(self, operation_type, operation_id, site_name, timestamp = 0, approved = False, size = 0, done = 0, last_update = 0):
+    def __init__(self, operation_type, operation_id, site_name, timestamp = 0, approved = False, size = 0, completed = False, last_update = 0):
         self.operation_type = operation_type
         self.operation_id = operation_id
         self.site_name = site_name
         self.timestamp = timestamp
         self.approved = bool(approved)
         self.size = size
-        self.done = done
-        self.last_update = last_update
+        self.completed = completed
         self.replicas = []
 
     def __del__(self):

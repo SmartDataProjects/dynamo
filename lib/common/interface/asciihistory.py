@@ -37,7 +37,7 @@ class ASCIIHistory(TransactionHistoryInterface):
 
     def _do_make_copy_entry(self, site, operation_id, approved, do_list, size): #override
         with open(self.copy_requests_path, 'a') as requests:
-            requests.write('%d %s %d 0 %d\n' % (operation_id, site.name, size, int(time.time())))
+            requests.write('%d %s %d\n' % (operation_id, site.name, size)))
 
         with open(self.copy_datasets_path, 'a') as datasets:
             for dataset, origin in do_list:
@@ -45,7 +45,7 @@ class ASCIIHistory(TransactionHistoryInterface):
 
     def _do_make_deletion_entry(self, site, operation_id, approved, datasets, size): #override
         with open(self.deletion_requests_path, 'a') as requests:
-            requests.write('%d %s %d %d\n' % (operation_id, site.name, size int(time.time())))
+            requests.write('%d %s %d\n' % (operation_id, site.name, size))
 
         with open(self.deletion_datasets_path, 'a') as datasets:
             for dataset in datasets:
@@ -53,11 +53,11 @@ class ASCIIHistory(TransactionHistoryInterface):
 
     def _do_update_copy_entry(self, copy_record): #override
         with open(self.copy_requests_path, 'a') as requests:
-            requests.write('%d %s %d %d %d\n' % (copy_record.operation_id, copy_record.site_name, copy_record.size, copy_record.done, copy_record.last_update))
+            requests.write('%d %s %d\n' % (copy_record.operation_id, copy_record.site_name, copy_record.size))
 
     def _do_update_deletion_entry(self, deletion_record): #override
         with open(self.deletion_requests_path, 'a') as requests:
-            requests.write('%d %s %d %d\n' % (deletion_record.operation_id, deletion_record.site_name, deletion_record.size, deletion_record.last_update))
+            requests.write('%d %s %d\n' % (deletion_record.operation_id, deletion_record.site_name, deletion_record.size))
 
     def _do_get_incomplete_copies(self): #override
         timestamps = {}

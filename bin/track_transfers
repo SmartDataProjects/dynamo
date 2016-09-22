@@ -116,9 +116,6 @@ for record in records:
 
     status = copy.copy_status(request_id)
 
-    # Tracking of the request status
-    request_still_existing = 0
-
     request_total = 0
     request_copied = 0
     replicas_in_request = []
@@ -130,9 +127,6 @@ for record in records:
     rrd_cdeftotstring = "CDEF:total="
 
     for (site, dataset), (total, copied, last_update) in status.items():
-
-        request_still_existing = 1
-        
         replica_total_sizes.append(total)
         sites_total.append([site,total])
         sites_copied.append([site,copied])
@@ -182,8 +176,8 @@ for record in records:
         try:
             # Keeping track of the request status
             replicas_in_request.append(rrd_file)
-            request_total = request_total + total
-            request_copied = request_copied + copied            
+            request_total += total
+            request_copied += copied            
 
             # Massaging the DEF and CDEF strings  
             if len(replicas_in_request)==1:
@@ -212,22 +206,20 @@ for record in records:
         print 'Request total: ', request_total
             
     # Update history DB
-    if request_still_existing == 1:
-        record.done = request_copied
-        record.size = request_total
-    else:
-        record.done = record.size
-
-    record.last_update = time.time()
-    history.update_copy_entry(record)
+    if len(status) != 0:
+        if request_total != record.size or request_copied == request_total:
+            record.size = request_total
+            record.completed = (request_copied == request_total)
+        
+            history.update_copy_entry(record)
 
     if DEBUG:
-        print 'Request still existing? ', request_still_existing 
+        print 'Request still existing? ', (len(status) != 0)
         print 'Size: ', record.size
-        print 'Copied: ', record.done
+        print 'Copied: ', record.completed
 
-    total_volume = total_volume + record.size
-    copied_volume = copied_volume + record.done
+    total_volume += record.size
+    copied_volume += request_copied 
 
     rrd_arglist.append('AREA:copied#aaffcc:Copied \l')
     rrd_arglist.append('LINE2:total#FF0000:Total \l')
