@@ -171,15 +171,23 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         catalogs = {} # {dataset: [block]}. Content can be empty if inclusive deletion is desired.
 
         if type(replica) == DatasetReplica:
-            catalogs[replica.dataset] = [block_replica.block for block_replica in replica.block_replicas]
+            replica_blocks = [r.block for r in replica.block_replicas]
+
+            if set(replica_blocks) == set(replica.dataset.blocks):
+                catalogs[replica.dataset] = []
+                level = 'dataset'
+            else:
+                catalogs[replica.dataset] = replica_blocks
+                level = 'block'
 
         elif type(replica) == BlockReplica:
             catalogs[replica.block.dataset] = [replica.block]
+            level = 'block'
 
         options = {
             'node': replica.site.name,
             'data': self._form_catalog_xml(catalogs),
-            'level': 'dataset',
+            'level': level,
             'rm_subscriptions': 'y',
             'comments': comments
         }
@@ -230,14 +238,22 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         for site, replica_list in replicas_by_site.items():
             catalogs = {}
+            level = 'dataset'
 
             for replica in replica_list:
-                catalogs[replica.dataset] = [block_replica.block for block_replica in replica.block_replicas]
+                replica_blocks = [r.block for r in replica.block_replicas]
+
+                # If one dataset replica asks for a partial deletion, we will be running block-level.
+                # Therefore all dataset in the catalog should have the full list of blocks to delete.
+                catalogs[replica.dataset] = replica_blocks
+    
+                if set(replica_blocks) != set(replica.dataset.blocks):
+                    level = 'block'
 
             options = {
                 'node': site.name,
                 'data': self._form_catalog_xml(catalogs),
-                'level': 'dataset',
+                'level': level,
                 'rm_subscriptions': 'y',
                 'comments': comments
             }
