@@ -616,7 +616,7 @@ class MySQLStore(LocalStoreInterface):
 
         # assuming block name is unique
         block_name_to_id = {}
-        for block_id, block_name from self._mysql.query('SELECT DISTINCT b.`id`, b.`name` FROM `blocks` AS b INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = b.`dataset_id`'):
+        for block_id, block_name in self._mysql.query('SELECT DISTINCT b.`id`, b.`name` FROM `blocks` AS b INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = b.`dataset_id`'):
             block_name_to_id[Block.translate_name(block_name)] = block_id
 
         all_replicas = []
