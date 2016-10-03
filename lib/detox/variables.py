@@ -30,12 +30,21 @@ def replica_dataset_release(replica):
     else:
         return '%d_%d_%d_%s' % version
 
+def dataset_num_full_disk_copy(replica):
+    dataset = replica.dataset
+    num = 0
+    for rep in dataset.replicas:
+        if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.site.active != Site.ACT_IGNORE and rep.is_full():
+            num += 1
+
+    return num
+
 replica_vardefs = {
     'dataset.name': (lambda r: r.dataset.name, TEXT_TYPE),
     'dataset.status': (lambda r: r.dataset.status, NUMERIC_TYPE, lambda v: eval('Dataset.STAT_' + v)),
     'dataset.on_tape': (lambda r: r.dataset.on_tape, NUMERIC_TYPE, lambda v: eval('Dataset.TAPE_' + v)),
     'dataset.last_update': (lambda r: r.dataset.last_update, TIME_TYPE),
-    'dataset.num_full_disk_copy': (lambda r: sum(1 for rep in r.dataset.replicas if rep.site.storage_type == Site.TYPE_DISK and rep.is_full()), NUMERIC_TYPE),
+    'dataset.num_full_disk_copy': (dataset_num_full_disk_copy, NUMERIC_TYPE),
     'dataset.usage_rank': (lambda r: r.dataset.demand.global_usage_rank, NUMERIC_TYPE),
     'dataset.release': (replica_dataset_release, TEXT_TYPE),
     'replica.incomplete': (replica_incomplete, BOOL_TYPE),
