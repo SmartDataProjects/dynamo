@@ -172,6 +172,7 @@ class InventoryManager(object):
             self.store.release_lock(force = True)
 
     def create_partitions(self):
+        Site.clear_partitions()
         for name, generator in config.inventory.partitions:
             Site.add_partition(name, generator(self, name))
 

@@ -321,6 +321,11 @@ class Site(object):
         Site.partitions[name] = partition
         Site._partitions_order.append(partition)
 
+    @staticmethod
+    def clear_partitions():
+        Site.partitions = {}
+        Site._partitions_order = []
+
 
     def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN, active = ACT_AVAILABLE):
         self.name = name
