@@ -175,17 +175,6 @@ class InventoryManager(object):
         for name, generator in config.inventory.partitions:
             Site.add_partition(name, generator(self, name))
 
-    # group-based partitions
-    for name in ['AnalysisOps', 'DataOps', 'RelVal', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']:
-        if name in inventory.groups:
-            Site.add_partition(name, make_group_match(inventory.groups[name]))
-
-    # partition "Tape"
-    Site.add_partition('Tape', lambda r: r.site.storage_type == Site.TYPE_MSS)
-    # unsubscribed partition
-    Site.add_partition('Unsubscribed', lambda r: r.group is None)
-
-
     def unlink_datasetreplica(self, replica):
         """
         Remove link from datasets and sites to the replica. Don't remove the replica-to-dataset/site link;
