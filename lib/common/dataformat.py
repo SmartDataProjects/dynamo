@@ -149,6 +149,17 @@ class Dataset(object):
 
         return new_block
 
+    def remove_block(self, block):
+        self.blocks.remove(block)
+
+        for replica in self.replicas:
+            site = replica.site
+            for block_replica in list(replica.block_replicas):
+                if block_replica.block == block:
+                    replica.block_replicas.remove(block_replica)
+                    site.remove_block_replica(block_replica)
+
+
 # Block and BlockReplica implemented as tuples to reduce memory footprint
 Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files', 'is_open'])
 

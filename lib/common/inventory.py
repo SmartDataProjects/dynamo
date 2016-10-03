@@ -85,6 +85,14 @@ class InventoryManager(object):
             self.groups = dict((g.name, g) for g in groups)
             self.datasets = dict((d.name, d) for d in datasets)
 
+            if load_replicas:
+                # Take out datasets with no replicas
+                for dataset in self.datasets.values():
+                    if len(dataset.replicas) == 0:
+                        self.datasets.pop(dataset.name)
+                        self.store.clear_cache()
+                        dataset.unlink()
+
         finally:
             self.store.release_lock()
 
@@ -133,7 +141,7 @@ class InventoryManager(object):
             else:
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets, dataset_filt = dataset_filter)
 
-            # Take out datasets and blocks with no replicas
+            # Take out datasets with no replicas
             for dataset in self.datasets.values():
                 if len(dataset.replicas) == 0:
                     self.datasets.pop(dataset.name)

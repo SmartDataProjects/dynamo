@@ -490,6 +490,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 dataset_replica = DatasetReplica(
                                     dataset,
                                     site,
+                                    group = group,
                                     is_complete = True,
                                     is_custodial = False,
                                     last_block_created = 0
@@ -501,7 +502,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                             if replica_entry['time_update'] > dataset_replica.last_block_created:
                                 dataset_replica.last_block_created = replica_entry['time_update']
-    
+
+                            if group != dataset_replica.group:
+                                dataset_replica.group = None
+
                             # PhEDEx 'complete' flag cannot be trusted; defining completeness in terms of size.
                             is_complete = (replica_entry['bytes'] == block.size)
                             is_custodial = (replica_entry['custodial'] == 'y')
@@ -554,21 +558,16 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         else:
             exec_get(all_sites, gname_list, [dataset_filt])
 
-        logger.info('Merging dataset information.')
-        # Data retrieval was split in groups. Now merge the group information.
-        for site in all_sites:
-            for replica in list(site.dataset_replicas):
-                if site.storage_type == Site.TYPE_MSS and replica.is_full():
-                    replica.dataset.on_tape = Dataset.TAPE_FULL
+        logger.info('Checking for blocks that may have been invalidated.')
 
-                for block_replica in replica.block_replicas:
-                    if replica.group is None:
-                        replica.group = block_replica.group
-                        continue
-                        
-                    if block_replica.group != replica.group:
-                        replica.group = None
-                        break
+        for dataset in datasets.values():
+            blocks_with_replicas = set()
+            for replica in dataset.replicas:
+                blocks_with_replicas.update([r.block for r in replica.block_replicas])
+
+            if blocks_with_replicas != set(dataset.blocks):
+                dataset.status = Dataset.STAT_PRODUCTION # trigger DBS query
+
 
     def find_tape_copies(self, datasets): #override (ReplicaInfoSourceInterface)
         # Use 'blockreplicasummary' query to check if all blocks of the dataset are on tape.
@@ -647,6 +646,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         skip_valid is True for routine inventory update.
         """
 
+        # select datasets that need closer inspection
         if skip_valid:
             open_datasets = [dataset for dataset in datasets.values() if dataset.status == Dataset.STAT_PRODUCTION or dataset.status == Dataset.STAT_UNKNOWN]
         else:
@@ -694,6 +694,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     list_chunk.remove(dataset)
     
                     dataset.is_open = (ds_entry['is_open'] == 'y')
+
+                    # start from the full list of blocks and remove ones found in PhEDEx
+                    invalidated_blocks = list(dataset.blocks)
     
                     for block_entry in ds_entry['block']:
                         try:
@@ -714,11 +717,16 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             )
                             dataset.blocks.append(block)
     
-                        elif block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
-                            dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
+                        else:
+                            invalidated_blocks.remove(block)
+                            if block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
+                                dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
 
                         if block_entry['time_update'] > dataset.last_update:
                             dataset.last_update = block_entry['time_update']
+
+                    for block in invalidated_blocks:
+                        dataset.remove_block(block)
     
                 for dataset in list_chunk: # what remains - in case PhEDEx does not say anything about this dataset
                     dataset.blocks = []
