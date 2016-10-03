@@ -1,5 +1,6 @@
 import os
 import logging
+from common.dataformat import Site
 
 class Configuration(object):
     pass
@@ -109,6 +110,22 @@ inventory.included_groups = [
     'upgrade'
 ]
 
+def group_partitioning(inventory, name):
+    group = inventory.groups[name]
+    return lambda r: r.group == group
+
+# list of (partition name, partitioning function generator)
+inventory.partitions = [
+    ('AnalysisOps', group_partitioning),
+    ('DataOps', group_partitioning),
+    ('RelVal', group_partitioning),
+    ('caf-comm', group_partitioning),
+    ('caf-alca', group_partitioning),
+    ('local', group_partitioning),
+    ('IB RelVal', group_partitioning),
+    ('Tape', lambda dummy1, dummy2: lambda r: r.site.storage_type == Site.TYPE_MSS),
+    ('Unsubscribed', lambda dummy1, dummy2: lambda r: r.group is None)
+]
 
 demand = Configuration()
 demand.access_history = Configuration()

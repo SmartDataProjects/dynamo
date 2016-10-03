@@ -75,15 +75,18 @@ class InventoryManager(object):
 
             sites, groups, datasets = self.store.load_data(site_filt = site_names, load_replicas = load_replicas)
 
-            for site in sites:
-                for group in groups:
-                    site.set_group_quota(group, quota_manager.get_quota(site, group))
-
-                site.active = quota_manager.get_status(site)
-
             self.sites = dict((s.name, s) for s in sites)
             self.groups = dict((g.name, g) for g in groups)
             self.datasets = dict((d.name, d) for d in datasets)
+
+            self.create_partitions()
+
+            for site in sites:
+                site.compute_occupancy()
+                for partition in Site.partitions.values():
+                    site.set_partition_quota(partition, quota_manager.get_quota(site, partition))
+
+                site.active = quota_manager.get_status(site)
 
             if load_replicas:
                 # Take out datasets with no replicas
@@ -135,6 +138,8 @@ class InventoryManager(object):
 
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
+            self.create_partitions()
+
             # First get information on all replicas in the system, possibly creating datasets / blocks along the way.
             if dataset_filter == '/*/*/*':
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
@@ -165,6 +170,21 @@ class InventoryManager(object):
         finally:
             # Lock is released even in case of unexpected errors
             self.store.release_lock(force = True)
+
+    def create_partitions(self):
+        for name, generator in config.inventory.partitions:
+            Site.add_partition(name, generator(self, name))
+
+    # group-based partitions
+    for name in ['AnalysisOps', 'DataOps', 'RelVal', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']:
+        if name in inventory.groups:
+            Site.add_partition(name, make_group_match(inventory.groups[name]))
+
+    # partition "Tape"
+    Site.add_partition('Tape', lambda r: r.site.storage_type == Site.TYPE_MSS)
+    # unsubscribed partition
+    Site.add_partition('Unsubscribed', lambda r: r.group is None)
+
 
     def unlink_datasetreplica(self, replica):
         """

@@ -298,7 +298,29 @@ class Site(object):
 
         else:
             return arg
-        
+
+    class Partition(object):
+        """
+        Defines storage partitioning.
+        """
+
+        def __init__(self, name, func):
+            self.name = name
+            self._partitioning = func
+
+        def __call__(self, replica):
+            return self._partitioning(replica)
+
+    partitions = {}
+    _partitions_order = []
+
+    @staticmethod
+    def add_partition(name, func):
+        index = len(Site._partitions)
+        partition = Partition(name, func)
+        Site.partitions[name] = partition
+        Site._partitions_order.append(partition)
+
 
     def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN, active = ACT_AVAILABLE):
         self.name = name
@@ -314,10 +336,20 @@ class Site(object):
         self.dataset_replicas = set()
 
         self._block_replicas = set()
-        self._group_keys = {} # {group: index}
-        self._group_quota = [] # in TB
-        self._occupancy_projected = [] # cached sum of block sizes
-        self._occupancy_physical = [] # cached sum of block replica sizes
+
+        # Each block replica can have multiple owners but will always have one "accounting owner", whose quota the replica counts toward.
+        # When the accounting owner disowns the replica, the software must reassign the ownership to another.
+        self._partition_quota = [0] * len(Site.partitions) # in TB
+        self._occupancy_projected = [0] * len(Site.partitions) # cached sum of block sizes
+        self._occupancy_physical = [0] * len(Site.partitions) # cached sum of block replica sizes
+
+    def __str__(self):
+        return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s, active=%s)' % \
+            (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu, Site.status_name(self.status), Site.activestate_name(self.active))
+
+    def __repr__(self):
+        return 'Site(\'%s\', host=\'%s\', storage_type=%d, backend=\'%s\', storage=%d, cpu=%f, status=%d, active=%d)' % \
+            (self.name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status, self.active)
 
     def unlink(self):
         # unlink objects to avoid ref cycles - should be called when this site is absolutely not needed
@@ -336,16 +368,6 @@ class Site(object):
             replica.block_replicas = []
 
         self._block_replicas.clear()
-
-        self._group_keys = {}
-
-    def __str__(self):
-        return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s, active=%s)' % \
-            (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu, Site.status_name(self.status), Site.activestate_name(self.active))
-
-    def __repr__(self):
-        return 'Site(\'%s\', host=\'%s\', storage_type=%d, backend=\'%s\', storage=%d, cpu=%f, status=%d, active=%d)' % \
-            (self.name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status, self.active)
 
     def find_dataset_replica(self, dataset):
         # very inefficient operation
@@ -368,33 +390,16 @@ class Site(object):
         except StopIteration:
             return None
 
-    def _group_key(self, group):
-        try:
-            return self._group_keys[group]
-        except KeyError:
-            index = len(self._group_keys)
-            self._group_keys[group] = index
-            self._group_quota.append(0)
-            self._occupancy_projected.append(0)
-            self._occupancy_physical.append(0)
-            return index
-
-    def group_present(self, group):
-        if type(group) is str:
-            try:
-                return next(g for g in self._group_keys if g is not None and g.name == group)
-            except StopIteration:
-                return None
-        else:
-            if group in self._group_keys:
-                return group
-
     def add_block_replica(self, replica):
         self._block_replicas.add(replica)
-        index = self._group_key(replica.group)
 
-        self._occupancy_projected[index] += replica.block.size
-        self._occupancy_physical[index] += replica.size
+        ip = 0
+        while ip != len(Site.partitions):
+            if Site._partitions_order[ip](replica):
+                self._occupancy_projected[ip] += replica.block.size
+                self._occupancy_physical[ip] += replica.size
+
+            ip += 1
 
     def remove_block_replica(self, replica):
         try:
@@ -403,41 +408,57 @@ class Site(object):
             print replica.site.name, replica.block.dataset.name, replica.block.name
             raise
 
-        index = self._group_keys[replica.group]
+        ip = 0
+        while ip != len(Site.partitions):
+            if Site._partitions_order[ip](replica):
+                self._occupancy_projected[ip] -= replica.block.size
+                self._occupancy_physical[ip] -= replica.size
 
-        self._occupancy_projected[index] -= replica.block.size
-        self._occupancy_physical[index] -= replica.size
+            ip += 1
 
     def clear_block_replicas(self):
         self._block_replicas.clear()
 
-        for index in self._group_keys.values():
-            self._occupancy_projected[index] = 0
-            self._occupancy_physical[index] = 0
+        ip = 0
+        while ip != len(Site.partitions):
+            self._occupancy_projected[ip] = 0
+            self._occupancy_physical[ip] = 0
+            ip += 1
 
     def set_block_replicas(self, replicas):
         self._block_replicas.clear()
         self._block_replicas.update(replicas)
 
-        for group, index in self._group_keys.items():
-            self._occupancy_projected[index] = sum(r.block.size for r in replicas if r.group == group)
-            self._occupancy_physical[index] = sum(r.size for r in replicas if r.group == group)
+        self.compute_occupancy()
 
-    def group_quota(self, group):
-        index = self._group_key(group)
+    def partition_quota(self, partition):
+        index = Site._partitions_order.index(partition)
 
-        return self._group_quota[index]
+        return self._partition_quota[index]
 
-    def set_group_quota(self, group, quota):
-        index = self._group_key(group)
-        self._group_quota[index] = quota
+    def set_partition_quota(self, partition, quota):
+        index = Site._partitions_order.index(partition)
+        self._partition_quota[index] = quota
 
-    def storage_occupancy(self, groups = [], physical = True):
-        if type(groups) is not list:
-            groups = [groups]
+    def compute_occupancy(self):
+        ip = 0
+        while ip != len(Site.partitions):
+            partition = Site._partitions_order[ip]
+            self._occupancy_projected[ip] = 0
+            self._occupancy_physical[ip] = 0
+            for replica in self._block_replicas:
+                if partition(replica):
+                    self._occupancy_projected[ip] += replica.block.size
+                    self._occupancy_physical[ip] += replica.size
 
-        if len(groups) == 0:
-            denom = sum(self._group_quota)
+            ip += 1
+
+    def storage_occupancy(self, partitions = [], physical = True):
+        if type(partitions) is not list:
+            partitions = [partitions]
+
+        if len(partitions) == 0:
+            denom = sum(self._partition_quota)
             if denom == 0:
                 return 0.
             else:
@@ -448,10 +469,10 @@ class Site(object):
         else:
             numer = 0.
             denom = 0.
-            for group in groups:
-                index = self._group_key(group)
+            for partition in partitions:
+                index = Site._partitions_order.index(partition)
 
-                denom += self._group_quota[index]
+                denom += self._partition_quota[index]
                 if physical:
                     numer += self._occupancy_physical[index] * 1.e-12
                 else:
@@ -462,28 +483,32 @@ class Site(object):
             else:
                 return numer / denom
 
-    def quota(self, groups = []):
-        if len(groups) == 0:
-            return sum(self._group_quota)
+    def quota(self, partitions = []):
+        if len(partitions) == 0:
+            return sum(self._partition_quota)
         else:
             quota = 0.
-            for group in groups:
-                quota += self.group_quota(group)
+            for partition in partitions:
+                quota += self.partition_quota(partition)
     
             return quota
 
 
 class Group(object):
-    """Represents a user group."""
+    """
+    Represents a user group.
+    olevel: ownership level: Dataset or Block
+    """
 
-    def __init__(self, name):
+    def __init__(self, name, olevel = Dataset):
         self.name = name
+        self.olevel = olevel
 
     def __str__(self):
-        return 'Group %s' % self.name
+        return 'Group %s (olevel=%s)' % (self.name, self.olevel.__name__)
 
     def __repr__(self):
-        return 'Group(\'%s\')' % self.name
+        return 'Group(\'%s\', %s)' % (self.name, self.olevel.__name__)
 
 
 class DatasetReplica(object):
