@@ -32,15 +32,12 @@ class Detox(object):
 
         self.policies[policy.partition] = policy
 
-    def run(self, partition = '', is_test = False, comment = '', auto_approval = True):
+    def run(self, partition, is_test = False, comment = '', auto_approval = True):
         """
         Main executable.
         """
 
-        if partition:
-            logger.info('Detox cycle for %s starting at %s', partition, time.strftime('%Y-%m-%d %H:%M:%S'))
-        else:
-            logger.info('Detox cycle starting at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
+        logger.info('Detox cycle for %s starting at %s', partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
 
         if time.time() - self.inventory_manager.store.last_update > config.inventory.refresh_min:
             logger.info('Inventory was last updated at %s. Reloading content from remote sources.', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.inventory_manager.store.last_update)))
@@ -62,9 +59,11 @@ class Detox(object):
         try:
             policy = self.policies[partition]
 
-            if not policy.static_optimization and sum(1 for q in policy.quotas.values() if q < 0.) != 0:
-                logger.error('Positive quota for all sites is required for partition %s.', partition)
-                return
+            if not policy.static_optimization:
+                for site in self.inventory_manager.sites.values():
+                    if site.partition_quota(policy.partition) < 0.: # the site is active but does not have a quota
+                        logger.error('Non-negative quota for all sites is required for partition %s.', partition.name)
+                        return
 
             self.history.save_conditions(policy.rules)
 
@@ -72,7 +71,7 @@ class Detox(object):
             self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
     
             # fetch the copy/deletion run number
-            run_number = self.history.new_deletion_run(partition, policy.version, is_test = is_test, comment = comment)
+            run_number = self.history.new_deletion_run(partition.name, policy.version, is_test = is_test, comment = comment)
     
             logger.info('Preparing deletion run %d', run_number)
     
@@ -81,15 +80,15 @@ class Detox(object):
             self.history.save_sites(run_number, self.inventory_manager)
             self.history.save_datasets(run_number, self.inventory_manager)
             # take snapshots of quotas if updated
-            self.history.save_quotas(run_number, policy.quotas, self.inventory_manager)
+            quotas = dict((site, site.partition_quota(partition)) for site in self.inventory_manager.sites.values())
+            self.history.save_quotas(run_number, quotas)
     
             logger.info('Identifying target sites.')
     
             # Ask each site if deletion should be triggered.
-            # Sites not in READY state or in IGNORE activity state are hard-coded to not be considered.
             target_sites = set()
             for site in self.inventory_manager.sites.values():
-                if site in policy.quotas and policy.quotas[site] != 0. and policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
+                if site.partition_quota(partition) != 0. and policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
                     target_sites.add(site)
 
             logger.info('Identifying dataset replicas in the partition.')
@@ -121,7 +120,7 @@ class Detox(object):
                         all_replicas.remove(replica)
                         protected[replica] = condition
                         if not policy.static_optimization:
-                            protected_fraction[replica.site] += replica.size() / policy.quotas[replica.site]
+                            protected_fraction[replica.site] += replica.size() / replica.site.partition_quota(partition)
 
                     elif decision == Policy.DEC_DELETE_UNCONDITIONAL:
                         self.inventory_manager.unlink_datasetreplica(replica)
@@ -229,7 +228,7 @@ class Detox(object):
                 
                 if not policy.static_optimization:
                     deleted_volume += replica.size() * 1.e-12
-                    if deleted_volume / policy.quotas[site] > detox_config.deletion_per_iteration:
+                    if deleted_volume / site.partition_quota(quota) > detox_config.deletion_per_iteration:
                         break
 
         return deleted
@@ -239,8 +238,8 @@ class Detox(object):
 
         if not comment:
             comment = 'Dynamo -- Automatic cache release request'
-            if policy.partition:
-                comment += ' for %s partition.' % policy.partition
+            if policy.partition.name != 'Global':
+                comment += ' for %s partition.' % policy.partition.name
 
         deleted_replicas = []
 
@@ -362,18 +361,13 @@ if __name__ == '__main__':
     action_list = ActionList()
     action_list.add_action('Delete', site_pattern, dataset_pattern)
 
-    # at the moment partitions are set by groups
-    group = inventory_manager.groups[args.partition]
+    partition = Site.partitions[args.partition]
 
-    quotas = {}
-    for site in inventory_manager.sites.values():
-        quotas[site] = site.group_quota(group)
-
-    policy = Policy(Policy.DEC_PROTECT, [action_list], Policy.ST_GREEDY, quotas, partition = args.partition, replica_requirement = BelongsTo(group))
+    policy = Policy(Policy.DEC_PROTECT, [action_list], Policy.ST_GREEDY, partition = partition, replica_requirement = BelongsTo(group))
 
     detox.set_policy(policy)
 
     if args.dry_run:
         config.read_only = True
 
-    detox.run(partition = args.partition, is_test = not args.production_run)
+    detox.run(partition, is_test = not args.production_run)

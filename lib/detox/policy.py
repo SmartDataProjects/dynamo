@@ -58,7 +58,7 @@ class PolicyLine(object):
 
 class Policy(object):
     """
-    Responsible for partitioning the replicas, setting quotas and activating deletion on sites, and making deletion decisions on replicas.
+    Responsible for partitioning the replicas and activating deletion on sites, and making deletion decisions on replicas.
     The core of the object is a stack of rules (specific rules first) with a fall-back default decision.
     A rule is a callable object that takes a dataset replica as an argument and returns None or (replica, decision, reason)
     """
@@ -67,12 +67,9 @@ class Policy(object):
     DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(1, 4)
     DEC_DELETE_UNCONDITIONAL = 4
 
-    def __init__(self, partition, quotas, partitioning, lines, version):
-        self.quotas = quotas # {site: quota}
+    def __init__(self, partition, lines, version):
         self.partition = partition
-        # An object with two methods dataset = int(DatasetReplica), block = bool(BlockReplica).
-        # dataset return values: 1->drep is in partition, 0->drep is not in partition, -1->drep is partially in partition
-        self.partitioning = partitioning
+
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
 
         self.static_optimization = True
@@ -190,7 +187,7 @@ class Policy(object):
 
         for rule in self.rules:
             if not rule.condition.static:
-                logger.info('Condition %s is dynamic. Turning off static policy evaluation for %s.', str(rule.condition), self.partition)
+                logger.info('Condition %s is dynamic. Turning off static policy evaluation for %s.', str(rule.condition), self.partition.name)
                 self.static_optimization = False
                 break
 
@@ -210,15 +207,6 @@ class Policy(object):
 
         all_replicas = set()
 
-        if self.partitioning is None:
-            # all replicas are in
-            for dataset in datasets:
-                all_replicas.update([replica for replica in dataset.replicas if replica.site in self.quotas and self.quotas[replica.site] != 0.])
-                
-            return all_replicas
-
-        # otherwise sort replicas out
-
         # stacking up replicas (rather than removing them one by one) for efficiency
         site_all_dataset_replicas = collections.defaultdict(list)
         site_all_block_replicas = collections.defaultdict(list)
@@ -229,41 +217,43 @@ class Policy(object):
                 replica = dataset.replicas[ir]
                 site = replica.site
 
-                if site not in self.quotas or self.quotas[site] == 0.:
+                if site.partition_quota(self.partition) == 0.:
                     ir += 1
                     continue
 
-                partitioning = self.partitioning.dataset(replica)
-
-                if partitioning > 0:
+                if self.partition(replica):
                     # this replica is fully in partition
                     site_all_dataset_replicas[site].append(replica)
                     site_all_block_replicas[site].extend(replica.block_replicas)
 
-                elif partitioning == 0:
-                    # this replica is completely not in partition
-                    self.untracked_replicas[replica] = replica.block_replicas
-                    replica.block_replicas = []
-
                 else:
-                    # this replica is partially in partition
-                    site_all_dataset_replicas[site].append(replica)
-
-                    site_block_replicas = site_all_block_replicas[site]
-
-                    block_replicas = []
+                    block_replicas = []                    
                     not_in_partition = []
+
                     for block_replica in replica.block_replicas:
-                        if self.partitioning.block(block_replica):
+                        if self.partition(block_replica):
+                            # this block replica is in partition
+                            if len(block_replicas) == 0:
+                                # first block replica
+                                site_all_dataset_replicas[site].append(replica)
+                                site_block_replicas = site_all_block_replicas[site]
+    
                             site_block_replicas.append(block_replica)
                             block_replicas.append(block_replica)
                         else:
                             not_in_partition.append(block_replica)
 
-                    replica.block_replicas = block_replicas
-    
-                    if len(not_in_partition) != 0:
-                        self.untracked_replicas[replica] = not_in_partition
+                    if len(block_replicas) == 0:
+                        # no block was in the partition
+                        self.untracked_replicas[replica] = replica.block_replicas
+                        replica.block_replicas = []
+
+                    else:
+                        replica.block_replicas = block_replicas
+        
+                        if len(not_in_partition) != 0:
+                            # remember blocks not in partition
+                            self.untracked_replicas[replica] = not_in_partition
 
                 if len(replica.block_replicas) == 0:
                     dataset.replicas.pop(ir)

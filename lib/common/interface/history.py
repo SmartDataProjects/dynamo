@@ -272,7 +272,7 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def save_quotas(self, run_number, quotas, inventory):
+    def save_quotas(self, run_number, quotas):
         """
         Update quota snapshots.
         """
@@ -283,7 +283,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_quotas(run_number, quotas, inventory)
+            self._do_save_quotas(run_number, quotas)
         finally:
             self.release_lock()
 

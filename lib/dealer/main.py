@@ -23,7 +23,7 @@ class Dealer(object):
     def set_policy(self, policy): # empty partition name -> default
         self.policies[policy.partition] = policy
 
-    def run(self, partition = '', is_test = False, comment = '', auto_approval = True):
+    def run(self, partition, is_test = False, comment = '', auto_approval = True):
         """
         1. Update the inventory if necessary.
         2. Update popularity.
@@ -31,10 +31,7 @@ class Dealer(object):
         4. Execute copy.
         """
 
-        if partition:
-            logger.info('Dealer run for %s starting at %s', partition, time.strftime('%Y-%m-%d %H:%M:%S'))
-        else:
-            logger.info('Dealer run starting at %s', time.strftime('%Y-%m-%d %H:%M:%S'))
+        logger.info('Dealer run for %s starting at %s', partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
         
         if time.time() - self.inventory_manager.store.last_update > config.inventory.refresh_min:
             logger.info('Inventory was last updated at %s. Reloading content from remote sources.', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.inventory_manager.store.last_update)))
@@ -46,7 +43,7 @@ class Dealer(object):
 
         policy = self.policies[partition]
 
-        run_number = self.history.new_copy_run(partition, policy.version, is_test = is_test, comment = comment)
+        run_number = self.history.new_copy_run(partition.name, policy.version, is_test = is_test, comment = comment)
 
         # update site and dataset lists
         # take a snapshot of site status
@@ -84,7 +81,7 @@ class Dealer(object):
                 continue
 
             for replica in dataset.replicas:
-                if policy.in_partition(replica):
+                if partition(replica):
                     datasets.append(dataset)
                     break
 
@@ -133,7 +130,7 @@ class Dealer(object):
             # jobs at each site. Normalize this by the capability at each site.
 
             site_business[site] = compute_site_business(site)
-            site_occupancy[site] = policy.site_occupancy(site)
+            site_occupancy[site] = site.storage_occupancy(policy.partition, physical = False)
 
         # now go through datasets sorted by weight / #replicas
         for dataset in datasets:
@@ -173,7 +170,7 @@ class Dealer(object):
                 pending_volumes[destination_site] += dataset_size
     
                 # recompute site properties
-                site_occupancy[destination_site] = policy.site_occupancy(site)
+                site_occupancy[destination_site] = site.storage_occupancy(policy.partition, physical = False)
 
                 for replica in dataset.replicas:
                     site = replica.site
@@ -208,8 +205,8 @@ class Dealer(object):
     def commit_copies(self, run_number, policy, copy_list, is_test, comment, auto_approval):
         if not comment:
             comment = 'Dynamo -- Automatic replication request'
-            if policy.partition:
-                comment += ' for %s partition.' % policy.partition
+            if policy.partition.name != 'Global':
+                comment += ' for %s partition.' % policy.partition.name
 
         for site, replicas in copy_list.items():
             if len(replicas) == 0:
@@ -243,7 +240,7 @@ if __name__ == '__main__':
     parser = ArgumentParser(description = 'Use dealer to copy a specific dataset from a specific site.')
 
     parser.add_argument('replica', metavar = 'SITE:DATASET', help = 'Replica to delete.')
-    parser.add_argument('--group', '-g', metavar = 'GROUP', dest = 'group', default = 'AnalysisOps', help = 'Group name.')
+    parser.add_argument('--partition', '-g', metavar = 'PARTITION', dest = 'partition', default = 'AnalysisOps', help = 'Partition name.')
     parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run',  help = 'Dry run (no write / delete at all)')
     parser.add_argument('--production-run', '-P', action = 'store_true', dest = 'production_run', help = 'This is not a test.')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
@@ -274,26 +271,22 @@ if __name__ == '__main__':
 
     dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history)
 
-    # create a subclass of Policy that allows direct manipulation of specific replicas.
-    class DirectCopy(DealerPolicy):
-        def __init__(self, site_occupancy, partition, site_pattern, dataset_pattern):
-            DealerPolicy.__init__(self, site_occupancy, partition)
+    # create a Partition object that allows direct manipulation of specific replicas.
 
-            self._site_re = re.compile(fnmatch.translate(site_pattern))
-            self._dataset_re = re.compile(fnmatch.translate(dataset_pattern))
+    partition = inventory_manager.partitions[args.partition]
 
-            self.in_partition = lambda replica: self._site_re.match(replica.site.name) and self._dataset_re.match(replica.dataset.name)
+    site_re = re.compile(fnmatch.translate(site_pattern))
+    dataset_re = re.compile(fnmatch.translate(dataset_pattern))
 
-    group = inventory_manager.groups(args.group)
-    sites = inventory_manager.sites.keys()
+    partition_name = args.partition + ':' + args.replica
 
-    site_occupancy = lambda site: site.storage_occupancy(group, physical = False)
+    Site.add_partition(partition_name, lambda replica: site_re.match(replica.site.name) and dataset_re.match(replica.dataset.name))
 
-    direct_copy = DirectCopy(site_occupancy, args.group, site_pattern, dataset_pattern)
+    policy = DealerPolicy(Site.partitions[partition_name])
 
     dealer.set_policy(policy)
 
     if args.dry_run:
         config.read_only = True
 
-    dealer.run(partition = args.partition, is_test = not args.production_run)
+    dealer.run(policy.partition, is_test = not args.production_run)

@@ -117,32 +117,18 @@ if 'detox' in args.module:
     for part_spec in args.detox_partitions:
         partdef = part_spec.split(':')
 
-        partition = partdef[0]
+        part_name = partdef[0]
         if len(partdef) > 1:
             def_name = partdef[1]
         else:
-            def_name = partition
+            def_name = part_name
     
         def_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + def_name + '.txt'
 
-        detox_partitions.append(partition)
-
-        if partition == 'Unsubscribed':
-            group = None
-            partitioning = BelongsTo(None)
-            all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_DISK]
-        else:
-            group = inventory_manager.groups[partition]
-            partitioning = BelongsTo(group)
-            all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_DISK]
-
-        if group:
-            quotas = dict([(site, site.group_quota(group)) for site in all_sites])
-        else:
-            quotas = dict([(site, -1.) for site in all_sites])
+        detox_partitions.append(Site.partitions[part_name])
 
         with open(def_path) as policy_def:    
-            policy = Policy(partition, quotas, partitioning, policy_def, policy_version)
+            policy = Policy(partition, policy_def, policy_version)
     
         detox.set_policy(policy)
 
@@ -152,15 +138,8 @@ if 'dealer' in args.module:
     dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history)
 
     group = inventory_manager.groups['AnalysisOps']
-    quotas = dict([(site, site.group_quota(group)) for site in inventory_manager.sites.values()])
-    
-    site_occupancy = lambda site: site.storage_occupancy(inventory_manager.groups['AnalysisOps'], physical = False)
 
-    def in_analysisops(replica):
-        owner = replica.effective_owner()
-        return owner is not None and owner.name == 'AnalysisOps'
-    
-    policy = DealerPolicy(site_occupancy, quotas, partition = 'AnalysisOps', in_partition = in_analysisops, group = group, version = policy_version)
+    policy = DealerPolicy(Site.partitions['AnalysisOps'], group = group, version = policy_version)
     
     dealer.set_policy(policy)
 
@@ -170,7 +149,7 @@ if args.force_inventory_update:
 
 if 'detox' in args.module:
     for partition in detox_partitions:
-        detox.run(partition = partition, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
+        detox.run(partition, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
 
 if 'dealer' in args.module:
-    dealer.run(partition = 'AnalysisOps', is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
+    dealer.run(Site.partitions['AnalysisOps'], is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)

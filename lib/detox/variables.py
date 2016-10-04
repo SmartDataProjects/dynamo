@@ -65,34 +65,13 @@ replica_request_variables = []
 # Variables that use locks
 replica_lock_variables = ['replica.has_locked_block']
 
-# Site variable definition must be a generator of a function
-# Generator takes a partition as an argument and the return function takes a site as an argument
-def partition_occupancy_comp(partition):
-    def occupancy(site):
-        group = site.group_present(partition)
-        if group is None:
-            return 0.
-        else:
-            return site.storage_occupancy(group)
-
-    return occupancy
-
-def partition_quota(partition):
-    def quota(site):
-        group = site.group_present(partition)
-        if group is None:
-            return 0.
-        else:
-            return site.group_quota(group)
-
-    return quota
-
+# site variable definition: partition -> (site -> value)
 site_vardefs = {
     'site.name': (lambda p: lambda s: s.name, TEXT_TYPE),
     'site.status': (lambda p: lambda s: s.status, NUMERIC_TYPE, lambda v: eval('Site.STAT_' + v)),
     'site.active': (lambda p: lambda s: s.active, NUMERIC_TYPE, lambda v: eval('Site.ACT_' + v)),
-    'site.occupancy': (partition_occupancy_comp, NUMERIC_TYPE),
-    'site.quota': (partition_quota, NUMERIC_TYPE),
+    'site.occupancy': (lambda p: lambda s: s.storage_occupancy([p]), NUMERIC_TYPE),
+    'site.quota': (lambda p: lambda s: s.partition_quota(p), NUMERIC_TYPE),
     'never': (lambda p: lambda s: False, BOOL_TYPE),
     'always': (lambda p: lambda s: True, BOOL_TYPE)
 }

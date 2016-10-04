@@ -13,7 +13,6 @@ from common.demand import DemandManager
 import common.interface.classes as classes
 from detox.main import Detox
 from detox.policy import Policy
-from detox.partitioning import BelongsTo
 import detox.configuration as detox_config
 from common.dataformat import Site
 import common.configuration as config
@@ -69,8 +68,8 @@ for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
         kwd[cls + '_cls'] = getattr(classes, clsname)
 
 # Include tape only if necessary
-for part in args.partitions:
-    if part.startswith('Tape'):
+for part_name in args.partitions:
+    if part_name.startswith('Tape'):
         if len(args.partitions) != 1:
             print 'Tape deletion should be a single execution of its own.'
             sys.exit(1)
@@ -128,36 +127,18 @@ partitions = []
 for part_spec in args.partitions:
     partdef = part_spec.split(':')
 
-    partition = partdef[0]
+    part_name = partdef[0]
     if len(partdef) > 1:
         def_name = partdef[1]
     else:
-        def_name = partition
+        def_name = part_name
 
     def_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + def_name + '.txt'
 
-    partitions.append(partition)
-
-    if partition == 'Tape':
-        group = None
-        partitioning = None
-        all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_MSS]
-    elif partition == 'Unsubscribed':
-        group = None
-        partitioning = BelongsTo(None)
-        all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_DISK]
-    else:
-        group = inventory_manager.groups[partition]
-        partitioning = BelongsTo(group)
-        all_sites = [site for site in inventory_manager.sites.values() if site.storage_type == Site.TYPE_DISK]
-
-    if group:
-        quotas = dict([(site, site.group_quota(group)) for site in all_sites])
-    else:
-        quotas = dict([(site, -1.) for site in all_sites])
+    partitions.append(Site.partitions[part_name])
 
     with open(def_path) as policy_def:
-        policy = Policy(partition, quotas, partitioning, policy_def, policy_version)
+        policy = Policy(partition, policy_def, policy_version)
 
     detox.set_policy(policy)
 
@@ -165,4 +146,4 @@ if args.force_inventory_update:
     inventory_manager.update()
 
 for partition in partitions:
-    detox.run(partition = partition, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
+    detox.run(partition, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)

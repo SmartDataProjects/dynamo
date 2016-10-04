@@ -10,25 +10,22 @@ class SiteQuotaRetriever(object):
     def __init__(self):
         self._mysql = MySQL(config_file = '/etc/my.cnf', config_group = 'mysql-ddm', db = 'IntelROCCS')
 
-    def get_quota(self, site, group):
-        if site.name.endswith('_MSS'):
-            return 18000
-
-        group_name = group.name
+    def get_quota(self, site, partition):
+        partition_name = partition.name
         # IntelROCCS replaces IB RelVal with IB-RelVal
-        if group_name == 'IB RelVal':
-            group_name = 'IB-RelVal'
+        if partition_name == 'IB RelVal':
+            partition_name = 'IB-RelVal'
 
-        entry = self._mysql.query('SELECT q.`SizeTb` FROM `Quotas` AS q INNER JOIN `Sites` AS s ON s.`SiteId` = q.`SiteId` INNER JOIN `Groups` AS g ON g.`GroupId` = q.`GroupId` WHERE s.`SiteName` LIKE %s AND g.`GroupName` LIKE %s ORDER BY q.`EntryDateUT` DESC LIMIT 1', site.name, group_name)
+        entry = self._mysql.query('SELECT q.`SizeTb` FROM `Quotas` AS q INNER JOIN `Sites` AS s ON s.`SiteId` = q.`SiteId` INNER JOIN `Groups` AS g ON g.`GroupId` = q.`GroupId` WHERE s.`SiteName` LIKE %s AND g.`GroupName` LIKE %s ORDER BY q.`EntryDateUT` DESC LIMIT 1', site.name, partition_name)
 
         if len(entry) == 0:
-            return 0
+            return 0.
 
         return entry[0]
 
     def get_status(self, site):
-        if site.name.endswith('_MSS'):
-            return Site.ACT_NOCOPY
+#        if site.storage_type == Site.TYPE_MSS:
+#            return Site.ACT_NOCOPY
 
         entry = self._mysql.query('SELECT `Status` FROM `Sites` WHERE `SiteName` LIKE %s', site.name)
 

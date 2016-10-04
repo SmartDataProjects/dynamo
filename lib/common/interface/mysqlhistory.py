@@ -212,7 +212,7 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('datasets', ('name',), lambda n: (n,), datasets_to_insert)
         self._make_dataset_id_map()
 
-    def _do_save_quotas(self, run_number, quotas, inventory): #override
+    def _do_save_quotas(self, run_number, quotas): #override
         if len(self._site_id_map) == 0:
             self._make_site_id_map()
 
@@ -230,14 +230,14 @@ class MySQLHistory(TransactionHistoryInterface):
 
         for site_name, last_quota in record:
             try:
-                site = inventory.sites[site_name]
+                site, quota = next(item for item in quotas.items())
             except KeyError:
                 continue
 
             sites_in_record.add(site)
 
-            if last_quota != quotas[site]:
-                self._mysql.query(insert_query, self._site_id_map[site.name], quotas[site])
+            if last_quota != quota:
+                self._mysql.query(insert_query, self._site_id_map[site.name], quota)
 
         for site, quota in quotas.items():
             if site not in sites_in_record:
