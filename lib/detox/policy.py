@@ -240,39 +240,33 @@ class Policy(object):
                     ir += 1
                     continue
 
-                if self.partition(replica):
-                    # this replica is fully in partition
-                    site_all_dataset_replicas[site].append(replica)
-                    site_all_block_replicas[site].extend(replica.block_replicas)
+                block_replicas = []                    
+                not_in_partition = []
+
+                for block_replica in replica.block_replicas:
+                    if self.partition(block_replica):
+                        # this block replica is in partition
+                        if len(block_replicas) == 0:
+                            # first block replica
+                            site_all_dataset_replicas[site].append(replica)
+                            site_block_replicas = site_all_block_replicas[site]
+
+                        site_block_replicas.append(block_replica)
+                        block_replicas.append(block_replica)
+                    else:
+                        not_in_partition.append(block_replica)
+
+                if len(block_replicas) == 0:
+                    # no block was in the partition
+                    self.untracked_replicas[replica] = replica.block_replicas
+                    replica.block_replicas = []
 
                 else:
-                    block_replicas = []                    
-                    not_in_partition = []
-
-                    for block_replica in replica.block_replicas:
-                        if self.partition(block_replica):
-                            # this block replica is in partition
-                            if len(block_replicas) == 0:
-                                # first block replica
-                                site_all_dataset_replicas[site].append(replica)
-                                site_block_replicas = site_all_block_replicas[site]
+                    replica.block_replicas = block_replicas
     
-                            site_block_replicas.append(block_replica)
-                            block_replicas.append(block_replica)
-                        else:
-                            not_in_partition.append(block_replica)
-
-                    if len(block_replicas) == 0:
-                        # no block was in the partition
-                        self.untracked_replicas[replica] = replica.block_replicas
-                        replica.block_replicas = []
-
-                    else:
-                        replica.block_replicas = block_replicas
-        
-                        if len(not_in_partition) != 0:
-                            # remember blocks not in partition
-                            self.untracked_replicas[replica] = not_in_partition
+                    if len(not_in_partition) != 0:
+                        # remember blocks not in partition
+                        self.untracked_replicas[replica] = not_in_partition
 
                 if len(replica.block_replicas) == 0:
                     dataset.replicas.pop(ir)

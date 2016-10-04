@@ -8,7 +8,7 @@ import sys
 import os
 
 import common.configuration as config
-from common.dataformat import Site, DatasetReplica, BlockReplica
+from common.dataformat import Dataset, Block, Site, DatasetReplica, BlockReplica
 from policy import Dismiss, Delete, Keep, Protect, Policy
 import detox.configuration as detox_config
 from common.misc import timer, parallel_exec, sigint
@@ -101,6 +101,7 @@ class Detox(object):
     
             protected = {} # {replica: condition_id}
             deleted = {}
+            reowned = {} # {replica: (condition_id, new_owner)}. re-owned datasets will appear as kept in history
 
             protected_fraction = collections.defaultdict(float) # {site: protected size}
     
@@ -123,9 +124,29 @@ class Detox(object):
                             protected_fraction[replica.site] += replica.size() / replica.site.partition_quota(partition)
 
                     elif isinstance(decision, Delete):
-                        self.inventory_manager.unlink_datasetreplica(replica)
-                        all_replicas.remove(replica)
-                        deleted[replica] = condition
+                        reassign = False
+                        if isinstance(decision, DeleteOwner):
+                            # may need to reassign ownership for parts instead of deleting
+                            dr_owner = None
+                            has_matching = False
+                            for block_replica in replica:
+                                if block_replica.group.olevel is Dataset and dr_owner is None:
+                                    # there is a dataset-level owner
+                                    dr_owner = block_replica.group
+
+                                if block_replica.group in decision.groups:
+                                    # have at least one block to reassign
+                                    has_matching = True
+
+                            if dr_owner is not None and has_matching:
+                                reassign = True
+                                all_replicas.remove(replica)
+                                reowned[replica] = (condition, dr_owner)
+
+                        if not reassign:
+                            self.inventory_manager.unlink_datasetreplica(replica)
+                            all_replicas.remove(replica)
+                            deleted[replica] = condition
     
                     elif replica.site in target_sites:
                         deletion_candidates[replica.site][replica] = condition
@@ -164,8 +185,11 @@ class Detox(object):
             kept = {}
             # remaining replicas not in protected or deleted are kept
             for replica, decision, condition in eval_results:
-                if not isinstance(decision, Protect) and replica not in deleted:
+                if not isinstance(decision, Protect) and replica not in deleted and replica not in reowned:
                     kept[replica] = condition
+
+            for replica, (condition, dr_owner, matching_brs) in reowned.items():
+                kept[replica] = condition
     
             for rule in policy.rules:
                 if hasattr(rule, 'has_match') and not rule.has_match:
@@ -175,6 +199,10 @@ class Detox(object):
             logger.info('Saving deletion decisions.')
 
             self.history.save_deletion_decisions(run_number, deleted, kept, protected)
+            
+            if len(reowned) != 0:
+                logger.info('Reassigning ownership.')
+                self.reassign_owner([(dr_owner, matching_brs) for condition, dr_owner, matching_brs in reowned.values()])
     
             logger.info('Committing deletion.')
             deleted_replicas = self.commit_deletions(run_number, policy, deleted.keys(), is_test, comment, auto_approval)
@@ -232,6 +260,10 @@ class Detox(object):
                         break
 
         return deleted
+
+    def reassign_owner(self, reassignment):
+        for new_owner, block_replicas in reassignment:
+            self.transaction_manager.copy.schedule_reassignments(block_replicas, new_owner, 'Dynamo -- Group reassignment')
 
     def commit_deletions(self, run_number, policy, deletion_list, is_test, comment, auto_approval):
         sites = set(r.site for r in deletion_list)

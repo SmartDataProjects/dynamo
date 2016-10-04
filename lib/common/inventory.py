@@ -5,7 +5,7 @@ import re
 from common.interface.classes import default_interface
 from common.interface.store import LocalStoreInterface
 from common.interface.sitequota import SiteQuotaRetriever
-from common.dataformat import IntegrityError, Dataset, DatasetReplica, BlockReplica
+from common.dataformat import IntegrityError, Dataset, Site, DatasetReplica, BlockReplica
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,8 @@ class ConsistencyError(Exception):
     
     pass
 
+# Create partitions
+Site.set_partitions(config.inventory.partitions)
 
 class InventoryManager(object):
     """Bookkeeping class to bridge the communication between remote and local data sources."""
@@ -173,8 +175,6 @@ class InventoryManager(object):
 
     def create_partitions(self):
         Site.clear_partitions()
-        for name, generator in config.inventory.partitions:
-            Site.add_partition(name, generator(self, name))
 
     def unlink_datasetreplica(self, replica):
         """

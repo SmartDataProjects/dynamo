@@ -43,7 +43,6 @@ class DemandManager(object):
 
     def load(self, inventory):
         sites = inventory.sites.values()
-        groups = inventory.groups.values()
         datasets = inventory.datasets.values()
 
         logger.info('Loading dataset access information.')

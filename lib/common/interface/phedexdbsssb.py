@@ -91,18 +91,25 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         request_mapping = {}
 
         def run_subscription_request(site, replica_list):
-            catalogs = {}
+            # replica_list can contain DatasetReplica and BlockReplica mixed
+
+            catalogs = collections.defaultdict(list)
 
             level = 'dataset'
 
-            for drep in replica_list:
-                dataset = drep.dataset
-                replica_blocks = [r.block for r in drep.block_replicas]
+            for replica in replica_list:
+                if type(replica) is DatasetReplica:
+                    dataset = replica.dataset
+                    replica_blocks = [r.block for r in replica.block_replicas]
 
-                if set(replica_blocks) == set(dataset.blocks):
-                    catalogs[dataset] = []
-                else:
-                    catalogs[dataset] = replica_blocks
+                    if set(replica_blocks) == set(dataset.blocks):
+                        catalogs[dataset] = []
+                    else:
+                        catalogs[dataset].extend(replica_blocks)
+                        level = 'block'
+
+                elif type(replica) is BlockReplica:
+                    catalogs[replica.block.dataset].append(replica)
                     level = 'block'
 
             options = {
@@ -155,13 +162,21 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             chunk_size = 0
             for replica in replica_list:
                 subscription_chunk.append(replica)
-                chunk_size += replica.size(physical = False)
+                if type(replica) is DatasetReplica:
+                    chunk_size += replica.size(physical = False)
+                elif type(replica) is BlockReplica:
+                    chunk_size += replica.block.size
+
                 if chunk_size >= config.phedex.subscription_chunk_size or replica == replica_list[-1]:
                     run_subscription_request(site, subscription_chunk)
                     subscription_chunk = []
                     chunk_size = 0
 
         return request_mapping
+
+    def schedule_reassignments(self, replicas, group, comments = '', auto_approval = True, is_test = False): #override (CopyInterface)
+        # for PhEDEx, copying and ownership reassignment are the same thing
+        self.schedule_copies(replicas, group, comments, auto_approval, is_test)
 
     def schedule_deletion(self, replica, comments = '', auto_approval = True, is_test = False): #override (DeletionInterface)
         if replica.site.storage_type == Site.TYPE_MSS and config.daemon_mode:
@@ -490,7 +505,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 dataset_replica = DatasetReplica(
                                     dataset,
                                     site,
-                                    group = group,
                                     is_complete = True,
                                     is_custodial = False,
                                     last_block_created = 0
@@ -502,9 +516,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                             if replica_entry['time_update'] > dataset_replica.last_block_created:
                                 dataset_replica.last_block_created = replica_entry['time_update']
-
-                            if group != dataset_replica.group:
-                                dataset_replica.group = None
 
                             # PhEDEx 'complete' flag cannot be trusted; defining completeness in terms of size.
                             is_complete = (replica_entry['bytes'] == block.size)

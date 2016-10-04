@@ -28,6 +28,12 @@ class CopyInterface(object):
 
         return request_mapping
 
+    def schedule_reassignments(self, replica_list, group, comments = '', auto_approval = True, is_test = False):
+        """
+        Reassign replica_list to group.
+        """
+        return {}
+
     def copy_status(self, operation_id):
         """
         Returns the completion status specified by the operation id as a

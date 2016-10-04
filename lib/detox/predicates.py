@@ -23,11 +23,16 @@ class Predicate(object):
                 raise InvalidOperator(op)
 
             return BinaryExpr.get(vardef, op, rhs_expr)
-        elif op in SetExpr.operators:
+        elif op in RightSetExpr.operators:
             if rhs_expr == '':
                 raise InvalidOperator(op)
 
-            return SetExpr.get(vardef, op, rhs_expr)
+            return RightSetExpr.get(vardef, op, rhs_expr)
+        elif op in LeftSetExpr.operators:
+            if rhs_expr == '':
+                raise InvalidOperator(op)
+
+            return LeftSetExpr.get(vardef, op, rhs_expr)
         else:
             raise InvalidOperator(op)
 
@@ -154,7 +159,7 @@ class Unmatch(PatternExpr):
         else:
             return self.vmap(obj) != self.rhs
 
-class SetExpr(Predicate):
+class RightSetExpr(Predicate):
     operators = ['in', 'notin']
 
     @staticmethod
@@ -163,6 +168,10 @@ class SetExpr(Predicate):
             return In(vardef, elems_expr)
         elif op == 'notin':
             return Notin(vardef, elems_expr)
+        elif op == 'contains':
+            return Contains(vardef, elems_expr)
+        elif op == 'doesnotcontain':
+            return DoesNotContain(vardef, elems_expr)
         else:
             raise InvalidOperator(op)
 
@@ -185,7 +194,7 @@ class SetExpr(Predicate):
         except:
             raise InvalidExpression(matches.group(1))
 
-class In(SetExpr):
+class In(RightSetExpr):
     def __call__(self, obj):
         if self.vtype == variables.NUMERIC_TYPE:
             return self.vmap(obj) in self.elems
@@ -197,6 +206,47 @@ class In(SetExpr):
             except StopIteration:
                 return False
 
-class Notin(SetExpr):
+class Notin(RightSetExpr):
     def __call__(self, obj):
         return not In.__call__(self, obj)
+
+class LeftSetExpr(Predicate):
+    operators = ['contains', 'doesnotcontain']
+
+    @staticmethod
+    def get(vardef, op, rhs_expr):
+        if op == 'contains':
+            return Contains(vardef, rhs_expr)
+        elif op == 'doesnotcontain':
+            return DoesNotContain(vardef, rhs_expr)
+        else:
+            raise InvalidOperator(op)
+
+    def __init__(self, vardef, rhs_expr):
+        Predicate.__init__(self, *vardef)
+
+        try:
+            if self.vtype == variables.NUMERIC_TYPE:
+                self.test = int(rhs_expr)
+            elif self.vtype == variables.TEXT_TYPE:
+                self.test = re.compile(fnmatch.translate(rhs_expr))
+            else:
+                raise Exception()
+        except:
+            raise InvalidExpression(rhs_expr)
+
+class Contains(LeftSetExpr):
+    def __call__(self, obj):
+        if self.vtype == variables.NUMERIC_TYPE:
+            return self.test in self.vmap(obj)
+        else:
+            elems = self.vmap(obj)
+            try:
+                next(e for e in elems if self.test.match(e))
+                return True
+            except StopIteration:
+                return False
+
+class DoesNotContain(RightSetExpr):
+    def __call__(self, obj):
+        return not Contains.__call__(self, obj)

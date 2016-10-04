@@ -302,6 +302,7 @@ class Site(object):
     class Partition(object):
         """
         Defines storage partitioning.
+        _partitioning: A function that takes a block replica and return whether the replica is in partition
         """
 
         def __init__(self, name, func):
@@ -314,17 +315,13 @@ class Site(object):
     partitions = {}
     _partitions_order = []
 
+    # must be called before any Site is instantiated
     @staticmethod
-    def add_partition(name, func):
-        index = len(Site._partitions)
-        partition = Partition(name, func)
-        Site.partitions[name] = partition
-        Site._partitions_order.append(partition)
-
-    @staticmethod
-    def clear_partitions():
-        Site.partitions = {}
-        Site._partitions_order = []
+    def set_partitions(config):
+        for name, func in config:
+            partition = Site.Partition(name, func)
+            Site.partitions[name] = partition
+            Site._partitions_order.append(partition)
 
 
     def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN, active = ACT_AVAILABLE):
@@ -505,7 +502,7 @@ class Group(object):
     olevel: ownership level: Dataset or Block
     """
 
-    def __init__(self, name, olevel = Dataset):
+    def __init__(self, name, olevel = Block):
         self.name = name
         self.olevel = olevel
 
@@ -524,10 +521,9 @@ class DatasetReplica(object):
     ACC_LOCAL, ACC_REMOTE = range(1, 3)
     Access = collections.namedtuple('Access', ['num_accesses', 'cputime'])
 
-    def __init__(self, dataset, site, group = None, is_complete = False, is_custodial = False, last_block_created = 0):
+    def __init__(self, dataset, site, is_complete = False, is_custodial = False, last_block_created = 0):
         self.dataset = dataset
         self.site = site
-        self.group = group # None also if owned by multiple groups
         self.is_complete = is_complete # = complete subscription. Can still be partial
         self.is_custodial = is_custodial
         self.last_block_created = last_block_created
@@ -547,9 +543,9 @@ class DatasetReplica(object):
         self.site = None
 
     def __str__(self):
-        return 'DatasetReplica {site}:{dataset} (group={group}, is_complete={is_complete}, is_custodial={is_custodial},' \
+        return 'DatasetReplica {site}:{dataset} (is_complete={is_complete}, is_custodial={is_custodial},' \
             ' block_replicas={block_replicas}, #accesses[LOCAL]={num_local_accesses}, #accesses[REMOTE]={num_remote_accesses})'.format(
-                site = self.site.name, dataset = self.dataset.name, group = self.group.name if self.group is not None else None, is_complete = self.is_complete,
+                site = self.site.name, dataset = self.dataset.name, is_complete = self.is_complete,
                 is_custodial = self.is_custodial,
                 block_replicas = str(self.block_replicas), num_local_accesses = len(self.accesses[DatasetReplica.ACC_LOCAL]),
                 num_remote_accesses = len(self.accesses[DatasetReplica.ACC_REMOTE]))
@@ -557,7 +553,6 @@ class DatasetReplica(object):
     def __repr__(self):
         rep = 'DatasetReplica(%s,\n' % repr(self.dataset)
         rep += '    %s,\n' % repr(self.site)
-        rep += '    group=%s,\n' % repr(self.group)
         rep += '    is_complete=%s,\n' % str(self.is_complete)
         rep += '    is_custodial=%s,\n' % str(self.is_custodial)
         rep += '    last_block_created=%d)' % self.last_block_created
@@ -565,7 +560,7 @@ class DatasetReplica(object):
         return rep
 
     def clone(self, block_replicas = True): # Create a detached clone. Detached in the sense that it is not linked from dataset or site.
-        replica = DatasetReplica(dataset = self.dataset, site = self.site, group = self.group, is_complete = self.is_complete, is_custodial = self.is_custodial, last_block_created = self.last_block_created)
+        replica = DatasetReplica(dataset = self.dataset, site = self.site, is_complete = self.is_complete, is_custodial = self.is_custodial, last_block_created = self.last_block_created)
 
         if block_replicas:
             for brep in self.block_replicas:
@@ -582,27 +577,30 @@ class DatasetReplica(object):
     def is_full(self):
         return self.is_complete and len(self.block_replicas) == len(self.dataset.blocks)
 
-    def size(self, groups = None, physical = True):
-        if groups is None:
-            if self.is_full():
-                return self.dataset.size()
-            else:
-                if physical:
-                    return sum([r.size for r in self.block_replicas])
-                else:
-                    return sum([r.block.size for r in self.block_replicas])
-
-        elif type(groups) is Group:
+    def size(self, groups = [], physical = True):
+        if groups is None or type(groups) is Group:
+            # single group given
             if physical:
                 return sum([r.size for r in self.block_replicas if r.group == groups])
             else:
                 return sum([r.block.size for r in self.block_replicas if r.group == groups])
 
-        elif type(groups) is list:
-            if physical:
-                return sum([r.size for r in self.block_replicas if r.group in groups])
+        else: # expect a list
+            if len(groups) == 0:
+                # no group spec
+                if self.is_full():
+                    return self.dataset.size()
+                else:
+                    if physical:
+                        return sum([r.size for r in self.block_replicas])
+                    else:
+                        return sum([r.block.size for r in self.block_replicas])
+
             else:
-                return sum([r.block.size for r in self.block_replicas if r.group in groups])
+                if physical:
+                    return sum([r.size for r in self.block_replicas if r.group in groups])
+                else:
+                    return sum([r.block.size for r in self.block_replicas if r.group in groups])
 
     def find_block_replica(self, block):
         try:
