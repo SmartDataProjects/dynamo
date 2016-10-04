@@ -604,32 +604,6 @@ class DatasetReplica(object):
             else:
                 return sum([r.block.size for r in self.block_replicas if r.group in groups])
 
-    def effective_owner(self):
-        if self.group:
-            return self.group
-
-        if len(self.block_replicas) == 0:
-            return None
-
-        # simple majority
-        counts = collections.defaultdict(int)
-        for br in self.block_replicas:
-            if br.group is not None:
-                counts[br.group] += 1
-
-        if len(counts) == 0:
-            return None
-        elif len(counts) == 1:
-            return counts.keys()[0]
-
-        order = sorted(counts.items(), key = lambda (g, c): c, reverse = True)
-
-        if order[0][1] > order[1][1]:
-            return order[0][0]
-        else:
-            # if tied, find alphanumerically first group
-            return min([g for g, c in order if c == order[0][1]], key = lambda g: g.name)
-
     def find_block_replica(self, block):
         try:
             if type(block) is Block:
@@ -652,14 +626,14 @@ class DatasetReplica(object):
 # Block and BlockReplica implemented as tuples to reduce memory footprint
 BlockReplica = collections.namedtuple('BlockReplica', ['block', 'site', 'group', 'is_complete', 'is_custodial', 'size'])
 
-def _BlockReplica_clone(self, block = None, site = None, group = None, is_complete = None, is_custodial = None, size = None):
+def _BlockReplica_clone(self, **kwd):
     return BlockReplica(
-        self.block if block is None else block,
-        self.site if site is None else site,
-        self.group if group is None else group,
-        self.is_complete if is_complete is None else is_complete,
-        self.is_custodial if is_custodial is None else is_custodial,
-        self.size if size is None else size
+        self.block if 'block' not in kwd else kwd['block'],
+        self.site if 'site' not in kwd else kwd['site'],
+        self.group if 'group' not in kwd else kwd['group'],
+        self.is_complete if 'is_complete' not in kwd else kwd['is_complete'],
+        self.is_custodial if 'is_custodial' not in kwd else kwd['is_custodial'],
+        self.size if 'size' not in kwd else kwd['size']
     )
 
 BlockReplica.clone = _BlockReplica_clone
