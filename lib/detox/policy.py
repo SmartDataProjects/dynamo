@@ -19,6 +19,25 @@ class ConfigurationError(Exception):
     def __str__(self):
         return repr(self.str)
 
+class Decision(object):
+    pass
+
+class Dismiss(Decision):
+    pass
+
+class Delete(Decision):
+    pass
+
+class DeleteOwner(Delete):
+    def __init__(self, groups):
+        self.groups = groups
+
+class Keep(Decision):
+    pass
+
+class Protect(Decision):
+    pass
+
 class PolicyLine(object):
     """
     Call this Policy when fixing the terminology.
@@ -63,11 +82,7 @@ class Policy(object):
     A rule is a callable object that takes a dataset replica as an argument and returns None or (replica, decision, reason)
     """
 
-    # do not change order - used by history records
-    DEC_DELETE, DEC_KEEP, DEC_PROTECT = range(1, 4)
-    DEC_DELETE_UNCONDITIONAL = 4
-
-    def __init__(self, partition, lines, version):
+    def __init__(self, partition, lines, version, inventory):
         self.partition = partition
 
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
@@ -76,11 +91,11 @@ class Policy(object):
         self.uses_accesses = False
         self.uses_requests = False
         self.uses_locks = False
-        self.parse_rules(lines)
+        self.parse_rules(lines, inventory)
 
         self.version = version
 
-    def parse_rules(self, lines):
+    def parse_rules(self, lines, inventory):
         if type(lines) is file:
             conf = lines
             lines = map(str.strip, conf.read().split('\n'))
@@ -113,14 +128,18 @@ class Policy(object):
             elif words[0] == 'Order':
                 line_type = LINE_ORDER
             elif words[0] == 'Protect':
-                decision = Policy.DEC_PROTECT
+                decision = Protect()
                 line_type = LINE_POLICY
             elif words[0] == 'Dismiss':
-                # will be set to KEEP if deletion is not needed
-                decision = Policy.DEC_DELETE
+                decision = Dismiss()
                 line_type = LINE_POLICY
             elif words[0] == 'Delete':
-                decision = Policy.DEC_DELETE_UNCONDITIONAL
+                decision = Delete()
+                line_type = LINE_POLICY
+            elif words[0].startswith('DeleteOwner'):
+                group_names = re.match('DeleteOwner\(([^)]+)\)', words[1]).group(1).split(',')
+                groups = [inventory.groups[n] for n in group_names]
+                decision = DeleteOwner(groups)
                 line_type = LINE_POLICY
             else:
                 raise ConfigurationError(line)
@@ -157,16 +176,16 @@ class Policy(object):
                 cond_text = ' '.join(words[1:])
 
                 if line_type == LINE_SITE_TARGET:
-                    self.target_site_def = SiteCondition(cond_text, self.partition)
+                    self.target_site_def = SiteCondition(cond_text, self.partition, inventory)
 
                 elif line_type == LINE_DELETION_TRIGGER:
-                    self.deletion_trigger = SiteCondition(cond_text, self.partition)
+                    self.deletion_trigger = SiteCondition(cond_text, self.partition, inventory)
 
                 elif line_type == LINE_STOP_CONDITION:
-                    self.stop_condition = SiteCondition(cond_text, self.partition)
+                    self.stop_condition = SiteCondition(cond_text, self.partition, inventory)
 
                 elif line_type == LINE_POLICY:
-                    self.rules.append(PolicyLine(decision, cond_text))
+                    self.rules.append(PolicyLine(decision, cond_text, inventory))
 
         if self.target_site_def is None:
             raise ConfigurationError('Target site definition missing.')

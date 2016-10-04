@@ -9,7 +9,7 @@ import os
 
 import common.configuration as config
 from common.dataformat import Site, DatasetReplica, BlockReplica
-from policy import Policy
+from policy import Dismiss, Delete, Keep, Protect, Policy
 import detox.configuration as detox_config
 from common.misc import timer, parallel_exec, sigint
 
@@ -116,13 +116,13 @@ class Detox(object):
                 deletion_candidates = collections.defaultdict(dict) # {site: {replica: condition_id}}
     
                 for replica, decision, condition in eval_results:
-                    if decision == Policy.DEC_PROTECT:
+                    if isinstance(decision, Protect):
                         all_replicas.remove(replica)
                         protected[replica] = condition
                         if not policy.static_optimization:
                             protected_fraction[replica.site] += replica.size() / replica.site.partition_quota(partition)
 
-                    elif decision == Policy.DEC_DELETE_UNCONDITIONAL:
+                    elif isinstance(decision, Delete):
                         self.inventory_manager.unlink_datasetreplica(replica)
                         all_replicas.remove(replica)
                         deleted[replica] = condition
@@ -164,7 +164,7 @@ class Detox(object):
             kept = {}
             # remaining replicas not in protected or deleted are kept
             for replica, decision, condition in eval_results:
-                if decision != Policy.DEC_PROTECT and replica not in deleted:
+                if not isinstance(decision, Protect) and replica not in deleted:
                     kept[replica] = condition
     
             for rule in policy.rules:

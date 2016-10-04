@@ -138,7 +138,7 @@ for part_spec in args.partitions:
     partitions.append(Site.partitions[part_name])
 
     with open(def_path) as policy_def:
-        policy = Policy(partition, policy_def, policy_version)
+        policy = Policy(partition, policy_def, policy_version, inventory_manager)
 
     detox.set_policy(policy)
 

@@ -128,7 +128,7 @@ if 'detox' in args.module:
         detox_partitions.append(Site.partitions[part_name])
 
         with open(def_path) as policy_def:    
-            policy = Policy(partition, policy_def, policy_version)
+            policy = Policy(partition, policy_def, policy_version, inventory_manager)
     
         detox.set_policy(policy)
 
