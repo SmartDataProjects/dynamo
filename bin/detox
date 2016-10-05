@@ -135,7 +135,9 @@ for part_spec in args.partitions:
 
     def_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + def_name + '.txt'
 
-    partitions.append(Site.partitions[part_name])
+    partition = Site.partitions[part_name]
+
+    partitions.append(partition)
 
     with open(def_path) as policy_def:
         policy = Policy(partition, policy_def, policy_version, inventory_manager)

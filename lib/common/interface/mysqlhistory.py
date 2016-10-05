@@ -230,7 +230,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         for site_name, last_quota in record:
             try:
-                site, quota = next(item for item in quotas.items())
+                site, quota = next(item for item in quotas.items() if item[0].name == site_name)
             except KeyError:
                 continue
 

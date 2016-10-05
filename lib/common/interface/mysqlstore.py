@@ -902,7 +902,7 @@ class MySQLStore(LocalStoreInterface):
             self._sites_to_ids[site] = site_id
             self._ids_to_sites[site_id] = site
 
-     def _set_group_ids(self, groups):
+    def _set_group_ids(self, groups):
         # reset id maps to the current content in the DB.
 
         self._groups_to_ids = {}

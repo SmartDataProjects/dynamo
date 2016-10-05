@@ -81,8 +81,6 @@ class InventoryManager(object):
             self.groups = dict((g.name, g) for g in groups)
             self.datasets = dict((d.name, d) for d in datasets)
 
-            self.create_partitions()
-
             for site in sites:
                 site.compute_occupancy()
                 for partition in Site.partitions.values():
@@ -140,8 +138,6 @@ class InventoryManager(object):
 
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
-            self.create_partitions()
-
             # First get information on all replicas in the system, possibly creating datasets / blocks along the way.
             if dataset_filter == '/*/*/*':
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
@@ -172,9 +168,6 @@ class InventoryManager(object):
         finally:
             # Lock is released even in case of unexpected errors
             self.store.release_lock(force = True)
-
-    def create_partitions(self):
-        Site.clear_partitions()
 
     def unlink_datasetreplica(self, replica):
         """

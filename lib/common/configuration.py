@@ -111,13 +111,13 @@ inventory.included_groups = [
 ]
 # list of (partition name, partitioning function)
 inventory.partitions = [
-    ('AnalysisOps', lambda r: r.group.name == 'AnalysisOps'),
-    ('DataOps', lambda r: r.group.name == 'DataOps'),
-    ('RelVal', lambda r: r.group.name == 'RelVal'),
-    ('caf-comm', lambda r: r.group.name == 'caf-comm'),
-    ('caf-alca', lambda r: r.group.name == 'caf-alca'),
-    ('local', lambda r: r.group.name == 'local'),
-    ('IB RelVal', lambda r: r.group.name == 'IB RelVal'),
+    ('AnalysisOps', lambda r: r.group is not None and r.group.name == 'AnalysisOps'),
+    ('DataOps', lambda r: r.group is not None and r.group.name == 'DataOps'),
+    ('RelVal', lambda r: r.group is not None and r.group.name == 'RelVal'),
+    ('caf-comm', lambda r: r.group is not None and r.group.name == 'caf-comm'),
+    ('caf-alca', lambda r: r.group is not None and r.group.name == 'caf-alca'),
+    ('local', lambda r: r.group is not None and r.group.name == 'local'),
+    ('IB RelVal', lambda r: r.group is not None and r.group.name == 'IB RelVal'),
     ('Tape', lambda r: r.site.storage_type == Site.TYPE_MSS),
     ('Unsubscribed', lambda r: r.group is None)
 ]

@@ -176,16 +176,16 @@ class Policy(object):
                 cond_text = ' '.join(words[1:])
 
                 if line_type == LINE_SITE_TARGET:
-                    self.target_site_def = SiteCondition(cond_text, self.partition, inventory)
+                    self.target_site_def = SiteCondition(cond_text, self.partition)
 
                 elif line_type == LINE_DELETION_TRIGGER:
-                    self.deletion_trigger = SiteCondition(cond_text, self.partition, inventory)
+                    self.deletion_trigger = SiteCondition(cond_text, self.partition)
 
                 elif line_type == LINE_STOP_CONDITION:
-                    self.stop_condition = SiteCondition(cond_text, self.partition, inventory)
+                    self.stop_condition = SiteCondition(cond_text, self.partition)
 
                 elif line_type == LINE_POLICY:
-                    self.rules.append(PolicyLine(decision, cond_text, inventory))
+                    self.rules.append(PolicyLine(decision, cond_text))
 
         if self.target_site_def is None:
             raise ConfigurationError('Target site definition missing.')
