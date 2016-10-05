@@ -28,7 +28,7 @@ class Dismiss(Decision):
 class Delete(Decision):
     pass
 
-class DeleteOwner(Delete):
+class DeleteOwner(Decision):
     def __init__(self, groups):
         self.groups = groups
 

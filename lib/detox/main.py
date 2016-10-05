@@ -124,29 +124,42 @@ class Detox(object):
                             protected_fraction[replica.site] += replica.size() / replica.site.partition_quota(partition)
 
                     elif isinstance(decision, Delete):
-                        reassign = False
-                        if isinstance(decision, DeleteOwner):
-                            # may need to reassign ownership for parts instead of deleting
-                            dr_owner = None
-                            has_matching = False
-                            for block_replica in replica:
-                                if block_replica.group.olevel is Dataset and dr_owner is None:
-                                    # there is a dataset-level owner
-                                    dr_owner = block_replica.group
+                        self.inventory_manager.unlink_datasetreplica(replica)
+                        all_replicas.remove(replica)
+                        deleted[replica] = condition
 
-                                if block_replica.group in decision.groups:
-                                    # have at least one block to reassign
-                                    has_matching = True
+                    if isinstance(decision, DeleteOwner):
+                        # This is a rather specific operation. The assumptions are that
+                        #  . owner groups that are targeted have block-level ownership (e.g. DataOps)
+                        #  . there may be a block that is owned by a group that has dataset-level ownership (e.g. AnalysisOps)
 
-                            if dr_owner is not None and has_matching:
-                                reassign = True
+                        dr_owner = None
+                        matching_brs = []
+                        for block_replica in replica.block_replicas:
+                            if block_replica.group.olevel is Dataset and dr_owner is None:
+                                # there is a dataset-level owner
+                                dr_owner = block_replica.group
+
+                            if block_replica.group in decision.groups:
+                                matching_brs.append(block_replica)
+
+                        if len(matching_brs) != 0:
+                            # act only when there is a block replica to do something on
+
+                            if len(matching_brs) == len(replica.block_replicas):
+                                # all blocks matched - not reassigning to any group but deleting
+                                self.inventory_manager.unlink_datasetreplica(replica)
+                                all_replicas.remove(replica)
+                                deleted[replica] = condition
+    
+                            elif dr_owner is None:
+                                # block replicas are marked for deletion, but we do not have a group that can take over
+                                # -> pass until block-level deletion is implemented
+                                pass
+                            else:
+                                # dr_owner is taking over
                                 all_replicas.remove(replica)
                                 reowned[replica] = (condition, dr_owner)
-
-                        if not reassign:
-                            self.inventory_manager.unlink_datasetreplica(replica)
-                            all_replicas.remove(replica)
-                            deleted[replica] = condition
     
                     elif replica.site in target_sites:
                         deletion_candidates[replica.site][replica] = condition
