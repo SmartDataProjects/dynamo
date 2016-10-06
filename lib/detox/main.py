@@ -9,7 +9,7 @@ import os
 
 import common.configuration as config
 from common.dataformat import Dataset, Block, Site, DatasetReplica, BlockReplica
-from policy import Dismiss, Delete, Keep, Protect, Policy
+from policy import Dismiss, Delete, DeleteOwner, Keep, Protect, Policy
 import detox.configuration as detox_config
 from common.misc import timer, parallel_exec, sigint
 
