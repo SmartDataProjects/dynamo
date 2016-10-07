@@ -88,9 +88,13 @@ class InventoryManager(object):
 
                 site.active = quota_manager.get_status(site)
 
+            num_dataset_replicas = 0
+            num_block_replicas = 0
             if load_replicas:
                 # Take out datasets with no replicas
                 for dataset in self.datasets.values():
+                    num_dataset_replicas += len(dataset.replicas)
+                    num_block_replicas += sum(len(r.block_replicas) for r in dataset.replicas)
                     if len(dataset.replicas) == 0:
                         self.datasets.pop(dataset.name)
                         self.store.clear_cache()
@@ -99,7 +103,7 @@ class InventoryManager(object):
         finally:
             self.store.release_lock()
 
-        logger.info('Data is loaded to memory.')
+        logger.info('Data is loaded to memory. %d sites, %d groups, %d datasets, %d dataset replicas, %d block replicas.', len(self.sites), len(self.groups), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
     def update(self, dataset_filter = '/*/*/*', load_first = True, make_snapshot = True):
         """Query the dataSource and get updated information."""
