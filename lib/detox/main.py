@@ -128,7 +128,7 @@ class Detox(object):
                         all_replicas.remove(replica)
                         deleted[replica] = condition
 
-                    if isinstance(decision, DeleteOwner):
+                    elif isinstance(decision, DeleteOwner):
                         # This is a rather specific operation. The assumptions are that
                         #  . owner groups that are targeted have block-level ownership (e.g. DataOps)
                         #  . there may be a block that is owned by a group that has dataset-level ownership (e.g. AnalysisOps)
