@@ -91,9 +91,9 @@ class ThreadCollector(object):
     def collect(self, threads):
         ith = 0
         while ith < len(threads):
-            thread = threads[ith][0]
+            thread, time_started = threads[ith][0:2]
             if thread.is_alive():
-                if self.timeout > 0 and time.time() - thread.__target.time_started > self.timeout:
+                if self.timeout > 0 and time.time() - time_started > self.timeout:
                     logger.error('Thread ' + thread.name + ' timed out.')
                     raise ThreadTimeout(thread.name)
 
@@ -101,7 +101,7 @@ class ThreadCollector(object):
                 continue
 
             thread.join()
-            thread, inputs, outputs, exception = threads.pop(ith)
+            thread, time_started, inputs, outputs, exception = threads.pop(ith)
             if exception.exception is not None:
                 logging.error('Exception in thread ' + thread.name)
                 raise exception.exception
@@ -154,7 +154,7 @@ def parallel_exec(function, arguments, per_thread = 1, num_threads = config.num_
         thread.daemon = True
 
         thread.start()
-        threads.append((thread, inputs, outputs, exception))
+        threads.append((thread, time.time(), inputs, outputs, exception))
 
         while len(threads) >= num_threads:
             collector.collect(threads)
