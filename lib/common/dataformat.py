@@ -312,8 +312,8 @@ class Site(object):
         def __call__(self, replica):
             return self._partitioning(replica)
 
-    partitions = {}
-    _partitions_order = []
+    partitions = {} # name -> Partition
+    _partitions_order = [] # list of partitions
 
     # must be called before any Site is instantiated
     @staticmethod
@@ -392,16 +392,23 @@ class Site(object):
         except StopIteration:
             return None
 
-    def add_block_replica(self, replica):
+    def add_block_replica(self, replica, partitions = None):
         self._block_replicas.add(replica)
 
-        ip = 0
-        while ip != len(Site.partitions):
-            if Site._partitions_order[ip](replica):
+        if partitions is None:
+            ip = 0
+            while ip != len(Site.partitions):
+                if Site._partitions_order[ip](replica):
+                    self._occupancy_projected[ip] += replica.block.size
+                    self._occupancy_physical[ip] += replica.size
+
+                ip += 1
+
+        else:
+            for partition in partitions:
+                ip = Site._partitions_order.index(partition)
                 self._occupancy_projected[ip] += replica.block.size
                 self._occupancy_physical[ip] += replica.size
-
-            ip += 1
 
     def remove_block_replica(self, replica):
         try:
