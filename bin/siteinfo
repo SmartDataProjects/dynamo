@@ -2,29 +2,38 @@
 
 import sys
 import time
+import collections
 from argparse import ArgumentParser
 
 from common.interface.mysqlhistory import MySQLHistory
 
-parser = ArgumentParser(description = 'SitesInfo')
+parser = ArgumentParser(description = 'Generate SitesInfo and RemainingDatasets files for Unified.')
 parser.add_argument('--out', '-o', metavar = 'PATH', dest = 'out_path', default = '.', help = 'Output path.')
 parser.add_argument('--cycle', '-c', metavar = 'ID', dest = 'cycle', type = int, default = 0, help = 'Cycle number.')
 
 args = parser.parse_args()
 sys.argv = []
 
-output = open(args.out_path + '/SitesInfo.txt', 'w')
-
-output.write('#\n')
-output.write('#- S I T E S  I N F O R M A T I O N ----\n')
-output.write('#\n')
-
 history = MySQLHistory()
-
 history.acquire_lock()
 
+partitions = ['AnalysisOps', 'DataOps', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']
+
 try:
-    for partition in ['AnalysisOps', 'DataOps', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']:
+    # Count datasets for RemainingDatasets
+    dataset_lists = collections.defaultdict(dict)
+    dscount_now = collections.defaultdict(int)
+    dscount_previous = collections.defaultdict(int)
+
+    sitesinfo = open(args.out_path + '/SitesInfo.txt', 'w')
+    
+    sitesinfo.write('#\n')
+    sitesinfo.write('#- S I T E S  I N F O R M A T I O N ----\n')
+    sitesinfo.write('#\n')
+
+    for partition in partitions:
+        # SitesInfo
+
         if args.cycle == 0:
             cycle = history.get_latest_deletion_run(partition = partition)
         else:
@@ -35,15 +44,15 @@ try:
         else:
             timestamp = history.get_run_timestamp(cycle)
    
-        output.write('#- %s\n' % time.strftime('%Y-%m-%d %H:%M', time.localtime(timestamp)))
-        output.write('#\n')
-        output.write('#- DDM Partition: ' + partition.replace(' ', '-') + ' -\n')
-        output.write('#\n')
-        output.write('#  Active Quota[TB] Taken[TB] LastCopy[TB] SiteName\n')
-        output.write('#------------------------------------------------------\n')
+        sitesinfo.write('#- %s\n' % time.strftime('%Y-%m-%d %H:%M', time.localtime(timestamp)))
+        sitesinfo.write('#\n')
+        sitesinfo.write('#- DDM Partition: ' + partition.replace(' ', '-') + ' -\n')
+        sitesinfo.write('#\n')
+        sitesinfo.write('#  Active Quota[TB] Taken[TB] LastCopy[TB] SiteName\n')
+        sitesinfo.write('#------------------------------------------------------\n')
 
         if cycle == 0:
-            output.write('# N/A\n')
+            sitesinfo.write('# N/A\n')
             continue
 
         sites_info = history.get_sites(cycle)
@@ -67,7 +76,7 @@ try:
 
             used = protect + delete + keep
 
-            output.write("   %-6d %-9d %-9.0f %-12.0f %-20s \n" % \
+            sitesinfo.write("   %-6d %-9d %-9.0f %-12.0f %-20s \n" % \
                 (active, quota, used, protect, site))
 
             quota_total += quota
@@ -80,9 +89,9 @@ try:
                 used_t2total += used
                 protect_t2total += protect
 
-        output.write('#------------------------------------------------------\n')
+        sitesinfo.write('#------------------------------------------------------\n')
 
-        output.write('#  %-6d %-9d %-9d %-12d %-20s \n' % \
+        sitesinfo.write('#  %-6d %-9d %-9d %-12d %-20s \n' % \
             (len(sites_info), quota_total, used_total, protect_total, 'Total T2s+T1s'))
 
         if quota_total > 0:
@@ -92,12 +101,12 @@ try:
             used_fraction = 1.
             protect_fraction = 1.
 
-        output.write('#  %-6s %-9s %-4.1f%%     %-4.1f%%\n' % \
+        sitesinfo.write('#  %-6s %-9s %-4.1f%%     %-4.1f%%\n' % \
             (' ', ' ', used_fraction * 100., protect_fraction * 100.))
         
-        output.write('#\n')
+        sitesinfo.write('#\n')
 
-        output.write('#  %-6d %-9d %-9d %-12d %-20s \n' % \
+        sitesinfo.write('#  %-6d %-9d %-9d %-12d %-20s \n' % \
             (num_t2, quota_t2total, used_t2total, protect_t2total, 'Total T2s'))
 
         if quota_t2total > 0:
@@ -107,12 +116,50 @@ try:
             used_fraction = 1.
             protect_fraction = 1.
 
-        output.write('#  %-6s %-9s %-4.1f%%     %-4.1f%%\n' % \
+        sitesinfo.write('#  %-6s %-9s %-4.1f%%     %-4.1f%%\n' % \
             (' ', ' ', used_fraction * 100., protect_fraction * 100.))
 
-        output.write('#------------------------------------------------------\n')
-        output.write('#\n')
+        sitesinfo.write('#------------------------------------------------------\n')
+        sitesinfo.write('#\n')
+
+        # RemainingDatasets
+
+        results = history.get_deletion_decisions(cycle, size_only = False)
+        for site, datasets in results.items():
+            dataset_lists[site][partition] = []
+            for (dataset, size, decision) in datasets:
+                dscount_now[dataset] += 1
+                dataset_lists[site][partition].append((dataset, size))
+
+        prev_cycle = history.get_latest_deletion_run(partition = partition, before = cycle)
+        results = history.get_deletion_decisions(prev_cycle, size_only = False)
+        for site, datasets in results.items():
+            for (dataset, size, decision) in datasets:
+                dscount_prev[dataset] += 1
+
+    sitesinfo.close()
+
+    for site in dataset_lists:
+        if not os.path.isdir(args.out_path + '/result/' + site):
+            os.mkdir(args.out_path + '/result/' + site)
+
+        remaining = open(args.out_path + '/result/' + site + '/RemainingDatasets.txt', 'w')
+
+        remaining.write('# -- ' + time.strftime('%Y-%m-%d %H:%M') + '\n')
+        remaining.write('\n')
+
+        for partition in partitions:
+            remaining.write('#\n')
+            remaining.write('#- DDM Partition: ' + partition + ' -\n')
+            remaining.write('#\n')
+            remaining.write('#  Rank      Size nsites nsites  DatasetName\n')
+            remaining.write('#[~days]     [GB] before after\n')
+            remaining.write('#---------------------------------------------\n')
+
+            for dataset, size in dataset_lists[site][partition]:
+                remaining.write('  9999.9 %9.1f %6d %6d  %s\n' % (size * 1.e-9, dscount_prev[dataset], dscount_now[dataset], dataset))
+
+        remaining.close()
         
 finally:
     history.release_lock()
-    output.close()
