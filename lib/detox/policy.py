@@ -237,7 +237,9 @@ class Policy(object):
                 site = replica.site
 
                 if site.partition_quota(self.partition) == 0.:
-                    ir += 1
+                    self.untracked_replicas[replica] = replica.block_replicas
+                    replica.block_replicas = []
+                    dataset.replicas.pop(ir)
                     continue
 
                 block_replicas = []                    
@@ -297,7 +299,7 @@ class Policy(object):
 
             for block_replica in block_replicas:
                 replica.block_replicas.append(block_replica)
-                site.add_block_replica(block_replica)
+                site.add_block_replica(block_replica, partitions = [self.partition])
 
     def evaluate(self, replica):
         for rule in self.rules:
