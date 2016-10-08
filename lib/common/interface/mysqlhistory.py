@@ -469,16 +469,17 @@ class MySQLHistory(TransactionHistoryInterface):
         return ''
 
     def _do_get_latest_deletion_run(self, partition, before): #override
-        sql = 'SELECT `id` FROM `partitions` WHERE `name` LIKE \'%s\'' % partition
-        if before > 0:
-            sql += ' AND `run_id` < %d' % before
-
-        result = self._mysql.query(sql)
+        result = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
         if len(result) == 0:
             return 0
 
         partition_id = result[0]
-        result = self._mysql.query('SELECT `id` FROM `runs` WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\') ORDER BY `id` DESC LIMIT 1', partition_id)
+
+        sql = 'SELECT MAX(`id`) FROM `runs` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\')' % partition_id
+        if before > 0:
+            sql += ' AND `id` < %d' % before
+
+        result = self._mysql.query(sql)
         if len(result) == 0:
             return 0
 
