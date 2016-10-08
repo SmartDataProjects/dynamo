@@ -255,6 +255,8 @@ class Detox(object):
 
             deleted_volume = 0.
 
+            quota = site.partition_quota(policy.partition)
+
             for replica in sorted_candidates:
                 if policy.stop_condition.match(site):
                     break
@@ -269,7 +271,7 @@ class Detox(object):
                 
                 if not policy.static_optimization:
                     deleted_volume += replica.size() * 1.e-12
-                    if deleted_volume / site.partition_quota(quota) > detox_config.deletion_per_iteration:
+                    if deleted_volume / quota > detox_config.deletion_per_iteration:
                         break
 
         return deleted
