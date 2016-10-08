@@ -335,7 +335,7 @@ class TransactionHistoryInterface(object):
     def get_deletion_decisions(self, run_number, size_only = True):
         """
         Return a dict {site: (protect_size, delete_size, keep_size)} if size_only = True.
-        Else return a massive dict {site: {dataset: (size, decision, reason)}}
+        Else return a massive dict {site: [(dataset, size, decision)]}
         """
 
         self.acquire_lock()
@@ -380,10 +380,10 @@ class TransactionHistoryInterface(object):
 
         return site_name
 
-    def get_latest_deletion_run(self, partition):
+    def get_latest_deletion_run(self, partition, before = -1):
         self.acquire_lock()
         try:
-            run_number = self._do_get_latest_deletion_run(partition)
+            run_number = self._do_get_latest_deletion_run(partition, before)
         finally:
             self.release_lock()
 

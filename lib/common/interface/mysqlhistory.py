@@ -397,8 +397,29 @@ class MySQLHistory(TransactionHistoryInterface):
             return product
 
         else:
-            # implement later
-            return {}
+            # return {site_name: [(dataset_name, size, decision)]}
+
+            query = 'SELECT s.`name`, d.`name`, r.`size`, l.`decision` FROM `replica_snapshot_cache` AS c'
+            query += ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`'
+            query += ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`'
+            query += ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`'
+            query += ' INNER JOIN `deletion_decisions` AS l ON l.`id` = c.`decision_id`'
+            query += ' WHERE c.`run_id` = %d' % run_number
+            query += ' ORDER BY s.`name` ASC, r.`size` DESC'
+
+            product = {}
+
+            _site_name = ''
+
+            for site_name, dataset_name, size, decision in self._mysql.query(query):
+                if site_name != _site_name:
+                    product[site_name] = []
+                    current = product[site_name]
+                    _site_name = site_name
+                
+                current.append((dataset_name, size, decision))
+
+            return product
 
     def _do_save_dataset_popularity(self, run_number, datasets): #override
         if len(self._dataset_id_map) == 0:
@@ -447,8 +468,12 @@ class MySQLHistory(TransactionHistoryInterface):
 
         return ''
 
-    def _do_get_latest_deletion_run(self, partition): #override
-        result = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
+    def _do_get_latest_deletion_run(self, partition, before): #override
+        sql = 'SELECT `id` FROM `partitions` WHERE `name` LIKE \'%s\'' % partition
+        if before > 0:
+            sql += ' AND `run_id` < %d' % before
+
+        result = self._mysql.query(sql)
         if len(result) == 0:
             return 0
 
