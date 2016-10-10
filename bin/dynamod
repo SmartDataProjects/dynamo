@@ -3,7 +3,19 @@
 # Process to run detox/dealer periodically.
 # --------------------------------------------------------------------------------------------------
 
-TEST=$1
+while [ $# -gt 0 ]
+do
+  case $1 in
+    --test-run)
+      TEST="--test-run -m test"
+      shift
+      ;;
+    *)
+      echo "Unknown option $1"
+      exit 1
+      ;;
+  esac
+done
 
 HOURS_PER_LOGFILE=12
 

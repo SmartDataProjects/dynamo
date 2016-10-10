@@ -13,7 +13,6 @@ from common.demand import DemandManager
 import common.interface.classes as classes
 from detox.main import Detox
 from detox.policy import Policy
-from detox.partitioning import BelongsTo
 import detox.configuration as detox_config
 from dealer.main import Dealer
 from dealer.policy import DealerPolicy
@@ -125,7 +124,9 @@ if 'detox' in args.module:
     
         def_path = os.environ['DYNAMO_BASE'] + '/policies/detox/' + def_name + '.txt'
 
-        detox_partitions.append(Site.partitions[part_name])
+        partition = Site.partitions[part_name]
+
+        detox_partitions.append(partition)
 
         with open(def_path) as policy_def:    
             policy = Policy(partition, policy_def, policy_version, inventory_manager)
