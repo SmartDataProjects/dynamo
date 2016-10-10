@@ -228,7 +228,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         sites_in_record = set()
 
-        for site_name, quota in record:
+        for site_name, last_quota in record:
             try:
                 site = inventory.sites[site_name]
             except KeyError:
@@ -236,8 +236,8 @@ class MySQLHistory(TransactionHistoryInterface):
 
             sites_in_record.add(site)
 
-            if quota != quotas[site]:
-                self._mysql.query(insert_query, self._site_id_map[site.name], quota)
+            if last_quota != quotas[site]:
+                self._mysql.query(insert_query, self._site_id_map[site.name], quotas[site])
 
         for site, quota in quotas.items():
             if site not in sites_in_record:

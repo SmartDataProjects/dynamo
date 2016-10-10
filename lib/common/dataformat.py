@@ -371,8 +371,8 @@ class Site(object):
     def group_present(self, group):
         if type(group) is str:
             try:
-                return next(g for g in self._group_keys if g.name == group)
-            except:
+                return next(g for g in self._group_keys if g is not None and g.name == group)
+            except StopIteration:
                 return None
         else:
             if group in self._group_keys:
@@ -411,14 +411,6 @@ class Site(object):
         for group, index in self._group_keys.items():
             self._occupancy_projected[index] = sum(r.block.size for r in replicas if r.group == group)
             self._occupancy_physical[index] = sum(r.size for r in replicas if r.group == group)
-
-    def group_usage(self, group, physical = True):
-        index = self._group_key(group)
-
-        if physical:
-            return self._occupancy_physical[index]
-        else:
-            return self._occupancy_projected[index]
 
     def group_quota(self, group):
         index = self._group_key(group)
