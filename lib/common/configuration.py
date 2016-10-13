@@ -119,7 +119,8 @@ inventory.partitions = [
     ('local', lambda r: r.group is not None and r.group.name == 'local'),
     ('IB RelVal', lambda r: r.group is not None and r.group.name == 'IB RelVal'),
     ('Tape', lambda r: r.site.storage_type == Site.TYPE_MSS),
-    ('Unsubscribed', lambda r: r.group is None)
+    ('Unsubscribed', lambda r: r.group is None),
+    ('Physics', lambda r: r.group is not None and r.group.name == 'AnalysisOps' or r.group.name == 'DataOps')
 ]
 
 demand = Configuration()
