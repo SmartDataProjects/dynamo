@@ -49,6 +49,7 @@ else:
 from common.inventory import InventoryManager
 from common.transaction import TransactionManager
 from common.demand import DemandManager
+from common.dataformat import Site
 import common.interface.classes as classes
 from dealer.main import Dealer
 from dealer.policy import DealerPolicy

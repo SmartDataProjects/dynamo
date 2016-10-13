@@ -81,9 +81,16 @@ class Dealer(object):
                 continue
 
             for replica in dataset.replicas:
-                if partition(replica):
-                    datasets.append(dataset)
-                    break
+                for block_replica in replica.block_replicas:
+                    if partition(block_replica):
+                        break
+                else:
+                    # no block replica in partition
+                    continue
+
+                # this replica is (partially) in partition
+                datasets.append(dataset)
+                break
 
         datasets.sort(key = lambda dataset: dataset.demand.request_weight, reverse = True)
 
@@ -150,8 +157,8 @@ class Dealer(object):
 
                 try:
                     destination_site = next(dest for dest, njob in sorted_sites if \
-                        policy.quotas[dest] != 0 and \
-                        site_occupancy[dest] + dataset_size / policy.quotas[dest] < 1. and \
+                        dest.partition_quota(policy.partition) != 0 and \
+                        site_occupancy[dest] + dataset_size / dest.partition_quota(policy.partition) < 1. and \
                         site_occupancy[dest] < dealer_config.target_site_occupancy * dealer_config.overflow_factor and \
                         pending_volumes[dest] < dealer_config.max_copy_per_site and \
                         dest.find_dataset_replica(dataset) is None
