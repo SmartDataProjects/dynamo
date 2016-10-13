@@ -6,7 +6,7 @@ class SiteInfoSourceInterface(object):
     def __init__(self):
         pass
 
-    def get_site_list(self, sites, filt = '*'):
+    def get_site_list(self, sites, include = ['*'], exclude = []):
         """
         Fill the list of sites with sites that match the wildcard name.
         Arguments:

@@ -97,13 +97,6 @@ class LocalStoreInterface(object):
 
         return self._do_list_snapshots(timestamp_only)
 
-    def clear_cache(self):
-        """
-        Clear whatever is cached
-        """
-
-        self._do_clear_cache()
-
     def clear(self):
         """
         Wipes out the store contents!!
@@ -175,7 +168,7 @@ class LocalStoreInterface(object):
 
         self._do_switch_snapshot(tag)
 
-    def get_site_list(self, site_filt = '*'):
+    def get_site_list(self, include = ['*'], exclude = []):
         """
         Return a list of site names. Argument site_filt can be a wildcard string or a list of wildcards.
         """
@@ -184,7 +177,7 @@ class LocalStoreInterface(object):
         
         self.acquire_lock()
         try:
-            site_names = self._do_get_site_list(site_filt)
+            site_names = self._do_get_site_list(include, exclude)
         finally:
             self.release_lock()
 

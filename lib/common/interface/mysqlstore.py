@@ -97,18 +97,6 @@ class MySQLStore(LocalStoreInterface):
     def _do_list_snapshots(self, timestamp_only):
         return self._mysql.list_snapshots(timestamp_only)
 
-    def _do_clear_cache(self): #override
-        """
-        Clear the id <-> object mappings.
-        """
-
-        self._datasets_to_ids = {} # cache dictionary object -> mysql id
-        self._sites_to_ids = {} # cache dictionary object -> mysql id
-        self._groups_to_ids = {} # cache dictionary object -> mysql id
-        self._ids_to_datasets = {} # cache dictionary mysql id -> object
-        self._ids_to_sites = {} # cache dictionary mysql id -> object
-        self._ids_to_groups = {} # cache dictionary mysql id -> object
-
     def _do_clear(self):
         tables = self._mysql.query('SHOW TABLES')
         tables.remove('system')
@@ -128,17 +116,17 @@ class MySQLStore(LocalStoreInterface):
     def _do_set_last_update(self, tm): #override
         self._mysql.query('UPDATE `system` SET `last_update` = FROM_UNIXTIME(%d)' % int(tm))
 
-    def _do_get_site_list(self, site_filt): #override
+    def _do_get_site_list(self, include, exclude): #override
         # Load sites
         site_names = []
 
         names = self._mysql.query('SELECT `name` FROM `sites`')
 
-        if type(site_filt) is str:
-            site_filt = [site_filt]
-        
         for name in names:
-            for filt in site_filt:
+            if name in exclude:
+                continue
+
+            for filt in include:
                 if fnmatch.fnmatch(name, filt):
                     break
             else:
@@ -173,9 +161,7 @@ class MySQLStore(LocalStoreInterface):
         if len(site_list) == 0:
             return [], [], []
 
-        sites_str = ''
-        if site_filt == '*' or site_filt == '':
-            sites_str = ','.join(['%d' % i for i in self._ids_to_sites.keys()])
+        sites_str = ','.join(['%d' % i for i in self._ids_to_sites.keys()])
 
         # Load groups
         group_list = []
@@ -225,7 +211,7 @@ class MySQLStore(LocalStoreInterface):
         query = 'SELECT DISTINCT d.`name`, d.`status`+0, d.`on_tape`, d.`data_type`+0, d.`software_version_id`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
         query += ' FROM `datasets` AS d'
         conditions = []
-        if load_replicas and sites_str:
+        if load_replicas:
             query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
             conditions.append('dr.`site_id` IN (%s)' % sites_str)
         if dataset_filt != '/*/*/*' and dataset_filt != '':
@@ -253,7 +239,7 @@ class MySQLStore(LocalStoreInterface):
         query = 'SELECT DISTINCT b.`id`, b.`dataset_id`, b.`name`, b.`size`, b.`num_files`, b.`is_open` FROM `blocks` AS b'
         query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         conditions = []
-        if load_replicas and sites_str:
+        if load_replicas:
             query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
             conditions.append('dr.`site_id` IN (%s)' % sites_str)
         if dataset_filt != '/*/*/*' and dataset_filt != '':
@@ -295,9 +281,7 @@ class MySQLStore(LocalStoreInterface):
             sql += ' INNER JOIN `block_replicas` AS br ON (br.`block_id`, br.`site_id`) = (b.`id`, dr.`site_id`)'
             sql += ' LEFT JOIN `block_replica_sizes` AS brs ON (brs.`block_id`, brs.`site_id`) = (br.`block_id`, br.`site_id`)'
 
-            conditions = []
-            if sites_str:
-                conditions.append('dr.`site_id` IN (%s)' % sites_str)
+            conditions = ['dr.`site_id` IN (%s)' % sites_str]
             if dataset_filt != '/*/*/*' and dataset_filt != '':
                 conditions.append('dr.`dataset_id` IN (%s)' % (','.join(['%d' % i for i in self._ids_to_datasets.keys()])))
 
@@ -335,6 +319,20 @@ class MySQLStore(LocalStoreInterface):
 
                 dataset_replica.block_replicas.append(block_replica)
                 site.add_block_replica(block_replica)
+
+            logger.info('Removing datasets with no replicas from memory.')
+            
+            # Take out datasets with no replicas
+            ids = 0
+            while ids != len(dataset_list):
+                dataset = dataset_list[ids]
+                if len(dataset.replicas) == 0:
+                    dataset_list.pop(ids)
+                    dataset.unlink()
+                else:
+                    ids += 1
+
+            self._set_dataset_ids(dataset_list)
 
         # Finally set last_update
         self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
@@ -578,6 +576,9 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query(query)
 
+        # TODO take care of invalidated blocks
+        # can create datasets_tmp the same way as blocks, delete from `blocks` blocks that are not in blocks_tmp but have dataset_id in datasets_tmp
+
         # there can be rows in blocks_tmp that are not in blocks
         query = 'INSERT INTO `blocks` (%s)' % (','.join(['`%s`' % f for f in fields]))
         query += ' SELECT * FROM `blocks_tmp` WHERE `name` NOT IN (SELECT `name` FROM `blocks`)'
@@ -639,15 +640,7 @@ class MySQLStore(LocalStoreInterface):
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
         mapping = lambda t: t
 
-        try:
-            self._mysql.insert_many('block_replicas_new', fields, mapping, all_replicas, do_update = False)
-        except:
-            # Unknown error occurred Aug 12 - trying to debug
-            with open('/var/log/dynamo/block_replicas_new.dump', 'w') as dump:
-                for did, r in blockreps_to_write:
-                    dump.write('%d %s\n' % (did, str(r)))
-
-            raise
+        self._mysql.insert_many('block_replicas_new', fields, mapping, all_replicas, do_update = False)
 
         self._mysql.query('RENAME TABLE `block_replicas` TO `block_replicas_old`')
         self._mysql.query('RENAME TABLE `block_replicas_new` TO `block_replicas`')

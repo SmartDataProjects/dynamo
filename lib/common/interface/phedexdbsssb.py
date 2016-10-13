@@ -342,18 +342,19 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             
         return status
 
-    def get_site_list(self, sites, filt = '*'): #override (SiteInfoSourceInterface)
+    def get_site_list(self, sites, include = ['*'], exclude = []): #override (SiteInfoSourceInterface)
         options = []
-        if type(filt) is str and len(filt) != 0 and filt != '*':
-            options = ['node=' + filt]
-        elif type(filt) is list:
-            options = ['node=%s' % s for s in filt]
+        if len(include) == 0:
+            return
+
+        if len(include) > 1 or include[0] != '*':
+            options = ['node=%s' % s for s in include]
 
         logger.info('get_site_list  Fetching the list of nodes from PhEDEx')
         source = self._make_phedex_request('nodes', options)
 
         for entry in source:
-            if entry['name'] not in sites:
+            if entry['name'] not in sites and entry['name'] not in exclude:
                 site = Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology'])
                 sites[entry['name']] = site
         
@@ -569,9 +570,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         else:
             exec_get(all_sites, gname_list, [dataset_filt])
 
-        logger.info('Checking for blocks that may have been invalidated.')
+        logger.info('Cleaning up.')
 
         for dataset in datasets.values():
+            # check for potentially invalidated blocks
             blocks_with_replicas = set()
             for replica in dataset.replicas:
                 blocks_with_replicas.update([r.block for r in replica.block_replicas])
@@ -579,6 +581,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             if blocks_with_replicas != set(dataset.blocks):
                 dataset.status = Dataset.STAT_PRODUCTION # trigger DBS query
 
+            # remove datasets with no replicas
+            if len(dataset.replicas) == 0:
+                datasets.pop(dataset.name)
+                dataset.unlink()
 
     def find_tape_copies(self, datasets): #override (ReplicaInfoSourceInterface)
         # Use 'blockreplicasummary' query to check if all blocks of the dataset are on tape.
@@ -737,11 +743,14 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             dataset.last_update = block_entry['time_update']
 
                     for block in invalidated_blocks:
+                        logger.info('Removing block %s from dataset %s', block.real_name(), dataset.name)
                         dataset.remove_block(block)
     
                 for dataset in list_chunk: # what remains - in case PhEDEx does not say anything about this dataset
-                    dataset.blocks = []
-                
+                    # this dataset will be unlinked in set_dataset_details
+                    for block in list(dataset.blocks):
+                        dataset.remove_block(block)
+
         # set_constituent can take 10000 datasets at once, make it smaller and more parallel
         chunk_size = 100
         dataset_chunks = []

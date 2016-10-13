@@ -68,12 +68,7 @@ class InventoryManager(object):
         quota_manager = SiteQuotaRetriever()
 
         try:
-            site_names = self.store.get_site_list(site_filt = config.inventory.included_sites)
-            for name in config.inventory.excluded_sites:
-                try:
-                    site_names.remove(name)
-                except ValueError:
-                    continue
+            site_names = self.store.get_site_list(include = config.inventory.included_sites, exclude = config.inventory.excluded_sites)
 
             sites, groups, datasets = self.store.load_data(site_filt = site_names, load_replicas = load_replicas)
 
@@ -88,17 +83,8 @@ class InventoryManager(object):
 
                 site.active = quota_manager.get_status(site)
 
-            num_dataset_replicas = 0
-            num_block_replicas = 0
-            if load_replicas:
-                # Take out datasets with no replicas
-                for dataset in self.datasets.values():
-                    num_dataset_replicas += len(dataset.replicas)
-                    num_block_replicas += sum(len(r.block_replicas) for r in dataset.replicas)
-                    if len(dataset.replicas) == 0:
-                        self.datasets.pop(dataset.name)
-                        self.store.clear_cache()
-                        dataset.unlink()
+            num_dataset_replicas = sum(len(d.replicas) for d in self.datasets.values())
+            num_block_replicas = sum(sum(len(r.block_replicas) for r in d.replicas) for d in self.datasets.values())
 
         finally:
             self.store.release_lock()
@@ -126,17 +112,7 @@ class InventoryManager(object):
                 logger.info('Unlinking replicas.')
                 self.unlink_all_replicas()
 
-            self.site_source.get_site_list(self.sites, filt = config.inventory.included_sites)
-
-            for site_name in config.inventory.excluded_sites:
-                try:
-                    site = self.sites.pop(site_name)
-                except KeyError:
-                    continue
-
-                site.unlink()
-                del site
-                self.store.clear_cache()
+            self.site_source.get_site_list(self.sites, include = config.inventory.included_sites, exclude = config.inventory.excluded_sites)
 
             self.site_source.set_site_status(self.sites)
 
@@ -147,13 +123,6 @@ class InventoryManager(object):
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
             else:
                 self.replica_source.make_replica_links(self.sites, self.groups, self.datasets, dataset_filt = dataset_filter)
-
-            # Take out datasets with no replicas
-            for dataset in self.datasets.values():
-                if len(dataset.replicas) == 0:
-                    self.datasets.pop(dataset.name)
-                    self.store.clear_cache()
-                    dataset.unlink()
 
             self.dataset_source.set_dataset_details(self.datasets, skip_valid = True)
 
