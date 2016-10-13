@@ -137,7 +137,7 @@ class Policy(object):
                 decision = Delete()
                 line_type = LINE_POLICY
             elif words[0].startswith('DeleteOwner'):
-                group_names = re.match('DeleteOwner\(([^)]+)\)', words[1]).group(1).split(',')
+                group_names = re.match('DeleteOwner\(([^)]+)\)', words[0]).group(1).split(',')
                 groups = [inventory.groups[n] for n in group_names]
                 decision = DeleteOwner(groups)
                 line_type = LINE_POLICY
