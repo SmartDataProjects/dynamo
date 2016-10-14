@@ -11,17 +11,24 @@ class SiteQuotaRetriever(object):
         self._mysql = MySQL(config_file = '/etc/my.cnf', config_group = 'mysql-ddm', db = 'IntelROCCS')
 
     def get_quota(self, site, partition):
-        partition_name = partition.name
-        # IntelROCCS replaces IB RelVal with IB-RelVal
-        if partition_name == 'IB RelVal':
-            partition_name = 'IB-RelVal'
+        partition_names = [partition.name]
 
-        entry = self._mysql.query('SELECT q.`SizeTb` FROM `Quotas` AS q INNER JOIN `Sites` AS s ON s.`SiteId` = q.`SiteId` INNER JOIN `Groups` AS g ON g.`GroupId` = q.`GroupId` WHERE s.`SiteName` LIKE %s AND g.`GroupName` LIKE %s ORDER BY q.`EntryDateUT` DESC LIMIT 1', site.name, partition_name)
+        if partition_names[0] == 'Physics':
+            partition_names = ['AnalysisOps', 'DataOps']
 
-        if len(entry) == 0:
-            return 0.
+        elif partition_names[0] == 'IB RelVal':
+            # IntelROCCS replaces IB RelVal with IB-RelVal
+            partition_names[0] = 'IB-RelVal'
 
-        return entry[0]
+        quota = 0.
+
+        for partition_name in partition_names:
+            entry = self._mysql.query('SELECT q.`SizeTb` FROM `Quotas` AS q INNER JOIN `Sites` AS s ON s.`SiteId` = q.`SiteId` INNER JOIN `Groups` AS g ON g.`GroupId` = q.`GroupId` WHERE s.`SiteName` LIKE %s AND g.`GroupName` LIKE %s ORDER BY q.`EntryDateUT` DESC LIMIT 1', site.name, partition_name)
+
+            if len(entry) != 0:
+                quota += entry[0]
+
+        return quota
 
     def get_status(self, site):
 #        if site.storage_type == Site.TYPE_MSS:

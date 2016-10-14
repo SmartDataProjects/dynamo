@@ -101,7 +101,7 @@ class Detox(object):
     
             protected = {} # {replica: condition_id}
             deleted = {}
-            reowned = {} # {replica: (condition_id, new_owner)}. re-owned datasets will appear as kept in history
+            reowned = {} # {replica: (condition_id, new_owner, block_replicas)}. re-owned datasets will appear as kept in history
 
             protected_fraction = collections.defaultdict(float) # {site: protected size}
     
@@ -159,7 +159,7 @@ class Detox(object):
                             else:
                                 # dr_owner is taking over
                                 all_replicas.remove(replica)
-                                reowned[replica] = (condition, dr_owner)
+                                reowned[replica] = (condition, dr_owner, matching_brs)
     
                     elif replica.site in target_sites:
                         deletion_candidates[replica.site][replica] = condition
@@ -215,7 +215,7 @@ class Detox(object):
             
             if len(reowned) != 0:
                 logger.info('Reassigning ownership.')
-                self.reassign_owner([(dr_owner, matching_brs) for condition, dr_owner, matching_brs in reowned.values()])
+                self.reassign_owner([(dr_owner, matching_brs) for condition, dr_owner, matching_brs in reowned.values()], is_test)
     
             logger.info('Committing deletion.')
             deleted_replicas = self.commit_deletions(run_number, policy, deleted.keys(), is_test, comment, auto_approval)
@@ -276,9 +276,9 @@ class Detox(object):
 
         return deleted
 
-    def reassign_owner(self, reassignment):
+    def reassign_owner(self, reassignment, is_test):
         for new_owner, block_replicas in reassignment:
-            self.transaction_manager.copy.schedule_reassignments(block_replicas, new_owner, 'Dynamo -- Group reassignment')
+            self.transaction_manager.copy.schedule_reassignments(block_replicas, new_owner, comments = 'Dynamo -- Group reassignment', is_test = is_test)
 
     def commit_deletions(self, run_number, policy, deletion_list, is_test, comment, auto_approval):
         sites = set(r.site for r in deletion_list)

@@ -109,7 +109,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         level = 'block'
 
                 elif type(replica) is BlockReplica:
-                    catalogs[replica.block.dataset].append(replica)
+                    catalogs[replica.block.dataset].append(replica.block)
                     level = 'block'
 
             options = {
