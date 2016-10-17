@@ -171,7 +171,7 @@ class InventoryManager(object):
         Create a new DatasetReplica object and return.
         """
 
-        new_replica = DatasetReplica(dataset, site, group = group)
+        new_replica = DatasetReplica(dataset, site)
 
         dataset.replicas.append(new_replica)
         site.dataset_replicas.add(new_replica)
