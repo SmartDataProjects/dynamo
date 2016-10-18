@@ -336,18 +336,34 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
-    def add_dataset_replicas(self, replicas):
+    def add_datasetreplicas(self, replicas):
         """
         Insert a few replicas instead of saving the full list.
         """
 
         if config.read_only:
-            logger.debug('_do_add_dataset_replicas()')
+            logger.debug('_do_add_datasetreplicas()')
             return
 
         self.acquire_lock()
         try:
-            self._do_add_dataset_replicas(replicas)
+            self._do_add_datasetreplicas(replicas)
+            self.set_last_update()
+        finally:
+            self.release_lock()
+
+    def add_blockreplicas(self, replicas):
+        """
+        Insert a few replicas instead of saving the full list.
+        """
+
+        if config.read_only:
+            logger.debug('_do_add_blockreplicas()')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_add_blockreplicas(replicas)
             self.set_last_update()
         finally:
             self.release_lock()

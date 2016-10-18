@@ -717,10 +717,9 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()')
 
-    def _do_add_dataset_replicas(self, replicas): #override
-        # make name -> id maps for use later
+    def _do_add_datasetreplicas(self, replicas): #override
         if len(self._datasets_to_ids) == 0 or len(self._sites_to_ids) == 0 or len(self._groups_to_ids) == 0:
-            raise RuntimeError('add_dataset_replicas cannot be called before initializing the id maps')
+            raise RuntimeError('add_datasetreplicas cannot be called before initializing the id maps')
 
         # insert/update dataset replicas
         logger.info('Inserting/updating %d dataset replicas.', len(replicas))
@@ -730,7 +729,7 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.insert_many('dataset_replicas', fields, mapping, replicas)
 
-        # insert/update block replicas for non-complete dataset replicas
+        # insert/update block replicas
         all_replicas = []
         replica_sizes = []
 
@@ -749,6 +748,37 @@ class MySQLStore(LocalStoreInterface):
                 all_replicas.append((block_id, site_id, self._groups_to_ids[block_replica.group], block_replica.is_complete, block_replica.is_custodial))
                 if not block_replica.is_complete:
                     replica_sizes.append((block_id, site_id, block_replica.size))
+
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
+        mapping = lambda t: t
+
+        self._mysql.insert_many('block_replicas', fields, mapping, all_replicas)
+
+        fields = ('block_id', 'site_id', 'size')
+        mapping = lambda t: t
+
+        self._mysql.insert_many('block_replica_sizes', fields, mapping, replica_sizes)
+
+    def _do_add_blockreplicas(self, replicas): #override
+        if len(self._datasets_to_ids) == 0 or len(self._sites_to_ids) == 0 or len(self._groups_to_ids) == 0:
+            raise RuntimeError('add_datasetreplicas cannot be called before initializing the id maps')
+
+        all_replicas = []
+        replica_sizes = []
+
+        for replica in replicas:
+            dataset_id = self._datasets_to_ids[replica.block.dataset]
+            site_id = self._sites_to_ids[replica.site]
+            
+            block_ids = {}
+            for name_str, block_id in self._mysql.query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
+                block_ids[Block.translate_name(name_str)] = block_id
+
+            block_id = block_ids[replica.block.name]
+
+            all_replicas.append((block_id, site_id, self._groups_to_ids[replica.group], replica.is_complete, replica.is_custodial))
+            if not replica.is_complete:
+                replica_sizes.append((block_id, site_id, replica.size))
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
         mapping = lambda t: t

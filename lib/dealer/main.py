@@ -224,7 +224,7 @@ class Dealer(object):
     
             for operation_id, (approved, op_replicas) in copy_mapping.items():
                 if approved and not is_test:
-                    self.inventory_manager.store.add_dataset_replicas(op_replicas)
+                    self.inventory_manager.store.add_datasetreplicas(op_replicas)
     
                 size = sum([r.size(physical = False) for r in op_replicas]) # this is not group size but the total size on disk
 
