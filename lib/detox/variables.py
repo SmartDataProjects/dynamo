@@ -57,7 +57,7 @@ replica_vardefs = {
 }
 
 # Variables that may change their values during a single program execution
-replica_dynamic_variables = ['dataset.num_full_disk_copy']
+replica_dynamic_variables = ['dataset.num_full_disk_copy', 'replica.owners']
 
 # Variables that use dataset replica accesses
 replica_access_variables = ['dataset.last_used', 'dataset.usage_rank', 'replica.num_access']
