@@ -14,7 +14,7 @@ class Condition(object):
         self.text = text
         self.predicates = []
 
-        pred_strs = text.split(' and ')
+        pred_strs = map(str.strip, text.split(' and '))
 
         for pred_str in pred_strs:
             words = pred_str.split()

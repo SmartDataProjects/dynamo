@@ -208,7 +208,6 @@ class Policy(object):
             if not rule.condition.static:
                 logger.info('Condition %s is dynamic. Turning off static policy evaluation for %s.', str(rule.condition), self.partition.name)
                 self.static_optimization = False
-                break
 
             if rule.condition.uses_accesses:
                 self.uses_accesses = True
