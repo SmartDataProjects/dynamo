@@ -558,32 +558,76 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # Use 'blockreplicasummary' query to check if all blocks of the dataset are on tape.
         # site=T*MSS -> tape
 
-        blocks_on_tape = collections.defaultdict(list)
-        lock = threading.Lock()
-
         # Routine to fetch data and fill the list of blocks on tape
         def inquire_phedex(dataset_list):
-            options = [('create_since', '0'), ('node', 'T*MSS'), ('custodial', 'y'), ('complete', 'y')]
-            options.extend([('dataset', dataset.name) for dataset in dataset_list])
+            options = [('create_since', 0), ('node', 'T*_MSS')]
+            options.extend([('block', dataset.name + '#*') for dataset in dataset_list]) # this will fetch dataset-level subscriptions too
 
-            source = self._make_phedex_request('blockreplicasummary', options, method = POST)
+            source = self._make_phedex_request('subscriptions', options, method = POST)
 
-            on_tape = collections.defaultdict(list)
+            # Elements of the returned list has a structure
+            # {'name': dataset_name, 'bytes': N, .., 'subscription': [ds_subscriptions], 'block': [blocks]}
+            # ds_subscription:
+            # {'custodial': 'y/n', .., 'node_bytes': N}
+            # block:
+            # {'bytes': N, 'name': DS#BL, 'subscription': [bl_subscriptions]}
+            # bl_subscription:
+            # {'custodial': 'y/n', .., 'node_bytes': N}
+            #
+            # dataset.on_tape = TAPE_FULL if
+            #  . A ds_subscription with node_bytes = bytes exist, or
+            #  . All blocks are at one node and node_bytes = bytes
+            # dataset.on_tape = TAPE_PARTIAL if not TAPE_FULL and
+            #  . A ds_subscription exists, or
+            #  . A bl_subscription exists
+            # dataset.on_tape = TAPE_NONE if not (TAPE_FULL or TAPE_PARTIAL)
 
-            for block_entry in source:
-                name = block_entry['name']
-                ds_name = name[:name.find('#')]
-                try:
-                    block_name = Block.translate_name(name[name.find('#') + 1:])
-                except:
-                    logger.error('Invalid block name %s in blockreplicasummary', name)
-                    continue
+            for ds_entry in source:
+                dataset = datasets[ds_entry['name']]
 
-                on_tape[ds_name].append(block_name)
+                ds_bytes = ds_entry['bytes']
 
-            with lock:
-                for ds_name, block_names in on_tape.items():
-                    blocks_on_tape[ds_name].extend(block_names)
+                # if a dataset-level or block-level subscription exists, it's at least partial
+
+                if 'subscription' in ds_entry:
+                    if len(ds_entry['subscription']) != 0:
+                        dataset.on_tape = Dataset.TAPE_PARTIAL
+
+                    for ds_subscription in ds_entry['subscription']:
+                        if ds_subscription['node_bytes'] == ds_bytes:
+                            dataset.on_tape = Dataset.TAPE_FULL
+                            break
+    
+                    else: # else of for
+                        # This dataset is fully on tape. No more need to process data
+                        continue
+
+                if 'block' in ds_entry:
+                    if len(ds_entry['block']) != 0:
+                        dataset.on_tape = Dataset.TAPE_PARTIAL
+
+                    block_names = set(b.name for b in dataset.blocks)
+                    blocks_at_sites = collections.defaultdict(set)
+    
+                    for bl_entry in ds_entry['block']:
+                        name = bl_entry['name']
+
+                        try:
+                            block_name = Block.translate_name(name[name.find('#') + 1:])
+                        except:
+                            logger.error('Invalid block name %s in subscriptions', name)
+                            continue
+    
+                        bl_bytes = bl_entry['bytes']
+    
+                        for bl_subscription in bl_entry['subscription']:
+                            if bl_subscription['node_bytes'] == bl_bytes:
+                                blocks_at_sites[bl_subscription['node']].add(block_name)
+    
+                    for names in blocks_at_sites.values():
+                        if names == block_names:
+                            dataset.on_tape = Dataset.TAPE_FULL
+                            break
 
         chunk_size = 1000
         dataset_chunks = [[]]
@@ -593,6 +637,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             # on_tape is TAPE_NONE by default
             if dataset.on_tape == Dataset.TAPE_FULL or dataset.status == Dataset.STAT_IGNORED:
                 continue
+
+            # set it back to NONE first
+            dataset.on_tape = Dataset.TAPE_NONE
 
             dataset_chunks[-1].append(dataset)
             if len(dataset_chunks[-1]) == chunk_size:
@@ -604,26 +651,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         logger.info('find_tape_copies  Checking tape copies.')
 
         parallel_exec(inquire_phedex, dataset_chunks)
-        del dataset_chunks
-
-        # Loop again and fill datasets
-        for dataset in datasets.values():
-            if dataset.on_tape == Dataset.TAPE_FULL or dataset.status == Dataset.STAT_IGNORED:
-                continue
-
-            dataset.on_tape = Dataset.TAPE_NONE
-
-            if dataset.name not in blocks_on_tape:
-                continue
-
-            on_tape = set(blocks_on_tape[dataset.name])
-
-            dataset_blocks = set(b.name for b in dataset.blocks)
-            if dataset_blocks == on_tape:
-                dataset.on_tape = Dataset.TAPE_FULL
-            else:
-                # tape subscription is made, but is not complete
-                dataset.on_tape = Dataset.TAPE_PARTIAL
 
     def set_dataset_details(self, datasets, skip_valid = False): #override (DatasetInfoSourceInterface)
         """
