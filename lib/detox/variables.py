@@ -39,6 +39,22 @@ def dataset_num_full_disk_copy(replica):
 
     return num
 
+def replica_num_full_disk_copy_common_owner(replica):
+    owners = set(br.group for br in replica.block_replicas if br.group is not None)
+    dataset = replica.dataset
+    num = 0
+    for rep in dataset.replicas:
+        if rep == replica:
+            num += 1
+            continue
+
+        if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.site.active != Site.ACT_IGNORE and rep.is_full():
+            rep_owners = set(br.group for br in rep.block_replicas if br.group is not None)
+            if len(owners & rep_owners) != 0:
+                num += 1
+
+    return num
+
 replica_vardefs = {
     'dataset.name': (lambda r: r.dataset.name, TEXT_TYPE),
     'dataset.status': (lambda r: r.dataset.status, NUMERIC_TYPE, lambda v: eval('Dataset.STAT_' + v)),
@@ -52,12 +68,12 @@ replica_vardefs = {
     'replica.last_used': (lambda r: max(r.dataset.last_update, r.last_access()), TIME_TYPE),
     'replica.num_access': (lambda r: len(r.accesses[DatasetReplica.ACC_LOCAL]) + len(r.accesses[DatasetReplica.ACC_REMOTE]), NUMERIC_TYPE),
     'replica.has_locked_block': (replica_has_locked_block, BOOL_TYPE),
-    'replica.owners': (lambda r: list(set(br.group.name for br in r.block_replicas if br.group is not None)), TEXT_TYPE)
-#    'replica.group_name': (lambda r: 'Null' if r.group is None else r.group.name, TEXT_TYPE) # need to rewrite when block-level deletion is enabled
+    'replica.owners': (lambda r: list(set(br.group.name for br in r.block_replicas if br.group is not None)), TEXT_TYPE),
+    'replica.num_full_disk_copy_common_owner': (replica_num_full_disk_copy_common_owner, NUMERIC_TYPE)
 }
 
 # Variables that may change their values during a single program execution
-replica_dynamic_variables = ['dataset.num_full_disk_copy', 'replica.owners']
+replica_dynamic_variables = ['dataset.num_full_disk_copy', 'replica.owners', 'replica.num_full_disk_copy_common_owner']
 
 # Variables that use dataset replica accesses
 replica_access_variables = ['dataset.last_used', 'dataset.usage_rank', 'replica.num_access']
