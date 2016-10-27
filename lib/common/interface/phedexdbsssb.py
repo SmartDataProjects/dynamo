@@ -587,16 +587,16 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset.unlink()
 
     def find_tape_copies(self, datasets): #override (ReplicaInfoSourceInterface)
-         # Use 'subscriptions' query to check if all blocks of the dataset are on tape.
-         # site=T*MSS -> tape
+        # Use 'subscriptions' query to check if all blocks of the dataset are on tape.
+        # site=T*MSS -> tape
  
-         # Routine to fetch data and fill the list of blocks on tape
-         def inquire_phedex(dataset_list):
+        # Routine to fetch data and fill the list of blocks on tape
+        def inquire_phedex(dataset_list):
             options = [('create_since', 0), ('node', 'T*_MSS')]
             options.extend([('block', dataset.name + '#*') for dataset in dataset_list]) # this will fetch dataset-level subscriptions too
 
             source = self._make_phedex_request('subscriptions', options, method = POST)
-
+           
             # Elements of the returned list has a structure
             # {'name': dataset_name, 'bytes': N, .., 'subscription': [ds_subscriptions], 'block': [blocks]}
             # ds_subscription:
@@ -613,75 +613,75 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             #  . A ds_subscription exists, or
             #  . A bl_subscription exists
             # dataset.on_tape = TAPE_NONE if not (TAPE_FULL or TAPE_PARTIAL)
-
+ 
             for ds_entry in source:
                 dataset = datasets[ds_entry['name']]
-
+ 
                 ds_bytes = ds_entry['bytes']
-
+ 
                 # if a dataset-level or block-level subscription exists, it's at least partial
-
+ 
                 if 'subscription' in ds_entry:
                     if len(ds_entry['subscription']) != 0:
                         dataset.on_tape = Dataset.TAPE_PARTIAL
-
+ 
                     for ds_subscription in ds_entry['subscription']:
                         if ds_subscription['node_bytes'] == ds_bytes:
                             dataset.on_tape = Dataset.TAPE_FULL
                             break
-    
+     
                     else: # else of for
                         # This dataset is fully on tape. No more need to process data
                         continue
- 
+  
                 if 'block' in ds_entry:
                     if len(ds_entry['block']) != 0:
                         dataset.on_tape = Dataset.TAPE_PARTIAL
- 
+  
                     block_names = set(b.name for b in dataset.blocks)
                     blocks_at_sites = collections.defaultdict(set)
-    
+     
                     for bl_entry in ds_entry['block']:
                         name = bl_entry['name']
- 
+  
                         try:
                             block_name = Block.translate_name(name[name.find('#') + 1:])
                         except:
                             logger.error('Invalid block name %s in subscriptions', name)
                             continue
-    
+     
                         bl_bytes = bl_entry['bytes']
-    
+     
                         for bl_subscription in bl_entry['subscription']:
                             if bl_subscription['node_bytes'] == bl_bytes:
                                 blocks_at_sites[bl_subscription['node']].add(block_name)
-    
+     
                     for names in blocks_at_sites.values():
                         if names == block_names:
                             dataset.on_tape = Dataset.TAPE_FULL
                             break
  
-         chunk_size = 1000
-         dataset_chunks = [[]]
+        chunk_size = 1000
+        dataset_chunks = [[]]
 
         # Loop over datasets not on tape
         for dataset in datasets.values():
-            # on_tape is TAPE_NONE by default
-            if dataset.on_tape == Dataset.TAPE_FULL or dataset.status == Dataset.STAT_IGNORED:
-                continue
+           # on_tape is TAPE_NONE by default
+           if dataset.on_tape == Dataset.TAPE_FULL or dataset.status == Dataset.STAT_IGNORED:
+               continue
  
-            # set it back to NONE first
-            dataset.on_tape = Dataset.TAPE_NONE
+           # set it back to NONE first
+           dataset.on_tape = Dataset.TAPE_NONE
 
-            dataset_chunks[-1].append(dataset)
-            if len(dataset_chunks[-1]) == chunk_size:
-                dataset_chunks.append([])
+           dataset_chunks[-1].append(dataset)
+           if len(dataset_chunks[-1]) == chunk_size:
+               dataset_chunks.append([])
 
         if len(dataset_chunks[-1]) == 0:
             dataset_chunks.pop()
-
+        
         logger.info('find_tape_copies  Checking tape copies.')
-
+        
         parallel_exec(inquire_phedex, dataset_chunks)
 
     def set_dataset_details(self, datasets, skip_valid = False): #override (DatasetInfoSourceInterface)
