@@ -28,7 +28,7 @@ mysqlhistory.db_params = {
 
 webservice = Configuration()
 webservice.x509_key = os.environ['X509_USER_PROXY']
-webservice.num_attempts = 5
+webservice.num_attempts = 20
 
 mysql = Configuration()
 mysql.max_query_len = 100000 # allows up to 1M characters; allowing 90% safety margin
