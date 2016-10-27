@@ -509,7 +509,7 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query(query)
 
-        self._mysql.query('DROP TABLE `datasets_tmp`')
+        # not dropping datasets_tmp yet - used for block invalidation
 
         known_datasets = set([d for i, d in tmp_insertions])
         new_datasets = list(set(datasets) - known_datasets)
@@ -575,6 +575,16 @@ class MySQLStore(LocalStoreInterface):
         query += ' WHERE ' + field_tuple('b1') + ' != ' + field_tuple('b2')
 
         self._mysql.query(query)
+
+        # delete entries for invalidated blocks (blocks in table whose datasets are in memory but are not in blocks_tmp)
+        query = 'DELETE FROM b1 USING `blocks` AS b1'
+        query += ' INNER JOIN `datasets_tmp` AS d ON d.`id` = b1.`dataset_id`'
+        query += ' LEFT JOIN `blocks_tmp` AS b2 ON b2.`name` = b1.`name` WHERE b2.`name` IS NULL'
+
+        self._mysql.query(query)
+
+        # we don't need datasets_tmp any more
+        self._mysql.query('DROP TABLE `datasets_tmp`')
 
         # TODO take care of invalidated blocks
         # can create datasets_tmp the same way as blocks, delete from `blocks` blocks that are not in blocks_tmp but have dataset_id in datasets_tmp
