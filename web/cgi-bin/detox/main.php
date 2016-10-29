@@ -15,8 +15,13 @@ if (isset($_REQUEST['getPartitions']) && $_REQUEST['getPartitions']) {
   $stmt->bind_param('s', $operation);
   $stmt->bind_result($id, $name);
   $stmt->execute();
-  while ($stmt->fetch())
-    $data[] = array('id' => $id, 'name' => $name);
+  while ($stmt->fetch()) {
+    $elem = array('id' => $id, 'name' => $name);
+    if ($name == 'Physics')
+      array_unshift($data, $elem);
+    else
+      $data[] = $elem;
+  }
   $stmt->close();
 
   echo json_encode($data);
@@ -53,7 +58,7 @@ else if (isset($_REQUEST['partitionId']))
 
 if ($cycle == 0) {
   if ($partition_id == 0)
-    $partition_id = 1;
+    $partition_id = 10;
 
   $stmt = $history_db->prepare('SELECT `id`, `policy_version`, `comment`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` DESC LIMIT 1');
   $stmt->bind_param('is', $partition_id, $operation);
