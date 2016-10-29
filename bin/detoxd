@@ -73,7 +73,7 @@ do
     fi
 
     # test run to produce sites info
-    $DYNAMO_BASE/bin/detox --test-run --partition 'caf-comm:MinimumCopies' 'caf-alca:MinimumCopies' 'local:MinimumCopies' 'IB RelVal:MinimumCopies' --log-level INFO
+    $DYNAMO_BASE/bin/detox --test-run --partition 'DataOps' 'caf-comm:MinimumCopies' 'caf-alca:MinimumCopies' 'local:MinimumCopies' 'IB RelVal:MinimumCopies' --log-level INFO
 
     if [ $ICYCLE -eq $CYCLES_PER_LOGFILE ]
     then
