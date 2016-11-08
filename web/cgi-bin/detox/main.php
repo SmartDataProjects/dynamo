@@ -250,6 +250,9 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     $stmt->close();
 
     $site_total = array('protect' => array(), 'keep' => array(), 'delete' => array(), 'protectPrev' => array(), 'keepPrev' => array());
+    foreach ($index_to_id as $id) {
+      $site_total['protect'][$id] = $site_total['keep'][$id] = $site_total['delete'][$id] = $site_total['protectPrev'][$id] = $site_total['keepPrev'][$id] = 0.;
+    }
 
     $query = 'SELECT c.`site_id`, l.`decision`, SUM(r.`size`) * 1.e-12';
     $query .= ' FROM `replica_snapshot_cache` AS c';

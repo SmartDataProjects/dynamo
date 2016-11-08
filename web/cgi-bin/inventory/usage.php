@@ -57,9 +57,6 @@ if (count($constraints) != 0)
 
 $query .= ' GROUP BY ' . $grouping;
 
-$query = str_replace("\n", " ", $query);
-error_log($query);
-
 /* EXECUTE AND FILL */
 
 $stmt = $store_db->prepare($query);
