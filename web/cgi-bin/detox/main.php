@@ -16,6 +16,9 @@ if (isset($_REQUEST['getPartitions']) && $_REQUEST['getPartitions']) {
   $stmt->bind_result($id, $name);
   $stmt->execute();
   while ($stmt->fetch()) {
+    if ((!isset($TESTMODE) || !$TESTMODE) && ($name == 'AnalysisOps' || $name == 'DataOps'))
+      continue;
+
     $elem = array('id' => $id, 'name' => $name);
     if ($name == 'Physics')
       array_unshift($data, $elem);
