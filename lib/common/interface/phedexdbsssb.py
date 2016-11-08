@@ -269,8 +269,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 if len(catalogs) == 0:
                     continue
 
-                logger.info('Requesting %s-level deletion of %s', level, str(map(lambda d: d.name, catalogs.keys())))
-
                 options = {
                     'node': site.name,
                     'data': self._form_catalog_xml(catalogs),
