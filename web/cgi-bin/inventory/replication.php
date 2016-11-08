@@ -1,83 +1,68 @@
 <?php
+/*
+  Included from main. Final product is the array $content.
+  Following variables are imported:
+  $store_db: mysqi, dynamo inventory store
+  $categories: string, what the results will be presented in terms of
+  $key_column: key column
+  $grouping: grouping by
+  $const_*: string, constraints
+  $constraints: array of constraint strings
+  $physical: bool, show physical/projected size
+  $content: output array
+*/
 
-$full_only = $physical;
+/* CONSTRUCT QUERY */
+
+$uses_group = ($categories == 'groups' || count($const_group) != 0);
 
 if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
-  $selection = 'SELECT d.`name`, COUNT(dr.`site_id`) FROM `dataset_replicas` AS dr';
-  $selection .= ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`';
-  $selection .= ' INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`';
-  if (count($const_group) != 0)
-    $selection .= ' INNER JOIN `groups` AS g ON g.`id` = dr.`group_id`';
+  $key_column = 'd.`name`';
 }
 else if ($categories == 'groups') {
-  $selection = 'SELECT g.`name`, COUNT(dr.`site_id`) FROM `dataset_replicas` AS dr';
-  $selection .= ' INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`';
-  $selection .= ' INNER JOIN `groups` AS g ON g.`id` = dr.`group_id`';
-  if (strlen($const_campaign) != 0 || strlen($const_data_tier) != 0 || strlen($const_dataset))
-    $selection .= ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`';
+  $key_column = 'IFNULL(g.`name`, \'Unsubscribed\')';
 }
 
-$grouping = ' GROUP BY dr.`dataset_id`';
+$query = 'SELECT ' . $key_column . ', COUNT(dr.`site_id`)
+FROM `dataset_replicas` AS dr
+INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`
+INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`';
 
-$constraints = array('s.`storage_type` NOT LIKE \'mss\'');
-if ($full_only)
+if ($uses_group) {
+  // group is inner-joined on purpose
+ 
+  $query .= ' INNER JOIN (
+  SELECT b.`dataset_id` AS dataset_id, br.`site_id` AS site_id, MIN(`groups`.`name`) AS name
+  FROM `block_replicas` AS br
+  INNER JOIN `groups` ON `groups`.`id` = br.`group_id`
+  INNER JOIN `blocks` AS b ON b.`id` = br.`block_id`
+  GROUP BY dataset_id, site_id
+) AS g ON (g.`dataset_id`, g.`site_id`) = (dr.`dataset_id`, dr.`site_id`)';
+}
+
+if ($physical) // full only
   $constraints[] = 'dr.`completion` LIKE \'full\'';
 
-if (strlen($const_campaign) != 0)
-  $constraints[] = 'd.`name` LIKE \'/%/' . $const_campaign . '%/%\'';
-if (strlen($const_data_tier) != 0)
-  $constraints[] = 'd.`name` LIKE \'/%/%/' . $const_data_tier . '\'';
-if (strlen($const_dataset) != 0)
-  $constraints[] = 'd.`name` LIKE \'' . $const_dataset . '\'';
-if (count($const_group) != 0) {
-  $subconsts = array();
-  foreach ($const_group as $cg)
-    $subconsts[] = 'g.`name` LIKE \'' . $cg . '\'';
-  $constraints[] = '(' . implode(' OR ', $subconsts) . ')';
-}
-
 if (count($constraints) != 0)
-  $constraint = ' WHERE ' . implode(' AND ', $constraints);
-else
-  $constraint = '';
+  $query .= ' WHERE ' . implode(' AND ', $constraints);
 
-$stmt = $store_db->prepare($selection . $constraint . $grouping);
+$query .= ' GROUP BY dr.`dataset_id`';
+
+/* EXECUTE AND FILL */
+
+$stmt = $store_db->prepare($query);
 $stmt->bind_result($name, $repl);
 $stmt->execute();
 
 $repl_counts = array();
 
-if ($categories == 'campaigns') {
-  while ($stmt->fetch()) {
-    preg_match('/^\/[^\/]+\/(?:(Run20.+)-v[0-9]+|([^\/-]+)-[^\/]+)\/.*/', $name, $matches);
-    $key = $matches[2];
-    if ($key == "")
-      $key = $matches[1];
+while ($stmt->fetch()) {
+  $key = $categories($name);
 
-    if (array_key_exists($key, $repl_counts))
-      $repl_counts[$key][] = $repl;
-    else
-      $repl_counts[$key] = array($repl);
-  }
-}
-else if ($categories == 'dataTiers') {
-  while ($stmt->fetch()) {
-    preg_match('/^\/[^\/]+\/[^\/]+\/([^\/-]+)/', $name, $matches);
-    $key = $matches[1];
-    if (array_key_exists($key, $repl_counts))
-      $repl_counts[$key][] = $repl;
-    else
-      $repl_counts[$key] = array($repl);
-  }
-}
-else if ($categories == 'datasets' || $categories == 'groups') {
-  while ($stmt->fetch()) {
-    $key = $name;
-    if (array_key_exists($key, $repl_counts))
-      $repl_counts[$key][] = $repl;
-    else
-      $repl_counts[$key] = array($repl);
-  }
+  if (array_key_exists($key, $repl_counts))
+    $repl_counts[$key][] = $repl;
+  else
+    $repl_counts[$key] = array($repl);
 }
 
 $stmt->close();

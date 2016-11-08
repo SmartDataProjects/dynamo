@@ -4,221 +4,91 @@
   Following variables are imported:
   $store_db: mysqi, dynamo inventory store
   $categories: string, what the results will be presented in terms of
-  $const_*: string, constraints
+  $key_column: key column
+  $grouping: grouping by
+  $constraints: array of constraint strings
   $physical: bool, show physical/projected size
-  $data: output array
-  $content: output array. Part of $data
+  $content: output array
 */
+
+/* CONSTRUCT QUERY */
+
+$uses_group = ($categories == 'groups' || count($const_group) != 0);
+
+if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
+  $key_column = 'd.`name`';
+  $grouping = 's.`id`, d.`id`';
+}
+else if ($categories == 'groups') {
+  $key_column = 'IFNULL(g.`name`, \'Unsubscribed\')';
+  $grouping = 's.`id`, g.`name`';
+}
+
+if ($physical) {
+  $query = 'SELECT s.`name`, ' . $key_column . ', SUM(IFNULL(brs.`size`, b.`size`)) * 1.e-12
+FROM `block_replicas` AS br
+INNER JOIN `blocks` AS b ON b.`id` = br.`block_id`
+INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`
+INNER JOIN `sites` AS s ON s.`id` = br.`site_id`
+LEFT JOIN `groups` AS g ON g.`id` = br.`group_id`
+LEFT JOIN `block_replica_sizes` AS brs ON (brs.`block_id`, brs.`site_id`) = (br.`block_id`, br.`site_id`)';
+}
+else {
+  // using MIN(group_name) as the group name of the dataset replica
+
+  $query = 'SELECT s.`name`, ' . $key_column . ', SUM(d.`size`) * 1.e-12
+FROM `dataset_replicas` AS dr
+INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`
+INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`';
+
+  if ($uses_group) {
+    $query .= ' INNER JOIN (
+  SELECT b.`dataset_id` AS dataset_id, br.`site_id` AS site_id, MIN(`groups`.`name`) AS name
+  FROM `block_replicas` AS br
+  INNER JOIN `blocks` AS b ON b.`id` = br.`block_id`
+  LEFT JOIN `groups` ON `groups`.`id` = br.`group_id`
+  GROUP BY dataset_id, site_id
+) AS g ON (g.`dataset_id`, g.`site_id`) = (dr.`dataset_id`, dr.`site_id`)';
+  }
+}
+
+if (count($constraints) != 0)
+  $query .= ' WHERE ' . implode(' AND ', $constraints);
+
+$query .= ' GROUP BY ' . $grouping;
+
+$query = str_replace("\n", " ", $query);
+error_log($query);
+
+/* EXECUTE AND FILL */
+
+$stmt = $store_db->prepare($query);
+$stmt->bind_result($site, $name, $size);
+$stmt->execute();
 
 $site_usages = array();
 $total_usage = array();
 
-function fetch_size($selection, $constraint_base, $grouping) {
-  global $store_db;
-  global $categories;
-  global $const_campaign, $const_data_tier, $const_dataset, $const_site, $const_group;
-  global $site_usages, $total_usage;
+while ($stmt->fetch()) {
+  if (!array_key_exists($site, $site_usages))
+    $site_usages[$site] = array();
 
-  $constraints = array();
+  $usage = &$site_usages[$site];
 
-  if ($constraint_base != '')
-    $constraints[] = $constraint_base;
-  if (strlen($const_campaign) != 0)
-    $constraints[] = 'd.`name` LIKE \'/%/' . $const_campaign . '%/%\'';
-  if (strlen($const_data_tier) != 0)
-    $constraints[] = 'd.`name` LIKE \'/%/%/' . $const_data_tier . '\'';
-  if (strlen($const_dataset) != 0)
-    $constraints[] = 'd.`name` LIKE \'' . $const_dataset . '\'';
-  if (strlen($const_site) != 0)
-    $constraints[] = 's.`name` LIKE \'' . $const_site . '\'';
-  if (count($const_group) != 0) {
-    $subconsts = array();
-    foreach ($const_group as $cg)
-      $subconsts[] = 'g.`name` LIKE \'' . $cg . '\'';
-    $constraints[] = '(' . implode(' OR ', $subconsts) . ')';
-  }
+  $key = $categories($name); // see keys.php
 
-  if (count($constraints) != 0)
-    $constraint = ' WHERE ' . implode(' AND ', $constraints);
+  if (array_key_exists($key, $usage))
+    $usage[$key] += $size;
   else
-    $constraint = '';
+    $usage[$key] = $size;
 
-  $stmt = $store_db->prepare($selection . ' ' . $constraint . ' ' . $grouping);
-  $stmt->bind_result($site, $name, $size);
-  $stmt->execute();
-
-  if ($categories == 'campaigns') {
-    while ($stmt->fetch()) {
-      if (!array_key_exists($site, $site_usages))
-        $site_usages[$site] = array();
-
-      $usage = &$site_usages[$site];
-
-      preg_match('/^\/[^\/]+\/(?:(Run20.+)-v[0-9]+|([^\/-]+)-[^\/]+)\/.*/', $name, $matches);
-      $key = $matches[2];
-      if ($key == "")
-        $key = $matches[1];
-
-      if (array_key_exists($key, $usage))
-        $usage[$key] += $size;
-      else
-        $usage[$key] = $size;
-
-      if (array_key_exists($key, $total_usage))
-        $total_usage[$key] += $size;
-      else
-        $total_usage[$key] = $size;
-    }
-  }
-  else if ($categories == 'dataTiers') {
-    while ($stmt->fetch()) {
-      if (!array_key_exists($site, $site_usages))
-        $site_usages[$site] = array();
-
-      $usage = &$site_usages[$site];
-
-      preg_match('/^\/[^\/]+\/[^\/]+\/([^\/-]+)/', $name, $matches);
-      $key = $matches[1];
-
-      if (array_key_exists($key, $usage))
-        $usage[$key] += $size;
-      else
-        $usage[$key] = $size;
-
-      if (array_key_exists($key, $total_usage))
-        $total_usage[$key] += $size;
-      else
-        $total_usage[$key] = $size;
-    }
-  }
-  else if ($categories == 'datasets' || $categories == 'groups') {
-    while ($stmt->fetch()) {
-      if (!array_key_exists($site, $site_usages))
-        $site_usages[$site] = array();
-
-      $usage = &$site_usages[$site];
-
-      $key = $name;
-
-      if (array_key_exists($key, $usage))
-        $usage[$key] += $size;
-      else
-        $usage[$key] = $size;
-
-      if (array_key_exists($key, $total_usage))
-        $total_usage[$key] += $size;
-      else
-        $total_usage[$key] = $size;
-    }
-  }
-  
-  $stmt->close();
-};
-
-/* CONSTRUCT QUERIES */
-
-$disk_only = 's.`storage_type` NOT LIKE \'mss\'';
-
-$join_d = ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`';
-$join_b = ' INNER JOIN `blocks` AS b on b.`dataset_id` = d.`id`';
-$join_s = ' INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`';
-$join_g = ' INNER JOIN `groups` AS g ON g.`id` = dr.`group_id`';
-
-if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
-  $selection = 'SELECT s.`name`, d.`name`, SUM(d.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
-  $selection .= $join_d;
-  $selection .= $join_s;
-  if (count($const_group) != 0)
-    $selection .= $join_g;
-
-  $grouping = ' GROUP BY s.`id`, d.`id`';
-}
-else if ($categories == 'groups') {
-  $selection = 'SELECT s.`name`, g.`name`, SUM(d.`size`) * 1.e-12 FROM `dataset_replicas` AS dr';
-  $selection .= $join_d;
-  $selection .= $join_g;
-  $selection .= $join_s;
-
-  $grouping = ' GROUP BY s.`id`, g.`id`';
+  if (array_key_exists($key, $total_usage))
+    $total_usage[$key] += $size;
+  else
+    $total_usage[$key] = $size;
 }
 
-$constraint_base = 'dr.`completion` LIKE \'full\' AND dr.`group_id` != 0 AND ' . $disk_only;
-
-fetch_size($selection, $constraint_base, $grouping);
-
-// block replicas are saved for dataset replicas that are
-//  . incomplete or partial
-//  . not entirely owned by a group
-
-$join_b = ' INNER JOIN `blocks` AS b on b.`id` = br.`block_id`';
-$join_d = ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`';
-$join_s = ' INNER JOIN `sites` AS s ON s.`id` = br.`site_id`';
-$join_g = ' INNER JOIN `groups` AS g ON g.`id` = br.`group_id`';
-
-if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
-  $selection = 'SELECT s.`name`, d.`name`, SUM(b.`size`) * 1.e-12 FROM `block_replicas` AS br';
-  $selection .= $join_b;
-  $selection .= $join_d;
-  $selection .= $join_s;
-  if (count($const_group) != 0)
-    $selection .= $join_g;
-
-  $grouping = ' GROUP BY s.`id`, d.`id`';
-}
-else if ($categories == 'groups') {
-  $selection = 'SELECT s.`name`, g.`name`, SUM(b.`size`) * 1.e-12 FROM `block_replicas` AS br';
-  $selection .= $join_b;
-  $selection .= $join_g;
-  $selection .= $join_s;
-  if (strlen($const_campaign) != 0 || strlen($const_data_tier) != 0 || strlen($const_dataset) != 0)
-    $selection .= $join_d;
-
-  $grouping = ' GROUP BY s.`id`, g.`id`';
-}
-
-if ($physical) # only pick up the block full sizes for complete replicas
-  $constraint_base = 'br.`is_complete` = 1 AND ' . $disk_only;
-else
-  $constraint_base = $disk_only;
-
-fetch_size($selection, $constraint_base, $grouping);
-
-if ($physical) {
-# now tally up the incomplete replicas
-
-  $join_b = ' INNER JOIN `blocks` AS b on b.`id` = brs.`block_id`';
-  $join_d = ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`';
-  $join_s = ' INNER JOIN `sites` AS s ON s.`id` = brs.`site_id`';
-  $join_br = ' INNER JOIN `block_replicas` AS br ON br.`block_id` = brs.`block_id` AND br.`site_id` = brs.`site_id`';
-  $join_g = ' INNER JOIN `groups` AS g ON g.`id` = br.`group_id`';
-
-  if ($categories == 'campaigns' || $categories == 'dataTiers' || $categories == 'datasets') {
-    $selection = 'SELECT s.`name`, d.`name`, SUM(brs.`size`) * 1.e-12 FROM `block_replica_sizes` AS brs';
-    $selection .= $join_b;
-    $selection .= $join_d;
-    $selection .= $join_s;
-    if (count($const_group) != 0) {
-      $selection .= $join_br;
-      $selection .= $join_g;
-    }
-
-    $grouping = ' GROUP BY s.`id`, d.`id`';
-  }
-  else if ($categories == 'groups') {
-    $selection = 'SELECT s.`name`, g.`name`, SUM(brs.`size`) * 1.e-12 FROM `block_replica_sizes` AS brs';
-    $selection .= $join_br;
-    $selection .= $join_g;
-    $selection .= $join_s;
-    if (strlen($const_campaign) != 0 || strlen($const_data_tier) != 0 || strlen($const_dataset) != 0) {
-      $selection .= $join_b;
-      $selection .= $join_d;
-    }
-
-    $grouping = ' GROUP BY s.`id`, g.`id`';
-  }
-
-  fetch_size($selection, $disk_only, $grouping);
-}
+$stmt->close();
 
 ksort($site_usages);
 arsort($total_usage);

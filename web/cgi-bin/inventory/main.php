@@ -1,6 +1,8 @@
 <?php
 
 include_once(__DIR__ . '/../common/init_db.php');
+include_once(__DIR__ . '/../common/utils.php');
+include_once(__DIR__ . '/../inventory/keys.php');
 
 $stmt = $store_db->prepare('SELECT `lock_host` FROM `system`');
 $stmt->bind_result($lock_host);
@@ -59,6 +61,20 @@ else if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
   $data_type = $_REQUEST['dataType'];
   $categories = $_REQUEST['categories'];
   $physical = $_REQUEST['physical'] == 'y';
+
+  $constraints = array();
+
+  $constraints[] = 's.`storage_type` NOT LIKE \'mss\'';
+  if (strlen($const_site) != 0)
+    $constraints[] = 's.`name` LIKE \'' . $const_site . '\'';
+  if (count($const_group) != 0)
+    $constraints[] = 'g.`name` IN (' . implode(',', array_quote($const_group)) . ')';
+  if (strlen($const_campaign) != 0)
+    $constraints[] = 'd.`name` LIKE \'/%/' . $const_campaign . '-%/%\'';
+  if (strlen($const_data_tier) != 0)
+    $constraints[] = 'd.`name` LIKE \'/%/%/' . $const_data_tier . '\'';
+  if (strlen($const_dataset) != 0)
+    $constraints[] = 'd.`name` LIKE \'' . $const_dataset . '\'';
 
   $data = array('dataType' => $data_type, 'content' => array());
 

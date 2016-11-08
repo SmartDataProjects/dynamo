@@ -782,18 +782,28 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
 
 function setDetailsLink(data)
 {
-    if (data.requestIds.length == 0) {
-        d3.select('#download').classed('clickable', false)
-            .on('click', null);
-        d3.select('#phedex').classed('clickable', false)
-            .on('click', null);
+    var hasDelete = false;
+
+    for (var x in data.siteData) {
+        if (data.siteData[x].delete != 0.) {
+            hasDelete = true;
+            break;
+        }
     }
-    else {
+
+    if (hasDelete)
         d3.select('#download').classed('clickable', true)
             .on('click', function () { downloadList(); });
+    else
+        d3.select('#download').classed('clickable', false)
+            .on('click', null);
+
+    if (data.requestIds.length == 0)
+        d3.select('#phedex').classed('clickable', false)
+            .on('click', null);
+    else
         d3.select('#phedex').classed('clickable', true)
             .on('click', function () { window.open('https://cmsweb.cern.ch/phedex/prod/Request::View?request=' + data.requestIds.join('+')); });
-    }
 }
 
 function loadSiteTable(name)
@@ -852,8 +862,8 @@ function findDataset()
 
 function downloadList()
 {
-    var url = window.location.href;
-    url += 'dumpDeletions=1';
+    var url = window.location.href.split('?')[0];
+    url += '?dumpDeletions=1';
     url += '&cycleNumber=' + currentCycle;
     
     window.location = url;
