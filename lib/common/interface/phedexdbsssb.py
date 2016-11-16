@@ -254,16 +254,20 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         for site, replica_list in replicas_by_site.items():
             for level in ['dataset', 'block']:
                 # execute the deletions in two steps: one for dataset-level and one for block-level
+                deletion_list = []
+
                 catalogs = {}
                 for replica in replica_list:
                     replica_blocks = [r.block for r in replica.block_replicas]
 
                     if set(replica_blocks) == set(replica.dataset.blocks):
                         if level == 'dataset':
+                            deletion_list.append(replica)
                             catalogs[replica.dataset] = []
 
                     else:
                         if level == 'block':
+                            deletion_list.append(replica)
                             catalogs[replica.dataset] = replica_blocks
 
                 if len(catalogs) == 0:
@@ -286,7 +290,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     while request_id in request_mapping:
                         request_id -= 1
     
-                    request_mapping[request_id] = (True, replica_list)
+                    request_mapping[request_id] = (True, deletion_list)
     
                 else:
                     # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
@@ -298,14 +302,14 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         
                     request_id = int(result[0]['id']) # return value is a string
         
-                    request_mapping[request_id] = (False, replica_list) # (completed, deleted_replicas)
+                    request_mapping[request_id] = (False, deletion_list) # (completed, deleted_replicas)
         
                     logger.warning('PhEDEx deletion request id: %d', request_id)
     
                     if auto_approval:
                         try:
                             result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
-                            request_mapping[request_id] = (True, replica_list)
+                            request_mapping[request_id] = (True, deletion_list)
                         except:
                             logger.error('schedule_deletions  deletion approval failed.')
                             continue
