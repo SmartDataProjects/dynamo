@@ -43,8 +43,7 @@ CREATE TABLE `copy_requests` (
   `approved` tinyint(1) NOT NULL DEFAULT '0',
   `site_id` int(10) unsigned NOT NULL DEFAULT '0',
   `size` bigint(20) NOT NULL DEFAULT '-1',
-  `size_copied` bigint(20) unsigned NOT NULL DEFAULT '0',
-  `last_update` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `completed` tinyint(1) unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -76,7 +75,7 @@ CREATE TABLE `datasets` (
   `name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=MyISAM AUTO_INCREMENT=360026 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=369545 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -114,7 +113,7 @@ CREATE TABLE `deletion_decisions` (
   KEY `datasets` (`dataset_id`),
   KEY `runs` (`run_id`),
   KEY `conditions` (`matched_condition`)
-) ENGINE=MyISAM AUTO_INCREMENT=40062384 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=MyISAM AUTO_INCREMENT=39962081 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -131,8 +130,6 @@ CREATE TABLE `deletion_requests` (
   `approved` tinyint(1) NOT NULL DEFAULT '0',
   `site_id` int(10) unsigned NOT NULL DEFAULT '0',
   `size` bigint(20) NOT NULL DEFAULT '-1',
-  `size_deleted` bigint(20) unsigned NOT NULL DEFAULT '0',
-  `last_update` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -177,7 +174,7 @@ CREATE TABLE `policy_conditions` (
   `text` varchar(512) COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `text` (`text`)
-) ENGINE=MyISAM AUTO_INCREMENT=265 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=MyISAM AUTO_INCREMENT=270 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -197,7 +194,7 @@ CREATE TABLE `quota_snapshots` (
   UNIQUE KEY `unique` (`site_id`,`partition_id`,`run_id`),
   KEY `site_partition` (`site_id`,`partition_id`),
   KEY `runs` (`run_id`)
-) ENGINE=MyISAM AUTO_INCREMENT=550 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=611 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -218,7 +215,7 @@ CREATE TABLE `replica_size_snapshots` (
   KEY `site_partition` (`site_id`,`partition_id`),
   KEY `datasets` (`dataset_id`),
   KEY `runs` (`run_id`)
-) ENGINE=MyISAM AUTO_INCREMENT=2204482 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=2558449 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -274,7 +271,7 @@ CREATE TABLE `runs` (
   PRIMARY KEY (`id`),
   KEY `operations` (`operation`),
   KEY `partitions` (`partition_id`)
-) ENGINE=MyISAM AUTO_INCREMENT=2765 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=4072 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -294,7 +291,7 @@ CREATE TABLE `site_status_snapshots` (
   UNIQUE KEY `unique` (`site_id`,`run_id`),
   KEY `sites` (`site_id`),
   KEY `runs` (`run_id`)
-) ENGINE=MyISAM AUTO_INCREMENT=509 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=508 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -321,4 +318,4 @@ CREATE TABLE `sites` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2016-10-20 13:55:40
+-- Dump completed on 2016-11-21 11:36:20
