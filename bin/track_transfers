@@ -256,6 +256,8 @@ for site in sites:
         for j in range(len(sites_copied[i])):
             if sites_copied[i][j] == site:
                 replicas_in_site = replicas_in_site + 1
+                if sites_copied[i][j+1] == None:
+                    sites_copied[i][j+1] = 0
                 site_copied = site_copied + sites_copied[i][j+1]
                 site_total = site_total + sites_total[i][j+1]
 
