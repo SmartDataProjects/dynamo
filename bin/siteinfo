@@ -18,7 +18,7 @@ sys.argv = []
 history = MySQLHistory()
 history.acquire_lock()
 
-partitions = ['AnalysisOps', 'DataOps', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']
+partitions = ['Physics', 'DataOps', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']
 
 try:
     # Count datasets for RemainingDatasets
