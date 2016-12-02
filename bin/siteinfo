@@ -7,6 +7,8 @@ import collections
 from argparse import ArgumentParser
 
 from common.interface.mysqlhistory import MySQLHistory
+from common.inventory import InventoryManager
+from common.demand import DemandManager
 
 parser = ArgumentParser(description = 'Generate SitesInfo and RemainingDatasets files for Unified.')
 parser.add_argument('--out', '-o', metavar = 'PATH', dest = 'out_path', default = '.', help = 'Output path.')
@@ -17,6 +19,10 @@ sys.argv = []
 
 history = MySQLHistory()
 history.acquire_lock()
+
+inventory = InventoryManager()
+demand = DemandManager()
+demand.load(inventory, accesses = True, requests = False)
 
 partitions = ['Physics', 'DataOps', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']
 
@@ -141,6 +147,8 @@ try:
     sitesinfo.close()
 
     for site in dataset_lists:
+        st = inventory.sites[site]
+
         if not os.path.isdir(args.out_path + '/result/' + site):
             os.makedirs(args.out_path + '/result/' + site)
 
@@ -161,7 +169,13 @@ try:
                 continue
 
             for dataset, size in dataset_lists[site][partition]:
-                remaining.write('  9999.9 %9.1f %6d %6d  %s\n' % (size * 1.e-9, dscount_prev[dataset], dscount_now[dataset], dataset))
+                try:
+                    ds = inventory.datasets[dataset]
+                    local_rank = ds.demand.local_usage_rank[st]
+                except KeyError:
+                    local_rank = 9999.9
+
+                remaining.write('  %6.1f %9.1f %6d %6d  %s\n' % (local_rank, size * 1.e-9, dscount_prev[dataset], dscount_now[dataset], dataset))
 
         remaining.close()
         

@@ -41,16 +41,19 @@ class DemandManager(object):
         self.last_requests_update = None
         self.time_today = 0.
 
-    def load(self, inventory):
+    def load(self, inventory, accesses = True, requests = True):
         sites = inventory.sites.values()
         datasets = inventory.datasets.values()
 
-        logger.info('Loading dataset access information.')
-        # returns a UTC date
-        self.last_accesses_update = self.store.load_replica_accesses(sites, datasets)
-        logger.info('Loading dataset requests information.')
-        # returns a UTC datetime
-        self.last_requests_update = self.store.load_dataset_requests(datasets)
+        if accesses:
+            logger.info('Loading dataset access information.')
+            # returns a UTC date
+            self.last_accesses_update = self.store.load_replica_accesses(sites, datasets)
+
+        if requests:
+            logger.info('Loading dataset requests information.')
+            # returns a UTC datetime
+            self.last_requests_update = self.store.load_dataset_requests(datasets)
 
         self.setup_demands(inventory)
 
@@ -227,6 +230,8 @@ class DemandManager(object):
                         local_rank = (today - last_access).days - num_access
     
                     local_rank -= replica.size(physical = False) * 1.e-12
+
+                    dataset.demand.local_usage_rank[replica.site] = local_rank
     
                     global_rank += local_rank
     
