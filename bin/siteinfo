@@ -156,6 +156,13 @@ try:
 
         remaining.write('# -- ' + time.strftime('%Y-%m-%d %H:%M') + '\n')
         remaining.write('\n')
+        remaining.write('# Rank = Ta - N - S if N != 0')
+        remaining.write('# Rank = Tc - S if N == 0')
+        remaining.write('# where')
+        remaining.write('#  Ta = (number of days since last access via CRAB)')
+        remaining.write('#  Tc = (number of days since dataset transfer to site)')
+        remaining.write('#  N = (number of recorded accesses via CRAB)')
+        remaining.write('#  S = (dataset size in TB)')
 
         for partition in partitions:
             remaining.write('#\n')
