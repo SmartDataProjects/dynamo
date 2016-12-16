@@ -33,11 +33,6 @@ class Dealer(object):
 
         logger.info('Dealer run for %s starting at %s', partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
         
-        if time.time() - self.inventory_manager.store.last_update > config.inventory.refresh_min:
-            logger.info('Inventory was last updated at %s. Reloading content from remote sources.', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.inventory_manager.store.last_update)))
-            # inventory is stale -> update
-            self.inventory_manager.update()
-
         self.demand_manager.update(self.inventory_manager, accesses = False, requests = True, locks = False)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 

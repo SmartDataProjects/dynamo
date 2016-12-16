@@ -39,11 +39,6 @@ class Detox(object):
 
         logger.info('Detox cycle for %s starting at %s', partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
 
-        if time.time() - self.inventory_manager.store.last_update > config.inventory.refresh_min:
-            logger.info('Inventory was last updated at %s. Reloading content from remote sources.', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.inventory_manager.store.last_update)))
-            # inventory is stale -> update
-            self.inventory_manager.update()
-
         if not config.read_only and not is_test:
             # write a file indicating detox activity
             while True:
@@ -91,6 +86,8 @@ class Detox(object):
                 if site.partition_quota(partition) != 0. and policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
                     target_sites.add(site)
 
+#            logger.info('Target sites: %s', ' '.join([s.name for s in target_sites]))
+
             logger.info('Identifying dataset replicas in the partition.')
 
             # "partition" as a verb - selecting only the blockreps in the partition
@@ -112,7 +109,11 @@ class Detox(object):
                     logger.info('Iteration %d', iteration)
     
                 eval_results = parallel_exec(lambda r: policy.evaluate(r), list(all_replicas), per_thread = 100)
-    
+
+#                logger.info('%d eval results', len(eval_results))
+#                if len(eval_results) != 0:
+#                    logger.info(str(eval_results[0]))
+
                 deletion_candidates = collections.defaultdict(dict) # {site: {replica: condition_id}}
     
                 for replica, decision, condition in eval_results:
