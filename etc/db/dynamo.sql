@@ -67,7 +67,7 @@ CREATE TABLE `blocks` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`),
   KEY `datasets` (`dataset_id`)
-) ENGINE=MyISAM AUTO_INCREMENT=3634714 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -150,7 +150,27 @@ CREATE TABLE `datasets` (
   `is_open` tinyint(1) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=MyISAM AUTO_INCREMENT=331747 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `files`
+--
+
+DROP TABLE IF EXISTS `files`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `files` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `block_id` bigint(20) unsigned NOT NULL DEFAULT '0',
+  `dataset_id` int(10) unsigned NOT NULL DEFAULT '0',
+  `size` bigint(20) NOT NULL DEFAULT '-1',
+  `name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`),
+  KEY `datasets` (`dataset_id`),
+  KEY `blocks` (`block_id`)
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -166,7 +186,7 @@ CREATE TABLE `groups` (
   `olevel` enum('Dataset','Block') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'Block',
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=MyISAM AUTO_INCREMENT=726 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -203,7 +223,7 @@ CREATE TABLE `sites` (
   `status` enum('ready','waitroom','morgue','unknown') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'ready',
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=MyISAM AUTO_INCREMENT=222 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -221,7 +241,7 @@ CREATE TABLE `software_versions` (
   `suffix` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL DEFAULT '',
   PRIMARY KEY (`id`),
   UNIQUE KEY `release` (`cycle`,`major`,`minor`,`suffix`)
-) ENGINE=MyISAM AUTO_INCREMENT=1104 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -250,4 +270,4 @@ CREATE TABLE `system` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2016-10-20 13:55:34
+-- Dump completed on 2017-01-04 18:30:03

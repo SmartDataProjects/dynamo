@@ -8,7 +8,7 @@ import fnmatch
 
 from common.interface.store import LocalStoreInterface
 from common.interface.mysql import MySQL
-from common.dataformat import Dataset, Block, Site, Group, DatasetReplica, BlockReplica, DatasetRequest
+from common.dataformat import Dataset, Block, File, Site, Group, DatasetReplica, BlockReplica, DatasetRequest
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -269,6 +269,44 @@ class MySQLStore(LocalStoreInterface):
             num_blocks += 1
 
         logger.info('Loaded data for %d blocks.', num_blocks)
+
+        # Load files
+        query = 'SELECT DISTINCT f.`dataset_id`, f.`block_id`, f.`name`, f.`size` FROM `files` AS f'
+        conditions = []
+        if load_replicas:
+            query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = f.`dataset_id`'
+            conditions.append('dr.`site_id` IN (%s)' % sites_str)
+        if dataset_filt != '/*/*/*' and dataset_filt != '':
+            query += ' INNER JOIN `datasets` AS d ON d.`id` = f.`dataset_id`'
+            conditions.append('d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%'))
+
+        if len(conditions) != 0:
+            query += ' WHERE ' + (' AND '.join(conditions))
+
+        query += ' ORDER BY f.`dataset_id`, f.`block_id`'
+
+        num_files = 0
+
+        _dataset_id = 0
+        dataset = None
+        _block_id = 0
+        block = None
+        for dataset_id, block_id, name, size in self._mysql.query(query):
+            if dataset_id != _dataset_id:
+                dataset = self._ids_to_datasets[dataset_id]
+                _dataset_id = dataset_id
+
+            if block_id != _block_id:
+                block = block_id_maps[dataset_id][block_id]
+                _block_id = block_id
+
+            lfile = File.create(name, block, size)
+
+            dataset.files.add(lfile)
+
+            num_files += 1
+
+        logger.info('Loaded data for %d files.', num_files)
 
         if load_replicas:
             logger.info('Loading replicas.')
@@ -539,13 +577,12 @@ class MySQLStore(LocalStoreInterface):
         # insert/update blocks
 
         # same strategy; write to temp and update
-        # this time however we don't want to create a block-to-id map
-        # which also means that we don't a priori know which blocks are in the DB already
-        # we therefore have to dump all blocks into a temporary table
+        # this time we dump all blocks into a temporary table
 
-        all_blocks = []
+        all_blocks = {}
         for dataset in datasets:
-            all_blocks.extend(dataset.blocks)
+            for block in dataset.blocks:
+                all_blocks[block.name] = block
 
         logger.info('Inserting/updating %d blocks.', len(all_blocks))
 
@@ -564,9 +601,7 @@ class MySQLStore(LocalStoreInterface):
             1 if b.is_open else 0
         )
 
-        self._mysql.insert_many('blocks_tmp', fields, mapping, all_blocks, do_update = False)
-
-        del all_blocks
+        self._mysql.insert_many('blocks_tmp', fields, mapping, all_blocks.values(), do_update = False)
 
         field_tuple = lambda t: '(' + ', '.join(['%s.`%s`' % (t, f) for f in fields[2:]]) + ')'
 
@@ -583,12 +618,6 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query(query)
 
-        # we don't need datasets_tmp any more
-        self._mysql.query('DROP TABLE `datasets_tmp`')
-
-        # TODO take care of invalidated blocks
-        # can create datasets_tmp the same way as blocks, delete from `blocks` blocks that are not in blocks_tmp but have dataset_id in datasets_tmp
-
         # there can be rows in blocks_tmp that are not in blocks
         query = 'INSERT INTO `blocks` (%s)' % (','.join(['`%s`' % f for f in fields]))
         query += ' SELECT * FROM `blocks_tmp` WHERE `name` NOT IN (SELECT `name` FROM `blocks`)'
@@ -596,7 +625,65 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query(query)
 
+        block_id_map = {}
+
+        for bid, bname in self._mysql.query('SELECT b1.`id`, b1.`name` FROM `blocks` AS b1 INNER JOIN `blocks_tmp` AS b2 ON b2.`name` = b1.`name`'):
+            block_id_map[all_blocks[Block.translate_name(bname)]] = bid
+
         self._mysql.query('DROP TABLE `blocks_tmp`')
+
+        del all_blocks
+
+        # insert/update files
+
+        # same strategy as blocks
+
+        all_files = []
+        for dataset in datasets:
+            all_files.extend(dataset.files)
+
+        logger.info('Inserting/updating %d files.', len(all_files))
+
+        self._mysql.query('CREATE TABLE `files_tmp` LIKE `files`')
+        # make file name the primary key
+        self._mysql.query('ALTER TABLE `files_tmp` DROP COLUMN `id`')
+
+        fields = ('block_id', 'dataset_id', 'size', 'name')
+        mapping = lambda f: (
+            block_id_map[f.block],
+            self._datasets_to_ids[f.block.dataset],
+            f.size,
+            f.fullpath()
+        )
+
+        self._mysql.insert_many('files_tmp', fields, mapping, all_files, do_update = False)
+
+        del all_files
+
+        query = 'UPDATE `files` AS f1 INNER JOIN `files_tmp` AS f2 ON f1.`name` = f2.`name` SET'
+        query += ' ' + ', '.join(['f1.`{f}` = f2.`{f}`'.format(f = f) for f in fields[2:]])
+        query += ' WHERE ' + field_tuple('f1') + ' != ' + field_tuple('f2')
+
+        self._mysql.query(query)
+
+        # delete entries for invalidated files
+        query = 'DELETE FROM f1 USING `files` AS f1'
+        query += ' INNER JOIN `datasets_tmp` AS d ON d.`id` = f1.`dataset_id`'
+        query += ' LEFT JOIN `files_tmp` AS f2 ON f2.`name` = f1.`name` WHERE f2.`name` IS NULL'
+
+        self._mysql.query(query)
+
+        # we don't need datasets_tmp any more
+        self._mysql.query('DROP TABLE `datasets_tmp`')
+
+        # there can be rows in files_tmp that are not in files
+        query = 'INSERT INTO `files` (%s)' % (','.join(['`%s`' % f for f in fields]))
+        query += ' SELECT * FROM `files_tmp` WHERE `name` NOT IN (SELECT `name` FROM `files`)'
+        # using subquery is faster than left join + where right is null
+
+        self._mysql.query(query)
+
+        self._mysql.query('DROP TABLE `files_tmp`')
 
     def _do_save_replicas(self, sites, groups, datasets): #override
         # make name -> id maps for use later

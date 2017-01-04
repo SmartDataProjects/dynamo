@@ -68,6 +68,7 @@ class Dataset(object):
 
         # "transient" members
         self.blocks = []
+        self.files = set()
         self.replicas = []
         self.requests = []
         self.demand = None
@@ -75,9 +76,9 @@ class Dataset(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset(\'%s\', status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, blocks=%s, replicas=%s)' % \
+        return 'Dataset(\'%s\', status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, %d files, replicas=%s)' % \
             (self.name, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
-            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), str([b.real_name() for b in self.blocks]), replica_sites)
+            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), len(self.blocks), len(self.files), replica_sites)
 
     def __repr__(self):
         return 'Dataset(\'%s\', status=%d, on_tape=%d, data_type=%d, software_version=%s, last_update=%d, is_open=%s)' % \
@@ -85,26 +86,27 @@ class Dataset(object):
 
     def unlink(self):
         # unlink objects to avoid ref cycles - should be called when this dataset is absolutely not needed
-        sites = []
         for replica in self.replicas:
             replica.dataset = None
             site = replica.site
 
-            sites.append(site)
             for block_replica in replica.block_replicas:
                 site.remove_block_replica(block_replica)
-                
+
+            replica.block_replicas = []
             site.dataset_replicas.remove(replica)
 
         # by removing the dataset replicas, the block replicas should become deletable (site->blockrep link is cut)
         self.replicas = []
         self.demand = None
+        self.files = set()
         self.blocks = []
 
     def size(self):
         return sum(b.size for b in self.blocks)
 
     def num_files(self):
+        # should change to counting the actual files?
         return sum(b.num_files for b in self.blocks)
 
     def find_block(self, block):
@@ -113,6 +115,18 @@ class Dataset(object):
                 return next(b for b in self.blocks if b == block)
             else:
                 return next(b for b in self.blocks if b.name == block)
+
+        except StopIteration:
+            return None
+
+    def find_file(self, lfile):
+        try:
+            if type(lfile) is File:
+                return next(f for f in self.files if f == lfile)
+            else:
+                directory_id = File.get_directory_id(lfile)
+                name = File.get_basename(lfile)
+                return next(f for f in self.files if f.name == name and f.directory_id == directory_id)
 
         except StopIteration:
             return None
@@ -135,30 +149,49 @@ class Dataset(object):
         new_block = Block(name, self, size, num_files, is_open)
         self.blocks.append(new_block)
 
+        file_replacements = {}
+        for lfile in [f for f in self.files if f.block == old_block]:
+            new_lfile = lfile.clone(block = new_block)
+
+            self.files.remove(lfile)
+            self.files.add(new_lfile)
+
+            file_replacements[lfile] = new_lfile
+
         for replica in self.replicas:
-            site = replica.site
-            for block_replica in list(replica.block_replicas):
-                if block_replica.block == old_block:
-                    new_block_replica = block_replica.clone(block = new_block)
+            for block_replica in [r for r in replica.block_replicas if r.block == old_block]:
+                new_block_replica = block_replica.clone(block = new_block)
 
-                    replica.block_replicas.remove(block_replica)
-                    replica.block_replicas.append(new_block_replica)
+                replica.block_replicas.remove(block_replica)
+                replica.block_replicas.append(new_block_replica)
 
-                    site.remove_block_replica(block_replica)
-                    site.add_block_replica(new_block_replica)
+                replica.site.remove_block_replica(block_replica)
+                replica.site.add_block_replica(new_block_replica)
 
         return new_block
 
     def remove_block(self, block):
         self.blocks.remove(block)
 
-        for replica in self.replicas:
-            site = replica.site
-            for block_replica in list(replica.block_replicas):
-                if block_replica.block == block:
-                    replica.block_replicas.remove(block_replica)
-                    site.remove_block_replica(block_replica)
+        for lfile in [f for f in self.files if f.block == block]:
+            self.files.remove(lfile)
 
+        for replica in self.replicas:
+            for block_replica in [r for r in replica.block_replicas if r.block == block]:
+                replica.block_replicas.remove(block_replica)
+                replica.site.remove_block_replica(block_replica)
+
+    def update_file(self, path, size):
+        directory_id = File.get_directory_id(lfile)
+        name = File.get_basename(lfile)
+        old_file = next(f for f in self.files if f.name == name and f.directory_id == directory_id)
+        self.files.remove(old_file)
+
+        new_file = old_file.clone(size = size)
+        self.files.add(new_file)
+
+        return new_file
+        
 
 # Block and BlockReplica implemented as tuples to reduce memory footprint
 Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files', 'is_open'])
@@ -187,13 +220,13 @@ def _Block_find_replica(self, site):
     except StopIteration:
         return None
 
-def _Block_clone(self, dataset = None, size = None, num_files = None, is_open = None):
+def _Block_clone(self, **kwd):
     return Block(
         self.name,
-        self.dataset if dataset is None else dataset,
-        self.size if size is None else size,
-        self.num_files if num_files is None else num_files,
-        self.is_open if is_open is None else is_open
+        self.dataset if 'dataset' not in kwd else kwd['dataset'],
+        self.size if 'size' not in kwd else kwd['size'],
+        self.num_files if 'num_files' not in kwd else kwd['num_files'],
+        self.is_open if 'is_open' not in kwd else kwd['is_open']
     )
 
 Block.translate_name = staticmethod(_Block_translate_name)
@@ -201,6 +234,53 @@ Block.__str__ = _Block___str__
 Block.real_name = _Block_real_name
 Block.find_replica = _Block_find_replica
 Block.clone = _Block_clone
+
+
+File = collections.namedtuple('File', ['name', 'directory_id', 'block', 'size'])
+
+def _File_get_directory_id(path):
+    directory = path[:path.rfind('/')]
+    try:
+        directory_id = File.directory_ids[directory]
+    except:
+        directory_id = len(File.directories)
+        File.directory_ids[directory] = directory_id
+        File.directories.append(directory)
+
+    return directory_id
+
+def _File_get_basename(path):
+    return path[path.rfind('/') + 1:]
+
+def _File_create(path, block, size):
+    return File(File.get_basename(path), File.get_directory_id(path), block, size)
+
+def _File_fullpath(self):
+    return File.directories[self.directory_id] + '/' + self.name
+
+def _File_clone(self, **kwd):
+    if 'path' in kwd:
+        path = kwd['path']
+        name = File.get_basename(path)
+        directory_id = File.get_directory_id(path)
+    else:
+        name = self.name
+        directory_id = self.directory_id
+
+    return File(
+        name,
+        directory_id,
+        self.block if 'block' not in kwd else kwd['block'],
+        self.size if 'size' not in kwd else kwd['size']
+    )
+
+File.directories = []
+File.directory_ids = {}
+File.get_directory_id = staticmethod(_File_get_directory_id)
+File.get_basename = staticmethod(_File_get_basename)
+File.create = staticmethod(_File_create)
+File.fullpath = _File_fullpath
+File.clone = _File_clone
 
 
 class Site(object):
@@ -365,6 +445,7 @@ class Site(object):
             replica.dataset = None
             replica.site = None
             for block_replica in replica.block_replicas:
+                # need to call remove before clearing the set for size accounting
                 self.remove_block_replica(block_replica)
 
             replica.block_replicas = []
@@ -551,10 +632,12 @@ class DatasetReplica(object):
 
     def __str__(self):
         return 'DatasetReplica {site}:{dataset} (is_complete={is_complete}, is_custodial={is_custodial},' \
-            ' block_replicas={block_replicas}, #accesses[LOCAL]={num_local_accesses}, #accesses[REMOTE]={num_remote_accesses})'.format(
+            ' {block_replicas_size} block_replicas,' \
+            ' #accesses[LOCAL]={num_local_accesses}, #accesses[REMOTE]={num_remote_accesses})'.format(
                 site = self.site.name, dataset = self.dataset.name, is_complete = self.is_complete,
                 is_custodial = self.is_custodial,
-                block_replicas = str(self.block_replicas), num_local_accesses = len(self.accesses[DatasetReplica.ACC_LOCAL]),
+                block_replicas_size = len(self.block_replicas),
+                num_local_accesses = len(self.accesses[DatasetReplica.ACC_LOCAL]),
                 num_remote_accesses = len(self.accesses[DatasetReplica.ACC_REMOTE]))
 
     def __repr__(self):
@@ -566,7 +649,8 @@ class DatasetReplica(object):
 
         return rep
 
-    def clone(self, block_replicas = True): # Create a detached clone. Detached in the sense that it is not linked from dataset or site.
+    def clone(self, block_replicas = True):
+        # Create a detached clone. Detached in the sense that it is not linked from dataset or site.
         replica = DatasetReplica(dataset = self.dataset, site = self.site, is_complete = self.is_complete, is_custodial = self.is_custodial, last_block_created = self.last_block_created)
 
         if block_replicas:

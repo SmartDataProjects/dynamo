@@ -51,9 +51,10 @@ class InventoryManager(object):
 
     def load(self, load_replicas = True):
         """
-        Load all information from local persistent storage to memory. The flag load_replicas
-        can be used to determine whether dataset/block-site links should also be loaded;
-        it is set to false when loading for an inventory update (link information is volatile).
+        Load information up to block level from local persistent storage to memory. The flag
+        load_replicas can be used to determine whether dataset/block-site links should also be
+        loaded; it is set to false when loading for an inventory update (link information is
+        volatile).
         """
 
         logger.info('Loading data from local persistent storage.')

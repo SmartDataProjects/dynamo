@@ -12,7 +12,7 @@ from common.interface.siteinfo import SiteInfoSourceInterface
 from common.interface.replicainfo import ReplicaInfoSourceInterface
 from common.interface.datasetinfo import DatasetInfoSourceInterface
 from common.interface.webservice import RESTService, GET, POST
-from common.dataformat import Dataset, Block, Site, Group, DatasetReplica, BlockReplica
+from common.dataformat import Dataset, Block, File, Site, Group, DatasetReplica, BlockReplica
 from common.misc import parallel_exec
 import common.configuration as config
 
@@ -735,7 +735,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         lock = threading.Lock()
 
         def inquire_phedex(list_chunk):
-            options = [('level', 'block')]
+            options = [('level', 'file')]
             options.extend([('dataset', d.name) for d in list_chunk])
 
             source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
@@ -749,6 +749,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                     # start from the full list of blocks and remove ones found in PhEDEx
                     invalidated_blocks = list(dataset.blocks)
+                    invalidated_files = list(dataset.files)
     
                     for block_entry in ds_entry['block']:
                         try:
@@ -772,7 +773,20 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         else:
                             invalidated_blocks.remove(block)
                             if block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
-                                dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
+                                block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
+
+                        for file_entry in block_entry['file']:
+                            lfn = file_entry['lfn']
+                            lfile = dataset.find_file(lfn)
+
+                            if lfile is None:
+                                lfile = File.create(lfn, block, file_entry['size'])
+                                dataset.files.add(lfile)
+
+                            else:
+                                invalidated_files.remove(lfile)
+                                if lfile.size != file_entry['size']:
+                                    lfile = dataset.update_file(file_entry['size'])
 
                         if block_entry['time_update'] > dataset.last_update:
                             dataset.last_update = block_entry['time_update']
@@ -780,6 +794,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     for block in invalidated_blocks:
                         logger.info('Removing block %s from dataset %s', block.real_name(), dataset.name)
                         dataset.remove_block(block)
+
+                    for lfile in invalidated_files:
+                        logger.info('Removing file %s from dataset %s', lfile.fullpath(), dataset.name)
+                        dataset.files.remove(lfile)
     
                 for dataset in list_chunk: # what remains - in case PhEDEx does not say anything about this dataset
                     # this dataset will be unlinked in set_dataset_details
