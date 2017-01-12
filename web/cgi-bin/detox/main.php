@@ -196,10 +196,10 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
   $data['partition'] = $partition_id;
 
   if ($_REQUEST['dataType'] == 'summary') {
-    $index_to_id = array();
-    $site_names = array();
+    $index_to_id = array(0);
+    $site_names = array(0 => 'Total');
     
-    $quotas = array();
+    $quotas = array(0 => 0);
 
     $query = 'SELECT `site_id`, `quota` FROM `quota_snapshots` AS q1';
     $query .= ' WHERE `partition_id` = ? AND `run_id` = (';
@@ -214,6 +214,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     while ($stmt->fetch()) {
       if ($quota != 0)
         $quotas[$site_id] = $quota;
+      $quotas[0] += $quota;
     }
     $stmt->close();
 
@@ -227,7 +228,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     }
     $stmt->close();
 
-    $statuses = array();
+    $statuses = array(0 => 1);
 
     $query = 'SELECT `site_id`, `active`, `status` FROM `site_status_snapshots` AS s1';
     $query .= ' WHERE `run_id` = (';
@@ -265,8 +266,10 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     $stmt->bind_param('i', $cycle);
     $stmt->bind_result($site_id, $decision, $size);
     $stmt->execute();
-    while ($stmt->fetch())
+    while ($stmt->fetch()) {
       $site_total[$decision][$site_id] = $size;
+      $site_total[$decision][0] += $size;
+    }
     $stmt->close();
 
     check_cache($prev_cycle, $partition_id);
@@ -282,8 +285,10 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     $stmt->bind_param('i', $prev_cycle);
     $stmt->bind_result($site_id, $decision, $size);
     $stmt->execute();
-    while ($stmt->fetch())
+    while ($stmt->fetch()) {
       $site_total[$decision][$site_id] = $size;
+      $site_total[$decision][0] += $size;
+    }
     $stmt->close();
 
     $data['siteData'] = array();

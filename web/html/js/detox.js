@@ -473,6 +473,14 @@ function displaySummary(data)
                 }
             });
 
+    // total separator
+    content.append('line').classed('totalSeparator', true)
+        .attr('x1', xmapping('Total') + xspace * 0.5)
+        .attr('x2', xmapping('Total') + xspace * 0.5)
+        .attr('y1', 0.)
+        .attr('y2', -summary.ymax)
+        .attr({'stroke-dasharray': '0.2,0.2', 'stroke-width': 0.2, 'stroke': 'black'});
+
     var lineLegend = summaryGraph.append('g').classed('lineLegend', true)
         .attr('transform', 'translate(' + gxnorm(50) + ', 0)');
 
@@ -503,6 +511,8 @@ function displaySummary(data)
     var total_kept = 0;
     var total_protected = 0;
     for (var x in data.siteData) {
+        if (data.siteData[x].name == 'Total')
+            continue;
         total_deleted += data.siteData[x].delete;
         total_kept += data.siteData[x].keep;
         total_protected += data.siteData[x].protect;
@@ -766,7 +776,7 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
                 displaySummary(data);
                 setDetailsLink(data);
                 spinner.stop();
-                setupSiteDetails(data.siteData);
+                setupSiteDetails(data.siteData.slice(1)); // 0th element is Total
             }, 'dataType': 'json', 'async': false});
 
     if (previousCycle == 0)
