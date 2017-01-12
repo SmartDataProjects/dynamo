@@ -28,7 +28,7 @@ STOP_TIMEOUT=${STOP_TIMEOUT-120} # it takes some time to restore databases
 
 # Start dynamo daemon (dynamod)
 start() {
-  PIDS=$(pgrep -n $EXECUTABLE > /dev/null)
+  PIDS=$(pgrep -n $EXECUTABLE)
   if [ "$PIDS" ]
   then
     echo "$EXECUTABLE already running: $PIDS"
