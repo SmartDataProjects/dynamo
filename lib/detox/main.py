@@ -110,12 +110,8 @@ class Detox(object):
     
                 eval_results = parallel_exec(lambda r: policy.evaluate(r), list(all_replicas), per_thread = 100)
 
-#                logger.info('%d eval results', len(eval_results))
-#                if len(eval_results) != 0:
-#                    logger.info(str(eval_results[0]))
-
                 deletion_candidates = collections.defaultdict(dict) # {site: {replica: condition_id}}
-    
+
                 for replica, decision, condition in eval_results:
                     if isinstance(decision, Protect):
                         all_replicas.remove(replica)
@@ -321,17 +317,33 @@ class Detox(object):
 
             deletion_mapping = {} #{deletion_id: (approved, [replicas])}
 
+            chunk_size = detox_config.deletion_volume_per_request
+
             while len(replica_list) != 0:
+                # stack up replicas up to 110% of volume_per_request
+                # unnecessary complication in my mind, but has been requested
                 list_chunk = []
+                list_above_chunk = []
                 deletion_size = 0
-                while deletion_size * 1.e-12 < detox_config.deletion_volume_per_request:
-                    try:
-                        replica = replica_list.pop()
-                    except IndexError:
+                while len(replica_list) != 0:
+                    size = replica_list[-1].size()
+                    if deletion_size > chunk_size and deletion_size + size > chunk_size * 1.1:
+                        # put the excess back
+                        list_above_chunk.reverse()
+                        replica_list.extend(list_above_chunk)
+                        list_above_chunk = []
                         break
 
-                    list_chunk.append(replica)
-                    deletion_size += replica.size()
+                    replica = replica_list.pop()
+
+                    if deletion_size > chunk_size:
+                        list_above_chunk.append(replica)
+                    else:
+                        list_chunk.append(replica)
+
+                    deletion_size += size
+
+                list_chunk.extend(list_above_chunk)
                 
                 chunk_record = self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = comment, auto_approval = auto_approval, is_test = is_test)
                 if is_test:
