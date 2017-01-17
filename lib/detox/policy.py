@@ -234,6 +234,7 @@ class Policy(object):
             while ir != len(dataset.replicas):
                 replica = dataset.replicas[ir]
                 site = replica.site
+                # site occupancy is computed at the end by set_block_replicas
 
                 if site.partition_quota(self.partition) == 0.:
                     self.untracked_replicas[replica] = replica.block_replicas
@@ -298,7 +299,7 @@ class Policy(object):
 
             for block_replica in block_replicas:
                 replica.block_replicas.append(block_replica)
-                site.add_block_replica(block_replica, partitions = [self.partition])
+                site.add_block_replica(block_replica)
 
     def evaluate(self, replica):
         for rule in self.rules:
