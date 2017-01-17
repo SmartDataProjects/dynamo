@@ -78,7 +78,6 @@ class InventoryManager(object):
             self.datasets = dict((d.name, d) for d in datasets)
 
             for site in sites:
-                site.compute_occupancy()
                 for partition in Site.partitions.values():
                     site.set_partition_quota(partition, quota_manager.get_quota(site, partition))
 

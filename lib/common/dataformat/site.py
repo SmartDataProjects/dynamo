@@ -190,13 +190,10 @@ class Site(object):
         self._block_replicas.add(replica)
 
         if partitions is None:
-            ip = 0
-            while ip != len(Site.partitions):
-                if Site._partitions_order[ip](replica):
+            for ip, partition in enumerate(Site._partitions_order):
+                if partition(replica):
                     self._occupancy_projected[ip] += replica.block.size
                     self._occupancy_physical[ip] += replica.size
-
-                ip += 1
 
         else:
             for partition in partitions:
@@ -211,28 +208,30 @@ class Site(object):
             print replica.site.name, replica.block.dataset.name, replica.block.name
             raise
 
-        ip = 0
-        while ip != len(Site.partitions):
-            if Site._partitions_order[ip](replica):
+        for ip, partition in enumerate(Site._partitions_order):
+            if partition(replica):
                 self._occupancy_projected[ip] -= replica.block.size
                 self._occupancy_physical[ip] -= replica.size
-
-            ip += 1
 
     def clear_block_replicas(self):
         self._block_replicas.clear()
 
-        ip = 0
-        while ip != len(Site.partitions):
+        for ip in xrange(len(Site.partitions)):
             self._occupancy_projected[ip] = 0
             self._occupancy_physical[ip] = 0
-            ip += 1
 
     def set_block_replicas(self, replicas):
         self._block_replicas.clear()
         self._block_replicas.update(replicas)
 
-        self.compute_occupancy()
+        for ip in xrange(len(Site.partitions)):
+            partition = Site._partitions_order[ip]
+            self._occupancy_projected[ip] = 0
+            self._occupancy_physical[ip] = 0
+            for replica in self._block_replicas:
+                if partition(replica):
+                    self._occupancy_projected[ip] += replica.block.size
+                    self._occupancy_physical[ip] += replica.size
 
     def partition_quota(self, partition):
         index = Site._partitions_order.index(partition)
@@ -242,19 +241,6 @@ class Site(object):
     def set_partition_quota(self, partition, quota):
         index = Site._partitions_order.index(partition)
         self._partition_quota[index] = quota
-
-    def compute_occupancy(self):
-        ip = 0
-        while ip != len(Site.partitions):
-            partition = Site._partitions_order[ip]
-            self._occupancy_projected[ip] = 0
-            self._occupancy_physical[ip] = 0
-            for replica in self._block_replicas:
-                if partition(replica):
-                    self._occupancy_projected[ip] += replica.block.size
-                    self._occupancy_physical[ip] += replica.size
-
-            ip += 1
 
     def storage_occupancy(self, partitions = [], physical = True):
         if type(partitions) is not list:
