@@ -1,6 +1,7 @@
 import time
 
 from block import Block
+from lfile import File
 
 class Dataset(object):
     """Represents a dataset."""
