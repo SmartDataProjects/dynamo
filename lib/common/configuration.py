@@ -71,6 +71,13 @@ weblock.sources = [
 ]
 weblock.lock = 'https://cmst2.web.cern.ch/cmst2/unified/globallocks.json.lock'
 
+mysqllock = Configuration()
+mysqllock.db_params = {
+    'config_file': '/etc/my.cnf',
+    'config_group': 'mysql-dynamo',
+    'db': 'dynamoregister'
+}
+
 tape_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']
 disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
 

@@ -127,7 +127,7 @@ class WebReplicaLockInterface(ReplicaLockInterface):
                                 logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                                 continue
 
-                            locked_blocks = dataset.blocks
+                            locked_blocks = list(dataset.blocks)
 
                         replica = dataset.find_replica(site)
                         if replica is None:
@@ -141,11 +141,14 @@ class WebReplicaLockInterface(ReplicaLockInterface):
 if __name__ == '__main__':
     # Unit test
 
-    logger.setLevel(logging.DEBUG)
-
+    import pprint
     from common.inventory import InventoryManager
+
+    logger.setLevel(logging.DEBUG)
 
     inventory = InventoryManager()
     locks = WebReplicaLockInterface()
 
     locks.update(inventory)
+
+    pprint.pprint(locks.locked_blocks)
