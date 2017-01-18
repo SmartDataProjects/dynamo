@@ -100,7 +100,7 @@ class Dataset(object):
 
     def find_block(self, block):
         try:
-            if type(block) is str:
+            if type(block) is long:
                 return next(b for b in self.blocks if b.name == block)
             else:
                 return next(b for b in self.blocks if b == block)
