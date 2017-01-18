@@ -747,10 +747,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                     dataset.is_open = (ds_entry['is_open'] == 'y')
 
-                    # start from the full list of blocks and remove ones found in PhEDEx
+                    # start from the full list of blocks and files and remove ones found in PhEDEx
                     invalidated_blocks = list(dataset.blocks)
                     invalidated_files = list(dataset.files)
-    
+
                     for block_entry in ds_entry['block']:
                         try:
                             block_name = Block.translate_name(block_entry['name'].replace(dataset.name + '#', ''))
@@ -796,6 +796,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         dataset.remove_block(block)
 
                     for lfile in invalidated_files:
+                        if lfile.block in invalidated_blocks:
+                            # removal from file taken care of
+                            continue
+
                         logger.info('Removing file %s from dataset %s', lfile.fullpath(), dataset.name)
                         dataset.files.remove(lfile)
     

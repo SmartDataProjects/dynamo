@@ -171,8 +171,8 @@ class Dataset(object):
                 replica.site.remove_block_replica(block_replica)
 
     def update_file(self, path, size):
-        directory_id = File.get_directory_id(lfile)
-        name = File.get_basename(lfile)
+        directory_id = File.get_directory_id(path)
+        name = File.get_basename(path)
         old_file = next(f for f in self.files if f.name == name and f.directory_id == directory_id)
         self.files.remove(old_file)
 
