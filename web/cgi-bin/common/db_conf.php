@@ -1,6 +1,6 @@
 <?php
 
-include_once('config.php');
+$db_conf_name = 'mysql-dynamo';
 
 $mycnf = file('/etc/my.cnf');
 $db_conf = array();
@@ -9,7 +9,7 @@ foreach ($mycnf as $line) {
   if (trim($line) == '')
     continue;
 
-  if (strpos($line, '[' . $db_conf_name . ']') !== false) {
+  if (strpos($line, '[mysql-dynamo]') !== false) {
     $in_block = true;
     continue;
   }
@@ -21,8 +21,5 @@ foreach ($mycnf as $line) {
     $db_conf[$words[0]] = $words[1];
   }
 }
-
-$history_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $history_db_name);
-$store_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $store_db_name);
 
 ?>

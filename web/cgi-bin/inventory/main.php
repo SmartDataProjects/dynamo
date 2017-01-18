@@ -1,8 +1,10 @@
 <?php
 
-include_once(__DIR__ . '/../common/init_db.php');
+include_once(__DIR__ . '/../common/db_conf.php');
 include_once(__DIR__ . '/../common/utils.php');
 include_once(__DIR__ . '/../inventory/keys.php');
+
+$store_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamo');
 
 $stmt = $store_db->prepare('SELECT `lock_host` FROM `system`');
 $stmt->bind_result($lock_host);

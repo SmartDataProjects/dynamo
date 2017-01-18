@@ -1,11 +1,7 @@
 <?php
 
-include_once(__DIR__ . '/../common/init_db.php');
-
-function check_cache($cycle, $partition_id)
+function check_cache($history_db, $cycle, $partition_id)
 {
-  global $history_db;
-
   $stmt = $history_db->prepare('SELECT COUNT(*) FROM `replica_snapshot_cache` WHERE `run_id` = ?');
   $stmt->bind_param('i', $cycle);
   $stmt->bind_result($num_rows);

@@ -1,7 +1,9 @@
 <?php
 
-include_once(__DIR__ . '/../common/init_db.php');
+include_once(__DIR__ . '/../common/db_conf.php');
 include(__DIR__ . '/check_cache.php');
+
+$history_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamohistory');
 
 $operation = 'deletion';
 
@@ -76,7 +78,7 @@ if (isset($_REQUEST['checkUpdate']) && $_REQUEST['checkUpdate']) {
   exit(0);
 }
 
-check_cache($cycle, $partition_id);
+check_cache($history_db, $cycle, $partition_id);
 
 if (isset($_REQUEST['searchDataset']) && $_REQUEST['searchDataset']) {
   $dataset_pattern = str_replace('*', '%', $_REQUEST['datasetName']);
@@ -272,7 +274,7 @@ if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
     }
     $stmt->close();
 
-    check_cache($prev_cycle, $partition_id);
+    check_cache($history_db, $prev_cycle, $partition_id);
 
     $query = 'SELECT c.`site_id`, CONCAT(l.`decision`, \'Prev\'), SUM(r.`size`) * 1.e-12';
     $query .= ' FROM `replica_snapshot_cache` AS c';
