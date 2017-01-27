@@ -53,6 +53,7 @@ from common.dataformat import Site
 import common.interface.classes as classes
 from dealer.main import Dealer
 from dealer.policy import DealerPolicy
+from dealer.plugins import plugins
 
 import common.configuration as config
 import dealer.configuration as dealer_config
@@ -115,6 +116,8 @@ with open(os.environ['DYNAMO_BASE'] + '/etc/policies.tag') as tag:
 group = inventory_manager.groups['AnalysisOps']
 
 policy = DealerPolicy(Site.partitions['AnalysisOps'], group = group, version = policy_version)
+policy.target_site_def = lambda s: s.name.startswith('T2_') or (s.name.startswith('T1_') and s.name.endswith('_Disk'))
+policy.request_plugins.append(plugins['Popularity'])
 
 dealer.set_policy(policy)
 

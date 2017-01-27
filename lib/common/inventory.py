@@ -183,6 +183,24 @@ class InventoryManager(object):
 
         return new_replica
 
+    def add_block_to_site(self, block, site, group = None):
+        """
+        Create a new BlockReplica object and return.
+        """
+
+        drep = block.dataset.find_replica(site)
+        if drep is None:
+            drep = DatasetReplica(block.dataset, site)
+    
+            block.dataset.replicas.append(drep)
+            site.dataset_replicas.add(drep)
+
+        new_replica = BlockReplica(block, site, group, is_complete = False, is_custodial = False, size = 0)    
+        drep.block_replicas.append(new_replica)
+        site.add_block_replica(new_replica)
+
+        return new_replica
+
     def scan_datasets(self, dataset_filter = '/*/*/*'):
         """
         Checks the information of existing datasets and save changes. Intended for an independent daemon process.

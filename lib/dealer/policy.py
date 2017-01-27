@@ -14,3 +14,19 @@ class DealerPolicy(object):
         self.partition = partition
         self.group = group
         self.version = version
+        self.target_site_def = None
+        
+        self.request_plugins = []
+
+    def collect_requests(self, inventory):
+        requests = {}
+
+        for plugin in self.request_plugins:
+            d, b, f = plugin.get_requests(inventory, self.partition)
+            requests[plugin] = (d, b, f)
+
+        return requests
+
+    def record(self, run_number, history, copy_list):
+        for plugin in self.request_plugins:
+            plugin.save_record(run_number, history, copy_list)
