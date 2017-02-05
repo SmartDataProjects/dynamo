@@ -10,9 +10,9 @@ if ($_SERVER['SSL_CLIENT_VERIFY'] != 'SUCCESS') {
   exit(0);
 }
 
-if (!isset($_REQUEST['action']) || !(isset($_REQUEST['item']) && isset($_REQUEST['lockid']))) {
+if (!isset($_REQUEST['action']) || !(isset($_REQUEST['item']) || isset($_REQUEST['lockid']))) {
   send_header(400, 'Bad request - missing parameter (action, item, lockid)');
-  echo "missing parameter (action, item, lockid)";
+  echo "missing parameter (action, item, lockid)\n";
   exit(0);
 }
 
@@ -26,7 +26,7 @@ else {
 }
 
 include_once(__DIR__ . '/../common/db_conf.php');
-$registry_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamoregistry');
+$registry_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamoregister');
 
 $dn = $_SERVER['SSL_CLIENT_S_DN'];
 $uid = 0;
@@ -113,7 +113,7 @@ else if (isset($_REQUEST['item'])) {
     $stmt->close();
 
     send_header(200, 'OK');
-    echo "Lock updated";
+    echo "Lock updated\n";
 
     exit(0);
   }
@@ -126,6 +126,6 @@ $stmt->execute();
 $stmt->close();
 
 send_header(200, 'OK');
-echo "Lock updated";
+echo "Lock updated\n";
 
 ?>
