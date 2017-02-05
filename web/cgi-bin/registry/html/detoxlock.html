@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Detox locks</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <link href="css/dynamo.css" rel="stylesheet">
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
+    <script type="text/javascript" src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+    <script type="text/javascript" src="http://spin.js.org/spin.min.js"></script>
+    <script type="text/javascript" src="js/detoxlock.js"></script>
+    <script type="text/javascript">
+      $(document).ready(function() {
+      initPage();
+      });
+    </script>
+  </head>
+  <body>
+    <header id="header">
+      <h1 id="pageTitle">Detox locks</h1>
+    </header>
+    <main id="main">
+      <div id="contents">
+        <section id="tables">
+          <article id="enabled">
+            <h3>Enabled locks</h3>
+            <table>
+              <thead>
+                <tr><th>User</th><th>Item(s)</th><th>Site(s)</th><th>Group(s)</th><th>Created</th><th>Expires</th><th>Comment</th></tr>
+              </thead>
+              <tbody>
+              </tbody>
+            </table>
+          </article>
+          <article id="disabled">
+            <h3>Disabled locks</h3>
+            <table>
+              <thead>
+                <tr><th>User</th><th>Item(s)</th><th>Site(s)</th><th>Group(s)</th><th>Created</th><th>Expires</th><th>Comment</th></tr>
+              </thead>
+              <tbody>
+              </tbody>
+            </table>
+          </article>
+        </section>
+      </div>
+    </main>
+    <footer id="footer">
+    </footer>
+  </body>
+</html>
