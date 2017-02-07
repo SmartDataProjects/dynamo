@@ -17,16 +17,6 @@ def _Block_real_name(self):
 
     return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]
 
-def _Block_find_replica(self, site):
-    try:
-        if type(site) is Site:
-            return next(r for r in self.replicas if r.site == site)
-        else:
-            return next(r for r in self.replicas if r.site.name == site)
-
-    except StopIteration:
-        return None
-
 def _Block_clone(self, **kwd):
     return Block(
         self.name,
@@ -39,5 +29,4 @@ def _Block_clone(self, **kwd):
 Block.translate_name = staticmethod(_Block_translate_name)
 Block.__str__ = _Block___str__
 Block.real_name = _Block_real_name
-Block.find_replica = _Block_find_replica
 Block.clone = _Block_clone

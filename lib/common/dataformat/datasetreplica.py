@@ -95,10 +95,10 @@ class DatasetReplica(object):
 
     def find_block_replica(self, block):
         try:
-            if type(block) is str:
-                return next(b for b in self.block_replicas if b.block.name == block)
-            else:
+            if type(block).__name__ == 'Block':
                 return next(b for b in self.block_replicas if b.block == block)
+            else:
+                return next(b for b in self.block_replicas if b.block.name == block)
 
         except StopIteration:
             return None

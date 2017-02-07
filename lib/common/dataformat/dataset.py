@@ -100,32 +100,32 @@ class Dataset(object):
 
     def find_block(self, block):
         try:
-            if type(block) is long:
-                return next(b for b in self.blocks if b.name == block)
-            else:
+            if type(block).__name__ == 'Block':
                 return next(b for b in self.blocks if b == block)
+            else:
+                return next(b for b in self.blocks if b.name == block)
 
         except StopIteration:
             return None
 
     def find_file(self, lfile):
         try:
-            if type(lfile) is str:
+            if type(lfile).__name__ == 'File':
+                return next(f for f in self.files if f == lfile)
+            else:
                 directory_id = File.get_directory_id(lfile)
                 name = File.get_basename(lfile)
                 return next(f for f in self.files if f.name == name and f.directory_id == directory_id)
-            else:
-                return next(f for f in self.files if f == lfile)
 
         except StopIteration:
             return None
 
     def find_replica(self, site):
         try:
-            if type(site) is str:
-                return next(r for r in self.replicas if r.site.name == site)
-            else:
+            if type(site).__name__ == 'Site':
                 return next(r for r in self.replicas if r.site == site)
+            else:
+                return next(r for r in self.replicas if r.site.name == site)
 
         except StopIteration:
             return None

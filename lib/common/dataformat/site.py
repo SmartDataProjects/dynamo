@@ -168,20 +168,20 @@ class Site(object):
     def find_dataset_replica(self, dataset):
         # very inefficient operation
         try:
-            if type(dataset) is str:
-                return next(d for d in list(self.dataset_replicas) if d.dataset.name == dataset)
-            else:
+            if type(dataset).__name__ == 'Dataset':
                 return next(d for d in list(self.dataset_replicas) if d.dataset == dataset)
+            else:
+                return next(d for d in list(self.dataset_replicas) if d.dataset.name == dataset)
 
         except StopIteration:
             return None
 
     def find_block_replica(self, block):
         try:
-            if type(block) is str:
-                return next(b for b in list(self._block_replicas) if b.block.name == block)
-            else:
+            if type(block).__name__ == 'Block':
                 return next(b for b in list(self._block_replicas) if b.block == block)
+            else:
+                return next(b for b in list(self._block_replicas) if b.block.name == block)
 
         except StopIteration:
             return None
