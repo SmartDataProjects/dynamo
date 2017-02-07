@@ -1,4 +1,5 @@
 import collections
+from site import Site
 
 # Block and BlockReplica implemented as tuples to reduce memory footprint
 Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files', 'is_open'])
@@ -6,6 +7,9 @@ Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files',
 def _Block_translate_name(name_str):
     # block name format: [8]-[4]-[4]-[4]-[12] where [n] is an n-digit hex.
     return int(name_str.replace('-', ''), 16)
+
+def _Block_notranslate_name(name_str):
+    return name_str
 
 def _Block___str__(self):
     return 'Block %s#%s (size=%d, num_files=%d, is_open=%s)' % (self.dataset.name, self.real_name(), self.size, self.num_files, self.is_open)
@@ -16,6 +20,9 @@ def _Block_real_name(self):
         full_string = '0' * (32 - len(full_string)) + full_string
 
     return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]
+
+def _Block_original_name(self):
+    return self.name
 
 def _Block_find_replica(self, site):
     try:
@@ -36,8 +43,10 @@ def _Block_clone(self, **kwd):
         self.is_open if 'is_open' not in kwd else kwd['is_open']
     )
 
-Block.translate_name = staticmethod(_Block_translate_name)
+#Block.translate_name = staticmethod(_Block_translate_name)
+Block.translate_name = staticmethod(_Block_notranslate_name) 
 Block.__str__ = _Block___str__
-Block.real_name = _Block_real_name
+#Block.real_name = _Block_real_name
+Block.real_name = _Block_original_name  
 Block.find_replica = _Block_find_replica
 Block.clone = _Block_clone

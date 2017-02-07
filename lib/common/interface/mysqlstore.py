@@ -24,7 +24,12 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql = MySQL(**config.mysqlstore.db_params)
 
-        self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0] # MySQL displays last_update in local time, but returns the UTC timestamp
+        reply = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')
+        if len(reply) > 0:
+            self.last_update = reply[0]
+        else:
+            self.last_update = 0
+            # MySQL displays last_update in local time, but returns the UTC timestamp
 
         self._datasets_to_ids = {} # cache dictionary object -> mysql id
         self._sites_to_ids = {} # cache dictionary object -> mysql id
@@ -40,7 +45,11 @@ class MySQLStore(LocalStoreInterface):
             self._mysql.query('UPDATE `system` SET `lock_host` = %s, `lock_process` = %s WHERE `lock_host` LIKE \'\' AND `lock_process` = 0', socket.gethostname(), os.getpid())
 
             # Did the update go through?
-            host, pid = self._mysql.query('SELECT `lock_host`, `lock_process` FROM `system`')[0]
+            host = 'nohost'
+            pid = 0
+            reply = self._mysql.query('SELECT `lock_host`, `lock_process` FROM `system`')
+            if len(reply) > 0:
+                host, pid = reply[0]
             self._mysql.query('UNLOCK TABLES')
 
             if host == socket.gethostname() and pid == os.getpid():
@@ -292,6 +301,8 @@ class MySQLStore(LocalStoreInterface):
         _block_id = 0
         block = None
         for dataset_id, block_id, name, size in self._mysql.query(query):
+            print dataset_id
+            print block_id
             if dataset_id != _dataset_id:
                 dataset = self._ids_to_datasets[dataset_id]
                 _dataset_id = dataset_id
@@ -302,6 +313,8 @@ class MySQLStore(LocalStoreInterface):
 
             lfile = File.create(name, block, size)
 
+            print name
+            print block
             dataset.files.add(lfile)
 
             num_files += 1

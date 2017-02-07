@@ -48,3 +48,6 @@ class PopularityHandler(BaseHandler):
         history.save_dataset_popularity(run_number, self._datasets)
 
 plugins['Popularity'] = PopularityHandler()
+
+if __name__ == '__main__':
+    pass

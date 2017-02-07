@@ -79,7 +79,7 @@ mysqllock.db_params = {
 }
 
 tape_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']
-disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
+disk_sites = ['T2_*', 'T3_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
 
 inventory = Configuration()
 inventory.included_sites = disk_sites

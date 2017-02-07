@@ -1,4 +1,5 @@
 from common.interface.phedexdbsssb import PhEDExDBSSSB
+from common.interface.localdbsssb import localDBSSSB
 from common.interface.mysqlstore import MySQLStore
 from common.interface.dbs import DBS
 from common.interface.popdb import PopDB
@@ -32,11 +33,11 @@ class DummyInterface(object):
             
 
 default_interface = {
-    'dataset_source': Generator(PhEDExDBSSSB),
-    'site_source': Generator(PhEDExDBSSSB),
-    'replica_source': Generator(PhEDExDBSSSB),
-    'copy': Generator(PhEDExDBSSSB),
-    'deletion': Generator(PhEDExDBSSSB),
+    'dataset_source': Generator(localDBSSSB),
+    'site_source': Generator(localDBSSSB),
+    'replica_source': Generator(localDBSSSB),
+    'copy': Generator(localDBSSSB),
+    'deletion': Generator(localDBSSSB),
     'store': Generator(MySQLStore),
     'lock': Generator(WebReplicaLockInterface),
     'access_history': Generator(PopDB),
