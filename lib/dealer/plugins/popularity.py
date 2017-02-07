@@ -12,7 +12,7 @@ class PopularityHandler(BaseHandler):
         BaseHandler.__init__(self)
         self._datasets = []
 
-    def get_requests(self, inventory, partition):
+    def get_requests(self, inventory, partition): # override
         self._datasets = []
 
         for dataset in inventory.datasets.values():
@@ -44,8 +44,9 @@ class PopularityHandler(BaseHandler):
         
         return list(self._datasets), [], []
 
-    def save_record(self, run_number, history, copy_list):
+    def save_record(self, run_number, history, copy_list): # override
         history.save_dataset_popularity(run_number, self._datasets)
+
 
 plugins['Popularity'] = PopularityHandler()
 

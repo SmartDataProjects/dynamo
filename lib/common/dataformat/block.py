@@ -1,5 +1,4 @@
 import collections
-from site import Site
 
 # Block and BlockReplica implemented as tuples to reduce memory footprint
 Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files', 'is_open'])
@@ -24,16 +23,6 @@ def _Block_real_name(self):
 def _Block_original_name(self):
     return self.name
 
-def _Block_find_replica(self, site):
-    try:
-        if type(site) is Site:
-            return next(r for r in self.replicas if r.site == site)
-        else:
-            return next(r for r in self.replicas if r.site.name == site)
-
-    except StopIteration:
-        return None
-
 def _Block_clone(self, **kwd):
     return Block(
         self.name,
@@ -48,5 +37,4 @@ Block.translate_name = staticmethod(_Block_notranslate_name)
 Block.__str__ = _Block___str__
 #Block.real_name = _Block_real_name
 Block.real_name = _Block_original_name  
-Block.find_replica = _Block_find_replica
 Block.clone = _Block_clone

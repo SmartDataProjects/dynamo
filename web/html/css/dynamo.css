@@ -25,3 +25,12 @@ body {
     margin-top: 10px;
     margin-bottom: 10px;
 }
+
+table {
+    border-spacing: 0;
+    border: 1px solid #999999;
+}
+
+tbody {
+    border-top: 2px solid black;
+}
