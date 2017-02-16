@@ -132,7 +132,7 @@ for record in records:
         sites_copied.append([site,copied])
 
         rrd_filepath = rrd_dir + '/' + site
-        tmp = rrd_dir + '/' + site + '/'  +  dataset.replace('/', '+') + '.rrd'
+        tmp = rrd_dir + '/' + site + '/'  +  request_id + '_' + dataset.replace('/', '+') + '.rrd'
         rrd_file = tmp.replace('+','',1)
         png_file = '%s/monitoring/replica__%s__%s.png' % (rrd_dir , site , rrd_file.rsplit('.',1)[0].rsplit('/',1)[1])
         incomplete_replicas_rrd.append(rrd_file)
@@ -156,7 +156,7 @@ for record in records:
             rrdtool.create(rrd_file, '--start', str(start), '--step', str(interval),
                 'DS:copied:GAUGE:%d:0:U' % (interval * 800),
                 'DS:total:GAUGE:%d:0:U' % (interval * 800),
-                'RRA:LAST:0:1:%i' % 3360    )
+                'RRA:LAST:0:1:%i' % 1344    )
 
             # data source
             #  DS:<name>:<type>:<heartbeat>:<min>:<max>
@@ -290,7 +290,7 @@ except:
 
 # Deletion part - first delete rrd files of completed requests that are older than one week, since we do not want them to be a part of the graphs anymore 
 
-older_than = datetime.now() - timedelta(days=100)
+older_than = datetime.now() - timedelta(days=20)
 
 for existing_rrd in existing_rrds:
 
