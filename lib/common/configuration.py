@@ -63,14 +63,21 @@ globalqueue.collector = 'cmsgwms-collector-global.cern.ch:9620'
 
 weblock = Configuration()
 weblock.sources = [
-    ('https://vocms049.cern.ch/unified/globallocks.json', 'cookie', 'LIST_OF_DATASETS'),
+    ('https://vocms049.cern.ch/unified/public/globallocks.json', 'noauth', 'LIST_OF_DATASETS'),
     ('https://cmst2.web.cern.ch/cmst2/unified-testbed/globallocks.json', 'cert', 'LIST_OF_DATASETS'),
     ('https://cmst1.web.cern.ch/CMST1/lockedData/lockTestSamples.json', 'cert', 'SITE_TO_DATASETS'),
     ('https://cmsweb.cern.ch/t0wmadatasvc/prod/dataset_locked', 'cert', 'CMSWEB_LIST_OF_DATASETS'),
     ('https://cmsweb.cern.ch/t0wmadatasvc/replayone/dataset_locked', 'cert', 'CMSWEB_LIST_OF_DATASETS'),
     ('https://cmsweb.cern.ch/t0wmadatasvc/replaytwo/dataset_locked', 'cert', 'CMSWEB_LIST_OF_DATASETS')
 ]
-weblock.lock = 'https://cmst2.web.cern.ch/cmst2/unified/globallocks.json.lock'
+weblock.lock = 'https://vocms049.cern.ch/unified/public/globallocks.json.lock'
+
+mysqllock = Configuration()
+mysqllock.db_params = {
+    'config_file': '/etc/my.cnf',
+    'config_group': 'mysql-dynamo',
+    'db': 'dynamoregister'
+}
 
 tape_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']
 disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
