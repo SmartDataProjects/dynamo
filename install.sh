@@ -43,4 +43,7 @@ git checkout $TAG 2> /dev/null
 cd - > /dev/null
 
 # CRONTAB
-sed "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/etc/crontab | crontab -u $USER -
+crontab -l -u $USER > /tmp/$USER.crontab
+sed "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/etc/crontab >> /tmp/$USER.crontab
+sort /tmp/$USER.crontab | uniq | crontab -u $USER -
+rm /tmp/$USER.crontab
