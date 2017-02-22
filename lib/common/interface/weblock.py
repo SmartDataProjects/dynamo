@@ -34,8 +34,10 @@ class WebReplicaLockInterface(ReplicaLockInterface):
             auth_handler = webservice.HTTPSCertKeyHandler
         elif auth_type == 'cookie':
             auth_handler = webservice.CERNSSOCookieAuthHandler
+        elif auth_type == 'noauth':
+            auth_handler = None
 
-        self._sources.append((webservice.RESTService(url, accept = data_type), content_type, auth_handler))
+        self._sources.append((webservice.RESTService(url, accept = data_type, auth_handler = auth_handler), content_type))
 
     def update(self, inventory): #override
 
@@ -55,10 +57,10 @@ class WebReplicaLockInterface(ReplicaLockInterface):
 
         self.locked_blocks = collections.defaultdict(list)
 
-        for source, content_type, auth_handler in self._sources:
+        for source, content_type in self._sources:
             logger.info('Retrieving lock information from %s', source.url_base)
 
-            data = source.make_request(auth_handler = auth_handler)
+            data = source.make_request()
 
             if content_type == WebReplicaLockInterface.LIST_OF_DATASETS:
                 # simple list of datasets
@@ -132,7 +134,7 @@ class WebReplicaLockInterface(ReplicaLockInterface):
                                 logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                                 continue
 
-                            locked_blocks = dataset.blocks
+                            locked_blocks = list(dataset.blocks)
 
                         replica = dataset.find_replica(site)
                         if replica is None:
@@ -146,11 +148,14 @@ class WebReplicaLockInterface(ReplicaLockInterface):
 if __name__ == '__main__':
     # Unit test
 
-    logger.setLevel(logging.DEBUG)
-
+    import pprint
     from common.inventory import InventoryManager
+
+    logger.setLevel(logging.DEBUG)
 
     inventory = InventoryManager()
     locks = WebReplicaLockInterface()
 
     locks.update(inventory)
+
+    pprint.pprint(locks.locked_blocks)

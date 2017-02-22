@@ -79,12 +79,21 @@ class RESTService(object):
     Returns python-parsed content.
     """
 
-    def __init__(self, url_base, headers = [], accept = 'application/json'):
+    def __init__(self, url_base, headers = [], accept = 'application/json', auth_handler = HTTPSCertKeyHandler):
+        """
+        @param url_base  There is no strict rule on separating the URL base and individual request REST command ('resource' in make_request). All requests
+                         are made to url_base + '/' + resource.
+        @param headers   Additional request headers (All standard headers including Accept are automatically passed).
+        @param accept    Accept header value.
+        @param auth_handler Handler class for authentication. Use None for no auth.
+        """
+
         self.url_base = url_base
         self.headers = list(headers)
         self.accept = accept
+        self.auth_handler = auth_handler
 
-    def make_request(self, resource = '', options = [], method = GET, format = 'url', auth_handler = HTTPSCertKeyHandler):
+    def make_request(self, resource = '', options = [], method = GET, format = 'url'):
         url = self.url_base
         if resource:
             url += '/' + resource
@@ -144,10 +153,10 @@ class RESTService(object):
         exceptions = []
         while len(exceptions) != config.webservice.num_attempts:
             try:
-                if self.url_base.startswith('https:'):
-                    opener = urllib2.build_opener(auth_handler())
+                if self.auth_handler:
+                    opener = urllib2.build_opener(self.auth_handler())
                 else:
-                    opener = urllib2.build_opener(urllib2.HTTPHandler())
+                    opener = urllib2.build_opener()
 
                 if 'Accept' not in self.headers:
                     opener.addheaders.append(('Accept', self.accept))
@@ -205,8 +214,9 @@ if __name__ == '__main__':
     parser.add_argument('resource', metavar = 'RES', help = 'Request resource.')
     parser.add_argument('options', metavar = 'EXPR', nargs = '*', default = [], help = 'Options after ? (chained with &).')
     parser.add_argument('--post', '-P', action = 'store_true', dest = 'use_post', help = 'Use POST instead of GET request.')
-    parser.add_argument('--output-format', '-f', metavar = 'FORMAT', dest = 'output_format', help = 'json or xml')
+    parser.add_argument('--output-format', '-f', metavar = 'FORMAT', dest = 'output_format', default = 'json', help = 'json or xml')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
+    parser.add_argument('--cert', '-c', metavar = 'PATH', dest = 'certificate', default = '', help = 'Use non-default certificate.')
 
     args = parser.parse_args()
     sys.argv = []
@@ -225,6 +235,9 @@ if __name__ == '__main__':
     else:
         logging.error('Unrecognized format %s', args.output_format)
         sys.exit(1)
+
+    if args.certificate:
+        config.webservice.x509_key = args.certificate
 
     interface = RESTService(args.url_base, accept = accept)
 
