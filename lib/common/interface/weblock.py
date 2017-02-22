@@ -4,7 +4,7 @@ import urllib2
 import time
 
 from common.interface.lock import ReplicaLockInterface
-from common.interface.webservice import RESTService
+import common.interface.webservice as webservice
 from common.dataformat import Block
 import common.configuration as config
 
@@ -26,11 +26,16 @@ class WebReplicaLockInterface(ReplicaLockInterface):
         for source in sources:
             self.add_source(*source)
         
-    def add_source(self, url, content_type, data_type = 'application/json'):
+    def add_source(self, url, auth_type, content_type, data_type = 'application/json'):
         if type(content_type) is str:
             content_type = eval('WebReplicaLockInterface.' + content_type)
 
-        self._sources.append((RESTService(url, accept = data_type), content_type))
+        if auth_type == 'cert':
+            auth_handler = webservice.HTTPSCertKeyHandler
+        elif auth_type == 'cookie':
+            auth_handler = webservice.CERNSSOCookieAuthHandler
+
+        self._sources.append((webservice.RESTService(url, accept = data_type), content_type, auth_handler))
 
     def update(self, inventory): #override
 
@@ -50,10 +55,10 @@ class WebReplicaLockInterface(ReplicaLockInterface):
 
         self.locked_blocks = collections.defaultdict(list)
 
-        for source, content_type in self._sources:
+        for source, content_type, auth_handler in self._sources:
             logger.info('Retrieving lock information from %s', source.url_base)
 
-            data = source.make_request()
+            data = source.make_request(auth_handler = auth_handler)
 
             if content_type == WebReplicaLockInterface.LIST_OF_DATASETS:
                 # simple list of datasets

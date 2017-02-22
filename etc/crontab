@@ -1,3 +1,4 @@
 00 01 * * * _DYNAMO_BASE_/bin/backup > /var/log/dynamo/backup.log 2>&1
 */5 * * * * _DYNAMO_BASE_/bin/removelock > /dev/null 2>&1
 */30 * * * * _DYNAMO_BASE_/bin/exec_dealermon.sh > /dev/null 2>&1
+30 02,08 * * * _DYNAMO_BASE_/bin/getcookies > /var/log/dynamo/getcookies.log 2>&1
