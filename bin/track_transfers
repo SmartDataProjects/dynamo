@@ -132,7 +132,7 @@ for record in records:
         sites_copied.append([site,copied])
 
         rrd_filepath = rrd_dir + '/' + site
-        tmp = rrd_dir + '/' + site + '/'  +  request_id + '_' + dataset.replace('/', '+') + '.rrd'
+        tmp = rrd_dir + '/' + site + '/'  +  str(request_id) + '_' + dataset.replace('/', '+') + '.rrd'
         rrd_file = tmp.replace('+','',1)
         png_file = '%s/monitoring/replica__%s__%s.png' % (rrd_dir , site , rrd_file.rsplit('.',1)[0].rsplit('/',1)[1])
         incomplete_replicas_rrd.append(rrd_file)
@@ -172,7 +172,7 @@ for record in records:
 
             # change selinux context of the RRD so that it can be read by a apache-invoked PHP script
             try:
-                selix.chcon(rrd_file, 'unconfined_u:object_r:httpd_sys_content_t:s0')
+                selinux.chcon(rrd_file, 'unconfined_u:object_r:httpd_sys_content_t:s0')
             except:
                 pass
 
