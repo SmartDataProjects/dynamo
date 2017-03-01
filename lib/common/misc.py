@@ -94,7 +94,7 @@ class ThreadCollector(object):
             thread, time_started = threads[ith][0:2]
             if thread.is_alive():
                 if self.timeout > 0 and time.time() - time_started > self.timeout:
-                    logger.error('Thread ' + thread.name + ' timed out.')
+                    logging.error('Thread ' + thread.name + ' timed out.')
                     raise ThreadTimeout(thread.name)
 
                 ith += 1
