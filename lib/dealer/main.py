@@ -98,6 +98,11 @@ class Dealer(object):
         1. Compute a time-weighted sum of number of requests for the last three days.
         2. Decide the sites least-occupied by analysis activities.
         3. Copy datasets with number of requests > available replicas to empty sites.
+
+        @param sites  List of site objects
+        @param items  ([datasets], [blocks], [files]) where each list element can be the object or (object, destination_site)
+        @param policy Dealer policy
+        @param pending_volumes Volumes pending transfer
         """
         
         copy_list = dict([(site, []) for site in sites]) # site -> [new_replica]
@@ -132,20 +137,27 @@ class Dealer(object):
             quota[site] = site.partition_quota(policy.partition)
 
         # now go through datasets
-        for dataset in datasets:
+        for entry in datasets:
+            if type(entry) is tuple:
+                dataset, destination_site = entry
+            else:
+                dataset = entry
+                destination_site = None
+
             dataset_size = dataset.size() * 1.e-12
 
-            sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
+            if destination_site is None:
+                sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
 
-            try:
-                destination_site = next(dest for dest, njob in sorted_sites if \
-                    site_occupancy[dest] + dataset_size < quota[dest] and \
-                    dest.find_dataset_replica(dataset) is None
-                )
-
-            except StopIteration:
-                logger.warning('%s has no copy destination.', dataset.name)
-                break
+                try:
+                    destination_site = next(dest for dest, njob in sorted_sites if \
+                        site_occupancy[dest] + dataset_size < quota[dest] and \
+                        dest.find_dataset_replica(dataset) is None
+                    )
+    
+                except StopIteration:
+                    logger.warning('%s has no copy destination.', dataset.name)
+                    break
 
             logger.info('Copying %s to %s', dataset.name, destination_site.name)
 
@@ -180,21 +192,28 @@ class Dealer(object):
                 break
 
         # now go through blocks
-        for block in blocks:
+        for entry in blocks:
+            if type(entry) is tuple:
+                block, destination_site = entry
+            else:
+                block = entry
+                destination_site = None
+
             block_size = block.size * 1.e-12
             block_name = block.real_name()
 
-            sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
+            if destination_site is None:
+                sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
 
-            try:
-                destination_site = next(dest for dest, njob in sorted_sites if \
-                    site_occupancy[dest] + block_size < quota[dest] and \
-                    dest.find_block_replica(block) is None
-                )
-
-            except StopIteration:
-                logger.warning('%s#%s has no copy destination.', block.dataset.name, block_name)
-                break
+                try:
+                    destination_site = next(dest for dest, njob in sorted_sites if \
+                        site_occupancy[dest] + block_size < quota[dest] and \
+                        dest.find_block_replica(block) is None
+                    )
+    
+                except StopIteration:
+                    logger.warning('%s#%s has no copy destination.', block.dataset.name, block_name)
+                    break
 
             logger.info('Copying %s#%s to %s', block.dataset.name, block_name, destination_site.name)
 
@@ -229,20 +248,27 @@ class Dealer(object):
                 break
 
         # now go through files
-        for lfile in files:
+        for entry in files:
+            if type(entry) is tuple:
+                lfile, destination_site = entry
+            else:
+                lfile = entry
+                destination_site = None
+
             file_size = lfile.size * 1.e-12
 
-            sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
-
-            try:
-                destination_site = next(dest for dest, njob in sorted_sites if \
-                    site_occupancy[dest] + file_size < quota[dest] and \
-                    dest.find_dataset_replica(dataset) is None
-                )
-
-            except StopIteration:
-                logger.warning('%s has no copy destination.', lfile.fullpath())
-                break
+            if destination_site is None:
+                sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
+    
+                try:
+                    destination_site = next(dest for dest, njob in sorted_sites if \
+                        site_occupancy[dest] + file_size < quota[dest] and \
+                        dest.find_dataset_replica(dataset) is None
+                    )
+    
+                except StopIteration:
+                    logger.warning('%s has no copy destination.', lfile.fullpath())
+                    break
 
             logger.info('Copying %s to %s', lfile.fullpath(), destination_site.name)
 
