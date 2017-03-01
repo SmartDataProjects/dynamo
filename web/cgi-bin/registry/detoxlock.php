@@ -1,42 +1,106 @@
 <?php
 
+// General note:
+// MySQL DATETIME accepts and returns local time. Always use UNIX_TIMESTAMP and FROM_UNIXTIME to interact with the DB.
+
+$format = 'json';
+
 function send_response($code, $result, $message, $data = NULL)
 {
+  global $format;
+
   header($_SERVER['SERVER_PROTOCOL'] . ' ' . $code, true, $code);
-  $response = array('result' => $result, 'message' => $message);
-  if ($data !== NULL)
-    $response['data'] = $data;
 
-  $json = '{"result": "' . $result . '", "message": "' . $message . '", "data": [';
-  $data_json = array();
-  foreach ($data as $elem) {
-    $j = array();
-    foreach($elem as $key => $value) {
-      $kv = '"' . $key .'": ';
-      if (is_string($value))
-        $kv .= '"' . $value . '"';
-      else
-        $kv .= '' . $value;
+  if ($format == 'json') {
+    $json = '{"result": "' . $result . '", "message": "' . $message . '"';
+    if ($data === NULL)
+      $json .= '}';
+    else {
+      $json .= ', "data": [';
+      $data_json = array();
+      foreach ($data as $elem) {
+        $j = array();
+        foreach($elem as $key => $value) {
+          $kv = '"' . $key .'": ';
+          if (is_string($value))
+            $kv .= '"' . $value . '"';
+          else
+            $kv .= '' . $value;
 
-      $j[] = $kv;
+          $j[] = $kv;
+        }
+        $data_json[] = '{' . implode(', ', $j) . '}';
+      }
+      $json .= implode(', ', $data_json);
+      $json .= ']}';
     }
-    $data_json[] = '{' . implode(', ', $j) . '}';
-  }
-  $json .= implode(', ', $data_json);
-  $json .= ']}';
   
-  echo $json . "\n";
+    echo $json . "\n";
+  }
+  else {
+    $writer = new XMLWriter();
+    $writer->openMemory();
+    $writer->setIndent(true);
+
+    $writer->startDocument('1.0', 'UTF-8');
+
+    $writer->startElement('data');
+
+    $writer->startElement('result');
+    $writer->text($result);
+    $writer->endElement();
+
+    $writer->startElement('message');
+    $writer->text($message);
+    $writer->endElement();
+
+    if ($data !== NULL) {
+      $writer->startElement('locks');
+      foreach ($data as $elem) {
+        $writer->startElement('lock');
+        $writer->startAttribute('id');
+        $writer->text($elem['lockid']);
+        $writer->endAttribute();
+        foreach($elem as $key => $value) {
+          if ($key == 'lockid')
+            continue;
+
+          $writer->startElement($key);
+          $writer->text($value);
+          $writer->endElement();
+        }
+        $writer->endElement();
+      }
+      $writer->endElement();
+    }
+
+    $writer->endElement();
+
+    $writer->endDocument();
+
+    echo $writer->flush();
+  }
+
   exit(0);
 }
 
 if ($_SERVER['SSL_CLIENT_VERIFY'] != 'SUCCESS')
   send_response(401, 'AuthFailed', 'SSL authentication failed');
 
+date_default_timezone_set('UTC');
+
 $command = substr($_SERVER['PATH_INFO'], 1); # dynamo.mit.edu/registry/detoxlock/command -> /command
 
 if ($command == "") {
   # show webpage
   exit(0);
+}
+
+if (isset($_REQUEST['format'])) {
+  if (in_array($_REQUEST['format'], array('json', 'xml')))
+    $format = $_REQUEST['format'];
+  else
+    send_response(400, 'BadRequest', 'Unknown format');
 }
 
 if (!in_array($command, array('protect', 'release', 'list', 'set')))
@@ -77,9 +141,13 @@ function get_lock_data($lockid, $item = '', $sites = '', $groups = '', $created_
 
   $data = array();
 
-  $query = 'SELECT l.`id`, l.`enabled`, l.`item`, l.`sites`, l.`groups`, l.`entry_date`, l.`expiration_date`, u.`name`, l.`comment` FROM `detox_locks` AS l INNER JOIN `users` AS u ON u.`id` = l.`user_id` WHERE ';
+  $query = 'SELECT l.`id`, l.`enabled`, l.`item`, l.`sites`, l.`groups`, l.`entry_date`, UNIX_TIMESTAMP(l.`expiration_date`), u.`name`, l.`comment` FROM `detox_locks` AS l INNER JOIN `users` AS u ON u.`id` = l.`user_id` WHERE ';
 
-  if ($lockid != 0) {
+  if (is_array($lockid)) {
+    $query .= 'l.`id` IN (' . implode(',', $lockid) . ')';
+    $stmt = $registry_db->prepare($query);
+  }
+  else if ($lockid > 0) {
     $query .= 'l.`id` = ?';
     $stmt = $registry_db->prepare($query);
     $stmt->bind_param('i', $lockid);
@@ -88,6 +156,11 @@ function get_lock_data($lockid, $item = '', $sites = '', $groups = '', $created_
     $query .= 'u.`id` = ?';
 
     $params = array('i', &$uid);
+
+    if ($lockid < 0) {
+      // get only enabled locks
+      $query .= ' AND l.`enabled` = 1';
+    }
 
     if ($item != '') {
       $query .= ' AND l.`item` LIKE ?';
@@ -138,7 +211,7 @@ function get_lock_data($lockid, $item = '', $sites = '', $groups = '', $created_
   $stmt->bind_result($lockid, $enabled, $item, $sites, $groups, $entry, $expiration, $uname, $comment);
   $stmt->execute();
   while ($stmt->fetch())
-    $data[$lockid] = array('lockid' => $lockid, 'enabled' => $enabled, 'user' => $uname, 'item' => $item, 'sites' => $sites, 'groups' => $groups, 'created' => $entry, 'expires' => $expiration, 'comment' => $comment);
+    $data[$lockid] = array('lockid' => $lockid, 'enabled' => $enabled, 'user' => $uname, 'item' => $item, 'sites' => $sites, 'groups' => $groups, 'created' => $entry, 'expires' => strftime('%Y-%m-%d %H:%M:%S', $expiration), 'comment' => $comment);
   $stmt->close();
 
   return $data;
@@ -161,6 +234,8 @@ function create_lock($item, $sites, $groups, $expiration, $comment)
 
 function update_lock($lockid, $enabled = NULL, $expiration = NULL, $comment = NULL)
 {
+  global $registry_db;
+
   $query = 'UPDATE `detox_locks` SET ';
   $params = array('');
 
@@ -173,7 +248,7 @@ function update_lock($lockid, $enabled = NULL, $expiration = NULL, $comment = NU
   }
 
   if ($expiration !== NULL) {
-    $set[] = '`expiration_date` = ?';
+    $set[] = '`expiration_date` = FROM_UNIXTIME(?)';
     $params[0] .= 'i';
     $params[] = &$expiration;
   }
@@ -190,15 +265,16 @@ function update_lock($lockid, $enabled = NULL, $expiration = NULL, $comment = NU
   $params[0] .= 'i';
   $params[] = &$lockid;
 
-  $stmt = $registry_db->prepare('`enabled` = ? WHERE `id` = ?');
+  $stmt = $registry_db->prepare($query);
   call_user_func_array(array($stmt, "bind_param"), $params);
   $stmt->execute();
   $stmt->close();
 
-  $data = get_lock_data($lockid);
+  $data = current(get_lock_data($lockid));
 
+  // validate
   return (($enabled === NULL || $data['enabled'] == $enabled) &&
-          ($expiration === NULL || $data['expires'] == $expiration) &&
+          ($expiration === NULL || strtotime($data['expires']) == $expiration) &&
           ($comment === NULL || $data['comment'] == $comment));
 }
 
@@ -219,8 +295,12 @@ if ($command == 'protect' || $command == 'release') {
     $groups = isset($_REQUEST['groups']) ? $_REQUEST['groups'] : '';
     
     $data = get_lock_data(0, $item, $sites, $groups);
-    $lock = current($data);
-    $lockid = $lock['lockid'];
+    if (count($data) == 0)
+      $lockid = 0;
+    else {
+      $lock = current($data);
+      $lockid = $lock['lockid'];
+    }
   }
   else
     send_response(400, 'BadRequest', 'Missing parameter (item or lockid)');
@@ -245,17 +325,17 @@ if ($command == 'protect' || $command == 'release') {
 
     if (isset($_REQUEST['expires'])) {
       if (is_numeric($_REQUEST['expires']))
-        $date = 0 + $_REQUEST['expires'];
+        $timestamp = 0 + $_REQUEST['expires'];
       else {
-        $date = strtotime($_REQUEST['expires']);
-        if ($date === false)
+        $timestamp = strtotime($_REQUEST['expires']);
+        if ($timestamp === false)
           send_response(400, 'BadRequest', 'Expiration date ill-formatted');
       }
 
-      if ($date < time())
+      if ($timestamp < time())
         send_response(400, 'BadRequest', 'Expiration date must be in the future');
 
-      $expiration = strftime('%Y-%m-%d %H:%M:%S', $date);
+      $expiration = strftime('%Y-%m-%d %H:%M:%S', $timestamp);
     }
     else
       send_response(400, 'BadRequest', 'Expiration date not set');
@@ -300,15 +380,72 @@ else if ($command == 'list') {
     send_response(200, 'OK', count($data) . ' locks found', array_values($data));
 }
 else if ($command == 'set') {
-  if (!isset($_POST['data']) || !is_array($_POST['data']))
+  if (!isset($_POST['data']))
     send_response(400, 'BadRequest', 'No data posted');
+
+  if ($format == 'json') {
+    $data = json_decode($_POST['data'], true);
+    if (!is_array($data))
+      send_response(400, 'BadRequest', 'Invalid data posted');
+  }
+  else if ($format == 'xml') {
+    $data = array();
+
+    $reader = new XMLReader();
+    if (!$reader->xml($_POST['data']) || !$reader->read() || $reader->name != 'locks')
+      send_response(400, 'BadRequest', 'Invalid data posted');
+
+    // structure:
+    // <locks>
+    //  <lock>
+    //   <property>value</property>
+    //   <property>value</property>
+    //  </lock>
+    // </locks>
+
+    if (!$reader->read())
+      send_response(400, 'BadRequest', 'Invalid data posted');
+
+    while (true) {
+      // name may be lock (no space between this tag and the previous closing) or #text
+      if ($reader->name == '#text' && !$reader->read())
+        send_response(400, 'BadRequest', 'Invalid data posted');
+
+      if ($reader->name == 'locks' && $reader->nodeType == XMLReader::END_ELEMENT) // </locks>
+        break;
+      else if ($reader->name != 'lock')
+        send_response(400, 'BadRequest', 'Invalid data posted');
+
+      if (!$reader->read())
+        send_response(400, 'BadRequest', 'Invalid data posted');
+
+      $entry = array();
+      
+      while (true) {
+        if ($reader->name == '#text' && !$reader->read())
+          send_response(400, 'BadRequest', 'Invalid data posted');
+
+        if ($reader->name == 'lock' && $reader->nodeType == XMLReader::END_ELEMENT) // </lock>
+          break;
+
+        $entry[$reader->name] = $reader->readInnerXML();
+
+        if (!$reader->next())
+          send_response(400, 'BadRequest', 'Invalid data posted');
+      }
+
+      $data[] = $entry;
+
+      if (!$reader->next())
+        send_response(400, 'BadRequest', 'Invalid data posted');
+    }
+  }
+
+  $to_insert = array();
+  $to_update = array();
 
   lock_lock(1);
 
-  $inserting_entries = array();
-  $updating_entries = array();
-
-  $data = $_POST['data'];
   foreach ($data as $key => $entry) {
     if (!isset($entry['item'])) {
       lock_lock(0);
@@ -339,7 +476,7 @@ else if ($command == 'set') {
 
       $comment = isset($entry['comment']) ? $entry['comment'] : '';
 
-      $inserting_entries[] = array($entry['item'], $sites, $groups, $expires, $comment);
+      $to_insert[] = array($entry['item'], $sites, $groups, $expires, $comment);
     }
     else {
       $update = current($current);
@@ -372,36 +509,43 @@ else if ($command == 'set') {
       else if (!isset($update['comment']))
         $update['comment'] = NULL;
 
-      $updating_entries[$update['lockid']] = $update;
+      $to_update[$update['lockid']] = $update;
     }
   }
 
-  $existing_entries = get_lock_data(0);
+  $existing_entries = get_lock_data(-1);
 
-  $deleting_entries = array();
+  $to_disable = array();
 
   foreach (array_keys($existing_entries) as $key) {
-    if (!array_key_exists($key, $updating_entries))
-      $deleting_entries[] = $key;
+    if (!array_key_exists($key, $to_update))
+      $to_disable[] = $key;
   }
 
-  foreach ($inserting_entries as $entry) {
+  $lockids = array();
+
+  foreach ($to_insert as $entry) {
     $lockid = create_lock($entry[0], $entry[1], $entry[2], $entry[3], $entry[4]);
     if ($lockid == 0) {
       lock_lock(0);
       send_response(400, 'InternalError', 'Failed to create lock');
     }
+    $lockids[] = $lockid;
   }
 
-  foreach ($updating_entries as $lockid => $entry) {
+  foreach ($to_update as $lockid => $entry) {
     if (!update_lock($lockid, $entry['enabled'], $entry['expires'], $entry['comment']))
       send_response(400, 'InternalError', 'Failed to update lock');
+
+    $lockids[] = $lockid;
   }
 
-  foreach ($deleting_entries as $lockid) {
+  foreach ($to_disable as $lockid) {
     if (!update_lock($lockid, 0))
       send_response(400, 'InternalError', 'Failed to disable lock');
   }
+
+  send_response(200, 'OK', 'Locks set', array_values(get_lock_data($lockids)));
 }
   
 ?>
