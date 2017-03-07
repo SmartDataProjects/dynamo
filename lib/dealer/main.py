@@ -216,7 +216,7 @@ class Dealer(object):
 
             for replica in list(replicas):
                 if self.inventory_manager.replica_source.replica_exists_at_site(site, replica):
-                    logger.info('Not copying replica because it exists at site: %s', str(replica))
+                    logger.info('Not copying replica because it exists at site: %s', repr(replica))
                     replicas.remove(replica)
 
             copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, policy.group, comments = comment, auto_approval = auto_approval, is_test = is_test)

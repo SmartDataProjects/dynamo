@@ -603,8 +603,14 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         if type(item) == Dataset:
             options += ['dataset=' + item.name, 'show_dataset=y']
+        elif type(item) == DatasetReplica:
+            options += ['dataset=' + item.dataset.name, 'show_dataset=y']
         elif type(item) == Block:
-            options += ['block=' = item.dataset.name + '%23' + item.real_name()]
+            options += ['block=' + item.dataset.name + '%23' + item.real_name()]
+        elif type(item) == BlockReplica:
+            options += ['block=' + item.block.dataset.name + '%23' + item.block.real_name()]
+        else:
+            raise RuntimeError('Invalid input passed: ' + repr(item))
         
         source = self._make_phedex_request('blockreplicas', options)
 
