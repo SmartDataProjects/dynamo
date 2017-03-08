@@ -451,7 +451,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     if 'block' not in dataset_entry:
                         continue
                     
-                    self._get_datasetreplica(dataset_entry, sites, groups, datasets, add_to_site = True, gname_list = gname_list)
+                    self._get_datasetreplica(dataset_entry, sites, groups, datasets, add_to_lists = True, gname_list = gname_list)
     
             if len(sites) == 1:
                 logger.debug('Done processing PhEDEx data from %s', site_list[0].name)
@@ -721,7 +721,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         parallel_exec(inquire_phedex, dataset_chunks, num_threads = 64)
 
-    def _get_datasetreplica(dataset_entry, sites, groups, datasets, add_to_lists = False, gname_list = None):
+    def _get_datasetreplica(self, dataset_entry, sites, groups, datasets, add_to_lists = False, gname_list = None):
         """
         Find or create a DatasetReplica object (with BlockReplicas) from a phedex blockreplicas call result.
         add_to_lists controls whether the replica lists of the dataset and site are updated, switching the
@@ -808,7 +808,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                     dataset.replicas.append(dataset_replica)
     
-                    if add_to_site:
+                    if add_to_lists:
                         site.dataset_replicas.add(dataset_replica)
     
                 if replica_entry['time_update'] > dataset_replica.last_block_created:
@@ -838,7 +838,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                 dataset_replica.block_replicas.append(block_replica)
     
-                if add_to_site:
+                if add_to_lists:
                     site.add_block_replica(block_replica)
 
         return dataset_replica
