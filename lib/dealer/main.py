@@ -60,11 +60,9 @@ class Dealer(object):
             pending_volumes = collections.defaultdict(float)
             # TODO get input from transfer monitor and update the pending volumes
     
-            # all datasets that the policy considers
-            requests = policy.collect_requests(self.inventory_manager)
+            # prioritized lists of datasets, blocks, and files
+            items = policy.collect_requests(self.inventory_manager)
 
-            items = self.prioritize(requests)
-    
             copy_list = self.determine_copies(target_sites, items, policy, pending_volumes)
 
             policy.record(run_number, self.history, copy_list)
@@ -78,19 +76,6 @@ class Dealer(object):
             pass
 
         logger.info('Finished dealer run at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
-
-    def prioritize(self, requests):
-        """
-        For the moment do the dumbest thing
-        """
-
-        items = ([], [], [])
-        for plugin, (datasets, blocks, files) in requests.items():
-            items[0].extend(datasets)
-            items[1].extend(blocks)
-            items[2].extend(files)
-
-        return items
 
     def determine_copies(self, sites, items, policy, pending_volumes):
         """

@@ -118,11 +118,11 @@ group = inventory_manager.groups['AnalysisOps']
 policy = DealerPolicy(Site.partitions['AnalysisOps'], group = group, version = policy_version)
 policy.target_site_def = lambda s: s.name.startswith('T2_') or (s.name.startswith('T1_') and s.name.endswith('_Disk'))
 
-policy.request_plugins.append(plugins['Popularity'])
+policy.add_plugin(plugins['Popularity'], 2)
 
 balancer = plugins['Balancer']
 balancer.history = history
-policy.request_plugins.append(balancer)
+policy.add_plugin(balancer, 1)
 
 dealer.set_policy(policy)
 

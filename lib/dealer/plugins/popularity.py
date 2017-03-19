@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 class PopularityHandler(BaseHandler):
     def __init__(self):
         BaseHandler.__init__(self)
+
+        self.name = 'Popularity'
         self._datasets = []
 
     def get_requests(self, inventory, partition): # override
