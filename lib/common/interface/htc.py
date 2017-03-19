@@ -24,7 +24,7 @@ class HTCondor(object):
         attempt = 0
         while True:
             try:
-                schedd_ads = self._collector.query(htcondor.AdTypes.Schedd, schedd_constraint, ['ScheddIpAddr'])
+                schedd_ads = self._collector.query(htcondor.AdTypes.Schedd, schedd_constraint, ['MyAddress'])
                 break
             except IOError:
                 attempt += 1
@@ -38,7 +38,7 @@ class HTCondor(object):
 
         for ad in schedd_ads:
             schedd = htcondor.Schedd(ad)
-            matches = re.match('<([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):([0-9]+)', ad['ScheddIpAddr'])
+            matches = re.match('<([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):([0-9]+)', ad['MyAddress'])
             # schedd does not have an ipaddr attribute natively, but we can assign it
             schedd.ipaddr = matches.group(1)
             schedd.host = socket.getnameinfo((matches.group(1), int(matches.group(2))), socket.AF_INET)[0] # socket.getnameinfo(*, AF_INET) returns a (host, port) 2-tuple
