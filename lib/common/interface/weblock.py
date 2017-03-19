@@ -34,6 +34,8 @@ class WebReplicaLockInterface(ReplicaLockInterface):
             auth_handler = webservice.HTTPSCertKeyHandler
         elif auth_type == 'cookie':
             auth_handler = webservice.CERNSSOCookieAuthHandler
+        else:
+            auth_handler = None
 
         self._sources.append((webservice.RESTService(url, accept = data_type), content_type, auth_handler))
 
