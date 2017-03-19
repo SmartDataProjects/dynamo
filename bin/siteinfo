@@ -79,7 +79,7 @@ try:
             try:
                 protect, delete, keep = sites_usage[site]
             except KeyError:
-                continue
+                protect = delete = keep = 0.
 
             used = protect + delete + keep
 
