@@ -748,8 +748,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     dataset.is_open = (ds_entry['is_open'] == 'y')
 
                     # start from the full list of blocks and files and remove ones found in PhEDEx
-                    invalidated_blocks = list(dataset.blocks)
+                    invalidated_blocks = set(dataset.blocks)
                     invalidated_files = list(dataset.files)
+
+                    files = []
 
                     for block_entry in ds_entry['block']:
                         try:
@@ -776,17 +778,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
 
                         for file_entry in block_entry['file']:
-                            lfn = file_entry['lfn']
-                            lfile = dataset.find_file(lfn)
-
-                            if lfile is None:
-                                lfile = File.create(lfn, block, file_entry['size'])
-                                dataset.files.add(lfile)
-
-                            else:
-                                invalidated_files.remove(lfile)
-                                if lfile.size != file_entry['size']:
-                                    lfile = dataset.update_file(file_entry['size'])
+                            files.append((file_entry['lfn'], block, file_entry['size']))
 
                         if block_entry['time_update'] > dataset.last_update:
                             dataset.last_update = block_entry['time_update']
@@ -795,11 +787,50 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         logger.info('Removing block %s from dataset %s', block.real_name(), dataset.name)
                         dataset.remove_block(block)
 
-                    for lfile in invalidated_files:
-                        if lfile.block in invalidated_blocks:
-                            # removal from file taken care of
-                            continue
+                    files.sort()
+                    # files in invalidated blocks are already removed
+                    known_files = sorted(dataset.files, key = lambda f: (f.fullpath(), f.size))
 
+                    invalidated_files = []
+
+                    iphed = 0
+                    iknown = 0
+                    while True:
+                        if iphed == len(files):
+                            # no more from phedex; rest is known but invalidated
+                            invalidated_files.extend(known_files[iknown:])
+                            break
+
+                        elif iknown == len(known_files):
+                            # all remaining files are new
+                            for entry in files[iphed:]:
+                                dataset.files.add(File.create(*entry))
+                            break
+
+                        else:
+                            phed_name, block, phed_size = files[iphed]
+                            known_file = known_files[iknown]
+                            known_path = known_file.fullpath()
+
+                            if phed_name == known_path:
+                                # same file
+                                if phed_size != known_file.size:
+                                    dataset.update_file(phed_name, phed_size)
+    
+                                iphed += 1
+                                iknown += 1
+
+                            elif phed_name < known_path:
+                                # new file
+                                dataset.files.add(File.create(phed_name, block, phed_size))
+                                iphed += 1
+
+                            else:
+                                # invalidated file
+                                invalidated_files.append(known_file)
+                                iknown += 1
+                            
+                    for lfile in invalidated_files:
                         logger.info('Removing file %s from dataset %s', lfile.fullpath(), dataset.name)
                         dataset.files.remove(lfile)
     
