@@ -4,6 +4,7 @@
 // MySQL DATETIME accepts and returns local time. Always use UNIX_TIMESTAMP and FROM_UNIXTIME to interact with the DB.
 
 $format = 'json';
+$return_data = true;
 
 function send_response($code, $result, $message, $data = NULL)
 {
@@ -13,7 +14,7 @@ function send_response($code, $result, $message, $data = NULL)
 
   if ($format == 'json') {
     $json = '{"result": "' . $result . '", "message": "' . $message . '"';
-    if ($data === NULL)
+    if ($data === NULL || !$return_data)
       $json .= '}';
     else {
       $json .= ', "data": [';
@@ -54,7 +55,7 @@ function send_response($code, $result, $message, $data = NULL)
     $writer->text($message);
     $writer->endElement();
 
-    if ($data !== NULL) {
+    if ($data !== NULL && $return_data) {
       $writer->startElement('locks');
       foreach ($data as $elem) {
         $writer->startElement('lock');
@@ -102,6 +103,9 @@ if (isset($_REQUEST['format'])) {
   else
     send_response(400, 'BadRequest', 'Unknown format');
 }
+
+if (isset($_REQUEST['return']) && $_REQUEST['return'] == 'no')
+  $return_data = false;
 
 if (!in_array($command, array('protect', 'release', 'list', 'set')))
   send_response(400, 'BadRequest', 'Invalid command (possible values: protect, release, list, set)');
