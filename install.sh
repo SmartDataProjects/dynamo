@@ -34,6 +34,13 @@ $DYNAMO_BASE/web/install.sh
 # POLICIES
 [ -e $DYNAMO_BASE/policies ] || git clone https://github.com/SmartDataProjects/dynamo-policies.git $DYNAMO_BASE/policies
 
+# NRPE PLUGINS
+if [ -d /usr/lib64/nagios/plugins ]
+then
+  sed "s|_DYNAMO_BACKUP_PATH_|$DYNAMO_BACKUP_PATH|" $DYNAMO_BASE/etc/nrpe/check_dynamo.sh > /usr/lib64/nagios/plugins/check_dynamo.sh
+  chmod +x /usr/lib64/nagios/plugins/check_dynamo.sh
+fi
+
 cd $DYNAMO_BASE/policies
 TAG=$(cat $DYNAMO_BASE/etc/policies.tag)
 echo "Checking out policies tag $TAG"
