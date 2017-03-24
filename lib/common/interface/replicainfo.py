@@ -20,9 +20,16 @@ class ReplicaInfoSourceInterface(object):
         """
         pass
 
-    def make_replica_links(self, sites, groups, datasets):
+    def make_replica_links(self, sites, groups, datasets, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*'):
         """
-        Link the sites with datasets and blocks.
-        Arguments are name->obj maps
+        Create replica objects and update the site and dataset objects.
+        Objects in sites and datasets should have replica information cleared.
+
+        @param sites        {'site_name': site_object}. No new site is created, but the list of replicas of individual sites are updated.
+        @param groups       {'group_name': group_object}. Read only.
+        @param datasets     {'dataset_name': dataset_object}. New dataset objects are inserted as they are found.
+        @param site_filt    Limit to replicas on sites matching the pattern.
+        @param group_filt   Limit to replicas owned by groups matching the pattern.
+        @param dataset_filt Limit to replicas of datasets matching the pattern.
         """
         pass
