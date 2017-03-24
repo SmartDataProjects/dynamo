@@ -424,8 +424,30 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     def make_replica_links(self, sites, groups, datasets, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*'): #override (ReplicaInfoSourceInterface)
         """
         Use blockreplicas to fetch a full list of all block replicas on the site.
-        sites, groups, filt are used to limit the query.
-        Objects in sites and datasets should have replica information cleared.
+        Objects in sites and datasets should have replica information cleared. All block replica objects
+        are newly created within this function.
+        Implementation:
+        1. Call PhEDEx blockreplicas with show_dataset=y to obtain a JSON structure of [{dataset: [{block: [replica]}]}]
+        2. Loop over JSON:
+          2.1 Unknown dataset -> create object
+          2.2 Loop over blocks:
+            2.2.1 Unknown block -> create object
+            2.2.2 Block updated -> set dataset.status to PRODUCTION and update block
+            2.2.3 Loop over block replicas:
+              2.2.3.1 If the replica is not owned by any of the specified groups, skip
+              2.2.3.2 Unknown dataset replica -> create object (can be known in case of parallel execution)
+              2.2.3.3 Create block replica object
+        3. For each dataset, make a list of blocks with replicas and compare it with the list of blocks.
+           If they differ, some blocks may be invalidated. Set dataset.status to PRODUCTION. (Triggers detailed
+           inquiry in set_dataset_details)
+        4. Remove datasets with no replicas from memory (simple speed optimization)
+
+        @param sites    {'site_name': site_object}. Read only.
+        @param groups   {'group_name': group_object}. Read only.
+        @param datasets {'dataset_name': dataset_object}. New dataset objects are inserted as they are found.
+        @param site_filt    Limit to replicas on sites matching the pattern.
+        @param group_filt   Limit to replicas owned by groups matching the pattern.
+        @param dataset_filt Limit to replicas of datasets matching the pattern.
         """
 
         logger.info('make_replica_links  Fetching block replica information from PhEDEx')
@@ -595,8 +617,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 dataset.unlink()
 
     def find_tape_copies(self, datasets): #override (ReplicaInfoSourceInterface)
-        # Use 'subscriptions' query to check if all blocks of the dataset are on tape.
-        # site=T*MSS -> tape
+        """
+        Use 'subscriptions' query to check if all blocks of the dataset are on tape.
+        Queries only for datasets where on_tape != FULL and status != IGNORED.
+        site=T*MSS -> tape
+        """
  
         # Routine to fetch data and fill the list of blocks on tape
         def inquire_phedex(dataset_list):
@@ -788,8 +813,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         dataset.remove_block(block)
 
                     files.sort()
+
                     # files in invalidated blocks are already removed
-                    known_files = sorted(dataset.files, key = lambda f: (f.fullpath(), f.size))
+                    known_files = sorted(dataset.files, key = lambda f: f.fullpath())
 
                     invalidated_files = []
 
@@ -812,7 +838,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             known_file = known_files[iknown]
                             known_path = known_file.fullpath()
 
-                            if phed_name == known_path:
+                            pathcmp = cmp(phed_name, known_path)
+
+                            if pathcmp == 0:
                                 # same file
                                 if phed_size != known_file.size:
                                     dataset.update_file(phed_name, phed_size)
@@ -820,7 +848,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 iphed += 1
                                 iknown += 1
 
-                            elif phed_name < known_path:
+                            elif pathcmp < 0:
                                 # new file
                                 dataset.files.add(File.create(phed_name, block, phed_size))
                                 iphed += 1
@@ -829,7 +857,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 # invalidated file
                                 invalidated_files.append(known_file)
                                 iknown += 1
-                            
+
                     for lfile in invalidated_files:
                         logger.info('Removing file %s from dataset %s', lfile.fullpath(), dataset.name)
                         dataset.files.remove(lfile)
@@ -888,7 +916,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     dataset.last_update = dbs_entry['last_modification_date']
 
         # set_status_type can work on up to 1000 datasets
-        chunk_size = 1000
+        chunk_size = 500
         dataset_chunks = []
 
         start = 0
