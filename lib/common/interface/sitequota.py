@@ -1,5 +1,9 @@
+import logging
+
 from common.interface.mysql import MySQL
 from common.dataformat import Site
+
+logger = logging.getLogger(__name__)
 
 class SiteQuotaRetriever(object):
     """
@@ -27,6 +31,8 @@ class SiteQuotaRetriever(object):
 
             if len(entry) != 0:
                 quota += entry[0]
+
+        logger.debug('Retrieved quota at %s for %s from IntelROCCS database: %f', site.name, str(partition_names), quota)
 
         return quota
 
