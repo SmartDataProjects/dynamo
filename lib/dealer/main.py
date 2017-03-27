@@ -54,13 +54,14 @@ class Dealer(object):
             # Ask each site if it should be considered as a copy destination.
             target_sites = set()
             for site in self.inventory_manager.sites.values():
-                if site.partition_quota(partition) != 0. and site.status == Site.STAT_READY and site.active == Site.ACT_AVAILABLE and policy.target_site_def.match(site):
+                if site.partition_quota(partition) != 0. and site.status == Site.STAT_READY and site.active == Site.ACT_AVAILABLE and policy.target_site_def(site):
                     target_sites.add(site)
     
             pending_volumes = collections.defaultdict(float)
             # TODO get input from transfer monitor and update the pending volumes
     
-            # prioritized lists of datasets, blocks, and files
+            # Prioritized lists of datasets, blocks, and files
+            # Plugins can specify the destination sites too - but is not passed the list of target sites to keep things simpler
             items = policy.collect_requests(self.inventory_manager)
 
             copy_list = self.determine_copies(target_sites, items, policy, pending_volumes)
@@ -102,7 +103,8 @@ class Dealer(object):
                 # total capability of the sites this dataset is at
                 total_cpu = sum([r.site.cpu for r in dataset.replicas])
                 # w * N * (site cpu / total cpu); normalized by site cpu
-                business += dataset.demand.request_weight * dataset.num_files() / total_cpu
+                if total_cpu > 0.:
+                    business += dataset.demand.request_weight * dataset.num_files() / total_cpu
 
             return business
 
@@ -125,6 +127,9 @@ class Dealer(object):
         for entry in datasets:
             if type(entry) is tuple:
                 dataset, destination_site = entry
+                if destination_site not in site_business:
+                    # a plugin specified the destination, but it's not in the list of potential target sites
+                    continue
             else:
                 dataset = entry
                 destination_site = None
@@ -180,6 +185,9 @@ class Dealer(object):
         for entry in blocks:
             if type(entry) is tuple:
                 block, destination_site = entry
+                if destination_site not in site_business:
+                    # a plugin specified the destination, but it's not in the list of potential target sites
+                    continue
             else:
                 block = entry
                 destination_site = None
@@ -236,6 +244,9 @@ class Dealer(object):
         for entry in files:
             if type(entry) is tuple:
                 lfile, destination_site = entry
+                if destination_site not in site_business:
+                    # a plugin specified the destination, but it's not in the list of potential target sites
+                    continue
             else:
                 lfile = entry
                 destination_site = None

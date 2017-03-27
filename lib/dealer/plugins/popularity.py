@@ -16,6 +16,7 @@ class PopularityHandler(BaseHandler):
 
     def get_requests(self, inventory, partition): # override
         self._datasets = []
+        requests = []
 
         for dataset in inventory.datasets.values():
             if dataset.demand.request_weight <= 0.:
@@ -38,13 +39,34 @@ class PopularityHandler(BaseHandler):
             else: # no block in partition
                 continue
 
+            self._datasets.append(dataset)
+
             num_requests = min(config.max_replicas, int(math.ceil(dataset.demand.request_weight / config.request_to_replica_threshold))) - len(dataset.replicas)
-            for _ in xrange(num_requests):
-                self._datasets.append(dataset)
+            if num_requests <= 0:
+                continue
+
+            requests.append((dataset, num_requests))
             
-        self._datasets.sort(key = lambda dataset: dataset.demand.request_weight, reverse = True)
+        requests.sort(key = lambda x: x[0].demand.request_weight, reverse = True)
+
+        datasets_to_request = []
+
+        # [(d1, n1), (d2, n2), ...] -> [d1, d2, .., d1, ..] (d1 repeats n1 times)
+        while True:
+            added_request = False
+            for ir in xrange(len(requests)):
+                dataset, num_requests = requests[ir]
+                if num_requests == 0:
+                    continue
+
+                datasets_to_request.append(dataset)
+                requests[ir] = (dataset, num_requests - 1)
+                added_request = True
+
+            if not added_request:
+                break
         
-        return list(self._datasets), [], []
+        return datasets_to_request, [], []
 
     def save_record(self, run_number, history, copy_list): # override
         history.save_dataset_popularity(run_number, self._datasets)
