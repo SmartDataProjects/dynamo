@@ -7,18 +7,6 @@ import time
 import re
 import fnmatch
 
-from common.inventory import InventoryManager
-from common.transaction import TransactionManager
-from common.demand import DemandManager
-import common.interface.classes as classes
-from detox.main import Detox
-from detox.policy import Policy
-import detox.configuration as detox_config
-from dealer.main import Dealer
-from dealer.policy import DealerPolicy
-from common.dataformat import Site
-import common.configuration as config
-
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Dynamo')
@@ -43,17 +31,30 @@ parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run'
 args = parser.parse_args()
 sys.argv = []
 
-if os.path.exists('/var/run/dynamod.pid'):
-    with open('/var/run/dynamod.pid') as pidfile:
-        if os.getppid() == int(pidfile.read()):
-            config.daemon_mode = True
-
 log_level = getattr(logging, args.log_level.upper())
 
 if args.log_file:
     logging.basicConfig(filename = args.log_file, filemode = 'w', level = log_level)
 else:
     logging.basicConfig(level = log_level)
+
+from common.inventory import InventoryManager
+from common.transaction import TransactionManager
+from common.demand import DemandManager
+import common.interface.classes as classes
+from detox.main import Detox
+from detox.policy import Policy
+import detox.configuration as detox_config
+from dealer.main import Dealer
+from dealer.policy import DealerPolicy
+from dealer.plugins import plugins as dealer_plugins
+from common.dataformat import Site
+import common.configuration as config
+
+if os.path.exists('/var/run/dynamod.pid'):
+    with open('/var/run/dynamod.pid') as pidfile:
+        if os.getppid() == int(pidfile.read()):
+            config.daemon_mode = True
 
 if args.dry_run:
     config.read_only = True
@@ -141,6 +142,12 @@ if 'dealer' in args.module:
     group = inventory_manager.groups['AnalysisOps']
 
     policy = DealerPolicy(Site.partitions['AnalysisOps'], group = group, version = policy_version)
+    policy.target_site_def = lambda s: s.name.startswith('T2_') or (s.name.startswith('T1_') and s.name.endswith('_Disk'))
+
+    policy.add_plugin(dealer_plugins['Popularity'], 2)
+    balancer = dealer_plugins['Balancer']
+    balancer.history = history
+    policy.add_plugin(balancer, 1)
     
     dealer.set_policy(policy)
 
