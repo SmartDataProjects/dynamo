@@ -321,7 +321,7 @@ class MySQLStore(LocalStoreInterface):
                 site.add_block_replica(block_replica)
 
             logger.info('Removing datasets with no replicas from memory.')
-            
+           
             # Take out datasets with no replicas
             ids = 0
             while ids != len(dataset_list):

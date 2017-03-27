@@ -20,6 +20,9 @@ class SiteQuotaRetriever(object):
             # IntelROCCS replaces IB RelVal with IB-RelVal
             partition_names[0] = 'IB-RelVal'
 
+        elif partition_names[0] == 'Tape':
+            return -1.
+
         quota = 0.
 
         for partition_name in partition_names:
@@ -31,8 +34,8 @@ class SiteQuotaRetriever(object):
         return quota
 
     def get_status(self, site):
-#        if site.storage_type == Site.TYPE_MSS:
-#            return Site.ACT_NOCOPY
+        if site.storage_type == Site.TYPE_MSS:
+            return Site.ACT_NOCOPY
 
         entry = self._mysql.query('SELECT `Status` FROM `Sites` WHERE `SiteName` LIKE %s', site.name)
 

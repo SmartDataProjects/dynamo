@@ -86,9 +86,8 @@ class Detox(object):
                 if site.partition_quota(partition) != 0. and policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
                     target_sites.add(site)
 
-#            logger.info('Target sites: %s', ' '.join([s.name for s in target_sites]))
-
             logger.info('Identifying dataset replicas in the partition.')
+            logger.info('%d replicas', sum(len(d.replicas) for d in self.inventory_manager.datasets.values()))
 
             # "partition" as a verb - selecting only the blockreps in the partition
             # will also select out replicas on sites with quotas

@@ -506,7 +506,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                     group = None
                             else:
                                 group = None
-    
+
                             site = sites[replica_entry['node']]
 
                             if dataset_replica is None or dataset_replica.site != site:
