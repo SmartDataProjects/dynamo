@@ -32,6 +32,7 @@ class CopyInterface(object):
         """
         Reassign replica_list to group.
         """
+
         return {}
 
     def copy_status(self, operation_id):
