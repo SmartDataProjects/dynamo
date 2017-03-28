@@ -17,11 +17,18 @@ var summary = {
 var siteDetails;
 var conditionTexts = {'0': 'No policy match'};
 
+var datasetSearchColors = [
+    '#ff00ff',
+    '#ffff66',
+    '#ff99ff',
+    '#0066ff'
+];
+
 function initPage(cycleNumber, partitionId)
 {
     var jaxData = {
         'url': window.location.href,
-        'data': {'getPartitions': 1},
+        'data': {'command': 'getPartitions'},
         'success': function (data, textStatus, jqXHR) { setPartitions(data); },
         'dataType': 'json',
         'async': false
@@ -44,7 +51,7 @@ function checkUpdates()
 
     var jaxData = {
         'url': window.location.href,
-        'data': {'checkUpdate': 1, 'partitionId': currentPartition},
+        'data': {'command': 'checkUpdate', 'partitionId': currentPartition},
         'success': function (latest, textStatus, jqXHR) { processUpdates(latest); },
         'dataType': 'json',
         'async': false
@@ -620,110 +627,190 @@ function displayDetails(siteData)
 
 function displayDatasetSearch(data)
 {
-    // data: [name: name, datasets: [{name: name, size: size, decision: dec, reason: reason}]]
+    // data: [{siteData: [name: site_name, datasets: [{name: dataset_name, size: size, decision: dec, reason: reason}]]}]
+    // one element per search pattern
 
     // Add bars corresponding to searched datasets to the summary graph
     var ynorm;
 
     if (currentNorm == 'relative')
-        ynorm = function (d, val) { if (d.quota == 0.) return 0.; else return summary.ymax - summary.yscale(val / d.quota); }
+        ynorm = function (site, val) { if (site.quota == 0.) return 0.; else return summary.ymax - summary.yscale(val / site.quota); }
     else
-        ynorm = function (d, val) { return (summary.ymax - summary.yscale(val)) / 1000.; }
+        ynorm = function (site, val) { return (summary.ymax - summary.yscale(val)) / 1000.; }
 
-    summary.bars.each(function (d) {
-            var x = 0;
-            while (x != data.length) {
-                if (d.name == data[x].name)
-                    break;
-                x += 1;
-            }
+    var siteAllDatasets = {};
 
-            if (x == data.length)
-                return;
+    // list of lists; outer: search pattern, inner: site
+    var protectOffsets = [];
+    var keepOffsets = [];
+    var deleteOffsets = [];
 
-            var siteDatasets = data[x].datasets;
+    for (var ipat in data) {
+        var siteData = data[ipat].siteData;
 
-            var protectTotal = 0;
-            var keepTotal = 0;
-            var deleteTotal = 0;
-            for (var x in siteDatasets) {
-                var dataset = siteDatasets[x];
-                if (dataset.decision == 'protect')
-                    protectTotal += dataset.size;
-                else if (dataset.decision == 'keep')
-                    keepTotal += dataset.size;
+        var protectOffsetsNext = [];
+        var keepOffsetsNext = [];
+        var deleteOffsetsNext = [];
+
+        var color = datasetSearchColors[ipat % datasetSearchColors.length];
+
+        summary.bars.each(function (site, isite) {
+                protectOffsetsNext.push(0);
+                keepOffsetsNext.push(0);
+                deleteOffsetsNext.push(0);
+
+                var x = 0;
+                while (x != siteData.length) {
+                    if (site.name == siteData[x].name)
+                        break;
+                    x += 1;
+                }
+    
+                if (x == siteData.length)
+                    return;
+
+                var siteDatasets = siteData[x].datasets;
+                if (siteAllDatasets[site.name] === undefined)
+                    siteAllDatasets[site.name] = siteDatasets;
                 else
-                    deleteTotal += dataset.size;
-            }
-            protectTotal /= 1000.;
-            keepTotal /= 1000.;
-            deleteTotal /= 1000.;
+                    siteAllDatasets[site.name] = siteAllDatasets[site.name].concat(siteDatasets);
+    
+                var protectTotal = 0;
+                var keepTotal = 0;
+                var deleteTotal = 0;
+                for (var x in siteDatasets) {
+                    var dataset = siteDatasets[x];
+                    if (dataset.decision == 'protect')
+                        protectTotal += dataset.size;
+                    else if (dataset.decision == 'keep')
+                        keepTotal += dataset.size;
+                    else
+                        deleteTotal += dataset.size;
+                }
+                protectTotal /= 1000.;
+                keepTotal /= 1000.;
+                deleteTotal /= 1000.;
+    
+                var bar = d3.select(this);
+                var barWidth = bar.select('.barComponent').attr('width');
+    
+                if (protectTotal > 0) {
+                    var offset = 0;
+                    if (ipat != 0)
+                        offset = protectOffsets[ipat - 1][isite];
 
-            var bar = d3.select(this);
-            var barWidth = bar.select('.barComponent').attr('width');
+                    var height = ynorm(site, protectTotal);
+                    var zero = offset - height;
+                    // this will become the offset for the next dataset
+                    protectOffsetsNext[isite] = zero;
 
-            if (protectTotal > 0) {
-                bar.append('rect')
-                    .classed('searched barComponent', true)
-                    .attr('transform', function (d) { return 'translate(0,-' + ynorm(d, protectTotal) + ')'; })
-                    .attr('height', function (d) { return ynorm(d, protectTotal); })
-                    .attr('width', barWidth);
-            }
+                    bar.append('rect')
+                        .classed('barComponent searched', true)
+                        .attr('fill', color)
+                        .attr('transform', 'translate(0,' + zero + ')')
+                        .attr('height', height)
+                        .attr('width', barWidth);
+                }
+    
+                if (keepTotal > 0) {
+                    var offset;
+                    if (ipat == 0)
+                        offset = d3.transform(bar.select('.protect').attr('transform')).translate[1];
+                    else
+                        offset = keepOffsets[ipat - 1][isite];
 
-            if (keepTotal > 0) {
-                var offset = d3.transform(bar.select('.protect').attr('transform')).translate[1];
-                bar.append('rect')
-                    .classed('searched barComponent', true)
-                    .attr('transform', function (d) { return 'translate(0,' + (offset - ynorm(d, keepTotal)) + ')'; })
-                    .attr('height', function (d) { return ynorm(d, keepTotal); })
-                    .attr('width', barWidth);
-            }
+                    var height = ynorm(site, keepTotal);
+                    var zero = offset - height;
+                    // this will become the offset for the next dataset
+                    keepOffsetsNext[isite] = zero;
 
-            if (deleteTotal > 0) {
-                var offset = d3.transform(bar.select('.keep').attr('transform')).translate[1];
-                bar.append('rect')
-                    .classed('searched barComponent', true)
-                    .attr('transform', function (d) { return 'translate(0,' + (offset - ynorm(d, deleteTotal)) + ')'; })
-                    .attr('height', function (d) { return ynorm(d, deleteTotal); })
-                    .attr('width', barWidth);
-            }
+                    bar.append('rect')
+                        .classed('barComponent searched', true)
+                        .attr('fill', color)
+                        .attr('transform', 'translate(0,' + zero + ')')
+                        .attr('height', height)
+                        .attr('width', barWidth);
+                }
+    
+                if (deleteTotal > 0) {
+                    var offset;
+                    if (ipat == 0)
+                        offset = d3.transform(bar.select('.keep').attr('transform')).translate[1];
+                    else
+                        offset = deleteOffsets[ipat - 1][isite];
 
-        });
+                    var height = ynorm(site, deleteTotal);
+                    var zero = offset - height;
+                    // this will become the offset for the next dataset
+                    deleteOffsetsNext[isite] = zero;
+
+                    bar.append('rect')
+                        .classed('barComponent searched', true)
+                        .attr('fill', color)
+                        .attr('transform', 'translate(0,' + zero + ')')
+                        .attr('height', height)
+                        .attr('width', barWidth);
+                }
+    
+            });
+
+        var displayBox = d3.select('#datasetsOnDisplay').append('div')
+            .classed('displayed', true)
+            .style({'width': '100%', 'height': '25px'});
+
+        displayBox.append('div')
+            .classed('datasetSearchIndex', true)
+            .append('div')
+            .style({'width': '20px', 'height': '20px', 'background-color': color, 'margin-right': '5px', 'float': 'right'});
+
+        var inputs = displayBox.append('div')
+            .classed('datasetSearchInputs', true);
+
+        inputs.append('div')
+            .classed('datasetSearch', true)
+            .style({'margin-left': '2%', 'float': 'left'})
+            .text(data[ipat].pattern);
+
+        inputs.append('input')
+            .classed('datasetSearchButton', true)
+            .property('type', 'button')
+            .property('value', 'Remove')
+            .on('click', function () { removeDataset(this.parentNode.parentNode) });
+
+        protectOffsets.push(protectOffsetsNext);
+        keepOffsets.push(keepOffsetsNext);
+        deleteOffsets.push(deleteOffsetsNext);
+    }
+
+    d3.select('#datasetsSearchNav').style('height', (25 * (data.length + 1)) + 10 + 'px');
+    d3.select('#datasetsOnDisplay').style('height', (25 * data.length) + 'px');
 
     // Hide sites that do not have the datasets and print tables containing only the searched datasets
-    siteDetails.each(function (d) {
-            var x = 0;
-            while (x != data.length) {
-                if (d.name == data[x].name)
-                    break;
-                x += 1;
-            }
-
-            if (x == data.length) {
-                this.style.display = 'none';
-                return;
-            }
-
-            var siteDatasets = data[x].datasets;
-
-            var tableBox = d3.select(this).select('.siteTableBox');
-            tableBox.select('div.loadSiteData').style('display', 'none');
-            tableBox.select('tbody.full').style('display', 'none');
-
-            var tbody = addTableRows(tableBox.select('table'), 'searched', siteDatasets);
-            var tbodyHeight = tbody.node().clientHeight;
-            if (tbodyHeight > 656) {
-                tbody.style('height', '656px');
-                tableBox.style('height', '700px');
-            }
-            else
-                tableBox.style('height', (tbodyHeight + 44) + 'px');
-        });
-
-    if (data.length == 0) {
+    if (siteAllDatasets.length == 0) {
         d3.select('#details').append('div').classed('searchResult', true)
             .style({'text-align': 'center', 'font-size': '18px', 'margin-bottom': '10px'})
             .text('No replica was found.');
+    }
+    else {
+        siteDetails.each(function (site, isite) {
+                if (siteAllDatasets[site.name] === undefined) {
+                    this.style.display = 'none';
+                    return;
+                }
+
+                var tableBox = d3.select(this).select('.siteTableBox');
+                tableBox.select('div.loadSiteData').style('display', 'none');
+                tableBox.select('tbody.full').style('display', 'none');
+
+                var tbody = addTableRows(tableBox.select('table'), 'searched', siteAllDatasets[site.name]);
+                var tbodyHeight = tbody.node().clientHeight;
+                if (tbodyHeight > 656) {
+                    tbody.style('height', '656px');
+                    tableBox.style('height', '700px');
+                }
+                else
+                    tableBox.style('height', (tbodyHeight + 44) + 'px');
+            });
     }
 }
 
@@ -740,6 +827,11 @@ function resetDatasetSearch()
         tableBox.style('height', '700px');
 
     tableBox.select('tbody.searched').remove();
+
+    d3.selectAll('#datasetsOnDisplay div.displayed').remove();
+
+    d3.select('#datasetsSearchNav').style('height', '35px');
+    d3.select('#datasetsOnDisplay').style('height', 0);
 }
 
 function loadSummary(cycleNumber, partitionId, summaryNorm)
@@ -765,7 +857,7 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
     $(box.node()).append($(spinner.el));
 
     var inputData = {
-        'getData': 1,
+        'command': 'getData',
         'dataType': 'summary',
         'cycleNumber': cycleNumber
     };
@@ -823,7 +915,7 @@ function loadSiteTable(name)
     $('#' + name + ' .siteTableBox').append($(spinner.el));
 
     var inputData = {
-        'getData': 1,
+        'command': 'getData',
         'dataType': 'siteDetail',
         'cycleNumber': currentCycle,
         'siteName': name
@@ -842,21 +934,29 @@ function loadSiteTable(name)
 
 function findDataset()
 {
-    resetDatasetSearch();
+    var inputBox = $('#newDatasetSearch');
 
-    var datasetName = $('#datasetSearch').val();
-
-    if ($.trim(datasetName) == '')
+    var input = $.trim(inputBox.val());
+    if (input == '')
         return;
+
+    var datasetNames = [];
+
+    d3.select('#datasetsOnDisplay').selectAll('div.displayed div.datasetSearch')
+        .each(function() { datasetNames.push(this.innerHTML); });
+
+    datasetNames.push(input);
+
+    resetDatasetSearch();
 
     var spinner = new Spinner({'scale': 5, 'corners': 0, 'width': 2, 'position': 'absolute'});
     spinner.spin();
     $('#summaryGraphBox').append($(spinner.el));
 
     var inputData = {
-        'searchDataset': 1,
+        'command': 'searchDataset',
         'cycleNumber': currentCycle,
-        'datasetName': datasetName
+        'datasetNames': datasetNames
     };
 
     $.get(window.location.href, inputData, function (data, textStatus, jqXHR) {
@@ -865,7 +965,44 @@ function findDataset()
                     conditionTexts[cid] = data.conditions[cid];
             }
 
-            displayDatasetSearch(data.siteData);
+            inputBox.val('');
+            displayDatasetSearch(data.results);
+            spinner.stop();
+    }, 'json');
+}
+
+function removeDataset(displayBox)
+{
+    var datasetNames = [];
+
+    d3.select('#datasetsOnDisplay').selectAll('div.displayed')
+        .each(function() {
+                if (this != displayBox)
+                    datasetNames.push(d3.select(this).select('div.datasetSearch').html());
+            });
+
+    resetDatasetSearch();
+
+    if (datasetNames.length == 0)
+        return;
+
+    var spinner = new Spinner({'scale': 5, 'corners': 0, 'width': 2, 'position': 'absolute'});
+    spinner.spin();
+    $('#summaryGraphBox').append($(spinner.el));
+
+    var inputData = {
+        'command': 'searchDataset',
+        'cycleNumber': currentCycle,
+        'datasetNames': datasetNames
+    };
+
+    $.get(window.location.href, inputData, function (data, textStatus, jqXHR) {
+            for (var cid in data.conditions) {
+                if (!(cid in conditionTexts))
+                    conditionTexts[cid] = data.conditions[cid];
+            }
+
+            displayDatasetSearch(data.results);
             spinner.stop();
     }, 'json');
 }
@@ -873,9 +1010,24 @@ function findDataset()
 function downloadList()
 {
     var url = window.location.href.split('?')[0];
-    url += '?dumpDeletions=1';
+    url += '?command=dumpDeletions';
     url += '&cycleNumber=' + currentCycle;
     
     window.location = url;
 }
 
+function findCycleFromRequest(reqid)
+{
+    var inputData = {
+        'command': 'findCycle',
+        'phedex': reqid
+    };
+
+    var cycle = currentCycle;
+
+    $.get(window.location.href, inputData, function (data, textStatus, jqXHR) {
+            cycle = data.cycle;
+    }, 'json');
+
+    return cycle;
+}

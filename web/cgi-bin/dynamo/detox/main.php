@@ -10,7 +10,7 @@ $operation = 'deletion';
 if (isset($TESTMODE) && $TESTMODE)
   $operation = 'deletion_test';
 
-if (isset($_REQUEST['getPartitions']) && $_REQUEST['getPartitions']) {
+if ($_REQUEST['command'] == 'getPartitions') {
   $data = array();
   
   $stmt = $history_db->prepare('SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `runs` INNER JOIN `partitions` ON `partitions`.`id` = `runs`.`partition_id` WHERE `runs`.`operation` LIKE ? ORDER BY `partitions`.`id`');
@@ -30,6 +30,21 @@ if (isset($_REQUEST['getPartitions']) && $_REQUEST['getPartitions']) {
   $stmt->close();
 
   echo json_encode($data);
+  exit(0);
+}
+else if($_REQUEST['command'] == 'findCycle') {
+  $phedex = $_REQUEST['phedex'] + 0;
+
+  $cycle = 0;
+
+  $stmt = $history_db->prepare('SELECT `run_id` FROM `deletion_requests` WHERE `id` = ?');
+  $stmt->bind_param('i', $phedex);
+  $stmt->bind_result($cycle);
+  $stmt->execute();
+  $stmt->fetch();
+  $stmt->close();
+
+  echo '{"cycle": ' . $cycle . '}';
   exit(0);
 }
 
@@ -73,17 +88,16 @@ if ($cycle == 0) {
   $stmt->close();
 }
 
-if (isset($_REQUEST['checkUpdate']) && $_REQUEST['checkUpdate']) {
+if ($_REQUEST['command'] == 'checkUpdate') {
   echo $cycle;
   exit(0);
 }
 
 check_cache($history_db, $cycle, $partition_id);
 
-if (isset($_REQUEST['searchDataset']) && $_REQUEST['searchDataset']) {
-  $dataset_pattern = str_replace('*', '%', $_REQUEST['datasetName']);
-
-  $json = '{"siteData": [';
+if ($_REQUEST['command'] == 'searchDataset') {
+  // return
+  // {"results": [{"siteData": [{"name": site, "datasets": [datasets]}]}], "conditions": [conditions]}
 
   $query = 'SELECT s.`name`, d.`name`, r.`size` * 1.e-9, l.`decision`, l.`matched_condition`';
   $query .= ' FROM `replica_snapshot_cache` AS c';
@@ -93,54 +107,57 @@ if (isset($_REQUEST['searchDataset']) && $_REQUEST['searchDataset']) {
   $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
   $query .= ' WHERE c.`run_id` = ? AND d.`name` LIKE ?';
 
-  $stmt = $history_db->prepare($query);
-  $stmt->bind_param('is', $cycle, $dataset_pattern);
-  $stmt->bind_result($site_name, $dataset_name, $size, $decision, $condition_id);
-  $stmt->execute();
+  $results_data = array();
 
-  $condition_ids = array();
+  foreach ($_REQUEST['datasetNames'] as $pattern) {
+    $dataset_pattern = str_replace('_', '\_', $pattern);
+    $dataset_pattern = str_replace('*', '%', $dataset_pattern);
+    $dataset_pattern = str_replace('?', '_', $dataset_pattern);
+ 
+    $stmt = $history_db->prepare($query);
+    $stmt->bind_param('is', $cycle, $dataset_pattern);
+    $stmt->bind_result($site_name, $dataset_name, $size, $decision, $condition_id);
+    $stmt->execute();
+  
+    $condition_ids = array();
 
-  $json_data = array();
-
-  while ($stmt->fetch()) {
-    if (!array_key_exists($site_name, $json_data))
-      $json_data[$site_name] = array();
-
-    $json_data[$site_name][] = sprintf('{"name":"%s","size":%f,"decision":"%s","conditionId":"%s"}', $dataset_name, $size, $decision, $condition_id);
-    $condition_ids[] = $condition_id;
+    $json_data = array();
+  
+    while ($stmt->fetch()) {
+      if (!array_key_exists($site_name, $json_data))
+        $json_data[$site_name] = array();
+  
+      $json_data[$site_name][] = sprintf('{"name":"%s","size":%f,"decision":"%s","conditionId":"%s"}', $dataset_name, $size, $decision, $condition_id);
+      $condition_ids[] = $condition_id;
+    }
+    $stmt->close();
+  
+    $json_texts = array();
+    foreach ($json_data as $site_name => $datasets)
+      $json_texts[] = sprintf('{"name": "%s", "datasets": [%s]}', $site_name, implode(',', $datasets));
+  
+    $results_data[] = '{"pattern": "' . $pattern . '", "siteData": [' . implode(',', $json_texts) . ']}';
   }
-  $stmt->close();
-
-  $json_texts = array();
-  foreach ($json_data as $site_name => $datasets)
-    $json_texts[] = sprintf('{"name": "%s", "datasets": [%s]}', $site_name, implode(',', $datasets));
-
-  $json .= implode(',', $json_texts);
-
-  $json .= '], "conditions": {';
-
-  $json_texts = array();
-
+ 
+  $cond_data = array();
+  
   if (count($condition_ids) != 0) {
     $cond_pool = implode(',', array_unique($condition_ids));
-
+  
     $query = sprintf('SELECT `id`, `text` FROM `policy_conditions` WHERE `id` IN (%s)', $cond_pool);
-
+  
     $stmt = $history_db->prepare($query);
     $stmt->bind_result($condition_id, $text);
     $stmt->execute();
     while ($stmt->fetch())
-      $json_texts[] = sprintf('"%d": "%s"', $condition_id, $text);
+      $cond_data[] = sprintf('"%d": "%s"', $condition_id, $text);
     $stmt->close();
   }
-
-  $json .= implode(',', $json_texts);
-  $json .= '}}';
-
-  echo $json;
+  
+  echo '{"results":[' . implode(',', $results_data) . '],"conditions":{' . implode(',', $cond_data) . '}}';
   exit(0);  
 }
-else if (isset($_REQUEST['dumpDeletions']) && $_REQUEST['dumpDeletions']) {
+else if ($_REQUEST['command'] == 'dumpDeletions') {
   $list = '';
 
   $query = 'SELECT s.`name`, d.`name`, z.`size` * 1.e-9 FROM `deleted_replicas` AS r';
@@ -184,7 +201,7 @@ if (!$stmt->fetch())
   $prev_cycle = 0;
 $stmt->close();
 
-if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
+if ($_REQUEST['command'] == 'getData') {
   // main data structure
   $data = array();
 

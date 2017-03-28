@@ -9,6 +9,7 @@ $return_data = true;
 function send_response($code, $result, $message, $data = NULL)
 {
   global $format;
+  global $return_data;
 
   header($_SERVER['SERVER_PROTOCOL'] . ' ' . $code, true, $code);
 
@@ -85,9 +86,6 @@ function send_response($code, $result, $message, $data = NULL)
   exit(0);
 }
 
-if ($_SERVER['SSL_CLIENT_VERIFY'] != 'SUCCESS')
-  send_response(401, 'AuthFailed', 'SSL authentication failed');
-
 date_default_timezone_set('UTC');
 
 $command = substr($_SERVER['PATH_INFO'], 1); # dynamo.mit.edu/registry/detoxlock/command -> /command
@@ -97,6 +95,14 @@ if ($command == "") {
   exit(0);
 }
 
+if ($command == 'help') {
+  echo file_get_contents(__DIR__ . '/html/detoxlock_help.html');
+  exit(0);
+}
+
+if ($_SERVER['SSL_CLIENT_VERIFY'] != 'SUCCESS')
+  send_response(401, 'AuthFailed', 'SSL authentication failed');
+
 if (isset($_REQUEST['format'])) {
   if (in_array($_REQUEST['format'], array('json', 'xml')))
     $format = $_REQUEST['format'];
@@ -104,8 +110,12 @@ if (isset($_REQUEST['format'])) {
     send_response(400, 'BadRequest', 'Unknown format');
 }
 
-if (isset($_REQUEST['return']) && $_REQUEST['return'] == 'no')
-  $return_data = false;
+if (isset($_REQUEST['return'])) {
+  $request = $_REQUEST['return'];
+  if ($request != 'yes' && $request != 'no')
+    send_response(400, 'BadRequest', 'Unknown value for option return');
+  $return_data = $request == 'yes';
+}
 
 if (!in_array($command, array('protect', 'release', 'list', 'set')))
   send_response(400, 'BadRequest', 'Invalid command (possible values: protect, release, list, set)');
@@ -138,78 +148,88 @@ function lock_lock($val)
   $stmt->close();
 }
 
-function get_lock_data($lockid, $item = '', $sites = '', $groups = '', $created_before = 0, $created_after = 0, $expires_before = 0, $expires_after = 0)
+function get_lock_data($lockid, $item = '', $sites = '', $groups = '', $created_before = 0, $created_after = 0, $expires_before = 0, $expires_after = 0, $mine_only = true)
 {
   global $registry_db;
   global $uid;
 
   $data = array();
 
-  $query = 'SELECT l.`id`, l.`enabled`, l.`item`, l.`sites`, l.`groups`, l.`entry_date`, UNIX_TIMESTAMP(l.`expiration_date`), u.`name`, l.`comment` FROM `detox_locks` AS l INNER JOIN `users` AS u ON u.`id` = l.`user_id` WHERE ';
+  $query = 'SELECT l.`id`, l.`enabled`, l.`item`, l.`sites`, l.`groups`, l.`entry_date`, UNIX_TIMESTAMP(l.`expiration_date`), u.`name`, l.`comment` FROM `detox_locks` AS l INNER JOIN `users` AS u ON u.`id` = l.`user_id`';
 
   if (is_array($lockid)) {
-    $query .= 'l.`id` IN (' . implode(',', $lockid) . ')';
+    $query .= ' WHERE l.`id` IN (' . implode(',', $lockid) . ')';
     $stmt = $registry_db->prepare($query);
   }
   else if ($lockid > 0) {
-    $query .= 'l.`id` = ?';
+    $query .= ' WHERE l.`id` = ?';
     $stmt = $registry_db->prepare($query);
     $stmt->bind_param('i', $lockid);
   }
   else {
-    $query .= 'u.`id` = ?';
+    $where_clause = array();
+    $params = array('');
 
-    $params = array('i', &$uid);
+    if ($mine_only) {
+      $where_clause[] = 'u.`id` = ?';
+      $params[0] .= 'i';
+      $params[] = &$uid;
+    }
 
     if ($lockid < 0) {
       // get only enabled locks
-      $query .= ' AND l.`enabled` = 1';
+      $where_clause[] =  'l.`enabled` = 1';
     }
 
     if ($item != '') {
-      $query .= ' AND l.`item` LIKE ?';
+      $where_clause[] =  'l.`item` LIKE ?';
       $params[0] .= 's';
       $params[] = &$item;
     }
 
     if ($sites != '') {
-      $query .= ' AND l.`sites` LIKE ?';
+      $where_clause[] =  'l.`sites` LIKE ?';
       $params[0] .= 's';
       $params[] = &$sites;
     }
 
     if ($groups != '') {
-      $query .= ' AND l.`groups` LIKE ?';
+      $where_clause[] =  'l.`groups` LIKE ?';
       $params[0] .= 's';
       $params[] = &$groups;
     }
 
     if ($created_before != 0) {
-      $query .= ' AND l.`entry_date` <= FROM_UNIXTIME(?)';
+      $where_clause[] =  'l.`entry_date` <= FROM_UNIXTIME(?)';
       $params[0] .= 'i';
       $params[] = &$created_before;
     }
 
     if ($created_after != 0) {
-      $query .= ' AND l.`entry_date` >= FROM_UNIXTIME(?)';
+      $where_clause[] =  'l.`entry_date` >= FROM_UNIXTIME(?)';
       $params[0] .= 'i';
       $params[] = &$created_after;
     }
 
     if ($expires_before != 0) {
-      $query .= ' AND l.`expiration_date` <= FROM_UNIXTIME(?)';
+      $where_clause[] =  'l.`expiration_date` <= FROM_UNIXTIME(?)';
       $params[0] .= 'i';
       $params[] = &$expires_before;
     }
 
     if ($expires_after != 0) {
-      $query .= ' AND l.`expiration_date` >= FROM_UNIXTIME(?)';
+      $where_clause[] =  'l.`expiration_date` >= FROM_UNIXTIME(?)';
       $params[0] .= 'i';
       $params[] = &$expires_after;
     }
 
-    $stmt = $registry_db->prepare($query);
-    call_user_func_array(array($stmt, "bind_param"), $params);
+    if (count($where_clause) != 0) {
+      $query .= ' WHERE ' . implode(' AND ', $where_clause);
+      $stmt = $registry_db->prepare($query);
+      call_user_func_array(array($stmt, "bind_param"), $params);
+    }
+    else
+      $stmt = $registry_db->prepare($query);
   }
 
   $stmt->bind_result($lockid, $enabled, $item, $sites, $groups, $entry, $expiration, $uname, $comment);
@@ -282,6 +302,22 @@ function update_lock($lockid, $enabled = NULL, $expiration = NULL, $comment = NU
           ($comment === NULL || $data['comment'] == $comment));
 }
 
+function get_expiration($request)
+{
+  if (is_numeric($request))
+    $timestamp = 0 + $request;
+  else {
+    $timestamp = strtotime($request);
+    if ($timestamp === false)
+      send_response(400, 'BadRequest', 'Expiration date ill-formatted');
+  }
+
+  if ($timestamp < time())
+    send_response(400, 'BadRequest', 'Expiration date must be in the future');
+
+  return strftime('%Y-%m-%d %H:%M:%S', $timestamp);
+}
+
 
 if ($command == 'protect' || $command == 'release') {
   $lockid = 0;
@@ -315,8 +351,11 @@ if ($command == 'protect' || $command == 'release') {
     else
       $enabled = 0;
 
+    $expiration = isset($_REQUEST['expires']) ? get_expiration($_REQUEST['expires']) : NULL;
+    $comment = isset($_REQUEST['comment']) ? $_REQUEST['comment'] : NULL;
+
     // known lock - update
-    if (update_lock($lockid, $enabled))
+    if (update_lock($lockid, $enabled, $expiration, $comment))
       send_response(200, 'OK', 'Lock updated', array_values(get_lock_data($lockid)));
     else
       send_response(400, 'InternalError', 'Failed to update lock');
@@ -327,20 +366,8 @@ if ($command == 'protect' || $command == 'release') {
   else {
     // this is a new lock
 
-    if (isset($_REQUEST['expires'])) {
-      if (is_numeric($_REQUEST['expires']))
-        $timestamp = 0 + $_REQUEST['expires'];
-      else {
-        $timestamp = strtotime($_REQUEST['expires']);
-        if ($timestamp === false)
-          send_response(400, 'BadRequest', 'Expiration date ill-formatted');
-      }
-
-      if ($timestamp < time())
-        send_response(400, 'BadRequest', 'Expiration date must be in the future');
-
-      $expiration = strftime('%Y-%m-%d %H:%M:%S', $timestamp);
-    }
+    if (isset($_REQUEST['expires']))
+      $expiration = get_expiration($_REQUEST['expires']);
     else
       send_response(400, 'BadRequest', 'Expiration date not set');
 
@@ -360,6 +387,10 @@ else if ($command == 'list') {
   $item = isset($_REQUEST['item']) ? $_REQUEST['item'] : '';
   $sites = isset($_REQUEST['sites']) ? $_REQUEST['sites'] : '';
   $groups = isset($_REQUEST['groups']) ? $_REQUEST['groups'] : '';
+  $user = isset($_REQUEST['user']) ? $_REQUEST['user'] : ''; // only "all" is allowed
+
+  if ($user != '' && $user != 'all' && $user != 'self')
+    send_response(400, 'BadRequest', 'Only "all" or "self" allowed for user value');
 
   $timestamps = array('created_before' => 0, 'created_after' => 0, 'expires_before' => 0, 'expires_after' => 0);
   foreach (array_keys($timestamps) as $key) {
@@ -377,7 +408,7 @@ else if ($command == 'list') {
     }
   }
 
-  $data = get_lock_data(0, $item, $sites, $groups, $timestamps['created_before'], $timestamps['created_after'], $timestamps['expires_before'], $timestamps['expires_after']);
+  $data = get_lock_data(0, $item, $sites, $groups, $timestamps['created_before'], $timestamps['created_after'], $timestamps['expires_before'], $timestamps['expires_after'], $user == 'self');
   if (count($data) == 0)
     send_response(200, 'EmptyResult', 'No lock found');
   else
