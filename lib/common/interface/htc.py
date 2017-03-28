@@ -13,8 +13,8 @@ class HTCondor(object):
 
     def __init__(self, collector, schedd_constraint = ''):
         """
-        Arguments:
-          collector = host:port of the Collector instance.
+        @param collector         host:port of the Collector instance.
+        @param schedd_constraint classad expression to narrow down the schedd selection.
         """
 
         self._collector = htcondor.Collector(collector)
@@ -75,3 +75,32 @@ class HTCondor(object):
         logger.info('HTCondor returned %d classads', len(classads))
 
         return classads
+
+
+if __name__ == '__main__':
+    
+    import sys
+    import pprint
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser(description = 'HTCondor interface')
+
+    parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
+    parser.add_argument('--pool', '-p', dest = 'pool', metavar = 'COLLECTOR', default = None, help = 'Condor pool to query.')
+    parser.add_argument('--schedd-const', '-s', dest = 'schedd_const', metavar = 'EXPR', default = '', help = 'Schedd constraint.')
+    parser.add_argument('--job-const', '-c', dest = 'job_const', metavar = 'EXPR', default = 'True', help = 'Job constraint.')
+    parser.add_argument('--attributes', '-a', dest = 'attributes', metavar = 'ATT', nargs = '+', default = [], help = 'Attributes to extract.')
+
+    args = parser.parse_args()
+    sys.argv = []
+
+    if args.log_level:
+        try:
+            level = getattr(logging, args.log_level.upper())
+            logging.getLogger().setLevel(level)
+        except AttributeError:
+            logging.warning('Log level ' + args.log_level + ' not defined')
+
+    interface = HTCondor(args.pool, args.schedd_const)
+    
+    pprint.pprint(interface.find_jobs(args.job_const, args.attributes))

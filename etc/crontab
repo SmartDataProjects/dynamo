@@ -1,4 +1,5 @@
 00 01 * * * _DYNAMO_BASE_/bin/backup > /var/log/dynamo/backup.log 2>&1
-*/5 * * * * _DYNAMO_BASE_/bin/removelock > /dev/null 2>&1
-*/30 * * * * _DYNAMO_BASE_/bin/exec_dealermon.sh > /dev/null 2>&1
+*/5 * * * * _DYNAMO_BASE_/bin/removelock > /var/log/dynamo/removelock.log 2>&1
+*/30 * * * * _DYNAMO_BASE_/bin/execbin track_transfers > /var/log/dynamo/track_transfers.log 2>&1
 30 02,08 * * * _DYNAMO_BASE_/bin/getcookies > /var/log/dynamo/getcookies.log 2>&1
+15 */2 * * * _DYNAMO_BASE/bin/execlib fill_users.py > /var/log/fill_users.log 2>&1

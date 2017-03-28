@@ -79,12 +79,21 @@ class RESTService(object):
     Returns python-parsed content.
     """
 
-    def __init__(self, url_base, headers = [], accept = 'application/json'):
+    def __init__(self, url_base, headers = [], accept = 'application/json', auth_handler = HTTPSCertKeyHandler):
+        """
+        @param url_base  There is no strict rule on separating the URL base and individual request REST command ('resource' in make_request). All requests
+                         are made to url_base + '/' + resource.
+        @param headers   Additional request headers (All standard headers including Accept are automatically passed).
+        @param accept    Accept header value.
+        @param auth_handler Handler class for authentication. Use None for no auth.
+        """
+
         self.url_base = url_base
         self.headers = list(headers)
         self.accept = accept
+        self.auth_handler = auth_handler
 
-    def make_request(self, resource = '', options = [], method = GET, format = 'url', auth_handler = HTTPSCertKeyHandler):
+    def make_request(self, resource = '', options = [], method = GET, format = 'url'):
         url = self.url_base
         if resource:
             url += '/' + resource
@@ -144,10 +153,10 @@ class RESTService(object):
         exceptions = []
         while len(exceptions) != config.webservice.num_attempts:
             try:
-                if self.url_base.startswith('https:'):
-                    opener = urllib2.build_opener(auth_handler())
+                if self.auth_handler:
+                    opener = urllib2.build_opener(self.auth_handler())
                 else:
-                    opener = urllib2.build_opener(urllib2.HTTPHandler())
+                    opener = urllib2.build_opener()
 
                 if 'Accept' not in self.headers:
                     opener.addheaders.append(('Accept', self.accept))

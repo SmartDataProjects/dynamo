@@ -486,6 +486,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                     dataset.is_open = (dataset_entry['is_open'] == 'y')
 
+                    dataset_replica = None
+
                     for block_entry in dataset_entry['block']:
                         try:
                             block_name = Block.translate_name(block_entry['name'].replace(ds_name + '#', ''))
@@ -529,7 +531,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                             site = sites[replica_entry['node']]
 
-                            dataset_replica = dataset.find_replica(site)    
+                            if dataset_replica is None or dataset_replica.site != site:
+                                dataset_replica = dataset.find_replica(site)
 
                             if dataset_replica is None:
                                 # first time associating this dataset with this site
@@ -716,6 +719,28 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         logger.info('find_tape_copies  Checking tape copies.')
         
         parallel_exec(inquire_phedex, dataset_chunks)
+
+    def replica_exists_at_site(self, site, item): #override (ReplicaInfoSourceInterface)
+        """
+        Argument item can be a Dataset, Block, or File. Returns true if a replica exists at the site.
+        """
+
+        options = ['node=' + site.name]
+
+        if type(item) == Dataset:
+            options += ['dataset=' + item.name, 'show_dataset=y']
+        elif type(item) == DatasetReplica:
+            options += ['dataset=' + item.dataset.name, 'show_dataset=y']
+        elif type(item) == Block:
+            options += ['block=' + item.dataset.name + '%23' + item.real_name()]
+        elif type(item) == BlockReplica:
+            options += ['block=' + item.block.dataset.name + '%23' + item.block.real_name()]
+        else:
+            raise RuntimeError('Invalid input passed: ' + repr(item))
+        
+        source = self._make_phedex_request('blockreplicas', options)
+
+        return len(source) != 0
 
     def set_dataset_details(self, datasets, skip_valid = False): #override (DatasetInfoSourceInterface)
         """

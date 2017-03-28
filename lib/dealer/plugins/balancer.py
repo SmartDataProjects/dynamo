@@ -16,10 +16,6 @@ class BalancingHandler(BaseHandler):
         self.history = None
 
     def get_requests(self, inventory, partition):
-        """
-        Return datasets, blocks, files, all sorted by priority.
-        """
-
         if self.history is None:
             return [], [], []
 
@@ -31,8 +27,6 @@ class BalancingHandler(BaseHandler):
 
         protected_fractions = {} # {site: fraction}
         last_copies = {} # {site: [datasets]}
-
-        logger.info('%d sites', len(inventory.sites))
 
         for site in inventory.sites.values():
             quota = site.partition_quota(partition)

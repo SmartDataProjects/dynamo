@@ -34,10 +34,10 @@ class WebReplicaLockInterface(ReplicaLockInterface):
             auth_handler = webservice.HTTPSCertKeyHandler
         elif auth_type == 'cookie':
             auth_handler = webservice.CERNSSOCookieAuthHandler
-        else:
+        elif auth_type == 'noauth':
             auth_handler = None
 
-        self._sources.append((webservice.RESTService(url, accept = data_type), content_type, auth_handler))
+        self._sources.append((webservice.RESTService(url, accept = data_type, auth_handler = auth_handler), content_type, auth_handler))
 
     def update(self, inventory): #override
 
@@ -57,10 +57,10 @@ class WebReplicaLockInterface(ReplicaLockInterface):
 
         self.locked_blocks = collections.defaultdict(list)
 
-        for source, content_type, auth_handler in self._sources:
+        for source, content_type in self._sources:
             logger.info('Retrieving lock information from %s', source.url_base)
 
-            data = source.make_request(auth_handler = auth_handler)
+            data = source.make_request()
 
             if content_type == WebReplicaLockInterface.LIST_OF_DATASETS:
                 # simple list of datasets
