@@ -144,10 +144,15 @@ if 'dealer' in args.module:
     policy = DealerPolicy(Site.partitions['AnalysisOps'], group = group, version = policy_version)
     policy.target_site_def = lambda s: s.name.startswith('T2_') or (s.name.startswith('T1_') and s.name.endswith('_Disk'))
 
-    policy.add_plugin(dealer_plugins['Popularity'], 2)
+    policy.add_plugin(dealer_plugins['Popularity'], 3)
+
     balancer = dealer_plugins['Balancer']
     balancer.history = history
-    policy.add_plugin(balancer, 1)
+    policy.add_plugin(balancer, 2)
+
+    undertaker = plugins['Undertaker']
+    undertaker.history = history
+    policy.add_plugin(undertaker, 1)
     
     dealer.set_policy(policy)
 
