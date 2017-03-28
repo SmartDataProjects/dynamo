@@ -70,7 +70,7 @@ weblock.sources = [
     ('https://cmsweb.cern.ch/t0wmadatasvc/replayone/dataset_locked', 'cert', 'CMSWEB_LIST_OF_DATASETS'),
     ('https://cmsweb.cern.ch/t0wmadatasvc/replaytwo/dataset_locked', 'cert', 'CMSWEB_LIST_OF_DATASETS')
 ]
-weblock.lock = 'https://cmst2.web.cern.ch/cmst2/unified/globallocks.json.lock'
+weblock.lock = 'https://vocms049.cern.ch/unified/public/globallocks.json.lock'
 
 mysqllock = Configuration()
 mysqllock.db_params = {
