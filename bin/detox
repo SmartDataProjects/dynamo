@@ -21,7 +21,7 @@ parser.add_argument('--force-inventory-update', '-I', action = 'store_true', des
 parser.add_argument('--partition', '-p', metavar = 'PARTITIONS', dest = 'partitions', nargs = '+', default = ['Physics', 'RelVal'], help = 'Name of the partitions. Syntax is <partition>[:<definition name>]. Definition name is translated to path DYNAMO_BASE/policies/detox/<partition>.txt. If none is given, partition name is used.')
 parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
 parser.add_argument('--no-auto-approval', '-P', action = 'store_true', dest = 'no_auto_approval', help = 'Do not approve deletion requests automatically.')
-parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'WARNING', help = 'Logging level.')
+parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to local databases.')
 parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Make a test run (results recorded in local database).')
@@ -29,6 +29,7 @@ parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run'
 args = parser.parse_args()
 sys.argv = []
 
+# Need to setup logging before loading other modules
 log_level = getattr(logging, args.log_level.upper())
 
 if args.log_file:

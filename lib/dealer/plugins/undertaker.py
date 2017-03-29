@@ -66,4 +66,3 @@ class Undertaker(BaseHandler):
 
 
 plugins['Undertaker'] = Undertaker()
-

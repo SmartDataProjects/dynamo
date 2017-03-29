@@ -25,6 +25,8 @@ class WebReplicaLockInterface(ReplicaLockInterface):
 
         for source in sources:
             self.add_source(*source)
+
+        self.locked_blocks = collections.defaultdict(list)
         
     def add_source(self, url, auth_type, content_type, data_type = 'application/json'):
         if type(content_type) is str:
@@ -37,7 +39,7 @@ class WebReplicaLockInterface(ReplicaLockInterface):
         elif auth_type == 'noauth':
             auth_handler = None
 
-        self._sources.append((webservice.RESTService(url, accept = data_type, auth_handler = auth_handler), content_type, auth_handler))
+        self._sources.append((webservice.RESTService(url, accept = data_type, auth_handler = auth_handler), content_type))
 
     def update(self, inventory): #override
 

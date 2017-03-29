@@ -18,7 +18,7 @@ parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', defaul
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
 parser.add_argument('--no-auto-approval', '-P', action = 'store_true', dest = 'no_auto_approval', help = 'Do not approve deletion and transfer requests automatically.')
-parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
+parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual copy requests, do not save anything to local storage.')
 parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Make a test run (results recorded in local database).')
@@ -26,15 +26,9 @@ parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run'
 args = parser.parse_args()
 sys.argv = []
 
-for path in ['/var/run/dynamod.pid', '/var/run/dealerd.pid']:
-    if os.path.exists(path):
-        with open(path) as pidfile:
-            if os.getppid() == int(pidfile.read()):
-                config.daemon_mode = True
-
 # Need to setup logging before loading other modules
+log_level = getattr(logging, args.log_level.upper())
 
-log_level = logging.INFO
 if args.log_level:
     try:
         log_level = getattr(logging, args.log_level.upper())
@@ -57,6 +51,12 @@ from dealer.plugins import plugins
 
 import common.configuration as config
 import dealer.configuration as dealer_config
+
+for path in ['/var/run/dynamod.pid', '/var/run/dealerd.pid']:
+    if os.path.exists(path):
+        with open(path) as pidfile:
+            if os.getppid() == int(pidfile.read()):
+                config.daemon_mode = True
 
 if args.dry_run:
     config.read_only = True

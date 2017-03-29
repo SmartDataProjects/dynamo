@@ -11,7 +11,7 @@ function send_response($code, $result, $message, $data = NULL)
   global $format;
   global $return_data;
 
-  header($_SERVER['SERVER_PROTOCOL'] . ' ' . $code, true, $code);
+ header($_SERVER['SERVER_PROTOCOL'] . ' ' . $code, true, $code);
 
   if ($format == 'json') {
     $json = '{"result": "' . $result . '", "message": "' . $message . '"';
@@ -148,7 +148,7 @@ function lock_lock($val)
   $stmt->close();
 }
 
-function get_lock_data($lockid, $item = '', $sites = '', $groups = '', $created_before = 0, $created_after = 0, $expires_before = 0, $expires_after = 0, $mine_only = true)
+function get_lock_data($lockid, $item = '', $sites = '', $groups = '', $created_before = 0, $created_after = 0, $expires_before = 0, $expires_after = 0, $mine_only = true, $exact = false)
 {
   global $registry_db;
   global $uid;
@@ -158,6 +158,9 @@ function get_lock_data($lockid, $item = '', $sites = '', $groups = '', $created_
   $query = 'SELECT l.`id`, l.`enabled`, l.`item`, l.`sites`, l.`groups`, l.`entry_date`, UNIX_TIMESTAMP(l.`expiration_date`), u.`name`, l.`comment` FROM `detox_locks` AS l INNER JOIN `users` AS u ON u.`id` = l.`user_id`';
 
   if (is_array($lockid)) {
+    if (count($lockid) == 0)
+      return $data;
+
     $query .= ' WHERE l.`id` IN (' . implode(',', $lockid) . ')';
     $stmt = $registry_db->prepare($query);
   }
@@ -186,18 +189,24 @@ function get_lock_data($lockid, $item = '', $sites = '', $groups = '', $created_
       $params[0] .= 's';
       $params[] = &$item;
     }
+    else if ($exact)
+      $where_clause[] = '(l.`item` IS NULL OR l.`item` = \'\')';
 
     if ($sites != '') {
       $where_clause[] =  'l.`sites` LIKE ?';
       $params[0] .= 's';
       $params[] = &$sites;
     }
+    else if ($exact)
+      $where_clause[] = '(l.`sites` IS NULL OR l.`sites` = \'\')';
 
     if ($groups != '') {
       $where_clause[] =  'l.`groups` LIKE ?';
       $params[0] .= 's';
       $params[] = &$groups;
     }
+    else if ($exact)
+      $where_clause[] = '(l.`groups` IS NULL OR l.`groups` = \'\')';
 
     if ($created_before != 0) {
       $where_clause[] =  'l.`entry_date` <= FROM_UNIXTIME(?)';
@@ -241,14 +250,24 @@ function get_lock_data($lockid, $item = '', $sites = '', $groups = '', $created_
   return $data;
 }
 
-function create_lock($item, $sites, $groups, $expiration, $comment)
+function get_exact_lock_data($lockid, $item = '', $sites = '', $groups = '', $created_before = 0, $created_after = 0, $expires_before = 0, $expires_after = 0, $mine_only = true)
+{
+  $data = get_lock_data($lockid, $item, $sites, $groups, $created_before, $created_after, $expires_before, $expires_after, $mine_only, true);
+
+  if (count($data) == 1)
+    return $data[0];
+  else
+    return NULL;
+}
+
+function create_lock($item, $sites, $groups, $expiration, $comment, $enabled = 1)
 {
   global $registry_db;
   global $uid;
 
-  $query = 'INSERT INTO `detox_locks` (`enabled`, `item`, `sites`, `groups`, `entry_date`, `expiration_date`, `user_id`, `comment`) VALUES (1, ?, ?, ?, NOW(), ?, ?, ?)';
+  $query = 'INSERT INTO `detox_locks` (`enabled`, `item`, `sites`, `groups`, `entry_date`, `last_update`, `expiration_date`, `user_id`, `comment`) VALUES (?, ?, ?, ?, NOW(), NOW(), FROM_UNIXTIME(?), ?, ?)';
   $stmt = $registry_db->prepare($query);
-  $stmt->bind_param('ssssis', $item, $sites, $groups, $expiration, $uid, $comment);
+  $stmt->bind_param('issssis', $enabled, $item, $sites, $groups, $expiration, $uid, $comment);
   $stmt->execute();
   $lockid = $stmt->insert_id;
   $stmt->close();
@@ -263,7 +282,7 @@ function update_lock($lockid, $enabled = NULL, $expiration = NULL, $comment = NU
   $query = 'UPDATE `detox_locks` SET ';
   $params = array('');
 
-  $set = array();
+  $set = array('`last_update` = NOW()');
 
   if ($enabled !== NULL) {
     $set[] = '`enabled` = ?';
@@ -285,21 +304,27 @@ function update_lock($lockid, $enabled = NULL, $expiration = NULL, $comment = NU
 
   $query .= implode(', ', $set);
 
-  $query .= ' WHERE `id` = ?';
-  $params[0] .= 'i';
-  $params[] = &$lockid;
+  if (is_array($lockid))
+    $query .= ' WHERE `id` IN (' . implode(',', $lockid) . ')';
+  else
+    $query .= ' WHERE `id` = ' . $lockid;
 
   $stmt = $registry_db->prepare($query);
   call_user_func_array(array($stmt, "bind_param"), $params);
   $stmt->execute();
   $stmt->close();
 
-  $data = current(get_lock_data($lockid));
+  $data = get_lock_data($lockid);
 
   // validate
-  return (($enabled === NULL || $data['enabled'] == $enabled) &&
-          ($expiration === NULL || strtotime($data['expires']) == $expiration) &&
-          ($comment === NULL || $data['comment'] == $comment));
+  foreach ($data as $datum) {
+    if (($enabled !== NULL && $datum['enabled'] != $enabled) ||
+        ($expiration !== NULL && strtotime($datum['expires']) != $expiration) ||
+        ($comment !== NULL && $datum['comment'] != $comment))
+      return false;
+  }
+
+  return true;
 }
 
 function get_expiration($request)
@@ -320,14 +345,16 @@ function get_expiration($request)
 
 
 if ($command == 'protect' || $command == 'release') {
-  $lockid = 0;
+  $lockids = array();
 
   if (isset($_REQUEST['lockid'])) {
     $lockid = 0 + $_REQUEST['lockid'];
     $data = get_lock_data($lockid);
 
     if (count($data) == 0)
-      $lockid = 0;
+      send_response(400, 'BadRequest', 'Unknown lock');
+    else
+      $lockids[] = $lockid;
   }
   else if (isset($_REQUEST['item'])) {
     $item = $_REQUEST['item'];
@@ -335,35 +362,15 @@ if ($command == 'protect' || $command == 'release') {
     $groups = isset($_REQUEST['groups']) ? $_REQUEST['groups'] : '';
     
     $data = get_lock_data(0, $item, $sites, $groups);
-    if (count($data) == 0)
-      $lockid = 0;
-    else {
-      $lock = current($data);
-      $lockid = $lock['lockid'];
-    }
+    $lockids = array_keys($data);
   }
   else
     send_response(400, 'BadRequest', 'Missing parameter (item or lockid)');
 
-  if ($lockid != 0) {
-    if ($command == 'protect')
-      $enabled = 1;
-    else
-      $enabled = 0;
+  if (count($lockids) == 0) {
+    if ($command == 'release')
+      send_response(400, 'BadRequest', 'Lock does not exist');
 
-    $expiration = isset($_REQUEST['expires']) ? get_expiration($_REQUEST['expires']) : NULL;
-    $comment = isset($_REQUEST['comment']) ? $_REQUEST['comment'] : NULL;
-
-    // known lock - update
-    if (update_lock($lockid, $enabled, $expiration, $comment))
-      send_response(200, 'OK', 'Lock updated', array_values(get_lock_data($lockid)));
-    else
-      send_response(400, 'InternalError', 'Failed to update lock');
-  }
-  else if ($command == 'release') {
-    send_response(400, 'BadRequest', 'Lock does not exist');
-  }
-  else {
     // this is a new lock
 
     if (isset($_REQUEST['expires']))
@@ -381,6 +388,21 @@ if ($command == 'protect' || $command == 'release') {
       send_response(200, 'OK', 'Lock created', array_values(get_lock_data($lockid)));
     else
       send_response(400, 'InternalError', 'Failed to create lock');
+  }
+  else {
+    if ($command == 'protect')
+      $enabled = 1;
+    else
+      $enabled = 0;
+
+    $expiration = isset($_REQUEST['expires']) ? get_expiration($_REQUEST['expires']) : NULL;
+    $comment = isset($_REQUEST['comment']) ? $_REQUEST['comment'] : NULL;
+
+    // known lock - update
+    if (update_lock($lockids, $enabled, $expiration, $comment))
+      send_response(200, 'OK', 'Lock updated', array_values(get_lock_data($lockids)));
+    else
+      send_response(400, 'InternalError', 'Failed to update lock');
   }
 }
 else if ($command == 'list') {
@@ -415,11 +437,10 @@ else if ($command == 'list') {
     send_response(200, 'OK', count($data) . ' locks found', array_values($data));
 }
 else if ($command == 'set') {
-  if (!isset($_POST['data']))
-    send_response(400, 'BadRequest', 'No data posted');
+  $input = file_get_contents('php://input');
 
   if ($format == 'json') {
-    $data = json_decode($_POST['data'], true);
+    $data = json_decode($input, true);
     if (!is_array($data))
       send_response(400, 'BadRequest', 'Invalid data posted');
   }
@@ -427,7 +448,7 @@ else if ($command == 'set') {
     $data = array();
 
     $reader = new XMLReader();
-    if (!$reader->xml($_POST['data']) || !$reader->read() || $reader->name != 'locks')
+    if (!$reader->xml($input) || !$reader->read() || $reader->name != 'locks')
       send_response(400, 'BadRequest', 'Invalid data posted');
 
     // structure:
@@ -490,9 +511,9 @@ else if ($command == 'set') {
     $sites = isset($entry['sites']) ? $entry['sites'] : '';
     $groups = isset($entry['groups']) ? $entry['groups'] : '';
 
-    $current = get_lock_data(0, $entry['item'], $sites, $groups);
+    $current = get_exact_lock_data(0, $entry['item'], $sites, $groups);
 
-    if (count($current) == 0) {
+    if ($current === NULL) {
       // new lock
       if (!isset($entry['expires'])) {
         lock_lock(0);
@@ -511,10 +532,12 @@ else if ($command == 'set') {
 
       $comment = isset($entry['comment']) ? $entry['comment'] : '';
 
-      $to_insert[] = array($entry['item'], $sites, $groups, $expires, $comment);
+      $enabled = isset($entry['enabled']) ? (0 + $entry['enabled']) : 1;
+
+      $to_insert[] = array($entry['item'], $sites, $groups, $expires, $comment, $enabled);
     }
     else {
-      $update = current($current);
+      $update = $current;
 
       if (isset($entry['enabled'])) {
         if ($entry['enabled'])
@@ -560,7 +583,7 @@ else if ($command == 'set') {
   $lockids = array();
 
   foreach ($to_insert as $entry) {
-    $lockid = create_lock($entry[0], $entry[1], $entry[2], $entry[3], $entry[4]);
+    $lockid = create_lock($entry[0], $entry[1], $entry[2], $entry[3], $entry[4], $entry[5]);
     if ($lockid == 0) {
       lock_lock(0);
       send_response(400, 'InternalError', 'Failed to create lock');
@@ -579,6 +602,8 @@ else if ($command == 'set') {
     if (!update_lock($lockid, 0))
       send_response(400, 'InternalError', 'Failed to disable lock');
   }
+
+  lock_lock(0);
 
   send_response(200, 'OK', 'Locks set', array_values(get_lock_data($lockids)));
 }

@@ -110,40 +110,26 @@ class RESTService(object):
         request = urllib2.Request(url)
 
         if method == POST and len(options) != 0:
-            if type(options) is list:
-                # convert key=value strings to (key, value) 2-tuples
-                optlist = []
-                for opt in options:
-                    if type(opt) is tuple:
-                        optlist.append(opt)
-
-                    elif type(opt) is str:
-                        key, eq, value = opt.partition('=')
-                        if eq == '=':
-                            optlist.append((key, value))
-
-                options = optlist
-            
             if format == 'url':
-                # Options can be a dict or a list of 2-tuples. The latter case allows repeated keys (e.g. dataset=A&dataset=B)
+                # Options can be a dict or a list of key=value strings or 2-tuples. The latter case allows repeated keys (e.g. dataset=A&dataset=B)
+                if type(options) is list:
+                    # convert key=value strings to (key, value) 2-tuples
+                    optlist = []
+                    for opt in options:
+                        if type(opt) is tuple:
+                            optlist.append(opt)
+    
+                        elif type(opt) is str:
+                            key, eq, value = opt.partition('=')
+                            if eq == '=':
+                                optlist.append((key, value))
+    
+                    options = optlist
+
                 data = urllib.urlencode(options)
 
             elif format == 'json':
-                # Options can be a dict or a list of 2-tuples. Repeated keys in the list case gets collapsed.
-                if type(options) is list:
-                    optdict = {}
-                    for key, value in options:
-                        if key in optdict:
-                            try:
-                                optdict[key].append(value)
-                            except AttributeError:
-                                current = optdict[key]
-                                optdict[key] = [current, value]
-                        else:
-                            optdict[key] = value
-    
-                    options = optdict
-
+                # Options must be jsonizable.
                 request.add_header('Content-type', 'application/json')
                 data = json.dumps(options)
 
