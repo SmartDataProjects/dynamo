@@ -290,22 +290,6 @@ class Detox(object):
                 if policy.stop_condition.match(site):
                     break
 
-                if replica.dataset.on_tape != Dataset.TAPE_FULL:
-                    # this dataset is not on tape; could this be a last full copy?
-                    has_incomplete_copy = False
-                    has_complete_copy = False
-                    for other_rep in replica.dataset.replicas:
-                        if other_rep == replica:
-                            continue
-                        if other_rep.is_full():
-                            has_complete_copy = True
-                        if not other_rep.is_complete:
-                            has_incomplete_copy = True
-
-                    if has_incomplete_copy and not has_complete_copy:
-                        logger.debug('Not removing replica %s to avoid a dangling transfer.')
-                        continue
-
                 if logger.getEffectiveLevel() == logging.DEBUG:
                     logger.debug('Deleting replica: %s', str(replica))
 
