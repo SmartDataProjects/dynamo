@@ -278,3 +278,6 @@ class MySQL(object):
 
         elif type(pool) is str:
             execute(pool)
+
+    def table_exists(self, table):
+        return len(self.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s LIMIT 1', self.db_name(), table)) != 0

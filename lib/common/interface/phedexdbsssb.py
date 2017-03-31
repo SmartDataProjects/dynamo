@@ -754,7 +754,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         else:
             open_datasets = [dataset for dataset in datasets.values() if dataset.status == Dataset.STAT_PRODUCTION or dataset.status == Dataset.STAT_UNKNOWN or dataset.status == Dataset.STAT_VALID]
 
-        logger.info('set_dataset_details  Finding blocks for %d datasets.', len(open_datasets))
+        logger.info('set_dataset_details  Finding blocks and files for %d datasets.', len(open_datasets))
 
         self._set_dataset_constituent_info(open_datasets)
 

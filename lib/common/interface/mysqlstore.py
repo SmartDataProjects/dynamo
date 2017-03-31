@@ -520,7 +520,7 @@ class MySQLStore(LocalStoreInterface):
 
         # instead of insert + on duplicate update, which will cost N x logN, we will create a temporary table, join, and update (N + N)
 
-        if self._mysql.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = \'datasets_tmp\' LIMIT 1', config.mysqlstore.db_params['db']):
+        if self._mysql.table_exists('datasets_tmp'):
             self._mysql.query('DROP TABLE `datasets_tmp`')
 
         self._mysql.query('CREATE TABLE `datasets_tmp` LIKE `datasets`')
@@ -592,19 +592,24 @@ class MySQLStore(LocalStoreInterface):
         for dataset in datasets:
             for block in dataset.blocks:
                 try:
-                    block_id = block_names_to_ids[block.real_name()]
+                    block_id = block_names_to_ids.pop(block.real_name())
                     known_blocks.append((block_id, block))
                 except KeyError:
                     new_blocks.append(block)
 
+        # remaining entries in block_names_to_ids are blocks in DB but not in memory
+        # if the dataset_id is in datasets_tmp, that means the dataset is in loaded but the block was not in memory -> invalidated and unlinked.
+        self._mysql.delete_many('blocks', 'id', block_names_to_ids.values(), ['`dataset_id` IN (SELECT `id` FROM `datasets_tmp`)'])
+
         block_names_to_ids = None
+        self._mysql.query('DROP TABLE `datasets_tmp`')
 
         logger.info('Inserting/updating %d blocks.', len(known_blocks) + len(new_blocks))
 
         # update known blocks by first inserting to blocks_tmp
     
-        if self._mysql.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = \'blocks_tmp\' LIMIT 1', config.mysqlstore.db_params['db']):
-            self._mysql.query('DROP TABLE IF `blocks_tmp`')
+        if self._mysql.table_exists('blocks_tmp'):
+            self._mysql.query('DROP TABLE `blocks_tmp`')
 
         self._mysql.query('CREATE TABLE `blocks_tmp` LIKE `blocks`')
 
@@ -632,19 +637,6 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query(query)
 
-        # (incomprehensive) check & removal of invalid blocks
-        # blocks_tmp = blocks we are updating
-        # blocks = all blocks
-        # datasets_tmp = datasets we are updating
-        #
-        # blocks * datasets_tmp = blocks of datasets we are updating
-        # (blocks * datasets_tmp) - blocks_tmp = blocks that were invalidated in this update
-        query = 'DELETE FROM b1 USING `blocks` AS b1'
-        query += ' INNER JOIN `datasets_tmp` AS d ON d.`id` = b1.`dataset_id`'
-        query += ' LEFT JOIN `blocks_tmp` AS b2 ON b2.`name` = b1.`name` WHERE b2.`name` IS NULL'
-
-        self._mysql.query(query)
-
         # insert new blocks
 
         fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open')
@@ -666,15 +658,8 @@ class MySQLStore(LocalStoreInterface):
         block_names_to_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `blocks`'))
 
         # insert/update files
-
-        # will NOT use the same strategy as blocks - there are too many files.
-
-        if self._mysql.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = \'files_tmp\' LIMIT 1', config.mysqlstore.db_params['db']):
-            self._mysql.query('DROP TABLE `files_tmp`')
-
-        self._mysql.query('CREATE TABLE `files_tmp` LIKE `files`')
-        self._mysql.query('ALTER TABLE `files_tmp` DROP COLUMN `id`')
-
+        # we can assume file data never change
+        # care only about new files and invalidated files
         fields = ('block_id', 'dataset_id', 'size', 'name')
         mapping = lambda f: (
             block_names_to_ids[f.block.real_name()],
@@ -683,91 +668,16 @@ class MySQLStore(LocalStoreInterface):
             f.fullpath()
         )
 
+        logger.info('Inserting/updating %d files.', sum(len(d.files) for d in datasets))
+
         for dataset in datasets:
-            self._mysql.insert_many('files_tmp', fields, mapping, list(dataset.files), do_update = False)
-
-        # then join files and files_tmp to find updates
-
-        query = 'UPDATE `files` AS f1 INNER JOIN `files_tmp` AS f2 ON f1.`name` = f2.`name` SET'
-        query += ' ' + ', '.join(['f1.`{f}` = f2.`{f}`'.format(f = f) for f in fields[2:]])
-        query += ' WHERE ' + field_tuple('f1') + ' != ' + field_tuple('f2')
-
-        self._mysql.query(query)
-
-        # delete entries for invalidated files
-        query = 'DELETE FROM f1 USING `files` AS f1'
-        query += ' INNER JOIN `datasets_tmp` AS d ON d.`id` = f1.`dataset_id`'
-        query += ' LEFT JOIN `files_tmp` AS f2 ON f2.`name` = f1.`name` WHERE f2.`name` IS NULL'
-
-        self._mysql.query(query)
-
-        # if we use the same strategy as blocks here:
-#        # same strategy as blocks
-#
-#        file_names_to_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `files`'))
-#
-#        known_files = []
-#        new_files = []
-#        for dataset in datasets:
-#            for lfile in dataset.files:
-#                try:
-#                    file_id = file_names_to_ids[lfile.fullpath()]
-#                    known_files.append((file_id, lfile))
-#                except KeyError:
-#                    new_files.append(lfile)
-#
-#        file_names_to_ids = None
-#
-#        logger.info('Inserting/updating %d files.', len(known_files) + len(new_files))
-#
-#        # update known files by first inserting to files_tmp
-#
-#        if self._mysql.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = \'files_tmp\' LIMIT 1', config.mysqlstore.db_params['db']):
-#            self._mysql.query('DROP TABLE `files_tmp`')
-#        self._mysql.query('CREATE TABLE `files_tmp` LIKE `files`')
-#
-#        fields = ('id', 'block_id', 'dataset_id', 'size', 'name')
-#        mapping = lambda x: (
-#            x[0],
-#            block_names_to_ids[x[1].block.real_name()],
-#            self._datasets_to_ids[x[1].block.dataset],
-#            x[1].size,
-#            x[1].fullpath()
-#        )
-#
-#        self._mysql.insert_many('files_tmp', fields, mapping, known_files, do_update = False)
-#
-#        del known_files
-#
-#        # then join files and files_tmp to find updates
-#
-#        query = 'UPDATE `files` AS f1 INNER JOIN `files_tmp` AS f2 ON f1.`name` = f2.`name` SET'
-#        query += ' ' + ', '.join(['f1.`{f}` = f2.`{f}`'.format(f = f) for f in fields[2:]])
-#        query += ' WHERE ' + field_tuple('f1') + ' != ' + field_tuple('f2')
-#
-#        self._mysql.query(query)
-#
-#        # insert new files
-#
-#        fields = ('block_id', 'dataset_id', 'size', 'name')
-#        mapping = lambda f: (
-#            block_names_to_ids[f.block.real_name()],
-#            self._datasets_to_ids[f.block.dataset],
-#            f.size,
-#            f.fullpath()
-#        )
-#
-#        self._mysql.insert_many('files', fields, mapping, new_files, do_update = False)
-#
-#        # delete entries for invalidated files
-#        query = 'DELETE FROM f1 USING `files` AS f1'
-#        query += ' INNER JOIN `datasets_tmp` AS d ON d.`id` = f1.`dataset_id`'
-#        query += ' LEFT JOIN `files_tmp` AS f2 ON f2.`name` = f1.`name` WHERE f2.`name` IS NULL'
-#
-#        self._mysql.query(query)
-
-        self._mysql.query('DROP TABLE `datasets_tmp`')
-        self._mysql.query('DROP TABLE `files_tmp`')
+            in_store = set(self._mysql.query('SELECT `name` FROM `files` WHERE `dataset_id` = %s', self._datasets_to_ids[dataset]))
+            new_files = dataset.files - in_store
+            invalidated_files = in_store - dataset.files
+            if len(new_files) != 0:
+                self._mysql.insert_many('files', fields, mapping, list(new_files), do_update = False)
+            if len(invalidated_files) != 0:
+                self._mysql.delete_many('files', 'name', [f.fullpath() for f in invalidated_files])
 
     def _do_save_replicas(self, sites, groups, datasets): #override
         # make name -> id maps for use later
@@ -781,7 +691,9 @@ class MySQLStore(LocalStoreInterface):
         # insert/update dataset replicas
         logger.info('Inserting/updating dataset replicas.')
 
-        self._mysql.query('DROP TABLE IF EXISTS `dataset_replicas_new`')
+        if self._mysql.table_exists('dataset_replicas_new'):
+            self._mysql.query('DROP TABLE `dataset_replicas_new`')
+
         self._mysql.query('CREATE TABLE `dataset_replicas_new` LIKE `dataset_replicas`')
 
         fields = ('dataset_id', 'site_id', 'completion', 'is_custodial', 'last_block_created')
@@ -817,7 +729,9 @@ class MySQLStore(LocalStoreInterface):
                     if not block_replica.is_complete:
                         replica_sizes.append((block_id, site_id, block_replica.size))
 
-        self._mysql.query('DROP TABLE IF EXISTS `block_replicas_new`')
+        if self._mysql.table_exists('block_replicas_new'):
+            self._mysql.query('DROP TABLE `block_replicas_new`')
+
         self._mysql.query('CREATE TABLE `block_replicas_new` LIKE `block_replicas`')
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
@@ -829,7 +743,9 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('RENAME TABLE `block_replicas_new` TO `block_replicas`')
         self._mysql.query('DROP TABLE `block_replicas_old`')
 
-        self._mysql.query('DROP TABLE IF EXISTS `block_replica_sizes_new`')
+        if self._mysql.table_exists('block_replica_sizes_new'):
+            self._mysql.query('DROP TABLE `block_replica_sizes_new`')
+
         self._mysql.query('CREATE TABLE `block_replica_sizes_new` LIKE `block_replica_sizes`')
 
         fields = ('block_id', 'site_id', 'size')
@@ -847,7 +763,9 @@ class MySQLStore(LocalStoreInterface):
         if len(self._sites_to_ids) == 0:
             self._set_site_ids(list(set([r.site for r in all_replicas])))
 
-        self._mysql.query('DROP TABLE IF EXISTS `dataset_accesses_new`')
+        if self._mysql.table_exists('dataset_accesses_new'):
+            self._mysql.query('DROP TABLE `dataset_accesses_new`')
+
         self._mysql.query('CREATE TABLE `dataset_accesses_new` LIKE `dataset_accesses`')
 
         fields = ('dataset_id', 'site_id', 'date', 'access_type', 'num_accesses', 'cputime')
@@ -879,8 +797,10 @@ class MySQLStore(LocalStoreInterface):
         for dataset in datasets:
             for request in dataset.requests:
                 all_requests.append((dataset, request))
+            
+        if self._mysql.table_exists('dataset_requests_new'):
+            self._mysql.query('DROP TABLE `dataset_requests_new`')
 
-        self._mysql.query('DROP TABLE IF EXISTS `dataset_requests_new`')
         self._mysql.query('CREATE TABLE `dataset_requests_new` LIKE `dataset_requests`')
 
         fields = ('id', 'dataset_id', 'queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued')
