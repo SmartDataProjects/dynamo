@@ -335,7 +335,7 @@ class TransactionHistoryInterface(object):
     def get_deletion_decisions(self, run_number, size_only = True):
         """
         Return a dict {site: (protect_size, delete_size, keep_size)} if size_only = True.
-        Else return a massive dict {site: [(dataset, size, decision)]}
+        Else return a massive dict {site: [(dataset, size, decision, reason)]}
         """
 
         self.acquire_lock()

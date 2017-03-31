@@ -40,8 +40,8 @@ class BalancingHandler(BaseHandler):
             except KeyError:
                 continue
 
-            protections = [(ds_name, size) for ds_name, size, decision in decisions if decision == 'protect']
-            protected_fraction = sum(size for ds_name, size in protections) * 1.e-12 / quota
+            protections = [(ds_name, size, reason) for ds_name, size, decision, reason in decisions if decision == 'protect']
+            protected_fraction = sum(size for ds_name, size, reason in protections) * 1.e-12 / quota
 
             logger.debug('Site %s protected fraction %f', site.name, protected_fraction)
 
@@ -52,7 +52,7 @@ class BalancingHandler(BaseHandler):
 
             last_copies[site] = []
 
-            for ds_name, size in protections:
+            for ds_name, size, reason in protections:
                 if size > config.max_dataset_size:
                     # protections is ordered
                     break
@@ -62,7 +62,7 @@ class BalancingHandler(BaseHandler):
                 except KeyError:
                     continue
 
-                if len(dataset.replicas) == 1: # this replica has no other copy
+                if reason in config.balancer_target_reasons:
                     logger.debug('%s is a last copy at %s', ds_name, site.name)
                     last_copies[site].append(dataset)
 
@@ -94,7 +94,6 @@ class BalancingHandler(BaseHandler):
 
             size = dataset.size() * 1.e-12
             protected_fractions[maxsite] -= size / float(maxsite.partition_quota(partition))
-            protected_fractions[minsite] += size / float(minsite.partition_quota(partition))
 
             total_size += size
 

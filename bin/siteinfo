@@ -134,14 +134,14 @@ try:
         results = history.get_deletion_decisions(cycle, size_only = False)
         for site, datasets in results.items():
             dataset_lists[site][partition] = []
-            for (dataset, size, decision) in datasets:
+            for (dataset, size, decision, reason) in datasets:
                 dscount_now[dataset] += 1
                 dataset_lists[site][partition].append((dataset, size))
 
         prev_cycle = history.get_latest_deletion_run(partition = partition, before = cycle)
         results = history.get_deletion_decisions(prev_cycle, size_only = False)
         for site, datasets in results.items():
-            for (dataset, size, decision) in datasets:
+            for (dataset, size, decision, reason) in datasets:
                 dscount_prev[dataset] += 1
 
     sitesinfo.close()

@@ -397,13 +397,14 @@ class MySQLHistory(TransactionHistoryInterface):
             return product
 
         else:
-            # return {site_name: [(dataset_name, size, decision)]}
+            # return {site_name: [(dataset_name, size, decision, reason)]}
 
-            query = 'SELECT s.`name`, d.`name`, r.`size`, l.`decision` FROM `replica_snapshot_cache` AS c'
+            query = 'SELECT s.`name`, d.`name`, r.`size`, l.`decision`, p.`text` FROM `replica_snapshot_cache` AS c'
             query += ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`'
             query += ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`'
             query += ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`'
             query += ' INNER JOIN `deletion_decisions` AS l ON l.`id` = c.`decision_id`'
+            query += ' INNER JOIN `policy_conditions` AS p ON p.`id` = l.`matched_condition`'
             query += ' WHERE c.`run_id` = %d' % run_number
             query += ' ORDER BY s.`name` ASC, r.`size` DESC'
 
@@ -411,13 +412,13 @@ class MySQLHistory(TransactionHistoryInterface):
 
             _site_name = ''
 
-            for site_name, dataset_name, size, decision in self._mysql.query(query):
+            for site_name, dataset_name, size, decision, reason in self._mysql.query(query):
                 if site_name != _site_name:
                     product[site_name] = []
                     current = product[site_name]
                     _site_name = site_name
                 
-                current.append((dataset_name, size, decision))
+                current.append((dataset_name, size, decision, reason))
 
             return product
 

@@ -18,3 +18,8 @@ target_site_occupancy = 0.9
 overflow_factor = 1.01 # Potentially copy up to target occupancy * overflow_factor
 
 summary_html = '/home/cmsprod/public_html/dynamo/dealer/copy_decisions.html'
+
+balancer_target_reasons = [
+    'dataset.name == /*/*/MINIAOD* and replica.num_full_disk_copy_common_owner < 3',
+    'replica.num_full_disk_copy_common_owner < 2'
+]
