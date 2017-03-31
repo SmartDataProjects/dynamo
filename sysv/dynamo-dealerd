@@ -28,7 +28,7 @@ STOP_TIMEOUT=${STOP_TIMEOUT-120} # it takes some time to restore databases
 
 # Start dealer daemon (dealerd)
 start() {
-  PIDS=$(pgrep $EXECUTABLE > /dev/null)
+  PIDS=$(ps ax | grep $EXECUTABLE | grep -v grep | grep -v 'init\.d' | awk '/^[0-9]/ {print $1}')
   if [ "$PIDS" ]
   then
     echo "$EXECUTABLE already running: $PIDS"
