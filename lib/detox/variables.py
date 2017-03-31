@@ -16,6 +16,13 @@ def replica_incomplete(replica):
 
     return False
 
+def dataset_has_incomplete_replica(replica):
+    for rep in replica.dataset.replicas:
+        if replica_incomplete(rep):
+            return True
+
+    return False
+
 def replica_has_locked_block(replica):
     for block_replica in replica.block_replicas:
         if block_replica in replica.dataset.demand.locked_blocks:
@@ -31,11 +38,17 @@ def replica_dataset_release(replica):
         return '%d_%d_%d_%s' % version
 
 def dataset_num_full_disk_copy(replica):
-    dataset = replica.dataset
     num = 0
-    for rep in dataset.replicas:
+    for rep in replica.dataset.replicas:
         if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.site.active != Site.ACT_IGNORE and rep.is_full():
             num += 1
+
+    return num
+
+def dataset_num_full_copy(replica):
+    num = dataset_num_full_disk_copy(replica)
+    if replica.dataset.on_tape == Dataset.TAPE_FULL:
+        num += 1
 
     return num
 
@@ -63,6 +76,7 @@ replica_vardefs = {
     'dataset.num_full_disk_copy': (dataset_num_full_disk_copy, NUMERIC_TYPE),
     'dataset.usage_rank': (lambda r: r.dataset.demand.global_usage_rank, NUMERIC_TYPE),
     'dataset.release': (replica_dataset_release, TEXT_TYPE),
+    'dataset.is_last_transfer_source': (lambda r: not replica_incomplete(r) and dataset_num_full_copy(r) == 1 and dataset_has_incomplete_replica(r), BOOL_TYPE),
     'replica.incomplete': (replica_incomplete, BOOL_TYPE),
     'replica.last_block_created': (lambda r: r.last_block_created, TIME_TYPE),
     'replica.last_used': (lambda r: max(r.last_block_created, r.last_access()), TIME_TYPE),
