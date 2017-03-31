@@ -16,35 +16,6 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
--- Table structure for table `blocks`
---
-
-DROP TABLE IF EXISTS `blocks`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `blocks` (
-  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(128) COLLATE latin1_general_cs NOT NULL,
-  `dataset_id` int(10) unsigned NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `datasets`
---
-
-DROP TABLE IF EXISTS `datasets`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `datasets` (
-  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(256) COLLATE latin1_general_cs NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
 -- Table structure for table `deletion_queue`
 --
 
@@ -52,14 +23,9 @@ DROP TABLE IF EXISTS `deletion_queue`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `deletion_queue` (
-  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-  `block_id` bigint(20) unsigned NOT NULL,
-  `site_id` mediumint(8) unsigned NOT NULL,
-  `created` datetime NOT NULL,
-  `requester` smallint(5) unsigned NOT NULL,
-  `status` enum('new','in_progress','rejected','done') COLLATE latin1_general_cs NOT NULL DEFAULT 'new',
-  `last_updated` datetime NOT NULL,
-  PRIMARY KEY (`id`)
+  `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
+  `target` varchar(64) COLLATE latin1_general_cs NOT NULL,
+  `created` datetime NOT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -114,34 +80,6 @@ CREATE TABLE `domains` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `requesters`
---
-
-DROP TABLE IF EXISTS `requesters`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `requesters` (
-  `id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(32) COLLATE latin1_general_cs NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `sites`
---
-
-DROP TABLE IF EXISTS `sites`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `sites` (
-  `id` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(64) COLLATE latin1_general_cs NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
 -- Table structure for table `transfer_queue`
 --
 
@@ -149,14 +87,10 @@ DROP TABLE IF EXISTS `transfer_queue`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `transfer_queue` (
-  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-  `block_id` bigint(20) unsigned NOT NULL,
-  `site_id` mediumint(8) unsigned NOT NULL,
-  `created` datetime NOT NULL,
-  `requester` smallint(5) unsigned NOT NULL,
-  `status` enum('new','in_progress','rejected','done') COLLATE latin1_general_cs NOT NULL DEFAULT 'new',
-  `last_updated` datetime NOT NULL,
-  PRIMARY KEY (`id`)
+  `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
+  `source` varchar(64) COLLATE latin1_general_cs NOT NULL,
+  `target` varchar(64) COLLATE latin1_general_cs NOT NULL,
+  `created` datetime NOT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -188,4 +122,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-03-31  9:57:25
+-- Dump completed on 2017-03-31 14:29:26
