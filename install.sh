@@ -1,6 +1,6 @@
 #!/bin/bash
 
-USER=$1
+export USER=$1
 
 if ! [ $USER ]
 then
