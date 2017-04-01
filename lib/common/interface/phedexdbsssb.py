@@ -69,6 +69,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             'comments': comments
         }
 
+        logger.info('schedule_copy  subscribe %d datasets', len(catalogs))
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug('schedule_copy  subscribe: %s', str(options))
 
@@ -126,6 +127,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 'comments': comments
             }
 
+            logger.info('schedule_copies  subscribe %d datasets', len(catalogs))
             if logger.getEffectiveLevel() == logging.DEBUG:
                 logger.debug('schedule_copies  subscribe: %s', str(options))
 
@@ -213,6 +215,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             return None
 
         if is_test:
+            logger.info('schedule_deletion  delete %d datasets', len(catalogs))
+            logger.debug('schedule_deletion  delete: %s', str(options))
             return (-1, True, [replica])
 
         else:
@@ -282,10 +286,13 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 }
     
                 if config.read_only:
+                    logger.info('schedule_deletions  delete %d datasets', len(catalogs))
                     logger.debug('schedule_deletions  delete: %s', str(options))
                     continue
     
                 if is_test:
+                    logger.info('schedule_deletions  delete %d datasets', len(catalogs))
+                    logger.debug('schedule_deletions  delete: %s', str(options))
                     request_id = -1
                     while request_id in request_mapping:
                         request_id -= 1

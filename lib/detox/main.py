@@ -356,7 +356,7 @@ class Detox(object):
 
             deletion_mapping = {} #{deletion_id: (approved, [replicas])}
 
-            chunk_size = detox_config.deletion_volume_per_request
+            chunk_size = detox_config.deletion_volume_per_request * 1.e+12
 
             while len(replica_list) != 0:
                 # stack up replicas up to 110% of volume_per_request
