@@ -4,6 +4,7 @@ import sys
 import os
 import time
 import collections
+import logging
 from argparse import ArgumentParser
 
 from common.interface.mysqlhistory import MySQLHistory
@@ -13,9 +14,20 @@ from common.demand import DemandManager
 parser = ArgumentParser(description = 'Generate SitesInfo and RemainingDatasets files for Unified.')
 parser.add_argument('--out', '-o', metavar = 'PATH', dest = 'out_path', default = '.', help = 'Output path.')
 parser.add_argument('--cycle', '-c', metavar = 'ID', dest = 'cycle', type = int, default = 0, help = 'Cycle number.')
+parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
 
 args = parser.parse_args()
 sys.argv = []
+
+# Need to setup logging before loading other modules
+log_level = getattr(logging, args.log_level.upper())
+
+if args.log_file:
+    logging.basicConfig(filename = args.log_file, filemode = 'w', level = log_level)
+else:
+    logging.basicConfig(level = log_level)
+
+logger.info('Writing ASCII SiteInfo.')
 
 history = MySQLHistory()
 history.acquire_lock()
