@@ -672,13 +672,15 @@ class MySQLStore(LocalStoreInterface):
 
         for dataset in datasets:
             in_store = set(self._mysql.query('SELECT `name` FROM `files` WHERE `dataset_id` = %s', self._datasets_to_ids[dataset]))
-            in_mem = set(f.fullpath() for f in dataset.files)
-            new_files = in_mem - in_store
-            invalidated_files = in_store - in_mem
-            if len(new_files) != 0:
-                self._mysql.insert_many('files', fields, mapping, list(new_files), do_update = False)
-            if len(invalidated_files) != 0:
-                self._mysql.delete_many('files', 'name', [f.fullpath() for f in invalidated_files])
+            file_map = dict((f.fullpath(), f) for f in dataset.files)
+            in_mem = set(file_map.keys())
+            new_file_names = in_mem - in_store
+            invalidated_file_names = in_store - in_mem
+            if len(new_file_names) != 0:
+                new_files = [file_map[n] for n in new_file_names]
+                self._mysql.insert_many('files', fields, mapping, new_files, do_update = False)
+            if len(invalidated_file_names) != 0:
+                self._mysql.delete_many('files', 'name', list(invalidated_file_names))
 
     def _do_save_replicas(self, sites, groups, datasets): #override
         # make name -> id maps for use later

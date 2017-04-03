@@ -102,7 +102,7 @@ do
       fi
     fi
 
-    if [[ $APPLICATIONS =~ detox ]]
+    if ! [ "$TEST" ] && [[ $APPLICATIONS =~ detox ]]
     then
       # test run to produce sites info
       if ! [ -e /var/run/dynamod.pid ]
@@ -127,11 +127,18 @@ do
       exit 0
     fi
 
-    $DYNAMO_BASE/bin/siteinfo --out /home/$USER/public_html/IntelROCCS/Detox
+    if ! [ "$TEST" ]
+    then
+      $DYNAMO_BASE/bin/siteinfo --out /home/$USER/public_html/IntelROCCS/Detox
+    fi
   
     echo ""
 
-    [ $TEST ] && exit 0
+    if [ $TEST ]
+    then
+      echo "Exiting from test run."
+      exit 0
+    fi
 
     sleep 3600
   done
