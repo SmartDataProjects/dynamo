@@ -672,8 +672,9 @@ class MySQLStore(LocalStoreInterface):
 
         for dataset in datasets:
             in_store = set(self._mysql.query('SELECT `name` FROM `files` WHERE `dataset_id` = %s', self._datasets_to_ids[dataset]))
-            new_files = dataset.files - in_store
-            invalidated_files = in_store - dataset.files
+            in_mem = set(f.fullpath() for f in dataset.files)
+            new_files = in_mem - in_store
+            invalidated_files = in_store - in_mem
             if len(new_files) != 0:
                 self._mysql.insert_many('files', fields, mapping, list(new_files), do_update = False)
             if len(invalidated_files) != 0:

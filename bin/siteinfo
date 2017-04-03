@@ -21,11 +21,7 @@ sys.argv = []
 
 # Need to setup logging before loading other modules
 log_level = getattr(logging, args.log_level.upper())
-
-if args.log_file:
-    logging.basicConfig(filename = args.log_file, filemode = 'w', level = log_level)
-else:
-    logging.basicConfig(level = log_level)
+logging.basicConfig(level = log_level)
 
 logger.info('Writing ASCII SiteInfo.')
 
@@ -200,3 +196,5 @@ try:
         
 finally:
     history.release_lock()
+
+logger.info('Finished writing ASCII SiteInfo.')
