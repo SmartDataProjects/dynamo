@@ -10,7 +10,7 @@ $operation = 'deletion';
 if (isset($TESTMODE) && $TESTMODE)
   $operation = 'deletion_test';
 
-if ($_REQUEST['command'] == 'getPartitions') {
+if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getPartitions') {
   $data = array();
   
   $stmt = $history_db->prepare('SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `runs` INNER JOIN `partitions` ON `partitions`.`id` = `runs`.`partition_id` WHERE `runs`.`operation` LIKE ? ORDER BY `partitions`.`id`');
@@ -32,8 +32,8 @@ if ($_REQUEST['command'] == 'getPartitions') {
   echo json_encode($data);
   exit(0);
 }
-else if($_REQUEST['command'] == 'findCycle') {
-  $phedex = $_REQUEST['phedex'] + 0;
+else if(isset($_REQUEST['command']) && $_REQUEST['command'] == 'findCycle') {
+  $phedex = isset($_REQUEST['phedex']) ? $_REQUEST['phedex'] + 0 : 0;
 
   $cycle = 0;
 
@@ -88,14 +88,14 @@ if ($cycle == 0) {
   $stmt->close();
 }
 
-if ($_REQUEST['command'] == 'checkUpdate') {
+if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'checkUpdate') {
   echo $cycle;
   exit(0);
 }
 
 check_cache($history_db, $cycle, $partition_id);
 
-if ($_REQUEST['command'] == 'searchDataset') {
+if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
   // return
   // {"results": [{"siteData": [{"name": site, "datasets": [datasets]}]}], "conditions": [conditions]}
 
@@ -109,34 +109,36 @@ if ($_REQUEST['command'] == 'searchDataset') {
 
   $results_data = array();
 
-  foreach ($_REQUEST['datasetNames'] as $pattern) {
-    $dataset_pattern = str_replace('_', '\_', $pattern);
-    $dataset_pattern = str_replace('*', '%', $dataset_pattern);
-    $dataset_pattern = str_replace('?', '_', $dataset_pattern);
+  if (isset($_REQUEST['datasetNames']) && is_array($_REQUEST['datasetNames'])) {
+    foreach ($_REQUEST['datasetNames'] as $pattern) {
+      $dataset_pattern = str_replace('_', '\_', $pattern);
+      $dataset_pattern = str_replace('*', '%', $dataset_pattern);
+      $dataset_pattern = str_replace('?', '_', $dataset_pattern);
  
-    $stmt = $history_db->prepare($query);
-    $stmt->bind_param('is', $cycle, $dataset_pattern);
-    $stmt->bind_result($site_name, $dataset_name, $size, $decision, $condition_id);
-    $stmt->execute();
+      $stmt = $history_db->prepare($query);
+      $stmt->bind_param('is', $cycle, $dataset_pattern);
+      $stmt->bind_result($site_name, $dataset_name, $size, $decision, $condition_id);
+      $stmt->execute();
   
-    $condition_ids = array();
+      $condition_ids = array();
 
-    $json_data = array();
+      $json_data = array();
   
-    while ($stmt->fetch()) {
-      if (!array_key_exists($site_name, $json_data))
-        $json_data[$site_name] = array();
+      while ($stmt->fetch()) {
+        if (!array_key_exists($site_name, $json_data))
+          $json_data[$site_name] = array();
   
-      $json_data[$site_name][] = sprintf('{"name":"%s","size":%f,"decision":"%s","conditionId":"%s"}', $dataset_name, $size, $decision, $condition_id);
-      $condition_ids[] = $condition_id;
+        $json_data[$site_name][] = sprintf('{"name":"%s","size":%f,"decision":"%s","conditionId":"%s"}', $dataset_name, $size, $decision, $condition_id);
+        $condition_ids[] = $condition_id;
+      }
+      $stmt->close();
+  
+      $json_texts = array();
+      foreach ($json_data as $site_name => $datasets)
+        $json_texts[] = sprintf('{"name": "%s", "datasets": [%s]}', $site_name, implode(',', $datasets));
+  
+      $results_data[] = '{"pattern": "' . $pattern . '", "siteData": [' . implode(',', $json_texts) . ']}';
     }
-    $stmt->close();
-  
-    $json_texts = array();
-    foreach ($json_data as $site_name => $datasets)
-      $json_texts[] = sprintf('{"name": "%s", "datasets": [%s]}', $site_name, implode(',', $datasets));
-  
-    $results_data[] = '{"pattern": "' . $pattern . '", "siteData": [' . implode(',', $json_texts) . ']}';
   }
  
   $cond_data = array();
@@ -157,7 +159,7 @@ if ($_REQUEST['command'] == 'searchDataset') {
   echo '{"results":[' . implode(',', $results_data) . '],"conditions":{' . implode(',', $cond_data) . '}}';
   exit(0);  
 }
-else if ($_REQUEST['command'] == 'dumpDeletions') {
+else if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'dumpDeletions') {
   $list = '';
 
   $query = 'SELECT s.`name`, d.`name`, z.`size` * 1.e-9 FROM `deleted_replicas` AS r';
@@ -201,7 +203,7 @@ if (!$stmt->fetch())
   $prev_cycle = 0;
 $stmt->close();
 
-if ($_REQUEST['command'] == 'getData') {
+if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
   // main data structure
   $data = array();
 
@@ -214,7 +216,7 @@ if ($_REQUEST['command'] == 'getData') {
   $data['cycleTimestamp'] = $timestamp;
   $data['partition'] = $partition_id;
 
-  if ($_REQUEST['dataType'] == 'summary') {
+  if (isset($_REQUEST['dataType']) && $_REQUEST['dataType'] == 'summary') {
     $index_to_id = array(0);
     $site_names = array(0 => 'Total');
     
@@ -270,9 +272,10 @@ if ($_REQUEST['command'] == 'getData') {
     $stmt->close();
 
     $site_total = array('protect' => array(), 'keep' => array(), 'delete' => array(), 'protectPrev' => array(), 'keepPrev' => array());
-    foreach ($index_to_id as $id) {
+    foreach ($index_to_id as $id)
       $site_total['protect'][$id] = $site_total['keep'][$id] = $site_total['delete'][$id] = $site_total['protectPrev'][$id] = $site_total['keepPrev'][$id] = 0.;
-    }
+
+    $site_total['protect'][0] = $site_total['keep'][0] = $site_total['delete'][0] = $site_total['protectPrev'][0] = $site_total['keepPrev'][0] = 0.;
 
     $query = 'SELECT c.`site_id`, l.`decision`, SUM(r.`size`) * 1.e-12';
     $query .= ' FROM `replica_snapshot_cache` AS c';
@@ -297,7 +300,7 @@ if ($_REQUEST['command'] == 'getData') {
     $query .= ' FROM `replica_snapshot_cache` AS c';
     $query .= ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`';
     $query .= ' INNER JOIN `deletion_decisions` AS l ON l.`id` = c.`decision_id`';
-    $query .= ' WHERE c.`run_id` = ?';
+    $query .= ' WHERE c.`run_id` = ? AND l.`decision` != \'delete\'';
     $query .= ' GROUP BY c.`site_id`, l.`decision`';
 
     $stmt = $history_db->prepare($query);
@@ -336,8 +339,8 @@ if ($_REQUEST['command'] == 'getData') {
       $data['requestIds'][] = $request_id;
     $stmt->close();
   }
-  else if ($_REQUEST['dataType'] == 'siteDetail') {
-    $site_name = $_REQUEST['siteName'];
+  else if (isset($_REQUEST['dataType']) && $_REQUEST['dataType'] == 'siteDetail') {
+    $site_name = isset($_REQUEST['siteName']) ? $_REQUEST['siteName'] : '';
 
     $data['content'] = array('name' => $site_name, 'datasets' => array());
     $datasets = &$data['content']['datasets'];
