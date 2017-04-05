@@ -1,13 +1,17 @@
 import sys
+import os
 import urllib
 import urllib2
 import httplib
 import time
 import json
 import logging
+import tempfile
+import threading
 
 import common.configuration as config
 from common.misc import unicode2str
+from common.interface.mysql import MySQL
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +83,7 @@ class RESTService(object):
     Returns python-parsed content.
     """
 
-    def __init__(self, url_base, headers = [], accept = 'application/json', auth_handler = HTTPSCertKeyHandler):
+    def __init__(self, url_base, headers = [], accept = 'application/json', auth_handler = HTTPSCertKeyHandler, use_cache = False):
         """
         @param url_base  There is no strict rule on separating the URL base and individual request REST command ('resource' in make_request). All requests
                          are made to url_base + '/' + resource.
@@ -92,8 +96,12 @@ class RESTService(object):
         self.headers = list(headers)
         self.accept = accept
         self.auth_handler = auth_handler
+        if use_cache:
+            self._cache_lock = threading.Lock() # webservice can be used by multiple threads
+        else:
+            self._cache_lock = None
 
-    def make_request(self, resource = '', options = [], method = GET, format = 'url'):
+    def make_request(self, resource = '', options = [], method = GET, format = 'url', cache_lifetime = 0):
         url = self.url_base
         if resource:
             url += '/' + resource
@@ -106,7 +114,28 @@ class RESTService(object):
 
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug(url)
-        
+
+        # first check the cache
+        if method == GET and self._cache_lock is not None and cache_lifetime > 0:
+            with self._cache_lock:
+                db = MySQL(**config.webservice.cache_db_params)
+                cache = db.query('SELECT UNIX_TIMESTAMP(`timestamp`), `content` FROM `webservice` WHERE `url` = %s', url)
+                db.close()
+
+            if len(cache) != 0:
+                timestamp, content = cache[0]
+                if time.time() - timestamp < cache_lifetime:
+                    if self.accept == 'application/json':
+                        result = json.loads(content)
+                        unicode2str(result)
+
+                    elif self.accept == 'application/xml':
+                        # TODO implement xml -> dict
+                        result = content
+
+                    return result
+
+        # now query the URL
         request = urllib2.Request(url)
 
         if method == POST and len(options) != 0:
@@ -158,6 +187,21 @@ class RESTService(object):
 
                 content = response.read()
                 del response
+
+                if method == GET and self._cache_lock is not None:
+                    with tempfile.NamedTemporaryFile(mode = 'w', delete = False) as tmpfile:
+                        filename = tmpfile.name
+                        tmpfile.write('\'%s\',\'%s\',\'%s\'' % (MySQL.escape_string(url), time.strftime('%Y-%m-%d %H:%M:%S'), MySQL.escape_string(content)))
+
+                    os.chmod(filename, 0644)
+
+                    with self._cache_lock:
+                        db = MySQL(**config.webservice.cache_db_params)
+                        db.query('DELETE FROM `webservice` WHERE `url` = %s', url)
+                        db.query(r"LOAD DATA LOCAL INFILE '%s' INTO TABLE `dynamocache`.`webservice` FIELDS TERMINATED BY ',' ENCLOSED BY '\''" % filename)
+                        db.close()
+
+                    os.remove(filename)
 
                 if self.accept == 'application/json':
                     result = json.loads(content)
