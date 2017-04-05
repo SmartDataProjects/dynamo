@@ -36,6 +36,9 @@ class MySQL(object):
     def db_name(self):
         return self._connection_parameters['db']
 
+    def close(self):
+        self._connection.close()
+
     def query(self, sql, *args):
         """
         Execute an SQL query. If the query is an INSERT, return the inserted row id (0 if no insertion happened).
