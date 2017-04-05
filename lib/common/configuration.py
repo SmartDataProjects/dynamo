@@ -30,6 +30,11 @@ webservice = Configuration()
 webservice.x509_key = os.environ['X509_USER_PROXY']
 webservice.cookie_file = os.environ['DYNAMO_DATADIR'] + '/cookies.txt'
 webservice.num_attempts = 20
+webservice.cache_db_params = {
+    'config_file': '/etc/my.cnf',
+    'config_group': 'mysql-dynamo',
+    'db': 'dynamocache'
+}   
 
 mysql = Configuration()
 mysql.max_query_len = 100000 # allows up to 1M characters; allowing 90% safety margin
@@ -44,6 +49,7 @@ mysqlstore.db_params = {
 phedex = Configuration()
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'
 phedex.subscription_chunk_size = 4.e+13 # 40 TB
+phedex.cache_lifetime = 28800 # cache lifetime in seconds (8 hours)
 
 dbs = Configuration()
 dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
