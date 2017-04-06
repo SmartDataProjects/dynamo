@@ -33,6 +33,7 @@ webservice.num_attempts = 20
 webservice.cache_db_params = {
     'config_file': '/etc/my.cnf',
     'config_group': 'mysql-dynamo',
+    'host': 't3serv009.mit.edu',
     'db': 'dynamocache'
 }   
 

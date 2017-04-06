@@ -118,9 +118,13 @@ class RESTService(object):
         # first check the cache
         if method == GET and self._cache_lock is not None and cache_lifetime > 0:
             with self._cache_lock:
-                db = MySQL(**config.webservice.cache_db_params)
-                cache = db.query('SELECT UNIX_TIMESTAMP(`timestamp`), `content` FROM `webservice` WHERE `url` = %s', url)
-                db.close()
+                try:
+                    db = MySQL(**config.webservice.cache_db_params)
+                    cache = db.query('SELECT UNIX_TIMESTAMP(`timestamp`), `content` FROM `webservice` WHERE `url` = %s', url)
+                    db.close()
+                except:
+                    logger.error('Connection to cache DB failed when fetching the timestamp for %s.', url)
+                    cache = []
 
             if len(cache) != 0:
                 timestamp, content = cache[0]
@@ -197,10 +201,14 @@ class RESTService(object):
                     os.chmod(filename, 0644)
 
                     with self._cache_lock:
-                        db = MySQL(**config.webservice.cache_db_params)
-                        db.query('DELETE FROM `webservice` WHERE `url` = %s', url)
-                        db.query(r"LOAD DATA LOCAL INFILE '%s' INTO TABLE `dynamocache`.`webservice` FIELDS TERMINATED BY ',' ENCLOSED BY '\''" % filename)
-                        db.close()
+                        try:
+                            db = MySQL(**config.webservice.cache_db_params)
+                            db.query('DELETE FROM `webservice` WHERE `url` = %s', url)
+                            db.query(r"LOAD DATA LOCAL INFILE '%s' INTO TABLE `dynamocache`.`webservice` FIELDS TERMINATED BY ',' ENCLOSED BY '\''" % filename)
+                            db.close()
+                        except:
+                            logger.error('Connection to cache DB failed when writing the response of %s.', url)
+                            pass
 
                     os.remove(filename)
 

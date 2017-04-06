@@ -26,10 +26,18 @@ class MySQL(object):
         return MySQLdb.escape_string(string)
     
     def __init__(self, host = '', user = '', passwd = '', config_file = '', config_group = '', db = ''):
+        self._connection_parameters = {}
         if config_file:
-            self._connection_parameters = {'read_default_file': config_file, 'read_default_group': config_group, 'db': db}
-        else:
-            self._connection_parameters = {'host': host, 'user': user, 'passwd': passwd, 'db': db}
+            self._connection_parameters['read_default_file'] = config_file
+            self._connection_parameters['read_default_group'] = config_group
+        if host:
+            self._connection_parameters['host'] = host
+        if user:
+            self._connection_parameters['user'] = user
+        if passwd:
+            self._connection_parameters['passwd'] = passwd
+        if db:
+            self._connection_parameters['db'] = db
 
         self._connection = MySQLdb.connect(**self._connection_parameters)
 
