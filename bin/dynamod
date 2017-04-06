@@ -134,7 +134,7 @@ do
   
     echo ""
 
-    if [ $TEST ]
+    if [ "$TEST" ]
     then
       echo "Exiting from test run."
       exit 0
