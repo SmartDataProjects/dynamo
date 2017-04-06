@@ -23,11 +23,11 @@ DROP TABLE IF EXISTS `webservice`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `webservice` (
-  `url` varchar(1000) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
+  `url` varchar(2048) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   `timestamp` datetime NOT NULL,
   `content` longtext CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
-  PRIMARY KEY (`url`),
-  KEY `time` (`timestamp`)
+  KEY `time` (`timestamp`),
+  KEY `url` (`url`(1000))
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -40,4 +40,4 @@ CREATE TABLE `webservice` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-04-05 23:03:18
+-- Dump completed on 2017-04-06 18:13:34
