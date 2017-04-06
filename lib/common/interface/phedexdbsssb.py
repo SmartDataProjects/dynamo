@@ -520,7 +520,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                         elif block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
                             # block record was updated
-                            logger.info('Updating block %s of dataset %s' % (block_entry['name'], ds_name))
                             block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
                             dataset.status = Dataset.STAT_PRODUCTION
 
@@ -597,10 +596,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 total_quota = site.quota()
                 if total_quota >= 500:
                     # further split by the first character of the dataset names
-                    # a-zA-Z0-9 -> 62 characters; split depending on the quota
-                    chunk_size = max(62 / int(total_quota / 100), 1)
+                    # split depending on the quota
                     characters = 'abcdefghijklmnopqrstuvwxyz0123456789' # dataset names in phedex are apparently case insensitive
-                    charsets = [characters[i:i + chunk_size] for i in range(0, 62, chunk_size)]
+                    chunk_size = max(len(characters) / int(total_quota / 100), 1)
+                    charsets = [characters[i:i + chunk_size] for i in range(0, len(characters), chunk_size)]
                     for charset in charsets:
                         items.append(([site], gname_list, ['/%s*/*/*' % c for c in charset]))
                 else:
