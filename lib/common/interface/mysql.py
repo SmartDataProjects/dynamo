@@ -269,7 +269,11 @@ class MySQL(object):
                 query_len = len(pool_expr)
                 items = []
                 while query_len < config.mysql.max_query_len and iP < len(pool):
-                    item = str(pool[iP])
+                    if type(pool[iP]) is str:
+                        item = "'%s'" % pool[iP]
+                    else:
+                        item = str(pool[iP])
+
                     query_len += len(item)
                     items.append(item)
                     iP += 1
