@@ -926,7 +926,7 @@ class MySQLStore(LocalStoreInterface):
         """
         Delete everything related to the datasets
         """
-        dataset_ids = self._mysql.select_many('datasets', 'id', 'name', ['\'%s\'' % d.name for d in datasets])
+        dataset_ids = self._mysql.select_many('datasets', 'id', 'name', [d.name for d in datasets])
 
         ids_str = ','.join(['%d' % i for i in dataset_ids])
 
@@ -952,7 +952,7 @@ class MySQLStore(LocalStoreInterface):
     def _do_delete_datasetreplicas(self, site, datasets, delete_blockreplicas): #override
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        dataset_ids = self._mysql.select_many('datasets', 'id', 'name', ['\'%s\'' % d.name for d in datasets])
+        dataset_ids = self._mysql.select_many('datasets', 'id', 'name', [d.name for d in datasets])
 
         self._mysql.delete_in('dataset_replicas', 'dataset_id', dataset_ids, additional_conditions = ['site_id = %d' % site_id])
 

@@ -120,7 +120,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        dataset_ids = self._mysql.select_many('datasets', ('id',), 'name', ['\'%s\'' % d.name for d in datasets])
+        dataset_ids = self._mysql.select_many('datasets', ('id',), 'name', [d.name for d in datasets])
 
         self._mysql.query('INSERT INTO `deletion_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`, `size`) VALUES (%s, %s, NOW(), %s, %s, %s)', operation_id, run_number, approved, site_id, size)
 
@@ -446,7 +446,7 @@ class MySQLHistory(TransactionHistoryInterface):
         id_to_dataset = dict(self._mysql.query('SELECT `id`, `name` FROM `datasets`'))
         id_to_site = dict(self._mysql.query('SELECT `id`, `name` FROM `sites`'))
 
-        replicas = self._mysql.select_many('copied_replicas', ('copy_id', 'dataset_id'), 'copy_id', ['%d' % i for i in id_to_record.keys()])
+        replicas = self._mysql.select_many('copied_replicas', ('copy_id', 'dataset_id'), 'copy_id', id_to_record.keys())
 
         current_copy_id = 0
         for copy_id, dataset_id in replicas:
