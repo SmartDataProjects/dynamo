@@ -33,9 +33,9 @@ webservice.num_attempts = 20
 webservice.cache_db_params = {
     'config_file': '/etc/my.cnf',
     'config_group': 'mysql-dynamo',
-    'host': 't3serv009.mit.edu',
+    'host': 't3serv003.mit.edu',
     'db': 'dynamocache'
-}   
+}
 
 mysql = Configuration()
 mysql.max_query_len = 100000 # allows up to 1M characters; allowing 90% safety margin
