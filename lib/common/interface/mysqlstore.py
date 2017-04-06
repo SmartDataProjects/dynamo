@@ -252,9 +252,13 @@ class MySQLStore(LocalStoreInterface):
 
         num_blocks = 0
 
+        start = time.time()
+        results = self._mysql.query(query)
+        logger.info('Query took %.1f seconds.', time.time() - start)
+
         _dataset_id = 0
         dataset = None
-        for block_id, dataset_id, name, size, num_files, is_open in self._mysql.query(query):
+        for block_id, dataset_id, name, size, num_files, is_open in results:
             if dataset_id != _dataset_id:
                 dataset = self._ids_to_datasets[dataset_id]
                 block_id_map = {}
@@ -268,7 +272,7 @@ class MySQLStore(LocalStoreInterface):
 
             num_blocks += 1
 
-        logger.info('Loaded data for %d blocks.', num_blocks)
+        logger.info('Loaded data for %d blocks in %.1f seconds.', num_blocks, time.time() - start)
 
         # Load files
         query = 'SELECT DISTINCT f.`dataset_id`, f.`block_id`, f.`name`, f.`size` FROM `files` AS f'
@@ -288,12 +292,16 @@ class MySQLStore(LocalStoreInterface):
 
         num_files = 0
 
+        start = time.time()
+        results = self._mysql.query(query)
+        logger.info('Query took %.1f seconds.', time.time() - start)
+
         _dataset_id = 0
         dataset = None
         _block_id = 0
         block = None
         block_id_map = None
-        for dataset_id, block_id, name, size in self._mysql.query(query):
+        for dataset_id, block_id, name, size in results:
             if dataset_id != _dataset_id:
                 dataset = self._ids_to_datasets[dataset_id]
                 _dataset_id = dataset_id
@@ -309,7 +317,7 @@ class MySQLStore(LocalStoreInterface):
 
             num_files += 1
 
-        logger.info('Loaded data for %d files.', num_files)
+        logger.info('Loaded data for %d files in %.1f seconds.', num_files, time.time() - start)
 
         if load_replicas:
             logger.info('Loading replicas.')
