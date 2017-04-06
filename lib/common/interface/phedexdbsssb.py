@@ -597,7 +597,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 if total_quota >= 500:
                     # further split by the first character of the dataset names
                     # split depending on the quota
-                    characters = 'abcdefghijklmnopqrstuvwxyz0123456789' # dataset names in phedex are apparently case insensitive
+                    characters = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789'
                     chunk_size = max(len(characters) / int(total_quota / 100), 1)
                     charsets = [characters[i:i + chunk_size] for i in range(0, len(characters), chunk_size)]
                     for charset in charsets:
@@ -1089,7 +1089,7 @@ if __name__ == '__main__':
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
     parser.add_argument('--raw', '-A', dest = 'raw_output', action = 'store_true', help = 'Print RAW PhEDEx response.')
     parser.add_argument('--test', '-T', dest = 'is_test', action = 'store_true', help = 'Test mode for commands delete and subscribe.')
-
+ 
     args = parser.parse_args()
     sys.argv = []
 
