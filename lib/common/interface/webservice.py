@@ -125,6 +125,7 @@ class RESTService(object):
             if len(cache) != 0:
                 timestamp, content = cache[0]
                 if time.time() - timestamp < cache_lifetime:
+                    logger.debug('Using cache for %s', url)
                     if self.accept == 'application/json':
                         result = json.loads(content)
                         unicode2str(result)
