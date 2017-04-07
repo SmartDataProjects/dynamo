@@ -606,7 +606,7 @@ class MySQLStore(LocalStoreInterface):
                     new_blocks.append(block)
 
         # remaining entries in block_names_to_ids are blocks in DB but not in memory
-        # if the dataset_id is in datasets_tmp, that means the dataset is in loaded but the block was not in memory -> invalidated and unlinked.
+        # if the dataset_id is in datasets_tmp, that means the dataset is loaded but the block was not in memory -> invalidated and unlinked.
         self._mysql.delete_many('blocks', 'id', block_names_to_ids.values(), ['`dataset_id` IN (SELECT `id` FROM `datasets_tmp`)'])
 
         block_names_to_ids = None
@@ -678,6 +678,10 @@ class MySQLStore(LocalStoreInterface):
 
         logger.info('Inserting/updating %d files.', sum(len(d.files) for d in datasets))
 
+        # first clean off the files with invalid blocks
+        self._mysql.query('DELETE FROM `files` WHERE `block_id` NOT IN (SELECT `id` FROM `blocks`)')
+
+        # then go over the datasets and update the files one by one
         for dataset in datasets:
             in_store = set(self._mysql.query('SELECT `name` FROM `files` WHERE `dataset_id` = %s', self._datasets_to_ids[dataset]))
             file_map = dict((f.fullpath(), f) for f in dataset.files)
