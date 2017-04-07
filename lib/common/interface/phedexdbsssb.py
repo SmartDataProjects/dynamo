@@ -797,20 +797,19 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             options.extend([('dataset', d.name) for d in list_chunk])
 
             source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
+            result = dict((e['name'], e) for e in source)
 
             with lock:
                 for dataset in list_chunk:
                     try:
-                        ds_entry = next(e for e in source if e['name'] == dataset.name)
-                    except StopIteration:
+                        ds_entry = result[dataset.name]
+                    except KeyError:
                         logger.error('PhEDEx has no record (data, level=block) of %s', dataset.name)
                         # remove the blocks from the dataset; the dataset itself will be unlinked in set_dataset_details
                         for block in list(dataset.blocks):
                             dataset.remove_block(block)
 
                         continue
-
-                    source.remove(ds_entry)
     
                     dataset.is_open = (ds_entry['is_open'] == 'y')
 
@@ -854,16 +853,15 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             options.extend([('dataset', d.name) for d in list_chunk])
 
             source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
+            result = dict((e['name'], e) for e in source)
 
             with lock:
                 for dataset in list_chunk:
                     try:
-                        ds_entry = next(e for e in source if e['name'] == dataset.name)
-                    except StopIteration:
+                        ds_entry = result[dataset.name]
+                    except KeyError:
                         # maybe the dataset has 0 files at the moment (PhEDEx will skip those)
                         continue
-
-                    source.remove(ds_entry)
 
                     files = []
 
@@ -877,7 +875,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         block = dataset.find_block(block_name)
     
                         if block is None:
-                            logger.error('Got files of unknown block %s#%s', dataset.name, block.real_name())
+                            logger.error('Got files of unknown block %s', block_entry['name'])
                             continue
 
                         for file_entry in block_entry['file']:
@@ -936,7 +934,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
 
         # set_constituent can take 10000 datasets at once, make it smaller and more parallel
-        chunk_size = 100
+        # actually querying for more than 1 dataset results in unpredictable behavior
+        chunk_size = 1
         dataset_chunks = []
 
         start = 0
