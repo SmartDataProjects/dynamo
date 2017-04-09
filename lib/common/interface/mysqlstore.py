@@ -237,12 +237,12 @@ class MySQLStore(LocalStoreInterface):
         block_id_maps = {} # {dataset_id: {block_id: block}}
 
         query = 'SELECT DISTINCT b.`id`, b.`dataset_id`, b.`name`, b.`size`, b.`num_files`, b.`is_open` FROM `blocks` AS b'
-        query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         conditions = []
         if load_replicas:
-            query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
-            conditions.append('dr.`site_id` IN (%s)' % sites_str)
+            query += ' INNER JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
+            conditions.append('br.`site_id` IN (%s)' % sites_str)
         if dataset_filt != '/*/*/*' and dataset_filt != '':
+            query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
             conditions.append('d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%'))
 
         if len(conditions) != 0:
@@ -260,7 +260,11 @@ class MySQLStore(LocalStoreInterface):
         dataset = None
         for block_id, dataset_id, name, size, num_files, is_open in results:
             if dataset_id != _dataset_id:
-                dataset = self._ids_to_datasets[dataset_id]
+                try:
+                    dataset = self._ids_to_datasets[dataset_id]
+                except KeyError: # inconsistent record (orphan block)
+                    continue
+                    
                 block_id_map = {}
                 block_id_maps[dataset_id] = block_id_map
                 _dataset_id = dataset_id
@@ -276,13 +280,12 @@ class MySQLStore(LocalStoreInterface):
 
         # Load files
         query = 'SELECT DISTINCT f.`dataset_id`, f.`block_id`, f.`name`, f.`size` FROM `files` AS f'
-        query += ' INNER JOIN `datasets` AS d ON d.`id` = f.`dataset_id`'
-        query += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id` AND b.`dataset_id` = d.`id`'
         conditions = []
         if load_replicas:
-            query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
+            query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = f.`dataset_id`'
             conditions.append('dr.`site_id` IN (%s)' % sites_str)
         if dataset_filt != '/*/*/*' and dataset_filt != '':
+            query += ' INNER JOIN `datasets` AS d ON d.`id` = f.`dataset_id`'
             conditions.append('d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%'))
 
         if len(conditions) != 0:
@@ -303,12 +306,20 @@ class MySQLStore(LocalStoreInterface):
         block_id_map = None
         for dataset_id, block_id, name, size in results:
             if dataset_id != _dataset_id:
-                dataset = self._ids_to_datasets[dataset_id]
+                try:
+                    dataset = self._ids_to_datasets[dataset_id]
+                except KeyError: # inconsistent record (orphan file)
+                    continue
+
                 _dataset_id = dataset_id
                 block_id_map = block_id_maps[dataset_id]
 
             if block_id != _block_id:
-                block = block_id_map[block_id]
+                try:
+                    block = block_id_map[block_id]
+                except KeyError:
+                    continue
+
                 _block_id = block_id
 
             lfile = File.create(name, block, size)
@@ -368,18 +379,6 @@ class MySQLStore(LocalStoreInterface):
 
                 dataset_replica.block_replicas.append(block_replica)
                 site.add_block_replica(block_replica)
-
-            logger.info('Removing datasets with no replicas from memory.')
-            
-            # Take out datasets with no replicas
-            ids = 0
-            while ids != len(dataset_list):
-                dataset = dataset_list[ids]
-                if len(dataset.replicas) == 0:
-                    dataset_list.pop(ids)
-                    dataset.unlink()
-                else:
-                    ids += 1
 
             self._set_dataset_ids(dataset_list)
 
@@ -522,9 +521,22 @@ class MySQLStore(LocalStoreInterface):
         # insert/update datasets
         logger.info('Inserting/updating %d datasets.', len(datasets))
 
-        if len(self._datasets_to_ids) == 0:
-            # load up the latest dataset ids
-            self._set_dataset_ids(datasets)
+        # first delete datasets in UNKNOWN status if there are any
+        self._mysql.query('DELETE FROM `datasets` WHERE `status` = \'UNKNOWN\'')
+
+        deleted_ids = []
+        for dataset in datasets:
+            if dataset.status == Dataset.STAT_UNKNOWN:
+                try:
+                    deleted_ids.append(self._datasets_to_ids[dataset])
+                except KeyError:
+                    continue
+
+                datasets.remove(dataset)
+                dataset.unlink()
+
+        if len(deleted_ids) != 0:
+            self._mysql.delete_many('datasets', 'id', deleted_ids)
 
         # instead of insert + on duplicate update, which will cost N x logN, we will create a temporary table, join, and update (N + N)
 
@@ -589,11 +601,15 @@ class MySQLStore(LocalStoreInterface):
 
         # insert/update blocks
 
+        # first clean up orphans
+        self._mysql.query('DELETE FROM `blocks` WHERE `dataset_id` NOT IN (SELECT `id` FROM `datasets`)')
+
         # same strategy; write to temp and update
         # dump all blocks into a temporary table
         # NOTE: here we rely on the assumption that block names are unique
 
-        block_names_to_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `blocks`'))
+        # get the list of known blocks (known blocks should belong to known datasets = datasets in dataset_tmp)
+        block_names_to_ids = dict(self._mysql.query('SELECT b.`name`, b.`id` FROM `blocks` AS b INNER JOIN `datasets_tmp` AS d ON d.`id` = b.`dataset_id`'))
 
         known_blocks = []
         new_blocks = []
@@ -607,7 +623,7 @@ class MySQLStore(LocalStoreInterface):
 
         # remaining entries in block_names_to_ids are blocks in DB but not in memory
         # if the dataset_id is in datasets_tmp, that means the dataset is loaded but the block was not in memory -> invalidated and unlinked.
-        self._mysql.delete_many('blocks', 'id', block_names_to_ids.values(), ['`dataset_id` IN (SELECT `id` FROM `datasets_tmp`)'])
+        self._mysql.delete_many('blocks', 'id', block_names_to_ids.values())
 
         block_names_to_ids = None
         self._mysql.query('DROP TABLE `datasets_tmp`')
@@ -666,6 +682,11 @@ class MySQLStore(LocalStoreInterface):
         block_names_to_ids = dict(self._mysql.query('SELECT `name`, `id` FROM `blocks`'))
 
         # insert/update files
+
+        # first clean up orphans
+        self._mysql.query('DELETE FROM `files` WHERE `dataset_id` NOT IN (SELECT `id` FROM `datasets`)')
+        self._mysql.query('DELETE FROM `files` WHERE `block_id` NOT IN (SELECT `id` FROM `blocks`)')
+
         # we can assume file data never change
         # care only about new files and invalidated files
         fields = ('block_id', 'dataset_id', 'size', 'name')
@@ -677,9 +698,6 @@ class MySQLStore(LocalStoreInterface):
         )
 
         logger.info('Inserting/updating %d files.', sum(len(d.files) for d in datasets))
-
-        # first clean off the files with invalid blocks
-        self._mysql.query('DELETE FROM `files` WHERE `block_id` NOT IN (SELECT `id` FROM `blocks`)')
 
         # then go over the datasets and update the files one by one
         for dataset in datasets:

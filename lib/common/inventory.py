@@ -207,7 +207,7 @@ class InventoryManager(object):
         """
 
         if len(self.datasets) == 0:
-            self.load()
+            self.load(load_replicas = False)
 
         if dataset_filter == '/*/*/*':
             datasets = dict([(d.name, d) for d in self.datasets.values() if d.status != Dataset.STAT_IGNORED])
@@ -236,6 +236,7 @@ if __name__ == '__main__':
     parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'sites', nargs = '+', default = ['@disk'], help = 'Site names or aggregate names (@disk, @tape, @all) to include.')
     parser.add_argument('--no-load', '-L', action = 'store_true', dest = 'no_load',  help = 'Do not load the existing inventory when updating.')
     parser.add_argument('--no-snapshot', '-S', action = 'store_true', dest = 'no_snapshot',  help = 'Do not make a snapshot of existing inventory when updating.')
+    parser.add_argument('--single-thread', '-T', action = 'store_true', dest = 'singleThread', help = 'Do not parallelize (for debugging).')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
     args = parser.parse_args()
@@ -246,6 +247,9 @@ if __name__ == '__main__':
             logging.getLogger().setLevel(level)
         except AttributeError:
             logging.warning('Log level ' + args.log_level + ' not defined')
+
+    if args.singleThread:
+        config.use_threads = False
 
     kwd = {'load_data': False} # not loading data by default to speed up update process
 

@@ -11,7 +11,9 @@ read_only = False
 
 daemon_mode = False
 
-num_threads = 32
+use_threads = True
+num_threads = 32 # default value for parallel_exec; actual number of threads depends on the function caller
+multi_thread_repeat_exception = True # when a thread hits an exception, repeat the thread executable for full debugging
 
 show_time_profile = True
 

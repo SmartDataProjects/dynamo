@@ -487,7 +487,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         new_dataset = False
 
                     except KeyError:
-                        dataset = Dataset(ds_name)
+                        dataset = Dataset(ds_name, status = Dataset.STAT_PRODUCTION)
                         datasets[ds_name] = dataset
                         new_dataset = True
 
@@ -610,7 +610,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         else:
             exec_get(all_sites, gname_list, [dataset_filt])
 
-        logger.info('Cleaning up.')
+        logger.info('Checking for updated datasets.')
 
         for dataset in datasets.values():
             # check for potentially invalidated blocks
@@ -621,15 +621,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             if blocks_with_replicas != set(dataset.blocks):
                 dataset.status = Dataset.STAT_PRODUCTION # trigger DBS query
 
-            # remove datasets with no replicas
-            if len(dataset.replicas) == 0:
-                datasets.pop(dataset.name)
-                dataset.unlink()
-
     def find_tape_copies(self, datasets): #override (ReplicaInfoSourceInterface)
         """
         Use 'subscriptions' query to check if all blocks of the dataset are on tape.
-        Queries only for datasets where on_tape != FULL and status != IGNORED.
+        Queries only for datasets where on_tape != FULL and status in [VALID, PRODUCTION].
         site=T*MSS -> tape
         """
  
@@ -710,7 +705,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # Loop over datasets not on tape
         for dataset in datasets.values():
            # on_tape is TAPE_NONE by default
-           if dataset.on_tape == Dataset.TAPE_FULL or dataset.status == Dataset.STAT_IGNORED:
+           if dataset.on_tape == Dataset.TAPE_FULL:
+               continue
+
+           if dataset.status != Dataset.STAT_VALID and dataset.status != Dataset.STAT_PRODUCTION:
                continue
  
            # set it back to NONE first
@@ -723,9 +721,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         if len(dataset_chunks[-1]) == 0:
             dataset_chunks.pop()
         
-        logger.info('find_tape_copies  Checking tape copies.')
+        ntotal = sum(len(c) for c in dataset_chunks)
+        logger.info('find_tape_copies  Checking tape copies of %d datasets.', ntotal)
         
-        parallel_exec(inquire_phedex, dataset_chunks)
+        parallel_exec(inquire_phedex, dataset_chunks, print_progress = (ntotal > 1000))
 
     def replica_exists_at_site(self, site, item): #override (ReplicaInfoSourceInterface)
         """
@@ -757,20 +756,13 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         # select datasets that need closer inspection
         if skip_valid:
-            open_datasets = [dataset for dataset in datasets.values() if dataset.status == Dataset.STAT_PRODUCTION or dataset.status == Dataset.STAT_UNKNOWN]
+            open_datasets = [dataset for dataset in datasets.values() if dataset.status == Dataset.STAT_PRODUCTION]
         else:
-            open_datasets = [dataset for dataset in datasets.values() if dataset.status == Dataset.STAT_PRODUCTION or dataset.status == Dataset.STAT_UNKNOWN or dataset.status == Dataset.STAT_VALID]
+            open_datasets = [dataset for dataset in datasets.values() if dataset.status == Dataset.STAT_PRODUCTION or dataset.status == Dataset.STAT_VALID]
 
         logger.info('set_dataset_details  Finding blocks and files for %d datasets.', len(open_datasets))
 
         self._set_dataset_constituent_info(open_datasets)
-
-        for dataset in list(open_datasets):
-            if len(dataset.blocks) == 0:
-                logger.debug('get_datasets %s does not have any blocks and is removed.', dataset.name)
-                datasets.pop(dataset.name)
-                dataset.unlink()
-                open_datasets.remove(dataset)
 
         logger.info('set_dataset_details  Setting status of %d datasets.', len(open_datasets))
 
@@ -792,20 +784,77 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         lock = threading.Lock()
 
         def inquire_phedex(list_chunk):
-            # first inquire at block level - level=file skips blocks with 0 files
-            options = [('level', 'block')]
-            options.extend([('dataset', d.name) for d in list_chunk])
+            # need to combine the results of two queries (level=block and level=file)
+            # because level=file skips datasets and blocks with 0 files
 
-            source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
-            result = dict((e['name'], e) for e in source)
+            result = dict()
 
+            # PhEDEx sometimes fails to return data of all datasets. The behavior is reproducible but not predictable to me..
+            # We therefore retry queries until all datasets are covered, or all single-dataset queries return nothing.
+            dataset_names = [d.name for d in list_chunk]
+            
+            while len(dataset_names) != 0:
+                options = [('level', 'block')]
+                options.extend([('dataset', n) for n in dataset_names])
+                response = self._make_phedex_request('data', options, method = POST)
+
+                if len(response) == 0:
+                    response = [{'dataset': []}]
+                    # go one by one
+                    for n in dataset_names:
+                        options = [('level', 'block'), ('dataset', n)]
+                        resp = self._make_phedex_request('data', options, method = POST)
+                        if len(resp) == 0:
+                            dataset_names.remove(n)
+                        else:
+                            response[0]['dataset'].append(resp[0]['dataset'][0])
+
+                for entry in response[0]['dataset']:
+                    dataset_names.remove(entry['name'])
+
+                    result[entry['name']] = entry
+
+            # Repeat with level=file
+            dataset_names = [d.name for d in list_chunk]
+
+            while len(dataset_names) != 0:
+                options = [('level', 'file')]
+                options.extend([('dataset', n) for n in dataset_names])
+                response = self._make_phedex_request('data', options, method = POST)
+
+                if len(response) == 0:
+                    response = [{'dataset': []}]
+                    # go one by one
+                    for n in dataset_names:
+                        options = [('level', 'file'), ('dataset', n)]
+                        resp = self._make_phedex_request('data', options, method = POST)
+                        if len(resp) == 0:
+                            dataset_names.remove(n)
+                        else:
+                            response[0]['dataset'].append(resp[0]['dataset'][0])
+
+                for ds_update_entry in response[0]['dataset']:
+                    dataset_names.remove(ds_update_entry['name'])
+
+                    files_dict = dict((b['name'], b['file']) for b in ds_update_entry['block'])
+                    for block_entry in result[ds_update_entry['name']]['block']:
+                        try:
+                            file_entries = files_dict[block_entry['name']]
+                        except KeyError:
+                            continue
+    
+                        block_entry['file'] = file_entries
+
+            # parts of this block that works solely on individual datasets (as opposed to making changes to sites) don't need to be locked
+            # but this is a pure processing code (no I/O) and therefore locking doesn't matter as long as there is python Global Interpreter Lock
             with lock:
                 for dataset in list_chunk:
                     try:
                         ds_entry = result[dataset.name]
                     except KeyError:
-                        logger.error('PhEDEx has no record (data, level=block) of %s', dataset.name)
-                        # remove the blocks from the dataset; the dataset itself will be unlinked in set_dataset_details
+                        # set the status to UNKNOWN. If DBS still has a record for this dataset, status will be reset in set_dataset_status_and_type
+                        dataset.status = Dataset.STAT_UNKNOWN
+                        # remove the blocks from the dataset. files belonging to the blocks are also unlinked
                         for block in list(dataset.blocks):
                             dataset.remove_block(block)
 
@@ -815,6 +864,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                     # start from the full list of blocks and files and remove ones found in PhEDEx
                     invalidated_blocks = set(dataset.blocks)
+
+                    files = [] # list of (lfn, block, size)
 
                     for block_entry in ds_entry['block']:
                         try:
@@ -843,43 +894,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         if block_entry['time_update'] > dataset.last_update:
                             dataset.last_update = block_entry['time_update']
 
+                        for file_entry in block_entry['file']:
+                            files.append((file_entry['lfn'], block, file_entry['size']))
+
                     for block in invalidated_blocks:
                         logger.info('Removing block %s from dataset %s', block.real_name(), dataset.name)
                         dataset.remove_block(block)
-
-            # done setting up blocks. Now do the same for files
-
-            options = [('level', 'file')]
-            options.extend([('dataset', d.name) for d in list_chunk])
-
-            source = self._make_phedex_request('data', options, method = POST)[0]['dataset']
-            result = dict((e['name'], e) for e in source)
-
-            with lock:
-                for dataset in list_chunk:
-                    try:
-                        ds_entry = result[dataset.name]
-                    except KeyError:
-                        # maybe the dataset has 0 files at the moment (PhEDEx will skip those)
-                        continue
-
-                    files = []
-
-                    for block_entry in ds_entry['block']:
-                        try:
-                            block_name = Block.translate_name(block_entry['name'].replace(dataset.name + '#', ''))
-                        except:
-                            logger.error('Invalid block name %s in data', block_name)
-                            continue
-    
-                        block = dataset.find_block(block_name)
-    
-                        if block is None:
-                            logger.error('Got files of unknown block %s', block_entry['name'])
-                            continue
-
-                        for file_entry in block_entry['file']:
-                            files.append((file_entry['lfn'], block, file_entry['size']))
 
                     files.sort()
 
@@ -889,22 +909,22 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     invalidated_files = []
 
                     # compare two sorted lists side-by-side
-                    iphed = 0
+                    isource = 0
                     iknown = 0
                     while True:
-                        if iphed == len(files):
+                        if isource == len(files):
                             # no more from phedex; rest is known but invalidated
                             invalidated_files.extend(known_files[iknown:])
                             break
 
                         elif iknown == len(known_files):
                             # all remaining files are new
-                            for entry in files[iphed:]:
+                            for entry in files[isource:]:
                                 dataset.files.add(File.create(*entry))
                             break
 
                         else:
-                            phed_name, block, phed_size = files[iphed]
+                            phed_name, block, phed_size = files[isource]
                             known_file = known_files[iknown]
                             known_path = known_file.fullpath()
 
@@ -915,13 +935,13 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 if phed_size != known_file.size:
                                     dataset.update_file(phed_name, phed_size)
     
-                                iphed += 1
+                                isource += 1
                                 iknown += 1
 
                             elif pathcmp < 0:
                                 # new file
                                 dataset.files.add(File.create(phed_name, block, phed_size))
-                                iphed += 1
+                                isource += 1
 
                             else:
                                 # invalidated file
@@ -934,8 +954,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
 
         # set_constituent can take 10000 datasets at once, make it smaller and more parallel
-        # actually querying for more than 1 dataset results in unpredictable behavior
-        chunk_size = 1
+        chunk_size = 100
         dataset_chunks = []
 
         start = 0
@@ -943,7 +962,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             dataset_chunks.append(datasets[start:start + chunk_size])
             start += chunk_size
 
-        parallel_exec(inquire_phedex, dataset_chunks, num_threads = 64)
+        parallel_exec(inquire_phedex, dataset_chunks, num_threads = 64, print_progress = (len(datasets) > 1000))
 
     def _set_dataset_status_and_type(self, datasets):
         """
@@ -954,23 +973,19 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         """
 
         def inquire_dbs(dataset_list):
+            # here threads are genuinely independent - no lock required
+
             names = [d.name for d in dataset_list]
     
             dbs_entries = self._make_dbs_request('datasetlist', {'dataset': names, 'detail': True}, method = POST, format = 'json')
+            result = dict((e['dataset'], e) for e in dbs_entries)
     
             for dataset in dataset_list:
                 try:
-                    ie = 0
-                    while ie != len(dbs_entries):
-                        if dbs_entries[ie]['dataset'] == dataset.name:
-                            dbs_entry = dbs_entries.pop(ie)
-                            break
-                        ie += 1
-                    else:
-                        raise StopIteration()
-
-                except StopIteration:
-                    logger.debug('set_dataset_details  Status of %s is unknown.', dataset.name)
+                    dbs_entry = result[dataset.name]
+                except KeyError:
+                    logger.debug('set_dataset_details  %s is not in DBS.', dataset.name)
+                    # datasets with stat_unknown will be removed from the record in save_dataset
                     dataset.status = Dataset.STAT_UNKNOWN
                     dataset.data_type = Dataset.TYPE_UNKNOWN
                     continue
@@ -991,7 +1006,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             dataset_chunks.append(datasets[start:start + chunk_size])
             start += chunk_size
 
-        parallel_exec(inquire_dbs, dataset_chunks)
+        parallel_exec(inquire_dbs, dataset_chunks, print_progress = (len(datasets) > 1000))
 
     def _set_software_version_info(self, datasets):
         """

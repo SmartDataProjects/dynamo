@@ -37,6 +37,9 @@ class DBS(DatasetInfoSourceInterface):
     def _construct_dataset(self, ds_record, block_records):
         ds_name = ds_record['dataset']
         dataset = Dataset(ds_name)
+        dataset.status = Dataset.status_val(ds_record['dataset_access_type'])
+        dataset.data_type = Dataset.data_type_val(ds_record['primary_ds_type'])
+        dataset.last_update = ds_record['last_modification_date']
 
         for block_record in block_records:
             if block_record['dataset'] != ds_name:
