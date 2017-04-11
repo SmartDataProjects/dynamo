@@ -19,10 +19,14 @@ class PopularityHandler(BaseHandler):
         requests = []
 
         for dataset in inventory.datasets.values():
+            if dataset.replicas is None:
+                # this dataset has no replica in the pool to begin with
+                continue
+
             if dataset.demand.request_weight <= 0.:
                 continue
 
-            if dataset.size() * 1.e-12 > config.max_dataset_size:
+            if dataset.size * 1.e-12 > config.max_dataset_size:
                 continue
 
             for replica in dataset.replicas:

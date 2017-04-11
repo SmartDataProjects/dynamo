@@ -80,9 +80,9 @@ config.inventory.included_sites = dealer_config.included_sites
 inventory_manager = InventoryManager(**kwd)
 
 if args.force_inventory_update:
-    inventory_manager.load(load_replicas = False)
+    inventory_manager.update()
 else:
-    inventory_manager.load(load_replicas = True)
+    inventory_manager.load()
 
 kwd = {}
 for cls in ['copy']:
@@ -129,8 +129,5 @@ undertaker.history = history
 policy.add_plugin(undertaker, 1)
 
 dealer.set_policy(policy)
-
-if args.force_inventory_update:
-    inventory_manager.update()
 
 dealer.run(Site.partitions['AnalysisOps'], is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)

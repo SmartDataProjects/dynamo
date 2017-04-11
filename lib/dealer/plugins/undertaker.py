@@ -48,7 +48,7 @@ class Undertaker(BaseHandler):
                 except KeyError:
                     continue
     
-                if len(dataset.replicas) == 1 and dataset.replicas[0].site == site: # this replica has no other copy
+                if dataset.replicas is not None and len(dataset.replicas) == 1 and dataset.replicas[0].site == site: # this replica has no other copy
                     logger.debug('%s is a last copy at %s', ds_name, site.name)
                     datasets.append(dataset)
 

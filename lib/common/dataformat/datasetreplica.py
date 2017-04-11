@@ -63,9 +63,11 @@ class DatasetReplica(object):
         return len(self.dataset.replicas) == 1 and self.dataset.replicas[0] == self
 
     def is_partial(self):
+        # dataset.blocks must be loaded if a replica is created for the dataset
         return self.is_complete and len(self.block_replicas) != len(self.dataset.blocks)
 
     def is_full(self):
+        # dataset.blocks must be loaded if a replica is created for the dataset
         return self.is_complete and len(self.block_replicas) == len(self.dataset.blocks)
 
     def size(self, groups = [], physical = True):
@@ -80,7 +82,7 @@ class DatasetReplica(object):
             if len(groups) == 0:
                 # no group spec
                 if self.is_full():
-                    return self.dataset.size()
+                    return self.dataset.size
                 else:
                     if physical:
                         return sum([r.size for r in self.block_replicas])

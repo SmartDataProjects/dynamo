@@ -88,9 +88,9 @@ kwd['load_data'] = False
 inventory_manager = InventoryManager(**kwd)
 
 if args.force_inventory_update:
-    inventory_manager.load(load_replicas = False)
+    inventory_manager.update()
 else:
-    inventory_manager.load(load_replicas = True)
+    inventory_manager.load()
 
 kwd = {}
 for cls in ['deletion']:
@@ -144,9 +144,6 @@ for part_spec in args.partitions:
         policy = Policy(partition, policy_def, policy_version, inventory_manager)
 
     detox.set_policy(policy)
-
-if args.force_inventory_update:
-    inventory_manager.update()
 
 for partition in partitions:
     detox.run(partition, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)

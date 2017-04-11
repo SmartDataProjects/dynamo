@@ -49,7 +49,7 @@ class InventoryManager(object):
         if load_data:
             self.load()
 
-    def load(self, load_replicas = True):
+    def load(self, load_blocks = True, load_files = False, load_replicas = True, dataset_filter = '/*/*/*'):
         """
         Load information up to block level from local persistent storage to memory. The flag
         load_replicas can be used to determine whether dataset/block-site links should also be
@@ -71,7 +71,13 @@ class InventoryManager(object):
         try:
             site_names = self.store.get_site_list(include = config.inventory.included_sites, exclude = config.inventory.excluded_sites)
 
-            sites, groups, datasets = self.store.load_data(site_filt = site_names, load_replicas = load_replicas)
+            sites, groups, datasets = self.store.load_data(
+                site_filt = site_names,
+                dataset_filt = dataset_filter,
+                load_blocks = load_blocks,
+                load_files = load_files,
+                load_replicas = load_replicas
+            )
 
             self.sites = dict((s.name, s) for s in sites)
             self.groups = dict((g.name, g) for g in groups)
@@ -83,8 +89,16 @@ class InventoryManager(object):
 
                 site.active = quota_manager.get_status(site)
 
-            num_dataset_replicas = sum(len(d.replicas) for d in self.datasets.values())
-            num_block_replicas = sum(sum(len(r.block_replicas) for r in d.replicas) for d in self.datasets.values())
+            num_dataset_replicas = 0
+            num_block_replicas = 0
+
+            if load_replicas:
+                for dataset in self.datasets.values():
+                    if dataset.replicas is None:
+                        continue
+    
+                    num_dataset_replicas += len(dataset.replicas)
+                    num_block_replicas += sum(len(r.block_replicas) for r in dataset.replicas)
 
         finally:
             self.store.release_lock()
@@ -106,7 +120,7 @@ class InventoryManager(object):
 
             if load_first and len(self.sites) == 0:
                 logger.info('Loading data from local storage.')
-                self.load(load_replicas = False)
+                self.load(load_blocks = False, load_files = False, load_replicas = False, dataset_filter = dataset_filter)
 
             else:
                 logger.info('Unlinking replicas.')
@@ -120,11 +134,14 @@ class InventoryManager(object):
 
             # First get information on all replicas in the system, possibly creating datasets / blocks along the way.
             if dataset_filter == '/*/*/*':
-                self.replica_source.make_replica_links(self.sites, self.groups, self.datasets)
+                self.replica_source.make_replica_links(self)
             else:
-                self.replica_source.make_replica_links(self.sites, self.groups, self.datasets, dataset_filt = dataset_filter)
+                self.replica_source.make_replica_links(self, dataset_filt = dataset_filter)
 
-            self.dataset_source.set_dataset_details(self.datasets, skip_valid = True)
+            open_datasets = filter(lambda d: d.status == Dataset.STAT_PRODUCTION, self.datasets.values())
+            # Typically we enter this function with no file data loaded from store, so each open_dataset will have new File objects created.
+            # However this does not lead to any slowdown since we download the full file information for each dataset anyway.
+            self.dataset_source.set_dataset_details(open_datasets)
 
             self.replica_source.find_tape_copies(self.datasets)
 
@@ -141,6 +158,24 @@ class InventoryManager(object):
         finally:
             # Lock is released even in case of unexpected errors
             self.store.release_lock(force = True)
+
+    def load_blocks(self, dataset):
+        """
+        Load blocks of a dataset. Try InventoryStore first, and if no record is found, query the DatasetInfoSource.
+        """
+
+        self.store.load_blocks(dataset)
+        if dataset.blocks is None:
+            self.dataset_source.set_dataset_details([dataset])
+
+    def load_files(self, dataset):
+        """
+        Load blocks of a dataset. Try InventoryStore first, and if no record is found, query the DatasetInfoSource.
+        """
+
+        self.store.load_files(dataset)
+        if dataset.files is None:
+            self.dataset_source.set_dataset_details([dataset])
 
     def unlink_datasetreplica(self, replica):
         """
@@ -160,7 +195,7 @@ class InventoryManager(object):
 
     def unlink_all_replicas(self):
         for dataset in self.datasets.values():
-            dataset.replicas = []
+            dataset.replicas = None
 
         for site in self.sites.values():
             site.dataset_replicas.clear()
@@ -171,10 +206,17 @@ class InventoryManager(object):
         Create a new DatasetReplica object and return.
         """
 
+        if dataset.replicas is None:
+            # this would be a case where a dataset previously completely absent from the pool is added back, e.g. when staging a dataset from tape.
+            dataset.replicas = []
+
         new_replica = DatasetReplica(dataset, site)
 
         dataset.replicas.append(new_replica)
         site.dataset_replicas.add(new_replica)
+
+        if dataset.blocks is None:
+            self.load_blocks(dataset)
 
         for block in dataset.blocks:
             block_replica = BlockReplica(block, site, group, is_complete = False, is_custodial = False, size = 0)
@@ -188,11 +230,19 @@ class InventoryManager(object):
         Create a new BlockReplica object and return.
         """
 
-        drep = block.dataset.find_replica(site)
+        dataset = block.dataset
+
+        drep = None
+        if dataset.replicas is None:
+            # see note in add_dataset_to_site
+            dataset.replicas = []
+        else:
+            drep = dataset.find_replica(site)
+
         if drep is None:
-            drep = DatasetReplica(block.dataset, site)
+            drep = DatasetReplica(dataset, site)
     
-            block.dataset.replicas.append(drep)
+            dataset.replicas.append(drep)
             site.dataset_replicas.add(drep)
 
         new_replica = BlockReplica(block, site, group, is_complete = False, is_custodial = False, size = 0)    
@@ -207,17 +257,18 @@ class InventoryManager(object):
         """
 
         if len(self.datasets) == 0:
-            self.load(load_replicas = False)
+            # load_files = False -> new files will be created in set_dataset_details. Doesn't really slow anything down.
+            self.load(load_blocks = False, load_files = False, load_replicas = False)
 
         if dataset_filter == '/*/*/*':
-            datasets = dict([(d.name, d) for d in self.datasets.values() if d.status != Dataset.STAT_IGNORED])
+            open_datasets = filter(lambda d: d.status == Dataset.STAT_PRODUCTION or d.status == Dataset.STAT_VALID, self.datasets.values())
         else:
             regex = re.compile(fnmatch.translate(dataset_filter))
-            datasets = dict([(d.name, d) for d in self.datasets.values() if regex.match(d.name) and d.status != Dataset.STAT_IGNORED])
+            open_datasets = filter(lambda d: (d.status == Dataset.STAT_PRODUCTION or d.status == Dataset.STAT_VALID) and regex.match(d.name), self.datasets.values())
 
-        self.dataset_source.set_dataset_details(datasets)
+        self.dataset_source.set_dataset_details(open_datasets)
 
-        self.store.save_datasets(datasets.values())
+        self.store.save_datasets(open_datasets)
 
 
 if __name__ == '__main__':

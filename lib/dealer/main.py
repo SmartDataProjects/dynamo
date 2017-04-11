@@ -104,7 +104,7 @@ class Dealer(object):
                 total_cpu = sum([r.site.cpu for r in dataset.replicas])
                 # w * N * (site cpu / total cpu); normalized by site cpu
                 if total_cpu > 0.:
-                    business += dataset.demand.request_weight * dataset.num_files() / total_cpu
+                    business += dataset.demand.request_weight * dataset.num_files / total_cpu
 
             return business
 
@@ -134,7 +134,7 @@ class Dealer(object):
                 dataset = entry
                 destination_site = None
 
-            dataset_size = dataset.size() * 1.e-12
+            dataset_size = dataset.size * 1.e-12
 
             if destination_site is None:
                 sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest

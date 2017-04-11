@@ -62,6 +62,10 @@ class BalancingHandler(BaseHandler):
                 except KeyError:
                     continue
 
+                if dataset.find_replica(site) is None:
+                    # this replica has disappeared since then
+                    continue
+
                 if reason in config.balancer_target_reasons:
                     logger.debug('%s is a last copy at %s', ds_name, site.name)
                     last_copies[site].append(dataset)
@@ -92,7 +96,7 @@ class BalancingHandler(BaseHandler):
 
             request.append((dataset, minsite))
 
-            size = dataset.size() * 1.e-12
+            size = dataset.size * 1.e-12
             protected_fractions[maxsite] -= size / float(maxsite.partition_quota(partition))
 
             total_size += size

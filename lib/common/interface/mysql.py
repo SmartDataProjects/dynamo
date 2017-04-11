@@ -175,7 +175,10 @@ class MySQL(object):
 
         values = ''
         for obj in objects:
-            values += template % MySQLdb.escape(mapping(obj), MySQLdb.converters.conversions)
+            if mapping is None:
+                values += template % MySQLdb.escape(obj, MySQLdb.converters.conversions)
+            else:
+                values += template % MySQLdb.escape(mapping(obj), MySQLdb.converters.conversions)
             
             # MySQL allows queries up to 1M characters
             if len(values) > config.mysql.max_query_len or obj == objects[-1]:

@@ -9,5 +9,7 @@ class DatasetInfoSourceInterface(object):
     def set_dataset_details(self, datasets):
         """
         Set detailed information, primarily those that may be updated.
+
+        @param datasets  List of datasets to be updated
         """
         pass

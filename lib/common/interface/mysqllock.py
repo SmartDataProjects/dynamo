@@ -38,6 +38,9 @@ class MySQLLockInterface(ReplicaLockInterface):
                 logger.debug('Cannot lock unknown dataset %s', dataset_name)
                 continue
 
+            if dataset.replicas is None:
+                continue
+
             if block_name != 0:
                 block = dataset.find_block(block_name)
                 if block is None:

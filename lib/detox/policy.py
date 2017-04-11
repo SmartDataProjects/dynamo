@@ -230,6 +230,9 @@ class Policy(object):
         site_all_block_replicas = collections.defaultdict(list)
 
         for dataset in datasets:
+            if dataset.replicas is None:
+                continue
+
             ir = 0
             while ir != len(dataset.replicas):
                 replica = dataset.replicas[ir]

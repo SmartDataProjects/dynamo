@@ -77,6 +77,9 @@ class WebReplicaLockInterface(ReplicaLockInterface):
                         logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                         continue
 
+                    if dataset.replicas is None:
+                        continue
+
                     for dataset_replica in dataset.replicas:
                         for block_replica in dataset_replica.block_replicas:
                             self.locked_blocks[dataset].append(block_replica)
@@ -92,6 +95,9 @@ class WebReplicaLockInterface(ReplicaLockInterface):
                         dataset = inventory.datasets[dataset_name]
                     except KeyError:
                         logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
+                        continue
+
+                    if dataset.replicas is None:
                         continue
 
                     for dataset_replica in dataset.replicas:
@@ -121,6 +127,9 @@ class WebReplicaLockInterface(ReplicaLockInterface):
                                 logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                                 continue
 
+                            if dataset.replicas is None:
+                                continue
+
                             block = dataset.find_block(block_name)
                             if block is None:
                                 logger.debug('Unknown block %s of %s in %s', block_real_name, dataset_name, source.url_base)
@@ -134,6 +143,9 @@ class WebReplicaLockInterface(ReplicaLockInterface):
                                 dataset = inventory.datasets[dataset_name]
                             except KeyError:
                                 logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
+                                continue
+
+                            if dataset.replicas is None:
                                 continue
 
                             locked_blocks = list(dataset.blocks)
