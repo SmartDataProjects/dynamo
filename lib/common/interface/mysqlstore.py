@@ -268,6 +268,8 @@ class MySQLStore(LocalStoreInterface):
                     block_id_map = {}
                     block_id_maps[dataset_id] = block_id_map
                     _dataset_id = dataset_id
+
+                    dataset.blocks = []
     
                 block = Block(Block.translate_name(name), dataset, size, num_files, is_open)
     
@@ -336,7 +338,7 @@ class MySQLStore(LocalStoreInterface):
 
                 block = block_id_map[block_id]
 
-                group = ids_group_map[group_id]
+                group = id_group_map[group_id]
 
                 block_replica = BlockReplica(block, site, group = group, is_complete = is_complete, is_custodial = b_is_custodial, size = block.size if b_size is None else b_size)
 
