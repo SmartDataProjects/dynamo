@@ -375,6 +375,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 sites[entry['name']] = site
         
     def set_site_status(self, sites): #override (SiteInfoSourceInterface)
+        logger.info('set_site_status  Fetching the site status from SSB')
+
         for site in sites.values():
             site.status = Site.STAT_READY
 
@@ -490,6 +492,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                     try:
                         dataset = inventory.datasets[ds_name]
+                        new_dataset = False
                     except KeyError:
                         dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False)
                         if dataset is None:
@@ -497,13 +500,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             inventory.datasets[ds_name] = dataset
                             new_dataset = True
                             counters['new_datasets'] += 1
-                    else:
-                        if dataset.status == Dataset.STAT_IGNORED:
-                            continue
 
-                        new_dataset = False
-                        if dataset.blocks is None:
-                            inventory.store.load_blocks(dataset)
+                    if dataset.status == Dataset.STAT_IGNORED:
+                        continue
+
+                    if dataset.blocks is None:
+                        inventory.store.load_blocks(dataset)
 
                     dataset.is_open = (dataset_entry['is_open'] == 'y')
 
@@ -1298,4 +1300,9 @@ if __name__ == '__main__':
     elif command == 'updaterequest' or command == 'updatesubscription':
         method = POST
 
-    pprint.pprint(interface._make_phedex_request(command, options, method = method, raw_output = args.raw_output))
+    result = interface._make_phedex_request(command, options, method = method, raw_output = args.raw_output)
+
+    if command == 'requestlist':
+        result.sort(key = lambda x: x['id'])
+
+    pprint.pprint(result)

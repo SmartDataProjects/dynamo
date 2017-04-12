@@ -41,6 +41,15 @@ class LocalStoreInterface(object):
         if self._lock_depth > 0: # should always be the case if properly programmed
             self._lock_depth -= 1
 
+    def get_last_update(self):
+        logger.debug('_do_get_last_update()')
+
+        self.acquire_lock()
+        try:
+            return self._do_get_last_update()
+        finally:
+            self.release_lock()
+
     def set_last_update(self, tm = time.time()):
         self.last_update = tm
 

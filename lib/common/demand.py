@@ -122,7 +122,8 @@ class DemandManager(object):
 
         all_replicas = []
         for dataset in inventory.datasets.values():
-            all_replicas.extend(dataset.replicas)
+            if dataset.replicas is not None:
+                all_replicas.extend(dataset.replicas)
 
         logger.info('Saving dataset access info for %d replicas.', len(all_replicas))
 
@@ -200,7 +201,7 @@ class DemandManager(object):
 
             dataset.demand.request_weight = request_weight
 
-            if len(dataset.replicas) != 0:
+            if dataset.replicas is not None and len(dataset.replicas) != 0:
                 # set the usage rank
                 # IntelROCCS implementation
                 # datasetRank = (1-used)*(now-creationDate)/(60*60*24) + \

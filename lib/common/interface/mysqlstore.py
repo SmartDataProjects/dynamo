@@ -106,6 +106,9 @@ class MySQLStore(LocalStoreInterface):
 
         self._mysql.query('USE ' + snapshot_name)
 
+    def _do_get_last_update(self): #override
+        return self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
+
     def _do_set_last_update(self, tm): #override
         self._mysql.query('UPDATE `system` SET `last_update` = FROM_UNIXTIME(%d)' % int(tm))
 
@@ -131,6 +134,9 @@ class MySQLStore(LocalStoreInterface):
         return site_names
 
     def _do_load_data(self, site_filt, dataset_filt, load_blocks, load_files, load_replicas): #override
+        # First set last_update
+        self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
+
         if type(site_filt) is list and len(site_filt) == 0:
             return [], [], []
 
@@ -270,10 +276,15 @@ class MySQLStore(LocalStoreInterface):
                     _dataset_id = dataset_id
 
                     dataset.blocks = []
+                    dataset.size = 0
+                    dataset.num_files = 0
     
                 block = Block(Block.translate_name(name), dataset, size, num_files, is_open)
     
                 dataset.blocks.append(block)
+                dataset.size += block.size
+                dataset.num_files += block.num_files
+
                 block_id_map[block_id] = block
     
                 num_blocks += 1
@@ -345,15 +356,12 @@ class MySQLStore(LocalStoreInterface):
                 dataset_replica.block_replicas.append(block_replica)
                 site.add_block_replica(block_replica)
 
-        # Finally set last_update
-        self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
-
         # Only the list of sites, groups, and datasets are returned
         return site_list, group_list, dataset_list
 
     def _do_load_dataset(self, dataset_name, load_blocks, load_files):
         query = 'SELECT d.`size`, d.`num_files`, d.`status`+0, d.`on_tape`, d.`data_type`+0, s.`cycle`, s.`major`, s.`minor`, s.`suffix`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open` FROM `datasets` AS d'
-        query += ' INNER JOIN `software_versions` AS s ON s.`id` = d.`software_version_id`'
+        query += ' LEFT JOIN `software_versions` AS s ON s.`id` = d.`software_version_id`'
         query += ' WHERE d.`name` = %s'
         result = self._mysql.query(query, dataset_name)
 
@@ -362,7 +370,10 @@ class MySQLStore(LocalStoreInterface):
 
         size, num_files, status, on_tape, data_type, s_cycle, s_major, s_minor, s_suffix, last_update, is_open = result[0]
         dataset = Dataset(dataset_name, size = size, num_files = num_files, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update, is_open = (is_open == 1))
-        dataset.software_version = (s_cycle, s_major, s_minor, s_suffix)
+        if s_cycle is None:
+            dataset.software_version = None
+        else:
+            dataset.software_version = (s_cycle, s_major, s_minor, s_suffix)
 
         if load_blocks:
             self._do_load_blocks(dataset)
@@ -848,7 +859,7 @@ class MySQLStore(LocalStoreInterface):
             all_accesses = []
             for replica in all_replicas:
                 dataset_id = dataset_id_map[replica.dataset]
-                site_id = sites_id_map[replica.site]
+                site_id = site_id_map[replica.site]
                 for date, access in replica.accesses[acc].items():
                     all_accesses.append((dataset_id, site_id, date, access))
 
@@ -1085,15 +1096,17 @@ class MySQLStore(LocalStoreInterface):
             return
 
         if tmp_join:
-            if self._mysql.table_exists('%s_map_tmp' % table):
-                self._mysql.query('DROP TABLE `%s_map_tmp`' % table)
+            tmp_table = '%s_map_tmp' % table
+            if self._mysql.table_exists(tmp_table):
+                self._mysql.query('DROP TABLE `%s`' % tmp_table)
 
-            self._mysql.query('CREATE TABLE `%s_map_tmp` (`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL, PRIMARY KEY (`name`)) ENGINE=MyISAM DEFAULT CHARSET=latin1')
-            self._mysql.insert_many('%s_map_tmp' % table, ('name'), lambda obj: obj.name, objects)
+            self._mysql.query('CREATE TABLE `%s` (`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL, PRIMARY KEY (`name`)) ENGINE=MyISAM DEFAULT CHARSET=latin1' % tmp_table)
+            obj_names = [(obj.name,) for obj in objects]
+            self._mysql.insert_many(tmp_table, ('name',), None, obj_names)
 
-            name_to_id = dict(self._mysql.query('SELECT `name`, `id` FROM `{table}` AS t1 INNER JOIN `{table}_map_tmp` AS t2 ON t2.`name` = t1.`name`'.format(table = table)))
+            name_to_id = dict(self._mysql.query('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_table)))
 
-            self._mysql.query('DROP TABLE `%s_map_tmp`' % table)
+            self._mysql.query('DROP TABLE `%s`' % tmp_table)
 
         else:
             name_to_id = dict(self._mysql.query('SELECT `name`, `id` FROM `%s`' % table))

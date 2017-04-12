@@ -350,3 +350,6 @@ if __name__ == '__main__':
     
             elif target == 'sites':
                 print manager.sites.keys()
+
+        elif command == 'last_update':
+            print manager.store.get_last_update()
