@@ -52,7 +52,7 @@ mysqlstore.db_params = {
 phedex = Configuration()
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'
 phedex.subscription_chunk_size = 4.e+13 # 40 TB
-phedex.cache_lifetime = 28800 # cache lifetime in seconds (8 hours)
+phedex.cache_lifetime = 21600 # cache lifetime in seconds (6 hours)
 
 dbs = Configuration()
 dbs.url_base = 'https://cmsweb.cern.ch/dbs/prod/global/DBSReader'
