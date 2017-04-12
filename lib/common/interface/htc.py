@@ -52,7 +52,7 @@ class HTCondor(object):
         Return ClassAds for jobs matching the constraints.
         """
 
-        logger.info('Querying HTCondor with constraint "%s" for attributes %s', constraint, str(attributes))
+        logger.debug('Querying HTCondor with constraint "%s" for attributes %s', constraint, str(attributes))
 
         classads = []
 

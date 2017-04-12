@@ -103,7 +103,7 @@ class InventoryManager(object):
         finally:
             self.store.release_lock()
 
-        logger.info('Data is loaded to memory. %d sites, %d groups, %d datasets, %d dataset replicas, %d block replicas.', len(self.sites), len(self.groups), len(self.datasets), num_dataset_replicas, num_block_replicas)
+        logger.info('Data is loaded to memory. %d sites, %d groups, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.sites), len(self.groups), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
     def update(self, dataset_filter = '/*/*/*', load_first = True, make_snapshot = True):
         """Query the dataSource and get updated information."""
@@ -351,5 +351,5 @@ if __name__ == '__main__':
             elif target == 'sites':
                 print manager.sites.keys()
 
-        elif command == 'last_update':
+        elif command == 'lastupdate':
             print manager.store.get_last_update()

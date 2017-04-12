@@ -96,6 +96,8 @@ class Policy(object):
         self.version = version
 
     def parse_rules(self, lines, inventory):
+        logger.info('Parsing policy stack for partition %s.', self.partition.name)
+
         if type(lines) is file:
             conf = lines
             lines = map(str.strip, conf.read().split('\n'))
@@ -215,6 +217,11 @@ class Policy(object):
                 self.uses_requests = True
             if rule.condition.uses_locks:
                 self.uses_locks = True
+
+        logger.info('Policy stack for %s: %d rules using', self.partition.name, len(self.rules))
+        logger.info(' Dataset access: ' + ('Y' if self.uses_accesses else 'N'))
+        logger.info(' Dataset requests: ' + ('Y' if self.uses_requests else 'N'))
+        logger.info(' Locks: ' + ('Y' if self.uses_locks else 'N') + '\n')
 
     def partition_replicas(self, datasets):
         """
