@@ -77,7 +77,7 @@ kwd['load_data'] = False
 inventory_manager = InventoryManager(**kwd)
 
 if args.force_inventory_update:
-    inventory_manager.update()
+    inventory_manager.update(make_snapshot = False)
 else:
     inventory_manager.load()
 
