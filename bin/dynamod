@@ -3,12 +3,22 @@
 # Process to run detox/dealer periodically.
 # --------------------------------------------------------------------------------------------------
 
+HOURS_PER_LOGFILE=12
+INVENTORY_UPDATE_INTERVAL=6
+
 while [ $# -gt 0 ]
 do
   case $1 in
     --test-run)
       TEST="--test-run -m test"
       shift
+      if [[ $2 =~ [1-9][0-9]* ]]
+      then
+        HOURS_PER_LOGFILE=$2
+        shift
+      else
+        HOURS_PER_LOGFILE=1
+      fi
       ;;
     *)
       echo "Unknown option $1"
@@ -16,9 +26,6 @@ do
       ;;
   esac
 done
-
-HOURS_PER_LOGFILE=12
-INVENTORY_UPDATE_INTERVAL=6
 
 export DYNAMO_BASE=$(dirname $(cd $(dirname ${BASH_SOURCE[0]}); pwd))
 source $DYNAMO_BASE/etc/profile.d/init.sh
@@ -47,6 +54,12 @@ do
   IHOUR=0
   while [ $IHOUR -lt $HOURS_PER_LOGFILE ]
   do
+    if [ $IHOUR -gt 0 ]
+    then
+      echo "Sleeping for 1 hour."
+      sleep 3600
+    fi
+
     APPLICATIONS=""
     if [ $(($IHOUR%$DYNAMO_DETOX_INTERVAL)) -eq 0 ]
     then
@@ -118,6 +131,7 @@ do
       if [ $IHOUR -eq $HOURS_PER_LOGFILE ] && [ $RC -ne 130 ]
       then
         # Clean unsubscribed data once every HOURS_PER_LOGFILE cycles
+        echo "Cleaning unsubscribed data."
         $DYNAMO_BASE/bin/dynamo detox $TEST --detox-partition 'Unsubscribed' --log-level INFO
       fi
   
@@ -136,8 +150,8 @@ do
     
       echo ""
     fi
+  
 
-    sleep 3600
   done
 
   if [ "$TEST" ]

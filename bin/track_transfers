@@ -221,7 +221,7 @@ for record in records:
         print 'Size: ', record.size
         print 'Copied: ', record.completed
 
-    total_volume += record.size
+    total_volume += request_total
     copied_volume += request_copied 
 
     rrd_arglist.append('AREA:copied#aaffcc:Copied \l')
@@ -314,3 +314,4 @@ for existing_png in existing_pngs:
 
 subprocess.call("rm /var/www/html/dynamo/dealermon/monitoring/*.png", shell=True)
 subprocess.call("cp /var/spool/dynamo/track_transfers/monitoring/*.png /var/www/html/dynamo/dealermon/monitoring/", shell=True)
+subprocess.call("cp -r /var/spool/dynamo/track_transfers/T* /var/www/html/dynamo/dealermon/monitoring/", shell=True)
