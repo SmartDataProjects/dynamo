@@ -501,9 +501,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             new_dataset = True
                             counters['new_datasets'] += 1
 
-                    if dataset.status == Dataset.STAT_IGNORED:
-                        continue
-
                     if dataset.blocks is None:
                         inventory.store.load_blocks(dataset)
 
@@ -545,17 +542,21 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             dataset.blocks.append(block)
                             dataset.size += block.size
                             dataset.num_files += block.num_files
-                            dataset.status = Dataset.STAT_PRODUCTION # trigger DBS query
+                            if dataset.status == Dataset.STAT_VALID:
+                                # there are some pretty crazy cases with ignored datasets. We've seen cases like two datasets with identical name, each
+                                # with its own list of blocks where PhEDEx "blockreplicas" and "data" and DBS "blocks" all don't agree
+                                dataset.status = Dataset.STAT_PRODUCTION # trigger DBS query
                             
-                            counters['new_blocks'] += 1
-                            new_block = True
+                                counters['new_blocks'] += 1
+                                new_block = True
 
                         elif block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
                             # block record was updated
                             block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
-                            dataset.status = Dataset.STAT_PRODUCTION
+                            if dataset.status == Dataset.STAT_VALID:
+                                dataset.status = Dataset.STAT_PRODUCTION
 
-                            updated_block = True
+                                updated_block = True
 
                         for replica_entry in block_entry['replica']:
                             if replica_entry['group'] not in gname_list:
@@ -649,8 +650,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         logger.info('Checking for updated datasets.')
 
         for dataset in inventory.datasets.values():
-            if dataset.status == Dataset.STAT_PRODUCTION or dataset.status == Dataset.STAT_IGNORED:
-                # dataset is already marked for further inspection
+            if dataset.status != Dataset.STAT_VALID:
+                # dataset is already marked for further inspection or ignored
                 continue
 
             if dataset.blocks is None or dataset.replicas is None:
@@ -865,7 +866,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 for entry in response[0]['dataset']:
                     dataset_names.remove(entry['name'])
 
-                    result[entry['name']] = entry
+                    # as crazy as it sounds, PhEDEx can have multiple independent records of identically named datasets
+                    try:
+                        result[entry['name']]['block'].extend(entry['block'])
+                    except KeyError:
+                        result[entry['name']] = entry
 
             # Repeat with level=file
             dataset_names = [d.name for d in list_chunk]
@@ -905,13 +910,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     try:
                         ds_entry = result[dataset.name]
                     except KeyError:
-                        # set the status to UNKNOWN. If DBS still has a record for this dataset, status will be reset in set_dataset_status_and_type
-                        dataset.status = Dataset.STAT_UNKNOWN
-                        # remove the blocks from the dataset. files belonging to the blocks are also unlinked
-                        if dataset.blocks is not None:
-                            for block in list(dataset.blocks):
-                                dataset.remove_block(block)
-
+                        # this function is called after make_replica_ links
+                        # i.e. "blockreplicas" knows about this dataset but "data" doesn't.
+                        # i.e. something is screwed up. set the status to IGNORED.
+                        dataset.status = Dataset.STAT_IGNORED
                         continue
     
                     dataset.is_open = (ds_entry['is_open'] == 'y')

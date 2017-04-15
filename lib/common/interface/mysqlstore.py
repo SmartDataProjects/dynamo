@@ -841,9 +841,9 @@ class MySQLStore(LocalStoreInterface):
 
     def _do_save_replica_accesses(self, all_replicas): #override
         site_id_map = {}
-        self._make_site_map(set(r.site for r in all_replicas), site_id_map = site_id_map)
+        self._make_site_map(list(set(r.site for r in all_replicas)), site_id_map = site_id_map)
         dataset_id_map = {}
-        self._make_dataset_map(set(r.dataset for r in all_replicas), dataset_id_map = dataset_id_map)
+        self._make_dataset_map(list(set(r.dataset for r in all_replicas)), dataset_id_map = dataset_id_map)
 
         if self._mysql.table_exists('dataset_accesses_new'):
             self._mysql.query('DROP TABLE `dataset_accesses_new`')
@@ -907,11 +907,11 @@ class MySQLStore(LocalStoreInterface):
 
     def _do_add_datasetreplicas(self, replicas): #override
         site_id_map = {}
-        self._make_site_map(set(r.site for r in replicas), site_id_map = site_id_map)
+        self._make_site_map(list(set(r.site for r in replicas)), site_id_map = site_id_map)
         group_id_map = {}
-        self._make_group_map(set(r.group for r in replicas), group_id_map = group_id_map)
+        self._make_group_map(list(set(r.group for r in replicas)), group_id_map = group_id_map)
         dataset_id_map = {}
-        self._make_dataset_map(set(r.dataset for r in replicas), dataset_id_map = dataset_id_map)
+        self._make_dataset_map(list(set(r.dataset for r in replicas)), dataset_id_map = dataset_id_map)
 
         # insert/update dataset replicas
         logger.info('Inserting/updating %d dataset replicas.', len(replicas))
@@ -949,11 +949,11 @@ class MySQLStore(LocalStoreInterface):
 
     def _do_add_blockreplicas(self, replicas): #override
         site_id_map = {}
-        self._make_site_map(set(r.site for r in replicas), site_id_map = site_id_map)
+        self._make_site_map(list(set(r.site for r in replicas)), site_id_map = site_id_map)
         group_id_map = {}
-        self._make_group_map(set(r.group for r in replicas), group_id_map = group_id_map)
+        self._make_group_map(list(set(r.group for r in replicas)), group_id_map = group_id_map)
         dataset_id_map = {}
-        self._make_dataset_map(set(r.dataset for r in replicas), dataset_id_map = dataset_id_map)
+        self._make_dataset_map(list(set(r.block.dataset for r in replicas)), dataset_id_map = dataset_id_map)
 
         all_replicas = []
         replica_sizes = []

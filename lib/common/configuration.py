@@ -1,4 +1,6 @@
 import os
+import re
+import time
 import logging
 from common.dataformat import Site
 
@@ -137,6 +139,14 @@ inventory.partitions = [
     ('Tape', lambda r: r.site.storage_type == Site.TYPE_MSS),
     ('Unsubscribed', lambda r: r.group is None),
     ('Physics', lambda r: r.group is not None and (r.group.name == 'AnalysisOps' or r.group.name == 'DataOps'))
+]
+# list of conditions for a PRODUCTION state dataset to become IGNORED (will still be reset to PRODUCTION if a new block replica is found)
+inventory.ignore_datasets = [
+    lambda d: (time.time() - d.last_update) / 3600. / 24. > 180,
+    lambda d: re.match('.*test.*', d.name, re.IGNORECASE),
+    lambda d: re.match('.*BUNNIES.*', d.name),
+    lambda d: re.match('.*/None.*', d.name),
+    lambda d: re.match('.*FAKE.*', d.name)
 ]
 
 demand = Configuration()

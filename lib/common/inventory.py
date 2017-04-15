@@ -143,6 +143,16 @@ class InventoryManager(object):
             # However this does not lead to any slowdown since we download the full file information for each dataset anyway.
             self.dataset_source.set_dataset_details(open_datasets)
 
+            for dataset in open_datasets:
+                if dataset.status != Dataset.STAT_PRODUCTION:
+                    # status changed
+                    continue
+
+                for cond in config.inventory.ignore_datasets:
+                    if cond(dataset):
+                        dataset.status = Dataset.STAT_IGNORED
+                        break
+
             self.replica_source.find_tape_copies(self.datasets)
 
             logger.info('Saving data.')
