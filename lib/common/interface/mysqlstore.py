@@ -959,7 +959,7 @@ class MySQLStore(LocalStoreInterface):
         replica_sizes = []
 
         for replica in replicas:
-            dataset_id = datasets_id_map[replica.block.dataset]
+            dataset_id = dataset_id_map[replica.block.dataset]
             site_id = site_id_map[replica.site]
             
             block_ids = {}
