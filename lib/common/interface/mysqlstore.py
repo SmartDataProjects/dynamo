@@ -908,8 +908,11 @@ class MySQLStore(LocalStoreInterface):
     def _do_add_datasetreplicas(self, replicas): #override
         site_id_map = {}
         self._make_site_map(list(set(r.site for r in replicas)), site_id_map = site_id_map)
+        groups = set()
+        for replica in replicas:
+            groups.update(block_replica.group for block_replica in replica.block_replicas)
         group_id_map = {}
-        self._make_group_map(list(set(r.group for r in replicas)), group_id_map = group_id_map)
+        self._make_group_map(list(groups), group_id_map = group_id_map)
         dataset_id_map = {}
         self._make_dataset_map(list(set(r.dataset for r in replicas)), dataset_id_map = dataset_id_map)
 

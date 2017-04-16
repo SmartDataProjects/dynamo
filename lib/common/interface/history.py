@@ -517,6 +517,16 @@ if __name__ == '__main__':
 
         interface.make_snapshot(tag = tag)
 
+    elif args.command == 'list':
+        try:
+            what = args.arguments[0]
+        except IndexError:
+            print 'Usage: list (snapshots|datasets|sites)'
+
+        if what == 'snapshots':
+            for snapshot in interface.list_snapshots():
+                print snapshot
+
     elif args.command == 'clean':
         try:
             tag = args.arguments[0]
