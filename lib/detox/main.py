@@ -32,26 +32,17 @@ class Detox(object):
 
         self.policies = {}
 
-    def set_policy(self, policy):
-        """
-        Can be called multiple times to set policies for different partitions.
-
-        @param policy  A Policy instance
-        """
-
-        self.policies[policy.partition] = policy
-
-    def run(self, partition, is_test = False, comment = '', auto_approval = True):
+    def run(self, policy, is_test = False, comment = '', auto_approval = True):
         """
         Main executable.
 
-        @param partition  A Site.Partition object
+        @param policy     A Detox Policy object
         @param is_test    Set to True when e.g. the main binary is invoked with --test-run option.
         @param comment    Passed to dynamo history as well as the deletion interface
         @param auto_approval
         """
 
-        logger.info('Detox cycle for %s starting at %s', partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
+        logger.info('Detox cycle for %s starting at %s', policy.partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
 
         if not config.read_only and not is_test:
             # write a file indicating detox activity
@@ -67,7 +58,7 @@ class Detox(object):
 
         # Execute the policy within a try block to avoid dead locks
         try:
-            self._execute_policy(self.policies[partition], is_test, comment, auto_approval)
+            self._execute_policy(policy, is_test, comment, auto_approval)
 
         finally:
             if not config.read_only and not is_test and os.path.exists(detox_config.activity_indicator):

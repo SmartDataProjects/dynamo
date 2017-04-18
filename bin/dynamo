@@ -111,10 +111,7 @@ if 'detox' in args.module:
     
     detox = Detox(inventory_manager, transaction_manager, demand_manager, history)
     
-    # Set up detox policies
-    
-    detox_partitions = []
-    
+    # Set up detox policies and run
     for part_spec in args.detox_partitions:
         partdef = part_spec.split(':')
 
@@ -133,7 +130,7 @@ if 'detox' in args.module:
         with open(def_path) as policy_def:    
             policy = Policy(partition, policy_def, policy_version, inventory_manager)
     
-        detox.set_policy(policy)
+        detox.run(policy, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
 
 if 'dealer' in args.module:
     # Main dealer object
@@ -155,12 +152,4 @@ if 'dealer' in args.module:
     undertaker.history = history
     policy.add_plugin(undertaker, 1)
     
-    dealer.set_policy(policy)
-
-
-if 'detox' in args.module:
-    for partition in detox_partitions:
-        detox.run(partition, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
-
-if 'dealer' in args.module:
-    dealer.run(Site.partitions['AnalysisOps'], is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
+    dealer.run(policy, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
