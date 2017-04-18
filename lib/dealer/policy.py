@@ -35,56 +35,57 @@ class DealerPolicy(object):
         @param priority  Priority factor
         """
 
-        if priority < 1:
-            raise RuntimeError('Invalid priority factor')
+        zero_prio = [(p, 0) for p, r in self._request_plugins if r == 0]
 
-        self._request_plugins.append((plugin, priority))
+        if priority == 0:
+            if len(self._request_plugins) != 0:
+                logger.warning('Throwing away existing plugins to make away for zero-priority plugin %s.', plugin.name)
+
+            self._request_plugins = zero_prio + [(plugin, 0)]
+        else:
+            if len(zero_prio) != 0:
+                raise RuntimeError('Plugins with priority == 0 exist. Cannot add a plugin with finite priority.')
+
+            self._request_plugins.append((plugin, priority))
 
     def collect_requests(self, inventory):
         """
         Collect requests from each plugin and return a prioritized list
         """
 
-        datasets = []
-        blocks = []
-        files = []
+        reqlists = []
 
         for plugin, priority in self._request_plugins:
-            d, b, f = plugin.get_requests(inventory, self.partition)
-            if len(d):
-                logger.debug('%s requesting %d datasets', plugin.name, len(d))
-                datasets.append((d, 1. / priority))
-            if len(b):
-                logger.debug('%s requesting %d blocks', plugin.name, len(b))
-                blocks.append((b, 1. / priority))
-            if len(f):
-                logger.debug('%s requesting %d files', plugin.name, len(f))
-                files.append((f, 1. / priority))
+            if priority == 0:
+                # all plugins must have priority 0 (see add_plugin)
+                # -> treat all as equal.
+                priority = 1
 
-        items = ([], [], [])
+            plugin_requests = plugin.get_requests(inventory, self.partition)
 
-        for il, itemlist in enumerate([datasets, blocks, files]):
-            while True:
-                total = sum(p for l, p in itemlist)
-                if total == 0.:
-                    break
+            logger.debug('%s requesting %d items', plugin.name, len(plugin_requests))
 
-                x = random.uniform(0., total)
-                t = 0.
-                i = 0
-                while i < len(itemlist):
-                    t += itemlist[i][1]
-                    if t >= x:
-                        l = itemlist[i][0]
-                        items[il].append(l.pop(0))
-                        break
-    
-                    i += 1
-    
-                if len(l) == 0:
-                    itemlist.pop(i)
+            if len(plugin_requests) != 0:
+                reqlists.append((plugin_requests, priority))
 
-        return items
+        requests = []
+
+        while len(reqlists) != 0:
+            pvalues = [1. / p for l, p in reqlists]
+            sums = [sum(pvalues[:i + 1]) for i in range(len(pvalues))]
+
+            # Classic weighted random-picking algorithm
+            # Select k if sum(w_{i})_{i <= k-1} w_{k} < x < sum(w_{i})_{i <= k} for x in Uniform(0, sum(w_{i}))
+            x = random.uniform(0., sums[-1])
+
+            ip = next(k for k in range(len(sums)) if x < sums[k])
+            reqlist = reqlists[ip][0]
+            requests.append(reqlist.pop(0))
+
+            if len(reqlist) == 0:
+                reqlists.pop(ip)
+
+        return requests
 
     def record(self, run_number, history, copy_list):
         for plugin, priority in self._request_plugins:

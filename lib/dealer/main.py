@@ -54,7 +54,7 @@ class Dealer(object):
 
         # Prioritized lists of datasets, blocks, and files
         # Plugins can specify the destination sites too - but is not passed the list of target sites to keep things simpler
-        items = policy.collect_requests(self.inventory_manager)
+        requests = policy.collect_requests(self.inventory_manager)
 
         logger.info('Determining the list of transfers to make.')
 
@@ -65,23 +65,23 @@ class Dealer(object):
                     site.status == Site.STAT_READY and \
                     site.active == Site.ACT_AVAILABLE and \
                     policy.target_site_def(site) and \
-                    site.storage_occupancy(partition, physical = False) < dealer_config.target_site_occupancy:
+                    site.storage_occupancy(policy.partition, physical = False) < dealer_config.target_site_occupancy:
 
                 target_sites.add(site)
 
-        copy_list = self.determine_copies(target_sites, items, policy.partition, policy.group, pending_volumes)
+        copy_list = self.determine_copies(target_sites, requests, policy.partition, policy.group, pending_volumes)
 
         policy.record(run_number, self.history, copy_list)
 
         logger.info('Committing copy.')
 
-        self.commit_copies(run_number, copy_list, group, is_test, comment, auto_approval)
+        self.commit_copies(run_number, copy_list, policy.group, is_test, comment, auto_approval)
 
         self.history.close_copy_run(run_number)
 
         logger.info('Finished dealer run at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
 
-    def determine_copies(self, target_sites, items, partition, group, pending_volumes):
+    def determine_copies(self, target_sites, requests, partition, group, pending_volumes):
         """
         Algorithm:
         1. Compute a time-weighted sum of number of requests for the last three days.
@@ -104,11 +104,11 @@ class Dealer(object):
             site_occupancy[site] = site.storage_occupancy(partition, physical = False)
 
         candidates = []
-        for entry in items:
-            if type(entry) is not tuple:
-                candidates.append((entry, None))
+        for request in requests:
+            if type(request) is tuple:
+                candidates.append(request)
             else:
-                candidates.append(entry)
+                candidates.append((request, None))
 
         # now go through all candidates
         for item, destination in candidates:
@@ -126,6 +126,8 @@ class Dealer(object):
             if destination is None:
                 #sorted from emptiest to busiest
                 sorted_sites = sorted(site_occupancy.items(), key = lambda (s, f): f)
+                
+                logger.info('Sites sorted by occupancy: %s', str(['%s(%.2f)' % (s.name, f) for s, f in sorted_sites]))
 
                 try:
                     destination = next(site for site, occupancy in sorted_sites if \

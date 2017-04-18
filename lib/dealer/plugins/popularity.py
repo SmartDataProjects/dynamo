@@ -9,9 +9,7 @@ logger = logging.getLogger(__name__)
 
 class PopularityHandler(BaseHandler):
     def __init__(self):
-        BaseHandler.__init__(self)
-
-        self.name = 'Popularity'
+        BaseHandler.__init__(self, 'Popularity')
         self._datasets = []
 
     def get_requests(self, inventory, partition): # override
@@ -70,7 +68,7 @@ class PopularityHandler(BaseHandler):
             if not added_request:
                 break
         
-        return datasets_to_request, [], []
+        return datasets_to_request
 
     def save_record(self, run_number, history, copy_list): # override
         history.save_dataset_popularity(run_number, self._datasets)

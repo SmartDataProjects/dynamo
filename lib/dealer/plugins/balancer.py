@@ -10,18 +10,16 @@ logger = logging.getLogger(__name__)
 
 class BalancingHandler(BaseHandler):
     def __init__(self):
-        BaseHandler.__init__(self)
-
-        self.name = 'Balancer'
+        BaseHandler.__init__(self, 'Balancer')
         self.history = None
 
     def get_requests(self, inventory, partition):
         if self.history is None:
-            return [], [], []
+            return []
 
         latest_run = self.history.get_latest_deletion_run(partition.name)
         
-        logger.info('Balancing site occupancy based on the protected fractions in the latest run %d', latest_run)
+        logger.info('Balancing site occupancy based on the protected fractions in the latest cycle %d', latest_run)
 
         deletion_decisions = self.history.get_deletion_decisions(latest_run, size_only = False)
 
@@ -101,7 +99,7 @@ class BalancingHandler(BaseHandler):
 
             total_size += size
 
-        return request, [], []
+        return request
 
     def save_record(self, run_number, history, copy_list):
         pass

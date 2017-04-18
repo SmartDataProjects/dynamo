@@ -1,6 +1,6 @@
 class BaseHandler(object):
-    def __init__(self):
-        pass
+    def __init__(self, name):
+        self.name = name
 
     def get_requests(self, inventory, partition):
         """
