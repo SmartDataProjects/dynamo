@@ -243,6 +243,10 @@ class Site(object):
         self._partition_quota[index] = quota
 
     def storage_occupancy(self, partitions = [], physical = True):
+        """
+        Returns the occupancy fraction for the partition.
+        """
+
         if type(partitions) is not list:
             partitions = [partitions]
 
@@ -273,6 +277,10 @@ class Site(object):
                 return numer / denom
 
     def quota(self, partitions = []):
+        """
+        Returns site quota for the partition in TB.
+        """
+
         if len(partitions) == 0:
             return sum(self._partition_quota)
         else:
