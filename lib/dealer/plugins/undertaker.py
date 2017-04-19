@@ -27,7 +27,7 @@ class Undertaker(BaseHandler):
 
         bad_sites = [site for site in inventory.sites.values() if site.status != Site.STAT_READY]
 
-        datasets = []
+        requests = []
 
         total_size = 0.
 
@@ -55,6 +55,8 @@ class Undertaker(BaseHandler):
                     # this dataset is no more at site
                     continue
 
+                # are there blocks at site that are nowhere else?
+
                 covered_blocks = set()
                 for replica in dataset.replicas:
                     if replica == site_replica or replica.site in bad_sites:
@@ -64,12 +66,18 @@ class Undertaker(BaseHandler):
 
                 blocks_on_site = set(br.block for br in site_replica.block_replicas)
 
-                # are there blocks at site that are nowhere else?
-                if len(blocks_on_site - covered_blocks) != 0:
-                    logger.debug('%s has a last copy block at %s', ds_name, site.name)
-                    datasets.append(dataset)
+                blocks_only_at_site = blocks_on_site - covered_blocks
 
-                    total_size += size
+                if len(blocks_only_at_site) != 0:
+                    logger.debug('%s has a last copy block at %s', ds_name, site.name)
+
+                    if blocks_only_at_site == set(dataset.blocks):
+                        # the entire dataset needs to be transferred off
+                        requests.append(dataset)
+                        total_size += dataset.size
+                    else:
+                        requests.append(list(blocks_only_at_site))
+                        total_size += sum(b.size for b in blocks_only_at_site)
     
         logger.info('Offloading protected datasets from non-ready sites %s (total size %.1f TB)', str([s.name for s in bad_sites]), total_size * 1.e-12)
 

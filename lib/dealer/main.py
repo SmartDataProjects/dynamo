@@ -116,10 +116,25 @@ class Dealer(object):
                 item_name = item.name
                 find_replica_at = lambda s: s.find_dataset_replica(item)
                 make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(item, s, group)
-            else:
+
+            elif type(item) is Block:
                 item_name = item.dataset.name + '#' + item.real_name()
                 find_replica_at = lambda s: s.find_block_replica(item)
                 make_new_replica_at = lambda s: self.inventory_manager.add_block_to_site(item, s, group)
+
+            elif type(item) is list:
+                # list of blocks (must belong to the same dataset)
+                if len(item) == 0:
+                    continue
+
+                dataset = item[0].dataset
+                item_name = dataset.name
+                find_replica_at = lambda s: s.find_dataset_replica(dataset)
+                make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(dataset, s, group, blocks = items)
+
+            else:
+                logger.warning('Invalid request found. Skipping.')
+                continue
 
             size = item.size * 1.e-12
 

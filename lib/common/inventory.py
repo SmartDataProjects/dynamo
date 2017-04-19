@@ -211,7 +211,7 @@ class InventoryManager(object):
             site.dataset_replicas.clear()
             site.clear_block_replicas()
 
-    def add_dataset_to_site(self, dataset, site, group = None):
+    def add_dataset_to_site(self, dataset, site, group = None, blocks = None):
         """
         Create a new DatasetReplica object and return.
         """
@@ -228,7 +228,10 @@ class InventoryManager(object):
         if dataset.blocks is None:
             self.load_blocks(dataset)
 
-        for block in dataset.blocks:
+        if blocks is None:
+            blocks = dataset.blocks
+
+        for block in blocks:
             block_replica = BlockReplica(block, site, group, is_complete = False, is_custodial = False, size = 0)
             new_replica.block_replicas.append(block_replica)
             site.add_block_replica(block_replica)
