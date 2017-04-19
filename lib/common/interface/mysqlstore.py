@@ -783,7 +783,7 @@ class MySQLStore(LocalStoreInterface):
 
         all_replicas = []
         for dataset in datasets:
-            if dataset.replicas is not None:
+            if dataset.status != Dataset.STAT_UNKNOWN and dataset.replicas is not None:
                 all_replicas.extend(dataset.replicas)
 
         self._mysql.insert_many('dataset_replicas_new', fields, mapping, all_replicas, do_update = False)
@@ -803,7 +803,7 @@ class MySQLStore(LocalStoreInterface):
         all_replicas = []
         replica_sizes = []
         for dataset in datasets:
-            if dataset.replicas is None:
+            if dataset.status == Dataset.STAT_UNKNOWN or dataset.replicas is None:
                 continue
 
             for replica in dataset.replicas:
