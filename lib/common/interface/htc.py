@@ -19,7 +19,7 @@ class HTCondor(object):
 
         self._collector = htcondor.Collector(collector)
 
-        logger.info('Finding schedds reporting to collector %s', collector)
+        logger.debug('Finding schedds reporting to collector %s', collector)
 
         attempt = 0
         while True:
@@ -45,7 +45,7 @@ class HTCondor(object):
 
             self._schedds.append(schedd)
 
-        logger.info('Found schedds: %s', ', '.join(['%s (%s)' % (schedd.host, schedd.ipaddr) for schedd in self._schedds]))
+        logger.debug('Found schedds: %s', ', '.join(['%s (%s)' % (schedd.host, schedd.ipaddr) for schedd in self._schedds]))
 
     def find_jobs(self, constraint = 'True', attributes = []):
         """
