@@ -9,28 +9,28 @@ from common.dataformat import Block
 
 logger = logging.getLogger(__name__)
 
-class MySQLLockInterface(ReplicaLockInterface):
+class MySQLLockInterface(object):
     """
-    Implementation of ReplicaLockInterface using a DB.
+    A plugin for DemandManager that appends lists of block replicas that are locked.
+    Sets one demand value:
+      locked_blocks:   {site: set of blocks}
     """
 
     def __init__(self, db_params = config.mysqllock.db_params):
-        ReplicaLockInterface.__init__(self)
-        
         self._mysql = MySQL(**db_params)
 
-    def update(self, inventory): #override
-        self.locked_blocks = collections.defaultdict(list)
+    def load(self, inventory):
+        self.update(inventory)
 
-        entries = self._mysql.query('SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `enabled` = 1')
+    def update(self, inventory):
+        entries = self._mysql.query('SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `unlock_date` IS NULL')
 
         for item_name, sites_pattern, groups_pattern in entries:
             if '#' in item_name:
                 dataset_name, block_real_name = item_name.split('#')
-                block_name = Block.translate_name(block_real_name)
             else:
                 dataset_name = item_name
-                block_name = 0
+                block_real_name = None
 
             try:
                 dataset = inventory.datasets[dataset_name]
@@ -41,49 +41,67 @@ class MySQLLockInterface(ReplicaLockInterface):
             if dataset.replicas is None:
                 continue
 
-            if block_name != 0:
-                block = dataset.find_block(block_name)
+            if dataset.blocks is None:
+                inventory.store.load_blocks(dataset)
+
+            if block_real_name is None:
+                blocks = list(dataset.blocks)
+            else:
+                block = dataset.find_block(Block.translate_name(block_real_name))
                 if block is None:
                     logger.debug('Cannot lock unknown block %s#%s', dataset_name, block_real_name)
                     continue
 
-                locked_blocks = [block]
+                blocks = [block]
 
-            else:
-                locked_blocks = list(dataset.blocks)
-
-            sites = []
+            sites = set()
             if sites_pattern:
-                # if no site matches the pattern, we will be on the safe side and treat it as a global lock
                 if '*' in sites_pattern:
-                    sites = [s for n, s in inventory.sites.items() if fnmatch.fnmatch(n, sites_pattern)]
+                    sites.update(s for n, s in inventory.sites.items() if fnmatch.fnmatch(n, sites_pattern))
                 else:
                     try:
-                        sites = [inventory.sites[sites_pattern]]
+                        sites.update(inventory.sites[sites_pattern])
                     except KeyError:
                         pass
 
-            groups = []
+            if len(sites) == 0:
+                # if no site matches the pattern, we will be on the safe side and treat it as a global lock
+                sites.update(r.site for r in dataset.replicas)
+
+            groups = set()
             if groups_pattern:
-                # if no group matches the pattern, we will be on the safe side and treat it as a global lock
                 if '*' in groups_pattern:
-                    groups = [g for n, g in inventory.groups.items() if fnmatch.fnmatch(n, groups_pattern)]
+                    groups.update(g for n, g in inventory.groups.items() if fnmatch.fnmatch(n, groups_pattern))
                 else:
                     try:
-                        groups = [inventory.groups[groups_pattern]]
+                        groups.update(inventory.groups[groups_pattern])
                     except KeyError:
                         pass
+
+            if len(groups) == 0:
+                # if no group matches the pattern, we will be on the safe side and treat it as a global lock
+                for replica in dataset.replicas:
+                    groups.update(brep.group for brep in replica.block_replicas)
+
+            try:
+                locked_blocks = dataset.demand['locked_blocks']
+            except KeyError:
+                locked_blocks = dataset.demand['locked_blocks'] = {}
 
             for replica in dataset.replicas:
-                if len(sites) != 0 and replica.site not in sites:
+                if replica.site not in sites:
                     continue
 
+                if site not in locked_blocks:
+                    locked_blocks[site] = set()
+
                 for block_replica in replica.block_replicas:
-                    if len(groups) != 0 and block_replica.group not in groups:
+                    if block_replica.group not in groups:
                         continue
 
-                    if block_replica.block in locked_blocks:
-                        self.locked_blocks[dataset].append(block_replica)
+                    if block_replica.block in blocks:
+                        locked_blocks[site].add(block_replica.block)
+
 
 if __name__ == '__main__':
     # Unit test
@@ -98,4 +116,18 @@ if __name__ == '__main__':
 
     locks.update(inventory)
 
-    pprint.pprint(locks.locked_blocks)
+    all_locks = []
+
+    for dataset in inventory.datasets.values():
+        try:
+            locked_blocks = dataset.demand['locked_blocks']
+        except KeyError:
+            continue
+
+        for site, blocks in locked_blocks.items():
+            if blocks == set(dataset.blocks):
+                all_locks.append((site.name, dataset.name))
+            else:
+                all_locks.append((site.name, dataset.name, [b.real_name() for b in blocks]))
+
+    pprint.pprint(all_locks)

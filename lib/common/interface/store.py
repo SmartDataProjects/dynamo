@@ -251,34 +251,32 @@ class LocalStoreInterface(object):
 
     def load_replica_accesses(self, sites, datasets):
         """
-        Load dataset replica access data into the existing list of datasets (.replicas)
-        Return the last update time stamp.
+        @param sites    List of sites
+        @param datasets List of datasets
+        @returns (last update date, {replica: {date: (num_access, cputime)}})
         """
 
         logger.debug('_do_load_replica_accesses()')
 
         self.acquire_lock()
         try:
-            last_update = self._do_load_replica_accesses(sites, datasets)
+            return self._do_load_replica_accesses(sites, datasets)
         finally:
             self.release_lock()
 
-        return last_update
-
     def load_dataset_requests(self, datasets):
         """
-        Load requests to datasets.
+        @param datasets  List of datasets
+        @returns (last update unix timestamp, {dataset: {job_id: (queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued)}})
         """
 
         logger.debug('_do_load_dataset_requests()')
 
         self.acquire_lock()
         try:
-            last_update = self._do_load_dataset_requests(datasets)
+            return self._do_load_dataset_requests(datasets)
         finally:
             self.release_lock()
-
-        return last_update
 
     def save_data(self, sites, groups, datasets):
         """
@@ -355,10 +353,10 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
-    def save_replica_accesses(self, replicas):
+    def save_replica_accesses(self, access_list):
         """
         Write information in memory into persistent storage.
-        Argument is a list of dataset replicas.
+        @param access_list  {replica: {date: (num_access, cputime)}}
         """
 
         if config.read_only:
@@ -367,15 +365,15 @@ class LocalStoreInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_replica_accesses(replicas)
+            self._do_save_replica_accesses(access_list)
             self.set_last_update()
         finally:
             self.release_lock()
 
-    def save_dataset_requests(self, datasets):
+    def save_dataset_requests(self, request_list):
         """
         Write information in memory into persistent storage.
-        Argument is a list of datasets with request information.
+        @param request_list  Data on updated requests. Same format as load_dataset_request return value [1]
         """
 
         if config.read_only:
@@ -384,7 +382,7 @@ class LocalStoreInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_dataset_requests(datasets)
+            self._do_save_dataset_requests(request_list)
             self.set_last_update()
         finally:
             self.release_lock()

@@ -456,19 +456,17 @@ class MySQLStore(LocalStoreInterface):
             if dataset.replicas is None:
                 continue
 
-            for replica in dataset.replicas:
-                replica.accesses[DatasetReplica.ACC_LOCAL].clear()
-                replica.accesses[DatasetReplica.ACC_REMOTE].clear()
+        access_list = {}
 
         # pick up all accesses that are less than 1 year old
         # old accesses will eb removed automatically next time the access information is saved from memory
-        accesses = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses`, `cputime` FROM `dataset_accesses` WHERE `date` > DATE_SUB(NOW(), INTERVAL 2 YEAR) ORDER BY `dataset_id`, `site_id`, `date`')
+        records = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses`, `cputime` FROM `dataset_accesses` WHERE `date` > DATE_SUB(NOW(), INTERVAL 2 YEAR) ORDER BY `dataset_id`, `site_id`, `date`')
 
         # little speedup by not repeating lookups for the same replica
         current_dataset_id = 0
         current_site_id = 0
         replica = None
-        for dataset_id, site_id, year, month, day, access_type, num_accesses, cputime in accesses:
+        for dataset_id, site_id, year, month, day, access_type, num_accesses, cputime in records:
             if dataset_id != current_dataset_id:
                 try:
                     dataset = id_dataset_map[dataset_id]
@@ -496,29 +494,31 @@ class MySQLStore(LocalStoreInterface):
                     # this dataset is not at the site any more
                     continue
 
+                access_list[replica] = {}
+
             date = datetime.date(year, month, day)
-            replica.accesses[int(access_type)][date] = DatasetReplica.Access(num_accesses, cputime)
+
+            access_list[replica][date] = (num_accesses, cputime)
 
         last_update = datetime.datetime.utcfromtimestamp(self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0])
 
-        logger.info('Loaded %d replica access data. Last update on %s UTC', len(accesses), last_update.strftime('%Y-%m-%d'))
+        logger.info('Loaded %d replica access data. Last update on %s UTC', len(records), last_update.strftime('%Y-%m-%d'))
 
-        return last_update.date()
+        return (last_update.date(), access_list)
 
     def _do_load_dataset_requests(self, datasets): #override
         id_dataset_map = {}
         self._make_dataset_map(datasets, id_dataset_map = id_dataset_map)
 
-        for dataset in datasets:
-            dataset.requests = []
-
         # pick up requests that are less than 1 year old
         # old requests will be removed automatically next time the access information is saved from memory
-        requests = self._mysql.query('SELECT `id`, `dataset_id`, UNIX_TIMESTAMP(`queue_time`), UNIX_TIMESTAMP(`completion_time`), `nodes_total`, `nodes_done`, `nodes_failed`, `nodes_queued` FROM `dataset_requests` WHERE `queue_time` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY `dataset_id`, `queue_time`')
+        records = self._mysql.query('SELECT `dataset_id`, `id`, UNIX_TIMESTAMP(`queue_time`), UNIX_TIMESTAMP(`completion_time`), `nodes_total`, `nodes_done`, `nodes_failed`, `nodes_queued` FROM `dataset_requests` WHERE `queue_time` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY `dataset_id`, `queue_time`')
+
+        requests = {}
 
         # little speedup by not repeating lookups for the same dataset
         current_dataset_id = 0
-        for job_id, dataset_id, queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued  in requests:
+        for dataset_id, job_id, queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued in records:
             if dataset_id != current_dataset_id:
                 try:
                     dataset = id_dataset_map[dataset_id]
@@ -526,26 +526,15 @@ class MySQLStore(LocalStoreInterface):
                     continue
 
                 current_dataset_id = dataset_id
+                requests[dataset] = {}
 
-            request = DatasetRequest(
-                job_id = job_id,
-                queue_time = queue_time,
-                completion_time = completion_time,
-                nodes_total = nodes_total,
-                nodes_done = nodes_done,
-                nodes_failed = nodes_failed,
-                nodes_queued = nodes_queued
-            )
+            requests[dataset][job_id] = (queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued)
 
-            dataset.requests.append(request)
+        last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
 
-            update = datetime.datetime.utcfromtimestamp(completion_time)
+        logger.info('Loaded %d dataset request data. Last update at %s UTC', len(records), datetime.datetime.utcfromtimestamp(last_update).strftime('%Y-%m-%d %H:%M:%S'))
 
-        last_update = datetime.datetime.utcfromtimestamp(self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0])
-
-        logger.info('Loaded %d dataset request data. Last update at %s UTC', len(requests), last_update.strftime('%Y-%m-%d %H:%M:%S'))
-
-        return last_update
+        return (last_update, requests)
 
     def _do_save_sites(self, sites): #override
         # insert/update sites
@@ -839,70 +828,57 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('RENAME TABLE `block_replica_sizes_new` TO `block_replica_sizes`')
         self._mysql.query('DROP TABLE `block_replica_sizes_old`')
 
-    def _do_save_replica_accesses(self, all_replicas): #override
+    def _do_save_replica_accesses(self, access_list): #override
+        replicas = access_list.keys()
+
         site_id_map = {}
-        self._make_site_map(list(set(r.site for r in all_replicas)), site_id_map = site_id_map)
+        self._make_site_map(list(set(r.site for r in replicas)), site_id_map = site_id_map)
         dataset_id_map = {}
-        self._make_dataset_map(list(set(r.dataset for r in all_replicas)), dataset_id_map = dataset_id_map)
-
-        if self._mysql.table_exists('dataset_accesses_new'):
-            self._mysql.query('DROP TABLE `dataset_accesses_new`')
-
-        self._mysql.query('CREATE TABLE `dataset_accesses_new` LIKE `dataset_accesses`')
+        self._make_dataset_map(list(set(r.dataset for r in replicas)), dataset_id_map = dataset_id_map)
 
         fields = ('dataset_id', 'site_id', 'date', 'access_type', 'num_accesses', 'cputime')
 
-        for acc, access_type in [(DatasetReplica.ACC_LOCAL, 'local'), (DatasetReplica.ACC_REMOTE, 'remote')]:
-            mapping = lambda (dataset_id, site_id, date, access): (dataset_id, site_id, date.strftime('%Y-%m-%d'), access_type, access.num_accesses, access.cputime)
+        data = []
+        for replica, replica_access_list in access_list.items():
+            dataset_id = dataset_id_map[replica.dataset]
+            site_id = site_id_map[replica.site]
 
-            # instead of inserting by datasets or by sites, collect all access information into a single list
-            all_accesses = []
-            for replica in all_replicas:
-                dataset_id = dataset_id_map[replica.dataset]
-                site_id = site_id_map[replica.site]
-                for date, access in replica.accesses[acc].items():
-                    all_accesses.append((dataset_id, site_id, date, access))
+            for date, (num_accesses, cputime) in site_access_list.items():
+                data.append((dataset_id, site_id, date.strftime('%Y-%m-%d'), num_accesses, cputime))
 
-            self._mysql.insert_many('dataset_accesses_new', fields, mapping, all_accesses, do_update = False)
+        self._mysql.insert_many('dataset_accesses', fields, None, data, do_update = True)
 
-        self._mysql.query('RENAME TABLE `dataset_accesses` TO `dataset_accesses_old`')
-        self._mysql.query('RENAME TABLE `dataset_accesses_new` TO `dataset_accesses`')
-        self._mysql.query('DROP TABLE `dataset_accesses_old`')
-
+        # remove old entries
+        self._mysql.query('DELETE FROM `dataset_accesses` WHERE `date` < DATE_SUB(NOW(), INTERVAL 2 YEAR)')
         self._mysql.query('UPDATE `system` SET `dataset_accesses_last_update` = NOW()')
 
-    def _do_save_dataset_requests(self, datasets): #override
+    def _do_save_dataset_requests(self, request_list): #override
+        datasets = request_list.keys()
+
         dataset_id_map = {}
         self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
 
-        all_requests = []
-        for dataset in datasets:
-            for request in dataset.requests:
-                all_requests.append((dataset, request))
-            
-        if self._mysql.table_exists('dataset_requests_new'):
-            self._mysql.query('DROP TABLE `dataset_requests_new`')
-
-        self._mysql.query('CREATE TABLE `dataset_requests_new` LIKE `dataset_requests`')
-
         fields = ('id', 'dataset_id', 'queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued')
-        mapping = lambda (d, r): (
-            r.job_id,
-            dataset_id_map[d],
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.queue_time)),
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.completion_time)) if r.completion_time > 0 else '0000-00-00 00:00:00',
-            r.nodes_total,
-            r.nodes_done,
-            r.nodes_failed,
-            r.nodes_queued
-        )
 
-        self._mysql.insert_many('dataset_requests_new', fields, mapping, all_requests, do_update = False)
+        data = []
+        for dataset, dataset_request_list in request_list.items():
+            dataset_id = dataset_id_map[dataset],
 
-        self._mysql.query('RENAME TABLE `dataset_requests` TO `dataset_requests_old`')
-        self._mysql.query('RENAME TABLE `dataset_requests_new` TO `dataset_requests`')
-        self._mysql.query('DROP TABLE `dataset_requests_old`')
+            for job_id, (queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued) in dataset_request_list.items():
+                data.append((
+                    job_id,
+                    dataset_id,
+                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(queue_time)),
+                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(completion_time)) if completion_time > 0 else '0000-00-00 00:00:00',
+                    nodes_total,
+                    nodes_done,
+                    nodes_failed,
+                    nodes_queued
+                ))
 
+        self._mysql.insert_many('dataset_requests', fields, None, data, do_update = True)
+
+        self._mysql.query('DELETE FROM `dataset_requests` WHERE `queue_time` < DATE_SUB(NOW(), INTERVAL 1 YEAR)')
         self._mysql.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()')
 
     def _do_add_datasetreplicas(self, replicas): #override

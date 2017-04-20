@@ -68,6 +68,10 @@ sitedb.url_base = 'https://cmsweb.cern.ch/sitedb/data/prod'
 
 popdb = Configuration()
 popdb.url_base = 'https://cmsweb.cern.ch/popdb'
+popdb.max_back_query = 7 # maximum number of dates interval to obtain records for; 7 days
+
+jobqueue = Configuration()
+jobqueue.weight_halflife = 3. # half life of job queue weight in days
 
 globalqueue = Configuration()
 globalqueue.collector = 'cmsgwms-collector-global.cern.ch:9620'
@@ -152,11 +156,3 @@ inventory.ignore_datasets = [
 demand = Configuration()
 demand.access_history = Configuration()
 demand.access_history.increment = 24 * 3600 # 24 hours
-demand.access_history.max_back_query = 7 # maximum number of dates interval to obtain records for; 7 days
-# give weight of bin[1] to now - bin[0]
-demand.weight_time_bins = [
-    (3600 * 24 * 7, 0.1),
-    (3600 * 24 * 3, 0.5),
-    (3600 * 24, 0.7),
-    (3600 * 12, 1.)
-]
