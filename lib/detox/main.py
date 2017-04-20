@@ -30,8 +30,6 @@ class Detox(object):
         self.demand_manager = demand
         self.history = history
 
-        self.policies = {}
-
     def run(self, policy, is_test = False, comment = '', auto_approval = True):
         """
         Main executable.
@@ -78,7 +76,7 @@ class Detox(object):
         self.history.save_conditions(policy.rules)
 
         # update requests, popularity, and locks
-        self.demand_manager.update(self.inventory_manager, accesses = policy.uses_accesses, requests = policy.uses_requests, locks = policy.uses_locks)
+        self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
 
         # update site status
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates

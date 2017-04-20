@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 class PopularityHandler(BaseHandler):
     def __init__(self):
         BaseHandler.__init__(self, 'Popularity')
+        self.used_demand_plugins.append('dataset_request')
+
         self._datasets = []
 
     def get_requests(self, inventory, partition): # override
@@ -21,7 +23,12 @@ class PopularityHandler(BaseHandler):
                 # this dataset has no replica in the pool to begin with
                 continue
 
-            if dataset.demand.request_weight <= 0.:
+            try:
+                request_weight = dataset.demand['request_weight']
+            except KeyError:
+                continue
+
+            if request_weight <= 0.:
                 continue
 
             if dataset.size * 1.e-12 > config.max_dataset_size:
@@ -43,13 +50,13 @@ class PopularityHandler(BaseHandler):
 
             self._datasets.append(dataset)
 
-            num_requests = min(config.max_replicas, int(math.ceil(dataset.demand.request_weight / config.request_to_replica_threshold))) - len(dataset.replicas)
+            num_requests = min(config.max_replicas, int(math.ceil(request_weight / config.request_to_replica_threshold))) - len(dataset.replicas)
             if num_requests <= 0:
                 continue
 
             requests.append((dataset, num_requests))
             
-        requests.sort(key = lambda x: x[0].demand.request_weight, reverse = True)
+        requests.sort(key = lambda x: x[0].demand['request_weight'], reverse = True)
 
         datasets_to_request = []
 

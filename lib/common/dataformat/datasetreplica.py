@@ -1,13 +1,5 @@
-import time
-import collections
-
 class DatasetReplica(object):
     """Represents a dataset replica. Combines dataset and site information."""
-
-    # Access types.
-    # Starting from 1 to play better with MySQL.
-    ACC_LOCAL, ACC_REMOTE = range(1, 3)
-    Access = collections.namedtuple('Access', ['num_accesses', 'cputime'])
 
     def __init__(self, dataset, site, is_complete = False, is_custodial = False, last_block_created = 0):
         self.dataset = dataset
@@ -16,7 +8,6 @@ class DatasetReplica(object):
         self.is_custodial = is_custodial
         self.last_block_created = last_block_created
         self.block_replicas = []
-        self.accesses = {DatasetReplica.ACC_LOCAL: {}, DatasetReplica.ACC_REMOTE: {}} # UTC date -> Accesses
 
     def unlink(self):
         self.dataset.replicas.remove(self)
@@ -32,13 +23,10 @@ class DatasetReplica(object):
 
     def __str__(self):
         return 'DatasetReplica {site}:{dataset} (is_complete={is_complete}, is_custodial={is_custodial},' \
-            ' {block_replicas_size} block_replicas,' \
-            ' #accesses[LOCAL]={num_local_accesses}, #accesses[REMOTE]={num_remote_accesses})'.format(
+            ' {block_replicas_size} block_replicas)'.format(
                 site = self.site.name, dataset = self.dataset.name, is_complete = self.is_complete,
                 is_custodial = self.is_custodial,
-                block_replicas_size = len(self.block_replicas),
-                num_local_accesses = len(self.accesses[DatasetReplica.ACC_LOCAL]),
-                num_remote_accesses = len(self.accesses[DatasetReplica.ACC_REMOTE]))
+                block_replicas_size = len(self.block_replicas))
 
     def __repr__(self):
         rep = 'DatasetReplica(%s,\n' % repr(self.dataset)
@@ -104,12 +92,3 @@ class DatasetReplica(object):
 
         except StopIteration:
             return None
-
-    def last_access(self):
-        try:
-            last_datetime = max(replica.accesses[DatasetReplica.ACC_LOCAL].keys() + replica.accesses[DatasetReplica.ACC_REMOTE].keys())
-        except:
-            return 0
-
-        return time.mktime(last_datetime.utctimetuple())
-

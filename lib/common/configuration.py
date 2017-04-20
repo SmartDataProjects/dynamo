@@ -152,7 +152,3 @@ inventory.ignore_datasets = [
     lambda d: re.match('.*/None.*', d.name),
     lambda d: re.match('.*FAKE.*', d.name)
 ]
-
-demand = Configuration()
-demand.access_history = Configuration()
-demand.access_history.increment = 24 * 3600 # 24 hours

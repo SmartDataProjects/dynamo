@@ -34,7 +34,7 @@ class Dealer(object):
             if policy.partition.name != 'Global':
                 comment += ' for %s partition.' % policy.partition.name
 
-        self.demand_manager.update(self.inventory_manager, accesses = False, requests = True, locks = False)
+        self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
         run_number = self.history.new_copy_run(policy.partition.name, policy.version, is_test = is_test, comment = comment)

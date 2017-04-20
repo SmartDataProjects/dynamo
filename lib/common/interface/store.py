@@ -253,7 +253,7 @@ class LocalStoreInterface(object):
         """
         @param sites    List of sites
         @param datasets List of datasets
-        @returns (last update date, {replica: {date: (num_access, cputime)}})
+        @returns (last update date, {replica: {date: num_access}})
         """
 
         logger.debug('_do_load_replica_accesses()')

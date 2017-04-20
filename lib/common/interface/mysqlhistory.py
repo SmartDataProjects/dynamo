@@ -427,7 +427,7 @@ class MySQLHistory(TransactionHistoryInterface):
             self._make_dataset_id_map()
 
         fields = ('run_id', 'dataset_id', 'popularity')
-        mapping = lambda dataset: (run_number, self._dataset_id_map[dataset.name], dataset.demand.request_weight)
+        mapping = lambda dataset: (run_number, self._dataset_id_map[dataset.name], dataset.demand['request_weight'] if 'request_weight' in dataset.demand else 0.)
         self._mysql.insert_many('dataset_popularity_snapshots', fields, mapping, datasets)
 
     def _do_get_incomplete_copies(self, partition): #override

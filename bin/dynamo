@@ -11,14 +11,6 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Dynamo')
 parser.add_argument('module', metavar = 'MODULE', nargs = '+', help = 'detox and/or dealer.')
-parser.add_argument('--store', '-i', metavar = 'CLASS', dest = 'store_cls', default = '', help = 'Store backend class.')
-parser.add_argument('--site-source', '-s', metavar = 'CLASS', dest = 'site_source_cls', default = '', help = 'SiteInfoSourceInterface class.')
-parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class.')
-parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class.')
-parser.add_argument('--access-history', '-a', metavar = 'CLASS', dest = 'access_history_cls', default = '', help = 'AccessHistoryInterface class.')
-parser.add_argument('--lock', '-k', metavar = 'CLASS', dest = 'lock_cls', default = '', help = 'LockInterface class.')
-parser.add_argument('--deletion', '-d', metavar = 'CLASS', dest = 'deletion_cls', default = '', help = 'DeletionInterface class.')
-parser.add_argument('--copy', '-c', metavar = 'CLASS', dest = 'copy_cls', default = '', help = 'CopyInterface backend class.')
 parser.add_argument('--force-inventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
 parser.add_argument('--detox-partition', '-p', metavar = 'PARTITION', dest = 'detox_partitions', nargs = '+', default = ['Physics', 'RelVal'], help = 'Name of the detox partitions. Syntax is <partition>[:<definition name>]. Definition name is translated to path DYNAMO_BASE/policies/detox/<partition>.txt. If none is given, partition name is used.')
 parser.add_argument('--dealer-plugins', '-g', metavar = 'PLUGIN:PRIORITY', dest = 'dealer_plugins', nargs = '+', default = ['Popularity:3', 'Balancer:2', 'Undertaker:1'], help = 'Name:Priority of the dealer plugins to run.')
@@ -46,7 +38,6 @@ from common.demand import DemandManager
 import common.interface.classes as classes
 from detox.main import Detox
 from detox.policy import Policy
-import detox.configuration as detox_config
 from dealer.main import Dealer
 from dealer.policy import DealerPolicy
 from dealer.plugins import plugins as dealer_plugins
@@ -92,15 +83,7 @@ for cls in ['deletion', 'copy']:
 
 transaction_manager = TransactionManager(**kwd)
 
-kwd = {}
-for cls in ['store', 'access_history', 'lock']:
-    clsname = getattr(args, cls + '_cls')
-    if clsname == '':
-        kwd[cls + '_cls'] = classes.default_interface[cls]
-    else:
-        kwd[cls + '_cls'] = getattr(classes, clsname)
-
-demand_manager = DemandManager(**kwd)
+demand_manager = DemandManager()
 
 history = classes.default_interface['history']()
 
@@ -128,6 +111,10 @@ if 'detox' in args.module:
 
         with open(def_path) as policy_def:    
             policy = Policy(partition, policy_def, policy_version, inventory_manager)
+
+        for plugin in policy.used_demand_plugins:
+            if plugin not in demand_manager.calculators:
+                demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
     
         detox.run(policy, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
 
@@ -154,5 +141,9 @@ if 'dealer' in args.module:
             plugin.history = history
 
         policy.add_plugin(plugin, priority)
+
+    for plugin in policy.used_demand_plugins:
+        if plugin not in demand_manager.calculators:
+            demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
     
     dealer.run(policy, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)

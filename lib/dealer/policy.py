@@ -19,6 +19,7 @@ class DealerPolicy(object):
         self.group = group
         self.version = version
         self.target_site_def = None
+        self.used_demand_plugins = set()
         
         self._request_plugins = []
 
@@ -47,6 +48,8 @@ class DealerPolicy(object):
                 raise RuntimeError('Plugins with priority == 0 exist. Cannot add a plugin with finite priority.')
 
             self._request_plugins.append((plugin, priority))
+
+        self.used_demand_plugins.update(plugin.used_demand_plugins)
 
     def collect_requests(self, inventory):
         """

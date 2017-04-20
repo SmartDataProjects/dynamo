@@ -460,13 +460,13 @@ class MySQLStore(LocalStoreInterface):
 
         # pick up all accesses that are less than 1 year old
         # old accesses will eb removed automatically next time the access information is saved from memory
-        records = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses`, `cputime` FROM `dataset_accesses` WHERE `date` > DATE_SUB(NOW(), INTERVAL 2 YEAR) ORDER BY `dataset_id`, `site_id`, `date`')
+        records = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses` FROM `dataset_accesses` WHERE `date` > DATE_SUB(NOW(), INTERVAL 2 YEAR) ORDER BY `dataset_id`, `site_id`, `date`')
 
         # little speedup by not repeating lookups for the same replica
         current_dataset_id = 0
         current_site_id = 0
         replica = None
-        for dataset_id, site_id, year, month, day, access_type, num_accesses, cputime in records:
+        for dataset_id, site_id, year, month, day, access_type, num_accesses in records:
             if dataset_id != current_dataset_id:
                 try:
                     dataset = id_dataset_map[dataset_id]
@@ -478,7 +478,8 @@ class MySQLStore(LocalStoreInterface):
 
                 current_dataset_id = dataset_id
                 replica = None
-            
+                current_site_id = 0
+
             if site_id != current_site_id:
                 try:
                     site = id_site_map[site_id]
@@ -487,6 +488,10 @@ class MySQLStore(LocalStoreInterface):
 
                 current_site_id = site_id
                 replica = None
+
+            elif replica is None:
+                # this dataset-site pair is checked and no replica was found
+                continue
 
             if replica is None:
                 replica = dataset.find_replica(site)
@@ -498,13 +503,13 @@ class MySQLStore(LocalStoreInterface):
 
             date = datetime.date(year, month, day)
 
-            access_list[replica][date] = (num_accesses, cputime)
+            access_list[replica][date] = num_accesses
 
-        last_update = datetime.datetime.utcfromtimestamp(self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0])
+        last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
 
-        logger.info('Loaded %d replica access data. Last update on %s UTC', len(records), last_update.strftime('%Y-%m-%d'))
+        logger.info('Loaded %d replica access data. Last update on %s UTC', len(records), time.strftime('%Y-%m-%d', time.gmtime(last_update)))
 
-        return (last_update.date(), access_list)
+        return (last_update, access_list)
 
     def _do_load_dataset_requests(self, datasets): #override
         id_dataset_map = {}
@@ -532,7 +537,7 @@ class MySQLStore(LocalStoreInterface):
 
         last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
 
-        logger.info('Loaded %d dataset request data. Last update at %s UTC', len(records), datetime.datetime.utcfromtimestamp(last_update).strftime('%Y-%m-%d %H:%M:%S'))
+        logger.info('Loaded %d dataset request data. Last update at %s UTC', len(records), time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(last_update)))
 
         return (last_update, requests)
 
@@ -843,8 +848,8 @@ class MySQLStore(LocalStoreInterface):
             dataset_id = dataset_id_map[replica.dataset]
             site_id = site_id_map[replica.site]
 
-            for date, (num_accesses, cputime) in site_access_list.items():
-                data.append((dataset_id, site_id, date.strftime('%Y-%m-%d'), num_accesses, cputime))
+            for date, (num_accesses, cputime) in replica_access_list.items():
+                data.append((dataset_id, site_id, date.strftime('%Y-%m-%d'), 'local', num_accesses, cputime))
 
         self._mysql.insert_many('dataset_accesses', fields, None, data, do_update = True)
 

@@ -9,7 +9,7 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-class WebReplicaLockInterface(object):
+class WebReplicaLock(object):
     """
     A plugin for DemandManager that appends lists of blocks that are locked.
     Sets one demand value:
@@ -27,7 +27,7 @@ class WebReplicaLockInterface(object):
 
     def add_source(self, url, auth_type, content_type, data_type = 'application/json'):
         if type(content_type) is str:
-            content_type = eval('WebReplicaLockInterface.' + content_type)
+            content_type = eval('WebReplicaLock.' + content_type)
 
         if auth_type == 'cert':
             auth_handler = webservice.HTTPSCertKeyHandler
@@ -61,7 +61,7 @@ class WebReplicaLockInterface(object):
 
             data = source.make_request()
 
-            if content_type == WebReplicaLockInterface.LIST_OF_DATASETS:
+            if content_type == WebReplicaLock.LIST_OF_DATASETS:
                 # simple list of datasets
                 for dataset_name in data:
                     if dataset_name is None:
@@ -88,7 +88,7 @@ class WebReplicaLockInterface(object):
                         else:
                             locked_blocks[replica.site] = set(brep.block for brep in replica.block_replicas)
 
-            elif content_type == WebReplicaLockInterface.CMSWEB_LIST_OF_DATASETS:
+            elif content_type == WebReplicaLock.CMSWEB_LIST_OF_DATASETS:
                 # data['result'] -> simple list of datasets
                 for dataset_name in data['result']:
                     if dataset_name is None:
@@ -115,7 +115,7 @@ class WebReplicaLockInterface(object):
                         else:
                             locked_blocks[replica.site] = set(brep.block for brep in replica.block_replicas)
                 
-            elif content_type == WebReplicaLockInterface.SITE_TO_DATASETS:
+            elif content_type == WebReplicaLock.SITE_TO_DATASETS:
                 # data = {site: {dataset: info}}
                 for site_name, objects in data.items():
                     try:
@@ -182,7 +182,7 @@ if __name__ == '__main__':
     logger.setLevel(logging.DEBUG)
 
     inventory = InventoryManager()
-    locks = WebReplicaLockInterface()
+    locks = WebReplicaLock()
 
     locks.update(inventory)
 

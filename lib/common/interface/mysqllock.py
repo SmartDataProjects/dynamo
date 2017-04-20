@@ -1,6 +1,5 @@
 import logging
 import fnmatch
-import collections
 
 import common.configuration as config
 from common.interface.lock import ReplicaLockInterface
@@ -9,7 +8,7 @@ from common.dataformat import Block
 
 logger = logging.getLogger(__name__)
 
-class MySQLLockInterface(object):
+class MySQLReplicaLock(object):
     """
     A plugin for DemandManager that appends lists of block replicas that are locked.
     Sets one demand value:
@@ -60,7 +59,7 @@ class MySQLLockInterface(object):
                     sites.update(s for n, s in inventory.sites.items() if fnmatch.fnmatch(n, sites_pattern))
                 else:
                     try:
-                        sites.update(inventory.sites[sites_pattern])
+                        sites.add(inventory.sites[sites_pattern])
                     except KeyError:
                         pass
 
@@ -74,7 +73,7 @@ class MySQLLockInterface(object):
                     groups.update(g for n, g in inventory.groups.items() if fnmatch.fnmatch(n, groups_pattern))
                 else:
                     try:
-                        groups.update(inventory.groups[groups_pattern])
+                        groups.add(inventory.groups[groups_pattern])
                     except KeyError:
                         pass
 
@@ -92,15 +91,15 @@ class MySQLLockInterface(object):
                 if replica.site not in sites:
                     continue
 
-                if site not in locked_blocks:
-                    locked_blocks[site] = set()
+                if replica.site not in locked_blocks:
+                    locked_blocks[replica.site] = set()
 
                 for block_replica in replica.block_replicas:
                     if block_replica.group not in groups:
                         continue
 
                     if block_replica.block in blocks:
-                        locked_blocks[site].add(block_replica.block)
+                        locked_blocks[replica.site].add(block_replica.block)
 
 
 if __name__ == '__main__':
@@ -112,7 +111,7 @@ if __name__ == '__main__':
     logger.setLevel(logging.DEBUG)
 
     inventory = InventoryManager()
-    locks = MySQLLockInterface()
+    locks = MySQLReplicaLock()
 
     locks.update(inventory)
 

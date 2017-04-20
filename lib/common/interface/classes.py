@@ -4,7 +4,7 @@ from common.interface.dbs import DBS
 from common.interface.popdb import PopDB
 from common.interface.globalqueue import GlobalQueue
 from common.interface.mysqlhistory import MySQLHistory
-from common.interface.weblock import WebReplicaLockInterface
+from common.interface.weblock import WebReplicaLock
 
 class Generator(object):
     """
@@ -38,8 +38,11 @@ default_interface = {
     'copy': Generator(PhEDExDBSSSB),
     'deletion': Generator(PhEDExDBSSSB),
     'store': Generator(MySQLStore),
-    'lock': Generator(WebReplicaLockInterface),
-    'access_history': Generator(PopDB),
-    'job_queue': Generator(GlobalQueue),
     'history': Generator(MySQLHistory)
+}
+
+demand_plugins = {
+    'locks': Generator(WebReplicaLock),
+    'replica_access': Generator(PopDB),
+    'dataset_request': Generator(GlobalQueue)
 }
