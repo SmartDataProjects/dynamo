@@ -42,7 +42,7 @@ default_interface = {
 }
 
 demand_plugins = {
-    'locks': Generator(WebReplicaLock),
+    'replica_locks': Generator(WebReplicaLock),
     'replica_access': Generator(PopDB),
     'dataset_request': Generator(GlobalQueue)
 }

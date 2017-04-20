@@ -6,7 +6,6 @@ from site import Site
 from group import Group
 from datasetreplica import DatasetReplica
 from blockreplica import BlockReplica
-from demand import DatasetDemand, DatasetRequest
 from history import HistoryRecord
 
 __all__ = [
@@ -19,7 +18,5 @@ __all__ = [
     'Group',
     'DatasetReplica',
     'BlockReplica',
-    'DatasetDemand',
-    'DatasetRequest',
     'HistoryRecord'
 ]

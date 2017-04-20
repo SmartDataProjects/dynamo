@@ -118,5 +118,5 @@ site_vardefs = {
 required_plugins = {
     'replica_access': ['dataset.last_used', 'dataset.usage_rank', 'replica.num_access'],
     'dataset_request': [],
-    'locks': ['replica.has_locked_block']
+    'replica_locks': ['replica.has_locked_block']
 }
