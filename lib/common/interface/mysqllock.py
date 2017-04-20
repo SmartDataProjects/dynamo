@@ -2,7 +2,6 @@ import logging
 import fnmatch
 
 import common.configuration as config
-from common.interface.lock import ReplicaLockInterface
 from common.interface.mysql import MySQL
 from common.dataformat import Block
 
