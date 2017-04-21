@@ -56,32 +56,14 @@ elif not args.comment and not config.daemon_mode:
     print 'Non-dry run from command line requires a comment (-m).'
     sys.exit(1)
 
-kwd = {}
-for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
-    clsname = getattr(args, cls + '_cls')
-    if clsname == '':
-        kwd[cls + '_cls'] = classes.default_interface[cls]
-    else:
-        kwd[cls + '_cls'] = getattr(classes, clsname)
-
-kwd['load_data'] = False
-
-inventory_manager = InventoryManager(**kwd)
+inventory_manager = InventoryManager(load_data = False)
 
 if args.force_inventory_update:
     inventory_manager.update(make_snapshot = False)
 else:
     inventory_manager.load()
 
-kwd = {}
-for cls in ['deletion', 'copy']:
-    clsname = getattr(args, cls + '_cls')
-    if clsname == '':
-        kwd[cls + '_cls'] = classes.default_interface[cls]
-    else:
-        kwd[cls + '_cls'] = getattr(classes, clsname)
-
-transaction_manager = TransactionManager(**kwd)
+transaction_manager = TransactionManager()
 
 demand_manager = DemandManager()
 
