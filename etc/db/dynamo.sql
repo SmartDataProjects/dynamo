@@ -190,6 +190,21 @@ CREATE TABLE `groups` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `partitions`
+--
+
+DROP TABLE IF EXISTS `partitions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `partitions` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(16) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `quotas`
 --
 
@@ -198,10 +213,10 @@ DROP TABLE IF EXISTS `quotas`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `quotas` (
   `site_id` int(10) unsigned NOT NULL,
-  `group_id` int(10) unsigned NOT NULL,
+  `partition_id` int(10) unsigned NOT NULL,
   `storage` float NOT NULL,
-  PRIMARY KEY (`site_id`,`group_id`),
-  KEY `groups` (`group_id`)
+  PRIMARY KEY (`site_id`,`partition_id`),
+  KEY `partitions` (`partition_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -270,4 +285,4 @@ CREATE TABLE `system` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-01-04 18:30:03
+-- Dump completed on 2017-04-20 23:19:32

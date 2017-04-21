@@ -25,7 +25,8 @@ DROP TABLE IF EXISTS `deletion_queue`;
 CREATE TABLE `deletion_queue` (
   `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
   `target` varchar(64) COLLATE latin1_general_cs NOT NULL,
-  `created` datetime NOT NULL
+  `created` datetime NOT NULL,
+  UNIQUE KEY `files` (`file`,`target`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -38,31 +39,21 @@ DROP TABLE IF EXISTS `detox_locks`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `detox_locks` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `enabled` tinyint(1) NOT NULL DEFAULT '1',
   `item` varchar(512) COLLATE latin1_general_cs NOT NULL,
-  `sites` text COLLATE latin1_general_cs,
-  `groups` text COLLATE latin1_general_cs,
-  `entry_date` datetime NOT NULL,
-  `last_update` datetime NOT NULL,
+  `sites` varchar(64) COLLATE latin1_general_cs DEFAULT NULL,
+  `groups` varchar(64) COLLATE latin1_general_cs DEFAULT NULL,
+  `lock_date` datetime NOT NULL,
+  `unlock_date` datetime DEFAULT NULL,
   `expiration_date` datetime NOT NULL,
   `user_id` int(11) unsigned NOT NULL,
   `comment` mediumtext COLLATE latin1_general_cs,
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
-  KEY `enabled` (`enabled`)
+  KEY `unlocked` (`unlock_date`),
+  KEY `locked` (`lock_date`),
+  KEY `expires` (`expiration_date`),
+  KEY `lock_data` (`item`,`sites`,`groups`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `detox_locks_lock`
---
-
-DROP TABLE IF EXISTS `detox_locks_lock`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `detox_locks_lock` (
-  `updating` tinyint(1) NOT NULL DEFAULT '0'
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -90,7 +81,8 @@ CREATE TABLE `transfer_queue` (
   `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
   `source` varchar(64) COLLATE latin1_general_cs NOT NULL,
   `target` varchar(64) COLLATE latin1_general_cs NOT NULL,
-  `created` datetime NOT NULL
+  `created` datetime NOT NULL,
+  UNIQUE KEY `files` (`file`,`source`,`target`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -122,4 +114,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-03-31 14:29:26
+-- Dump completed on 2017-04-20 23:29:19
