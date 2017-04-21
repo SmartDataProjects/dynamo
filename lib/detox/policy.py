@@ -4,7 +4,7 @@ import logging
 import collections
 import subprocess
 
-from detox.variables import replica_vardefs, replica_access_variables, replica_request_variables, replica_lock_variables
+import detox.variables as variables
 from detox.condition import ReplicaCondition, SiteCondition
 
 logger = logging.getLogger(__name__)
@@ -88,14 +88,14 @@ class Policy(object):
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
 
         self.static_optimization = True
-        self.uses_accesses = False
-        self.uses_requests = False
-        self.uses_locks = False
+        self.used_demand_plugins = set()
         self.parse_rules(lines, inventory)
 
         self.version = version
 
     def parse_rules(self, lines, inventory):
+        logger.info('Parsing policy stack for partition %s.', self.partition.name)
+
         if type(lines) is file:
             conf = lines
             lines = map(str.strip, conf.read().split('\n'))
@@ -162,23 +162,13 @@ class Policy(object):
                 else:
                     raise ConfigurationError(words[1])
 
-                if words[2] in replica_access_variables:
-                    self.uses_accesses = True
-                if words[2] in replica_request_variables:
-                    self.uses_requests = True
-                if words[2] in replica_lock_variables:
-                    self.uses_locks = True
+                for plugin, exprs in variables.required_plugins.items():
+                    if words[2] in exprs:
+                        self.used_demand_plugins.add(plugin)
 
-                sortkey = replica_vardefs[words[2]][0]
-                def sort_order(item1,item2):
-                    v1 = sortkey(item1)
-                    v2 = sortkey(item2)
-                    if v1 == v2:
-                        return cmp(item1.dataset.size,item2.dataset.size)
-                    else:
-                        return cmp(v1,v2)
-                self.candidate_sort = lambda replicas: sorted(replicas, key=sortkey, reverse = reverse)
-                
+                sortkey = variables.replica_vardefs[words[2]][0]
+                self.candidate_sort = lambda replicas: sorted(replicas, key = sortkey, reverse = reverse)
+
             else:
                 cond_text = ' '.join(words[1:])
 
@@ -205,24 +195,16 @@ class Policy(object):
             raise ConfiguraitonError('Deletion candidate sorting is not specified.')
 
         for cond in [self.target_site_def, self.deletion_trigger, self.stop_condition]:
-            if cond.uses_accesses:
-                self.uses_accesses = True
-            if cond.uses_requests:
-                self.uses_requests = True
-            if cond.uses_locks:
-                self.uses_locks = True
+            self.used_demand_plugins.update(cond.used_demand_plugins)
 
         for rule in self.rules:
             if not rule.condition.static:
                 logger.info('Condition %s is dynamic. Turning off static policy evaluation for %s.', str(rule.condition), self.partition.name)
                 self.static_optimization = False
 
-            if rule.condition.uses_accesses:
-                self.uses_accesses = True
-            if rule.condition.uses_requests:
-                self.uses_requests = True
-            if rule.condition.uses_locks:
-                self.uses_locks = True
+            self.used_demand_plugins.update(rule.condition.used_demand_plugins)
+
+        logger.info('Policy stack for %s: %d rules using demand plugins %s', self.partition.name, len(self.rules), str(sorted(self.used_demand_plugins)))
 
     def partition_replicas(self, datasets):
         """
@@ -238,6 +220,9 @@ class Policy(object):
         site_all_block_replicas = collections.defaultdict(list)
 
         for dataset in datasets:
+            if dataset.replicas is None:
+                continue
+
             ir = 0
             while ir != len(dataset.replicas):
                 replica = dataset.replicas[ir]

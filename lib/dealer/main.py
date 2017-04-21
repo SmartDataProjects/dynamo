@@ -4,7 +4,7 @@ import collections
 import fnmatch
 import logging
 
-from common.dataformat import Dataset, DatasetReplica, BlockReplica, Site
+from common.dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site
 import common.configuration as config
 import dealer.configuration as dealer_config
 
@@ -18,269 +18,163 @@ class Dealer(object):
         self.demand_manager = demand
         self.history = history
 
-        self.policies = {}
-
-    def set_policy(self, policy): # empty partition name -> default
-        self.policies[policy.partition] = policy
-
-    def run(self, partition, is_test = False, comment = '', auto_approval = True):
+    def run(self, policy, is_test = False, comment = '', auto_approval = True):
         """
-        1. Update the inventory if necessary.
-        2. Update popularity.
-        3. Create new replicas representing copy operations that should take place.
-        4. Execute copy.
+        1. Update site status.
+        2. Take snapshots of the current status (datasets and sites).
+        3. Collect copy requests from various plugins, sorted by priority.
+        4. Go through the list of requests and fulfill up to the allowed volume.
+        5. Make transfer requests.
         """
 
-        logger.info('Dealer run for %s starting at %s', partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
+        logger.info('Dealer run for %s starting at %s', policy.partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
 
-        try:
-            #self.demand_manager.update(self.inventory_manager, accesses = False, requests = True, locks = False)
-            self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
-    
-            policy = self.policies[partition]
-    
-            run_number = self.history.new_copy_run(partition.name, policy.version, is_test = is_test, comment = comment)
-    
-            # update site and dataset lists
-            # take a snapshot of site status
-            self.history.save_sites(run_number, self.inventory_manager)
-            self.history.save_datasets(run_number, self.inventory_manager)
-            # take snapshots of quotas if updated
-            quotas = dict((site, site.partition_quota(partition)) for site in self.inventory_manager.sites.values())
-            self.history.save_quotas(run_number, quotas)
-   
-            logger.info('Identifying target sites.')
-    
-            # Ask each site if it should be considered as a copy destination.
-            target_sites = set()
-            for site in self.inventory_manager.sites.values():
-                if site.partition_quota(partition) != 0. and site.status == Site.STAT_READY and site.active == Site.ACT_AVAILABLE and policy.target_site_def(site):
-                    target_sites.add(site)
-    
-            pending_volumes = collections.defaultdict(float)
-            # TODO get input from transfer monitor and update the pending volumes
-    
-            # all datasets that the policy considers
-            requests = policy.collect_requests(self.inventory_manager)
+        if not comment:
+            comment = 'Dynamo -- Automatic replication request'
+            if policy.partition.name != 'Global':
+                comment += ' for %s partition.' % policy.partition.name
 
-            items = self.prioritize(requests)
-    
-            copy_list = self.determine_copies(target_sites, items, policy, pending_volumes)
+        self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
+        self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
-            policy.record(run_number, self.history, copy_list)
-    
-            logger.info('Committing copy.')
-            self.commit_copies(run_number, policy, copy_list, is_test, comment, auto_approval)
-    
-            self.history.close_copy_run(run_number)
+        run_number = self.history.new_copy_run(policy.partition.name, policy.version, is_test = is_test, comment = comment)
 
-        finally:
-            pass
+        # update site and dataset lists
+        # take a snapshot of site status
+        self.history.save_sites(run_number, self.inventory_manager)
+        self.history.save_datasets(run_number, self.inventory_manager)
+        # take snapshots of quotas if updated
+        quotas = dict((site, site.partition_quota(policy.partition)) for site in self.inventory_manager.sites.values())
+        self.history.save_quotas(run_number, quotas)
+
+        pending_volumes = collections.defaultdict(float)
+        # TODO get input from transfer monitor and update the pending volumes
+
+        logger.info('Collecting copy proposals.')
+
+        # Prioritized lists of datasets, blocks, and files
+        # Plugins can specify the destination sites too - but is not passed the list of target sites to keep things simpler
+        requests = policy.collect_requests(self.inventory_manager)
+
+        logger.info('Determining the list of transfers to make.')
+
+        # Ask each site if it should be considered as a copy destination.
+        target_sites = set()
+        for site in self.inventory_manager.sites.values():
+            if quotas[site] != 0. and \
+                    site.status == Site.STAT_READY and \
+                    policy.target_site_def(site) and \
+                    site.storage_occupancy(policy.partition, physical = False) < dealer_config.target_site_occupancy:
+
+                target_sites.add(site)
+
+        copy_list = self.determine_copies(target_sites, requests, policy.partition, policy.group, pending_volumes)
+
+        policy.record(run_number, self.history, copy_list)
+
+        logger.info('Committing copy.')
+
+        self.commit_copies(run_number, copy_list, policy.group, is_test, comment, auto_approval)
+
+        self.history.close_copy_run(run_number)
 
         logger.info('Finished dealer run at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
 
-    def prioritize(self, requests):
-        """
-        For the moment do the dumbest thing
-        """
-
-        items = ([], [], [])
-        for plugin, (datasets, blocks, files) in requests.items():
-            items[0].extend(datasets)
-            items[1].extend(blocks)
-            items[2].extend(files)
-
-        return items
-
-    def determine_copies(self, sites, items, policy, pending_volumes):
+    def determine_copies(self, target_sites, requests, partition, group, pending_volumes):
         """
         Algorithm:
         1. Compute a time-weighted sum of number of requests for the last three days.
         2. Decide the sites least-occupied by analysis activities.
         3. Copy datasets with number of requests > available replicas to empty sites.
 
-        @param sites  List of site objects
+        @param sites  List of target sites
         @param items  ([datasets], [blocks], [files]) where each list element can be the object or (object, destination_site)
         @param policy Dealer policy
         @param pending_volumes Volumes pending transfer
         """
-        
-        copy_list = dict([(site, []) for site in sites]) # site -> [new_replica]
 
-        datasets, blocks, files = items
+        quotas = dict((site, site.partition_quota(partition)) for site in self.inventory_manager.sites.values())
+        copy_list = dict([(site, []) for site in target_sites]) # site -> [new_replica]
 
-        def compute_site_business(site):
-            business = 0.
-            return business
-
-        # request-weighted, cpu-normalized number of running jobs at sites
-        site_business = {}
         site_occupancy = {}
-        quota = {}
-        for site in sites:
-            # At the moment we don't have the information of exactly how many jobs are running at each site.
-            # Assume fair share of jobs among sites: (Nreq * Nfile) * (site_capability / sum_{site}(capability))
-            # jobs at each site. Normalize this by the capability at each site.
-            site_business[site] = compute_site_business(site)
-            quota[site] = site.partition_quota(policy.partition)
-            site_occupancy[site] = site.storage_occupancy(policy.partition, physical = False)
+        for site in target_sites:
+            # At the moment we don't have the information of exactly how many jobs are running at each site, so we are simply sorting the sites by occupancy.
+            site_occupancy[site] = site.storage_occupancy(partition, physical = False)
 
-        # now go through datasets
-        for entry in datasets:
-            if type(entry) is tuple:
-                dataset, destination_site = entry
+        candidates = []
+        for request in requests:
+            if type(request) is tuple:
+                candidates.append(request)
             else:
-                dataset = entry
-                destination_site = None
+                candidates.append((request, None))
 
-            dataset_size = dataset.size * 1.e-12/quota[site]
+        # now go through all candidates
+        for item, destination in candidates:
+            if type(item) is Dataset:
+                item_name = item.name
+                item_size = item.size * 1.e-12
+                find_replica_at = lambda s: s.find_dataset_replica(item)
+                make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(item, s, group)
 
-            if destination_site is None:
-                sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) 
-                #sorted from emptiest to busiest
-                try:
-                    destination_site = next(dest for dest, njob in sorted_sites if \
-                        site_occupancy[dest] + dataset_size < quota[dest] and \
-                        dest.find_dataset_replica(dataset) is None
-                    )
-    
-                except StopIteration:
-                    logger.warning('%s has no copy destination.', dataset.name)
-                    break
-            else:
-                occup = site.storage_occupancy(policy.partition, physical = False)
-                limit = dealer_config.target_site_occupancy * dealer_config.overflow_factor
-                if (occup + dataset_size) > limit:
+            elif type(item) is Block:
+                item_name = item.dataset.name + '#' + item.real_name()
+                item_size = item.size * 1.e-12
+                find_replica_at = lambda s: s.find_block_replica(item)
+                make_new_replica_at = lambda s: self.inventory_manager.add_block_to_site(item, s, group)
+
+            elif type(item) is list:
+                # list of blocks (must belong to the same dataset)
+                if len(item) == 0:
                     continue
 
-            logger.info('Copying %s to %s', dataset.name, destination_site.name)
-            new_replica = self.inventory_manager.add_dataset_to_site(dataset, 
-                                                                     destination_site, 
-                                                                     policy.group)
-            copy_list[destination_site].append(new_replica)
+                dataset = item[0].dataset
+                item_name = dataset.name
+                item_size = sum(b.size for b in item)
+                find_replica_at = lambda s: s.find_dataset_replica(dataset)
+                make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(dataset, s, group, blocks = items)
 
-            # recompute site properties
-            pending_volumes[destination_site] += dataset_size
-            occ = site.storage_occupancy(policy.partition, physical = False)
-
-            if occ > dealer_config.target_site_occupancy * dealer_config.overflow_factor or \
-                    pending_volumes[destination_site] > dealer_config.max_copy_per_site:
-                # this site should get no more copies
-                site_business.pop(destination_site,'None')
-                site_occupancy.pop(destination_site,'None')
             else:
-                site_occupancy[destination_site] = occ
+                logger.warning('Invalid request found. Skipping.')
+                continue
 
-            for replica in dataset.replicas:
-                site = replica.site
-                if site in site_business:
-                    site_business[site] = compute_site_business(site)
-
-            # check if we should stop copying
-            if min(pending_volumes.values()) > dealer_config.max_copy_per_site:
-                logger.warning('All sites have exceeded copy volume target. No more copies will be made.')
-                break
-
-            if sum(pending_volumes.values()) > dealer_config.max_copy_total:
-                logger.warning('Total copy volume has exceeded the limit. No more copies will be made.')
-                break
-
-        # now go through blocks
-        for entry in blocks:
-            if type(entry) is tuple:
-                block, destination_site = entry
-            else:
-                block = entry
-                destination_site = None
-
-            block_size = block.size * 1.e-12
-            block_name = block.real_name()
-
-            if destination_site is None:
-                sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
-
+            if destination is None:
+                #sorted from emptiest to busiest
+                sorted_sites = sorted(site_occupancy.items(), key = lambda (s, f): f)
+                
                 try:
-                    destination_site = next(dest for dest, njob in sorted_sites if \
-                        site_occupancy[dest] + block_size < quota[dest] and \
-                        dest.find_block_replica(block) is None
+                    destination = next(site for site, occupancy in sorted_sites if \
+                        occupancy + item_size / quotas[site] < 1. and \
+                        find_replica_at(site) is None
                     )
     
                 except StopIteration:
-                    logger.warning('%s#%s has no copy destination.', block.dataset.name, block_name)
-                    break
+                    logger.warning('%s has no copy destination.', item_name)
+                    continue
 
-            logger.info('Copying %s#%s to %s', block.dataset.name, block_name, destination_site.name)
+            else:
+                if destination not in site_occupancy or site_occupancy[site] + item_size / quotas[site] > 1.:
+                    # a plugin specified the destination, but it's not in the list of potential target sites
+                    logger.warning('Cannot copy %s to %s.', item_name, site.name)
+                    continue
 
-            new_replica = self.inventory_manager.add_block_to_site(block, destination_site, policy.group)
+                if find_replica_at(destination) is not None:
+                    logger.info('%s is already at %s', item_name, destination.name)
+                    continue
 
-            copy_list[destination_site].append(new_replica)
+            logger.info('Copying %s to %s', item_name, destination.name)
+
+            new_replica = make_new_replica_at(destination)
+
+            copy_list[destination].append(new_replica)
 
             # recompute site properties
-            pending_volumes[destination_site] += block_size
-            occ = site.storage_occupancy(policy.partition, physical = False)
+            pending_volumes[destination] += item_size
+            site_occupancy[destination] += item_size / quotas[destination]
 
-            if occ > dealer_config.target_site_occupancy * dealer_config.overflow_factor or \
-                    pending_volumes[destination_site] < dealer_config.max_copy_per_site:
+            if site_occupancy[destination] > dealer_config.target_site_occupancy or \
+                    pending_volumes[destination] > dealer_config.max_copy_per_site:
                 # this site should get no more copies
-                site_business.pop(destination_site)
-                site_occupancy.pop(destination_site)
-            else:
-                site_occupancy[destination_site] = occ
-
-            for replica in block.dataset.replicas:
-                site = replica.site
-                if site in site_business:
-                    site_business[site] = compute_site_business(site)
-
-            # check if we should stop copying
-            if min(pending_volumes.values()) > dealer_config.max_copy_per_site:
-                logger.warning('All sites have exceeded copy volume target. No more copies will be made.')
-                break
-
-            if sum(pending_volumes.values()) > dealer_config.max_copy_total:
-                logger.warning('Total copy volume has exceeded the limit. No more copies will be made.')
-                break
-
-        # now go through files
-        for entry in files:
-            if type(entry) is tuple:
-                lfile, destination_site = entry
-            else:
-                lfile = entry
-                destination_site = None
-
-            file_size = lfile.size * 1.e-12
-
-            if destination_site is None:
-                sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
-    
-                try:
-                    destination_site = next(dest for dest, njob in sorted_sites if \
-                        site_occupancy[dest] + file_size < quota[dest] and \
-                        dest.find_dataset_replica(dataset) is None
-                    )
-    
-                except StopIteration:
-                    logger.warning('%s has no copy destination.', lfile.fullpath())
-                    break
-
-            logger.info('Copying %s to %s', lfile.fullpath(), destination_site.name)
-
-            # there is no mechanism of tracking the physical movement of files in inventory.
-
-            copy_list[destination_site].append((site, lfile))
-
-            # recompute site properties
-            pending_volumes[destination_site] += file_size
-            occ = site.storage_occupancy(policy.partition, physical = False)
-
-            if occ > dealer_config.target_site_occupancy * dealer_config.overflow_factor or \
-                    pending_volumes[destination_site] < dealer_config.max_copy_per_site:
-                # this site should get no more copies
-                site_business.pop(destination_site)
-                site_occupancy.pop(destination_site)
-            else:
-                site_occupancy[destination_site] = occ
+                site_occupancy.pop(destination)
 
             # check if we should stop copying
             if min(pending_volumes.values()) > dealer_config.max_copy_per_site:
@@ -293,17 +187,18 @@ class Dealer(object):
 
         return copy_list
 
-    def commit_copies(self, run_number, policy, copy_list, is_test, comment, auto_approval):
-        if not comment:
-            comment = 'Dynamo -- Automatic replication request'
-            if policy.partition.name != 'Global':
-                comment += ' for %s partition.' % policy.partition.name
-
+    def commit_copies(self, run_number, copy_list, group, is_test, comment, auto_approval):
         for site, replicas in copy_list.items():
             if len(replicas) == 0:
                 continue
 
-            copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, policy.group, comments = comment, auto_approval = auto_approval, is_test = is_test)
+            for replica in list(replicas):
+                # final check with replica information source
+                if self.inventory_manager.replica_source.replica_exists_at_site(site, replica):
+                    logger.info('Not copying replica because it exists at site: %s', repr(replica))
+                    replicas.remove(replica)
+
+            copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, group, comments = comment, auto_approval = auto_approval, is_test = is_test)
             # copy_mapping .. {operation_id: (approved, [replica])}
     
             for operation_id, (approved, op_replicas) in copy_mapping.items():

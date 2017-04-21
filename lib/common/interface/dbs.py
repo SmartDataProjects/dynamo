@@ -17,44 +17,44 @@ class DBS(DatasetInfoSourceInterface):
 
         self._interface = RESTService(config.dbs.url_base)
 
-    def fill_dataset_info(self, datasets): # override
-        dataset_list = datasets.values()
+    def set_dataset_details(self, datasets): #override
         first = 0
-        while first < len(dataset_list):
+        while first < len(datasets):
             # fetch data 1000 at a time
-            last = first + 1000
-            ds_records = self._make_request('datasetlist', {'dataset': [d.name for d in dataset_list[first:last]], 'detail': True}, method = POST, format = 'json')            
+            chunk_map = dict((d.name, d) for d in datasets[first:first + 1000])
+            first += 1000
+            
+            ds_records = self._make_request('datasetlist', {'dataset': chunk_map.keys(), 'detail': True}, method = POST, format = 'json')            
 
             # This is still way too slow - have to make one API call (O(1)s) for each dataset.
-            # We are actually only interested in the number of blocks in the dataset; DBS datasetlist does not give you that.
             for ds_record in ds_records:
-                block_records = self._make_request('blocksummaries', ['dataset=' + ds_record['dataset']] + ['detail=True'])
-            
-                datasets[ds_record['dataset']] = self._construct_dataset(ds_record, block_records)
+                dataset = chunk_map[ds_record['dataset']]
+                dataset.status = Dataset.status_val(ds_record['dataset_access_type'])
+                dataset.data_type = Dataset.data_type_val(ds_record['primary_ds_type'])
+                dataset.last_update = ds_record['last_modification_date']
+                dataset.blocks = []
 
-            first = last
+                block_records = self._make_request('blocksummaries', ['dataset=' + ds_record['dataset'], 'detail=True'])
+                for block_record in block_records:
+                    block_name = Block.translate_name(block_record['block_name'].replace(dataset.name + '#', ''))
 
-    def _construct_dataset(self, ds_record, block_records):
-        ds_name = ds_record['dataset']
-        dataset = Dataset(ds_name)
+                    if block_record['open_for_writing'] == 1:
+                        is_open = True
+                        dataset.is_open = True
+                    else:
+                        is_open = False
 
-        for block_record in block_records:
-            if block_record['dataset'] != ds_name:
-                continue
+                    block = dataset.find_block(block_name)
 
-            block_name = Block.translate_name(block_record['block_name'].replace(dataset.name + '#', ''))
+                    if block is None:
+                        block = Block(block_name, dataset = dataset, size = block_record['block_size'], num_files = block_record['file_count'], is_open = is_open)
+                
+                        dataset.blocks.append(block)
+                        dataset.size += block.size
+                        dataset.num_files += block.num_files
 
-            if block_record['open_for_writing'] == 1:
-                is_open = True
-                dataset.is_open = True
-            else:
-                is_open = False
-
-            block = Block(block_name, dataset = dataset, size = block_record['block_size'], num_files = block_record['file_count'], is_open = is_open)
-        
-            dataset.blocks.append(block)
-
-        return dataset
+                    elif block.size != block_record['block_size'] or block.num_files != block_record['file_count'] or block.is_open != is_open:
+                        dataset.update_block(block_name, block_record['block_size'], block_record['file_count'], is_open)
 
     def _make_request(self, resource, options = [], method = GET, format = 'url'):
         """

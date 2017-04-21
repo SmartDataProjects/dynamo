@@ -20,10 +20,25 @@ class ReplicaInfoSourceInterface(object):
         """
         pass
 
-    def make_replica_links(self, sites, groups, datasets):
+    def replica_exists_at_site(self, site, item):
         """
-        Link the sites with datasets and blocks.
-        Arguments are name->obj maps
+        Query individual sites about individual items (dataset, block, or file)
+        @param site  Site object
+        @param item  Dataset, Block, or File object
+        @return Boolean indicating whether a replica exists at the site.
+        """
+
+        return False
+
+    def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*'):
+        """
+        Create replica objects and update the site and dataset objects.
+        Objects in sites and datasets should have replica information cleared.
+
+        @param inventory    InventoryManager instance
+        @param site_filt    Limit to replicas on sites matching the pattern.
+        @param group_filt   Limit to replicas owned by groups matching the pattern.
+        @param dataset_filt Limit to replicas of datasets matching the pattern.
         """
         pass
 

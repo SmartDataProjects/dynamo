@@ -120,7 +120,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        dataset_ids = self._mysql.select_many('datasets', ('id',), 'name', ['\'%s\'' % d.name for d in datasets])
+        dataset_ids = self._mysql.select_many('datasets', ('id',), 'name', [d.name for d in datasets])
 
         self._mysql.query('INSERT INTO `deletion_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`, `size`) VALUES (%s, %s, NOW(), %s, %s, %s)', operation_id, run_number, approved, site_id, size)
 
@@ -147,15 +147,15 @@ class MySQLHistory(TransactionHistoryInterface):
 
         sites_in_record = set()
 
-        insert_query = 'INSERT INTO `site_status_snapshots` (`site_id`, `run_id`, `active`, `status`) VALUES (%s, {run_number}, %s, %s)'.format(run_number = run_number)
+        insert_query = 'INSERT INTO `site_status_snapshots` (`site_id`, `run_id`, `status`) VALUES (%s, {run_number}, %s, %s)'.format(run_number = run_number)
 
-        query = 'SELECT s.`name`, ss.`active`, ss.`status`+0 FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
+        query = 'SELECT s.`name`, ss.`status`+0 FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
         query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
         record = self._mysql.query(query)
 
         sites_in_record = set()
 
-        for site_name, active, status in record:
+        for site_name, status in record:
             try:
                 site = inventory.sites[site_name]
             except KeyError:
@@ -163,21 +163,21 @@ class MySQLHistory(TransactionHistoryInterface):
 
             sites_in_record.add(site)
 
-            if site.active != active or site.status != status:
-                self._mysql.query(insert_query, self._site_id_map[site.name], site.active, site.status)
+            if site.status != status:
+                self._mysql.query(insert_query, self._site_id_map[site.name], site.status)
 
         for site in inventory.sites.values():
             if site not in sites_in_record:
-                self._mysql.query(insert_query, self._site_id_map[site.name], site.active, site.status)
+                self._mysql.query(insert_query, self._site_id_map[site.name], site.status)
 
     def _do_get_sites(self, run_number): #override
         partition_id = self._mysql.query('SELECT `partition_id` FROM runs WHERE `id` = %s', run_number)[0]
 
-        query = 'SELECT s.`name`, ss.`active`, ss.`status` FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
+        query = 'SELECT s.`name`, ss.`status` FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
         query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
         record = self._mysql.query(query)
 
-        status_map = dict([(site_name, (active, status)) for site_name, active, status in record])
+        status_map = dict([(site_name, status) for site_name, status in record])
 
         query = 'SELECT s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id`'
         query += ' WHERE q.`partition_id` = %d' % partition_id
@@ -187,13 +187,13 @@ class MySQLHistory(TransactionHistoryInterface):
 
         sites_dict = {}
 
-        for site_name, st in status_map.items():
+        for site_name, status in status_map.items():
             try:
                 quota = quota_map[site_name]
             except KeyError:
                 quota = 0
 
-            sites_dict[site_name] = st + (quota,)
+            sites_dict[site_name] = (status, quota)
 
         return sites_dict
 
@@ -397,13 +397,14 @@ class MySQLHistory(TransactionHistoryInterface):
             return product
 
         else:
-            # return {site_name: [(dataset_name, size, decision)]}
+            # return {site_name: [(dataset_name, size, decision, reason)]}
 
-            query = 'SELECT s.`name`, d.`name`, r.`size`, l.`decision` FROM `replica_snapshot_cache` AS c'
+            query = 'SELECT s.`name`, d.`name`, r.`size`, l.`decision`, p.`text` FROM `replica_snapshot_cache` AS c'
             query += ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`'
             query += ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`'
             query += ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`'
             query += ' INNER JOIN `deletion_decisions` AS l ON l.`id` = c.`decision_id`'
+            query += ' INNER JOIN `policy_conditions` AS p ON p.`id` = l.`matched_condition`'
             query += ' WHERE c.`run_id` = %d' % run_number
             query += ' ORDER BY s.`name` ASC, r.`size` DESC'
 
@@ -411,13 +412,13 @@ class MySQLHistory(TransactionHistoryInterface):
 
             _site_name = ''
 
-            for site_name, dataset_name, size, decision in self._mysql.query(query):
+            for site_name, dataset_name, size, decision, reason in self._mysql.query(query):
                 if site_name != _site_name:
                     product[site_name] = []
                     current = product[site_name]
                     _site_name = site_name
                 
-                current.append((dataset_name, size, decision))
+                current.append((dataset_name, size, decision, reason))
 
             return product
 
@@ -426,7 +427,7 @@ class MySQLHistory(TransactionHistoryInterface):
             self._make_dataset_id_map()
 
         fields = ('run_id', 'dataset_id', 'popularity')
-        mapping = lambda dataset: (run_number, self._dataset_id_map[dataset.name], dataset.demand.request_weight)
+        mapping = lambda dataset: (run_number, self._dataset_id_map[dataset.name], dataset.demand['request_weight'] if 'request_weight' in dataset.demand else 0.)
         self._mysql.insert_many('dataset_popularity_snapshots', fields, mapping, datasets)
 
     def _do_get_incomplete_copies(self, partition): #override
@@ -445,7 +446,7 @@ class MySQLHistory(TransactionHistoryInterface):
         id_to_dataset = dict(self._mysql.query('SELECT `id`, `name` FROM `datasets`'))
         id_to_site = dict(self._mysql.query('SELECT `id`, `name` FROM `sites`'))
 
-        replicas = self._mysql.select_many('copied_replicas', ('copy_id', 'dataset_id'), 'copy_id', ['%d' % i for i in id_to_record.keys()])
+        replicas = self._mysql.select_many('copied_replicas', ('copy_id', 'dataset_id'), 'copy_id', id_to_record.keys())
 
         current_copy_id = 0
         for copy_id, dataset_id in replicas:

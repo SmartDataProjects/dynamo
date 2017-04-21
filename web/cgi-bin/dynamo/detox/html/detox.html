@@ -26,13 +26,16 @@
           Cycle: 
           <span id="previous">Previous</span>
           <span id="next">Next</span>
-          <input type="text" id="jumpInput" size="10"><input type="button" value="Go" onclick="loadSummary($('#jumpInput').val(), currentPartition, currentNorm)">
+          <input type="text" id="jumpInput" size="10" onkeypress="if (event.keyCode == 13) loadSummary(this.value, currentPartition, currentNorm)"><input type="button" value="Go" onclick="loadSummary($('#jumpInput').val(), currentPartition, currentNorm)"> <br>
+          PhEDEx request: <input type="text" id="phedexReqInput" size="10" onkeypress="if (event.keyCode == 13) loadSummary(findCycleFromRequest(this.value), currentPartition, currentNorm)"><input type="button" value="Go" onclick="loadSummary(findCycleFromRequest($('#phedexReqInput').val()), currentPartition, currentNorm)">
         </nav>
       </div>
     </header>
     <main id="main">
       <nav id="datasetSearchNav">
-        Find dataset: <input type="text" id="datasetSearch" size="50" onkeypress="if (event.keyCode == 13) findDataset();"> <input type="button" value="Search" onclick="findDataset()">
+        <div id="datasetsOnDisplay"></div>
+        <div class="datasetSearchIndex">Find dataset: </div><div class="datasetSearchInputs"><input type="text" class="datasetSearch" id="newDatasetSearch" onkeypress="if (event.keyCode == 13) findDataset();"> <input type="button" value="Search" onclick="findDataset()" class="datasetSearchButton"></div>
+        </div>
       </nav>
       <nav id="partitions">
       </nav>

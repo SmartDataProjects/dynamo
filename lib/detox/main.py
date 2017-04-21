@@ -30,8 +30,6 @@ class Detox(object):
         self.demand_manager = demand
         self.history = history
 
-        self.policies = {}
-
     def run(self, policy, is_test = False, comment = '', auto_approval = True):
         """
         Main executable.
@@ -70,15 +68,15 @@ class Detox(object):
         # if no policy line requires iterative execution, we need the sites to have non-negative quotas
         if not policy.static_optimization:
             for site in self.inventory_manager.sites.values():
-                if site.partition_quota(policy.partition) < 0.: # the site is active but does not have a quota
-                    logger.error('Non-negative quota for all sites is required for partition %s.', policy.partition.name)
+                if site.partition_quota(policy.partition) < 0.: # the site has infinite quota
+                    logger.error('Finite quota for all sites is required for partition %s.', policy.partition.name)
                     return
 
         # insert new policy lines to the history database
         self.history.save_conditions(policy.rules)
 
         # update requests, popularity, and locks
-        self.demand_manager.update(self.inventory_manager, accesses = policy.uses_accesses, requests = policy.uses_requests, locks = policy.uses_locks)
+        self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
 
         # update site status
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates

@@ -63,7 +63,7 @@ class Dataset(object):
         self.files = None # is a set when loaded
         self.replicas = None # is a list when loaded
         self.requests = []
-        self.demand = None
+        self.demand = {} # freeform key-value pairs
 
     def __str__(self):
         if self.replicas is None:
@@ -96,7 +96,7 @@ class Dataset(object):
 
         # by removing the dataset replicas, the block replicas should become deletable (site->blockrep link is cut)
         self.replicas = None
-        self.demand = None
+        self.demand = {}
         self.files = None
         self.blocks = None
 

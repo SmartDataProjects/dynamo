@@ -335,7 +335,7 @@ class TransactionHistoryInterface(object):
     def get_deletion_decisions(self, run_number, size_only = True):
         """
         Return a dict {site: (protect_size, delete_size, keep_size)} if size_only = True.
-        Else return a massive dict {site: [(dataset, size, decision)]}
+        Else return a massive dict {site: [(dataset, size, decision, reason)]}
         """
 
         self.acquire_lock()
@@ -516,6 +516,16 @@ if __name__ == '__main__':
             tag = ''
 
         interface.make_snapshot(tag = tag)
+
+    elif args.command == 'list':
+        try:
+            what = args.arguments[0]
+        except IndexError:
+            print 'Usage: list (snapshots|datasets|sites)'
+
+        if what == 'snapshots':
+            for snapshot in interface.list_snapshots():
+                print snapshot
 
     elif args.command == 'clean':
         try:

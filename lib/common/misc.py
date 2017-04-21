@@ -81,20 +81,26 @@ class ThreadTimeout(RuntimeError):
 
 
 class ThreadCollector(object):
-    def __init__(self, ntotal = 0, timeout = 0):
+    def __init__(self, target, ntotal = 0, timeout = 0):
+        self.target = target
         self.outputs = []
         self.ntotal = ntotal
         self.ndone = 0
         self.watermark = 0
+        self.start_time = 0
         self.timeout = timeout
 
     def collect(self, threads):
+        if self.ntotal != 0 and self.start_time == 0:
+            self.start_time = time.time()
+
         ith = 0
         while ith < len(threads):
-            thread, time_started = threads[ith][0:2]
+            thread, time_started, inputs = threads[ith][0:3]
             if thread.is_alive():
                 if self.timeout > 0 and time.time() - time_started > self.timeout:
-                    logger.error('Thread ' + thread.name + ' timed out.')
+                    logging.error('Thread ' + thread.name + ' timed out.')
+                    logging.error('Inputs: ' + str([str(i) for i in inputs]))
                     raise ThreadTimeout(thread.name)
 
                 ith += 1
@@ -104,6 +110,15 @@ class ThreadCollector(object):
             thread, time_started, inputs, outputs, exception = threads.pop(ith)
             if exception.exception is not None:
                 logging.error('Exception in thread ' + thread.name)
+                logging.error('Inputs: ' + str([str(i) for i in inputs]))
+
+                if config.multi_thread_repeat_exception:
+                    logging.error('Repeating execution')
+                    for args in inputs:
+                        self.target.function(*args) # no catch
+
+                    logging.error('No exception was thrown during the repeat.')
+
                 raise exception.exception
 
             self.outputs.extend(outputs)
@@ -111,7 +126,7 @@ class ThreadCollector(object):
             if self.ntotal != 0: # progress report requested
                 self.ndone += len(inputs)
                 if self.ndone == self.ntotal or self.ndone > self.watermark:
-                    logging.info('Processed %.1f%% of input.', 100. * self.ndone / self.ntotal)
+                    logging.info('Processed %.1f%% of input (%ds elapsed).', 100. * self.ndone / self.ntotal, int(time.time() - self.start_time))
                     self.watermark += max(1, self.ntotal / 20)
 
 
@@ -124,6 +139,16 @@ def parallel_exec(function, arguments, per_thread = 1, num_threads = config.num_
     if len(arguments) == 0:
         return []
 
+    if not config.use_threads:
+        outputs = []
+        for args in arguments:
+            if type(args) is tuple:
+                outputs.append(function(*args))
+            else:
+                outputs.append(function(args))
+
+        return outputs
+
     if per_thread < 1:
         per_thread = 1
 
@@ -132,9 +157,9 @@ def parallel_exec(function, arguments, per_thread = 1, num_threads = config.num_
 
     target = FunctionWrapper(function)
     if print_progress:
-        collector = ThreadCollector(len(arguments), timeout = timeout)
+        collector = ThreadCollector(target, ntotal = len(arguments), timeout = timeout)
     else:
-        collector = ThreadCollector(timeout = timeout)
+        collector = ThreadCollector(target, timeout = timeout)
 
     # format the inputs: list (one element for one thread) of lists (arguments x per_thread) of tuples
     input_list = [[]]
@@ -154,6 +179,7 @@ def parallel_exec(function, arguments, per_thread = 1, num_threads = config.num_
         thread.daemon = True
 
         thread.start()
+
         threads.append((thread, time.time(), inputs, outputs, exception))
 
         while len(threads) >= num_threads:
