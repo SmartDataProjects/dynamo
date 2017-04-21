@@ -158,7 +158,7 @@ class TransactionHistoryInterface(object):
 
     def close_deletion_run(self, run_number):
         if config.read_only:
-            logger.info('close_copy_run')
+            logger.info('close_deletion_run')
             return
 
         self.acquire_lock()
