@@ -276,8 +276,10 @@ class DetoxLock {
         $this->send_response(400, 'InternalError', 'Failed to update lock');
     }
 
-    if (!$this->disable_lock($to_unlock))
-      $this->send_response(400, 'InternalError', 'Failed to disable lock');
+    if (count($to_unlock) != 0) {
+      if (!$this->disable_lock($to_unlock))
+        $this->send_response(400, 'InternalError', 'Failed to disable lock');
+    }
 
     $lockids = array_merge($inserted_ids, array_keys($to_update), $to_unlock);
 
