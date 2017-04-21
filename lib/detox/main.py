@@ -235,17 +235,6 @@ class Detox(object):
         logger.info('Restoring inventory state.')
         policy.restore_replicas()
 
-        logger.info('Removing datasets with no replicas.')
-        datasets_to_remove = []
-        for dataset in set([replica.dataset for replica in deleted_replicas]):
-            if len(dataset.replicas) == 0:
-                if not is_test:
-                    datasets_to_remove.append(self.inventory_manager.datasets.pop(dataset.name))
-                    dataset.unlink()
-
-        if len(datasets_to_remove) != 0:
-            self.inventory_manager.store.delete_datasets(datasets_to_remove)
-
         self.history.close_deletion_run(run_number)
 
     def determine_deletions(self, target_sites, deletion_candidates, policy):
