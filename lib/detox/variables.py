@@ -2,7 +2,7 @@
 Define translations from text-based detox configuration to actual python expressions here
 """
 
-from common.dataformat import Dataset, Site, DatasetReplica
+from common.dataformat import Dataset, Site
 
 BOOL_TYPE, NUMERIC_TYPE, TEXT_TYPE, TIME_TYPE = range(4)
 
