@@ -100,6 +100,7 @@ for cls in ['deletion']:
         kwd[cls + '_cls'] = getattr(classes, clsname)
 
 transaction_manager = TransactionManager(**kwd)
+transaction_manager.deletion.store = inventory_manager.store
 
 kwd = {}
 for cls in ['store', 'access_history', 'lock']:

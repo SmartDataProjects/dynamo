@@ -1,14 +1,14 @@
 import common.configuration as common
 
-included_sites = ['T2_*', 'T1_*_Disk']
+included_sites = ['T2_*', 'T3_*']
 
 demand_refresh_interval = 7200. # update demand if demand manager time_today is more than 7200 seconds ago
 
-max_dataset_size = 50. # Maximum dataset size to consider for copy in TB
+max_dataset_size = 10. # Maximum dataset size to consider for copy in TB
 
 request_to_replica_threshold = 1.75 # (weighted number of requests) / (number of replicas) above which replication happens
 
-max_copy_per_site = 50. # Maximum volume to be copied per site in TB
+max_copy_per_site = 10. # Maximum volume to be copied per site in TB
 max_copy_total = 100.
 
 max_replicas = 10

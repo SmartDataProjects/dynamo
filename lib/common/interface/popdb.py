@@ -16,6 +16,7 @@ class PopDB(AccessHistoryInterface):
         super(self.__class__, self).__init__()
 
         self._popdb_interface = RESTService(url_base)
+        print url_base
 
     def get_local_accesses(self, site, date): #override
         if site.name.startswith('T0'):
@@ -42,12 +43,25 @@ class PopDB(AccessHistoryInterface):
 
         return accesses
 
+    def get_xrootd_accesses(self, site, date): #override                                                     
+        service = 'xrdpopularity/DSStatInTimeWindow'
+        datestr = date.strftime('%Y-%m-%d')
+        result = self._make_request(service, ['sitename=' + sitename, 
+                                              'tstart=' + datestr, 'tstop=' + datestr])
+        accesses = []
+        for ds_entry in result:
+            access = DatasetReplica.Access(int(ds_entry['NACC']), float(ds_entry['TOTCPU']))
+            accesses.append((ds_entry['COLLNAME'], access))
+            
+        return accesses
+
     def _make_request(self, resource, options = [], method = GET, format = 'url'):
         """
         Make a single popdb request call. Returns the result json interpreted as a python dict.
         """
 
         resp = self._popdb_interface.make_request(resource, options = options, method = method, format = format)
+        #print resp
 
         result = resp['DATA']
         del resp
@@ -74,7 +88,7 @@ if __name__== '__main__':
     popdb = PopDB()
 
     if args.command == 'dsstat':
-        service = 'popularity'
+        service = 'xrdpopularity'
         for opt in args.options:
             if 'sitename=' in opt:
                 sitename = opt[opt.find('=') + 1:]

@@ -27,7 +27,11 @@ class DatasetReplica(object):
         for block_replica in self.block_replicas:
             self.site.remove_block_replica(block_replica)
 
+        for file_replica in self.file_replicas:
+            self.site.remove_file_replica(file_replica)
+
         self.block_replicas = []
+        self.site_replicas = []
         self.site = None
 
     def __str__(self):
@@ -39,6 +43,7 @@ class DatasetReplica(object):
                 block_replicas_size = len(self.block_replicas),
                 num_local_accesses = len(self.accesses[DatasetReplica.ACC_LOCAL]),
                 num_remote_accesses = len(self.accesses[DatasetReplica.ACC_REMOTE]))
+
 
     def __repr__(self):
         rep = 'DatasetReplica(%s,\n' % repr(self.dataset)
@@ -56,6 +61,10 @@ class DatasetReplica(object):
         if block_replicas:
             for brep in self.block_replicas:
                 replica.block_replicas.append(brep.clone())
+
+        if file_replicas:
+            for brep in self.file_replicas:
+                replica.file_replicas.append(brep.clone())
 
         return replica
 
@@ -80,7 +89,7 @@ class DatasetReplica(object):
             if len(groups) == 0:
                 # no group spec
                 if self.is_full():
-                    return self.dataset.size()
+                    return self.dataset.size
                 else:
                     if physical:
                         return sum([r.size for r in self.block_replicas])

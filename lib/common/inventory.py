@@ -49,7 +49,8 @@ class InventoryManager(object):
         if load_data:
             self.load()
 
-    def load(self, load_replicas = True):
+    def load(self, load_blocks = True, load_files = False, 
+             load_replicas = True, dataset_filter = '/*/*/*'):
         """
         Load information up to block level from local persistent storage to memory. The flag
         load_replicas can be used to determine whether dataset/block-site links should also be
@@ -71,7 +72,12 @@ class InventoryManager(object):
         try:
             site_names = self.store.get_site_list(include = config.inventory.included_sites, exclude = config.inventory.excluded_sites)
 
-            sites, groups, datasets = self.store.load_data(site_filt = site_names, load_replicas = load_replicas)
+            sites, groups, datasets = self.store.load_data(
+                site_filt = site_names,
+                dataset_filt = dataset_filter,
+                load_blocks = load_blocks,
+                load_files = load_files,
+                load_replicas = load_replicas)
 
             self.sites = dict((s.name, s) for s in sites)
             self.groups = dict((g.name, g) for g in groups)

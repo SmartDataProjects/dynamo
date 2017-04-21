@@ -132,6 +132,8 @@ class Site(object):
 
         self._block_replicas = set()
 
+        self._file_replicas = set()
+
         # Each block replica can have multiple owners but will always have one "accounting owner", whose quota the replica counts toward.
         # When the accounting owner disowns the replica, the software must reassign the ownership to another.
         self._partition_quota = [0] * len(Site.partitions) # in TB
@@ -160,10 +162,15 @@ class Site(object):
             for block_replica in replica.block_replicas:
                 # need to call remove before clearing the set for size accounting
                 self.remove_block_replica(block_replica)
-
             replica.block_replicas = []
 
+            for file_replica in replica.file_replicas:
+                # need to call remove before clearing the set for size accounting
+                self.remove_file_replica(file_replica)
+            replica.file_replicas = []
+
         self._block_replicas.clear()
+        self._file_replicas.clear()
 
     def find_dataset_replica(self, dataset):
         # very inefficient operation
@@ -186,6 +193,17 @@ class Site(object):
         except StopIteration:
             return None
 
+    def find_file_replica(self, lfile):
+        try:
+            if type(lfile).__name__ == 'File':
+                return next(b for b in list(self._file_replicas) if b.lfile == lfile)
+            else:
+                return next(b for b in list(self._file_replicas) if b.lfile.name == lfile)
+            
+        except StopIteration:
+            return None
+        
+
     def add_block_replica(self, replica, partitions = None):
         self._block_replicas.add(replica)
 
@@ -201,6 +219,9 @@ class Site(object):
                 self._occupancy_projected[ip] += replica.block.size
                 self._occupancy_physical[ip] += replica.size
 
+    def add_file_replica(self, replica, partitions = None):
+        self._file_replicas.add(replica)
+
     def remove_block_replica(self, replica):
         try:
             self._block_replicas.remove(replica)
@@ -212,6 +233,13 @@ class Site(object):
             if partition(replica):
                 self._occupancy_projected[ip] -= replica.block.size
                 self._occupancy_physical[ip] -= replica.size
+
+    def remove_file_replica(self,replica):
+        try:
+            self._file_replicas.remove(replica)
+        except ValueError:
+            print replica.site.name, replica.lfile.dataset.name, replica.lfile.name
+            raise
 
     def clear_block_replicas(self):
         self._block_replicas.clear()

@@ -5,5 +5,6 @@ from popularity import PopularityHandler
 __all__ = [
     'plugins',
     'BaseHandler',
-    'PopularityHandler'
+    'PopularityHandler',
+    'DirectRequestsHandler'
 ]

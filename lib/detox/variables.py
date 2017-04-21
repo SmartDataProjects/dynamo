@@ -66,6 +66,7 @@ replica_vardefs = {
     'replica.incomplete': (replica_incomplete, BOOL_TYPE),
     'replica.last_block_created': (lambda r: r.last_block_created, TIME_TYPE),
     'replica.last_used': (lambda r: max(r.dataset.last_update, r.last_access()), TIME_TYPE),
+    'replica.last_modified': (lambda r: (r.last_block_created,r.dataset.size), TIME_TYPE),
     'replica.num_access': (lambda r: len(r.accesses[DatasetReplica.ACC_LOCAL]) + len(r.accesses[DatasetReplica.ACC_REMOTE]), NUMERIC_TYPE),
     'replica.has_locked_block': (replica_has_locked_block, BOOL_TYPE),
     'replica.owners': (lambda r: list(set(br.group.name for br in r.block_replicas if br.group is not None)), TEXT_TYPE),

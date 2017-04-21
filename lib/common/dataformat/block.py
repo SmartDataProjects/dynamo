@@ -1,4 +1,5 @@
 import collections
+import hashlib
 
 # Block and BlockReplica implemented as tuples to reduce memory footprint
 Block = collections.namedtuple('Block', ['name', 'dataset', 'size', 'num_files', 'is_open'])
@@ -9,6 +10,13 @@ def _Block_translate_name(name_str):
 
 def _Block_notranslate_name(name_str):
     return name_str
+
+def _Block_md5translate_name(name_str):
+    m = hashlib.md5()
+    m.update(name_str)
+    retval = m.hexdigest()
+    del m
+    return retval
 
 def _Block___str__(self):
     return 'Block %s#%s (size=%d, num_files=%d, is_open=%s)' % (self.dataset.name, self.real_name(), self.size, self.num_files, self.is_open)
@@ -34,6 +42,7 @@ def _Block_clone(self, **kwd):
 
 #Block.translate_name = staticmethod(_Block_translate_name)
 Block.translate_name = staticmethod(_Block_notranslate_name) 
+Block.convert2md5 = staticmethod(_Block_md5translate_name)
 Block.__str__ = _Block___str__
 #Block.real_name = _Block_real_name
 Block.real_name = _Block_original_name  

@@ -41,6 +41,15 @@ class LocalStoreInterface(object):
         if self._lock_depth > 0: # should always be the case if properly programmed
             self._lock_depth -= 1
 
+    def get_last_update(self):
+        logger.debug('_do_get_last_update()')
+
+        self.acquire_lock()
+        try:
+            return self._do_get_last_update()
+        finally:
+            self.release_lock()
+
     def set_last_update(self, tm = time.time()):
         self.last_update = tm
 
@@ -183,7 +192,7 @@ class LocalStoreInterface(object):
 
         return site_names
 
-    def load_data(self, site_filt = '*', dataset_filt = '/*/*/*', load_replicas = True):
+    def load_data(self, site_filt = '*', dataset_filt = '/*/*/*', load_blocks = False, load_files = False, load_replicas = True):
         """
         Return lists loaded from persistent storage. Argument site_filt can be a wildcard string or a list
         of exact site names.
@@ -193,11 +202,52 @@ class LocalStoreInterface(object):
 
         self.acquire_lock()
         try:
-            site_list, group_list, dataset_list = self._do_load_data(site_filt, dataset_filt, load_replicas)
+            site_list, group_list, dataset_list = self._do_load_data(site_filt, dataset_filt, load_blocks, load_files, load_replicas)
         finally:
             self.release_lock()
 
         return site_list, group_list, dataset_list
+
+    def load_dataset(self, dataset_name, load_blocks = False, load_files = False):
+        """
+        Load a dataset and create a Dataset object.
+        """
+
+        logger.debug('_do_load_dataset()')
+
+        self.acquire_lock()
+        try:
+            dataset = self._do_load_dataset(dataset_name, load_blocks, load_files)
+        finally:
+            self.release_lock()
+
+        return dataset
+
+    def load_blocks(self, dataset):
+        """
+        Load files for the given dataset.
+        """
+
+        logger.debug('_do_load_blocks()')
+
+        self.acquire_lock()
+        try:
+            self._do_load_blocks(dataset)
+        finally:
+            self.release_lock()
+
+    def load_files(self, dataset):
+        """
+        Load files for the given dataset.
+        """
+
+        logger.debug('_do_load_files()')
+        
+        self.acquire_lock()
+        try:
+            self._do_load_files(dataset)
+        finally:
+            self.release_lock()
 
     def load_replica_accesses(self, sites, datasets):
         """
@@ -235,6 +285,9 @@ class LocalStoreInterface(object):
         Write information in memory into persistent storage.
         Remove information of datasets and blocks with no replicas.
         Arguments are list of objects.
+        @param sites    list of sites
+        @param groups   list of groups
+        @param datasets list of datasets
         """
 
         if config.read_only:

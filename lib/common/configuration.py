@@ -40,6 +40,14 @@ mysqlstore.db_params = {
     'db': 'dynamo'
 }
 
+mysqlregistry = Configuration()
+mysqlregistry.db_params = {
+    'config_file': '/etc/my.cnf',
+    'config_group': 'mysql-dynamo',
+    'db': 'dynamoregister'
+}
+
+
 phedex = Configuration()
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'
 phedex.subscription_chunk_size = 4.e+13 # 40 TB

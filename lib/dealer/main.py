@@ -34,7 +34,7 @@ class Dealer(object):
         logger.info('Dealer run for %s starting at %s', partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
 
         try:
-            self.demand_manager.update(self.inventory_manager, accesses = False, requests = True, locks = False)
+            #self.demand_manager.update(self.inventory_manager, accesses = False, requests = True, locks = False)
             self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
     
             policy = self.policies[partition]
@@ -54,7 +54,7 @@ class Dealer(object):
             # Ask each site if it should be considered as a copy destination.
             target_sites = set()
             for site in self.inventory_manager.sites.values():
-                if site.partition_quota(partition) != 0. and site.status == Site.STAT_READY and site.active == Site.ACT_AVAILABLE and policy.target_site_def.match(site):
+                if site.partition_quota(partition) != 0. and site.status == Site.STAT_READY and site.active == Site.ACT_AVAILABLE and policy.target_site_def(site):
                     target_sites.add(site)
     
             pending_volumes = collections.defaultdict(float)
@@ -98,6 +98,11 @@ class Dealer(object):
         1. Compute a time-weighted sum of number of requests for the last three days.
         2. Decide the sites least-occupied by analysis activities.
         3. Copy datasets with number of requests > available replicas to empty sites.
+
+        @param sites  List of site objects
+        @param items  ([datasets], [blocks], [files]) where each list element can be the object or (object, destination_site)
+        @param policy Dealer policy
+        @param pending_volumes Volumes pending transfer
         """
         
         copy_list = dict([(site, []) for site in sites]) # site -> [new_replica]
@@ -106,51 +111,52 @@ class Dealer(object):
 
         def compute_site_business(site):
             business = 0.
-    
-            for replica in list(site.dataset_replicas):
-                dataset = replica.dataset
-                # total capability of the sites this dataset is at
-                total_cpu = sum([r.site.cpu for r in dataset.replicas])
-                # w * N * (site cpu / total cpu); normalized by site cpu
-                business += dataset.demand.request_weight * dataset.num_files() / total_cpu
-
             return business
 
         # request-weighted, cpu-normalized number of running jobs at sites
         site_business = {}
         site_occupancy = {}
+        quota = {}
         for site in sites:
             # At the moment we don't have the information of exactly how many jobs are running at each site.
             # Assume fair share of jobs among sites: (Nreq * Nfile) * (site_capability / sum_{site}(capability))
             # jobs at each site. Normalize this by the capability at each site.
-
             site_business[site] = compute_site_business(site)
+            quota[site] = site.partition_quota(policy.partition)
             site_occupancy[site] = site.storage_occupancy(policy.partition, physical = False)
 
-        quota = {}
-        for site in sites:
-            quota[site] = site.partition_quota(policy.partition)
-
         # now go through datasets
-        for dataset in datasets:
-            dataset_size = dataset.size() * 1.e-12
+        for entry in datasets:
+            if type(entry) is tuple:
+                dataset, destination_site = entry
+            else:
+                dataset = entry
+                destination_site = None
 
-            sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
+            dataset_size = dataset.size * 1.e-12/quota[site]
 
-            try:
-                destination_site = next(dest for dest, njob in sorted_sites if \
-                    site_occupancy[dest] + dataset_size < quota[dest] and \
-                    dest.find_dataset_replica(dataset) is None
-                )
-
-            except StopIteration:
-                logger.warning('%s has no copy destination.', dataset.name)
-                break
+            if destination_site is None:
+                sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) 
+                #sorted from emptiest to busiest
+                try:
+                    destination_site = next(dest for dest, njob in sorted_sites if \
+                        site_occupancy[dest] + dataset_size < quota[dest] and \
+                        dest.find_dataset_replica(dataset) is None
+                    )
+    
+                except StopIteration:
+                    logger.warning('%s has no copy destination.', dataset.name)
+                    break
+            else:
+                occup = site.storage_occupancy(policy.partition, physical = False)
+                limit = dealer_config.target_site_occupancy * dealer_config.overflow_factor
+                if (occup + dataset_size) > limit:
+                    continue
 
             logger.info('Copying %s to %s', dataset.name, destination_site.name)
-
-            new_replica = self.inventory_manager.add_dataset_to_site(dataset, destination_site, policy.group)
-
+            new_replica = self.inventory_manager.add_dataset_to_site(dataset, 
+                                                                     destination_site, 
+                                                                     policy.group)
             copy_list[destination_site].append(new_replica)
 
             # recompute site properties
@@ -158,10 +164,10 @@ class Dealer(object):
             occ = site.storage_occupancy(policy.partition, physical = False)
 
             if occ > dealer_config.target_site_occupancy * dealer_config.overflow_factor or \
-                    pending_volumes[destination_site] < dealer_config.max_copy_per_site:
+                    pending_volumes[destination_site] > dealer_config.max_copy_per_site:
                 # this site should get no more copies
-                site_business.pop(destination_site)
-                site_occupancy.pop(destination_site)
+                site_business.pop(destination_site,'None')
+                site_occupancy.pop(destination_site,'None')
             else:
                 site_occupancy[destination_site] = occ
 
@@ -180,21 +186,28 @@ class Dealer(object):
                 break
 
         # now go through blocks
-        for block in blocks:
+        for entry in blocks:
+            if type(entry) is tuple:
+                block, destination_site = entry
+            else:
+                block = entry
+                destination_site = None
+
             block_size = block.size * 1.e-12
             block_name = block.real_name()
 
-            sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
+            if destination_site is None:
+                sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
 
-            try:
-                destination_site = next(dest for dest, njob in sorted_sites if \
-                    site_occupancy[dest] + block_size < quota[dest] and \
-                    dest.find_block_replica(block) is None
-                )
-
-            except StopIteration:
-                logger.warning('%s#%s has no copy destination.', block.dataset.name, block_name)
-                break
+                try:
+                    destination_site = next(dest for dest, njob in sorted_sites if \
+                        site_occupancy[dest] + block_size < quota[dest] and \
+                        dest.find_block_replica(block) is None
+                    )
+    
+                except StopIteration:
+                    logger.warning('%s#%s has no copy destination.', block.dataset.name, block_name)
+                    break
 
             logger.info('Copying %s#%s to %s', block.dataset.name, block_name, destination_site.name)
 
@@ -229,20 +242,27 @@ class Dealer(object):
                 break
 
         # now go through files
-        for lfile in files:
+        for entry in files:
+            if type(entry) is tuple:
+                lfile, destination_site = entry
+            else:
+                lfile = entry
+                destination_site = None
+
             file_size = lfile.size * 1.e-12
 
-            sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
-
-            try:
-                destination_site = next(dest for dest, njob in sorted_sites if \
-                    site_occupancy[dest] + file_size < quota[dest] and \
-                    dest.find_dataset_replica(dataset) is None
-                )
-
-            except StopIteration:
-                logger.warning('%s has no copy destination.', lfile.fullpath())
-                break
+            if destination_site is None:
+                sorted_sites = sorted(site_business.items(), key = lambda (s, n): n) #sorted from emptiest to busiest
+    
+                try:
+                    destination_site = next(dest for dest, njob in sorted_sites if \
+                        site_occupancy[dest] + file_size < quota[dest] and \
+                        dest.find_dataset_replica(dataset) is None
+                    )
+    
+                except StopIteration:
+                    logger.warning('%s has no copy destination.', lfile.fullpath())
+                    break
 
             logger.info('Copying %s to %s', lfile.fullpath(), destination_site.name)
 
@@ -344,6 +364,7 @@ if __name__ == '__main__':
     transaction_manager = TransactionManager()
     
     demand_manager = DemandManager()
+    #deman_manager = None
 
     history = classes.default_interface['history']()
 

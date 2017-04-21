@@ -26,15 +26,26 @@ class MySQL(object):
         return MySQLdb.escape_string(string)
     
     def __init__(self, host = '', user = '', passwd = '', config_file = '', config_group = '', db = ''):
+        self._connection_parameters = {}
         if config_file:
-            self._connection_parameters = {'read_default_file': config_file, 'read_default_group': config_group, 'db': db}
-        else:
-            self._connection_parameters = {'host': host, 'user': user, 'passwd': passwd, 'db': db}
+            self._connection_parameters['read_default_file'] = config_file
+            self._connection_parameters['read_default_group'] = config_group
+        if host:
+            self._connection_parameters['host'] = host
+        if user:
+            self._connection_parameters['user'] = user
+        if passwd:
+            self._connection_parameters['passwd'] = passwd
+        if db:
+            self._connection_parameters['db'] = db
 
         self._connection = MySQLdb.connect(**self._connection_parameters)
 
     def db_name(self):
         return self._connection_parameters['db']
+
+    def close(self):
+        self._connection.close()
 
     def query(self, sql, *args):
         """
@@ -164,7 +175,10 @@ class MySQL(object):
 
         values = ''
         for obj in objects:
-            values += template % MySQLdb.escape(mapping(obj), MySQLdb.converters.conversions)
+            if mapping is None:
+                values += template % MySQLdb.escape(obj, MySQLdb.converters.conversions)
+            else:
+                values += template % MySQLdb.escape(mapping(obj), MySQLdb.converters.conversions)
             
             # MySQL allows queries up to 1M characters
             if len(values) > config.mysql.max_query_len or obj == objects[-1]:
@@ -266,7 +280,11 @@ class MySQL(object):
                 query_len = len(pool_expr)
                 items = []
                 while query_len < config.mysql.max_query_len and iP < len(pool):
-                    item = str(pool[iP])
+                    if type(pool[iP]) is str:
+                        item = "'%s'" % pool[iP]
+                    else:
+                        item = str(pool[iP])
+
                     query_len += len(item)
                     items.append(item)
                     iP += 1
@@ -278,3 +296,6 @@ class MySQL(object):
 
         elif type(pool) is str:
             execute(pool)
+
+    def table_exists(self, table):
+        return len(self.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s LIMIT 1', self.db_name(), table)) != 0

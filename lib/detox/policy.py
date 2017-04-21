@@ -170,8 +170,15 @@ class Policy(object):
                     self.uses_locks = True
 
                 sortkey = replica_vardefs[words[2]][0]
-                self.candidate_sort = lambda replicas: sorted(replicas, key = sortkey, reverse = reverse)
-
+                def sort_order(item1,item2):
+                    v1 = sortkey(item1)
+                    v2 = sortkey(item2)
+                    if v1 == v2:
+                        return cmp(item1.dataset.size,item2.dataset.size)
+                    else:
+                        return cmp(v1,v2)
+                self.candidate_sort = lambda replicas: sorted(replicas, key=sortkey, reverse = reverse)
+                
             else:
                 cond_text = ' '.join(words[1:])
 
@@ -186,6 +193,7 @@ class Policy(object):
 
                 elif line_type == LINE_POLICY:
                     self.rules.append(PolicyLine(decision, cond_text))
+            
 
         if self.target_site_def is None:
             raise ConfigurationError('Target site definition missing.')
