@@ -223,7 +223,7 @@ class Policy(object):
         logger.info(' Dataset requests: ' + ('Y' if self.uses_requests else 'N'))
         logger.info(' Locks: ' + ('Y' if self.uses_locks else 'N') + '\n')
 
-    def partition_replicas(self, datasets):
+    def partition_replicas(self, inventory):
         """
         Take the full list of datasets and pick out block replicas that are not in the partition.
         If a dataset replica loses all block replicas, take the dataset replica itself out of inventory.
@@ -233,10 +233,10 @@ class Policy(object):
         all_replicas = set()
 
         # stacking up replicas (rather than removing them one by one) for efficiency
-        site_all_dataset_replicas = collections.defaultdict(list)
-        site_all_block_replicas = collections.defaultdict(list)
+        site_all_dataset_replicas = dict((site, []) for site in inventory.sites.values())
+        site_all_block_replicas = dict((site, []) for site in inventory.sites.values())
 
-        for dataset in datasets:
+        for dataset in inventory.datasets.values():
             if dataset.replicas is None:
                 continue
 
