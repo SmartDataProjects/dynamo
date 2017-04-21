@@ -22,10 +22,9 @@ class PopDB(AccessHistory):
         self._popdb_interface = RESTService(url_base, use_cache = True)
 
     def update(self, inventory): #override
-        if self._last_update == 0:
-            records = inventory.store.load_replica_accesses(inventory.sites.values(), inventory.datasets.values())
-            self._last_update = records[0]
-            self._access_list = records[1]
+        records = inventory.store.load_replica_accesses(inventory.sites.values(), inventory.datasets.values())
+        self._last_update = records[0]
+        full_access_list = records[1]
 
         start_time = max(self._last_update, (time.time() - 3600 * 24 * config.popdb.max_back_query))
         logger.info('Updating dataset access info from %s to %s', time.strftime('%Y-%m-%d', time.gmtime(start_time)), time.strftime('%Y-%m-%d', time.gmtime()))
@@ -64,13 +63,13 @@ class PopDB(AccessHistory):
                     if replica is None:
                         continue
 
-                    if replica not in self._access_list:
-                        self._access_list[replica] = {}
+                    if replica not in full_access_list:
+                        full_access_list[replica] = {}
 
                     if replica not in access_list:
                         access_list[replica] = {}
 
-                    self._access_list[replica][date] = int(ds_entry['NACC'])
+                    full_access_list[replica][date] = int(ds_entry['NACC'])
                     access_list[replica][date] = (int(ds_entry['NACC']), float(ds_entry['TOTCPU']))
 
         utctoday = datetime.date(*time.gmtime()[:3])
@@ -88,7 +87,7 @@ class PopDB(AccessHistory):
 
         self._last_update = time.time()
 
-        self._compute(inventory)
+        self._compute(full_access_list)
 
     def _make_request(self, resource, options = [], method = GET, format = 'url'):
         """

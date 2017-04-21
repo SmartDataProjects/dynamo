@@ -18,10 +18,8 @@ class GlobalQueue(JobQueue):
         self.htcondor = HTCondor(collector, schedd_constraint = 'CMSGWMS_Type =?= "crabschedd"')
 
     def update(self, inventory): #override
-        if self._last_update == 0:
-            records = inventory.store.load_dataset_requests(inventory.datasets.values())
-            self._last_update = records[0]
-            self._request_list = records[1]
+        records = inventory.store.load_dataset_requests(inventory.datasets.values())
+        full_request_list = records[1]
 
         constraint = 'TaskType=?="ROOT" && !isUndefined(DESIRED_CMSDataset) && (QDate > {last_update} || CompletionDate > {last_update})'.format(last_update = self._last_update)
 
@@ -43,8 +41,8 @@ class GlobalQueue(JobQueue):
                 try:
                     dataset = inventory.datasets[_dataset_name]
 
-                    if dataset not in self._request_list:
-                        self._request_list[dataset] = {}
+                    if dataset not in full_request_list:
+                        full_request_list[dataset] = {}
 
                     request_list[dataset] = {}
 
@@ -76,14 +74,14 @@ class GlobalQueue(JobQueue):
 
             job_id = ad['GlobalJobId']
 
-            self._request_list[dataset][job_id] = reqdata
+            full_request_list[dataset][job_id] = reqdata
             request_list[dataset][job_id] = reqdata
 
         inventory.store.save_dataset_requests(request_list)
 
         self._last_update = time.time()
 
-        self._compute(inventory)
+        self._compute(full_request_list)
 
 
 def form_job_constraint(dataset, status, start_time, end_time):

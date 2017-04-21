@@ -15,20 +15,18 @@ class AccessHistory(object):
 
     def __init__(self):
         self._last_update = 0 # unix time of last update
-        self._access_list = {} # {replica: {datetime.date: num_access}}
 
     def load(self, inventory):
         records = inventory.store.load_replica_accesses(inventory.sites.values(), inventory.datasets.values())
         self._last_update = records[0]
-        self._access_list = records[1]
 
-        self._compute(inventory)
+        self._compute(records[1])
 
     def update(self, inventory):
         # implemented in subclasses
         pass
 
-    def _compute(self, inventory):
+    def _compute(self, access_list):
         """
         Set the dataset usage rank based on access list.
         Following the IntelROCCS implementation for local rank:
@@ -40,36 +38,30 @@ class AccessHistory(object):
         now = time.time()
         today = datetime.datetime.utcfromtimestamp(now).date()
 
-        for dataset in inventory.datasets.values():
-            if dataset.replicas is None:
-                continue
+        datasets = set()
 
-            dataset.demand['local_usage'] = {} # {site: DatasetReplicaUsage}
+        for replica, accesses in access_list.items():
+            if replica.dataset not in datasets:
+                replica.dataset.demand['local_usage'] = {} # {site: DatasetReplicaUsage}
+                datasets.add(replica.dataset)
     
-            global_rank = 0.
+            size = replica.size(physical = False) * 1.e-9
 
-            for replica in dataset.replicas:
-                try:
-                    accesses = self._access_list[replica]
-                except KeyError:
-                    continue
+            last_access = max(accesses.keys())
+            num_access = sum(accesses.values())
 
-                size = replica.size(physical = False) * 1.e-9
+            if num_access == 0:
+                local_rank = (now - replica.last_block_created) / (24. * 3600.)
+            else:
+                local_rank = (today - last_access).days - num_access / size
 
-                last_access = max(accesses.keys())
-                num_access = sum(accesses.values())
+            local_rank -= size * 1.e-3
 
-                if num_access == 0:
-                    local_rank = (now - replica.last_block_created) / (24. * 3600.)
-                else:
-                    local_rank = (today - last_access).days - num_access / size
+            # mktime returns expects the local time but the timetuple we pass is for UTC. subtracting time.timezone
+            replica.dataset.demand['local_usage'][replica.site] = DatasetReplicaUsage(local_rank, num_access, time.mktime(last_access.timetuple()) - time.timezone)
 
-                local_rank -= size * 1.e-3
-
-                # mktime returns expects the local time but the timetuple we pass is for UTC. subtracting time.timezone
-                dataset.demand['local_usage'][replica.site] = DatasetReplicaUsage(local_rank, num_access, time.mktime(last_access.timetuple()) - time.timezone)
-
-                global_rank += local_rank
+        for dataset in datasets:
+            global_rank = sum(usage.rank for usage in dataset.demand['local_usage'].values())
 
             if len(dataset.replicas) != 0:
                 global_rank /= len(dataset.replicas)
