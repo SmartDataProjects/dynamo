@@ -125,7 +125,7 @@ class Detox(object):
                 logger.info('Iteration %d', iteration)
 
             # call policy.evaluate for each replica
-            # parallel_exec is just an speed optimization (may not be meaningful in the presence of python Global Interpreter Lock)
+            # parallel_exec is just a speed optimization (may not be meaningful in the presence of python Global Interpreter Lock)
             eval_results = parallel_exec(lambda r: policy.evaluate(r), list(all_replicas), per_thread = 100)
 
             deletion_candidates = collections.defaultdict(dict) # {site: {replica: condition_id}}
@@ -230,7 +230,7 @@ class Detox(object):
         self.history.save_deletion_decisions(run_number, deleted, kept, protected)
         
         logger.info('Committing deletion.')
-        deleted_replicas = self.commit_deletions(run_number, policy, deleted.keys(), is_test, comment, auto_approval)
+        self.commit_deletions(run_number, policy, deleted.keys(), is_test, comment, auto_approval)
 
         logger.info('Restoring inventory state.')
         policy.restore_replicas()
@@ -311,8 +311,6 @@ class Detox(object):
             if policy.partition.name != 'Global':
                 comment += ' for %s partition.' % policy.partition.name
 
-        deleted_replicas = []
-
         # now schedule deletion for each site
         for site in sorted(sites):
             if site.storage_type == Site.TYPE_MSS:
@@ -383,8 +381,6 @@ class Detox(object):
                             # this replica was fully in the partition
                             # second arg is False because block replicas must be all gone by now
                             self.inventory_manager.store.delete_datasetreplica(replica, delete_blockreplicas = False)
-                            deleted_replicas.append(replica)
-
                 size = sum([r.size() for r in replicas])
 
                 self.history.make_deletion_entry(run_number, site, deletion_id, approved, [r.dataset for r in replicas], size)
@@ -394,5 +390,3 @@ class Detox(object):
             sigint.unblock()
 
             logger.info('Done deleting %d replicas (%.1f TB) from %s.', num_deleted, total_size * 1.e-12, site.name)
-
-        return deleted_replicas
