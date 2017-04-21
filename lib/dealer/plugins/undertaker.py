@@ -81,7 +81,7 @@ class Undertaker(BaseHandler):
     
         logger.info('Offloading protected datasets from non-ready sites %s (total size %.1f TB)', str([s.name for s in bad_sites]), total_size * 1.e-12)
 
-        return datasets
+        return requests
 
     def save_record(self, run_number, history, copy_list): # override
         pass

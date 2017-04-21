@@ -114,11 +114,13 @@ class Dealer(object):
         for item, destination in candidates:
             if type(item) is Dataset:
                 item_name = item.name
+                item_size = item.size * 1.e-12
                 find_replica_at = lambda s: s.find_dataset_replica(item)
                 make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(item, s, group)
 
             elif type(item) is Block:
                 item_name = item.dataset.name + '#' + item.real_name()
+                item_size = item.size * 1.e-12
                 find_replica_at = lambda s: s.find_block_replica(item)
                 make_new_replica_at = lambda s: self.inventory_manager.add_block_to_site(item, s, group)
 
@@ -129,6 +131,7 @@ class Dealer(object):
 
                 dataset = item[0].dataset
                 item_name = dataset.name
+                item_size = sum(b.size for b in item)
                 find_replica_at = lambda s: s.find_dataset_replica(dataset)
                 make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(dataset, s, group, blocks = items)
 
@@ -136,17 +139,13 @@ class Dealer(object):
                 logger.warning('Invalid request found. Skipping.')
                 continue
 
-            size = item.size * 1.e-12
-
             if destination is None:
                 #sorted from emptiest to busiest
                 sorted_sites = sorted(site_occupancy.items(), key = lambda (s, f): f)
                 
-                logger.info('Sites sorted by occupancy: %s', str(['%s(%.2f)' % (s.name, f) for s, f in sorted_sites]))
-
                 try:
                     destination = next(site for site, occupancy in sorted_sites if \
-                        occupancy + size / quotas[site] < 1. and \
+                        occupancy + item_size / quotas[site] < 1. and \
                         find_replica_at(site) is None
                     )
     
@@ -155,7 +154,7 @@ class Dealer(object):
                     continue
 
             else:
-                if destination not in site_occupancy or site_occupancy[site] + size / quotas[site] > 1.:
+                if destination not in site_occupancy or site_occupancy[site] + item_size / quotas[site] > 1.:
                     # a plugin specified the destination, but it's not in the list of potential target sites
                     logger.warning('Cannot copy %s to %s.', item_name, site.name)
                     continue
@@ -171,8 +170,8 @@ class Dealer(object):
             copy_list[destination].append(new_replica)
 
             # recompute site properties
-            pending_volumes[destination] += size
-            site_occupancy[destination] += size / quotas[destination]
+            pending_volumes[destination] += item_size
+            site_occupancy[destination] += item_size / quotas[destination]
 
             if site_occupancy[destination] > dealer_config.target_site_occupancy or \
                     pending_volumes[destination] > dealer_config.max_copy_per_site:
