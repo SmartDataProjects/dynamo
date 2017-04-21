@@ -4,7 +4,6 @@ import re
 
 from common.interface.classes import default_interface
 from common.interface.store import LocalStoreInterface
-from common.interface.sitequota import SiteQuotaRetriever
 from common.dataformat import IntegrityError, Dataset, Site, DatasetReplica, BlockReplica
 import common.configuration as config
 
@@ -65,9 +64,6 @@ class InventoryManager(object):
         
         self.store.acquire_lock()
 
-        # temporary
-        quota_manager = SiteQuotaRetriever()
-
         try:
             site_names = self.store.get_site_list(include = config.inventory.included_sites, exclude = config.inventory.excluded_sites)
 
@@ -82,12 +78,6 @@ class InventoryManager(object):
             self.sites = dict((s.name, s) for s in sites)
             self.groups = dict((g.name, g) for g in groups)
             self.datasets = dict((d.name, d) for d in datasets)
-
-            for site in sites:
-                for partition in Site.partitions.values():
-                    site.set_partition_quota(partition, quota_manager.get_quota(site, partition))
-
-                site.active = quota_manager.get_status(site)
 
             num_dataset_replicas = 0
             num_block_replicas = 0

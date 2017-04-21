@@ -240,6 +240,7 @@ class Site(object):
 
     def set_partition_quota(self, partition, quota):
         index = Site._partitions_order.index(partition)
+
         self._partition_quota[index] = quota
 
     def storage_occupancy(self, partitions = [], physical = True):

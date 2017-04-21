@@ -180,26 +180,20 @@ class MySQLStore(LocalStoreInterface):
         id_group_map = {}
         self._make_group_map(group_list, id_group_map = id_group_map)
 
-#        # Load site quotas
-#        quotas = self._mysql.query('SELECT `site_id`, `group_id`, `storage` FROM `quotas`')
-#        for site_id, group_id, storage in quotas:
-#            try:
-#                site = id_site_map[site_id]
-#            except KeyError:
-#                continue
-#
-#            try:
-#                group = id_group_map[group_id]
-#            except KeyError:
-#                continue
-#
-#            site.set_group_quota(group, storage)
-#
-#        for site in site_list:
-#            for group in group_list:
-#                if site.group_present(group):
-#                    logger.info('Setting quota for %s on %s to %d', group.name, site.name, int(site.storage / len(group_list)))
-#                    site.set_group_quota(group, int(site.storage / len(group_list)))
+        # Load site quotas
+        quotas = self._mysql.query('SELECT q.`site_id`, p.`name`, q.`storage` FROM `quotas` AS q INNER JOIN `partitions` AS p ON p.`id` = q.`partition_id`')
+        for site_id, partition_name, storage in quotas:
+            try:
+                site = id_site_map[site_id]
+            except KeyError:
+                continue
+
+            try:
+                partition = Site.partitions[partition_name]
+            except KeyError:
+                continue
+
+            site.set_partition_quota(partition, storage)
 
         # Load software versions - treat directly as tuples with id in first column
         software_version_map = {0: None}
