@@ -68,8 +68,8 @@ class Detox(object):
         # if no policy line requires iterative execution, we need the sites to have non-negative quotas
         if not policy.static_optimization:
             for site in self.inventory_manager.sites.values():
-                if site.partition_quota(policy.partition) < 0.: # the site is active but does not have a quota
-                    logger.error('Non-negative quota for all sites is required for partition %s.', policy.partition.name)
+                if site.partition_quota(policy.partition) < 0.: # the site has infinite quota
+                    logger.error('Finite quota for all sites is required for partition %s.', policy.partition.name)
                     return
 
         # insert new policy lines to the history database

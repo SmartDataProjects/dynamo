@@ -1,6 +1,7 @@
 import logging
 import collections
 import random
+import fnmatch
 import time
 
 import dealer.configuration as dealer_config
@@ -8,6 +9,18 @@ import dealer.configuration as dealer_config
 logger = logging.getLogger(__name__)
 
 random.seed(time.time())
+
+def target_site_def(site):
+    matches = False
+    for pattern in dealer_config.target_sites:
+        if pattern.startswith('!'):
+            if fnmatch.fnmatch(site.name, pattern[1:]):
+                matches = False
+        else:
+            if fnmatch.fnmatch(site.name, pattern):
+                matches = True
+
+    return matches
 
 class DealerPolicy(object):
     """
@@ -18,7 +31,8 @@ class DealerPolicy(object):
         self.partition = partition
         self.group = group
         self.version = version
-        self.target_site_def = None
+        # target site can change between policies, but we only have one policy running at the moment
+        self.target_site_def = target_site_def
         self.used_demand_plugins = set()
         
         self._request_plugins = []
@@ -64,7 +78,7 @@ class DealerPolicy(object):
                 # -> treat all as equal.
                 priority = 1
 
-            plugin_requests = plugin.get_requests(inventory, self.partition)
+            plugin_requests = plugin.get_requests(inventory, self)
 
             logger.debug('%s requesting %d items', plugin.name, len(plugin_requests))
 

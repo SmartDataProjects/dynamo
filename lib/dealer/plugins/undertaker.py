@@ -12,11 +12,11 @@ class Undertaker(BaseHandler):
         BaseHandler.__init__(self, 'Undertaker')
         self.history = None
 
-    def get_requests(self, inventory, partition): # override
+    def get_requests(self, inventory, policy): # override
         if self.history is None:
             return []
 
-        latest_run = self.history.get_latest_deletion_run(partition.name)
+        latest_run = self.history.get_latest_deletion_run(policy.partition.name)
 
         logger.info('Offloading sites that were not in READY state at latest cycle %d', latest_run)
 

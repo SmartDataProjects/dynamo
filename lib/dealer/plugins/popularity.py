@@ -14,7 +14,7 @@ class PopularityHandler(BaseHandler):
 
         self._datasets = []
 
-    def get_requests(self, inventory, partition): # override
+    def get_requests(self, inventory, policy): # override
         self._datasets = []
         requests = []
 
@@ -36,7 +36,7 @@ class PopularityHandler(BaseHandler):
 
             for replica in dataset.replicas:
                 for block_replica in replica.block_replicas:
-                    if partition(block_replica):
+                    if policy.partition(block_replica):
                         break
                 else:
                     # no block replica in partition

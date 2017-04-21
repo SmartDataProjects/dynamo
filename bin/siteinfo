@@ -8,8 +8,9 @@ import logging
 from argparse import ArgumentParser
 
 from common.interface.mysqlhistory import MySQLHistory
+from common.interface.popdb import PopDB
 from common.inventory import InventoryManager
-from common.demand import DemandManager
+from common.dataformat import Site
 
 parser = ArgumentParser(description = 'Generate SitesInfo and RemainingDatasets files for Unified.')
 parser.add_argument('--out', '-o', metavar = 'PATH', dest = 'out_path', default = '.', help = 'Output path.')
@@ -30,8 +31,9 @@ logger.info('Writing ASCII SiteInfo.')
 history = MySQLHistory()
 
 inventory = InventoryManager()
-demand = DemandManager()
-demand.load(inventory, accesses = True, requests = False)
+
+popdb = PopDB()
+popdb.load(inventory)
 
 partitions = ['Physics', 'DataOps', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']
 
@@ -83,13 +85,20 @@ for partition in partitions:
     protect_t2total = 0.
 
     for site in sorted(sites_info):
-        active, status, quota = sites_info[site]
+        status, quota = sites_info[site]
         try:
             protect, delete, keep = sites_usage[site]
         except KeyError:
             protect = delete = keep = 0.
 
         used = protect + delete + keep
+
+        if status == Site.STAT_READY:
+            active = 1
+        elif status == Site.STAT_UNKNOWN:
+            active = 2
+        else:
+            active = 0
 
         sitesinfo.write("   %-6d %-9d %-9.0f %-12.0f %-20s \n" % \
             (active, quota, used, protect, site))
@@ -185,8 +194,7 @@ for site in dataset_lists:
 
         for dataset, size in dataset_lists[site][partition]:
             try:
-                ds = inventory.datasets[dataset]
-                local_rank = ds.demand.local_usage_rank[st]
+                local_rank = inventory.datasets[dataset].demand['local_usage'][st].rank
             except KeyError:
                 local_rank = 9999.9
 

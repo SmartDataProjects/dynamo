@@ -55,7 +55,7 @@ def replica_num_access(replica):
 def dataset_num_full_disk_copy(replica):
     num = 0
     for rep in replica.dataset.replicas:
-        if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.site.active != Site.ACT_IGNORE and rep.is_full():
+        if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.is_full():
             num += 1
 
     return num
@@ -76,7 +76,7 @@ def replica_num_full_disk_copy_common_owner(replica):
             num += 1
             continue
 
-        if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.site.active != Site.ACT_IGNORE and rep.is_full():
+        if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.is_full():
             rep_owners = set(br.group for br in rep.block_replicas if br.group is not None)
             if len(owners & rep_owners) != 0:
                 num += 1
@@ -108,7 +108,6 @@ replica_dynamic_variables = ['dataset.num_full_disk_copy', 'replica.owners', 're
 site_vardefs = {
     'site.name': (lambda p: lambda s: s.name, TEXT_TYPE),
     'site.status': (lambda p: lambda s: s.status, NUMERIC_TYPE, lambda v: eval('Site.STAT_' + v)),
-    'site.active': (lambda p: lambda s: s.active, NUMERIC_TYPE, lambda v: eval('Site.ACT_' + v)),
     'site.occupancy': (lambda p: lambda s: s.storage_occupancy([p]), NUMERIC_TYPE),
     'site.quota': (lambda p: lambda s: s.partition_quota(p), NUMERIC_TYPE),
     'never': (lambda p: lambda s: False, BOOL_TYPE),

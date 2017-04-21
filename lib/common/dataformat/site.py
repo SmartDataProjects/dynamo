@@ -1,7 +1,6 @@
 class Site(object):
     TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, 5)
     STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, 5)
-    ACT_IGNORE, ACT_AVAILABLE, ACT_NOCOPY = range(3)
 
     @staticmethod
     def storage_type_val(arg):
@@ -65,33 +64,6 @@ class Site(object):
         else:
             return arg
 
-    @staticmethod
-    def activestate_val(arg):
-        if type(arg) is str:
-            arg = arg.lower()
-            if arg == 'ignore':
-                return Site.ACT_IGNORE
-            elif arg == 'available':
-                return Site.ACT_AVAILABLE
-            elif arg == 'nocopy':
-                return Site.ACT_NOCOPY
-
-        else:
-            return arg
-
-    @staticmethod
-    def activestate_name(arg):
-        if type(arg) is int:
-            if arg == Site.ACT_IGNORE:
-                return 'ignore'
-            elif arg == Site.ACT_AVAILABLE:
-                return 'available'
-            elif arg == Site.ACT_NOCOPY:
-                return 'nocopy'
-
-        else:
-            return arg
-
     class Partition(object):
         """
         Defines storage partitioning.
@@ -117,7 +89,7 @@ class Site(object):
             Site._partitions_order.append(partition)
 
 
-    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN, active = ACT_AVAILABLE):
+    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN):
         self.name = name
         self.host = host
         self.storage_type = storage_type
@@ -125,8 +97,6 @@ class Site(object):
         self.storage = storage # in TB
         self.cpu = cpu # in kHS06
         self.status = status
-
-        self.active = active
 
         self.dataset_replicas = set()
 
@@ -139,12 +109,12 @@ class Site(object):
         self._occupancy_physical = [0] * len(Site.partitions) # cached sum of block replica sizes
 
     def __str__(self):
-        return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s, active=%s)' % \
-            (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu, Site.status_name(self.status), Site.activestate_name(self.active))
+        return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s)' % \
+            (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu, Site.status_name(self.status))
 
     def __repr__(self):
-        return 'Site(\'%s\', host=\'%s\', storage_type=%d, backend=\'%s\', storage=%d, cpu=%f, status=%d, active=%d)' % \
-            (self.name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status, self.active)
+        return 'Site(\'%s\', host=\'%s\', storage_type=%d, backend=\'%s\', storage=%d, cpu=%f, status=%d)' % \
+            (self.name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
 
     def unlink(self):
         # unlink objects to avoid ref cycles - should be called when this site is absolutely not needed

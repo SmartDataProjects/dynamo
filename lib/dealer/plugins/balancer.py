@@ -13,11 +13,11 @@ class BalancingHandler(BaseHandler):
         BaseHandler.__init__(self, 'Balancer')
         self.history = None
 
-    def get_requests(self, inventory, partition):
+    def get_requests(self, inventory, policy):
         if self.history is None:
             return []
 
-        latest_run = self.history.get_latest_deletion_run(partition.name)
+        latest_run = self.history.get_latest_deletion_run(policy.partition.name)
         
         logger.info('Balancing site occupancy based on the protected fractions in the latest cycle %d', latest_run)
 
@@ -27,10 +27,13 @@ class BalancingHandler(BaseHandler):
         last_copies = {} # {site: [datasets]}
 
         for site in inventory.sites.values():
-            quota = site.partition_quota(partition)
-
             # do not consider bad sites in balancing in any way (it's not this plugin's job to offload protected data from bad sites)
-            if quota == 0. or site.status != Site.STAT_READY or site.active != Site.ACT_AVAILABLE:
+            if site.status != Site.STAT_READY or not policy.target_site_def(site):
+                continue
+
+            quota = site.partition_quota(policy.partition)
+
+            if quota == 0:
                 continue
 
             try:
@@ -95,7 +98,7 @@ class BalancingHandler(BaseHandler):
             request.append((dataset, minsite))
 
             size = dataset.size * 1.e-12
-            protected_fractions[maxsite] -= size / float(maxsite.partition_quota(partition))
+            protected_fractions[maxsite] -= size / float(maxsite.partition_quota(policy.partition))
 
             total_size += size
 

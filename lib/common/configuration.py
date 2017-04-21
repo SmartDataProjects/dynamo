@@ -99,7 +99,16 @@ disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
 
 inventory = Configuration()
 inventory.included_sites = disk_sites
-inventory.excluded_sites = ['T2_CH_CERNBOX', 'T2_MY_UPM_BIRUNI', 'T1_US_FNAL_New_Disk']
+inventory.excluded_sites = [
+    'T1_US_FNAL_New_Disk', # not a valid site
+    'T2_CH_CERNBOX', # not a valid site
+    'T2_MY_UPM_BIRUNI', # inheriting from IntelROCCS status 0
+    'T2_PK_NCP', # inheriting from IntelROCCS status 0
+    'T2_PL_Warsaw', # inheriting from IntelROCCS status 0
+    'T2_RU_ITEP', # inheriting from IntelROCCS status 0
+    'T2_RU_PNPI', # inheriting from IntelROCCS status 0
+    'T2_TH_CUNSTDA' # inheriting from IntelROCCS status 0
+]
 inventory.included_groups = [
     'AnalysisOps', 'DataOps', 'FacOps', 'IB RelVal', 'RelVal',
     'B2G',

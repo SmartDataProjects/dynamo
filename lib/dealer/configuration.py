@@ -1,6 +1,9 @@
 import common.configuration as common
 
-included_sites = ['T2_*', 'T1_*_Disk']
+target_sites = ['T2_*', 'T1_*_Disk',
+    '!T2_GR_Ioannina',
+    '!T2_TR_METU'
+]
 
 demand_refresh_interval = 7200. # update demand if demand manager time_today is more than 7200 seconds ago
 
