@@ -106,7 +106,7 @@ class Detox(object):
 
         # "partition" as a verb - selecting only the blockreps in the partition
         # will also select out replicas on sites with quotas
-        all_replicas = policy.partition_replicas(self.inventory_manager.datasets.values())
+        all_replicas = policy.partition_replicas(self.inventory_manager)
 
         logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(all_replicas))
 
