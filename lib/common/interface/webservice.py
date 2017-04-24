@@ -143,7 +143,7 @@ class RESTService(object):
         # now query the URL
         request = urllib2.Request(url)
 
-        if method == POST and len(options) != 0:
+        if method == POST:
             if format == 'url':
                 # Options can be a dict or a list of key=value strings or 2-tuples. The latter case allows repeated keys (e.g. dataset=A&dataset=B)
                 if type(options) is list:
@@ -225,7 +225,7 @@ class RESTService(object):
                 return result
     
             except urllib2.HTTPError as err:
-                last_except = (str(err))
+                last_except = (str(err)) + '\nBody:\n' + err.read()
             except:
                 last_except = sys.exc_info()[:2]
 

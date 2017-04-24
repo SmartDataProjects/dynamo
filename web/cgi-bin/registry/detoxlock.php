@@ -14,26 +14,39 @@ if ($command == 'help') {
   exit(0);
 }
 
+include_once(__DIR__ . '/common.php');
+
 if ($_SERVER['SSL_CLIENT_VERIFY'] != 'SUCCESS')
-  send_response(401, 'AuthFailed', 'SSL authentication failed');
+  send_response(401, 'AuthFailed', 'SSL authentication failed.');
 
 include_once('detoxlock.class.php');
 
+if (isset($_REQUEST['service']))
+  $service = $_REQUEST['service'];
+else
+  $service = 'user';
+
+// admin users can specify to act as another user
+if (isset($_REQUEST['asuser']))
+  $as_user = $_REQUEST['asuser'];
+else
+  $as_user = NULL;
+
 // CLIENT_S_DN: DN of the client cert (can be a proxy)
 // CLIENT_I_DN: DN of the issuer of the client cert
-$detoxlock = new DetoxLock($_SERVER['SSL_CLIENT_S_DN'], $_SERVER['SSL_CLIENT_I_DN']);
+$detoxlock = new DetoxLock($_SERVER['SSL_CLIENT_S_DN'], $_SERVER['SSL_CLIENT_I_DN'], $service, $as_user);
 
 if (isset($_REQUEST['format'])) {
   if (in_array($_REQUEST['format'], array('json', 'xml')))
     $detoxlock->format = $_REQUEST['format'];
   else
-    send_response(400, 'BadRequest', 'Unknown format');
+    $detoxlock->send_response(400, 'BadRequest', 'Unknown format');
 }
 
 if (isset($_REQUEST['return'])) {
   $request = $_REQUEST['return'];
   if ($request != 'yes' && $request != 'no')
-    send_response(400, 'BadRequest', 'Unknown value for option return');
+    $detoxlock->send_response(400, 'BadRequest', 'Unknown value for option return');
 
   $detoxlock->return_data = ($request == 'yes');
 }

@@ -21,7 +21,14 @@ class MySQLReplicaLock(object):
         self.update(inventory)
 
     def update(self, inventory):
-        entries = self._mysql.query('SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `unlock_date` IS NULL')
+        query = 'SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `unlock_date` IS NULL'
+        if len(config.mysqllock.users) != 0:
+            query += ' AND (`user_id`, `service_id`) IN ('
+            query += 'SELECT u.`id`, s.`id` FROM `users` AS u, `services` AS s WHERE '
+            query += ' OR '.join('(u.`name` LIKE "%s" AND s.`name` LIKE "%s")' % us for us in config.mysqllock.users)
+            query += ')'
+
+        entries = self._mysql.query(query)
 
         for item_name, sites_pattern, groups_pattern in entries:
             if '#' in item_name:

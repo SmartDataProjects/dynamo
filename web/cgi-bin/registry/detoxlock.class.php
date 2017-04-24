@@ -1,6 +1,7 @@
 <?php
 
 include_once(__DIR__ . '/../dynamo/common/db_conf.php');
+include_once(__DIR__ . '/common.php');
 
 // General note:
 // MySQL DATETIME accepts and returns local time. Always use UNIX_TIMESTAMP and FROM_UNIXTIME to interact with the DB.
@@ -11,22 +12,17 @@ class DetoxLock {
 
   private $_db = NULL;
   private $_uid = 0;
-  private $_uname = '';
+  private $_sid = 0;
 
-  public function __construct($cert_dn, $issuer_dn)
+  public function __construct($cert_dn, $issuer_dn, $service, $as_user = NULL)
   {
     global $db_conf;
 
     $this->_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamoregister');
 
-    $stmt = $this->_db->prepare('SELECT `id`, `name` FROM `users` WHERE `dn` LIKE ? OR `dn` LIKE ?');
-    $stmt->bind_param('ss', $cert_dn, $issuer_dn);
-    $stmt->bind_result($this->_uid, $this->_uname);
-    $stmt->execute();
-    $stmt->fetch();
-    $stmt->close();
+    get_user($this->_db, $cert_dn, $issuer_dn, $service, $as_user, $this->_uid, $this->_sid);
 
-    if ($this->_uid == 0)
+    if ($this->_uid == 0 || $this->_sid == 0)
       $this->send_response(400, 'BadRequest', 'Unknown user');
   }
 
@@ -295,7 +291,7 @@ class DetoxLock {
     else if ($command == 'unlock')
       $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after'));
     else if ($command == 'list')
-      $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after', 'showall', 'user'));
+      $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after', 'showall', 'user', 'service'));
 
     foreach (array_keys($request) as $key) {
       if (in_array($key, $allowed_fields)) {
@@ -305,7 +301,7 @@ class DetoxLock {
           $request[$key] = $this->format_timestamp($request[$key], true);
         else if (strpos($key, 'created') === 0)
           $request[$key] = $this->format_timestamp($request[$key]);
-        else if ($request[$key] + 0 == $request[$key])
+        else
           $request[$key] = $this->_db->real_escape_string($request[$key]);
       }
       else
@@ -319,8 +315,9 @@ class DetoxLock {
 
     $query = 'SELECT `detox_locks`.`id`, `detox_locks`.`item`, `detox_locks`.`sites`, `detox_locks`.`groups`,';
     $query .= ' UNIX_TIMESTAMP(`detox_locks`.`lock_date`), UNIX_TIMESTAMP(`detox_locks`.`unlock_date`), UNIX_TIMESTAMP(`detox_locks`.`expiration_date`),';
-    $query .= ' `users`.`name`, `detox_locks`.`comment` FROM `detox_locks`';
+    $query .= ' `users`.`name`, `services`.`name`, `detox_locks`.`comment` FROM `detox_locks`';
     $query .= ' INNER JOIN `users` ON `users`.`id` = `detox_locks`.`user_id`';
+    $query .= ' INNER JOIN `services` ON `services`.`id` = `detox_locks`.`service_id`';
 
     $where_clause = array();
     $params = array('');
@@ -346,9 +343,10 @@ class DetoxLock {
       }
 
       if ($mine_only) {
-        $where_clause[] = '`users`.`id` = ?';
-        $params[0] .= 'i';
+        $where_clause[] = '`users`.`id` = ? AND `services`.`id` = ?';
+        $params[0] .= 'ii';
         $params[] = &$this->_uid;
+        $params[] = &$this->_sid;
       }
 
       if (isset($request['item'])) {
@@ -402,7 +400,7 @@ class DetoxLock {
     if (count($params) > 1)
       call_user_func_array(array($stmt, "bind_param"), $params);
 
-    $stmt->bind_result($lid, $item, $sites, $groups, $created, $disabled, $expiration, $uname, $comment);
+    $stmt->bind_result($lid, $item, $sites, $groups, $created, $disabled, $expiration, $uname, $sname, $comment);
     $stmt->execute();
     while ($stmt->fetch()) {
       $data[$lid] =
@@ -414,6 +412,8 @@ class DetoxLock {
               'expires' => strftime('%Y-%m-%d %H:%M:%S', $expiration),
               );
 
+      if ($sname != 'user')
+        $data[$lid]['service'] = $sname;
       if ($sites !== NULL)
         $data[$lid]['sites'] = $sites;
       if ($groups !== NULL)
@@ -431,9 +431,9 @@ class DetoxLock {
 
   private function create_lock($item, $sites, $groups, $expiration, $comment)
   {
-    $query = 'INSERT INTO `detox_locks` (`item`, `sites`, `groups`, `lock_date`, `expiration_date`, `user_id`, `comment`) VALUES (?, ?, ?, NOW(), FROM_UNIXTIME(?), ?, ?)';
+    $query = 'INSERT INTO `detox_locks` (`item`, `sites`, `groups`, `lock_date`, `expiration_date`, `user_id`, `service_id`, `comment`) VALUES (?, ?, ?, NOW(), FROM_UNIXTIME(?), ?, ?, ?)';
     $stmt = $this->_db->prepare($query);
-    $stmt->bind_param('ssssis', $item, $sites, $groups, $expiration, $this->_uid, $comment);
+    $stmt->bind_param('ssssiis', $item, $sites, $groups, $expiration, $this->_uid, $this->_sid, $comment);
     $stmt->execute();
     $lockid = $stmt->insert_id;
     $stmt->close();
@@ -517,7 +517,7 @@ class DetoxLock {
   private function lock_table($updating)
   {
     if ($updating)
-      $query = 'LOCK TABLES `detox_locks`, `users` WRITE';
+      $query = 'LOCK TABLES `detox_locks`, `users`, `services` WRITE';
     else
       $query = 'UNLOCK TABLES';
 
@@ -528,84 +528,8 @@ class DetoxLock {
   {
     // Table lock will be released at the end of the session. Explicit unlocking is in principle unnecessary.
     $this->lock_table(false);
-
-    header($_SERVER['SERVER_PROTOCOL'] . ' ' . $code, true, $code);
-
-    if ($this->format == 'json') {
-      $json = '{"result": "' . $result . '", "message": "' . $message . '"';
-
-      if ($data === NULL || !$this->return_data) {
-        $json .= '}';
-      }
-      else {
-        $json .= ', "data": [';
-        $data_json = array();
-        foreach ($data as $elem) {
-          $j = array();
-          foreach($elem as $key => $value) {
-            $kv = '"' . $key .'": ';
-            if (is_string($value))
-              $kv .= '"' . $value . '"';
-            else
-              $kv .= '' . $value;
-
-            $j[] = $kv;
-          }
-          $data_json[] = '{' . implode(', ', $j) . '}';
-        }
-        $json .= implode(', ', $data_json);
-        $json .= ']}';
-      }
-  
-      echo $json . "\n";
-    }
-    else {
-      $writer = new XMLWriter();
-      $writer->openMemory();
-      $writer->setIndent(true);
-
-      $writer->startDocument('1.0', 'UTF-8');
-
-      $writer->startElement('data');
-
-      $writer->startElement('result');
-      $writer->text($result);
-      $writer->endElement();
-
-      $writer->startElement('message');
-      $writer->text($message);
-      $writer->endElement();
-
-      if ($data !== NULL && $this->return_data) {
-        $writer->startElement('locks');
-        foreach ($data as $elem) {
-          $writer->startElement('lock');
-          $writer->startAttribute('id');
-          $writer->text($elem['lockid']);
-          $writer->endAttribute();
-          foreach($elem as $key => $value) {
-            if ($key == 'lockid')
-              continue;
-
-            $writer->startElement($key);
-            $writer->text($value);
-            $writer->endElement();
-          }
-          $writer->endElement();
-        }
-        $writer->endElement();
-      }
-
-      $writer->endElement();
-
-      $writer->endDocument();
-
-      echo $writer->flush();
-    }
-
-    exit(0);
+    send_response($code, $result, $message, $this->return_data ? $data : NULL, $this->format);
   }
 }
-
 
 ?>
