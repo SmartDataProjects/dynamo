@@ -37,14 +37,29 @@ class Dealer(object):
         self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
+        quotas = dict((site, site.partition_quota(policy.partition)) for site in self.inventory_manager.sites.values())
+
+        # Ask each site if it should be considered as a copy destination.
+        target_sites = set()
+        for site in self.inventory_manager.sites.values():
+            if quotas[site] != 0. and \
+                    site.status == Site.STAT_READY and \
+                    policy.target_site_def(site) and \
+                    site.storage_occupancy(policy.partition, physical = False) < dealer_config.target_site_occupancy:
+
+                target_sites.add(site)
+
+        if len(target_sites) == 0:
+            logger.info('No sites can accept transfers at the moment. Exiting Dealer.')
+            return
+
         run_number = self.history.new_copy_run(policy.partition.name, policy.version, is_test = is_test, comment = comment)
 
         # update site and dataset lists
         # take a snapshot of site status
+        # take snapshots of quotas if updated
         self.history.save_sites(run_number, self.inventory_manager)
         self.history.save_datasets(run_number, self.inventory_manager)
-        # take snapshots of quotas if updated
-        quotas = dict((site, site.partition_quota(policy.partition)) for site in self.inventory_manager.sites.values())
         self.history.save_quotas(run_number, quotas)
 
         pending_volumes = collections.defaultdict(float)
@@ -57,16 +72,6 @@ class Dealer(object):
         requests = policy.collect_requests(self.inventory_manager)
 
         logger.info('Determining the list of transfers to make.')
-
-        # Ask each site if it should be considered as a copy destination.
-        target_sites = set()
-        for site in self.inventory_manager.sites.values():
-            if quotas[site] != 0. and \
-                    site.status == Site.STAT_READY and \
-                    policy.target_site_def(site) and \
-                    site.storage_occupancy(policy.partition, physical = False) < dealer_config.target_site_occupancy:
-
-                target_sites.add(site)
 
         copy_list = self.determine_copies(target_sites, requests, policy.partition, policy.group, pending_volumes)
 
@@ -130,7 +135,7 @@ class Dealer(object):
 
                 dataset = item[0].dataset
                 item_name = dataset.name
-                item_size = sum(b.size for b in item)
+                item_size = sum(b.size for b in item) * 1.e-12
                 find_replica_at = lambda s: s.find_dataset_replica(dataset)
                 make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(dataset, s, group, blocks = items)
 
