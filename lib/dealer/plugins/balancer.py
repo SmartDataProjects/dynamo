@@ -17,8 +17,12 @@ class BalancingHandler(BaseHandler):
         if self.history is None:
             return []
 
-        latest_run = self.history.get_latest_deletion_run(policy.partition.name)
-        
+        latest_runs = self.history.get_deletion_runs(policy.partition.name)
+        if len(latest_runs) == 0:
+            return []
+
+        latest_run = latest_runs[0]
+
         logger.info('Balancing site occupancy based on the protected fractions in the latest cycle %d', latest_run)
 
         deletion_decisions = self.history.get_deletion_decisions(latest_run, size_only = False)
@@ -58,6 +62,10 @@ class BalancingHandler(BaseHandler):
                     # protections is ordered
                     break
 
+                if ds_name in requested_datasets:
+                    # this dataset is already in queue
+                    continue
+
                 try:
                     dataset = inventory.datasets[ds_name]
                 except KeyError:
@@ -67,9 +75,18 @@ class BalancingHandler(BaseHandler):
                     # this replica has disappeared since then
                     continue
 
-                if reason in config.balancer_target_reasons:
-                    logger.debug('%s is a last copy at %s', ds_name, site.name)
-                    last_copies[site].append(dataset)
+                for target_reason, num_rep in config.balancer_target_reasons:
+                    if reason != target_reason:
+                        continue
+
+                    num_nonpartial = 0
+                    for replica in dataset.replicas:
+                        if not replica.is_partial():
+                            num_nonpartial += 1
+
+                    if num_nonpartial < num_rep:
+                        logger.debug('%s is a last copy at %s', ds_name, site.name)
+                        last_copies[site].append(dataset)
 
         request = []
 

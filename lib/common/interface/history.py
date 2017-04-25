@@ -247,7 +247,16 @@ class TransactionHistoryInterface(object):
         """
 
         if run_number == 0:
-            run_number = self.get_latest_deletion_run(partition)
+            deletion_runs = self.get_deletion_runs(partition)
+            copy_runs = self.get_copy_runs(partition)
+            if len(deletion_runs) == 0 and len(copy_runs) == 0:
+                raise RuntimeError('No history record exists')
+            elif len(deletion_runs) == 0:
+                run_number = copy_runs[0]
+            elif len(copy_runs) == 0:
+                run_number = deletion_runs[0]
+            else:
+                run_number = max(deletion_runs[0], copy_runs[0])
 
         self.acquire_lock()
         try:
@@ -371,6 +380,19 @@ class TransactionHistoryInterface(object):
 
         return copies
 
+    def get_copied_replicas(self, run_number):
+        """
+        Get the list of (site name, dataset name) copied in the given run.
+        """
+        self.acquire_lock()
+        try:
+            # list of HistoryRecords
+            copies = self._do_get_copied_replicas(run_number)
+        finally:
+            self.release_lock()
+
+        return copies
+
     def get_site_name(self, operation_id):
         self.acquire_lock()
         try:
@@ -380,10 +402,29 @@ class TransactionHistoryInterface(object):
 
         return site_name
 
-    def get_latest_deletion_run(self, partition, before = -1):
+    def get_deletion_runs(self, partition, first = -1, last = -1):
+        """
+        Get a list of deletion runs in range first <= run <= last. If first == -1, pick only the latest before last.
+        If last == -1, select runs up to the latest.
+        """
+
         self.acquire_lock()
         try:
-            run_number = self._do_get_latest_deletion_run(partition, before)
+            run_numbers = self._do_get_deletion_runs(partition, first, last)
+        finally:
+            self.release_lock()
+
+        return run_number
+
+    def get_copy_runs(self, partition, first = -1, last = -1):
+        """
+        Get a list of copy runs in range first <= run <= last. If first == -1, pick only the latest before last.
+        If last == -1, select runs up to the latest.
+        """
+
+        self.acquire_lock()
+        try:
+            run_numbers = self._do_get_copy_runs(partition, before)
         finally:
             self.release_lock()
 

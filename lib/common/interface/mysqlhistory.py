@@ -458,6 +458,15 @@ class MySQLHistory(TransactionHistoryInterface):
 
         return id_to_record.values()
 
+    def _do_get_copied_replicas(self, run_number): #override
+        query = 'SELECT s.`name`, d.`name` FROM `copied_replicas` AS p'
+        query += ' INNER JOIN `copy_requests` AS r ON r.`id` = p.`copy_id`'
+        query += ' INNER JOIN `datasets` AS d ON d.`id` = p.`dataset_id`'
+        query += ' INNER JOIN `sites` AS s ON s.`id` = r.`site_id`'
+        query += ' WHERE r.`run_id` = %d' % run_number
+        
+        return self._mysql.query(query)
+
     def _do_get_site_name(self, operation_id): #override
         result = self._mysql.query('SELECT s.name FROM `sites` AS s INNER JOIN `copy_requests` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s', operation_id)
         if len(result) != 0:
@@ -469,22 +478,47 @@ class MySQLHistory(TransactionHistoryInterface):
 
         return ''
 
-    def _do_get_latest_deletion_run(self, partition, before): #override
+    def _do_get_deletion_runs(self, partition, first, last): #override
         result = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
         if len(result) == 0:
             return 0
 
         partition_id = result[0]
 
-        sql = 'SELECT MAX(`id`) FROM `runs` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\')' % partition_id
-        if before > 0:
-            sql += ' AND `id` < %d' % before
+        if first < 0:
+            sql = 'SELECT MAX(`id`)'
+        else:
+            sql = 'SELECT `id`'
 
-        result = self._mysql.query(sql)
+        sql += ' FROM `runs` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\')' % partition_id
+
+        if first >= 0:
+            sql += ' AND `id` >= %d' % first
+        if last >= 0:
+            sql += ' AND `id` <= %d' % last
+
+        return self._mysql.query(sql)
+
+    def _do_get_copy_runs(self, partition, first, last): #override
+        result = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
         if len(result) == 0:
             return 0
 
-        return result[0]
+        partition_id = result[0]
+
+        if first < 0:
+            sql = 'SELECT MAX(`id`)'
+        else:
+            sql = 'SELECT `id`'
+
+        sql += ' FROM `runs` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'copy\', \'copy_test\')' % partition_id
+
+        if first >= 0:
+            sql += ' AND `id` >= %d' % first
+        if last >= 0:
+            sql += ' AND `id` <= %d' % last
+
+        return self._mysql.query(sql)
 
     def _do_get_run_timestamp(self, run_number): #override
         result = self._mysql.query('SELECT UNIX_TIMESTAMP(`time_start`) FROM `runs` WHERE `id` = %s', run_number)

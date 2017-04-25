@@ -52,7 +52,11 @@ for partition in partitions:
     # SitesInfo
 
     if args.cycle == 0:
-        cycle = history.get_latest_deletion_run(partition = partition)
+        runs = history.get_deletion_runs(partition = partition, -1)
+        if len(runs) != 0:
+            cycle = runs[0]
+        else:
+            cycle = 0
     else:
         cycle = args.cycle
 
@@ -155,11 +159,13 @@ for partition in partitions:
             dscount_now[dataset] += 1
             dataset_lists[site][partition].append((dataset, size))
 
-    prev_cycle = history.get_latest_deletion_run(partition = partition, before = cycle)
-    results = history.get_deletion_decisions(prev_cycle, size_only = False)
-    for site, datasets in results.items():
-        for (dataset, size, decision, reason) in datasets:
-            dscount_prev[dataset] += 1
+    runs = history.get_deletion_runs(partition = partition, -1, cycle - 1)
+    if len(runs) != 0:
+        prev_cycle = runs[0]
+        results = history.get_deletion_decisions(prev_cycle, size_only = False)
+        for site, datasets in results.items():
+            for (dataset, size, decision, reason) in datasets:
+                dscount_prev[dataset] += 1
 
 sitesinfo.close()
 

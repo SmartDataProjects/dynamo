@@ -16,7 +16,11 @@ class Undertaker(BaseHandler):
         if self.history is None:
             return []
 
-        latest_run = self.history.get_latest_deletion_run(policy.partition.name)
+        latest_runs = self.history.get_deletion_runs(policy.partition.name)
+        if len(latest_runs) == 0:
+            return []
+
+        latest_run = latest_runs[0]
 
         logger.info('Offloading sites that were not in READY state at latest cycle %d', latest_run)
 
