@@ -93,7 +93,7 @@ mysqllock.db_params = {
     'config_group': 'mysql-dynamo',
     'db': 'dynamoregister'
 }
-mysqllock.users = [('%', '%')] # list of (user, service) 2-tuples
+mysqllock.users = [('%%', '%%')] # list of (user, service) 2-tuples
 
 tape_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']
 disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
