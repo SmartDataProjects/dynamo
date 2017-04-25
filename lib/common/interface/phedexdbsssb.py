@@ -1299,7 +1299,7 @@ if __name__ == '__main__':
 
         sys.exit(0)
 
-    elif command == 'updaterequest' or command == 'updatesubscription':
+    elif command == 'updaterequest' or command == 'updatesubscription' or command == 'data':
         method = POST
 
     result = interface._make_phedex_request(command, options, method = method, raw_output = args.raw_output)
