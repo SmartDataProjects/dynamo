@@ -42,17 +42,17 @@ class Detox(object):
 
         logger.info('Detox cycle for %s starting at %s', policy.partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
 
-        if not config.read_only and not is_test:
-            # write a file indicating detox activity
-            while True:
-                if os.path.exists(detox_config.activity_indicator):
-                    logger.info('Detox activity indicator exists. Waiting for 60 seconds.')
-                    time.sleep(60)
-                else:
-                    break
-
-            with open(detox_config.activity_indicator, 'w') as indicator:
-                indicator.write('Detox started: ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
+#        if not config.read_only and not is_test:
+#            # write a file indicating detox activity
+#            while True:
+#                if os.path.exists(detox_config.activity_indicator):
+#                    logger.info('Detox activity indicator exists. Waiting for 60 seconds.')
+#                    time.sleep(60)
+#                else:
+#                    break
+#
+#            with open(detox_config.activity_indicator, 'w') as indicator:
+#                indicator.write('Detox started: ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
 
         # Execute the policy within a try block to avoid dead locks
         try:

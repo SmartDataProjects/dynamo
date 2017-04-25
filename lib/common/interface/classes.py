@@ -4,7 +4,7 @@ from common.interface.dbs import DBS
 from common.interface.popdb import PopDB
 from common.interface.globalqueue import GlobalQueue
 from common.interface.mysqlhistory import MySQLHistory
-from common.interface.weblock import WebReplicaLock
+from common.interface.mysqllock import MySQLReplicaLock
 
 class Generator(object):
     """
@@ -42,7 +42,7 @@ default_interface = {
 }
 
 demand_plugins = {
-    'replica_locks': Generator(WebReplicaLock),
+    'replica_locks': Generator(MySQLReplicaLock),
     'replica_access': Generator(PopDB),
     'dataset_request': Generator(GlobalQueue)
 }

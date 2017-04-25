@@ -103,10 +103,22 @@ do
 
       echo "Taking a snapshot of the history DB."
       $DYNAMO_BASE/bin/execlib common/interface/history.py snapshot
+
+      if [[ $APPLICATIONS =~ detox ]]
+      then
+        echo "Loading web-based replica locks to registry."
+        touch /home/cmsprod/public_html/IntelROCCS/Detox/inActionLock.txt
+        $DYNAMO_BASE/bin/load_locks.py
+      fi
   
       echo "Starting the main program."
       $DYNAMO_BASE/bin/dynamo $APPLICATIONS $TEST $COMMENT --log-level INFO
       RC=$?
+
+      if [[ $APPLICATIONS =~ detox ]]
+      then
+        rm /home/cmsprod/public_html/IntelROCCS/Detox/inActionLock.txt
+      fi
   
       if [ $RC -ne 0 ] && [ $RC -ne 130 ]
       then
