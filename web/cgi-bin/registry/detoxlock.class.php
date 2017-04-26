@@ -13,6 +13,7 @@ class DetoxLock {
   private $_db = NULL;
   private $_uid = 0;
   private $_sid = 0;
+  private $_read_only = true;
 
   public function __construct($cert_dn, $issuer_dn, $service, $as_user = NULL)
   {
@@ -20,16 +21,21 @@ class DetoxLock {
 
     $this->_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamoregister');
 
-    get_user($this->_db, $cert_dn, $issuer_dn, $service, $as_user, $this->_uid, $this->_sid);
+    $authorized = get_user($this->_db, $cert_dn, $issuer_dn, $service, $as_user, $this->_uid, $this->_sid);
 
     if ($this->_uid == 0 || $this->_sid == 0)
       $this->send_response(400, 'BadRequest', 'Unknown user');
+
+    $this->_read_only = !$authorized;
   }
 
   public function execute($command, $request)
   {
     if (!in_array($command, array('lock', 'unlock', 'list', 'set')))
       $this->send_response(400, 'BadRequest', 'Invalid command (possible values: lock, unlock, list, set)');
+
+    if ($command != 'list' && $this->_read_only)
+      $this->send_response(400, 'BadRequest', 'User not authorized');
 
     $this->sanitize_request($command, $request);
 
@@ -125,17 +131,11 @@ class DetoxLock {
         $this->send_response(400, 'BadRequest', 'Only showall=y or showall=n allowed');
     }
 
-    $mine_only = true;
-    if (isset($request['user'])) {
-      if ($request['user'] == 'all')
-        $mine_only = false;
-      else if ($request['user'] == 'self')
-        $mine_only = true;
-      else
-        $this->send_response(400, 'BadRequest', 'Only user=all or user=self allowed');
-    }
+    $uname = isset($request['user']) ? $request['user'] : NULL;
 
-    $existing_data = $this->get_data($request, $skip_disabled, $mine_only);
+    $sname = isset($request['service']) ? $request['service'] : 'user';
+
+    $existing_data = $this->get_data($request, $skip_disabled, $uname, $sname);
 
     if (count($existing_data) == 0)
       $this->send_response(200, 'EmptyResult', 'No lock found');
@@ -309,7 +309,7 @@ class DetoxLock {
     }
   }
 
-  private function get_data($request = array(), $skip_disabled = true, $mine_only = true)
+  private function get_data($request = array(), $skip_disabled = true, $uname = NULL, $sname = NULL)
   {
     $data = array();
 
@@ -342,11 +342,26 @@ class DetoxLock {
         $where_clause[] =  '`detox_locks`.`unlock_date` IS NULL';
       }
 
-      if ($mine_only) {
-        $where_clause[] = '`users`.`id` = ? AND `services`.`id` = ?';
-        $params[0] .= 'ii';
+      if ($uname === NULL) {
+        $where_clause[] = '`users`.`id` = ?';
+        $params[0] .= 'i';
         $params[] = &$this->_uid;
+      }
+      else {
+        $where_clause[] = '`users`.`name` = ?';
+        $params[0] .= 's';
+        $params[] = &$uname;
+      }
+
+      if ($sname === NULL) {
+        $where_clause[] = '`services`.`id` = ?';
+        $params[0] .= 'i';
         $params[] = &$this->_sid;
+      }
+      else {
+        $where_clause[] = '`services`.`name` = ?';
+        $params[0] .= 's';
+        $params[] = &$sname;
       }
 
       if (isset($request['item'])) {

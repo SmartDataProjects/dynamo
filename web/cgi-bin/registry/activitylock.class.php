@@ -10,9 +10,10 @@ class ActivityLock {
   private $_db = NULL;
   private $_uid = 0;
   private $_sid = 0;
+  private $_read_only = true;
   private $_apps = array();
 
-  public function __construct()
+  public function __construct($cert_dn, $issuer_dn, $service, $as_user = NULL)
   {
     global $db_conf;
 
@@ -29,18 +30,23 @@ class ActivityLock {
       $this->_apps[] = trim($quoted, " '\"");
 
     $this->_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamoregister');
-  }
 
-  public function set_user($cert_dn, $issuer_dn, $service, $as_user = NULL)
-  {
-    get_user($this->_db, $cert_dn, $issuer_dn, $service, $as_user, $this->_uid, $this->_sid);
+    $authorized = get_user($this->_db, $cert_dn, $issuer_dn, $service, $as_user, $this->_uid, $this->_sid);
 
     if ($this->_uid == 0 || $this->_sid == 0)
       send_response(400, 'BadRequest', 'Unknown user');
+
+    $this->_read_only = !$authorized;
   }
 
   public function execute($command, $request)
   {
+    if (!in_array($command, array('check', 'lock', 'unlock')))
+      send_response(400, 'BadRequest', 'Invalid command (possible values: check, lock, unlock)');
+
+    if ($command != 'check' && $this->_read_only)
+      send_response(400, 'BadRequest', 'User not authorized');
+
     $this->sanitize_request($command, $request);
 
     if ($command == 'check') {

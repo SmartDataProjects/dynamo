@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Dynamo application locks API</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <link href="css/dynamo.css" rel="stylesheet">
+    <link href="css/detox.css" rel="stylesheet">
+  </head>
+  <body>
+    <h1>Dynamo application locks API</h1>
+    <h3>Usage</h3>
+    <p>
+      This API is used to block / unblock execution of dynamo applications. Each Dynamo application creates and
+      holds a lock while it executes. External entities that need to block dynamo execution for a period of time can request
+      to lock its applications. Locks are identified by the application name, requesting user, and optionally the
+      "service name". Service name is used if a user is managing locks in behalf of some system (e.g. Unified).
+      Only users and services with permissions can make changes to the lock database (read-only functions are available to
+      everyone). Please write a message to the HN hn-cms-dmDevelopment (DataManagement Developers) to obtain a
+      permission.
+    </p>
+    <p>
+      There is NO browser-friendly interface for application locks at the moment, aside from this manual page. Use
+      cURL to access the API:
+      <pre>
+        curl -k --cert <i>proxy</i> --key <i>proxy</i> 'https://dynamo.mit.edu/registry/activitylock/<i>command</i>[?<i>options</i>]'
+      </pre>
+      where <i>proxy</i> is a valid CMS grid proxy and <i>command</i> is one of the commands listed below. <br>
+      <span style="color:red;">Note that authentication with grid proxies work only with cURL+OpenSSL, which is not the default build in Scientific Linux and CentOS. CMS environment sourced from CVMFS provides a working configuration.</span>
+    </p>
+
+    <h3>Examples</h3>
+    <ul>
+      <li>Lock detox:
+        <pre>
+          activitylock/lock?app=detox
+        </pre>
+        When the lock is successful, an "OK: Lock active" message is sent back as a JSON string. If the application is already locked by
+        another user, a "Failed: application already locked" message is sent back.
+      </li>
+      <li>Lock detox as a service user "prodsystem":
+        <pre>
+          activitylock/lock?service=prodsystem&amp;app=detox
+        </pre>
+      </li>
+      <li>Unlock detox:
+        <pre>
+          activitylock/unlock?app=detox
+        </pre>
+        Only locks created by your user name and service name can be released.
+      </li>
+      <li>Check the lock status:
+        <pre>
+          activitylock/check
+        </pre>
+      </li>
+    </ul>
+
+    <h3>Commands</h3>
+    <ul>
+      <li><strong>lock</strong>
+        <p>
+          Attempt to lock an application. Takes options <strong>service</strong>, <strong>app</strong>, and <strong>note</strong>. <strong>note</strong> is a free-format string (URL encoded if given as a GET argument).
+        </p>
+      </li>
+      <li><strong>unlock</strong>
+        <p>
+          Unlocks an application, if the lock is owned by the current user and service. Takes options <strong>service</strong> and <strong>app</strong>.
+        </p>
+      </li>
+      <li><strong>check</strong>
+        <p>
+          Returns the current application lock status. Takes option <strong>app</strong>.
+        </p>
+      </li>
+    </ul>
+
+    <h3>Options</h3>
+    <ul>
+      <li><strong>service</strong>
+        <p>
+          Name of the CMS service the user is managing the locks for. When specified, authorization is checked for the user-service combination.
+        </p>
+        <p><i>Values</i><br>
+          A service name string.
+        </p>
+      </li>
+      <li><strong>app</strong>
+        <p>
+          Name of the Dynamo application to lock / unlock.
+        </p>
+        <p><i>Values</i><br>
+          detox, dealer
+        </p>
+      </li>
+      <li><strong>note</strong>
+        <p>
+          Lock comment.
+        </p>
+        <p><i>Value</i><br>
+          A free-format string. Note that white spaces must be replaced by %20 (and all other non-alphanumeric characters with their URL-encoded values) when passed as a GET string from the command line.
+        </p>
+      </li>
+    </ul>
+  </body>
+</html>
