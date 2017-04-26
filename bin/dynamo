@@ -73,8 +73,6 @@ history = classes.default_interface['history']()
 with open(os.environ['DYNAMO_BASE'] + '/etc/policies.tag') as tag:
     policy_version = tag.read().strip()
 
-activitylock = ActivityLock()
-
 if 'detox' in args.module:
     # Main detox object
     
@@ -101,11 +99,8 @@ if 'detox' in args.module:
             if plugin not in demand_manager.calculators:
                 demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
 
-        activitylock.lock('detox')
-    
-        detox.run(policy, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
-
-        activitylock.unlock('detox')
+        with ActivityLock('detox'):
+            detox.run(policy, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
 
 if 'dealer' in args.module:
     # Main dealer object
@@ -134,8 +129,5 @@ if 'dealer' in args.module:
         if plugin not in demand_manager.calculators:
             demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
 
-    activitylock.lock('dealer')
-    
-    dealer.run(policy, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
-
-    activitylock.unlock('dealer')
+    with ActivityLock('detox'):
+        dealer.run(policy, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
