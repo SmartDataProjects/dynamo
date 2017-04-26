@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 ###############################################################
 DEBUG = 0
 
-partition = 'AnalysisOps'
+partitions = ['AnalysisOps','Physics']
 
 rrd_dir = config.paths.data + '/track_transfers'
 sites = glob(rrd_dir+'/*')
@@ -59,6 +59,7 @@ except:
 history = classes.default_interface['history']()
 
 request_ids = []
+records = []
 
 try:
     source_path = sys.argv[1]
@@ -67,9 +68,11 @@ try:
             request_ids.append(int(line.strip()))
 
 except:
-    records = history.get_incomplete_copies(partition)    
-    for record in records:
-        request_ids.append(record.operation_id)
+    for partition in partitions:
+        partition_records = history.get_incomplete_copies(partition)    
+        for record in partition_records:
+            records.append(record)
+            request_ids.append(record.operation_id)
 
 if DEBUG:
     print 'Incomplete copies at the moment: ', len(request_ids) 
@@ -127,6 +130,7 @@ for record in records:
     rrd_cdeftotstring = "CDEF:total="
 
     for (site, dataset), (total, copied, last_update) in status.items():
+
         replica_total_sizes.append(total)
         sites_total.append([site,total])
         sites_copied.append([site,copied])
