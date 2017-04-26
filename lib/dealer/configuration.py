@@ -23,6 +23,6 @@ summary_html = '/home/cmsprod/public_html/dynamo/dealer/copy_decisions.html'
 # balancer considers dataset replicas protected for the following reasons
 # the number is the minimum number of non-partial replicas above which balancer ignores the dataset
 balancer_target_reasons = [
-    ('dataset.name == /*/*/MINIAOD* and replica.num_full_disk_copy_common_owner < 3', 3)
+    ('dataset.name == /*/*/MINIAOD* and replica.num_full_disk_copy_common_owner < 3', 3),
     ('replica.num_full_disk_copy_common_owner < 2', 2)
 ]
