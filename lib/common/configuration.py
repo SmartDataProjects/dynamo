@@ -96,7 +96,7 @@ mysqllock.db_params = {
 mysqllock.users = [('%%', '%%')] # list of (user, service) 2-tuples
 
 activitylock = Configuration()
-activitylock.url_base = 'https://dynamo.mit.edu/registry/activitylock'
+activitylock.url_base = 'https://t3desk007.mit.edu/registry/activitylock'
 
 tape_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']
 disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
