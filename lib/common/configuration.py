@@ -96,13 +96,18 @@ mysqllock.db_params = {
 mysqllock.users = [('%%', '%%')] # list of (user, service) 2-tuples
 
 activitylock = Configuration()
-activitylock.url_base = 'https://t3desk007.mit.edu/registry/activitylock'
+activitylock.db_params = {
+    'config_file': '/etc/my.cnf',
+    'config_group': 'mysql-dynamo',
+    'db': 'dynamoregister'
+}
+activitylock.default_user = 'paus'
 
 tape_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']
 disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
 
 inventory = Configuration()
-inventory.included_sites = disk_sites
+inventory.included_sites = ['T2_US_MIT']
 inventory.excluded_sites = [
     'T1_US_FNAL_New_Disk', # not a valid site
     'T2_CH_CERNBOX', # not a valid site
@@ -155,7 +160,7 @@ inventory.partitions = [
     ('IB RelVal', lambda r: r.group is not None and r.group.name == 'IB RelVal'),
     ('Tape', lambda r: r.site.storage_type == Site.TYPE_MSS),
     ('Unsubscribed', lambda r: r.group is None),
-    ('Physics', lambda r: r.group is not None and (r.group.name == 'AnalysisOps' or r.group.name == 'DataOps'))
+    ('Physics', ['AnalysisOps', 'DataOps'])
 ]
 # list of conditions for a PRODUCTION state dataset to become IGNORED (will still be reset to PRODUCTION if a new block replica is found)
 inventory.ignore_datasets = [

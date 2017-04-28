@@ -70,9 +70,21 @@ class Site(object):
         _partitioning: A function that takes a block replica and return whether the replica is in partition
         """
 
-        def __init__(self, name, func):
+        def __init__(self, name, partitioning):
             self.name = name
-            self._partitioning = func
+            if type(partitioning) is list:
+                self.subpartitions = [Site.partitions[p] for p in partitioning]
+
+                def inpartition(block_replica):
+                    for p in self.subpartitions:
+                        if p(block_replica):
+                            return True
+
+                self._partitioning = inpartition
+            else:
+                self.subpartitions = []
+                # must be a function block_replica -> bool
+                self._partitioning = partitioning
 
         def __call__(self, replica):
             return self._partitioning(replica)
@@ -212,6 +224,11 @@ class Site(object):
         index = Site._partitions_order.index(partition)
 
         self._partition_quota[index] = quota
+
+        # if this is a subpartition of another partition, recompute the quota of the other
+        for ip, other in enumerate(Site._partitions_order):
+            if partition in other.subpartitions:
+                self._partition_quota[ip] = sum(self._partition_quota[Site._partitions_order.index(p)] for p in other.subpartitions)
 
     def storage_occupancy(self, partitions = [], physical = True):
         """
