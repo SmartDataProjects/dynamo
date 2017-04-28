@@ -203,5 +203,5 @@ if 'dealer' in args.module:
         if plugin not in demand_manager.calculators:
             demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
 
-    with ActivityLock('detox'):
+    with ActivityLock('dealer'):
         dealer.run(policy, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
