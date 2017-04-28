@@ -254,6 +254,7 @@ class Policy(object):
                     # no block was in the partition
                     self.untracked_replicas[replica] = replica.block_replicas
                     replica.block_replicas = []
+                    dataset.replicas.pop(ir)
 
                 else:
                     replica.block_replicas = block_replicas
@@ -262,9 +263,6 @@ class Policy(object):
                         # remember blocks not in partition
                         self.untracked_replicas[replica] = not_in_partition
 
-                if len(replica.block_replicas) == 0:
-                    dataset.replicas.pop(ir)
-                else:
                     all_replicas.add(replica)
                     ir += 1
 
