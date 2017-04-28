@@ -861,7 +861,7 @@ class MySQLStore(LocalStoreInterface):
 
         data = []
         for dataset, dataset_request_list in request_list.items():
-            dataset_id = dataset_id_map[dataset],
+            dataset_id = dataset_id_map[dataset]
 
             for job_id, (queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued) in dataset_request_list.items():
                 data.append((
