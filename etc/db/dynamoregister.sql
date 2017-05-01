@@ -16,6 +16,38 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
+-- Table structure for table `activity_lock`
+--
+
+DROP TABLE IF EXISTS `activity_lock`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `activity_lock` (
+  `user_id` int(10) unsigned NOT NULL,
+  `service_id` int(10) unsigned NOT NULL,
+  `application` enum('detox','dealer') COLLATE latin1_general_cs NOT NULL,
+  `timestamp` datetime NOT NULL,
+  `note` text COLLATE latin1_general_cs,
+  UNIQUE KEY `user` (`user_id`,`service_id`),
+  UNIQUE KEY `application` (`application`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `authorized_users`
+--
+
+DROP TABLE IF EXISTS `authorized_users`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `authorized_users` (
+  `user_id` int(10) unsigned NOT NULL,
+  `service_id` int(10) unsigned NOT NULL,
+  UNIQUE KEY `user` (`user_id`,`service_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `deletion_queue`
 --
 
@@ -46,13 +78,14 @@ CREATE TABLE `detox_locks` (
   `unlock_date` datetime DEFAULT NULL,
   `expiration_date` datetime NOT NULL,
   `user_id` int(11) unsigned NOT NULL,
+  `service_id` int(10) unsigned NOT NULL,
   `comment` mediumtext COLLATE latin1_general_cs,
   PRIMARY KEY (`id`),
-  KEY `user_id` (`user_id`),
   KEY `unlocked` (`unlock_date`),
   KEY `locked` (`lock_date`),
   KEY `expires` (`expiration_date`),
-  KEY `lock_data` (`item`,`sites`,`groups`)
+  KEY `lock_data` (`item`,`sites`,`groups`),
+  KEY `user_id` (`user_id`,`service_id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -64,6 +97,20 @@ DROP TABLE IF EXISTS `domains`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `domains` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(32) COLLATE latin1_general_cs NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `services`
+--
+
+DROP TABLE IF EXISTS `services`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `services` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(32) COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`)
@@ -114,4 +161,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-04-20 23:29:19
+-- Dump completed on 2017-05-01 15:19:32

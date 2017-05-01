@@ -198,7 +198,7 @@ DROP TABLE IF EXISTS `partitions`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `partitions` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(16) NOT NULL,
+  `name` varchar(16) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
@@ -285,4 +285,4 @@ CREATE TABLE `system` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-04-20 23:19:32
+-- Dump completed on 2017-05-01 15:19:09

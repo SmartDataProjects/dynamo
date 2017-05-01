@@ -17,6 +17,8 @@ do
   KEY=$(echo $LINE | cut -d'=' -f 1)
   VALUE=$(echo $LINE | cut -d'=' -f 2)
 
+  [ $KEY ] || break
+
   case $KEY in
     host)
       OPTIONS="$OPTIONS -h $VALUE"
