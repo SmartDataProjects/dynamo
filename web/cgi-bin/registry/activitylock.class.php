@@ -72,7 +72,7 @@ class ActivityLock {
 
   private function exec_lock($request)
   {
-    $this->_db->query('LOCK TABLES `activity_lock`, `users`, `services` WRITE');
+    $this->_db->query('LOCK TABLES `activity_lock` WRITE, `users` WRITE, `services` WRITE');
 
     $existing = array();
 

@@ -532,7 +532,7 @@ class DetoxLock {
   private function lock_table($updating)
   {
     if ($updating)
-      $query = 'LOCK TABLES `detox_locks`, `users`, `services` WRITE';
+      $query = 'LOCK TABLES `detox_locks` WRITE, `users` WRITE, `services` WRITE';
     else
       $query = 'UNLOCK TABLES';
 
