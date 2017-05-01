@@ -440,6 +440,29 @@ class MySQLStore(LocalStoreInterface):
 
             dataset.files.add(lfile)
 
+    def _do_find_block_of(self, fullpath, datasets): #override
+        query = 'SELECT d.`name`, b.`name` FROM `files` AS f'
+        query += ' INNER JOIN `datasets` AS d ON d.`id` = f.`dataset_id`'
+        query += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
+        query += ' WHERE f.`name` = %s'
+
+        result = self._mysql.query(query, fullpath)
+
+        if len(result) == 0:
+            return None
+
+        dname, bname = result[0]
+
+        try:
+            dataset = datasets[dname]
+        except KeyError:
+            return None
+
+        if dataset.blocks is None:
+            self.load_blocks(dataset)
+
+        return dataset.find_block(Block.translate_name(bname))
+
     def _do_load_replica_accesses(self, sites, datasets): #override
         id_site_map = {}
         self._make_site_map(sites, id_site_map = id_site_map)

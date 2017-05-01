@@ -249,6 +249,15 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
+    def find_block_of(self, fullpath, datasets):
+        """
+        Return the Block object for the given file.
+        """
+
+        logger.debug('_do_find_block_of()')
+
+        return self._do_find_block_of(fullpath, datasets)
+
     def load_replica_accesses(self, sites, datasets):
         """
         @param sites    List of sites

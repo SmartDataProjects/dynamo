@@ -177,6 +177,13 @@ class InventoryManager(object):
         if dataset.files is None:
             self.dataset_source.set_dataset_details([dataset])
 
+    def find_block_of(self, fullpath):
+        """
+        Return the Block that the file belongs to. If no Block is in memory, returns None.
+        """
+
+        return self.store.find_block_of(fullpath, self.datasets)
+
     def unlink_datasetreplica(self, replica):
         """
         Remove link from datasets and sites to the replica. Don't remove the replica-to-dataset/site link;
