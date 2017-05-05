@@ -11,7 +11,7 @@ class ActivityLock(object):
     Web-based activity lock using registry.
     """
 
-    def __init__(self, application, service = 'dynamo', asuser = '', db_params = config.activitylock.db_params):
+    def __init__(self, application, service = 'dynamo', asuser = '', db_params = config.registry.db_params):
         self._mysql = MySQL(**db_params)
 
         self.application = application

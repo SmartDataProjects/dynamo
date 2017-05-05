@@ -14,7 +14,7 @@ class MySQLReplicaLock(object):
       locked_blocks:   {site: set of blocks}
     """
 
-    def __init__(self, db_params = config.mysqllock.db_params):
+    def __init__(self, db_params = config.registry.db_params):
         self._mysql = MySQL(**db_params)
 
     def load(self, inventory):
