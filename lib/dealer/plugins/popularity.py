@@ -34,19 +34,8 @@ class PopularityHandler(BaseHandler):
             if dataset.size * 1.e-12 > config.max_dataset_size:
                 continue
 
-            for replica in dataset.replicas:
-                for block_replica in replica.block_replicas:
-                    if policy.partition(block_replica):
-                        break
-                else:
-                    # no block replica in partition
-                    continue
-
-                # this replica is (partially) in partition
-                break
-
-            else: # no block in partition
-                continue
+            if len(dataset.replicas) == 0 and dataset.on_tape == TAPE_NONE:
+                continue # avoid stuck transfers if trying to subscribe sth that has no copies at all 
 
             self._datasets.append(dataset)
 
