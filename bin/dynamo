@@ -142,7 +142,7 @@ if 'detox' in args.module:
             
                 dataset.demand.pop('locked_blocks')
         
-            service = RESTService('https://t3desk007.mit.edu/registry/detoxlock')
+            service = RESTService('https://' + config.hostname + '/registry/detoxlock')
             service.make_request('set?asuser=%s&service=%s' % weblock_users[iu], method = POST, options = data, format = 'json')
     
         config.mysqllock.users = mysqllock_users

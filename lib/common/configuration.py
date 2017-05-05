@@ -9,6 +9,8 @@ class Configuration(object):
 
 logging.basicConfig(level = logging.INFO)
 
+hostname = 'dynamo.mit.edu'
+
 read_only = False
 
 daemon_mode = False
