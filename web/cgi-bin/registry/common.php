@@ -1,6 +1,6 @@
 <?php
 
-function get_user($db, $cert_dn, $issuer_dn, $service, $as_user, &$uid, &$sid)
+function get_user($db, $cert_dn, $issuer_dn, $service, $as_user, &$uid, &$uname, &$sid)
 {
   // fill in uid and sid, return true => authorized, false => unauthorized (still may be allowed to do read-only operations)
 
@@ -8,10 +8,10 @@ function get_user($db, $cert_dn, $issuer_dn, $service, $as_user, &$uid, &$sid)
   $uid = 0;
   $sid = 0;
 
-  $query = 'SELECT `users`.`id`, `services`.`id` FROM `users`, `services` WHERE (`users`.`dn` = ? OR `users`.`dn` = ?) AND `services`.`name` = ?';
+  $query = 'SELECT `users`.`id`, `users`.`name`, `services`.`id` FROM `users`, `services` WHERE (`users`.`dn` = ? OR `users`.`dn` = ?) AND `services`.`name` = ?';
   $stmt = $db->prepare($query);
   $stmt->bind_param('sss', $cert_dn, $issuer_dn, $service);
-  $stmt->bind_result($uid, $sid);
+  $stmt->bind_result($uid, $uname, $sid);
   $stmt->execute();
   $stmt->fetch();
   $stmt->close();

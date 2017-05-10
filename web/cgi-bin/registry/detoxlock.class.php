@@ -12,7 +12,9 @@ class DetoxLock {
 
   private $_db = NULL;
   private $_uid = 0;
+  private $_uname = '';
   private $_sid = 0;
+  private $_sname = '';
   private $_read_only = true;
 
   public function __construct($cert_dn, $issuer_dn, $service, $as_user = NULL)
@@ -21,10 +23,12 @@ class DetoxLock {
 
     $this->_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamoregister');
 
-    $authorized = get_user($this->_db, $cert_dn, $issuer_dn, $service, $as_user, $this->_uid, $this->_sid);
+    $authorized = get_user($this->_db, $cert_dn, $issuer_dn, $service, $as_user, $this->_uid, $this->_uname, $this->_sid);
 
     if ($this->_uid == 0 || $this->_sid == 0)
       $this->send_response(400, 'BadRequest', 'Unknown user');
+
+    $this->_sname = $service;
 
     $this->_read_only = !$authorized;
   }
@@ -49,7 +53,7 @@ class DetoxLock {
       $this->exec_list($request);
     }
     else if ($command == 'set') {
-      $this->exec_set();
+      $this->exec_set($request);
     }
   }
 
@@ -143,11 +147,14 @@ class DetoxLock {
       $this->send_response(200, 'OK', count($existing_data) . ' locks found', array_values($existing_data));
   }
 
-  private function exec_set()
+  private function exec_set($request)
   {
+    // $request is not used at the moment
+
     $input = file_get_contents('php://input');
 
     if ($this->format == 'json') {
+      error_log(print_r($input, true));
       $data = json_decode($input, true);
       if (!is_array($data))
         $this->send_response(400, 'BadRequest', 'Invalid data posted');
@@ -208,58 +215,82 @@ class DetoxLock {
     // now we determine what's in the table already and what needs to be added
     $this->lock_table(true);
 
+    $in_input = array();
     $to_insert = array();
     $to_update = array();
     $to_unlock = array();
 
-    foreach ($data as $key => $request) {
-      $this->sanitize_request('lock', $request);
+    $existing_locks = $this->get_data(array(), true, NULL, NULL, true);
 
-      $lockid = 0;
+    foreach ($data as $key => $entry) {
+      $this->sanitize_request('lock', $entry);
 
-      if (isset($request['lockid'])) {
+      $entry['user'] = $this->_uname;
+      $entry['service'] = $this->_sname;
+
+      if (isset($entry['lockid'])) {
         // an update
 
-        $current_locks = $this->get_data(array('lockid' => $request['lockid']));
-        if (count($current_locks) == 0)
-          $this->send_response(400, 'BadRequest', 'Lock id ' . $request['lockid'] . ' not found');
+        $lockid = $entry['lockid'];
 
-        $to_update[$request['lockid']] = $request;
+        if (!array_key_exists($lockid, $existing_locks))
+          $this->send_response(400, 'BadRequest', 'Lock id ' . $lockid . ' not found');
+
+        $in_input[] = $lockid;
+
+        $existing = $existing_locks[$lockid];
+
+        if (!$this->identify_locks($entry, $existing))
+          $this->send_response(400, 'BadRequest', 'Lock with id ' . $key . ' does not match record');
+
+        if ($this->has_diff($entry, $existing))
+          $to_update[$lockid] = $entry;
       }
       else {
-        if (!isset($request['item']))
+        if (!isset($entry['item']))
           $this->send_response(400, 'BadRequest', 'Missing item name in entry ' . $key);
 
-        $current_locks = $this->get_data($request);
+        $sites = isset($entry['sites']) ? $entry['sites'] : NULL;
+        $groups = isset($entry['groups']) ? $entry['groups'] : NULL;
 
-        if (count($current_locks) == 0) {
-          // new lock
-          if (!isset($request['expires']))
+        $new_lock = true;
+
+        if (array_key_exists($entry['item'], $existing_locks)) { 
+          foreach ($existing_locks[$entry['item']] as $existing) {
+            if (!$this->identify_locks($entry, $existing))
+              continue;
+
+            $lockid = $existing['lockid'];
+
+            $in_input[] = $lockid;
+
+            if ($this->has_diff($entry, $existing))
+              $to_update[$lockid] = $entry;
+
+            $new_lock = false;
+            break;
+          }
+        }
+
+        if ($new_lock) {
+          if (!isset($entry['expires']))
             $this->send_response(400, 'BadRequest', 'Missing expiry date in entry ' . $key);
 
-          $sites = isset($request['sites']) ? $request['sites'] : NULL;
-          $groups = isset($request['groups']) ? $request['groups'] : NULL;
-          $comment = isset($request['comment']) ? $request['comment'] : NULL;
+          $comment = isset($entry['comment']) ? $entry['comment'] : NULL;
 
-          $to_insert[] = array($request['item'], $sites, $groups, $request['expires'], $comment);
-        }
-        else {
-          $lockid = current(array_keys($current_locks));
-          $to_update[$lockid] = $request;
+          $to_insert[] = array($entry['item'], $sites, $groups, $entry['expires'], $comment);
         }
       }
     }
 
-    $existing_entries = $this->get_data();
-
-    foreach (array_keys($existing_entries) as $key) {
-      if (!array_key_exists($key, $to_update))
+    foreach (array_keys($existing_locks) as $key) {
+      if (is_int($key) and !in_array($key, $in_input))
         $to_unlock[] = $key;
     }
 
     $inserted_ids = array();
-    foreach ($to_insert as $request) {
-      $lockid = $this->create_lock($request[0], $request[1], $request[2], $request[3], $request[4]);
+    foreach ($to_insert as $entry) {
+      $lockid = $this->create_lock($entry[0], $entry[1], $entry[2], $entry[3], $entry[4]);
       if ($lockid == 0)
         $this->send_response(400, 'InternalError', 'Failed to create lock');
 
@@ -309,8 +340,41 @@ class DetoxLock {
     }
   }
 
-  private function get_data($request = array(), $skip_disabled = true, $uname = NULL, $sname = NULL)
+  private function identify_locks($lock1, $lock2)
   {
+    return $lock1['item'] == $lock2['item'] &&
+      $lock1['user'] == $lock2['user'] &&
+      (isset($lock1['sites']) ? $lock1['sites'] : NULL) === (isset($lock2['sites']) ? $lock2['sites'] : NULL) &&
+      (isset($lock1['groups']) ? $lock1['groups'] : NULL) === (isset($lock2['groups']) ? $lock2['groups'] : NULL) &&
+      ((!isset($lock1['service']) || $lock1['service'] == 'user') ? NULL : $lock1['service']) === ((!isset($lock2['service']) || $lock2['service'] == 'user') ? NULL : $lock2['service']);
+  }
+
+  private function has_diff($update, $ref)
+  {
+    if (isset($update['expires'])) {
+      if ($this->format_timestamp($update['expires']) != $this->format_timestamp($ref['expires']))
+        return true;
+    }
+
+    if (isset($update['comment']) && $update['comment'] != $ref['comment'])
+      return true;
+
+    return false;
+  }
+
+  private function get_data($request = array(), $skip_disabled = true, $uname = NULL, $sname = NULL, $add_item_keys = false)
+  {
+    // return a big array of all locks belonging to uname and sname.
+    // structure:
+    // array(
+    //   id => array('lockid' => id, 'item' => name, ...),
+    //   ...
+    //   item => array(
+    //     array('lockid' => id, 'item' => name, ...), ...
+    //   )
+    // )
+    // elements with item keys are added only if $add_item_keys is true.
+
     $data = array();
 
     $query = 'SELECT `detox_locks`.`id`, `detox_locks`.`item`, `detox_locks`.`sites`, `detox_locks`.`groups`,';
@@ -418,7 +482,7 @@ class DetoxLock {
     $stmt->bind_result($lid, $item, $sites, $groups, $created, $disabled, $expiration, $uname, $sname, $comment);
     $stmt->execute();
     while ($stmt->fetch()) {
-      $data[$lid] =
+      $datum =
         array(
               'lockid' => $lid,
               'user' => $uname,
@@ -428,15 +492,24 @@ class DetoxLock {
               );
 
       if ($sname != 'user')
-        $data[$lid]['service'] = $sname;
+        $datum['service'] = $sname;
       if ($sites !== NULL)
-        $data[$lid]['sites'] = $sites;
+        $datum['sites'] = $sites;
       if ($groups !== NULL)
-        $data[$lid]['groups'] = $groups;
+        $datum['groups'] = $groups;
       if ($disabled !== NULL)
-        $data[$lid]['unlocked'] = strftime('%Y-%m-%d %H:%M:%S', $disabled);
+        $datum['unlocked'] = strftime('%Y-%m-%d %H:%M:%S', $disabled);
       if ($comment !== NULL)
-        $data[$lid]['comment'] = $comment;
+        $datum['comment'] = $comment;
+
+      $data[$lid] = $datum;
+
+      if ($add_item_keys) {
+        if (array_key_exists($item, $data))
+          $data[$item][] = $datum;
+        else
+          $data[$item] = array($datum);
+      }
     }
 
     $stmt->close();
@@ -489,8 +562,7 @@ class DetoxLock {
 
     // validate
     foreach ($data as $datum) {
-      if ((isset($content['expires']) && strtotime($datum['expires']) != $content['expires']) ||
-          (isset($content['comment']) && $datum['comment'] != $content['comment']))
+      if ($this->has_diff($content, $datum))
         return NULL;
     }
 

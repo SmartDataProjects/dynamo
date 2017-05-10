@@ -9,7 +9,9 @@ include_once(__DIR__ . '/common.php');
 class ActivityLock {
   private $_db = NULL;
   private $_uid = 0;
+  private $_uname = '';
   private $_sid = 0;
+  private $_sname = '';
   private $_read_only = true;
   private $_apps = array();
 
@@ -31,7 +33,7 @@ class ActivityLock {
 
     $this->_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamoregister');
 
-    $authorized = get_user($this->_db, $cert_dn, $issuer_dn, $service, $as_user, $this->_uid, $this->_sid);
+    $authorized = get_user($this->_db, $cert_dn, $issuer_dn, $service, $as_user, $this->_uid, $this->_uname, $this->_sid);
 
     if ($this->_uid == 0 || $this->_sid == 0)
       send_response(400, 'BadRequest', 'Unknown user');
