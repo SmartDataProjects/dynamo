@@ -68,15 +68,17 @@ class ActivityLock(object):
         query += ' INNER JOIN `services` ON `services`.`id` = `activity_lock`.`service_id`'
         query += ' WHERE `application` = %s'
         result = self._mysql.query(query, self.application)
-        if len(result) != 0:
-            logger.error('Lock logic error: some process obtained the activity lock for %s', self.application)
+        if len(result) == 0:
             self._mysql.query('UNLOCK TABLES')
             return True
 
-        query = 'DELETE FROM `activity_lock` WHERE `application` = %s'
-        self._mysql.query(query, self.application)
+        if result[0] == (self.user, self.service):
+            query = 'DELETE FROM `activity_lock` WHERE `application` = %s'
+            self._mysql.query(query, self.application)
+            self._mysql.query('UNLOCK TABLES')
+            return True
 
-        self._mysql.query('UNLOCK TABLES')
-
-        # return True for "with lock" use case
-        return True
+        else:
+            logger.error('Lock logic error: some process obtained the activity lock for %s', self.application)
+            self._mysql.query('UNLOCK TABLES')
+            return False
