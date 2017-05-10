@@ -81,6 +81,7 @@ CREATE TABLE `detox_locks` (
   `service_id` int(10) unsigned NOT NULL,
   `comment` mediumtext COLLATE latin1_general_cs,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `unique` (`item`,`sites`,`groups`,`user_id`,`service_id`),
   KEY `unlocked` (`unlock_date`),
   KEY `locked` (`lock_date`),
   KEY `expires` (`expiration_date`),
@@ -161,4 +162,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-05-01 15:19:32
+-- Dump completed on 2017-05-10 10:47:02
