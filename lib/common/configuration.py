@@ -1,17 +1,22 @@
 import os
+import socket
 import re
 import time
 import logging
 from common.dataformat import Site
 
 class Configuration(object):
-    def __init__(**kwd):
+    def __init__(self, **kwd):
         for key, value in kwd.items():
             setattr(self, key, value)
 
 logging.basicConfig(level = logging.INFO)
 
-hostname = 'dynamo.mit.edu'
+hostname = socket.gethostname()
+ipaddr = socket.getaddrinfo(hostname, 0)[0][4][0]
+if ipaddr == socket.getaddrinfo('dynamo.mit.edu', 0)[0][4][0]:
+    # this is the production server
+    hostname = 'dynamo.mit.edu'
 
 read_only = False
 
@@ -116,16 +121,16 @@ tape_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']
 disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
 
 inventory = Configuration(
-    included_sites = ['T2_US_MIT'],
+    included_sites = disk_sites,
     excluded_sites = [
         'T1_US_FNAL_New_Disk', # not a valid site
         'T2_CH_CERNBOX', # not a valid site
-        'T2_MY_UPM_BIRUNI', # inheriting from IntelROCCS status 0
-        'T2_PK_NCP', # inheriting from IntelROCCS status 0
-        'T2_PL_Warsaw', # inheriting from IntelROCCS status 0
-        'T2_RU_ITEP', # inheriting from IntelROCCS status 0
-        'T2_RU_PNPI', # inheriting from IntelROCCS status 0
-        'T2_TH_CUNSTDA' # inheriting from IntelROCCS status 0
+        'T2_MY_UPM_BIRUNI', # site not in popDB
+#        'T2_PK_NCP', # inheriting from IntelROCCS status 0
+#        'T2_PL_Warsaw', # inheriting from IntelROCCS status 0
+#        'T2_RU_ITEP', # inheriting from IntelROCCS status 0
+#        'T2_RU_PNPI', # inheriting from IntelROCCS status 0
+#        'T2_TH_CUNSTDA' # inheriting from IntelROCCS status 0
     ],
     included_groups = [
         'AnalysisOps', 'DataOps', 'FacOps', 'IB RelVal', 'RelVal',
