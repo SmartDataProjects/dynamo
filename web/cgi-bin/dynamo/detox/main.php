@@ -251,7 +251,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
 
     $statuses = array(0 => 1);
 
-    $query = 'SELECT `site_id`, `active`, `status` FROM `site_status_snapshots` AS s1';
+    $query = 'SELECT `site_id`, `status` FROM `site_status_snapshots` AS s1';
     $query .= ' WHERE `run_id` = (';
     $query .= '  SELECT MAX(`run_id`) FROM `site_status_snapshots` AS s2';
     $query .= '   WHERE s2.`site_id` = s1.`site_id` AND s2.`run_id` <= ?';
@@ -259,13 +259,11 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
 
     $stmt = $history_db->prepare($query);
     $stmt->bind_param('i', $cycle);
-    $stmt->bind_result($site_id, $active, $status);
+    $stmt->bind_result($site_id, $status);
     $stmt->execute();
     while ($stmt->fetch()) {
-      if ($status == 'morgue' || $status == 'waitroom' || $active == 0)
+      if ($status == 'morgue' || $status == 'waitroom')
         $statuses[$site_id] = 0;
-      else if ($active == 2)
-        $statuses[$site_id] = 2;
       else
         $statuses[$site_id] = 1;
     }
