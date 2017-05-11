@@ -414,7 +414,7 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-        return run_number
+        return run_numbers
 
     def get_copy_runs(self, partition, first = -1, last = -1):
         """

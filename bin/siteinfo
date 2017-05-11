@@ -52,7 +52,7 @@ for partition in partitions:
     # SitesInfo
 
     if args.cycle == 0:
-        runs = history.get_deletion_runs(partition = partition, -1)
+        runs = history.get_deletion_runs(partition = partition, first = -1)
         if len(runs) != 0:
             cycle = runs[0]
         else:
@@ -159,7 +159,7 @@ for partition in partitions:
             dscount_now[dataset] += 1
             dataset_lists[site][partition].append((dataset, size))
 
-    runs = history.get_deletion_runs(partition = partition, -1, cycle - 1)
+    runs = history.get_deletion_runs(partition = partition, first = -1, last = cycle - 1)
     if len(runs) != 0:
         prev_cycle = runs[0]
         results = history.get_deletion_decisions(prev_cycle, size_only = False)
@@ -179,13 +179,13 @@ for site in dataset_lists:
 
     remaining.write('# -- ' + time.strftime('%Y-%m-%d %H:%M') + '\n')
     remaining.write('\n')
-    remaining.write('# Rank = Ta - N - S if N != 0')
-    remaining.write('# Rank = Tc - S if N == 0')
-    remaining.write('# where')
-    remaining.write('#  Ta = (number of days since last access via CRAB)')
-    remaining.write('#  Tc = (number of days since dataset transfer to site)')
-    remaining.write('#  N = (number of recorded accesses via CRAB)')
-    remaining.write('#  S = (dataset size in TB)')
+    remaining.write('# Rank = Ta - N - S if N != 0\n')
+    remaining.write('# Rank = Tc - S if N == 0\n')
+    remaining.write('# where\n')
+    remaining.write('#  Ta = (number of days since last access via CRAB)\n')
+    remaining.write('#  Tc = (number of days since dataset transfer to site)\n')
+    remaining.write('#  N = (number of recorded accesses via CRAB)\n')
+    remaining.write('#  S = (dataset size in TB)\n')
 
     for partition in partitions:
         remaining.write('#\n')
