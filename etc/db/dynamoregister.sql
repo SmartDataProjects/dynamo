@@ -81,13 +81,12 @@ CREATE TABLE `detox_locks` (
   `service_id` int(10) unsigned NOT NULL,
   `comment` mediumtext COLLATE latin1_general_cs,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `unique` (`item`,`sites`,`groups`,`user_id`,`service_id`),
   KEY `unlocked` (`unlock_date`),
   KEY `locked` (`lock_date`),
   KEY `expires` (`expiration_date`),
   KEY `lock_data` (`item`,`sites`,`groups`),
   KEY `user_id` (`user_id`,`service_id`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -162,4 +161,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-05-10 10:47:02
+-- Dump completed on 2017-05-11 14:02:18
