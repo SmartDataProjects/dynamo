@@ -154,7 +154,6 @@ class DetoxLock {
     $input = file_get_contents('php://input');
 
     if ($this->format == 'json') {
-      error_log(print_r($input, true));
       $data = json_decode($input, true);
       if (!is_array($data))
         $this->send_response(400, 'BadRequest', 'Invalid data posted');
