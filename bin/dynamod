@@ -114,6 +114,11 @@ do
       $DYNAMO_BASE/bin/dynamo $APPLICATIONS $TEST $COMMENT --log-level INFO --load-locks
       RC=$?
 
+      if ! [ "$TEST" ] && [[ $APPLICATIONS =~ detox ]] && [ $RC -ne 130 ]
+      then
+        $DYNAMO_BASE/bin/siteinfo --out /home/$USER/public_html/IntelROCCS/Detox
+      fi
+
       if [[ $APPLICATIONS =~ detox ]] && ! [ "$TEST" ]
       then
         rm /home/cmsprod/public_html/IntelROCCS/Detox/inActionLock.txt
@@ -172,12 +177,7 @@ do
         # case: dynamo killed with SIGINT - you were probably running this script in a terminal and pressed Ctrl-C
         exit 0
       fi
-  
-      if ! [ "$TEST" ]
-      then
-        $DYNAMO_BASE/bin/siteinfo --out /home/$USER/public_html/IntelROCCS/Detox
-      fi
-    
+ 
       echo ""
     fi
   
