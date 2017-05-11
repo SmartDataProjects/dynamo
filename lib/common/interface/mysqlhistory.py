@@ -147,7 +147,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         sites_in_record = set()
 
-        insert_query = 'INSERT INTO `site_status_snapshots` (`site_id`, `run_id`, `status`) VALUES (%s, {run_number}, %s, %s)'.format(run_number = run_number)
+        insert_query = 'INSERT INTO `site_status_snapshots` (`site_id`, `run_id`, `status`) VALUES (%s, {run_number}, %s)'.format(run_number = run_number)
 
         query = 'SELECT s.`name`, ss.`status`+0 FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
         query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
