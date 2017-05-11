@@ -307,9 +307,7 @@ class DetoxLock {
         $this->send_response(400, 'InternalError', 'Failed to disable lock');
     }
 
-    $lockids = array_merge($inserted_ids, array_keys($to_update), $to_unlock);
-
-    $this->send_response(200, 'OK', 'Locks set', array_values($this->get_data(array('lockid' => $lockids))));
+    $this->send_response(200, 'OK', 'Locks set', array_values($this->get_data()));
   }
 
   private function sanitize_request($command, &$request)

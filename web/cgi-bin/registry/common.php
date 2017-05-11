@@ -53,6 +53,8 @@ function get_user($db, $cert_dn, $issuer_dn, $service, $as_user, &$uid, &$uname,
   else {
     // admin as someone else - (as_user, service) must be in authorized_users table
 
+    $uname = $as_user;
+
     $query = 'SELECT `authorized_users`.`user_id` FROM `authorized_users`';
     $query .= ' INNER JOIN `users` ON `users`.`id` = `authorized_users`.`user_id`';
     $query .= ' WHERE `authorized_users`.`service_id` = ? AND `users`.`name` = ?';
