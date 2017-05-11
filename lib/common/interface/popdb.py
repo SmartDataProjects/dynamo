@@ -87,7 +87,7 @@ class PopDB(AccessHistory):
 
         self._last_update = time.time()
 
-        self._compute(full_access_list)
+        self._compute(inventory, full_access_list)
 
     def _make_request(self, resource, options = [], method = GET, format = 'url'):
         """
