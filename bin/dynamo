@@ -127,9 +127,6 @@ if 'detox' in args.module:
             
                         collapse_dataset = False
         
-                    if blocks != dataset.blocks:
-                        collapse_dataset = False
-        
                     locked_sites.add(site)
         
                 if locked_sites != set(r.site for r in dataset.replicas):
