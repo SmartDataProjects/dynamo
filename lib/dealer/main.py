@@ -137,7 +137,7 @@ class Dealer(object):
                 item_name = dataset.name
                 item_size = sum(b.size for b in item) * 1.e-12
                 find_replica_at = lambda s: s.find_dataset_replica(dataset)
-                make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(dataset, s, group, blocks = items)
+                make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(dataset, s, group, blocks = item)
 
             else:
                 logger.warning('Invalid request found. Skipping.')

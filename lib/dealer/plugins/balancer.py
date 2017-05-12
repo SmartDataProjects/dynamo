@@ -62,10 +62,6 @@ class BalancingHandler(BaseHandler):
                     # protections is ordered
                     break
 
-                if ds_name in requested_datasets:
-                    # this dataset is already in queue
-                    continue
-
                 try:
                     dataset = inventory.datasets[ds_name]
                 except KeyError:

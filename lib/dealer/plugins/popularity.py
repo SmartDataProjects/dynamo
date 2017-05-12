@@ -1,6 +1,7 @@
 import math
 import logging
 
+from common.dataformat import Dataset
 from dealer.plugins._list import plugins
 from dealer.plugins.base import BaseHandler
 import dealer.configuration as config
@@ -34,7 +35,7 @@ class PopularityHandler(BaseHandler):
             if dataset.size * 1.e-12 > config.max_dataset_size:
                 continue
 
-            if len(dataset.replicas) == 0 and dataset.on_tape == TAPE_NONE:
+            if len(dataset.replicas) == 0 and dataset.on_tape == Dataset.TAPE_NONE:
                 continue # avoid stuck transfers if trying to subscribe sth that has no copies at all 
 
             self._datasets.append(dataset)
