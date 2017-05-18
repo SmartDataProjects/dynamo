@@ -91,7 +91,7 @@ replica_vardefs = {
     'dataset.num_full_disk_copy': (dataset_num_full_disk_copy, NUMERIC_TYPE),
     'dataset.usage_rank': (lambda r: r.dataset.demand['global_usage_rank'] if 'global_usage_rank' in r.dataset.demand else 0., NUMERIC_TYPE),
     'dataset.release': (replica_dataset_release, TEXT_TYPE),
-    'dataset.is_last_transfer_source': (lambda r: not replica_incomplete(r) and dataset_num_full_copy(r) == 1 and dataset_has_incomplete_replica(r), BOOL_TYPE),
+    'dataset.is_last_transfer_source': (lambda r: r.is_full() and dataset_num_full_copy(r) == 1 and dataset_has_incomplete_replica(r), BOOL_TYPE),
     'replica.incomplete': (replica_incomplete, BOOL_TYPE),
     'replica.last_block_created': (lambda r: r.last_block_created, TIME_TYPE),
     'replica.last_used': (replica_last_used, TIME_TYPE),
