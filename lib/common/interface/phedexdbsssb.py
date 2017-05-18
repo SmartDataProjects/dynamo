@@ -329,17 +329,45 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         if len(request) == 0:
             return {}
 
+        pprint.pprint(request)
+
         site_name = request[0]['destinations']['node'][0]['name']
+
         dataset_names = []
         for ds_entry in request[0]['data']['dbs']['dataset']:
             dataset_names.append(ds_entry['name'])
 
-        subscriptions = self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in dataset_names])
+        block_names = []
+        for ds_entry in request[0]['data']['dbs']['block']:
+            block_names.append(ds_entry['name'].replace('#', '%23'))
+
+        subscriptions = []
+        if len(dataset_names) != 0:
+            subscriptions.extend(self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in dataset_names]))
+        if len(block_names) != 0:
+            subscriptions.extend(self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['block=%s' % n for n in block_names]))
+
+        pprint.pprint(subscriptions)
 
         status = {}
-        for subscription in subscriptions:
-            cont = subscription['subscription'][0]
-            status[(site_name, subscription['name'])] = (subscription['bytes'], cont['node_bytes'], cont['time_update'])
+        for dataset in subscriptions:
+            try:
+                cont = dataset['subscription'][0]
+                bytes = dataset['bytes']
+                node_bytes = cont['node_bytes']
+                time_update = cont['time_update']
+            except KeyError:
+                # this was a block-level subscription (no 'subscription' field for the dataset)
+                bytes = 0
+                node_bytes = 0
+                time_update = 0
+                for block in dataset['block']:
+                    cont = block['subscription'][0]
+                    bytes += block['bytes']
+                    node_bytes += cont['node_bytes']
+                    time_update = max(time_update, cont['time_update'])
+
+            status[(site_name, dataset['name'])] = (bytes, node_bytes, time_update)
 
         return status
 
