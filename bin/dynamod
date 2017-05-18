@@ -40,12 +40,6 @@ do
   esac
 done
 
-if ! [ -e /var/run/dynamod.pid ] && ! [ "$COMMENT" ]
-then
-  echo "Need a comment option (-m) if running from command line."
-  exit 1
-fi
-
 export DYNAMO_BASE=$(dirname $(cd $(dirname ${BASH_SOURCE[0]}); pwd))
 source $DYNAMO_BASE/etc/profile.d/init.sh
 
