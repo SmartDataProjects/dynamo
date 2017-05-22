@@ -1279,7 +1279,7 @@ if __name__ == '__main__':
         comments = ''
         for io in xrange(len(args.options)):
             opt = args.options[io]
-            matches = re.match('(node|group|dataset|block|comments)=([^ ]+)', opt)
+            matches = re.match('(node|group|dataset|block|comments)=(.+)', opt)
             if not matches:
                 print 'Invalid argument ' + opt
                 sys.exit(1)
@@ -1345,6 +1345,13 @@ if __name__ == '__main__':
                 # don't add the block to dataset (otherwise will become a dataset-level operation)
                 block_replica = BlockReplica(block, site, group, True, False, 0)
                 dataset_replica.block_replicas.append(block_replica)
+
+        print 'Confirm ' + command + ' [Y/n]'
+        print 'Replicas', replicas
+        print 'Comments', args.comments
+        response = sys.stdin.readline().strip()
+        if response != 'Y':
+            sys.exit(0)
 
         if command == 'delete':
             interface.schedule_deletions(replicas, comments = comments, is_test = args.is_test)
