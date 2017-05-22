@@ -1272,52 +1272,79 @@ if __name__ == '__main__':
             if response != 'Y':
                 sys.exit(0)
 
-        if not re.match('T[0-3]_.*', args.options[0]):
-            print 'Arguments: site [group] dataset[#block] [dataset[#block] ..]comment'
-            sys.exit(1)
-
-        iopt = 0
-
-        site = Site(args.options[iopt])
-        iopt += 1
-
-        if not re.match('/[^/]+/[^/]+/[^/]+', args.options[iopt]):
-            group = Group(args.options[iopt])
-            iopt += 1
-        else:
-            group = Group('AnalysisOps')
-
-        replicas = []
-        while True:
-            if iopt == len(args.options):
-                print 'Arguments: site [group] dataset[#block] [dataset[#block] ..] comment'
+        site = None
+        group = None
+        datasets = []
+        blocks = {}
+        comments = ''
+        for io in xrange(len(args.options)):
+            opt = args.options[io]
+            matches = re.match('(node|group|dataset|block|comments)=([^ ]+)', opt)
+            if not matches:
+                print 'Invalid argument ' + opt
                 sys.exit(1)
 
-            if not re.match('/[^/]+/[^/]+/[^/]+', args.options[iopt]):
-                break
+            key = matches.group(1)
+            value = matches.group(2)
 
-            obj_name = args.options[iopt]
-            iopt += 1
-            
-            if '#' in obj_name:
-                dataset_name, block_name = obj_name.split('#')
-            else:
-                dataset_name = obj_name
+            if key == 'node':
+                site = Site(value)
+            elif key == 'group':
+                group = Group(value)
+            elif key == 'dataset':
+                if not re.match('/[^/]+/[^/]+/[^/]+', value):
+                    print 'Invalid dataset name ' + value
+                    sys.exit(1)
 
-            try:
-                dataset_replica = next(replica for replica in replicas if replica.dataset.name == dataset_name)
-            except StopIteration:
-                dataset = Dataset(dataset_name)
-                dataset_replica = DatasetReplica(dataset, site)
-                replicas.append(dataset_replica)
+                if value not in datasets:
+                    datasets.append(value)
+            elif key == 'block':
+                if '#' in value:
+                    dname, bnane = value.split('#')
+                else:
+                    dname, bnane = value.split('%23')
 
-            if '#' in obj_name:
-                block = Block(Block.translate_name(block_name), dataset, 0, 0, False)
+                if not re.match('/[^/]+/[^/]+/[^/]+', dname):
+                    print 'Invalid dataset name ' + dname
+                    sys.exit(1)
+    
+                if len(bnane) != 36:
+                    print 'Invalid block name ' + dname + '#' + bnane
+                    sys.exit(1)
+
+                try:
+                    if bnane not in blocks[dname]:
+                        blocks[dname].append(bnane)
+                except KeyError:
+                    blocks[dname] = [bnane]
+
+            elif key == 'comments':
+                comments = value
+
+        if site is None or group is None or (len(datasets) == 0 and len(blocks) == 0) or comments == '':
+            print 'Must specify node, group, comments, and dataset or block'
+            sys.exit(1)
+
+        for dname in datasets:
+            if dname in blocks:
+                print 'Cannot make dataset-level and block-level requests of a same dataset.'
+                sys.exit(1)
+
+        replicas = []
+        for dname in datasets:
+            dataset = Dataset(dname)
+            replicas.append(DatasetReplica(dataset, site))
+
+        for dname, bnames in blocks.items():
+            dataset = Dataset(dname)
+            dataset_replica = DatasetReplica(dataset, site)
+            replicas.append(dataset_replica)
+
+            for bname in bnames:
+                block = Block(Block.translate_name(bname), dataset, 0, 0, False)
                 # don't add the block to dataset (otherwise will become a dataset-level operation)
                 block_replica = BlockReplica(block, site, group, True, False, 0)
                 dataset_replica.block_replicas.append(block_replica)
-
-        comments = ' '.join(args.options[iopt:])
 
         if command == 'delete':
             interface.schedule_deletions(replicas, comments = comments, is_test = args.is_test)
