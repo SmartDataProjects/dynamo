@@ -4,8 +4,13 @@ export USER=$1
 
 if ! [ $USER ]
 then
-  echo "Using cmsprod as the user of the executables."
-  USER=cmsprod
+  echo "Usage: install.sh <user> [production]"
+  exit 1
+fi
+
+if [ "$2" = "production" ]
+then
+  PRODUCTION=1
 fi
 
 export DYNAMO_BASE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
@@ -45,8 +50,11 @@ git pull origin
 git checkout $TAG 2> /dev/null
 cd - > /dev/null
 
-# CRONTAB
-crontab -l -u $USER > /tmp/$USER.crontab
-sed "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/etc/crontab >> /tmp/$USER.crontab
-sort /tmp/$USER.crontab | uniq | crontab -u $USER -
-rm /tmp/$USER.crontab
+if [ $PRODUCTION ]
+then
+  # CRONTAB
+  crontab -l -u $USER > /tmp/$USER.crontab
+  sed "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/etc/crontab >> /tmp/$USER.crontab
+  sort /tmp/$USER.crontab | uniq | crontab -u $USER -
+  rm /tmp/$USER.crontab
+fi
