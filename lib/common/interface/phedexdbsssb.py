@@ -938,10 +938,13 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     try:
                         ds_entry = result[dataset.name]
                     except KeyError:
-                        # this function is called after make_replica_ links
+                        # This function is called after make_replica_ links
                         # i.e. "blockreplicas" knows about this dataset but "data" doesn't.
-                        # i.e. something is screwed up. set the status to IGNORED.
-                        dataset.status = Dataset.STAT_IGNORED
+                        # i.e. something is screwed up.
+                        # We used to set the status to IGNORED, but this would cause problems
+                        # with very new datasets.
+                        dataset.is_open = True
+                        dataset.status = Dataset.STAT_UNKNOWN
                         continue
     
                     dataset.is_open = (ds_entry['is_open'] == 'y')
