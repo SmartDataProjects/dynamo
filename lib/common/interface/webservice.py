@@ -245,6 +245,7 @@ class RESTService(object):
 if __name__ == '__main__':
 
     import sys
+    import pprint
     from argparse import ArgumentParser
 
     parser = ArgumentParser(description = 'REST interface')
@@ -285,4 +286,6 @@ if __name__ == '__main__':
     else:
         method = GET
 
-    print interface.make_request(args.resource, args.options, method = method)
+    result = interface.make_request(args.resource, args.options, method = method)
+
+    pprint.pprint(result)
