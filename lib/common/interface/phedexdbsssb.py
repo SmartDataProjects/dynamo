@@ -342,10 +342,16 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             block_names.append(ds_entry['name'].replace('#', '%23'))
 
         subscriptions = []
+
         if len(dataset_names) != 0:
-            subscriptions.extend(self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in dataset_names]))
+            chunks = [dataset_names[i:i + 10] for i in xrange(0, len(dataset_names), 10)]
+            for chunk in chunks:
+                subscriptions.extend(self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in chunk]))
+
         if len(block_names) != 0:
-            subscriptions.extend(self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['block=%s' % n for n in block_names]))
+            chunks = [block_names[i:i + 10] for i in xrange(0, len(block_names), 10)]
+            for chunk in chunks:
+                subscriptions.extend(self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['block=%s' % n for n in chunk]))
 
         pprint.pprint(subscriptions)
 
