@@ -518,9 +518,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     
                     ds_name = dataset_entry['name']
 
+                    new_dataset = False
                     try:
                         dataset = inventory.datasets[ds_name]
-                        new_dataset = False
                     except KeyError:
                         dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False)
                         if dataset is None:
@@ -986,8 +986,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             if block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
                                 block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
 
-                        if block_entry['time_update'] > dataset.last_update:
-                            dataset.last_update = block_entry['time_update']
+                        if int(block_entry['time_update']) > dataset.last_update:
+                            dataset.last_update = int(block_entry['time_update'])
 
                         for file_entry in block_entry['file']:
                             files.append((file_entry['lfn'], block, file_entry['size']))
@@ -1095,10 +1095,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                 dataset.status = Dataset.status_val(dbs_entry['dataset_access_type'])
                 dataset.data_type = Dataset.data_type_val(dbs_entry['primary_ds_type'])
-                if dbs_entry['last_modification_date'] > dataset.last_update:
+                if int(dbs_entry['last_modification_date']) > dataset.last_update:
                     # normally last_update is determined by the last block update
                     # in case there was a change in the dataset info itself in DBS
-                    dataset.last_update = dbs_entry['last_modification_date']
+                    dataset.last_update = int(dbs_entry['last_modification_date'])
 
 
         # set_status_type can work on up to 1000 datasets, but the http POST seems not able to handle huge inputs
