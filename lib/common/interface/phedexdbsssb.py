@@ -1322,7 +1322,7 @@ if __name__ == '__main__':
                     sys.exit(1)
 
                 try:
-                    if bnane not in blocks[dname]:
+                    if bname not in blocks[dname]:
                         blocks[dname].append(bnane)
                 except KeyError:
                     blocks[dname] = [bnane]
@@ -1330,7 +1330,7 @@ if __name__ == '__main__':
             elif key == 'comments':
                 comments = value
 
-        if site is None or group is None or (len(datasets) == 0 and len(blocks) == 0) or comments == '':
+        if site is None or (command == 'subscribe' and group is None) or (len(datasets) == 0 and len(blocks) == 0) or comments == '':
             print 'Must specify node, group, comments, and dataset or block'
             sys.exit(1)
 
@@ -1355,9 +1355,9 @@ if __name__ == '__main__':
                 block_replica = BlockReplica(block, site, group, True, False, 0)
                 dataset_replica.block_replicas.append(block_replica)
 
-        print 'Confirm ' + command + ' [Y/n]'
         print 'Replicas', replicas
-        print 'Comments', args.comments
+        print 'Comments', comments
+        print 'Confirm ' + command + ' [Y/n]'
         response = sys.stdin.readline().strip()
         if response != 'Y':
             sys.exit(0)
