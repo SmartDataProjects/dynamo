@@ -531,9 +531,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False)
                         if dataset is None:
                             dataset = Dataset(ds_name, status = Dataset.STAT_PRODUCTION)
-                            inventory.datasets[ds_name] = dataset
                             new_dataset = True
                             counters['new_datasets'] += 1
+
+                        inventory.datasets[ds_name] = dataset
 
                     if dataset.blocks is None:
                         inventory.store.load_blocks(dataset)
