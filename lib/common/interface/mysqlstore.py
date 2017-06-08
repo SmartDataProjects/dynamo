@@ -603,8 +603,6 @@ class MySQLStore(LocalStoreInterface):
         datasets_to_insert = []
 
         for dataset in datasets:
-            if '/MuOnia/Run2016E-18Apr2017-v1' in dataset.name:
-                logger.info("EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE WHAT THE FUCK IS GOING ON EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE")
             try:
                 dataset_id, size, num_files, status, on_tape, data_type, software_version_id, last_update, is_open = name_entry_map[dataset.name]
             except KeyError:
