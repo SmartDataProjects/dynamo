@@ -311,6 +311,30 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
+    def update_data(self, sites, groups, datasets):
+        """
+        Update persistent storage with data in memory.
+        Remove information of datasets and blocks with no replicas.
+        Arguments are list of objects.
+        @param sites    list of sites
+        @param groups   list of groups
+        @param datasets list of datasets
+        """
+
+        if config.read_only:
+            logger.debug('_do_update_data()')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_sites(sites)
+            self._do_save_groups(groups)
+            self._do_save_datasets(datasets)
+            self._do_update_replicas(sites, groups, datasets)
+            self.set_last_update()
+        finally:
+            self.release_lock()
+
     def save_sites(self, sites):
         """
         Write information in memory into persistent storage.

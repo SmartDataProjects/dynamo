@@ -5,6 +5,7 @@ import collections
 import pprint
 import fnmatch
 import threading
+import pprint
 
 from common.interface.copy import CopyInterface
 from common.interface.deletion import DeletionInterface
@@ -465,7 +466,165 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             group = Group(name)
             groups[name] = group
 
-    def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*'): #override (ReplicaInfoSourceInterface)
+    '''    
+    def get_delta_information(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*', last_update = '1234567890'):
+        """
+        Dummy
+        """
+        logger.info('Retrieving delta information from PhEDEx')
+        lock = threading.Lock()
+        
+        def exec_get(site_list, gname_list, dname_list):
+            if len(site_list) == 1:
+                logger.debug('Fetching replica info on %s.', site_list[0].name)
+            
+                
+            # ---------
+            # Deletions
+            # ---------
+
+            #options = ['request_since=%s' % last_update]
+            #for site in site_list:
+            #    options.append('node=' + site.name)
+            #source = self._make_phedex_request('deletions', options)
+
+            # ---------
+            # Additions
+            # ---------
+
+            options = ['create_since=%s' % last_update]
+            for site in site_list:
+                options.append('node=' + site.name)
+
+            source = self._make_phedex_request('blockreplicas', options)
+
+            #logger.info(pprint.pformat(source))
+            #logger.info(pprint.pformat(inventory.datasets))
+            
+            with lock:
+                for block_entry in source:
+                    #
+                    #if 'block' not in dataset_entry:
+                    #    continue
+
+                    block_name = block_entry['name']
+
+                    #logger.info("XXXXXXXXXX")
+                    #logger.info(block_name)
+                    #logger.info("XXXXXXXXXX")
+                    
+                    site = inventory.sites[block_entry['replica'][0]['node']] # [0] because it should be exactly one block for replica anyway
+                    ds_name = block_name.split('#')[0]
+
+                    try:
+                        if block_name == "/MuOnia/Run2016E-18Apr2017-v1/AOD#5140b700-3e3f-11e7-a388-002590494fb0":
+
+                            dataset = inventory.datasets[ds_name]
+                            logger.info("XXXX FOUND AT SITE XXXXXX")
+                            logger.info(block_name)
+                            logger.info("XXXXXXXXXX")
+                            logger.info("XXXXX NOW WE NEED TO ADD THE BLOCK XXXXX")
+
+
+                    except:
+                        if block_name == "/MuOnia/Run2016E-18Apr2017-v1/AOD#5140b700-3e3f-11e7-a388-002590494fb0":
+
+                            
+                            logger.info("XXXX OH NO IT DOESNT EXIST AT THIS SITE. BUT IS IT IN THE DATABASE? XXXXXX")
+                            logger.info(ds_name)
+                            
+                            dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False)
+                            logger.info(pprint.pformat(dataset))
+
+                            # TWO OPTIONS: 
+                            # FIRST, IT IS AN ENTIRELY NEW DATASET AND THE DATABASE DOESNT KNOW ABOUT IT
+                            if dataset is None:
+                                logger.info("XXXX ADDING IT XXXXXX")
+                                dataset = Dataset(ds_name, status = Dataset.STAT_PRODUCTION)
+                                new_dataset = True
+                            # SECOND, IT IS A NEW REPLICA FOR THIS SITE BUT IS ALSO ALREADY SOMEWHERE ELSE                                 
+                            else:
+                                new_dataset = False
+                                #sanity check
+                                dataset_replica = dataset.find_replica(site)
+                                
+                                if dataset_replica == None:
+                                    # first time associating this dataset with this site
+                                    logger.info("Yep, there we go")
+
+                                    try:
+                                        block_name = Block.translate_name(block_name.replace(ds_name + '#', ''))
+                                        logger.info("HERE COMES THE BLOCK NAME")
+                                        logger.info(block_name)
+
+                                    except:
+                                        logger.error('Invalid block name %s in blockreplicas', ds_name)
+                                        continue
+
+
+                                    replica_size = 0
+                                    for block in source:
+                                        if site == inventory.sites[block['replica'][0]['node']]:
+                                            replica_size += block['replica'][0]['bytes'] 
+                                                                        
+
+                                    if dataset.blocks is None:
+                                        inventory.store.load_blocks(dataset)
+                                            
+                                    dataset_replica = DatasetReplica(
+                                        dataset,
+                                        site,
+                                        is_complete = True,
+                                        is_custodial = False,
+                                        last_block_created = 0
+                                    )
+
+                                    if dataset.replicas is None:
+                                        dataset.replicas = []
+
+                                    dataset.replicas.append(dataset_replica)
+
+                                    site.dataset_replicas.add(dataset_replica)
+                                    
+                                    if block_entry['replica'][0]['time_update'] > dataset_replica.last_block_created:
+                                        dataset_replica.last_block_created = block_entry['replica'][0]['time_update']
+                                    #inventory.store.update_dataset(dataset)
+                                    #inventory.store.add_dataset(dataset)
+                                    #inventory.store.update_blocks(dataset)
+
+                        else:
+                           pass
+                       
+
+        all_sites = [site for name, site in inventory.sites.items() if fnmatch.fnmatch(name, site_filt)]
+        gname_list = [name for name in inventory.groups.keys() if fnmatch.fnmatch(name, group_filt)] + [None]
+
+        if dataset_filt == '/*/*/*' or dataset_filt == '' or dataset_filt == '*':
+            items = []
+            for site in all_sites:
+                total_quota = site.quota()
+                if total_quota >= 500:
+                    # further split by the first character of the dataset names                                                                                                                                   
+                    # split depending on the quota                                                                                                                                                                
+                    characters = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789'
+                    chunk_size = max(len(characters) / int(total_quota / 100), 1)
+                    charsets = [characters[i:i + chunk_size] for i in range(0, len(characters), chunk_size)]
+                    for charset in charsets:
+                        items.append(([site], gname_list, ['/%s*/*/*' % c for c in charset]))
+                else:
+                    items.append(([site], gname_list, ['/*/*/*']))
+
+            parallel_exec(exec_get, items, num_threads = min(64, len(items)), print_progress = True, timeout = 3600)
+            del items
+        else:
+            exec_get(all_sites, gname_list, [dataset_filt])
+            
+        logger.info('Done.')
+    
+    '''
+    
+    def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*', from_delta = False, last_update = '1234567890'): #override (ReplicaInfoSourceInterface)
+
         """
         Use blockreplicas to fetch a full list of all block replicas on the site.
         Objects in sites and datasets should have replica information cleared. All block replica objects
@@ -508,6 +667,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 logger.debug('Fetching replica info on %s.', site_list[0].name)
 
             options = ['show_dataset=y']
+            if from_delta == True:
+                options = ['show_dataset=y&create_since=%s' % last_update]
+
             for site in site_list:
                 options.append('node=' + site.name)
 
@@ -523,17 +685,17 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         continue
                     
                     ds_name = dataset_entry['name']
+                    new_dataset = False
 
                     try:
                         dataset = inventory.datasets[ds_name]
-                        new_dataset = False
                     except KeyError:
                         dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False)
                         if dataset is None:
                             dataset = Dataset(ds_name, status = Dataset.STAT_PRODUCTION)
-                            inventory.datasets[ds_name] = dataset
                             new_dataset = True
                             counters['new_datasets'] += 1
+                        inventory.datasets[ds_name] = dataset
 
                     if dataset.blocks is None:
                         inventory.store.load_blocks(dataset)
@@ -544,6 +706,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         dataset.blocks = []
                         dataset.size = 0
                         dataset.num_files = 0
+
+                    if '/MuOnia/Run2016E-18Apr2017-v1/AOD' in ds_name:
+                        logger.info(pprint.pformat(dataset.replicas))
 
                     if dataset.replicas is None:
                         dataset.replicas = []
@@ -624,8 +789,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                                 site.dataset_replicas.add(dataset_replica)
     
-                            if replica_entry['time_update'] > dataset_replica.last_block_created:
-                                dataset_replica.last_block_created = replica_entry['time_update']
+                            if int(replica_entry['time_update']) > dataset_replica.last_block_created:
+                                dataset_replica.last_block_created = int(replica_entry['time_update'])
 
                             # PhEDEx 'complete' flag cannot be trusted; defining completeness in terms of size.
                             is_complete = (replica_entry['bytes'] == block.size)
@@ -649,14 +814,15 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             )
     
                             dataset_replica.block_replicas.append(block_replica)
-
+                            
                             site.add_block_replica(block_replica)
+
 
                     if new_block:
                         counters['datasets_with_new_blocks'] += 1
                     if updated_block:
                         counters['datasets_with_updated_blocks'] += 1
-    
+
 
         all_sites = [site for name, site in inventory.sites.items() if fnmatch.fnmatch(name, site_filt)]
         gname_list = [name for name in inventory.groups.keys() if fnmatch.fnmatch(name, group_filt)] + [None]
@@ -992,8 +1158,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             if block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
                                 block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
 
-                        if block_entry['time_update'] > dataset.last_update:
-                            dataset.last_update = block_entry['time_update']
+                        if int(block_entry['time_update']) > dataset.last_update:
+                            dataset.last_update = int(block_entry['time_update'])
 
                         for file_entry in block_entry['file']:
                             files.append((file_entry['lfn'], block, file_entry['size']))
@@ -1101,10 +1267,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
                 dataset.status = Dataset.status_val(dbs_entry['dataset_access_type'])
                 dataset.data_type = Dataset.data_type_val(dbs_entry['primary_ds_type'])
-                if dbs_entry['last_modification_date'] > dataset.last_update:
+                if int(dbs_entry['last_modification_date']) > dataset.last_update:
                     # normally last_update is determined by the last block update
                     # in case there was a change in the dataset info itself in DBS
-                    dataset.last_update = dbs_entry['last_modification_date']
+                    dataset.last_update = int(dbs_entry['last_modification_date'])
 
 
         # set_status_type can work on up to 1000 datasets, but the http POST seems not able to handle huge inputs

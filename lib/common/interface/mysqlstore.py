@@ -5,6 +5,7 @@ import re
 import socket
 import logging
 import fnmatch
+import pprint
 
 from common.interface.store import LocalStoreInterface
 from common.interface.mysql import MySQL
@@ -208,7 +209,6 @@ class MySQLStore(LocalStoreInterface):
         conditions = []
         if load_replicas:
             query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
-            conditions.append('dr.`site_id` IN (%s)' % sites_str)
         if dataset_filt != '/*/*/*' and dataset_filt != '':
             conditions.append('d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%%'))
 
@@ -603,6 +603,8 @@ class MySQLStore(LocalStoreInterface):
         datasets_to_insert = []
 
         for dataset in datasets:
+            if '/MuOnia/Run2016E-18Apr2017-v1' in dataset.name:
+                logger.info("EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE WHAT THE FUCK IS GOING ON EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE")
             try:
                 dataset_id, size, num_files, status, on_tape, data_type, software_version_id, last_update, is_open = name_entry_map[dataset.name]
             except KeyError:
@@ -620,6 +622,11 @@ class MySQLStore(LocalStoreInterface):
 
         if len(dataset_ids_to_delete) != 0:
             self._mysql.delete_many('datasets', 'id', dataset_ids_to_delete)
+
+        logger.info("DATASETS TO UPDATE:")    
+        logger.info(pprint.pformat(datasets_to_update))
+        logger.info("DATASETS TO INSERT:")    
+        logger.info(pprint.pformat(datasets_to_insert))
 
         # clean up orphans before making insertions
         self._mysql.query('DELETE FROM `blocks` WHERE `dataset_id` NOT IN (SELECT `id` FROM `datasets`)')
@@ -772,6 +779,61 @@ class MySQLStore(LocalStoreInterface):
         # insert files
         fields = ('block_id', 'dataset_id', 'size', 'name')
         self._mysql.insert_many('files', fields, None, files_to_insert, do_update = False)
+
+
+    def _do_update_replicas(self, sites, groups, datasets): #override
+        site_id_map = {}
+        self._make_site_map(sites, site_id_map = site_id_map)
+        group_id_map = {}
+        self._make_group_map(groups, group_id_map = group_id_map)
+        dataset_id_map = {}
+        self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
+
+        # insert/update dataset replicas
+        logger.info('Updating dataset replicas.')
+
+        if self._mysql.table_exists('dataset_replicas_new'):
+            self._mysql.query('DROP TABLE `dataset_replicas_new`')
+
+        fields = ('dataset_id', 'site_id', 'completion', 'is_custodial', 'last_block_created')
+        mapping = lambda r: (dataset_id_map[r.dataset], site_id_map[r.site], 'partial' if r.is_partial() else ('full' if r.is_complete else 'incomplete'), r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.last_block_created)))
+
+        all_replicas = []
+        for dataset in datasets:
+            if dataset.status != Dataset.STAT_UNKNOWN and dataset.replicas is not None:
+                all_replicas.extend(dataset.replicas)
+
+        self._mysql.insert_many('dataset_replicas', fields, mapping, all_replicas, do_update = True)
+
+        # insert/update block replicas
+        logger.info('Updating block replicas.')
+
+        # assuming block name is unique
+        block_name_to_id = {}
+        for block_id, block_name in self._mysql.query('SELECT DISTINCT b.`id`, b.`name` FROM `blocks` AS b INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = b.`dataset_id`'):
+            block_name_to_id[Block.translate_name(block_name)] = block_id
+
+        all_replicas = []
+        replica_sizes = []
+        for dataset in datasets:
+            if dataset.status == Dataset.STAT_UNKNOWN or dataset.replicas is None:
+                continue
+
+            for replica in dataset.replicas:
+                site_id = site_id_map[replica.site]
+                for block_replica in replica.block_replicas:
+                    block_id = block_name_to_id[block_replica.block.name]
+
+                    all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial))
+                    if not block_replica.is_complete:
+                        replica_sizes.append((block_id, site_id, block_replica.size))
+
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
+        self._mysql.insert_many('block_replicas', fields, None, all_replicas, do_update = True)
+
+        fields = ('block_id', 'site_id', 'size')
+        self._mysql.insert_many('block_replica_sizes', fields, None, replica_sizes, do_update = True)
+
 
     def _do_save_replicas(self, sites, groups, datasets): #override
         site_id_map = {}
