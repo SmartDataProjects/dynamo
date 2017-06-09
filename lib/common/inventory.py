@@ -360,8 +360,8 @@ if __name__ == '__main__':
         icmd += 1
     
         if command == 'update':
-            #manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot, from_delta = args.from_delta, last_update = manager.store.get_last_update())
-            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot, from_delta = args.from_delta, last_update = "1496350950")
+            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot, from_delta = args.from_delta, last_update = manager.store.get_last_update())
+            #manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot, from_delta = args.from_delta, last_update = "1496350950")
     
         elif command == 'scan':
             manager.scan_datasets(dataset_filter = args.dataset)

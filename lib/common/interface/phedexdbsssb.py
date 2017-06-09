@@ -707,9 +707,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         dataset.size = 0
                         dataset.num_files = 0
 
-                    if '/MuOnia/Run2016E-18Apr2017-v1/AOD' in ds_name:
-                        logger.info(pprint.pformat(dataset.replicas))
-
                     if dataset.replicas is None:
                         dataset.replicas = []
 

@@ -209,6 +209,7 @@ class MySQLStore(LocalStoreInterface):
         conditions = []
         if load_replicas:
             query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
+            conditions.append('dr.`site_id` IN (%s)' % sites_str)
         if dataset_filt != '/*/*/*' and dataset_filt != '':
             conditions.append('d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%%'))
 
@@ -626,10 +627,14 @@ class MySQLStore(LocalStoreInterface):
         logger.info("DATASETS TO INSERT:")    
         logger.info(pprint.pformat(datasets_to_insert))
 
+        logger.info("WAITING")    
+
         # clean up orphans before making insertions
         self._mysql.query('DELETE FROM `blocks` WHERE `dataset_id` NOT IN (SELECT `id` FROM `datasets`)')
         self._mysql.query('DELETE FROM `files` WHERE `dataset_id` NOT IN (SELECT `id` FROM `datasets`)')
         self._mysql.query('DELETE FROM `files` WHERE `block_id` NOT IN (SELECT `id` FROM `blocks`)')
+
+        logger.info("WAITING ...")    
 
         fields = ('id', 'name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
         # MySQL expects the local time for last_update
@@ -743,6 +748,7 @@ class MySQLStore(LocalStoreInterface):
 
             for name, lfile in files.items():
                 files_to_insert.append((block_id_map[lfile.block], dataset_id, lfile.size, name))
+
 
         for dataset in datasets_to_insert:
             if dataset.blocks is None:
