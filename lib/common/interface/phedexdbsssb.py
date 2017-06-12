@@ -668,7 +668,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             options = ['show_dataset=y']
             if from_delta == True:
-                options = ['show_dataset=y&create_since=%s' % last_update]
+                options = ['show_dataset=y&update_since=%s' % last_update]
 
             for site in site_list:
                 options.append('node=' + site.name)

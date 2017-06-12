@@ -49,7 +49,7 @@ class InventoryManager(object):
         if load_data:
             self.load()
 
-    def load(self, load_blocks = True, load_files = False, load_replicas = True, dataset_filter = '/*/*/*'):
+    def load(self, load_blocks = True, load_files = False, load_replicas = True, dataset_filter = '/*/*/*', from_delta = False):
         """
         Load information up to block level from local persistent storage to memory. The flag
         load_replicas can be used to determine whether dataset/block-site links should also be
@@ -68,6 +68,9 @@ class InventoryManager(object):
         try:
             site_names = self.store.get_site_list(include = config.inventory.included_sites, exclude = config.inventory.excluded_sites)
 
+            if from_delta:
+                dataset_filter = '/from_delta/*/*'
+
             sites, groups, datasets = self.store.load_data(
                 site_filt = site_names,
                 dataset_filt = dataset_filter,
@@ -79,10 +82,6 @@ class InventoryManager(object):
             self.sites = dict((s.name, s) for s in sites)
             self.groups = dict((g.name, g) for g in groups)
             self.datasets = dict((d.name, d) for d in datasets)
-
-            for d in datasets:
-                if d.name == "/Pythia8_Ups1SMM_ptUps_06_09_Hydjet_MB/HINPbPbWinter16DR-75X_mcRun2_HeavyIon_v13-v1/AODSIM":
-                    logger.info("FOUND ITTTTTTTTTTTTTTTTT")
 
             num_dataset_replicas = 0
             num_block_replicas = 0
@@ -118,7 +117,7 @@ class InventoryManager(object):
 
             if load_first and len(self.sites) == 0:
                 logger.info('Loading data from local storage.')
-                self.load(load_blocks = from_delta, load_files = False, load_replicas = from_delta, dataset_filter = dataset_filter)
+                self.load(load_blocks = from_delta, load_files = False, load_replicas = from_delta, dataset_filter = dataset_filter, from_delta = from_delta)
 
             else:
                 logger.info('Unlinking replicas.')
@@ -137,7 +136,6 @@ class InventoryManager(object):
                 self.replica_source.make_replica_links(self, dataset_filt = dataset_filter, from_delta = from_delta, last_update = last_update)
                 
             logger.info("Tell me the truth")
-
 
             open_datasets = filter(lambda d: d.status == Dataset.STAT_PRODUCTION, self.datasets.values())
             # Typically we enter this function with no file data loaded from store, so each open_dataset will have new File objects created.
