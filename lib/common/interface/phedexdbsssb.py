@@ -1095,8 +1095,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     dbs_entry = result[dataset.name]
                 except KeyError:
                     logger.debug('set_dataset_details  %s is not in DBS.', dataset.name)
-                    # this dataset is in PhEDEx but not in DBS - set to IGNORED and clean them up regularly
-                    dataset.status = Dataset.STAT_IGNORED
+                    # this dataset is in PhEDEx but not in DBS - set to UNKNOWN
+                    # We used to set the status to IGNORED, but this would cause problems
+                    # with very new datasets.
+                    dataset.status = Dataset.STAT_UNKNOWN
                     dataset.data_type = Dataset.TYPE_UNKNOWN
                     continue
     
