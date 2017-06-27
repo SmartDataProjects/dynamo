@@ -228,12 +228,6 @@ class Policy(object):
                 site = replica.site
                 # site occupancy is computed at the end by set_block_replicas
 
-                if site.partition_quota(self.partition) == 0.:
-                    self.untracked_replicas[replica] = replica.block_replicas
-                    replica.block_replicas = []
-                    dataset.replicas.pop(ir)
-                    continue
-
                 block_replicas = []                    
                 not_in_partition = []
 

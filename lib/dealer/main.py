@@ -42,7 +42,7 @@ class Dealer(object):
         # Ask each site if it should be considered as a copy destination.
         target_sites = set()
         for site in self.inventory_manager.sites.values():
-            if quotas[site] != 0. and \
+            if quotas[site] > 0. and \
                     site.status == Site.STAT_READY and \
                     policy.target_site_def(site) and \
                     site.storage_occupancy(policy.partition, physical = False) < dealer_config.target_site_occupancy:
@@ -148,6 +148,7 @@ class Dealer(object):
                 sorted_sites = sorted(site_occupancy.items(), key = lambda (s, f): f)
                 
                 try:
+                    # sorted_sites <- site_occupancy <- target_sites; quota guaranteed to be > 0
                     destination = next(site for site, occupancy in sorted_sites if \
                         occupancy + item_size / quotas[site] < 1. and \
                         find_replica_at(site) is None

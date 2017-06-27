@@ -100,7 +100,7 @@ class Detox(object):
         # Ask each site if deletion should be triggered.
         target_sites = set()
         for site in self.inventory_manager.sites.values():
-            if site.partition_quota(policy.partition) != 0. and policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
+            if policy.target_site_def.match(site) and policy.deletion_trigger.match(site):
                 target_sites.add(site)
 
         logger.info('Identifying dataset replicas in the partition.')
@@ -137,7 +137,11 @@ class Detox(object):
                     all_replicas.remove(replica)
                     protected[replica] = condition
                     if not policy.static_optimization:
-                        protected_fraction[replica.site] += replica.size() / replica.site.partition_quota(policy.partition)
+                        quota = replica.site.partition_quota(policy.partition)
+                        if quota > 0.:
+                            protected_fraction[replica.site] += replica.size() / quota
+                        else:
+                            protected_fraction[replica.site] = 0.
 
                 elif isinstance(decision, Delete):
                     self.inventory_manager.unlink_datasetreplica(replica)
@@ -279,7 +283,7 @@ class Detox(object):
                 
                 if not policy.static_optimization:
                     deleted_volume += replica.size() * 1.e-12
-                    if deleted_volume / quota > detox_config.deletion_per_iteration:
+                    if quota >= 0. and deleted_volume / quota > detox_config.deletion_per_iteration:
                         break
 
         return deleted

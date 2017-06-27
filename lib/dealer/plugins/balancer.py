@@ -37,7 +37,8 @@ class BalancingHandler(BaseHandler):
 
             quota = site.partition_quota(policy.partition)
 
-            if quota == 0:
+            if quota <= 0:
+                # if the site has 0 or infinite quota, don't consider in balancer
                 continue
 
             try:
