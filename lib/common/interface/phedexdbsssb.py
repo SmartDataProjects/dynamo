@@ -626,7 +626,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*', from_delta = False, last_update = '1234567890'): #override (ReplicaInfoSourceInterface)
 
         """
-        Use blockreplicas to fetch a full list of all block replicas on the site.
+        Use blockreplicas to fetch a full list of all block replicas on the site (or a list corresponding to new replicas created 
+        since the last inventory update: "from_delta").
         Objects in sites and datasets should have replica information cleared. All block replica objects
         are newly created within this function.
         Implementation:
@@ -690,7 +691,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     try:
                         dataset = inventory.datasets[ds_name]
                     except KeyError:
-                        dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False)
+                        dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False, load_replicas = False)
                         if dataset is None:
                             dataset = Dataset(ds_name, status = Dataset.STAT_PRODUCTION)
                             new_dataset = True
@@ -716,6 +717,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     updated_block = False
 
                     for block_entry in dataset_entry['block']:
+
                         try:
                             block_name = Block.translate_name(block_entry['name'].replace(ds_name + '#', ''))
                         except:
@@ -814,7 +816,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             
                             site.add_block_replica(block_replica)
 
-
+                    
                     if new_block:
                         counters['datasets_with_new_blocks'] += 1
                     if updated_block:
@@ -843,6 +845,57 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             del items
         else:
             exec_get(all_sites, gname_list, [dataset_filt])
+            
+        if from_delta:
+            # delta deletions part
+            logger.info('Checking for deleted dataset and block replicas.')
+
+            #last_update = "1497385150"
+
+            for site in all_sites:
+                deletions = []
+                deletions.extend(self._make_phedex_request('deletions', ['node=%s' % site.name] + ['request_since=%s' % last_update]))
+
+                for dbs_entry in deletions:
+
+                    ds_name = dbs_entry['name']
+                    dataset = None
+
+                    try:
+                        dataset = inventory.datasets[ds_name]
+                    except KeyError:
+                        dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False, load_replicas = True)
+                        
+                    logger.info(pprint.pformat(dataset))                        
+                    dataset_replica = dataset.find_replica(site)
+
+                    if dataset_replica is None or dataset is None:
+                        logger.error('Trying to delete blocks from dataset(_replica) %s that does not exist( on site %s).' % (ds_name, site))
+                        continue
+
+                    logger.info("BBBBBBBBBBBBBBBBB")
+                    logger.info(ds_name)
+                    
+                    for block_entry in dbs_entry['block']:
+                        logger.info("AAAAAAAAAAAAAAAAAAAAA")
+                        block_name = block_entry['name'].split('#', 1)[1]
+                        logger.info(pprint.pformat(dataset_replica))
+                        block_replica = dataset_replica.find_block_replica(Block.translate_name(block_name))
+                        if block_replica is None:
+                            logger.error('Trying to delete a block that is not in the dataset.')
+                            continue
+                        else:
+                            dataset_replica.block_replicas.remove(block_replica)
+                            site.remove_block_replica(block_replica)
+
+                    #if not dataset_replica.block_replicas:# empty list, no block_replicas anymore                        
+                    #    site.dataset_replicas.remove(dataset_replica)
+                    #    dataset.replicas.remove(dataset_replica)
+                    #    dataset_replica.dataset = None
+                    #    dataset_replica.site = None
+
+                    logger.info(site.name)
+                    inventory.datasets[ds_name] = dataset
 
         logger.info('Checking for updated datasets.')
 

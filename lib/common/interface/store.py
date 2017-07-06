@@ -208,7 +208,7 @@ class LocalStoreInterface(object):
 
         return site_list, group_list, dataset_list
 
-    def load_dataset(self, dataset_name, load_blocks = False, load_files = False):
+    def load_dataset(self, dataset_name, load_blocks = False, load_files = False, load_replicas = False):
         """
         Load a dataset and create a Dataset object.
         """
@@ -217,7 +217,7 @@ class LocalStoreInterface(object):
 
         self.acquire_lock()
         try:
-            dataset = self._do_load_dataset(dataset_name, load_blocks, load_files)
+            dataset = self._do_load_dataset(dataset_name, load_blocks, load_files, load_replicas)
         finally:
             self.release_lock()
 
