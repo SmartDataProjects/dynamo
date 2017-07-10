@@ -208,7 +208,7 @@ class LocalStoreInterface(object):
 
         return site_list, group_list, dataset_list
 
-    def load_dataset(self, dataset_name, load_blocks = False, load_files = False, load_replicas = False, sites = 'T*', groups = ""):
+    def load_dataset(self, dataset_name, load_blocks = False, load_files = False, load_replicas = False, sites = None, groups = None):
         """
         Load a dataset and create a Dataset object.
         """
@@ -223,7 +223,7 @@ class LocalStoreInterface(object):
 
         return dataset
 
-    def load_replicas(self, dataset):
+    def load_replicas(self, dataset, sites = None, groups = None):
         """
         Load replicas for the given dataset.
         """
@@ -232,7 +232,7 @@ class LocalStoreInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_load_replicas(dataset)
+            self._do_load_replicas(dataset, sites, groups)
         finally:
             self.release_lock()
 
