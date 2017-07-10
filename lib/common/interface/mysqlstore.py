@@ -354,7 +354,7 @@ class MySQLStore(LocalStoreInterface):
         # Only the list of sites, groups, and datasets are returned
         return site_list, group_list, dataset_list
 
-    def _do_load_dataset(self, dataset_name, load_blocks, load_files, load_replicas):
+    def _do_load_dataset(self, dataset_name, load_blocks, load_files, load_replicas, sites, groups):
         query = 'SELECT d.`size`, d.`num_files`, d.`status`+0, d.`on_tape`, d.`data_type`+0, s.`cycle`, s.`major`, s.`minor`, s.`suffix`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open` FROM `datasets` AS d'
         query += ' LEFT JOIN `software_versions` AS s ON s.`id` = d.`software_version_id`'
         query += ' WHERE d.`name` = %s'
@@ -377,9 +377,50 @@ class MySQLStore(LocalStoreInterface):
             self._do_load_files(dataset)
             
         if load_replicas:
-            self._do_load_files(dataset)
+            self._do_load_replicas(dataset, sites, groups)
 
         return dataset
+
+    def _do_load_replicas(self, dataset, sites, groups):
+        dataset.replicas = []
+
+        id_site_map = {}
+        self._make_site_map(sites, id_site_map = id_site_map)
+        id_group_map = {}
+        self._make_group_map(groups, id_group_map = id_group_map)
+    
+        dataset_id = self._mysql.query('SELECT `id` FROM `datasets` WHERE `name` = %s', dataset.name)
+        block_ids = self._mysql.query('SELECT `id`, `name`, `size` FROM `blocks` WHERE `dataset_id` = %d' % dataset_id[0])
+        result = self._mysql.query('SELECT `site_id`, `completion`, `is_custodial`, UNIX_TIMESTAMP(`last_block_created`) FROM `dataset_replicas` WHERE `dataset_id` = %d' % dataset_id[0])
+        
+        # Load all the dataset_replicas
+        for site_id, completion, is_custodial, last_block_created in result:
+            site = id_site_map[site_id]
+            dataset_replica = DatasetReplica(dataset, site, is_complete = (completion != 'incomplete'), is_custodial = is_custodial, last_block_created = last_block_created)
+            
+            # Load all the block_replicas per dataset_replica
+            for block_id, block_name, block_size in block_ids:
+                block_replica_query = self._mysql.query('SELECT `group_id`, `is_complete`, `is_custodial` FROM `block_replicas` WHERE `block_id` = %d AND `site_id` = %d' % (block_id, site_id))
+                block_replica_sizes_query = self._mysql.query('SELECT `size` FROM `block_replica_sizes` WHERE `block_id` = %d AND `site_id` = %d' % (block_id, site_id))
+                
+                for group_id, complete, custodial in block_replica_query:
+                    brs = 0
+                    if complete:
+                        brs = block_size
+                    else:
+                        brs = block_replica_sizes_query[0]
+                    block_replica = BlockReplica(dataset.find_block(Block.translate_name(block_name)),
+                                                 site,
+                                                 id_group_map[group_id],
+                                                 complete,
+                                                 custodial,
+                                                 size = brs
+                                                 )
+                    dataset_replica.block_replicas.append(block_replica)
+                    site.add_block_replica(block_replica)
+
+            dataset.replicas.append(dataset_replica)
+            site.dataset_replicas.add(dataset_replica)
 
     def _do_load_blocks(self, dataset):
         if dataset.blocks is not None:
@@ -625,20 +666,17 @@ class MySQLStore(LocalStoreInterface):
         if len(dataset_ids_to_delete) != 0:
             self._mysql.delete_many('datasets', 'id', dataset_ids_to_delete)
 
-        logger.info("DATASETS TO UPDATE:")    
+        logger.info("Datasets to update:")    
         logger.info(len(datasets_to_update))    
-        #logger.info(pprint.pformat(datasets_to_update))
-        logger.info("DATASETS TO INSERT:")    
+        logger.info("Datasets to insert:")    
         logger.info(len(datasets_to_insert))
 
-        logger.info("WAITING")    
-
         # clean up orphans before making insertions
+        logger.info("Cleaning up orphans")    
+
         self._mysql.query('DELETE FROM `blocks` WHERE `dataset_id` NOT IN (SELECT `id` FROM `datasets`)')
         self._mysql.query('DELETE FROM `files` WHERE `dataset_id` NOT IN (SELECT `id` FROM `datasets`)')
         self._mysql.query('DELETE FROM `files` WHERE `block_id` NOT IN (SELECT `id` FROM `blocks`)')
-
-        logger.info("WAITING ...")    
 
         fields = ('id', 'name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
         # MySQL expects the local time for last_update
@@ -788,7 +826,6 @@ class MySQLStore(LocalStoreInterface):
         fields = ('block_id', 'dataset_id', 'size', 'name')
         self._mysql.insert_many('files', fields, None, files_to_insert, do_update = False)
 
-
     def _do_update_replicas(self, sites, groups, datasets): #override
         site_id_map = {}
         self._make_site_map(sites, site_id_map = site_id_map)
@@ -829,34 +866,27 @@ class MySQLStore(LocalStoreInterface):
                 continue
             
             # delta deletions: load here information of all dataset replicas/block replicas from inventory (inventory.store.load_dataset).
-            inventory_dataset = self._do_load_dataset(dataset.name, load_blocks = True, load_files = False, load_replicas = True)
+            inventory_dataset = self._do_load_dataset(dataset.name, load_blocks = True, load_files = False, load_replicas = True, sites = sites, groups = groups)
             
             dataset_replicas_to_delete = []
             for replica in dataset.replicas:
                 
                 site_id = site_id_map[replica.site]
-                    
-
-                logger.info("WHATS GOING ON 0 site")
-                logger.info(pprint.pformat(replica.site))
-                logger.info("WHATS GOING ON 1 replica")
-                logger.info(pprint.pformat(replica))
-                # delta deletions: compare with dataset.replicas
-                logger.info("WHATS GOING ON 2 inventory_dataset")
-                logger.info(pprint.pformat(inventory_dataset))
-                logger.info("WHATS GOING ON 3 inventory_dataset_replica")
                 inventory_dataset_replica = inventory_dataset.find_replica(replica.site)
-                logger.info(pprint.pformat(inventory_dataset_replica))
                 
                 block_replicas_to_delete = []
                 for inventory_block_replica in inventory_dataset_replica.block_replicas:
                     if inventory_block_replica not in replica.block_replicas:
                         block_replicas_to_delete.append(inventory_block_replica)
 
-                self._do_delete_blockreplicas(block_replicas_to_delete)
+                if len(block_replicas_to_delete) > 0:
+                    self._do_delete_blockreplicas(block_replicas_to_delete)
                 
                 if len(replica.block_replicas) == 0:
-                    self._do_delete_datasetreplicas(replica.site, dataset, False)
+                    # neef to listify single dataset object for further processing
+                    datasets_to_delete = []
+                    datasets_to_delete.append(dataset)
+                    self._do_delete_datasetreplicas(replica.site, datasets_to_delete, False)
                     
             # end of delta deletions part
 
@@ -873,8 +903,6 @@ class MySQLStore(LocalStoreInterface):
 
         fields = ('block_id', 'site_id', 'size')
         self._mysql.insert_many('block_replica_sizes', fields, None, replica_sizes, do_update = True)
-
-
 
     def _do_save_replicas(self, sites, groups, datasets): #override
         site_id_map = {}

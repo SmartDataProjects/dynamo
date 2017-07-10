@@ -135,8 +135,6 @@ class InventoryManager(object):
             else:
                 self.replica_source.make_replica_links(self, dataset_filt = dataset_filter, from_delta = from_delta, last_update = last_update)
                 
-            logger.info("Tell me the truth")
-
             open_datasets = filter(lambda d: d.status == Dataset.STAT_PRODUCTION, self.datasets.values())
             # Typically we enter this function with no file data loaded from store, so each open_dataset will have new File objects created.
             # However this does not lead to any slowdown since we download the full file information for each dataset anyway.
