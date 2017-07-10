@@ -466,7 +466,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             group = Group(name)
             groups[name] = group
-
     
     def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*', from_delta = False, last_update = '1234567890'): #override (ReplicaInfoSourceInterface)
 
@@ -508,11 +507,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             'new_blocks': 0
         }
 
-
         all_sites = [site for name, site in inventory.sites.items() if fnmatch.fnmatch(name, site_filt)]
         all_groups = [group for name, group in inventory.groups.items() if fnmatch.fnmatch(name, group_filt)]
         gname_list = [name for name in inventory.groups.keys() if fnmatch.fnmatch(name, group_filt)] + [None]
-
 
         def exec_get(site_list, gname_list, dname_list):
             if len(site_list) == 1:
@@ -529,7 +526,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 options.append('dataset=' + dname)
 
             source = self._make_phedex_request('blockreplicas', options)
-
 
             # process retrieved data under a lock - otherwise can cause inconsistencies when e.g. block info is updated between one phedex call and another.
             with lock:
@@ -569,7 +565,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     updated_block = False
 
                     for block_entry in dataset_entry['block']:
-
                         try:
                             block_name = Block.translate_name(block_entry['name'].replace(ds_name + '#', ''))
                         except:
