@@ -171,7 +171,7 @@ class RESTService(object):
 
         wait = 1.
         exceptions = []
-        while len(exceptions) != config.webservice.num_attempts:
+        while True:
             try:
                 if self.auth_handler:
                     opener = urllib2.build_opener(self.auth_handler())
@@ -233,13 +233,17 @@ class RESTService(object):
 
             logger.info('Exception "%s" occurred in webservice. Trying again in %.1f seconds.', str(last_except), wait)
 
+            if len(exceptions) == config.webservice.num_attempts:
+                break
+
             time.sleep(wait)
             wait *= 1.5
 
-        else: # exhausted allowed attempts
-            logger.error('Too many failed attempts in webservice')
-            logger.error('%s' % ' '.join(map(str, exceptions)))
-            raise RuntimeError('webservice too many attempts')
+        # closes attempt loop
+
+        logger.error('Too many failed attempts in webservice')
+        logger.error('%s' % ' '.join(map(str, exceptions)))
+        raise RuntimeError('webservice too many attempts')
 
 
 if __name__ == '__main__':
