@@ -13,4 +13,4 @@ LIB=$1
 shift
 ARGS="$@"
 
-/usr/bin/python $DYNAMO_BASE/lib/$LIB $ARGS
+python $DYNAMO_BASE/lib/$LIB $ARGS
