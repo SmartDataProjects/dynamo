@@ -324,7 +324,7 @@ if __name__ == '__main__':
     config.inventory.included_sites = []
     for pattern in args.sites:
         if pattern == '@all':
-            config.inventory.included_sites = config.mss_sites + config.disk_sites
+            config.inventory.included_sites = config.tape_sites + config.disk_sites
             break
         elif pattern == '@disk':
             config.inventory.included_sites = config.disk_sites

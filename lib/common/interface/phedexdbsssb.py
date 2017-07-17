@@ -993,7 +993,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             if block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
                                 block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
 
-                        if int(block_entry['time_update']) > dataset.last_update:
+                        if block_entry['time_update'] is not None and int(block_entry['time_update']) > dataset.last_update:
                             dataset.last_update = int(block_entry['time_update'])
 
                         for file_entry in block_entry['file']:
