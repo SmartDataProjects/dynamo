@@ -6,14 +6,6 @@ class ReplicaInfoSourceInterface(object):
     def __init__(self):
         pass
 
-    def get_dataset_names(self, sites = [], groups = [], filt = '/*/*/*'):
-        """
-        Return a list of dataset names on the given site.
-        Argument groups is a name->group dict.
-        """
-
-        return []
-
     def find_tape_copies(self, datasets):
         """
         Set on_tape properties of datasets with on_tape != TAPE_FULL.
@@ -30,7 +22,7 @@ class ReplicaInfoSourceInterface(object):
 
         return False
 
-    def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*'):
+    def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '*', from_delta = False, last_update = 0):
         """
         Create replica objects and update the site and dataset objects.
         Objects in sites and datasets should have replica information cleared.

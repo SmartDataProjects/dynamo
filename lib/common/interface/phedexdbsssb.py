@@ -467,8 +467,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             group = Group(name)
             groups[name] = group
     
-    def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*', from_delta = False, last_update = '1234567890'): #override (ReplicaInfoSourceInterface)
-
+    def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '*', from_delta = False, last_update = 0): #override (ReplicaInfoSourceInterface)
         """
         Use blockreplicas to fetch a full list of all block replicas on the site (or a list corresponding to new replicas created 
         since the last inventory update: "from_delta").
@@ -511,13 +510,14 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         all_groups = [group for name, group in inventory.groups.items() if fnmatch.fnmatch(name, group_filt)]
         gname_list = [name for name in inventory.groups.keys() if fnmatch.fnmatch(name, group_filt)] + [None]
 
-        def exec_get(site_list, gname_list, dname_list):
+        def exec_get(site_list, dname_list):
             if len(site_list) == 1:
                 logger.debug('Fetching replica info on %s.', site_list[0].name)
 
             options = ['show_dataset=y']
-            if from_delta == True:
-                options = ['show_dataset=y&update_since=%s' % last_update]
+
+            if from_delta:
+                options.append('update_since=%d' % last_update)
 
             for site in site_list:
                 options.append('node=' + site.name)
@@ -534,16 +534,19 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         continue
                     
                     ds_name = dataset_entry['name']
+
                     new_dataset = False
 
                     try:
                         dataset = inventory.datasets[ds_name]
                     except KeyError:
                         dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False, load_replicas = from_delta, sites = all_sites, groups = all_groups)
+
                         if dataset is None:
                             dataset = Dataset(ds_name, status = Dataset.STAT_PRODUCTION)
                             new_dataset = True
                             counters['new_datasets'] += 1
+
                         inventory.datasets[ds_name] = dataset
 
                     if dataset.blocks is None:
@@ -679,7 +682,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         counters['datasets_with_updated_blocks'] += 1
 
 
-        if (( dataset_filt == '/*/*/*' or dataset_filt == '' or dataset_filt == '*' )):
+        if dataset_filt == '*':
+            # PhEDEx only accepts form /*/*/*
+            dataset_filt = '/*/*/*'
+
+        if dataset_filt == '/*/*/*':
             items = []
             for site in all_sites:
                 total_quota = site.quota()
@@ -690,23 +697,22 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     chunk_size = max(len(characters) / int(total_quota / 100), 1)
                     charsets = [characters[i:i + chunk_size] for i in range(0, len(characters), chunk_size)]
                     for charset in charsets:
-                        items.append(([site], gname_list, ['/%s*/*/*' % c for c in charset]))
+                        items.append(([site], ['/%s*/*/*' % c for c in charset]))
                 else:
-                    items.append(([site], gname_list, ['/*/*/*']))
+                    items.append(([site], ['/*/*/*']))
 
             parallel_exec(exec_get, items, num_threads = min(64, len(items)), print_progress = True, timeout = 3600)
             del items
         else:
-            exec_get(all_sites, gname_list, [dataset_filt])
+            exec_get(all_sites, [dataset_filt])
             
-        
         if from_delta:
             # delta deletions part
             logger.info('Checking for deleted dataset and block replicas.')
 
             for site in all_sites:
                 deletions = []
-                deletions.extend(self._make_phedex_request('deletions', ['node=%s' % site.name] + ['request_since=%s' % last_update]))
+                deletions.extend(self._make_phedex_request('deletions', ['node=%s' % site.name] + ['request_since=%d' % last_update]))
 
                 for dbs_entry in deletions:
 

@@ -192,7 +192,7 @@ class LocalStoreInterface(object):
 
         return site_names
 
-    def load_data(self, site_filt = '*', dataset_filt = '/*/*/*', load_blocks = False, load_files = False, load_replicas = True):
+    def load_data(self, site_filt = '*', dataset_filt = '*', load_blocks = False, load_files = False, load_replicas = True):
         """
         Return lists loaded from persistent storage. Argument site_filt can be a wildcard string or a list
         of exact site names.
@@ -214,6 +214,9 @@ class LocalStoreInterface(object):
         """
 
         logger.debug('_do_load_dataset()')
+
+        if load_replicas and (sites is None or groups is None):
+            raise RuntimeError('Cannot load replicas without sites or groups')
 
         self.acquire_lock()
         try:

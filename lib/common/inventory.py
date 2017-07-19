@@ -49,7 +49,7 @@ class InventoryManager(object):
         if load_data:
             self.load()
 
-    def load(self, load_blocks = True, load_files = False, load_replicas = True, dataset_filter = '/*/*/*', from_delta = False):
+    def load(self, dataset_filter = '*', load_blocks = True, load_files = False, load_replicas = True):
         """
         Load information up to block level from local persistent storage to memory. The flag
         load_replicas can be used to determine whether dataset/block-site links should also be
@@ -67,9 +67,6 @@ class InventoryManager(object):
 
         try:
             site_names = self.store.get_site_list(include = config.inventory.included_sites, exclude = config.inventory.excluded_sites)
-
-            if from_delta:
-                dataset_filter = '/from_delta/*/*'
 
             sites, groups, datasets = self.store.load_data(
                 site_filt = site_names,
@@ -99,13 +96,10 @@ class InventoryManager(object):
 
         logger.info('Data is loaded to memory. %d sites, %d groups, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.sites), len(self.groups), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
-    def update(self, dataset_filter = '/*/*/*', load_first = True, make_snapshot = True, from_delta = False, last_update = '1234567890'):
+    def update(self, dataset_filter = '*', load_first = True, make_snapshot = True, from_delta = True):
         """Query the dataSource and get updated information."""
 
         logger.info('Locking inventory.')
-
-        # Update from delta
-        self.delta = from_delta
 
         # Lock the inventory
         self.store.acquire_lock()
@@ -117,7 +111,21 @@ class InventoryManager(object):
 
             if load_first and len(self.sites) == 0:
                 logger.info('Loading data from local storage.')
-                self.load(load_blocks = from_delta, load_files = False, load_replicas = from_delta, dataset_filter = dataset_filter, from_delta = from_delta)
+
+                if from_delta:
+                    # don't load anything
+                    load_config = {
+                        'dataset_filter': ''
+                    }
+                else:
+                    load_config = {
+                        'load_blocks': False,
+                        'load_files': False,
+                        'load_replicas': False,
+                        'dataset_filter': dataset_filter
+                    }
+
+                self.load(**load_config)
 
             else:
                 logger.info('Unlinking replicas.')
@@ -130,10 +138,10 @@ class InventoryManager(object):
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
             # First get information on all replicas in the system, possibly creating datasets / blocks along the way.
-            if dataset_filter == '/*/*/*':
-                self.replica_source.make_replica_links(self, from_delta = from_delta, last_update = last_update)
+            if dataset_filter == '*':
+                self.replica_source.make_replica_links(self, from_delta = from_delta, last_update = self.store.get_last_update())
             else:
-                self.replica_source.make_replica_links(self, dataset_filt = dataset_filter, from_delta = from_delta, last_update = last_update)
+                self.replica_source.make_replica_links(self, dataset_filt = dataset_filter, from_delta = from_delta, last_update = self.store.get_last_update())
                 
             open_datasets = filter(lambda d: d.status == Dataset.STAT_PRODUCTION, self.datasets.values())
             # Typically we enter this function with no file data loaded from store, so each open_dataset will have new File objects created.
@@ -157,11 +165,10 @@ class InventoryManager(object):
 
             # Save inventory data to persistent storage
             # Datasets and groups with no replicas are removed
-            if from_delta == False:
-                self.store.save_data(self.sites.values(), self.groups.values(), self.datasets.values())
-            else:
+            if from_delta:
                 self.store.update_data(self.sites.values(), self.groups.values(), self.datasets.values())
-
+            else:
+                self.store.save_data(self.sites.values(), self.groups.values(), self.datasets.values())
 
             if make_snapshot:
                 logger.info('Removing the snapshot.')
@@ -273,7 +280,7 @@ class InventoryManager(object):
 
         return new_replica
 
-    def scan_datasets(self, dataset_filter = '/*/*/*'):
+    def scan_datasets(self, dataset_filter = '*'):
         """
         Checks the information of existing datasets and save changes. Intended for an independent daemon process.
         """
@@ -282,7 +289,7 @@ class InventoryManager(object):
             # load_files = False -> new files will be created in set_dataset_details. Doesn't really slow anything down.
             self.load(load_blocks = False, load_files = False, load_replicas = False)
 
-        if dataset_filter == '/*/*/*':
+        if dataset_filter == '*':
             open_datasets = filter(lambda d: d.status == Dataset.STAT_PRODUCTION or d.status == Dataset.STAT_VALID, self.datasets.values())
         else:
             regex = re.compile(fnmatch.translate(dataset_filter))
@@ -309,7 +316,6 @@ if __name__ == '__main__':
     parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'sites', nargs = '+', default = ['@disk'], help = 'Site names or aggregate names (@disk, @tape, @all) to include.')
     parser.add_argument('--no-load', '-L', action = 'store_true', dest = 'no_load',  help = 'Do not load the existing inventory when updating.')
     parser.add_argument('--no-snapshot', '-S', action = 'store_true', dest = 'no_snapshot',  help = 'Do not make a snapshot of existing inventory when updating.')
-    parser.add_argument('--from-delta', '-D', action = 'store_true', dest = 'from_delta',  help = 'Update inventory from delta information.')
     parser.add_argument('--single-thread', '-T', action = 'store_true', dest = 'singleThread', help = 'Do not parallelize (for debugging).')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
@@ -356,8 +362,10 @@ if __name__ == '__main__':
         icmd += 1
     
         if command == 'update':
-            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot, from_delta = args.from_delta, last_update = manager.store.get_last_update())
-            #manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot, from_delta = args.from_delta, last_update = "1496350950")
+            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot)
+
+        elif command == 'updatefull':
+            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot, from_delta = False)
     
         elif command == 'scan':
             manager.scan_datasets(dataset_filter = args.dataset)

@@ -204,13 +204,17 @@ class MySQLStore(LocalStoreInterface):
         # Load datasets - only load ones with replicas on selected sites if load_replicas == True
         dataset_list = []
 
+        if dataset_filt == '':
+            # no dataset wanted
+            return site_list, group_list, dataset_list
+
         query = 'SELECT DISTINCT d.`name`, d.`size`, d.`num_files`, d.`status`+0, d.`on_tape`, d.`data_type`+0, d.`software_version_id`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
         query += ' FROM `datasets` AS d'
         conditions = []
         if load_replicas:
             query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
             conditions.append('dr.`site_id` IN (%s)' % sites_str)
-        if dataset_filt != '/*/*/*' and dataset_filt != '':
+        if dataset_filt != '*':
             conditions.append('d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%%'))
 
         if len(conditions) != 0:
@@ -242,7 +246,7 @@ class MySQLStore(LocalStoreInterface):
             if load_replicas:
                 query += ' INNER JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
                 conditions.append('br.`site_id` IN (%s)' % sites_str)
-            if dataset_filt != '/*/*/*' and dataset_filt != '':
+            if dataset_filt != '*':
                 query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
                 conditions.append('d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%%'))
     
@@ -312,7 +316,7 @@ class MySQLStore(LocalStoreInterface):
             sql += ' LEFT JOIN `block_replica_sizes` AS brs ON (brs.`block_id`, brs.`site_id`) = (br.`block_id`, br.`site_id`)'
 
             conditions = ['dr.`site_id` IN (%s)' % sites_str]
-            if dataset_filt != '/*/*/*' and dataset_filt != '':
+            if dataset_filt != '*':
                 conditions.append('dr.`dataset_id` IN (%s)' % (','.join(['%d' % i for i in id_dataset_map.keys()])))
 
             if len(conditions) != 0:
@@ -388,39 +392,60 @@ class MySQLStore(LocalStoreInterface):
         self._make_site_map(sites, id_site_map = id_site_map)
         id_group_map = {}
         self._make_group_map(groups, id_group_map = id_group_map)
+
+        dataset_id = self._mysql.query('SELECT `id` FROM `datasets` WHERE `name` = %s', dataset.name)[0]
+
+        id_block_map = {}
+        if dataset.blocks is not None:
+            for bid, bname in self._mysql.query('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %d' % dataset_id):
+                block = dataset.find_block(Block.translate_name(bname))
+                if block is None:
+                    raise RuntimeError('Block %s is supposed to be loaded in memory but could not be found' % bname)
+
+                id_block_map[bid] = block
     
-        dataset_id = self._mysql.query('SELECT `id` FROM `datasets` WHERE `name` = %s', dataset.name)
-        block_ids = self._mysql.query('SELECT `id`, `name`, `size` FROM `blocks` WHERE `dataset_id` = %d' % dataset_id[0])
-        result = self._mysql.query('SELECT `site_id`, `completion`, `is_custodial`, UNIX_TIMESTAMP(`last_block_created`) FROM `dataset_replicas` WHERE `dataset_id` = %d' % dataset_id[0])
+            block_replica_query = 'SELECT br.`block_id`, br.`site_id`, br.`group_id`, br.`is_complete`, br.`is_custodial`, brs.`size` FROM `block_replicas` AS br'
+            block_replica_query += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = br.`block_id` AND brs.`site_id` = br.`site_id`'
+            block_replica_query += ' ORDER BY br.`site_id`'
+
+            block_replica_entries = self._mysql.query(block_replica_query)
+            ibr = 0 # used below to iterate over block replicas
+
+        result = self._mysql.query('SELECT `site_id`, `completion`, `is_custodial`, UNIX_TIMESTAMP(`last_block_created`) FROM `dataset_replicas` WHERE `dataset_id` = %d ORDER BY `site_id`' % dataset_id)
         
         # Load all the dataset_replicas
         for site_id, completion, is_custodial, last_block_created in result:
             site = id_site_map[site_id]
             dataset_replica = DatasetReplica(dataset, site, is_complete = (completion != 'incomplete'), is_custodial = is_custodial, last_block_created = last_block_created)
-            
-            # Load all the block_replicas per dataset_replica
-            for block_id, block_name, block_size in block_ids:
-                block_replica_query = self._mysql.query('SELECT `group_id`, `is_complete`, `is_custodial` FROM `block_replicas` WHERE `block_id` = %d AND `site_id` = %d' % (block_id, site_id))
-                block_replica_sizes_query = self._mysql.query('SELECT `size` FROM `block_replica_sizes` WHERE `block_id` = %d AND `site_id` = %d' % (block_id, site_id))
-                
-                for group_id, complete, custodial in block_replica_query:
-                    brs = 0
-                    if complete:
-                        brs = block_size
-                    else:
-                        brs = block_replica_sizes_query[0]
-                    block_replica = BlockReplica(dataset.find_block(Block.translate_name(block_name)),
-                                                 site,
-                                                 id_group_map[group_id],
-                                                 complete,
-                                                 custodial,
-                                                 size = brs
-                                                 )
-                    dataset_replica.block_replicas.append(block_replica)
-                    site.add_block_replica(block_replica)
 
             dataset.replicas.append(dataset_replica)
             site.dataset_replicas.add(dataset_replica)
+
+            if dataset.blocks is not None:
+                while ibr != len(block_replica_entries):
+                    block_id, b_site_id, group_id, b_is_complete, b_is_custodial, br_size = block_replica_entries[ibr]
+                    if b_site_id != site_id:
+                        # next site
+                        break
+
+                    block = id_block_map[block_id]
+
+                    if br_size is None:
+                        br_size = block.size
+
+                    block_replica = BlockReplica(
+                        block,
+                        site,
+                        id_group_map[group_id],
+                        b_is_complete,
+                        b_is_custodial,
+                        size = block.size
+                    )
+
+                    dataset_replica.block_replicas.append(block_replica)
+                    site.add_block_replica(block_replica)
+
+                    ibr += 1
 
     def _do_load_blocks(self, dataset):
         if dataset.blocks is not None:
