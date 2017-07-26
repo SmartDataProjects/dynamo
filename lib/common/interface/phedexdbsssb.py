@@ -497,6 +497,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         logger.info('make_replica_links  Fetching block replica information from PhEDEx')
 
+        if from_delta:
+            # query URL will be different every time - need to turn caching off
+            cache_lifetime = config.phedex.cache_lifetime
+            config.phedex.cache_lifetime = 0
+
         lock = threading.Lock()
         counters = {
             'new_datasets': 0,
@@ -539,25 +544,23 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                     try:
                         dataset = inventory.datasets[ds_name]
+
+                        if dataset.blocks is None:
+                            inventory.store.load_blocks(dataset)
+
                     except KeyError:
                         dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False, load_replicas = from_delta, sites = all_sites, groups = all_groups)
 
                         if dataset is None:
+                            logger.debug('Creating new dataset %s', ds_name)
                             dataset = Dataset(ds_name, status = Dataset.STAT_PRODUCTION)
+                            dataset.blocks = []
                             new_dataset = True
                             counters['new_datasets'] += 1
 
                         inventory.datasets[ds_name] = dataset
 
-                    if dataset.blocks is None:
-                        inventory.store.load_blocks(dataset)
-
                     dataset.is_open = (dataset_entry['is_open'] == 'y')
-
-                    if dataset.blocks is None:
-                        dataset.blocks = []
-                        dataset.size = 0
-                        dataset.num_files = 0
 
                     if dataset.replicas is None:
                         dataset.replicas = []
@@ -568,6 +571,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     updated_block = False
 
                     for block_entry in dataset_entry['block']:
+                        logger.debug('Block %s', block_entry['name'])
+
                         try:
                             block_name = Block.translate_name(block_entry['name'].replace(ds_name + '#', ''))
                         except:
@@ -579,6 +584,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             block = dataset.find_block(block_name)
 
                         if block is None:
+                            logger.debug('Creating new block %s', block_entry['name'])
+
                             block = Block(
                                 block_name,
                                 dataset = dataset,
@@ -598,8 +605,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 counters['new_blocks'] += 1
                                 new_block = True
 
-                        elif block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
+                        elif block.size != block_entry['bytes'] or \
+                                block.num_files != block_entry['files'] or \
+                                block.is_open != (block_entry['is_open'] == 'y'):
                             # block record was updated
+                            logger.debug('Block %s record was updated', block.real_name())
+
                             block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
                             if dataset.status == Dataset.STAT_VALID:
                                 dataset.status = Dataset.STAT_PRODUCTION
@@ -622,10 +633,13 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             site = inventory.sites[replica_entry['node']]
 
                             if dataset_replica is None or dataset_replica.site != site:
+                                logger.debug('New site %s', site.name)
                                 dataset_replica = dataset.find_replica(site)
 
                             if dataset_replica is None:
                                 # first time associating this dataset with this site
+                                logger.debug('Instantiating dataset replica at %s', site.name)
+
                                 dataset_replica = DatasetReplica(
                                     dataset,
                                     site,
@@ -652,29 +666,32 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             # if any of the block replica is custodial, dataset replica also is
                             if is_custodial:
                                 dataset_replica.is_custodial = True
-    
-                            block_replica = BlockReplica(
-                                block,
-                                site,
-                                group,
-                                is_complete, 
-                                is_custodial,
-                                size = replica_entry['bytes']
-                            )
+
+                            block_replica = dataset_replica.find_block_replica(block)
                             
-                            new_block_replica = True
-                                
-                            if from_delta:
-                                for br in dataset_replica.block_replicas:
-                                    if block_replica.block.name == br.block.name:
-                                        # Updating the dataset_replica
-                                        new_block_replica = False
-                                        dataset_replica.block_replicas.remove(br)
-                                        dataset_replica.block_replicas.append(block_replica)
-                                        
-                            if new_block_replica:
+                            if block_replica is None:
+                                # if not from_delta or simply a new block replica
+                                logger.debug('New BlockReplica of %s', block.real_name())
+
+                                block_replica = BlockReplica(
+                                    block,
+                                    site,
+                                    group,
+                                    is_complete, 
+                                    is_custodial,
+                                    size = replica_entry['bytes']
+                                )
+
                                 dataset_replica.block_replicas.append(block_replica)
                                 site.add_block_replica(block_replica)
+
+                            elif block_replica.group != group or \
+                                    block_replica.is_complete != is_complete or \
+                                    block_replica.is_custodial != is_custodial or \
+                                    block_replica.size != replica_entry['bytes']:
+
+                                logger.debug('Updating BlockReplica of %s', block.real_name())
+                                dataset_replica.update_block_replica(block, group, is_complete, is_custodial, replica_entry['bytes'])
                     
                     if new_block:
                         counters['datasets_with_new_blocks'] += 1
@@ -711,8 +728,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             logger.info('Checking for deleted dataset and block replicas.')
 
             for site in all_sites:
-                deletions = []
-                deletions.extend(self._make_phedex_request('deletions', ['node=%s' % site.name] + ['request_since=%d' % last_update]))
+                deletions = self._make_phedex_request('deletions', ['node=%s' % site.name] + ['request_since=%d' % last_update])
 
                 for dbs_entry in deletions:
 
@@ -721,16 +737,18 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                     try:
                         dataset = inventory.datasets[ds_name]
-                        logger.info("Found dataset in memory")
+                        logger.debug("Found dataset %s in memory", ds_name)
+
                     except KeyError:
-                        logger.info("Loading dataset")
+                        logger.debug("Loading dataset %s", ds_name)
                         dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False, load_replicas = True, sites = all_sites, groups = all_groups)
                         
-                    dataset_replica = dataset.find_replica(site)
-
                     if dataset is None:
                         logger.error('Trying to delete blocks from dataset %s that does not exist.' % (ds_name))
                         continue
+
+                    dataset_replica = dataset.find_replica(site)
+
                     if dataset_replica is None:
                         logger.error('Trying to delete blocks from dataset_replica of %s that does not exist on site %s.' % (ds_name, site))
                         continue
@@ -741,6 +759,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         if block_replica is None:
                             logger.error('Trying to delete a block %s that is not in the dataset replica.' % block_name)
                             continue
+
                         else:
                             dataset_replica.block_replicas.remove(block_replica)
 
@@ -765,6 +784,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             if blocks_with_replicas != set(dataset.blocks):
                 counters['datasets_with_updated_blocklist'] += 1
                 dataset.status = Dataset.STAT_PRODUCTION # trigger DBS query
+
+        if from_delta:
+            # restore caching
+            config.phedex.cache_lifetime = cache_lifetime
 
         logger.info('Done.')
         logger.info(' %d new datasets', counters['new_datasets'])
