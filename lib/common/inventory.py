@@ -138,10 +138,7 @@ class InventoryManager(object):
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
             # First get information on all replicas in the system, possibly creating datasets / blocks along the way.
-            if dataset_filter == '*':
-                self.replica_source.make_replica_links(self, from_delta = from_delta, last_update = self.store.get_last_update())
-            else:
-                self.replica_source.make_replica_links(self, dataset_filt = dataset_filter, from_delta = from_delta, last_update = self.store.get_last_update())
+            self.replica_source.make_replica_links(self, dataset_filt = dataset_filter, from_delta = from_delta, last_update = self.store.get_last_update())
                 
             open_datasets = filter(lambda d: d.status == Dataset.STAT_PRODUCTION, self.datasets.values())
             # Typically we enter this function with no file data loaded from store, so each open_dataset will have new File objects created.
