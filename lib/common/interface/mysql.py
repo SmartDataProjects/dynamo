@@ -107,8 +107,10 @@ class MySQL(object):
 
         if type(key) is tuple:
             key_str = '(' + ','.join('`%s`' % k for k in key) + ')'
-        else:
+        elif '`' not in key:
             key_str = '`%s`' % key
+        else:
+            key_str = key
 
         sqlbase += ' WHERE '
         for add in additional_conditions:
@@ -182,9 +184,6 @@ class MySQL(object):
             
             # MySQL allows queries up to 1M characters
             if len(values) > config.mysql.max_query_len or obj == objects[-1]:
-                if logger.getEffectiveLevel() == logging.DEBUG:
-                    logger.debug(sqlbase % values)
-
                 self.query(sqlbase % values)
 
                 values = ''
@@ -272,6 +271,9 @@ class MySQL(object):
                 self._execute_in_batches(nested_execute, pool[3])
 
         elif type(pool) is list:
+            if len(pool) == 0:
+                return
+
             # need to repeat in case pool is a long list
             iP = 0
             while iP < len(pool):
