@@ -162,10 +162,7 @@ class InventoryManager(object):
 
             # Save inventory data to persistent storage
             # Datasets and groups with no replicas are removed
-            if from_delta:
-                self.store.update_data(self.sites.values(), self.groups.values(), self.datasets.values())
-            else:
-                self.store.save_data(self.sites.values(), self.groups.values(), self.datasets.values())
+            self.store.save_data(self.sites.values(), self.groups.values(), self.datasets.values(), delta = from_delta)
 
             if make_snapshot:
                 logger.info('Removing the snapshot.')
