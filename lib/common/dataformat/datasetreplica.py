@@ -1,3 +1,5 @@
+from blockreplica import BlockReplica
+
 class DatasetReplica(object):
     """Represents a dataset replica. Combines dataset and site information."""
 
@@ -92,3 +94,20 @@ class DatasetReplica(object):
 
         except StopIteration:
             return None
+
+    def update_block_replica(self, block, group, is_complete, is_custodial, size):
+        old_replica = next(b for b in self.block_replicas if b.block == block)
+        self.block_replicas.remove(old_replica)
+
+        new_replica = BlockReplica(
+            block,
+            self.site,
+            group,
+            is_complete, 
+            is_custodial,
+            size = size
+        )
+        self.block_replicas.append(new_replica)
+
+        self.site.remove_block_replica(old_replica)
+        self.site.add_block_replica(new_replica)
