@@ -175,24 +175,6 @@ class InventoryManager(object):
             # Lock is released even in case of unexpected errors
             self.store.release_lock(force = True)
 
-    def load_blocks(self, dataset):
-        """
-        Load blocks of a dataset. Try InventoryStore first, and if no record is found, query the DatasetInfoSource.
-        """
-
-        self.store.load_blocks(dataset)
-        if dataset.blocks is None:
-            self.dataset_source.set_dataset_details([dataset])
-
-    def load_files(self, dataset):
-        """
-        Load blocks of a dataset. Try InventoryStore first, and if no record is found, query the DatasetInfoSource.
-        """
-
-        self.store.load_files(dataset)
-        if dataset.files is None:
-            self.dataset_source.set_dataset_details([dataset])
-
     def find_block_of(self, fullpath):
         """
         Return the Block that the file belongs to. If no Block is in memory, returns None.
@@ -238,10 +220,8 @@ class InventoryManager(object):
         dataset.replicas.append(new_replica)
         site.dataset_replicas.add(new_replica)
 
-        if dataset.blocks is None:
-            self.load_blocks(dataset)
-
         if blocks is None:
+            # dataset.blocks cannot be None at this point
             blocks = dataset.blocks
 
         for block in blocks:
