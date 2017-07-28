@@ -59,7 +59,7 @@ class BalancingHandler(BaseHandler):
             last_copies[site] = []
 
             for ds_name, size, reason in protections:
-                if size > config.max_dataset_size:
+                if size * 1.e-12 > config.max_dataset_size:
                     # protections is ordered
                     break
 
