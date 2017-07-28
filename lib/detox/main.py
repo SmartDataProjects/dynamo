@@ -285,7 +285,7 @@ class Detox(object):
                 
                 if not policy.static_optimization:
                     deleted_volume += replica.size() * 1.e-12
-                    if quota >= 0. and deleted_volume / quota > detox_config.deletion_per_iteration:
+                    if quota > 0. and deleted_volume / quota > detox_config.deletion_per_iteration:
                         break
 
         return deleted
