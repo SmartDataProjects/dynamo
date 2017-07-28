@@ -60,8 +60,10 @@ class Detox(object):
             self._execute_policy(policy, is_test, comment, auto_approval)
 
         finally:
-            if not config.read_only and not is_test and os.path.exists(detox_config.activity_indicator):
-                os.remove(detox_config.activity_indicator)
+            pass
+#            if not config.read_only and not is_test and os.path.exists(detox_config.activity_indicator):
+#                os.remove(detox_config.activity_indicator)
+#        Activity lock file is now written by dynamod
 
         logger.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
 
