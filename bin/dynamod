@@ -110,7 +110,7 @@ do
 
       if ! [ "$TEST" ] && [[ $APPLICATIONS =~ detox ]] && [ $RC -ne 130 ]
       then
-        $DYNAMO_BASE/bin/siteinfo --out /home/$USER/public_html/IntelROCCS/Detox
+        $DYNAMO_BASE/bin/siteinfo --out /home/cmsprod/public_html/IntelROCCS/Detox
       fi
 
       if [[ $APPLICATIONS =~ detox ]] && ! [ "$TEST" ]
