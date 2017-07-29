@@ -65,9 +65,11 @@ class DealerPolicy(object):
 
         self.used_demand_plugins.update(plugin.used_demand_plugins)
 
-    def collect_requests(self, inventory):
+    def collect_requests(self, inventory, target_sites):
         """
-        Collect requests from each plugin and return a prioritized list
+        Collect requests from each plugin and return a prioritized list.
+        @param inventory     An InventoryManager instance.
+        @param target_sites  A set of target sites for plugins that specify the destinations.
         """
 
         reqlists = []
@@ -78,17 +80,17 @@ class DealerPolicy(object):
                 # -> treat all as equal.
                 priority = 1
 
-            plugin_requests = plugin.get_requests(inventory, self)
+            plugin_requests = plugin.get_requests(inventory, self, target_sites)
 
             logger.debug('%s requesting %d items', plugin.name, len(plugin_requests))
 
             if len(plugin_requests) != 0:
-                reqlists.append((plugin_requests, priority))
+                reqlists.append((plugin_requests, plugin, priority))
 
         requests = []
 
         while len(reqlists) != 0:
-            pvalues = [1. / p for l, p in reqlists]
+            pvalues = [1. / r for l, p, r in reqlists]
             sums = [sum(pvalues[:i + 1]) for i in range(len(pvalues))]
 
             # Classic weighted random-picking algorithm
@@ -96,10 +98,12 @@ class DealerPolicy(object):
             x = random.uniform(0., sums[-1])
 
             ip = next(k for k in range(len(sums)) if x < sums[k])
+
             reqlist = reqlists[ip][0]
             requests.append(reqlist.pop(0))
 
             if len(reqlist) == 0:
+                logger.debug('No more requests from %s', reqlists[ip][1].name)
                 reqlists.pop(ip)
 
         return requests

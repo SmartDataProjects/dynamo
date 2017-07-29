@@ -3,6 +3,7 @@ import datetime
 import collections
 import fnmatch
 import logging
+import random
 
 from common.dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site
 import common.configuration as config
@@ -69,7 +70,7 @@ class Dealer(object):
 
         # Prioritized lists of datasets, blocks, and files
         # Plugins can specify the destination sites too - but is not passed the list of target sites to keep things simpler
-        requests = policy.collect_requests(self.inventory_manager)
+        requests = policy.collect_requests(self.inventory_manager, target_sites)
 
         logger.info('Determining the list of transfers to make.')
 
@@ -144,24 +145,33 @@ class Dealer(object):
                 continue
 
             if destination is None:
-                #sorted from emptiest to busiest
-                sorted_sites = sorted(site_occupancy.items(), key = lambda (s, f): f)
-                
-                try:
-                    # sorted_sites <- site_occupancy <- target_sites; quota guaranteed to be > 0
-                    destination = next(site for site, occupancy in sorted_sites if \
-                        occupancy + item_size / quotas[site] < 1. and \
-                        find_replica_at(site) is None
-                    )
+                # randomly choose the destination site with probability proportional to free space
+                site_array = []
+                for site, occupancy in site_occupancy.items():
+                    if occupancy + item_size / quotas[site] > 1. or find_replica_at(site) is not None:
+                        continue
+
+                    p = 1. - occupancy
+                    if len(site_array) != 0:
+                        p += site_array[-1][1]
     
-                except StopIteration:
+                    site_array.append((site, p))
+
+                if len(site_array) == 0:
                     logger.warning('%s has no copy destination.', item_name)
                     continue
 
+                x = random.uniform(0., site_array[-1][1])
+        
+                isite = next(k for k in range(len(site_array)) if x < site_array[k][1])
+        
+                destination = site_array[isite][0]
+
             else:
-                if destination not in site_occupancy or site_occupancy[site] + item_size / quotas[site] > 1.:
+                if destination not in site_occupancy or site_occupancy[destination] + item_size / quotas[destination] > 1.:
                     # a plugin specified the destination, but it's not in the list of potential target sites
-                    logger.warning('Cannot copy %s to %s.', item_name, site.name)
+                    logger.warning('Cannot copy %s to %s.', item_name, destination.name)
+
                     continue
 
                 if find_replica_at(destination) is not None:
@@ -180,6 +190,7 @@ class Dealer(object):
 
             if site_occupancy[destination] > dealer_config.target_site_occupancy or \
                     pending_volumes[destination] > dealer_config.max_copy_per_site:
+                logger.info('Site %s projected occupancy exceeded the limit.', destination.name)
                 # this site should get no more copies
                 site_occupancy.pop(destination)
 

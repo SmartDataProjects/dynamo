@@ -1,4 +1,5 @@
 import logging
+import random
 
 from dealer.plugins import plugins
 from dealer.plugins.base import BaseHandler
@@ -13,7 +14,7 @@ class BalancingHandler(BaseHandler):
         BaseHandler.__init__(self, 'Balancer')
         self.history = None
 
-    def get_requests(self, inventory, policy):
+    def get_requests(self, inventory, policy, target_sites):
         if self.history is None:
             return []
 
@@ -30,11 +31,7 @@ class BalancingHandler(BaseHandler):
         protected_fractions = {} # {site: fraction}
         last_copies = {} # {site: [datasets]}
 
-        for site in inventory.sites.values():
-            # do not consider bad sites in balancing in any way (it's not this plugin's job to offload protected data from bad sites)
-            if site.status != Site.STAT_READY or not policy.target_site_def(site):
-                continue
-
+        for site in target_sites:
             quota = site.partition_quota(policy.partition)
 
             if quota <= 0:
@@ -96,7 +93,7 @@ class BalancingHandler(BaseHandler):
             minsite, minfrac = min(protected_fractions.items(), key = lambda x: x[1])
 
             logger.debug('Protected fraction variation %f', maxfrac - minfrac)
-            
+
             # if max - min is less than 5%, we are done
             if maxfrac - minfrac < 0.05:
                 break
@@ -107,9 +104,7 @@ class BalancingHandler(BaseHandler):
                 protected_fractions.pop(maxsite)
                 continue
 
-            logger.debug('Proposing to copy %s to %s', dataset.name, minsite.name)
-
-            request.append((dataset, minsite))
+            request.append(dataset)
 
             size = dataset.size * 1.e-12
             protected_fractions[maxsite] -= size / float(maxsite.partition_quota(policy.partition))
