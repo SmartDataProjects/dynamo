@@ -3,6 +3,8 @@
 include_once(__DIR__ . '/../common/db_conf.php');
 include(__DIR__ . '/check_cache.php');
 
+date_default_timezone_set('America/New_York');
+
 $history_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamohistory');
 
 $operation = 'deletion';
@@ -216,6 +218,12 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
   $data['cycleTimestamp'] = $timestamp;
   $data['partition'] = $partition_id;
 
+  // $timestamp is local time string
+  $ts = strptime($timestamp, '%Y-%m-%d %H:%M:%S');
+  // converting a local time tuple to unix time
+  $unixtime = mktime($ts['tm_hour'], $ts['tm_min'], $ts['tm_sec'], 1 + $ts['tm_mon'], $ts['tm_mday'], 1900 + $ts['tm_year']);
+  $data['timestampWarning'] = ($unixtime < mktime() - 3600 * 1); // warn if timestamp is more than 18 hours in the past
+
   if (isset($_REQUEST['dataType']) && $_REQUEST['dataType'] == 'summary') {
     $index_to_id = array(0);
     $site_names = array(0 => 'Total');
@@ -251,7 +259,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
 
     $statuses = array(0 => 1);
 
-    $query = 'SELECT `site_id`, `status` FROM `site_status_snapshots` AS s1';
+    $query = 'SELECT `site_id`, `active`, `status` FROM `site_status_snapshots` AS s1';
     $query .= ' WHERE `run_id` = (';
     $query .= '  SELECT MAX(`run_id`) FROM `site_status_snapshots` AS s2';
     $query .= '   WHERE s2.`site_id` = s1.`site_id` AND s2.`run_id` <= ?';
@@ -259,11 +267,13 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
 
     $stmt = $history_db->prepare($query);
     $stmt->bind_param('i', $cycle);
-    $stmt->bind_result($site_id, $status);
+    $stmt->bind_result($site_id, $active, $status);
     $stmt->execute();
     while ($stmt->fetch()) {
-      if ($status == 'morgue' || $status == 'waitroom')
+      if ($status == 'morgue' || $status == 'waitroom' || $active == 0)
         $statuses[$site_id] = 0;
+      else if ($active == 2)
+        $statuses[$site_id] = 2;
       else
         $statuses[$site_id] = 1;
     }

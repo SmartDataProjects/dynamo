@@ -217,6 +217,9 @@ function displaySummary(data)
     }
     cycleHeader.append('span').text(', ' + data.cycleTimestamp + ')');
 
+    if (data.timestampWarning)
+        cycleHeader.style('color', 'red');
+
     d3.select('#cycleComments')
         .append('span').text(data.comment);
 
