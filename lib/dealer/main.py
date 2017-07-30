@@ -210,12 +210,6 @@ class Dealer(object):
             if len(replicas) == 0:
                 continue
 
-            for replica in list(replicas):
-                # final check with replica information source
-                if self.inventory_manager.replica_source.replica_exists_at_site(site, replica):
-                    logger.info('Not copying replica because it exists at site: %s', repr(replica))
-                    replicas.remove(replica)
-
             copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, group, comments = comment, auto_approval = auto_approval, is_test = is_test)
             # copy_mapping .. {operation_id: (approved, [replica])}
     

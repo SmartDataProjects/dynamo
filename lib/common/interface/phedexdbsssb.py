@@ -70,7 +70,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             'comments': comments
         }
 
-        logger.info('schedule_copy  subscribe %d datasets', len(catalogs))
+        logger.info('schedule_copy  subscribe %d datasets at %s', len(catalogs), options['node'])
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug('schedule_copy  subscribe: %s', str(options))
 
@@ -128,7 +128,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 'comments': comments
             }
 
-            logger.info('schedule_copies  subscribe %d datasets', len(catalogs))
+            logger.info('schedule_copies  subscribe %d datasets at %s', len(catalogs), options['node'])
             if logger.getEffectiveLevel() == logging.DEBUG:
                 logger.debug('schedule_copies  subscribe: %s', str(options))
 
