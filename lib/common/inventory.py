@@ -137,8 +137,13 @@ class InventoryManager(object):
 
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
+            if from_delta:
+                last_update = self.store.get_last_update()
+            else:
+                last_update = 0
+
             # First get information on all replicas in the system, possibly creating datasets / blocks along the way.
-            self.replica_source.make_replica_links(self, dataset_filt = dataset_filter, from_delta = from_delta, last_update = self.store.get_last_update())
+            self.replica_source.make_replica_links(self, dataset_filt = dataset_filter, last_update = last_update)
                 
             open_datasets = filter(lambda d: d.status == Dataset.STAT_PRODUCTION, self.datasets.values())
             # Typically we enter this function with no file data loaded from store, so each open_dataset will have new File objects created.
@@ -155,7 +160,11 @@ class InventoryManager(object):
                         dataset.status = Dataset.STAT_IGNORED
                         break
 
-            self.replica_source.find_tape_copies(self.datasets)
+            if not from_delta:
+                # if running from_delta, all sites must be in the included sites list.
+                # replica_source.make_replica_links is responsible for updating on_tape flags of datasets
+                # we should get rid of this function once delta update is established and we include tape sites in included_sites
+                self.replica_source.find_tape_copies(self, last_update = last_update)
 
             logger.info('Saving data.')
             #logger.info(pprint.pformat(self.datasets.values()))
@@ -317,7 +326,7 @@ if __name__ == '__main__':
     config.inventory.included_sites = []
     for pattern in args.sites:
         if pattern == '@all':
-            config.inventory.included_sites = config.mss_sites + config.disk_sites
+            config.inventory.included_sites = config.tape_sites + config.disk_sites
             break
         elif pattern == '@disk':
             config.inventory.included_sites = config.disk_sites

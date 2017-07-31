@@ -467,10 +467,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             group = Group(name)
             groups[name] = group
     
-    def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '*', from_delta = False, last_update = 0): #override (ReplicaInfoSourceInterface)
+    def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '*', last_update = 0): #override (ReplicaInfoSourceInterface)
         """
         Use blockreplicas to fetch a full list of all block replicas on the site (or a list corresponding to new replicas created 
-        since the last inventory update: "from_delta").
+        since the last inventory update).
         Objects in sites and datasets should have replica information cleared. All block replica objects
         are newly created within this function.
         Implementation:
@@ -497,7 +497,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         logger.info('make_replica_links  Fetching block replica information from PhEDEx')
 
-        if from_delta:
+        if last_update > 0:
             # query URL will be different every time - need to turn caching off
             cache_lifetime = config.phedex.cache_lifetime
             config.phedex.cache_lifetime = 0
@@ -521,7 +521,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             options = ['show_dataset=y']
 
-            if from_delta:
+            if last_update > 0:
                 options.append('update_since=%d' % last_update)
 
             for site in site_list:
@@ -549,7 +549,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             inventory.store.load_blocks(dataset)
 
                     except KeyError:
-                        dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False, load_replicas = from_delta, sites = all_sites, groups = all_groups)
+                        dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False, load_replicas = (last_update > 0), sites = all_sites, groups = all_groups)
 
                         if dataset is None:
                             logger.debug('Creating new dataset %s', ds_name)
@@ -651,7 +651,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 dataset.replicas.append(dataset_replica)
 
                                 site.dataset_replicas.add(dataset_replica)
-    
+
+                            if site.storage_type == Site.TYPE_MSS:
+                                # start with partial - update to full if the dataset replica is indeed full
+                                dataset.on_tape = Dataset.TAPE_PARTIAL
+
                             if int(replica_entry['time_update']) > dataset_replica.last_block_created:
                                 dataset_replica.last_block_created = int(replica_entry['time_update'])
 
@@ -692,6 +696,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                                 logger.debug('Updating BlockReplica of %s', block.real_name())
                                 dataset_replica.update_block_replica(block, group, is_complete, is_custodial, replica_entry['bytes'])
+
+                            if site.storage_type == Site.TYPE_MSS:
+                                # ask whether the dataset replica is full after encountering each block
+                                if dataset_replica.is_full():
+                                    dataset.on_tape = Dataset.TAPE_FULL
                     
                     if new_block:
                         counters['datasets_with_new_blocks'] += 1
@@ -707,23 +716,28 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             items = []
             for site in all_sites:
                 total_quota = site.quota()
-                if total_quota >= 500:
-                    # further split by the first character of the dataset names
-                    # split depending on the quota
+                if total_quota < 0 or total_quota >= 500:
+                    # negative quota -> "infinite"
+                    # For large sites, further split by the first character of the dataset names
+                    # Splitting depends on the quota
                     characters = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789'
-                    chunk_size = max(len(characters) / int(total_quota / 100), 1)
+                    if total_quota > 0:
+                        chunk_size = max(len(characters) / int(total_quota / 100), 1)
+                    else:
+                        chunk_size = 1
+
                     charsets = [characters[i:i + chunk_size] for i in range(0, len(characters), chunk_size)]
                     for charset in charsets:
                         items.append(([site], ['/%s*/*/*' % c for c in charset]))
                 else:
                     items.append(([site], ['/*/*/*']))
 
-            parallel_exec(exec_get, items, num_threads = min(64, len(items)), print_progress = True, timeout = 3600)
+            parallel_exec(exec_get, items, num_threads = min(32, len(items)), print_progress = True, timeout = 3600)
             del items
         else:
             exec_get(all_sites, [dataset_filt])
             
-        if from_delta:
+        if last_update > 0:
             # delta deletions part
             logger.info('Checking for deleted dataset and block replicas.')
 
@@ -785,7 +799,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 counters['datasets_with_updated_blocklist'] += 1
                 dataset.status = Dataset.STAT_PRODUCTION # trigger DBS query
 
-        if from_delta:
+        if last_update > 0:
             # restore caching
             config.phedex.cache_lifetime = cache_lifetime
 
@@ -796,16 +810,21 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         logger.info(' %d datasets with updated blocks', counters['datasets_with_updated_blocks'])
         logger.info(' %d datasets with updated blocklist', counters['datasets_with_updated_blocklist'])
 
-    def find_tape_copies(self, datasets): #override (ReplicaInfoSourceInterface)
+    def find_tape_copies(self, inventory, last_update = 0): #override (ReplicaInfoSourceInterface)
         """
         Use 'subscriptions' query to check if all blocks of the dataset are on tape.
         Queries only for datasets where on_tape != FULL and status in [VALID, PRODUCTION].
         site=T*MSS -> tape
         """
+
+        all_sites = inventory.sites.values()
+        all_groups = inventory.groups.values()
  
         # Routine to fetch data and fill the list of blocks on tape
         def inquire_phedex(dataset_list):
-            options = [('create_since', 0), ('node', 'T*_MSS')]
+            # note: for delta updates (last_update > 0), dataset_list is empty
+
+            options = [('create_since', last_update), ('node', 'T*_MSS')]
             options.extend([('block', dataset.name + '#*') for dataset in dataset_list]) # this will fetch dataset-level subscriptions too
 
             source = self._make_phedex_request('subscriptions', options, method = POST)
@@ -828,8 +847,18 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             # dataset.on_tape = TAPE_NONE if not (TAPE_FULL or TAPE_PARTIAL)
  
             for ds_entry in source:
-                dataset = datasets[ds_entry['name']]
- 
+                try:
+                    dataset = inventory.datasets[ds_entry['name']]
+                except KeyError:
+                    dataset = inventory.store.load_dataset(ds_entry['name'], load_blocks = True, load_files = False, load_replicas = True, sites = all_sites, groups = all_groups)
+
+                if dataset is None:
+                    # We can get here if doing a delta update (last_update > 0) and this dataset was only
+                    # updated at tape recently
+                    dataset = Dataset(ds_entry['name'], status = Dataset.STAT_PRODUCTION)
+                    # Need to get the full list of blocks
+                    self.set_dataset_details([dataset])
+
                 ds_bytes = ds_entry['bytes']
  
                 # if a dataset-level or block-level subscription exists, it's at least partial
@@ -843,8 +872,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             dataset.on_tape = Dataset.TAPE_FULL
                             break
      
-                    else: # else of for
-                        # This dataset is fully on tape. No more need to process data
+                    if dataset.on_tape == Dataset.TAPE_FULL:
+                        # no more need to process data
                         continue
   
                 if 'block' in ds_entry:
@@ -852,6 +881,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         dataset.on_tape = Dataset.TAPE_PARTIAL
   
                     block_names = set(b.name for b in dataset.blocks)
+                    # collect the list of blocks subscribed at each tape site
                     blocks_at_sites = collections.defaultdict(set)
      
                     for bl_entry in ds_entry['block']:
@@ -866,44 +896,54 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         bl_bytes = bl_entry['bytes']
      
                         for bl_subscription in bl_entry['subscription']:
+                            # only consider full block replicas
                             if bl_subscription['node_bytes'] == bl_bytes:
                                 blocks_at_sites[bl_subscription['node']].add(block_name)
-     
+
+                    # if there is at least one tape site with a full list of block replicas, set on_tape to TAPE_FULL and be done
                     for names in blocks_at_sites.values():
                         if names == block_names:
                             dataset.on_tape = Dataset.TAPE_FULL
                             break
- 
-        chunk_size = 1000
-        dataset_chunks = [[]]
 
-        # Loop over datasets not on tape
-        for dataset in datasets.values():
-           # on_tape is TAPE_NONE by default
-           if dataset.on_tape == Dataset.TAPE_FULL:
-               continue
 
-           if dataset.status != Dataset.STAT_VALID and dataset.status != Dataset.STAT_PRODUCTION:
-               continue
+        if last_update == 0:
+            # full update - we have all datasets we care about in memory already
+            chunk_size = 1000
+            dataset_chunks = [[]]
+    
+            # Loop over datasets not on tape
+            for dataset in inventory.datasets.values():
+               # on_tape is TAPE_NONE by default
+               if dataset.on_tape == Dataset.TAPE_FULL:
+                   continue
+    
+               if dataset.status != Dataset.STAT_VALID and dataset.status != Dataset.STAT_PRODUCTION:
+                   continue
+    
+               if dataset.blocks is None:
+                   # this dataset is not loaded at the moment
+                   continue
+     
+               # set it back to NONE first
+               dataset.on_tape = Dataset.TAPE_NONE
+    
+               dataset_chunks[-1].append(dataset)
+               if len(dataset_chunks[-1]) == chunk_size:
+                   dataset_chunks.append([])
+    
+            if len(dataset_chunks[-1]) == 0:
+                dataset_chunks.pop()
+            
+            ntotal = sum(len(c) for c in dataset_chunks)
+            logger.info('find_tape_copies  Checking tape copies of %d datasets.', ntotal)
+            
+            parallel_exec(inquire_phedex, dataset_chunks, print_progress = (ntotal > 1000))
 
-           if dataset.blocks is None:
-               # this dataset is not loaded at the moment
-               continue
- 
-           # set it back to NONE first
-           dataset.on_tape = Dataset.TAPE_NONE
-
-           dataset_chunks[-1].append(dataset)
-           if len(dataset_chunks[-1]) == chunk_size:
-               dataset_chunks.append([])
-
-        if len(dataset_chunks[-1]) == 0:
-            dataset_chunks.pop()
-        
-        ntotal = sum(len(c) for c in dataset_chunks)
-        logger.info('find_tape_copies  Checking tape copies of %d datasets.', ntotal)
-        
-        parallel_exec(inquire_phedex, dataset_chunks, print_progress = (ntotal > 1000))
+        else:
+            # delta update - query for any updates in tape sites
+            # this may take a long time if last_update is far in the past
+            inquire_phedex([])
 
     def replica_exists_at_site(self, site, item): #override (ReplicaInfoSourceInterface)
         """
@@ -944,7 +984,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         # DBS 'datasetlist' query. Sets not just the status but also the dataset type.
         self._set_dataset_status_and_type(datasets)
 
-        release_unknown = filter(lambda d: d.software_version is None, datasets)
+        # some datasets may become IGNORED after set_dataset_status_and_type
+        release_unknown = filter(lambda d: d.status != Dataset.STAT_IGNORED and d.software_version is None, datasets)
 
         logger.info('set_dataset_details  Finding the software version for %d datasets.', len(release_unknown))
 
@@ -1057,7 +1098,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         try:
                             block_name = Block.translate_name(block_entry['name'].replace(dataset.name + '#', ''))
                         except:
-                            logger.error('Invalid block name %s in data', block_name)
+                            logger.error('Invalid block name %s in data', block_entry['name'])
                             continue
     
                         block = dataset.find_block(block_name)
@@ -1080,7 +1121,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             if block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
                                 block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
 
-                        if int(block_entry['time_update']) > dataset.last_update:
+                        if block_entry['time_update'] is not None and int(block_entry['time_update']) > dataset.last_update:
                             dataset.last_update = int(block_entry['time_update'])
 
                         for file_entry in block_entry['file']:
@@ -1173,9 +1214,35 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             # here threads are genuinely independent - no lock required
 
             names = [d.name for d in dataset_list]
-    
-            dbs_entries = self._make_dbs_request('datasetlist', {'dataset': names, 'detail': True}, method = POST, format = 'json')
-            result = dict((e['dataset'], e) for e in dbs_entries)
+
+            # We may have an invalid dataset within the list, in which case the entire call will be scrapped.
+            # In such cases, we need to identify and throw out the invalid datasets recursively.
+
+            dbs_response = self._make_dbs_request('datasetlist', {'dataset': names, 'detail': True}, method = POST, format = 'json', raise_on_error = False)
+
+            if type(dbs_response) is not list:
+                # error
+                errorcode, exception = dbs_response
+                if errorcode == 400: # bad request
+                    if len(dataset_list) == 1:
+                        dataset = dataset_list[0]
+                        logger.debug('set_dataset_details  DBS throws an error on %s.', dataset.name)
+                        # this dataset is in PhEDEx but not in DBS - set to IGNORED and clean them up regularly
+                        dataset.status = Dataset.STAT_IGNORED
+                        dataset.data_type = Dataset.TYPE_UNKNOWN
+                    else:
+                        # split the list in half and inquire DBS for each
+                        inquire_dbs(dataset_list[:len(dataset_list) / 2])
+                        inquire_dbs(dataset_list[len(dataset_list) / 2:])
+
+                    return
+
+                else:
+                    logger.error('DBS error: %s', str(exception))
+                    raise RuntimeError('set_dataset_status_and_type')
+                    
+            # normal return
+            result = dict((e['dataset'], e) for e in dbs_response)
     
             for dataset in dataset_list:
                 try:
@@ -1266,12 +1333,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         
         return body
 
-    def _make_dbs_request(self, resource, options = [], method = GET, format = 'url'):
+    def _make_dbs_request(self, resource, options = [], method = GET, format = 'url', raise_on_error = True):
         """
         Make a single DBS request call. Returns a list of dictionaries from the body of the query result.
         """
 
-        resp = self._dbs_interface.make_request(resource, options = options, method = method, format = format)
+        resp = self._dbs_interface.make_request(resource, options = options, method = method, format = format, raise_on_error = raise_on_error)
 
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug(pprint.pformat(resp))
