@@ -65,11 +65,10 @@ class DealerPolicy(object):
 
         self.used_demand_plugins.update(plugin.used_demand_plugins)
 
-    def collect_requests(self, inventory, target_sites):
+    def collect_requests(self, inventory):
         """
         Collect requests from each plugin and return a prioritized list.
         @param inventory     An InventoryManager instance.
-        @param target_sites  A set of target sites for plugins that specify the destinations.
         """
 
         reqlists = []
@@ -80,7 +79,7 @@ class DealerPolicy(object):
                 # -> treat all as equal.
                 priority = 1
 
-            plugin_requests = plugin.get_requests(inventory, self, target_sites)
+            plugin_requests = plugin.get_requests(inventory, self)
 
             logger.debug('%s requesting %d items', plugin.name, len(plugin_requests))
 
@@ -100,7 +99,26 @@ class DealerPolicy(object):
             ip = next(k for k in range(len(sums)) if x < sums[k])
 
             reqlist = reqlists[ip][0]
-            requests.append(reqlist.pop(0))
+            request = reqlist.pop(0)
+            requests.append(request)
+
+            if logger.getEffectiveLevel() == logging.DEBUG:
+                if type(request) is tuple:
+                    item, destination = request
+                    destname = destination.name
+                else:
+                    item = request
+                    destname = 'somewhere'
+    
+                if type(item).__name__ == 'Dataset':
+                    name = item.name
+                elif type(item).__name__ == 'Block':
+                    name = item.dataset.name + '#' + item.real_name()
+                elif type(item) is list:
+                    name = item[0].dataset.name + '#'
+                    name += ':'.join(block.real_name() for block in item)
+    
+                logger.debug('Selecting request from %s: %s to %s', reqlists[ip][1].name, name, destname)
 
             if len(reqlist) == 0:
                 logger.debug('No more requests from %s', reqlists[ip][1].name)

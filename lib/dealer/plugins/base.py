@@ -3,7 +3,7 @@ class BaseHandler(object):
         self.name = name
         self.used_demand_plugins = []
 
-    def get_requests(self, inventory, policy, target_sites):
+    def get_requests(self, inventory, policy):
         """
         Return a prioritized list of objects requesting transfer of.
         """

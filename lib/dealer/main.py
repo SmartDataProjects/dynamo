@@ -70,7 +70,7 @@ class Dealer(object):
 
         # Prioritized lists of datasets, blocks, and files
         # Plugins can specify the destination sites too - but is not passed the list of target sites to keep things simpler
-        requests = policy.collect_requests(self.inventory_manager, target_sites)
+        requests = policy.collect_requests(self.inventory_manager)
 
         logger.info('Determining the list of transfers to make.')
 

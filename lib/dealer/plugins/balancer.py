@@ -14,7 +14,7 @@ class BalancingHandler(BaseHandler):
         BaseHandler.__init__(self, 'Balancer')
         self.history = None
 
-    def get_requests(self, inventory, policy, target_sites):
+    def get_requests(self, inventory, policy):
         if self.history is None:
             return []
 
@@ -31,12 +31,16 @@ class BalancingHandler(BaseHandler):
         protected_fractions = {} # {site: fraction}
         last_copies = {} # {site: [datasets]}
 
-        for site in target_sites:
+        for site in inventory.sites.values():
             quota = site.partition_quota(policy.partition)
+
+            logger.debug('Site %s quota %f', site.name, quota)
 
             if quota <= 0:
                 # if the site has 0 or infinite quota, don't consider in balancer
                 continue
+
+            logger.debug('Site %s in deletion_decisions %d', site.name, (site.name in deletion_decisions))
 
             try:
                 decisions = deletion_decisions[site.name]
@@ -82,6 +86,9 @@ class BalancingHandler(BaseHandler):
                         logger.debug('%s is a last copy at %s', ds_name, site.name)
                         last_copies[site].append(dataset)
 
+        for site, frac in sorted(protected_fractions.items(), key = lambda (s, f): f):
+            logger.debug('Site %s fraction %f', site.name, frac)
+
         request = []
 
         total_size = 0.
@@ -93,6 +100,7 @@ class BalancingHandler(BaseHandler):
             minsite, minfrac = min(protected_fractions.items(), key = lambda x: x[1])
 
             logger.debug('Protected fraction variation %f', maxfrac - minfrac)
+            logger.debug('Max site: %s', maxsite.name)
 
             # if max - min is less than 5%, we are done
             if maxfrac - minfrac < 0.05:

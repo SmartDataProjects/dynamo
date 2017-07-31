@@ -12,7 +12,7 @@ class Undertaker(BaseHandler):
         BaseHandler.__init__(self, 'Undertaker')
         self.history = None
 
-    def get_requests(self, inventory, policy, target_sites): # override
+    def get_requests(self, inventory, policy): # override
         if self.history is None:
             return []
 
