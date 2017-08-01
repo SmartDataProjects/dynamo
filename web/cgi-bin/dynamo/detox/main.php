@@ -222,7 +222,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
   $ts = strptime($timestamp, '%Y-%m-%d %H:%M:%S');
   // converting a local time tuple to unix time
   $unixtime = mktime($ts['tm_hour'], $ts['tm_min'], $ts['tm_sec'], 1 + $ts['tm_mon'], $ts['tm_mday'], 1900 + $ts['tm_year']);
-  $data['timestampWarning'] = ($unixtime < mktime() - 3600 * 1); // warn if timestamp is more than 18 hours in the past
+  $data['timestampWarning'] = ($unixtime < mktime() - 3600 * 18); // warn if timestamp is more than 18 hours in the past
 
   if (isset($_REQUEST['dataType']) && $_REQUEST['dataType'] == 'summary') {
     $index_to_id = array(0);
