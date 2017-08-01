@@ -902,8 +902,7 @@ class MySQLStore(LocalStoreInterface):
                     if inventory_block_replica not in replica.block_replicas:
                         block_replicas_to_delete.append(inventory_block_replica)
 
-                if len(block_replicas_to_delete) > 0:
-                    self.delete_blockreplicas(block_replicas_to_delete)
+                self.delete_blockreplicas(block_replicas_to_delete)
 
             # delete dataset replicas that are in DB but not in memory
             for inventory_replica in inventory_dataset.replicas:
@@ -912,17 +911,19 @@ class MySQLStore(LocalStoreInterface):
                     self.delete_datasetreplica(inventory_replica, delete_blockreplicas = True)
                     
             # end of delta deletions part
+            # remaining block replicas are to be inserted
 
             block_name_to_id = {}
             for block_id, block_name in self._mysql.query('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
                 block_name_to_id[Block.translate_name(block_name)] = block_id
 
-            for block_replica in replica.block_replicas:
-                block_id = block_name_to_id[block_replica.block.name]
-                
-                all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial))
-                if not block_replica.is_complete:
-                    replica_sizes.append((block_id, site_id, block_replica.size))
+            for replica in dataset.replicas:
+                for block_replica in replica.block_replicas:
+                    block_id = block_name_to_id[block_replica.block.name]
+                    
+                    all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial))
+                    if not block_replica.is_complete:
+                        replica_sizes.append((block_id, site_id, block_replica.size))
                     
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
         self._mysql.insert_many('block_replicas', fields, None, all_replicas, do_update = True)
@@ -1177,6 +1178,9 @@ class MySQLStore(LocalStoreInterface):
     def _do_delete_blockreplicas(self, replica_list): #override
         # Mass block replica deletion typically happens for a few sites and a few datasets.
         # Fetch site id first to avoid a long query.
+
+        if len(replica_list) == 0:
+            return
 
         sites = list(set([r.site for r in replica_list])) # list of unique sites
         datasets = list(set([r.block.dataset for r in replica_list])) # list of unique sites

@@ -181,6 +181,33 @@ class InventoryManager(object):
             # Lock is released even in case of unexpected errors
             self.store.release_lock(force = True)
 
+    def load_dataset(self, dataset_name, load_blocks = False, load_files = False, load_replicas = False, sites = None, groups = None):
+        """
+        Load a dataset from the store, and if it exists, add to self.datasets.
+        Maybe add an option to load from DatasetSource too?
+        """
+
+        dataset = self.store.load_dataset(dataset_name, load_blocks = load_blocks, load_files = load_files, load_replicas = load_replicas, sites = sites, groups = groups)
+
+        if dataset is None:
+            logger.debug('Creating new dataset %s', dataset_name)
+            dataset = Dataset(dataset_name, status = Dataset.STAT_PRODUCTION)
+            in_store = False
+
+            if load_blocks:
+                dataset.blocks = []
+            if load_files:
+                dataset.files = []
+            if load_replicas:
+                dataset.replicas = []
+
+        else:
+            in_store = True
+
+        self.datasets[dataset_name] = dataset
+
+        return dataset, in_store
+
     def find_block_of(self, fullpath):
         """
         Return the Block that the file belongs to. If no Block is in memory, returns None.
@@ -298,7 +325,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', '-d', metavar = 'EXPR', dest = 'dataset', default = '/*/*/*', help = 'Limit operation to datasets matching the expression.')
     parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'sites', nargs = '+', default = ['@disk'], help = 'Site names or aggregate names (@disk, @tape, @all) to include.')
     parser.add_argument('--no-load', '-L', action = 'store_true', dest = 'no_load',  help = 'Do not load the existing inventory when updating.')
-    parser.add_argument('--no-snapshot', '-S', action = 'store_true', dest = 'no_snapshot',  help = 'Do not make a snapshot of existing inventory when updating.')
+    parser.add_argument('--snapshot', '-S', action = 'store_true', dest = 'snapshot',  help = 'Make a snapshot of existing inventory when updating.')
     parser.add_argument('--single-thread', '-T', action = 'store_true', dest = 'singleThread', help = 'Do not parallelize (for debugging).')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
 
@@ -345,10 +372,10 @@ if __name__ == '__main__':
         icmd += 1
     
         if command == 'update':
-            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot)
+            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = args.snapshot)
 
         elif command == 'updatefull':
-            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = not args.no_snapshot, from_delta = False)
+            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = args.snapshot, from_delta = False)
     
         elif command == 'scan':
             manager.scan_datasets(dataset_filter = args.dataset)
