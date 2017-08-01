@@ -94,8 +94,8 @@ if 'detox' in args.module:
             ('dmytro', 't0-replaytwo')
         ]
         
-        for iu, (url, auth_type, content_type) in enumerate(config.weblock.sources):
-            weblock = WebReplicaLock(sources = [(url, auth_type, content_type)])
+        for iu, (url, auth_type, content_type, site_pattern) in enumerate(config.weblock.sources):
+            weblock = WebReplicaLock(sources = [(url, auth_type, content_type, site_pattern)])
         
             weblock.update(inventory_manager)
         
