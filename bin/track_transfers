@@ -101,6 +101,12 @@ if not os.path.exists(total_rrdfile):
 def is_transfer_stuck(rrd_file):
     stuck = 0
     result = rrdtool.fetch(rrd_file, "LAST")
+
+    lasttime = result[0][1]
+    firsttime = lasttime - 6*24*3600
+
+    result = rrdtool.fetch(rrd_file, "LAST", '-s', str(firsttime), '-e', str(lasttime))
+
     rows = result[2]
     while rows[len(rows)-1][1] is None:
         rows = rows[:-1]
