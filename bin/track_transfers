@@ -27,7 +27,7 @@ from common.misc import parallel_exec
 ####### yiiyama@mit.edu, bmaier@mit.edu #######################
 ###############################################################
 
-if commands.getstatusoutput('ps -Af | grep "python /usr/local/dynamo/bin/track_transfers" | wc -l')[1] > 2:
+if int(commands.getstatusoutput('ps -Af | grep "python /usr/local/dynamo/bin/track_transfers" | wc -l')[1]) > 2:
     print "Found another running instance of track_transfers. Exiting."
     sys.exit(1)
 
