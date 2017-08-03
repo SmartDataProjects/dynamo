@@ -218,11 +218,16 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
   $data['cycleTimestamp'] = $timestamp;
   $data['partition'] = $partition_id;
 
-  // $timestamp is local time string
-  $ts = strptime($timestamp, '%Y-%m-%d %H:%M:%S');
-  // converting a local time tuple to unix time
-  $unixtime = mktime($ts['tm_hour'], $ts['tm_min'], $ts['tm_sec'], 1 + $ts['tm_mon'], $ts['tm_mday'], 1900 + $ts['tm_year']);
-  $data['timestampWarning'] = ($unixtime < mktime() - 3600 * 18); // warn if timestamp is more than 18 hours in the past
+  if ($next_cycle == 0) {
+    // we are showing the latest cycle
+    // $timestamp is local time string
+    $ts = strptime($timestamp, '%Y-%m-%d %H:%M:%S');
+    // converting a local time tuple to unix time
+    $unixtime = mktime($ts['tm_hour'], $ts['tm_min'], $ts['tm_sec'], 1 + $ts['tm_mon'], $ts['tm_mday'], 1900 + $ts['tm_year']);
+    $data['timestampWarning'] = ($unixtime < mktime() - 3600 * 1); // warn if timestamp is more than 18 hours in the past
+  }
+  else
+    $data['timestampWarning'] = false;
 
   if (isset($_REQUEST['dataType']) && $_REQUEST['dataType'] == 'summary') {
     $index_to_id = array(0);

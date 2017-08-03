@@ -219,6 +219,8 @@ function displaySummary(data)
 
     if (data.timestampWarning)
         cycleHeader.style('color', 'red');
+    else
+        cycleHeader.style('color', 'white');
 
     d3.select('#cycleComments')
         .append('span').text(data.comment);
