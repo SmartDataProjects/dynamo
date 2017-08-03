@@ -653,7 +653,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         counters['datasets_with_new_blocks'] += 1
                     if updated_block:
                         counters['datasets_with_updated_blocks'] += 1
-    
 
         all_sites = [site for name, site in inventory.sites.items() if fnmatch.fnmatch(name, site_filt)]
         gname_list = [name for name in inventory.groups.keys() if fnmatch.fnmatch(name, group_filt)] + [None]
@@ -677,6 +676,44 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             del items
         else:
             exec_get(all_sites, gname_list, [dataset_filt])
+
+        logger.info('Checking dataset status changes.')
+
+        invalid_or_deprecated = set(d for d in inventory.datasets.values() if d.status == Dataset.STAT_INVALID or d.status == Dataset.STAT_DEPRECATED)
+
+        dbs_invalids = self._make_dbs_request('datasets', ['dataset_access_type=INVALID'])
+        for ds_entry in dbs_invalids:
+            try:
+                dataset = inventory.datasets[ds_entry['dataset']]
+            except KeyError:
+                continue
+
+            dataset.status = Dataset.STAT_INVALID
+
+            try:
+                invalid_or_deprecated.remove(dataset)
+            except KeyError:
+                pass
+
+        dbs_deprecated = self._make_dbs_request('datasets', ['dataset_access_type=DEPRECATED'])
+        for ds_entry in dbs_deprecated:
+            try:
+                dataset = inventory.datasets[ds_entry['dataset']]
+            except KeyError:
+                continue
+
+            dataset.status = Dataset.STAT_DEPRECATED
+
+            try:
+                invalid_or_deprecated.remove(dataset)
+            except KeyError:
+                pass
+
+        # remaining datasets in the list must have been revalidated
+        # set it to production to trigger further inspection
+        for dataset in invalid_or_deprecated:
+            logger.info('%s was invalid or deprecated but not any more', dataset.name)
+            dataset.status = Dataset.STAT_PRODUCTION
 
         logger.info('Checking for updated datasets.')
 
