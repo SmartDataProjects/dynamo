@@ -329,8 +329,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         if len(request) == 0:
             return {}
 
-        pprint.pprint(request)
-
         site_name = request[0]['destinations']['node'][0]['name']
 
         dataset_names = []
@@ -352,8 +350,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             chunks = [block_names[i:i + 10] for i in xrange(0, len(block_names), 10)]
             for chunk in chunks:
                 subscriptions.extend(self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['block=%s' % n for n in chunk]))
-
-        pprint.pprint(subscriptions)
 
         status = {}
         for dataset in subscriptions:
