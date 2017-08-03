@@ -239,7 +239,7 @@ for existing_rrd in existing_rrds:
         subprocess.call("rm -f %s" % existing_rrd, shell=True) 
 
 
-subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/T*/*rrd", shell=True)
+subprocess.call("rm -rf /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/T*", shell=True)
 subprocess.call("cp -r /var/spool/dynamo/track_phedex/T* /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)        
 
 print "DONE."
