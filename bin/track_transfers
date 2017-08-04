@@ -108,12 +108,15 @@ def is_transfer_stuck(rrd_file):
     result = rrdtool.fetch(rrd_file, "LAST", '-s', str(firsttime), '-e', str(lasttime))
 
     rows = result[2]
-    while rows[len(rows)-1][1] is None:
-        rows = rows[:-1]
+    try:
+        while rows[len(rows)-1][1] is None:
+            rows = rows[:-1]
 
-    if len(rows) > 288 and (rows[len(rows)-1][0] - rows[len(rows)-289][0])/rows[len(rows)-1][1] < 0.01:
+        if len(rows) > 288 and (rows[len(rows)-1][0] - rows[len(rows)-289][0])/rows[len(rows)-1][1] < 0.01:
         #288 corresponds to 3 days * 24 hours * 4 timestamps per hour
-        stuck = 1
+            stuck = 1
+    except:
+        pass
 
     return stuck
 
@@ -151,8 +154,6 @@ def exec_get(sitename):
         for (site, dataset), (total, copied, last_update) in status.items():
 
             if copied is not None:# That happens sometimes for very, very, very old requests
-                #sites_total.append([site,total])
-                #sites_copied.append([site,copied])
                 site_total += total
                 site_copied += copied
 
