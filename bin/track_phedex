@@ -1,0 +1,245 @@
+#!/usr/bin/env python
+import csv
+import sys
+import os
+import time
+import subprocess
+import random
+import json
+import rrdtool
+from tempfile import NamedTemporaryFile
+import shutil
+import common.interface.classes as classes
+from glob import glob
+from datetime import datetime, timedelta
+import time
+
+
+###############################################################
+####### This script will spit out rrd files monitoring ########
+####### the copy status through Phedex on three levels: #######
+#
+####### huibregc@mit.edu, bmaier@mit.edu, yiiyama@mit.edu######
+###############################################################
+
+
+# Location where rrd files are stored
+rrd_dir = "/var/spool/dynamo/track_phedex"
+
+# Checking if subscriptions are done by dynamo (then: ignore)
+partitions = ['AnalysisOps','Physics']
+history = classes.default_interface['history']()
+copy = classes.default_interface['copy']()
+
+# Defining how far back we wanna go: two weeks
+maxtime=int(time.time())-15*24*60*60
+interval = 900
+timestamp = int(time.time()) / interval * interval
+start = (int(time.time())/ interval - 1)*interval
+
+# Small txt-based database
+tempfile = "%s/overwrite_unfinished.txt" % rrd_dir
+expired_empty = "%s/expired_empty.txt" % rrd_dir
+
+request_ids = []
+idcheck = []
+
+older_than = datetime.now() - timedelta(days=20)
+existing_rrds = glob(rrd_dir+'/*/*.rrd')
+unfinished_rrds = []
+
+
+# Isolate subscriptions monitored by Dynamo for exclusion later 
+for partition in partitions:
+    partition_records = history.get_incomplete_copies(partition)
+    for record in partition_records:
+        request_ids.append(int(str(record.operation_id).rstrip("L")))
+
+# Making wget calls to PhEDEx for JSON dumps of subscriptions
+subprocess.call("wget -O %s/unfinished.txt --no-check-certificate 'https://cmsweb.cern.ch/phedex/datasvc/json/prod/subscriptions?percent_max=99.999&create_since=%s'" % (rrd_dir,str(maxtime)),shell=True)
+
+def get_query(filename):
+    """
+    This function returns an array of subscription ids, names, sites, copied amounts and total sizes. It opens the PhEDEx query (wget) txt files and collects id numbers from the JSON. IDs are looped through the copy.copy_status object to retrieve the remaining properties of the subscription. It also creates and writes RRD files for each dataset, organized by destination site.
+    """
+    ids = []
+    names = []
+    nodes = []
+    amt_finished = []
+    sizes = []
+    nums = []
+
+    with open(filename) as Tmp:
+        Pdict = json.load(Tmp)
+        for i in range(len(Pdict["phedex"]["dataset"])):
+            try: 
+                for j in range(len(Pdict["phedex"]["dataset"][i]["block"])):
+                        for n in range(len(Pdict["phedex"]["dataset"][i]["block"][j]["subscription"])):
+                            request_id = Pdict["phedex"]["dataset"][i]["block"][j]["subscription"][n]["request"]
+                            if request_id not in request_ids and request_id not in ids:
+                                ids.append(request_id)
+            except:
+                for k in range(len(Pdict["phedex"]["dataset"][i]["subscription"])):
+                    request_id = Pdict["phedex"]["dataset"][i]["subscription"][k]["request"]
+                    if request_id not in request_ids and request_id not in ids:
+                        ids.append(request_id)                    
+
+        for num in ids:
+            status = copy.copy_status(num)
+            for (site, dataset), (total, copied, last_update) in status.items():
+                
+                names.append(dataset)
+                nums.append(num)
+                sizes.append(total)
+                amt_finished.append(copied)
+                nodes.append(site)
+                
+                try:
+                    os.makedirs(rrd_dir+"/%s" % str(site))
+                except:
+                    pass
+                    
+                rrd_dir_site = rrd_dir + "/%s" % str(site)
+                dataset_name = dataset.lstrip("/")       
+                rrd_phedex = rrd_dir_site + "/%s_%s.rrd" % ((str(num)), str(dataset_name.replace("/","+")))
+                unfinished_rrds.append(rrd_phedex)
+                if not os.path.exists(rrd_phedex):
+                    rrdtool.create(rrd_phedex, '--start', str(start), '--step', str(interval),
+                                   'DS:copied:GAUGE:%d:0:U' % (interval * 800),
+                                   'DS:total:GAUGE:%d:0:U' % (interval * 800),
+                                   'RRA:LAST:0:1:%i' % 1344    )
+
+    array = [names,sizes,nodes,amt_finished,nums]
+
+    return array
+
+array_unfinished = get_query("%s/unfinished.txt" % rrd_dir)
+
+#Create new CSV file with columns: ||Run_ID||Dataset_Name||Site||Copied||Size||Complete|| -> strictly incomplete subscriptions written to this file.
+if not os.path.exists("%s/rrd/filelist.txt" % rrd_dir):
+    with open("%s/rrd/filelist.txt" % rrd_dir, "w") as csvfilelist:
+        fieldnames = ["run_id","name","destination","amount_copied","total"]
+        writer = csv.DictWriter(csvfilelist, fieldnames=fieldnames)
+        writer.writerow(dict(zip(fieldnames,fieldnames))) 
+        finished = 0
+        for i in range(len(array_unfinished[0])):
+            writer.writerow({"run_id" :"%s" % str(array_unfinished[4][i]),"name" : "%s" % str(array_unfinished[0][i]), "destination" : "%s" % str(array_unfinished[2][i]), "amount_copied" : "%s" % str(array_unfinished[3][i]),"total": "%s" % str(array_unfinished[1][i])})
+            try:
+                copied = array_unfinished[3][i]
+                total = array_unfinished[1][i]
+                rrd_dir_site = rrd_dir + "/%s" % str(array_unfinished[2][i])
+                dataset_name = str(array_unfinished[0][i]).lstrip("/")       
+                rrd_phedex = rrd_dir_site + "/%s_%s.rrd" % ((str(array_unfinished[4][i])), str(dataset_name.replace("/","+")))
+                rrdtool.update(rrd_phedex, '%d:%d:%d' % (timestamp, copied, total))
+            except:
+                pass
+
+
+#Update CSV file if it exists. Append all rows from PhEDEx unfinished query. Remove all rows from PhEDEx finished query 
+else:
+    with open("%s/rrd/filelist.txt" % rrd_dir, "r") as csvfilelist:
+        with open(tempfile, "w") as tmpfile:
+            reader = csv.reader(csvfilelist,delimiter=',')
+            fieldnames = ["run_id","name","destination","amount_copied","total"]
+            writer = csv.DictWriter(tmpfile, fieldnames=fieldnames)
+            writer.writerow(dict(zip(fieldnames,fieldnames)))
+            next(reader)
+            i = 0
+            for element in array_unfinished[0]:
+                writer.writerow({"run_id" :"%s" % str(array_unfinished[4][i]),"name" : "%s" % str(array_unfinished[0][i]), "destination" : "%s" % str(array_unfinished[2][i]), "amount_copied" : "%s" % str(array_unfinished[3][i]),"total": "%s" % str(array_unfinished[1][i])})
+                i += 1
+                try:
+                    copied = array_unfinished[3][i]
+                    total = array_unfinished[1][i]
+                    rrd_dir_site = rrd_dir + "/%s" % str(array_unfinished[2][i])
+                    dataset_name = str(array_unfinished[0][i]).lstrip("/")       
+                    rrd_phedex = rrd_dir_site + "/%s_%s.rrd" % ((str(array_unfinished[4][i])), str(dataset_name.replace("/","+")))
+                    rrdtool.update(rrd_phedex, '%d:%d:%d' % (timestamp, copied, total))
+                except:
+                    pass
+                
+            #Tagging both complete and stuck transfer IDs
+            for row in reader:
+                if int(row[0]) not in array_unfinished[4]:
+                    print row[0]
+                    idcheck.append(int(row[0]))
+ 
+            #Overwrite existing filelist CSV file
+            shutil.move(tempfile,"%s/rrd/filelist.txt" % rrd_dir)
+
+
+#Collect IDs of subscriptions out of 30 day query (write ID into CSV file for archive)
+if not os.path.exists("%s/rrd/filelistexpired.txt" % rrd_dir):
+    with open("%s/rrd/filelistexpired.txt" % rrd_dir,"w") as expired:
+        writer = csv.DictWriter(expired, fieldnames = fieldnames)
+        writer.writerow(dict(zip(fieldnames,fieldnames)))        
+        #Loop over all possible finished and stuck subscriptions and appen only the latter
+        for num in idcheck:
+            status = copy.copy_status(num)
+            for (site, dataset), (total, copied, last_update) in status.items():
+                if total != copied:
+                    writer.writerow({"run_id" : "%s" %str(num), "name":"%s" %str(dataset),"destination":"%s" %str(site), "amount_copied":"%s" %str(copied), "total":"%s" %str(total)})
+else:
+    with open(expired_empty,"w") as blank:
+        writer = csv.DictWriter(blank, fieldnames = fieldnames)
+        writer.writerow(dict(zip(fieldnames,fieldnames)))
+        #Loop over all possible finished and stuck subscriptions and append only the latter
+        for num in idcheck:
+            status = copy.copy_status(num)
+            j = 0
+            for (site, dataset), (total, copied, last_update) in status.items():
+                if total != copied:
+                    writer.writerow({"run_id" : "%s" %str(num), "name":"%s" %str(dataset),"destination":"%s" %str(site), "amount_copied":"%s" %str(copied), "total":"%s" %str(total)})
+                #Final update for finished subscription RRD files
+                elif total == copied:
+                    try:
+                        rrd_dir_site = rrd_dir + "/%s" % str(site)
+                        dataset_name = dataset.lstrip("/")       
+                        rrd_phedex = rrd_dir_site + "/%s_%s.rrd" % ((str(num)), str(dataset_name.replace("/","+")))
+                        rrdtool.update(rrd_phedex, '%d:%d:%d' % (timestamp, copied, total))
+                    except:
+                        pass
+                                    
+                                    
+        #Overwrite existing CSV file
+        shutil.move(expired_empty,"%s/rrd/filelistexpired.txt" % rrd_dir)    
+        #filelistexpired.txt takes the same format as filelist, but contains entries of subscriptions outside of the 30 day query
+
+
+
+#Update RRD files for stuck transfers not included in initial query
+try:            
+    with open("%s/rrd/filelistexpired.txt" % rrd_dir, "r") as expiredreader:
+        ereader = csv.reader(expiredreader, delimiter = ",")
+        next(ereader)
+        for entry in ereader:
+            status = copy.copy_status(int(entry[0]))
+
+            for (site, dataset), (total, copied, last_update) in status.items():
+                try:
+                    rrd_dir_site = rrd_dir + "/%s" % str(site)
+                    dataset_name = dataset.lstrip("/")       
+                    rrd_phedex = rrd_dir_site + "/%s_%s.rrd" % ((str(num)), str(dataset_name.replace("/","+")))
+                    rrdtool.update(rrd_phedex, '%d:%d:%d' % (timestamp, copied, total))
+                except:
+                    pass
+   
+except:
+    pass
+
+
+#Remove the query temporary files
+os.remove("%s/unfinished.txt" % rrd_dir)
+#os.remove("finished.txt")
+
+for existing_rrd in existing_rrds:
+    filetime = datetime.fromtimestamp(os.path.getmtime(existing_rrd))
+    if existing_rrd not in unfinished_rrds and filetime < older_than:
+        # Delete pngs and rrd files
+        subprocess.call("rm -f %s" % existing_rrd, shell=True) 
+
+
+subprocess.call("rm -rf /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/T*", shell=True)
+subprocess.call("cp -r /var/spool/dynamo/track_phedex/T* /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)        
+
+print "DONE."

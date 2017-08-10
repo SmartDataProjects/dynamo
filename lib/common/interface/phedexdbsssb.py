@@ -70,7 +70,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             'comments': comments
         }
 
-        logger.info('schedule_copy  subscribe %d datasets', len(catalogs))
+        logger.info('schedule_copy  subscribe %d datasets at %s', len(catalogs), options['node'])
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug('schedule_copy  subscribe: %s', str(options))
 
@@ -128,7 +128,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 'comments': comments
             }
 
-            logger.info('schedule_copies  subscribe %d datasets', len(catalogs))
+            logger.info('schedule_copies  subscribe %d datasets at %s', len(catalogs), options['node'])
             if logger.getEffectiveLevel() == logging.DEBUG:
                 logger.debug('schedule_copies  subscribe: %s', str(options))
 
@@ -348,8 +348,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         if len(request) == 0:
             return {}
 
-        pprint.pprint(request)
-
         site_name = request[0]['destinations']['node'][0]['name']
 
         dataset_names = []
@@ -363,16 +361,14 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         subscriptions = []
 
         if len(dataset_names) != 0:
-            chunks = [dataset_names[i:i + 10] for i in xrange(0, len(dataset_names), 10)]
+            chunks = [dataset_names[i:i + 35] for i in xrange(0, len(dataset_names), 35)]
             for chunk in chunks:
                 subscriptions.extend(self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in chunk]))
 
         if len(block_names) != 0:
-            chunks = [block_names[i:i + 10] for i in xrange(0, len(block_names), 10)]
+            chunks = [block_names[i:i + 35] for i in xrange(0, len(block_names), 35)]
             for chunk in chunks:
                 subscriptions.extend(self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['block=%s' % n for n in chunk]))
-
-        pprint.pprint(subscriptions)
 
         status = {}
         for dataset in subscriptions:
@@ -676,7 +672,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         counters['datasets_with_new_blocks'] += 1
                     if updated_block:
                         counters['datasets_with_updated_blocks'] += 1
-    
 
         all_sites = [site for name, site in inventory.sites.items() if fnmatch.fnmatch(name, site_filt)]
         gname_list = [name for name in inventory.groups.keys() if fnmatch.fnmatch(name, group_filt)] + [None]
@@ -700,6 +695,44 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             del items
         else:
             exec_get(all_sites, gname_list, [dataset_filt])
+
+        logger.info('Checking dataset status changes.')
+
+        invalid_or_deprecated = set(d for d in inventory.datasets.values() if d.status == Dataset.STAT_INVALID or d.status == Dataset.STAT_DEPRECATED)
+
+        dbs_invalids = self._make_dbs_request('datasets', ['dataset_access_type=INVALID'])
+        for ds_entry in dbs_invalids:
+            try:
+                dataset = inventory.datasets[ds_entry['dataset']]
+            except KeyError:
+                continue
+
+            dataset.status = Dataset.STAT_INVALID
+
+            try:
+                invalid_or_deprecated.remove(dataset)
+            except KeyError:
+                pass
+
+        dbs_deprecated = self._make_dbs_request('datasets', ['dataset_access_type=DEPRECATED'])
+        for ds_entry in dbs_deprecated:
+            try:
+                dataset = inventory.datasets[ds_entry['dataset']]
+            except KeyError:
+                continue
+
+            dataset.status = Dataset.STAT_DEPRECATED
+
+            try:
+                invalid_or_deprecated.remove(dataset)
+            except KeyError:
+                pass
+
+        # remaining datasets in the list must have been revalidated
+        # set it to production to trigger further inspection
+        for dataset in invalid_or_deprecated:
+            logger.info('%s was invalid or deprecated but not any more', dataset.name)
+            dataset.status = Dataset.STAT_PRODUCTION
 
         logger.info('Checking for updated datasets.')
 

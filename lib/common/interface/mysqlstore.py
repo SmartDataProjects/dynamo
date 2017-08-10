@@ -781,13 +781,12 @@ class MySQLStore(LocalStoreInterface):
         dataset_id_map = {}
         self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
 
+        site_id_list = '(' + ','.join('%d' % sid for sid in site_id_map.values()) + ')'
+
         # insert/update dataset replicas
         logger.info('Inserting/updating dataset replicas.')
 
-        if self._mysql.table_exists('dataset_replicas_new'):
-            self._mysql.query('DROP TABLE `dataset_replicas_new`')
-
-        self._mysql.query('CREATE TABLE `dataset_replicas_new` LIKE `dataset_replicas`')
+        self._mysql.query('DELETE FROM `dataset_replicas` WHERE `site_id` IN ' + site_id_list)
 
         fields = ('dataset_id', 'site_id', 'completion', 'is_custodial', 'last_block_created')
         mapping = lambda r: (dataset_id_map[r.dataset], site_id_map[r.site], 'partial' if r.is_partial() else ('full' if r.is_complete else 'incomplete'), r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.last_block_created)))
@@ -797,25 +796,20 @@ class MySQLStore(LocalStoreInterface):
             if dataset.status != Dataset.STAT_UNKNOWN and dataset.replicas is not None:
                 all_replicas.extend(dataset.replicas)
 
-        self._mysql.insert_many('dataset_replicas_new', fields, mapping, all_replicas, do_update = False)
-
-        self._mysql.query('RENAME TABLE `dataset_replicas` TO `dataset_replicas_old`')
-        self._mysql.query('RENAME TABLE `dataset_replicas_new` TO `dataset_replicas`')
-        self._mysql.query('DROP TABLE `dataset_replicas_old`')
+        self._mysql.insert_many('dataset_replicas', fields, mapping, all_replicas, do_update = False)
 
         # insert/update block replicas
         logger.info('Inserting/updating block replicas.')
-
-        # assuming block name is unique
-        block_name_to_id = {}
-        for block_id, block_name in self._mysql.query('SELECT DISTINCT b.`id`, b.`name` FROM `blocks` AS b INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = b.`dataset_id`'):
-            block_name_to_id[Block.translate_name(block_name)] = block_id
 
         all_replicas = []
         replica_sizes = []
         for dataset in datasets:
             if dataset.status == Dataset.STAT_UNKNOWN or dataset.replicas is None:
                 continue
+
+            block_name_to_id = {}
+            for block_id, block_name in self._mysql.query('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
+                block_name_to_id[Block.translate_name(block_name)] = block_id
 
             for replica in dataset.replicas:
                 site_id = site_id_map[replica.site]
@@ -826,29 +820,15 @@ class MySQLStore(LocalStoreInterface):
                     if not block_replica.is_complete:
                         replica_sizes.append((block_id, site_id, block_replica.size))
 
-        if self._mysql.table_exists('block_replicas_new'):
-            self._mysql.query('DROP TABLE `block_replicas_new`')
-
-        self._mysql.query('CREATE TABLE `block_replicas_new` LIKE `block_replicas`')
+        self._mysql.query('DELETE FROM `block_replicas` WHERE `site_id` IN ' + site_id_list)
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
-        self._mysql.insert_many('block_replicas_new', fields, None, all_replicas, do_update = False)
+        self._mysql.insert_many('block_replicas', fields, None, all_replicas, do_update = False)
 
-        self._mysql.query('RENAME TABLE `block_replicas` TO `block_replicas_old`')
-        self._mysql.query('RENAME TABLE `block_replicas_new` TO `block_replicas`')
-        self._mysql.query('DROP TABLE `block_replicas_old`')
-
-        if self._mysql.table_exists('block_replica_sizes_new'):
-            self._mysql.query('DROP TABLE `block_replica_sizes_new`')
-
-        self._mysql.query('CREATE TABLE `block_replica_sizes_new` LIKE `block_replica_sizes`')
+        self._mysql.query('DELETE FROM `block_replica_sizes` WHERE `site_id` IN ' + site_id_list)
 
         fields = ('block_id', 'site_id', 'size')
-        self._mysql.insert_many('block_replica_sizes_new', fields, None, replica_sizes, do_update = False)
-
-        self._mysql.query('RENAME TABLE `block_replica_sizes` TO `block_replica_sizes_old`')
-        self._mysql.query('RENAME TABLE `block_replica_sizes_new` TO `block_replica_sizes`')
-        self._mysql.query('DROP TABLE `block_replica_sizes_old`')
+        self._mysql.insert_many('block_replica_sizes', fields, None, replica_sizes, do_update = False)
 
     def _do_save_replica_accesses(self, access_list): #override
         replicas = access_list.keys()
