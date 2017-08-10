@@ -11,7 +11,7 @@ max_dataset_size = 50. # Maximum dataset size to consider for copy in TB
 
 request_to_replica_threshold = 1.75 # (weighted number of requests) / (number of replicas) above which replication happens
 
-max_copy_per_site = 50. # Maximum volume to be copied per site in TB
+max_copy_per_site = 10. # Maximum volume to be copied per site in TB
 max_copy_total = 200.
 
 max_replicas = 10
