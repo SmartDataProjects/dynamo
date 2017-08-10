@@ -224,7 +224,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             try:
                 result = self._make_phedex_request('delete', options, method = POST)
             except:
-                logger.error('schedule_deletions  delete failed.')
+                logger.error('schedule_deletion  delete failed.')
                 return (0, False, [])
 
             request_id = int(result[0]['id']) # return value is a string
@@ -256,72 +256,91 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             logger.warning('Deletion from MSS cannot be done in daemon mode.')
             return {}
 
-        for site, replica_list in replicas_by_site.items():
-            for level in ['dataset', 'block']:
-                # execute the deletions in two steps: one for dataset-level and one for block-level
-                deletion_list = []
+        def call_deletion(site, level, deletion_list):
+            """
+            Sometimes we have invalid data in the list of objects to delete.
+            PhEDEx throws a 400 error in such a case. We have to then try to identify the
+            problematic item through trial and error.
+            """
 
-                catalogs = {}
-                for replica in replica_list:
-                    replica_blocks = [r.block for r in replica.block_replicas]
+            catalogs = {}
+            for replica in deletion_list:
+                if level == 'dataset':
+                    catalogs[replica.dataset] = []
+                elif level == 'block':
+                    catalogs[replica.dataset] = [r.block for r in replica.block_replicas]
 
-                    if replica.dataset.blocks is not None and set(replica_blocks) == set(replica.dataset.blocks):
-                        if level == 'dataset':
-                            deletion_list.append(replica)
-                            catalogs[replica.dataset] = []
+            if len(catalogs) == 0:
+                return
 
+            options = {
+                'node': site.name,
+                'data': self._form_catalog_xml(catalogs),
+                'level': level,
+                'rm_subscriptions': 'y',
+                'comments': comments
+            }
+
+            if config.read_only:
+                logger.info('schedule_deletions  delete %d datasets', len(catalogs))
+                logger.debug('schedule_deletions  delete: %s', str(options))
+                return
+
+            if is_test:
+                logger.info('schedule_deletions  delete %d datasets', len(catalogs))
+                logger.debug('schedule_deletions  delete: %s', str(options))
+                request_id = -1
+                while request_id in request_mapping:
+                    request_id -= 1
+
+                request_mapping[request_id] = (True, deletion_list)
+                return
+
+            # result = [{'id': <id>}] (item 'request_created' of PhEDEx response) if successful
+            try:
+                result = self._make_phedex_request('delete', options, method = POST)
+            except:
+                if self._phedex_interface.last_errorcode == 400:
+                    # bad request - split the deletion list and try each half
+                    if len(deletion_list) == 1:
+                        logger.error('schedule_deletions  Could not delete %s from %s', replica.dataset.name, site.name)
                     else:
-                        if level == 'block':
-                            deletion_list.append(replica)
-                            catalogs[replica.dataset] = replica_blocks
-
-                if len(catalogs) == 0:
-                    continue
-
-                options = {
-                    'node': site.name,
-                    'data': self._form_catalog_xml(catalogs),
-                    'level': level,
-                    'rm_subscriptions': 'y',
-                    'comments': comments
-                }
-    
-                if config.read_only:
-                    logger.info('schedule_deletions  delete %d datasets', len(catalogs))
-                    logger.debug('schedule_deletions  delete: %s', str(options))
-                    continue
-    
-                if is_test:
-                    logger.info('schedule_deletions  delete %d datasets', len(catalogs))
-                    logger.debug('schedule_deletions  delete: %s', str(options))
-                    request_id = -1
-                    while request_id in request_mapping:
-                        request_id -= 1
-    
-                    request_mapping[request_id] = (True, deletion_list)
-    
+                        call_deletion(site, level, deletion_list[:len(deletion_list) / 2])
+                        call_deletion(site, level, deletion_list[len(deletion_list) / 2:])
                 else:
-                    # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
-                    try:
-                        result = self._make_phedex_request('delete', options, method = POST)
-                    except:
-                        logger.error('schedule_deletions  delete failed.')
-                        continue
+                    logger.error('schedule_deletions  Could not delete %d datasets from %s', len(deletion_list), site.name)
+                    
+                return
+
+            request_id = int(result[0]['id']) # return value is a string
         
-                    request_id = int(result[0]['id']) # return value is a string
+            request_mapping[request_id] = (False, deletion_list) # (completed, deleted_replicas)
         
-                    request_mapping[request_id] = (False, deletion_list) # (completed, deleted_replicas)
-        
-                    logger.warning('PhEDEx deletion request id: %d', request_id)
+            logger.warning('PhEDEx deletion request id: %d', request_id)
     
-                    if auto_approval:
-                        try:
-                            result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
-                            request_mapping[request_id] = (True, deletion_list)
-                        except:
-                            logger.error('schedule_deletions  deletion approval failed.')
-                            continue
-    
+            if auto_approval:
+                try:
+                    result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
+                    request_mapping[request_id] = (True, deletion_list)
+                except:
+                    logger.error('schedule_deletions  deletion approval failed.')
+            
+
+        for site, replica_list in replicas_by_site.items():
+            # execute the deletions in two steps: one for dataset-level and one for block-level
+            deletion_lists = {'dataset': [], 'block': []}
+
+            for replica in replica_list:
+                replica_blocks = [r.block for r in replica.block_replicas]
+
+                if replica.dataset.blocks is not None and set(replica_blocks) == set(replica.dataset.blocks):
+                    deletion_lists['dataset'].append(replica)
+                else:
+                    deletion_lists['block'].append(replica)
+
+            call_deletion(site, 'dataset', deletion_lists['dataset'])
+            call_deletion(site, 'block', deletion_lists['block'])
+
         return request_mapping
 
     def copy_status(self, request_id): #override (CopyInterface)

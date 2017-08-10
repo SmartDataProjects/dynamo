@@ -101,7 +101,19 @@ class RESTService(object):
         else:
             self._cache_lock = None
 
-    def make_request(self, resource = '', options = [], method = GET, format = 'url', cache_lifetime = 0):
+        self.last_errorcode = 0
+        self.last_exception = None
+
+    def make_request(self, resource = '', options = [], method = GET, format = 'url', cache_lifetime = 0, retry_on_error = True):
+        """
+        @param resource       What comes after url_base
+        @param options        For GET calls, compiled into key=value&key=value&... For POST calls, becomes data
+        @param method         GET or POST
+        @param format         Format to send data in.
+        @param cache_lifetime If nonzero, get data from local cache DB if the last call was made within the lifetime.
+        @param retry_on_error Retry on general error (error code != 400 - Bad request).
+        """
+
         url = self.url_base
         if resource:
             url += '/' + resource
@@ -171,7 +183,7 @@ class RESTService(object):
 
         wait = 1.
         exceptions = []
-        while True:
+        while len(exceptions) != config.webservice.num_attempts:
             try:
                 if self.auth_handler:
                     opener = urllib2.build_opener(self.auth_handler())
@@ -225,26 +237,28 @@ class RESTService(object):
                 return result
     
             except urllib2.HTTPError as err:
-                last_except = (str(err)) + '\nBody:\n' + err.read()
+                self.last_errorcode = err.code
+                self.last_exception = (str(err)) + '\nBody:\n' + err.read()
             except:
-                last_except = sys.exc_info()[:2]
+                self.last_errorcode = 0
+                self.last_exception = sys.exc_info()[:2]
 
-            exceptions.append(last_except)
+            exceptions.append((self.last_errorcode, self.last_exception))
 
-            logger.info('Exception "%s" occurred in webservice. Trying again in %.1f seconds.', str(last_except), wait)
-
-            if len(exceptions) == config.webservice.num_attempts:
+            if not retry_on_error or self.last_errorcode == 400:
                 break
+
+            logger.info('Exception "%s" occurred in webservice. Trying again in %.1f seconds.', str(self.last_exception), wait)
 
             time.sleep(wait)
             wait *= 1.5
 
-        # closes attempt loop
-
+        # exhausted allowed attempts
         logger.error('Too many failed attempts in webservice')
+        logger.error('Last error code %d', self.last_errorcode)
         logger.error('%s' % ' '.join(map(str, exceptions)))
-        raise RuntimeError('webservice too many attempts')
 
+        raise RuntimeError('webservice too many attempts')
 
 if __name__ == '__main__':
 
