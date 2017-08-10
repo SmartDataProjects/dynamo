@@ -92,11 +92,11 @@ if __name__ == '__main__':
                 datasets = values.split(',')
                 options['dataset'] = datasets
             else:
-                try:
-                    value = int(values)
-                except ValueError:
+                if values == 'True' or values == 'False':
+                    value = bool(values)
+                else:
                     try:
-                        value = bool(values)
+                        value = int(values)
                     except ValueError:
                         value = values
 
