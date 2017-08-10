@@ -77,10 +77,9 @@ do
     if [ $(($IHOUR%$DETOX_INTERVAL)) -eq 0 ]
     then
       APPLICATIONS="detox"
-    fi
-    if [ $(($IHOUR%$DEALER_INTERVAL)) -eq 0 ]
+    elif [ $(($IHOUR%$DEALER_INTERVAL)) -eq 0 ]
     then
-      APPLICATIONS="dealer $APPLICATIONS"
+      APPLICATIONS="dealer"
     fi
 
     if [ $(($IHOUR%$INVENTORY_UPDATE_INTERVAL)) -eq 0 ]

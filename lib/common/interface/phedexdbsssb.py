@@ -81,7 +81,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             return -1
 
         else:
-            result = self._make_phedex_request('subscribe', options, method = POST)
+            try:
+                result = self._make_phedex_request('subscribe', options, method = POST)
+            except:
+                result = []
     
             if len(result) == 0:
                 logger.error('schedule_copy failed.')
@@ -144,7 +147,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             else:
                 # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
-                result = self._make_phedex_request('subscribe', options, method = POST)
+                try:
+                    result = self._make_phedex_request('subscribe', options, method = POST)
+                except:
+                    result = []
     
                 if len(result) == 0:
                     logger.error('schedule_copies  copy failed.')
