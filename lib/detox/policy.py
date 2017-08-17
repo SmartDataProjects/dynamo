@@ -144,7 +144,7 @@ class Policy(object):
             else:
                 raise ConfigurationError(line)
 
-            if 'dataset.name' in line and words[-1].count('/') != 3 and words[-1][0] != '/':
+            if 'dataset.name' in line and (words[-1].count('/') != 3 or words[-1][0] != '/'):
                 raise ConfigurationError(line)
 
             if len(words) == 1:
