@@ -80,6 +80,12 @@ class Dataset(object):
         return 'Dataset(\'%s\', size=%d, num_files=%d, status=%d, on_tape=%d, data_type=%d, software_version=%s, last_update=%d, is_open=%s)' % \
             (self.name, self.size, self.num_files, self.status, self.on_tape, self.data_type, str(self.software_version), self.last_update, str(self.is_open))
 
+    def initialize(self):
+        self.status = Dataset.STAT_VALID
+        self.blocks = []
+        self.files = set()
+        self.replicas = []
+
     def unlink(self):
         # unlink objects to avoid ref cycles - should be called when this dataset is absolutely not needed
 

@@ -1,4 +1,4 @@
-import time
+import time, datetime
 import math
 import logging
 
@@ -86,13 +86,19 @@ class PopularityHandler(BaseHandler):
 
 
 class UserRequest:
-    def __init__(self,did,site):
+    def __init__(self,did,site,tstamp=0,inaction=False):
+        self._reqid = 0
         self._id = did
         self._site = site
         self._nrequests = 0
-        self._earliest = 0
+        self._earliest = tstamp
         self._latest = 0
-        self._rank = 0
+        self._status = 'new'
+        self._updated = False
+        self._inaction = False
+        if inaction == True:
+            self._inaction = True
+
     def __hash__(self):
         return hash((self._id, self._site))
     def __eq__(self, other):
@@ -101,7 +107,8 @@ class UserRequest:
                 return True
         return False
 
-    def addRequestTime(self,tstamp,nowtime):
+    def updateRequest(self,tstamp,inaction=False):
+        self._updated=True
         if self._nrequests == 0:
             self._earliest = tstamp
         
@@ -109,24 +116,27 @@ class UserRequest:
             self._earliest = tstamp
         if self._latest < tstamp:
             self._latest = tstamp
+
         self._nrequests += 1
-        self._rank += (nowtime - tstamp)  
-    def site(self):
-        return self._site
-    def popularity(self):
-        return self._nrequests
-    def requested(self):
-        return self._earliest
-    def rank(self):
-        return self._rank
+        if self._inaction == False:
+            if inaction == True:
+                self._inaction = True
+    def site(self):      return self._site
+    def popularity(self):return self._nrequests
+    def requested(self): return self._earliest
+    def rank(self):      return self._nrequests
+    def isactive(self):  return self._inaction
+    def reqId(self):     return self._reqid
+    def status(self):    return self._status
+    def updated(self):   return self._updated
         
 class DirectRequestsHandler(BaseHandler):
     def __init__(self):
-        BaseHandler.__init__(self)
+        BaseHandler.__init__(self,'LastUsed')
         self._reqtable = 'requests'
+        self._unified = 'requests_unified'
         self._datasets = []
         self._requests = []
-        self._deleteRequests = {}
         self._mysql = MySQL(**comm_config.mysqlregistry.db_params)
 
     def get_requests_lock(self):
@@ -147,31 +157,66 @@ class DirectRequestsHandler(BaseHandler):
     def release_lock(self):
         self._mysql.query("UNLOCK TABLES")
 
-    def read_requests(self):
-        return self._mysql.query("select * from " + self._reqtable)
+    def read_history(self):
+        return self._mysqlHist.query("select * from " + self._reqhistory)
 
-    def release_requests(self,idname):
+    def release_requests(self,table,reqs2delete):
         array = []
-        for did in self._deleteRequests:
-            for site in self._deleteRequests[did]:
+        for (did,site) in reqs2delete:
                 array.append((did,site,'copy'))
-        self._mysql.delete_many('requests', (idname,'site','reqtype'), array)
+        self._mysql.delete_many(table, ('item','site','reqtype'), array)
+
+    def update_unified(self,idname):
+        for (dset,target) in  self._requests:
+            request = self._requests[(dset,target)]
+            created = datetime.datetime.fromtimestamp(request.requested())
+            if not request.isactive():
+                #arrayNew.append((dset,'dataset',target,'copy',created,created))
+                self._newRequests[(dset,target)] = request
+            else:
+                if request.updated():
+                    print "old request rank = " + str(request.rank())
+                    sql = "update requests_unified set rank=" + str(request.rank())
+                    sql = sql + " where reqid=" + str(request.reqId())  
+                    self._mysql.query(sql)
 
     def get_requests(self, inventory, policy): # override
         nowtime = int(time.time())
 
-        self._deleteRequests = {}
         self._requests = {}
+        self._newRequests = {}
         self._datasets = []
 
+        reqs2delete = {}
+        unif2delete = {}
         self.get_requests_lock()
-        reqs = self.read_requests()
+
+        reqs = self._mysql.query("select * from " + self._unified)
+        for item in reqs:
+            dset = item[1]
+            target = item[3]
+            reqtime = int(time.mktime(item[7].timetuple()))
+            self._requests[(dset,target)] = UserRequest(dset,target,reqtime,True)
+            self._requests[(dset,target)]._reqid = int(item[0])
+            self._requests[(dset,target)]._nrequests = int(item[5])
+            self._requests[(dset,target)]._status = item[6]
+            reps = inventory.datasets[dset].replicas
+            fullreps = [i for i in reps if i.is_complete==True]
+            if len([i for i in fullreps if i.site.name==target])>0:
+                print dset
+                print " request already done, trash it"
+                unif2delete[(dset,target)] = True
+
+        reqs = self._mysql.query("select * from " + self._reqtable)
         for item in reqs:
             dset = item[0]
             target = item[2]
             reqtype = item[3]
-            reqtime = int(time.mktime(item[4].timetuple()))
-
+            if item[4] != None:
+                reqtime = int(time.mktime(item[4].timetuple()))
+            else:
+                reqtime = time.time()
+                      
             #we only deal with copy requests here
             if reqtype != 'copy':
                 print dset
@@ -181,9 +226,7 @@ class DirectRequestsHandler(BaseHandler):
             if dset not in inventory.datasets:
                 print dset
                 print " non existing dataset, trash it "
-                if dset not in self._deleteRequests:                                              
-                    self._deleteRequests[dset] = []
-                self._deleteRequests[dset].append(target)
+                reqs2delete[(dset,target)] = True
                 continue
 
             #check that the full replicas exist anywhere
@@ -198,20 +241,33 @@ class DirectRequestsHandler(BaseHandler):
             if len([i for i in fullreps if i.site.name==target])>0:
                 print dset
                 print " request already done, trash it"
-                if dset not in self._deleteRequests:
-                    self._deleteRequests[dset] = []
-                self._deleteRequests[dset].append(target)
+                reqs2delete[(dset,target)] = True
                 continue
                 
             if (dset,target) not in self._requests:
                 self._requests[(dset,target)] = UserRequest(dset,target)
-            self._requests[(dset,target)].addRequestTime(reqtime,nowtime)
+            self._requests[(dset,target)].updateRequest(reqtime,False)
 
-        self.release_requests('item')
+        for (dset,target) in  self._requests:
+            #if inaction true it means we already acting upon it
+            #collapse all other requests and update the date
+            if self._requests[(dset,target)].isactive():
+                print dset
+                print "master request is in"
+                reqs2delete[(dset,target)] = True
+                
+        self.update_unified('item')
+        self.release_requests('requests',reqs2delete)
+        self.release_requests('requests_unified',unif2delete)
         self.release_lock()
 
+        for (dset,target) in  self._requests:
+            request = self._requests[(dset,target)]
+            if request.isactive() and request.status() == 'new':
+                self._newRequests[(dset,target)] = request
+
         print "\n attaching copy requests for datasets:"
-        for req in sorted(self._requests.values(), key=lambda x: x._rank, reverse=True):
+        for req in sorted(self._newRequests.values(), key=lambda x: x.rank(), reverse=True):
             ds = inventory.datasets[req._id]
             print ds.name
             self._datasets.append((ds,inventory.sites[req._site]))

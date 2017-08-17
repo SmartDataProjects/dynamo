@@ -17,6 +17,7 @@ class Dealer(object):
         self.transaction_manager = transaction
         self.demand_manager = demand
         self.history = history
+        self.push_partial = False
 
     def run(self, policy, is_test = False, comment = '', auto_approval = True):
         """
@@ -64,7 +65,7 @@ class Dealer(object):
             if quotas[site] != 0. and \
                     site.status == Site.STAT_READY and \
                     policy.target_site_def(site) and \
-                    site.storage_occupancy(policy.partition, physical = False) < dealer_config.target_site_occupancy:
+                    site.storage_occupancy(policy.partition, physical = True) < dealer_config.target_site_occupancy:
 
                 target_sites.add(site)
 
@@ -99,7 +100,7 @@ class Dealer(object):
         site_occupancy = {}
         for site in target_sites:
             # At the moment we don't have the information of exactly how many jobs are running at each site, so we are simply sorting the sites by occupancy.
-            site_occupancy[site] = site.storage_occupancy(partition, physical = False)
+            site_occupancy[site] = site.storage_occupancy(partition, physical = True)
 
         candidates = []
         for request in requests:
@@ -129,7 +130,7 @@ class Dealer(object):
 
                 dataset = item[0].dataset
                 item_name = dataset.name
-                item_size = sum(b.size for b in item)
+                item_size = sum(b.size for b in item)  * 1.e-12
                 find_replica_at = lambda s: s.find_dataset_replica(dataset)
                 make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(dataset, s, group, blocks = items)
 
@@ -152,12 +153,12 @@ class Dealer(object):
                     continue
 
             else:
-                if destination not in site_occupancy or site_occupancy[site] + item_size / quotas[site] > 1.:
+                if destination not in site_occupancy or site_occupancy[destination] + item_size / quotas[site] > 1.:
                     # a plugin specified the destination, but it's not in the list of potential target sites
-                    logger.warning('Cannot copy %s to %s.', item_name, site.name)
+                    logger.warning('Cannot copy %s to %s.', item_name, destination.name)
                     continue
 
-                if find_replica_at(destination) is not None:
+                if (not self.push_partial) and (find_replica_at(destination) is not None):
                     logger.info('%s is already at %s', item_name, destination.name)
                     continue
 
@@ -261,7 +262,7 @@ if __name__ == '__main__':
     demand_manager = DemandManager()
     #deman_manager = None
 
-    history = classes.default_interface['history']()
+    history = classes.default_interface['historylocal']()
 
     dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history)
 

@@ -4,6 +4,7 @@ import logging
 import time
 import re
 import collections
+import datetime
 
 from common.interface.history import TransactionHistoryInterface
 from common.interface.mysql import MySQL
@@ -12,7 +13,7 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-class MySQLHistory(TransactionHistoryInterface):
+class LocalHistory(TransactionHistoryInterface):
     """
     Transaction history interface implementation using MySQL as the backend.
     """
@@ -24,6 +25,62 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._site_id_map = {}
         self._dataset_id_map = {}
+
+    def _do_save_dataset_transfers(self,replica_list,replica_times):
+        print "will be saving new filled replicas"
+        timenow = datetime.datetime.now()
+        if len(self._site_id_map) == 0:
+            self._make_site_id_map()
+        if len(self._dataset_id_map) == 0:
+            self._make_dataset_id_map()
+
+        new_datasets = []
+        new_sites = []
+        for replica in replica_list:
+            if replica.dataset.name not in self._dataset_id_map:
+                new_datasets.append(replica.dataset.name)
+            if replica.site.name not in self._site_id_map:
+                new_sites.append(replica.site.name)
+        
+        if len(new_datasets) > 0:
+            self._mysql.insert_many('datasets', ('name',), lambda n: (n,), new_datasets)
+            self._make_dataset_id_map()
+        if len(new_sites) > 0:
+            self._mysql.insert_many('sites', ('name',), lambda n: (n,), new_sites)
+            self._make_site_id_map()
+
+        self._mysql.insert_many('copy_dataset', ('item_id', 'site_to','size','created','updated'), 
+                                lambda d: (self._dataset_id_map[d.dataset.name],
+                                           self._site_id_map[d.site.name],
+                                           d.dataset.size,replica_times[d],timenow), replica_list)
+
+    def _do_save_replica_deletions(self,replica_list,replica_times):
+        print "will be saving deleted replicas"
+        timenow = datetime.datetime.now()
+        if len(self._site_id_map) == 0:
+            self._make_site_id_map()
+        if len(self._dataset_id_map) == 0:
+            self._make_dataset_id_map()
+
+        new_datasets = []
+        new_sites = []
+        for replica in replica_list:
+            if replica.dataset.name not in self._dataset_id_map:
+                new_datasets.append(replica.dataset.name)
+            if replica.site.name not in self._site_id_map:
+                new_sites.append(replica.site.name)
+
+        if len(new_datasets) > 0:
+            self._mysql.insert_many('datasets', ('name',), lambda n: (n,), new_datasets)
+            self._make_dataset_id_map()
+        if len(new_sites) > 0:
+            self._mysql.insert_many('sites', ('name',), lambda n: (n,), new_sites)
+            self._make_site_id_map()
+
+        self._mysql.insert_many('delete_dataset', ('item_id', 'site','size','created','updated'),
+                                lambda d: (self._dataset_id_map[d.dataset.name],
+                                           self._site_id_map[d.site.name],
+                                           d.dataset.size,replica_times[d],timenow), replica_list)
 
     def _do_acquire_lock(self, blocking): #override
         while True:
@@ -147,7 +204,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         sites_in_record = set()
 
-        insert_query = 'INSERT INTO `site_status_snapshots` (`site_id`, `run_id`, `status`) VALUES (%s, {run_number}, %s, %s)'.format(run_number = run_number)
+        insert_query = 'INSERT INTO `site_status_snapshots` (`site_id`, `run_id`, `status`) VALUES (%s, {run_number}, %s)'.format(run_number = run_number)
 
         query = 'SELECT s.`name`, ss.`status`+0 FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
         query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
@@ -547,4 +604,3 @@ class MySQLHistory(TransactionHistoryInterface):
         num_deleted = self._mysql.query('DELETE FROM `replica_snapshot_cache_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
         if num_deleted != 0:
             self._mysql.query('OPTIMIZE TABLE `replica_snapshot_cache_usage`')
-

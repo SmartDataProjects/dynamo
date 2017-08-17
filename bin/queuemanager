@@ -1,0 +1,72 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import logging
+import time
+import re
+import fnmatch
+
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'QueueManager')
+parser.add_argument('--store', '-i', metavar = 'CLASS', dest = 'store_cls', default = '', help = 'Store backend class.')
+parser.add_argument('--site-source', '-s', metavar = 'CLASS', dest = 'site_source_cls', default = '', help = 'SiteInfoSourceInterface class.')
+parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class.')
+parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class.')
+parser.add_argument('--noinventory-update', '-I', action = 'store_true', dest = 'force_inventory_update', help = 'Force inventory to update.')
+parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
+parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
+parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
+
+args = parser.parse_args()
+sys.argv = []
+
+# Need to setup logging before loading other modules
+
+log_level = logging.INFO
+if args.log_level:
+    try:
+        log_level = getattr(logging, args.log_level.upper())
+    except AttributeError:
+        logging.warning('Log level ' + args.log_level + ' not defined')
+
+if args.log_file:
+    logging.basicConfig(filename = args.log_file, filemode = 'a', level = log_level)
+else:
+    logging.basicConfig(level = log_level)
+
+from common.inventory import InventoryManager
+from common.dataformat import Site
+import common.interface.classes as classes
+from queuemanager.main import QueueManager
+
+import common.configuration as config
+
+kwd = {}
+for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
+    clsname = getattr(args, cls + '_cls')
+    if clsname == '':
+        kwd[cls + '_cls'] = classes.default_interface[cls]
+    else:
+        kwd[cls + '_cls'] = getattr(classes, clsname)
+
+kwd['load_data'] = False
+
+invMan = InventoryManager(**kwd)
+invMan.load(load_files = True, load_replicas = True, load_blocks = True)
+
+history = classes.default_interface['history']()
+
+#group = invMan.groups['AnalysisOps']
+#group = None
+
+qMan = QueueManager(invMan,history)
+qMan.run(comment = args.comment)
+
+if args.force_inventory_update:
+    pass
+else:
+    print "saving to database"
+    invMan.store.save_data(invMan.sites.values(), invMan.groups.values(), 
+                           invMan.datasets.values())

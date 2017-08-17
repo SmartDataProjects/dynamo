@@ -84,6 +84,7 @@ class Policy(object):
 
     def __init__(self, partition, lines, version, inventory):
         self.partition = partition
+        self.sort_key = None
 
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
 
@@ -111,7 +112,7 @@ class Policy(object):
         self.stop_condition = None
         self.rules = []
         self.default_decision = -1
-        self.candidate_sort = None
+        #self.candidate_sort = None
 
         LINE_SITE_TARGET, LINE_DELETION_TRIGGER, LINE_STOP_CONDITION, LINE_POLICY, LINE_ORDER = range(5)
 
@@ -166,8 +167,9 @@ class Policy(object):
                     if words[2] in exprs:
                         self.used_demand_plugins.add(plugin)
 
-                sortkey = variables.replica_vardefs[words[2]][0]
-                self.candidate_sort = lambda replicas: sorted(replicas, key = sortkey, reverse = reverse)
+                self.sortkey = variables.replica_vardefs[words[2]][0]
+                #self.candidate_sort = lambda replicas: sorted(replicas, key = sortkey, reverse = reverse)
+                self.candidate_sort = lambda replicas: sorted(replicas, self.cmp_items, reverse = reverse)
 
             else:
                 cond_text = ' '.join(words[1:])
@@ -205,6 +207,21 @@ class Policy(object):
             self.used_demand_plugins.update(rule.condition.used_demand_plugins)
 
         logger.info('Policy stack for %s: %d rules using demand plugins %s', self.partition.name, len(self.rules), str(sorted(self.used_demand_plugins)))
+
+    def cmp_items(self,a,b):
+        aval = self.sortkey(a)
+        bval = self.sortkey(b)
+
+        if aval > bval:
+            return 1
+        elif aval == bval:
+            if a.dataset.size > b.dataset.size:
+                return 1
+            else:
+                return -1
+        else:
+            return -1
+
 
     def partition_replicas(self, datasets):
         """

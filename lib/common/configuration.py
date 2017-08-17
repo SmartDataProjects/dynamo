@@ -58,6 +58,13 @@ mysqlregistry.db_params = {
     'db': 'dynamoregister'
 }
 
+mysqlhistory = Configuration()
+mysqlhistory.db_params = {
+    'config_file': '/etc/my.cnf',
+    'config_group': 'mysql-dynamo',
+    'db': 'dynamohistory'
+}
+
 
 phedex = Configuration()
 phedex.url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod'

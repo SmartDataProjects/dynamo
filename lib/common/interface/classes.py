@@ -3,8 +3,10 @@ from common.interface.localdbsssb import localDBSSSB
 from common.interface.mysqlstore import MySQLStore
 from common.interface.dbs import DBS
 from common.interface.popdb import PopDB
+from common.interface.localaccess import LocalAccess
 from common.interface.globalqueue import GlobalQueue
 from common.interface.mysqlhistory import MySQLHistory
+from common.interface.localhistory import LocalHistory
 from common.interface.weblock import WebReplicaLock
 
 class Generator(object):
@@ -39,11 +41,12 @@ default_interface = {
     'copy': Generator(localDBSSSB),
     'deletion': Generator(localDBSSSB),
     'store': Generator(MySQLStore),
-    'history': Generator(MySQLHistory)
+    'history': Generator(LocalHistory)
 }
 
 demand_plugins = {
     'replica_locks': Generator(WebReplicaLock),
     'replica_access': Generator(PopDB),
+    'replica_demands': Generator(LocalAccess),
     'dataset_request': Generator(GlobalQueue)
 }

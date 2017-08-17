@@ -319,6 +319,8 @@ class MySQLStore(LocalStoreInterface):
 
             sql += ' ORDER BY dr.`dataset_id`, dr.`site_id`'
 
+            print sql
+
             _dataset_id = 0
             _site_id = 0
             dataset_replica = None
@@ -326,6 +328,9 @@ class MySQLStore(LocalStoreInterface):
             for dataset_id, site_id, completion, is_custodial, last_block_created, block_id, group_id, is_complete, b_is_custodial, b_size in self._mysql.query(sql):
                 if dataset_id != _dataset_id:
                     _dataset_id = dataset_id
+                    if dataset_id == 701:
+                        print '701 is here'
+
                     dataset = id_dataset_map[_dataset_id]
                     dataset.replicas = []
 
@@ -755,6 +760,9 @@ class MySQLStore(LocalStoreInterface):
         self._make_site_map(sites, site_id_map = site_id_map)
         group_id_map = {}
         self._make_group_map(groups, group_id_map = group_id_map)
+        print group_id_map
+
+
         dataset_id_map = {}
         self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
 
@@ -798,7 +806,6 @@ class MySQLStore(LocalStoreInterface):
                 site_id = site_id_map[replica.site]
                 for block_replica in replica.block_replicas:
                     block_id = block_name_to_id[block_replica.block.name]
-
                     all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial))
                     if not block_replica.is_complete:
                         replica_sizes.append((block_id, site_id, block_replica.size))

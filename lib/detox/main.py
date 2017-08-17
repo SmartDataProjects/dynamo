@@ -42,6 +42,8 @@ class Detox(object):
 
         logger.info('Detox cycle for %s starting at %s', policy.partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
 
+        print "in main detox"
+
         if not config.read_only and not is_test:
             # write a file indicating detox activity
             while True:
@@ -262,6 +264,7 @@ class Detox(object):
         """
 
         deleted = {}
+        print "determine deletions"
 
         for site in target_sites:
             if site not in deletion_candidates:
@@ -272,7 +275,6 @@ class Detox(object):
             sorted_candidates = policy.candidate_sort(site_candidates.keys())
 
             print "sorted candidates = " + str(len(sorted_candidates))
-            print sorted_candidates
 
             deleted_volume = 0.
 

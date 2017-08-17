@@ -48,7 +48,7 @@ class InventoryManager(object):
         if load_data:
             self.load()
 
-    def load(self, load_blocks = True, load_files = False, load_replicas = True, dataset_filter = '/*/*/*'):
+    def load(self, load_blocks = True, load_files = True, load_replicas = False, dataset_filter = '/*/*/*'):
         """
         Load information up to block level from local persistent storage to memory. The flag
         load_replicas can be used to determine whether dataset/block-site links should also be
@@ -304,7 +304,8 @@ if __name__ == '__main__':
     if args.singleThread:
         config.use_threads = False
 
-    kwd = {'load_data': False} # not loading data by default to speed up update process
+    #kwd = {'load_data': False} # not loading data by default to speed up update process
+    kwd = {}
 
     for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
         clsname = getattr(args, cls + '_cls')
