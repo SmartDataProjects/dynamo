@@ -1262,7 +1262,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             try:
                 dbs_response = self._make_dbs_request('datasetlist', {'dataset': names, 'detail': True}, method = POST, format = 'json')
             except:
-                self._dbs_interface.last_errorcode == 400:
+                if self._dbs_interface.last_errorcode == 400:
                     if len(dataset_list) == 1:
                         dataset = dataset_list[0]
                         logger.debug('set_dataset_details  DBS throws an error on %s.', dataset.name)
