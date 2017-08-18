@@ -562,7 +562,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     ds_name = dataset_entry['name']
 
                     new_dataset = False
-<<<<<<< HEAD
 
                     try:
                         dataset = inventory.datasets[ds_name]
@@ -577,22 +576,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             new_dataset = True
                             counters['new_datasets'] += 1
 
-=======
-                    try:
-                        dataset = inventory.datasets[ds_name]
-                    except KeyError:
-                        dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False)
-                        if dataset is None:
-                            dataset = Dataset(ds_name, status = Dataset.STAT_PRODUCTION)
-                            new_dataset = True
-                            counters['new_datasets'] += 1
-
-                        inventory.datasets[ds_name] = dataset
-
-                    if dataset.blocks is None:
-                        inventory.store.load_blocks(dataset)
-
->>>>>>> origin/production
                     dataset.is_open = (dataset_entry['is_open'] == 'y')
 
                     if dataset.replicas is None:
