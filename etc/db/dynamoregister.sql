@@ -28,8 +28,8 @@ CREATE TABLE `activity_lock` (
   `application` enum('detox','dealer') COLLATE latin1_general_cs NOT NULL,
   `timestamp` datetime NOT NULL,
   `note` text COLLATE latin1_general_cs,
-  UNIQUE KEY `user` (`user_id`,`service_id`),
-  UNIQUE KEY `application` (`application`)
+  UNIQUE KEY `application` (`application`),
+  KEY `user` (`user_id`,`service_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -86,7 +86,7 @@ CREATE TABLE `detox_locks` (
   KEY `expires` (`expiration_date`),
   KEY `lock_data` (`item`,`sites`,`groups`),
   KEY `user_id` (`user_id`,`service_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -125,11 +125,12 @@ DROP TABLE IF EXISTS `transfer_queue`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `transfer_queue` (
+  `reqid` int(10) unsigned NOT NULL,
   `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
-  `source` varchar(64) COLLATE latin1_general_cs NOT NULL,
-  `target` varchar(64) COLLATE latin1_general_cs NOT NULL,
-  `created` datetime NOT NULL,
-  UNIQUE KEY `files` (`file`,`source`,`target`)
+  `site_from` varchar(32) COLLATE latin1_general_cs NOT NULL,
+  `site_to` varchar(32) COLLATE latin1_general_cs NOT NULL,
+  `status` enum('new','done','failed') COLLATE latin1_general_cs NOT NULL,
+  UNIQUE KEY `file` (`file`,`site_from`,`site_to`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -161,4 +162,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-05-11 14:02:18
+-- Dump completed on 2017-06-26 15:52:45

@@ -144,6 +144,9 @@ class Policy(object):
             else:
                 raise ConfigurationError(line)
 
+            if 'dataset.name' in line and (words[-1].count('/') != 3 or words[-1][0] != '/'):
+                raise ConfigurationError(line)
+
             if len(words) == 1:
                 if line_type == LINE_POLICY:
                     self.default_decision = decision
@@ -227,12 +230,6 @@ class Policy(object):
                 replica = dataset.replicas[ir]
                 site = replica.site
                 # site occupancy is computed at the end by set_block_replicas
-
-                if site.partition_quota(self.partition) == 0.:
-                    self.untracked_replicas[replica] = replica.block_replicas
-                    replica.block_replicas = []
-                    dataset.replicas.pop(ir)
-                    continue
 
                 block_replicas = []                    
                 not_in_partition = []

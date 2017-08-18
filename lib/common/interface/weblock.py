@@ -1,6 +1,7 @@
 import logging
 import collections
 import urllib2
+import fnmatch
 import time
 
 import common.interface.webservice as webservice
@@ -25,7 +26,7 @@ class WebReplicaLock(object):
         for source in sources:
             self.add_source(*source)
 
-    def add_source(self, url, auth_type, content_type, data_type = 'application/json'):
+    def add_source(self, url, auth_type, content_type, site_pattern, data_type = 'application/json'):
         if type(content_type) is str:
             content_type = eval('WebReplicaLock.' + content_type)
 
@@ -36,7 +37,7 @@ class WebReplicaLock(object):
         elif auth_type == 'noauth':
             auth_handler = None
 
-        self._sources.append((webservice.RESTService(url, accept = data_type, auth_handler = auth_handler), content_type))
+        self._sources.append((webservice.RESTService(url, accept = data_type, auth_handler = auth_handler), content_type, site_pattern))
 
     def load(self, inventory):
         self.update(inventory)
@@ -56,7 +57,7 @@ class WebReplicaLock(object):
             logger.info('Lock files are being produced. Waiting 60 seconds.')
             time.sleep(60)
 
-        for source, content_type in self._sources:
+        for source, content_type, site_pattern in self._sources:
             logger.info('Retrieving lock information from %s', source.url_base)
 
             data = source.make_request()
@@ -83,6 +84,9 @@ class WebReplicaLock(object):
                         locked_blocks = dataset.demand['locked_blocks'] = {}
 
                     for replica in dataset.replicas:
+                        if site_pattern is not None and not fnmatch.fnmatch(replica.site.name, site_pattern):
+                            continue
+
                         if replica.site in locked_blocks:
                             locked_blocks[replica.site].update(brep.block for brep in replica.block_replicas)
                         else:
@@ -110,6 +114,9 @@ class WebReplicaLock(object):
                         locked_blocks = dataset.demand['locked_blocks'] = {}
 
                     for replica in dataset.replicas:
+                        if site_pattern is not None and not fnmatch.fnmatch(replica.site.name, site_pattern):
+                            continue
+
                         if replica.site in locked_blocks:
                             locked_blocks[replica.site].update(brep.block for brep in replica.block_replicas)
                         else:

@@ -1,3 +1,5 @@
+import sys
+
 class Site(object):
     TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, 5)
     STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, 5)
@@ -225,56 +227,66 @@ class Site(object):
 
         self._partition_quota[index] = quota
 
-        # if this is a subpartition of another partition, recompute the quota of the other
-        for ip, other in enumerate(Site._partitions_order):
-            if partition in other.subpartitions:
-                self._partition_quota[ip] = sum(self._partition_quota[Site._partitions_order.index(p)] for p in other.subpartitions)
+        if quota < 0:
+            # quota < 0 -> infinite. This partition cannot be a subpartition
+            for sup in Site._partitions_order:
+                if partition in sup.subpartitions:
+                    raise RuntimeError('Infinite quota set for a subpartition')
+
+        elif quota > 0:
+            # if this is a subpartition of another partition, recompute the quota of the superpartition
+            for ip, sup in enumerate(Site._partitions_order):
+                if partition in sup.subpartitions:
+                    self._partition_quota[ip] = sum(self._partition_quota[Site._partitions_order.index(p)] for p in sup.subpartitions)
 
     def storage_occupancy(self, partitions = [], physical = True):
         """
-        Returns the occupancy fraction for the partition.
+        Returns the occupancy fraction for the partition, excluding the partitions with negative (i.e. infinite) quota.
         """
 
         if type(partitions) is not list:
             partitions = [partitions]
 
         if len(partitions) == 0:
-            denom = sum(self._partition_quota)
-            if denom == 0:
-                return 0.
+            partitions = list(Site._partitions_order)
+
+        numer = 0.
+        denom = 0.
+        for partition in partitions:
+            index = Site._partitions_order.index(partition)
+
+            quota = self._partition_quota[index]
+            if quota < 0:
+                continue
+
+            denom += quota
+            if physical:
+                numer += self._occupancy_physical[index] * 1.e-12
             else:
-                if physical:
-                    return sum(self._occupancy_physical) * 1.e-12 / denom
-                else:
-                    return sum(self._occupancy_projected) * 1.e-12 / denom
+                numer += self._occupancy_projected[index] * 1.e-12
+                
+        if numer == 0.:
+            return 0.
+
+        if denom == 0.:
+            return sys.float_info.max
         else:
-            numer = 0.
-            denom = 0.
-            for partition in partitions:
-                index = Site._partitions_order.index(partition)
-
-                denom += self._partition_quota[index]
-                if physical:
-                    numer += self._occupancy_physical[index] * 1.e-12
-                else:
-                    numer += self._occupancy_projected[index] * 1.e-12
-
-            if denom == 0.:
-                return 0.
-            else:
-                return numer / denom
+            return numer / denom
 
     def quota(self, partitions = []):
         """
-        Returns site quota for the partition in TB.
+        Returns site quota for the partition in TB, exclusing negative quotas.
         """
 
         if len(partitions) == 0:
-            return sum(self._partition_quota)
-        else:
-            quota = 0.
-            for partition in partitions:
-                quota += self.partition_quota(partition)
-    
-            return quota
+            partitions = list(Site._partitions_order)
 
+        quota = 0.
+        for partition in partitions:
+            q = self.partition_quota(partition)
+            if q < 0:
+                continue
+
+            quota += q
+
+        return quota

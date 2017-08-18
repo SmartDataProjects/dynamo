@@ -32,80 +32,105 @@ class MySQLReplicaLock(object):
 
         for item_name, sites_pattern, groups_pattern in entries:
             if '#' in item_name:
-                dataset_name, block_real_name = item_name.split('#')
+                dataset_pattern, block_pattern = item_name.split('#')
             else:
-                dataset_name = item_name
-                block_real_name = None
+                dataset_pattern = item_name
+                block_pattern = None
 
-            try:
-                dataset = inventory.datasets[dataset_name]
-            except KeyError:
-                logger.debug('Cannot lock unknown dataset %s', dataset_name)
-                continue
-
-            if dataset.replicas is None:
-                continue
-
-            if dataset.blocks is None:
-                inventory.store.load_blocks(dataset)
-
-            if block_real_name is None:
-                blocks = list(dataset.blocks)
+            if '*' in dataset_pattern:
+                datasets = []
+                for dataset in inventory.datasets.values():
+                    # this is highly inefficient but I can't think of a better way
+                    if fnmatch.fnmatch(dataset.name, dataset_pattern):
+                        datasets.append(dataset)
             else:
-                block = dataset.find_block(Block.translate_name(block_real_name))
-                if block is None:
-                    logger.debug('Cannot lock unknown block %s#%s', dataset_name, block_real_name)
+                try:
+                    dataset = inventory.datasets[dataset_pattern]
+                except KeyError:
+                    logger.debug('Cannot lock unknown dataset %s', dataset_pattern)
                     continue
 
-                blocks = [block]
+                datasets = [dataset]
 
-            sites = set()
+            dataset_blocks = []
+            for dataset in datasets:
+                if dataset.replicas is None:
+                    continue
+    
+                if dataset.blocks is None:
+                    inventory.store.load_blocks(dataset)
+
+                if block_pattern is None:
+                    blocks = set(dataset.blocks)
+
+                elif '*' in block_pattern:
+                    blocks = set()
+                    for block in dataset.blocks:
+                        if fnmatch.fnmatch(block.real_name(), block_pattern):
+                            blocks.add(block)
+
+                else:
+                    block = dataset.find_block(Block.translate_name(block_pattern))
+                    if block is None:
+                        logger.debug('Cannot lock unknown block %s#%s', dataset_pattern, block_pattern)
+                        continue
+                    
+                    blocks = set([block])
+
+                dataset_blocks.append((dataset, blocks))
+
+            specified_sites = []
             if sites_pattern:
                 if '*' in sites_pattern:
-                    sites.update(s for n, s in inventory.sites.items() if fnmatch.fnmatch(n, sites_pattern))
+                    specified_sites.extend(s for n, s in inventory.sites.items() if fnmatch.fnmatch(n, sites_pattern))
                 else:
                     try:
-                        sites.add(inventory.sites[sites_pattern])
+                        specified_sites.append(inventory.sites[sites_pattern])
                     except KeyError:
                         pass
 
-            if len(sites) == 0:
-                # if no site matches the pattern, we will be on the safe side and treat it as a global lock
-                sites.update(r.site for r in dataset.replicas)
-
-            groups = set()
+            specified_groups = []
             if groups_pattern:
                 if '*' in groups_pattern:
-                    groups.update(g for n, g in inventory.groups.items() if fnmatch.fnmatch(n, groups_pattern))
+                    specified_groups.extend(g for n, g in inventory.groups.items() if fnmatch.fnmatch(n, groups_pattern))
                 else:
                     try:
-                        groups.add(inventory.groups[groups_pattern])
+                        specified_groups.append(inventory.groups[groups_pattern])
                     except KeyError:
                         pass
 
-            if len(groups) == 0:
-                # if no group matches the pattern, we will be on the safe side and treat it as a global lock
+            for dataset, blocks in dataset_blocks:
+                sites = set(specified_sites)
+                groups = set(specified_groups)
+
+                if len(sites) == 0:
+                    # either sites_pattern was not given (global lock) or no sites matched (typo?)
+                    # we will treat this as a global lock
+                    sites.update(r.site for r in dataset.replicas)
+    
+                if len(groups) == 0:
+                    # if no group matches the pattern, we will be on the safe side and treat it as a global lock
+                    for replica in dataset.replicas:
+                        groups.update(brep.group for brep in replica.block_replicas)
+    
+                try:
+                    locked_blocks = dataset.demand['locked_blocks']
+                except KeyError:
+                    locked_blocks = dataset.demand['locked_blocks'] = {}
+    
                 for replica in dataset.replicas:
-                    groups.update(brep.group for brep in replica.block_replicas)
-
-            try:
-                locked_blocks = dataset.demand['locked_blocks']
-            except KeyError:
-                locked_blocks = dataset.demand['locked_blocks'] = {}
-
-            for replica in dataset.replicas:
-                if replica.site not in sites:
-                    continue
-
-                if replica.site not in locked_blocks:
-                    locked_blocks[replica.site] = set()
-
-                for block_replica in replica.block_replicas:
-                    if block_replica.group not in groups:
+                    if replica.site not in sites:
                         continue
-
-                    if block_replica.block in blocks:
-                        locked_blocks[replica.site].add(block_replica.block)
+    
+                    if replica.site not in locked_blocks:
+                        locked_blocks[replica.site] = set()
+    
+                    for block_replica in replica.block_replicas:
+                        if block_replica.group not in groups:
+                            continue
+    
+                        if block_replica.block in blocks:
+                            locked_blocks[replica.site].add(block_replica.block)
 
 
 if __name__ == '__main__':

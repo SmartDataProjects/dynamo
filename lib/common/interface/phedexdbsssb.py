@@ -72,7 +72,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             'comments': comments
         }
 
-        logger.info('schedule_copy  subscribe %d datasets', len(catalogs))
+        logger.info('schedule_copy  subscribe %d datasets at %s', len(catalogs), options['node'])
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug('schedule_copy  subscribe: %s', str(options))
 
@@ -83,7 +83,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             return -1
 
         else:
-            result = self._make_phedex_request('subscribe', options, method = POST)
+            try:
+                result = self._make_phedex_request('subscribe', options, method = POST)
+            except:
+                result = []
     
             if len(result) == 0:
                 logger.error('schedule_copy failed.')
@@ -130,7 +133,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 'comments': comments
             }
 
-            logger.info('schedule_copies  subscribe %d datasets', len(catalogs))
+            logger.info('schedule_copies  subscribe %d datasets at %s', len(catalogs), options['node'])
             if logger.getEffectiveLevel() == logging.DEBUG:
                 logger.debug('schedule_copies  subscribe: %s', str(options))
 
@@ -146,7 +149,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             else:
                 # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
-                result = self._make_phedex_request('subscribe', options, method = POST)
+                try:
+                    result = self._make_phedex_request('subscribe', options, method = POST)
+                except:
+                    result = []
     
                 if len(result) == 0:
                     logger.error('schedule_copies  copy failed.')
@@ -226,7 +232,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             try:
                 result = self._make_phedex_request('delete', options, method = POST)
             except:
-                logger.error('schedule_deletions  delete failed.')
+                logger.error('schedule_deletion  delete failed.')
                 return (0, False, [])
 
             request_id = int(result[0]['id']) # return value is a string
@@ -258,80 +264,97 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             logger.warning('Deletion from MSS cannot be done in daemon mode.')
             return {}
 
-        for site, replica_list in replicas_by_site.items():
-            for level in ['dataset', 'block']:
-                # execute the deletions in two steps: one for dataset-level and one for block-level
-                deletion_list = []
+        def call_deletion(site, level, deletion_list):
+            """
+            Sometimes we have invalid data in the list of objects to delete.
+            PhEDEx throws a 400 error in such a case. We have to then try to identify the
+            problematic item through trial and error.
+            """
 
-                catalogs = {}
-                for replica in replica_list:
-                    replica_blocks = [r.block for r in replica.block_replicas]
+            catalogs = {}
+            for replica in deletion_list:
+                if level == 'dataset':
+                    catalogs[replica.dataset] = []
+                elif level == 'block':
+                    catalogs[replica.dataset] = [r.block for r in replica.block_replicas]
 
-                    if replica.dataset.blocks is not None and set(replica_blocks) == set(replica.dataset.blocks):
-                        if level == 'dataset':
-                            deletion_list.append(replica)
-                            catalogs[replica.dataset] = []
+            if len(catalogs) == 0:
+                return
 
+            options = {
+                'node': site.name,
+                'data': self._form_catalog_xml(catalogs),
+                'level': level,
+                'rm_subscriptions': 'y',
+                'comments': comments
+            }
+
+            if config.read_only:
+                logger.info('schedule_deletions  delete %d datasets', len(catalogs))
+                logger.debug('schedule_deletions  delete: %s', str(options))
+                return
+
+            if is_test:
+                logger.info('schedule_deletions  delete %d datasets', len(catalogs))
+                logger.debug('schedule_deletions  delete: %s', str(options))
+                request_id = -1
+                while request_id in request_mapping:
+                    request_id -= 1
+
+                request_mapping[request_id] = (True, deletion_list)
+                return
+
+            # result = [{'id': <id>}] (item 'request_created' of PhEDEx response) if successful
+            try:
+                result = self._make_phedex_request('delete', options, method = POST)
+            except:
+                if self._phedex_interface.last_errorcode == 400:
+                    # bad request - split the deletion list and try each half
+                    if len(deletion_list) == 1:
+                        logger.error('schedule_deletions  Could not delete %s from %s', replica.dataset.name, site.name)
                     else:
-                        if level == 'block':
-                            deletion_list.append(replica)
-                            catalogs[replica.dataset] = replica_blocks
-
-                if len(catalogs) == 0:
-                    continue
-
-                options = {
-                    'node': site.name,
-                    'data': self._form_catalog_xml(catalogs),
-                    'level': level,
-                    'rm_subscriptions': 'y',
-                    'comments': comments
-                }
-    
-                if config.read_only:
-                    logger.info('schedule_deletions  delete %d datasets', len(catalogs))
-                    logger.debug('schedule_deletions  delete: %s', str(options))
-                    continue
-    
-                if is_test:
-                    logger.info('schedule_deletions  delete %d datasets', len(catalogs))
-                    logger.debug('schedule_deletions  delete: %s', str(options))
-                    request_id = -1
-                    while request_id in request_mapping:
-                        request_id -= 1
-    
-                    request_mapping[request_id] = (True, deletion_list)
-    
+                        call_deletion(site, level, deletion_list[:len(deletion_list) / 2])
+                        call_deletion(site, level, deletion_list[len(deletion_list) / 2:])
                 else:
-                    # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
-                    try:
-                        result = self._make_phedex_request('delete', options, method = POST)
-                    except:
-                        logger.error('schedule_deletions  delete failed.')
-                        continue
+                    logger.error('schedule_deletions  Could not delete %d datasets from %s', len(deletion_list), site.name)
+                    
+                return
+
+            request_id = int(result[0]['id']) # return value is a string
         
-                    request_id = int(result[0]['id']) # return value is a string
+            request_mapping[request_id] = (False, deletion_list) # (completed, deleted_replicas)
         
-                    request_mapping[request_id] = (False, deletion_list) # (completed, deleted_replicas)
-        
-                    logger.warning('PhEDEx deletion request id: %d', request_id)
+            logger.warning('PhEDEx deletion request id: %d', request_id)
     
-                    if auto_approval:
-                        try:
-                            result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
-                            request_mapping[request_id] = (True, deletion_list)
-                        except:
-                            logger.error('schedule_deletions  deletion approval failed.')
-                            continue
-    
+            if auto_approval:
+                try:
+                    result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
+                    request_mapping[request_id] = (True, deletion_list)
+                except:
+                    logger.error('schedule_deletions  deletion approval failed.')
+            
+
+        for site, replica_list in replicas_by_site.items():
+            # execute the deletions in two steps: one for dataset-level and one for block-level
+            deletion_lists = {'dataset': [], 'block': []}
+
+            for replica in replica_list:
+                replica_blocks = [r.block for r in replica.block_replicas]
+
+                if replica.dataset.blocks is not None and set(replica_blocks) == set(replica.dataset.blocks):
+                    deletion_lists['dataset'].append(replica)
+                else:
+                    deletion_lists['block'].append(replica)
+
+            call_deletion(site, 'dataset', deletion_lists['dataset'])
+            call_deletion(site, 'block', deletion_lists['block'])
+
         return request_mapping
 
     def copy_status(self, request_id): #override (CopyInterface)
         request = self._make_phedex_request('transferrequests', 'request=%d' % request_id)
         if len(request) == 0:
             return {}
-
-        pprint.pprint(request)
 
         site_name = request[0]['destinations']['node'][0]['name']
 
@@ -346,16 +369,14 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         subscriptions = []
 
         if len(dataset_names) != 0:
-            chunks = [dataset_names[i:i + 10] for i in xrange(0, len(dataset_names), 10)]
+            chunks = [dataset_names[i:i + 35] for i in xrange(0, len(dataset_names), 35)]
             for chunk in chunks:
                 subscriptions.extend(self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in chunk]))
 
         if len(block_names) != 0:
-            chunks = [block_names[i:i + 10] for i in xrange(0, len(block_names), 10)]
+            chunks = [block_names[i:i + 35] for i in xrange(0, len(block_names), 35)]
             for chunk in chunks:
                 subscriptions.extend(self._make_phedex_request('subscriptions', ['node=%s' % site_name] + ['block=%s' % n for n in chunk]))
-
-        pprint.pprint(subscriptions)
 
         status = {}
         for dataset in subscriptions:
@@ -541,6 +562,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     ds_name = dataset_entry['name']
 
                     new_dataset = False
+<<<<<<< HEAD
 
                     try:
                         dataset = inventory.datasets[ds_name]
@@ -555,6 +577,22 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             new_dataset = True
                             counters['new_datasets'] += 1
 
+=======
+                    try:
+                        dataset = inventory.datasets[ds_name]
+                    except KeyError:
+                        dataset = inventory.store.load_dataset(ds_name, load_blocks = True, load_files = False)
+                        if dataset is None:
+                            dataset = Dataset(ds_name, status = Dataset.STAT_PRODUCTION)
+                            new_dataset = True
+                            counters['new_datasets'] += 1
+
+                        inventory.datasets[ds_name] = dataset
+
+                    if dataset.blocks is None:
+                        inventory.store.load_blocks(dataset)
+
+>>>>>>> origin/production
                     dataset.is_open = (dataset_entry['is_open'] == 'y')
 
                     if dataset.replicas is None:
@@ -778,6 +816,44 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 elif dataset.on_tape != Dataset.TAPE_FULL:
                                     dataset.on_tape = Dataset.TAPE_PARTIAL
 
+
+        logger.info('Checking dataset status changes.')
+
+        invalid_or_deprecated = set(d for d in inventory.datasets.values() if d.status == Dataset.STAT_INVALID or d.status == Dataset.STAT_DEPRECATED)
+
+        dbs_invalids = self._make_dbs_request('datasets', ['dataset_access_type=INVALID'])
+        for ds_entry in dbs_invalids:
+            try:
+                dataset = inventory.datasets[ds_entry['dataset']]
+            except KeyError:
+                continue
+
+            dataset.status = Dataset.STAT_INVALID
+
+            try:
+                invalid_or_deprecated.remove(dataset)
+            except KeyError:
+                pass
+
+        dbs_deprecated = self._make_dbs_request('datasets', ['dataset_access_type=DEPRECATED'])
+        for ds_entry in dbs_deprecated:
+            try:
+                dataset = inventory.datasets[ds_entry['dataset']]
+            except KeyError:
+                continue
+
+            dataset.status = Dataset.STAT_DEPRECATED
+
+            try:
+                invalid_or_deprecated.remove(dataset)
+            except KeyError:
+                pass
+
+        # remaining datasets in the list must have been revalidated
+        # set it to production to trigger further inspection
+        for dataset in invalid_or_deprecated:
+            logger.info('%s was invalid or deprecated but not any more', dataset.name)
+            dataset.status = Dataset.STAT_PRODUCTION
 
         logger.info('Checking for updated datasets.')
 
@@ -1200,12 +1276,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             # We may have an invalid dataset within the list, in which case the entire call will be scrapped.
             # In such cases, we need to identify and throw out the invalid datasets recursively.
 
-            dbs_response = self._make_dbs_request('datasetlist', {'dataset': names, 'detail': True}, method = POST, format = 'json', raise_on_error = False)
-
-            if type(dbs_response) is not list:
-                # error
-                errorcode, exception = dbs_response
-                if errorcode == 400: # bad request
+            try:
+                dbs_response = self._make_dbs_request('datasetlist', {'dataset': names, 'detail': True}, method = POST, format = 'json')
+            except:
+                self._dbs_interface.last_errorcode == 400:
                     if len(dataset_list) == 1:
                         dataset = dataset_list[0]
                         logger.debug('set_dataset_details  DBS throws an error on %s.', dataset.name)
@@ -1220,7 +1294,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     return
 
                 else:
-                    logger.error('DBS error: %s', str(exception))
+                    logger.error('DBS error: %s', str(self._dbs_interface.last_exception))
                     raise RuntimeError('set_dataset_status_and_type')
                     
             # normal return
@@ -1231,8 +1305,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     dbs_entry = result[dataset.name]
                 except KeyError:
                     logger.debug('set_dataset_details  %s is not in DBS.', dataset.name)
-                    # this dataset is in PhEDEx but not in DBS - set to IGNORED and clean them up regularly
-                    dataset.status = Dataset.STAT_IGNORED
+                    # this dataset is in PhEDEx but not in DBS - set to UNKNOWN
+                    # We used to set the status to IGNORED, but this would cause problems
+                    # with very new datasets.
+                    dataset.status = Dataset.STAT_UNKNOWN
                     dataset.data_type = Dataset.TYPE_UNKNOWN
                     continue
     
@@ -1315,12 +1391,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         
         return body
 
-    def _make_dbs_request(self, resource, options = [], method = GET, format = 'url', raise_on_error = True):
+    def _make_dbs_request(self, resource, options = [], method = GET, format = 'url'):
         """
         Make a single DBS request call. Returns a list of dictionaries from the body of the query result.
         """
 
-        resp = self._dbs_interface.make_request(resource, options = options, method = method, format = format, raise_on_error = raise_on_error)
+        resp = self._dbs_interface.make_request(resource, options = options, method = method, format = format)
 
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug(pprint.pformat(resp))
@@ -1459,7 +1535,7 @@ if __name__ == '__main__':
                     sys.exit(1)
 
                 try:
-                    if bnane not in blocks[dname]:
+                    if bname not in blocks[dname]:
                         blocks[dname].append(bnane)
                 except KeyError:
                     blocks[dname] = [bnane]
@@ -1467,7 +1543,7 @@ if __name__ == '__main__':
             elif key == 'comments':
                 comments = value
 
-        if site is None or group is None or (len(datasets) == 0 and len(blocks) == 0) or comments == '':
+        if site is None or (command == 'subscribe' and group is None) or (len(datasets) == 0 and len(blocks) == 0) or comments == '':
             print 'Must specify node, group, comments, and dataset or block'
             sys.exit(1)
 
@@ -1492,9 +1568,9 @@ if __name__ == '__main__':
                 block_replica = BlockReplica(block, site, group, True, False, 0)
                 dataset_replica.block_replicas.append(block_replica)
 
-        print 'Confirm ' + command + ' [Y/n]'
         print 'Replicas', replicas
-        print 'Comments', args.comments
+        print 'Comments', comments
+        print 'Confirm ' + command + ' [Y/n]'
         response = sys.stdin.readline().strip()
         if response != 'Y':
             sys.exit(0)
