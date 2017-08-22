@@ -839,7 +839,7 @@ class MySQLStore(LocalStoreInterface):
             for lfile in dataset.files:
                 files_to_insert.append((block_id_map[lfile.block], dataset_id, lfile.size, lfile.fullpath()))
 
-        sqlbase = 'DELETE d, f, br, brs FROM `blocks` AS b'
+        sqlbase = 'DELETE b, f, br, brs FROM `blocks` AS b'
         sqlbase += ' LEFT JOIN `files` AS f ON f.`block_id` = b.`id`'
         sqlbase += ' LEFT JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
         sqlbase += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id`'
