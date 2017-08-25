@@ -1,3 +1,4 @@
+import re
 import logging
 
 import detox.variables as variables
@@ -42,6 +43,10 @@ class Condition(object):
                 operator = ''
 
             rhs_expr = ' '.join(words[2:])
+
+            # don't hard-code this here - variables.py should also define RHS domain
+            if expr == 'dataset.name' and not re.match('/[^/]+/[^/]+/[^/]+', rhs_expr):
+                raise ConfigurationError(line)
 
             self.predicates.append(Predicate.get(vardef, operator, rhs_expr))
 
