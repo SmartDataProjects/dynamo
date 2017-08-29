@@ -660,8 +660,6 @@ class MySQLStore(LocalStoreInterface):
         for entry in self._mysql.query(query):
             name_entry_map[entry[0]] = entry[1:]
 
-        # delete datasets in UNKNOWN status if there are any
-        dataset_ids_to_delete = self._mysql.query('SELECT `id` FROM `datasets` WHERE `status` = \'UNKNOWN\'')
         datasets_to_update = []
         datasets_to_insert = []
 
@@ -669,29 +667,12 @@ class MySQLStore(LocalStoreInterface):
             try:
                 dataset_id, size, num_files, status, on_tape, data_type, software_version_id, last_update, is_open = name_entry_map.pop(dataset.name)
             except KeyError:
-                if dataset.status != Dataset.STAT_UNKNOWN:
-                    datasets_to_insert.append(dataset)
-                continue
-
-            if dataset.status == Dataset.STAT_UNKNOWN:
-                dataset_ids_to_delete.append(dataset_id)
+                datasets_to_insert.append(dataset)
                 continue
 
             if dataset.size != size or dataset.num_files != num_files or dataset.status != status or dataset.on_tape != on_tape or \
                     version_map[dataset.software_version] != software_version_id or dataset.last_update != last_update or dataset.is_open != is_open:
                 datasets_to_update.append((dataset_id, dataset))
-
-        logger.info("%d datasets to delete", len(dataset_ids_to_delete))
-        sqlbase = 'DELETE d, b, f, dr, br, brs, da, req FROM `datasets` AS d'
-        sqlbase += ' LEFT JOIN `blocks` AS b ON b.`dataset_id` = d.`id`'
-        sqlbase += ' LEFT JOIN `files` AS f ON f.`dataset_id` = d.`id`'
-        sqlbase += ' LEFT JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
-        sqlbase += ' LEFT JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
-        sqlbase += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id`'
-        sqlbase += ' LEFT JOIN `dataset_accesses` AS da ON da.`dataset_id` = d.`id`'
-        sqlbase += ' LEFT JOIN `dataset_requests` AS req ON req.`dataset_id` = d.`id`'
-
-        self._mysql.execute_many(sqlbase, 'd.`id`', dataset_ids_to_delete)
 
         logger.info("%d datasets to update", len(datasets_to_update))
         logger.info("%d datasets to insert", len(datasets_to_insert))
@@ -778,6 +759,7 @@ class MySQLStore(LocalStoreInterface):
                 try:
                     block = blocks.pop(name)
                 except KeyError:
+                    # in DB but not in memory - TODO need to have "invalidated" flag and not delete
                     block_ids_to_delete.append(block_id)
                     continue
 
@@ -809,6 +791,7 @@ class MySQLStore(LocalStoreInterface):
                 try:
                     lfile = files.pop(name)
                 except KeyError:
+                    # in DB but not in memory - TODO also invalidate, not delete
                     file_ids_to_delete.append(file_id)
                     continue
                     
@@ -877,7 +860,7 @@ class MySQLStore(LocalStoreInterface):
 
         all_replicas = []
         for dataset in datasets:
-            if dataset.status != Dataset.STAT_UNKNOWN and dataset.replicas is not None:
+            if dataset.replicas is not None:
                 all_replicas.extend(dataset.replicas)
 
         self._mysql.insert_many('dataset_replicas', fields, mapping, all_replicas, do_update = True)
@@ -887,7 +870,7 @@ class MySQLStore(LocalStoreInterface):
         all_replicas = []
         replica_sizes = []
         for dataset in datasets:
-            if dataset.status == Dataset.STAT_UNKNOWN or dataset.replicas is None:
+            if dataset.replicas is None:
                 continue
             
             # delta deletions: load here information of all dataset replicas/block replicas from inventory (inventory.store.load_dataset).
@@ -955,7 +938,7 @@ class MySQLStore(LocalStoreInterface):
 
         all_replicas = []
         for dataset in datasets:
-            if dataset.status != Dataset.STAT_UNKNOWN and dataset.replicas is not None:
+            if dataset.replicas is not None:
                 all_replicas.extend(dataset.replicas)
 
         self._mysql.insert_many('dataset_replicas', fields, mapping, all_replicas, do_update = False)
@@ -966,7 +949,7 @@ class MySQLStore(LocalStoreInterface):
         all_replicas = []
         replica_sizes = []
         for dataset in datasets:
-            if dataset.status == Dataset.STAT_UNKNOWN or dataset.replicas is None:
+            if dataset.replicas is None:
                 continue
 
             block_name_to_id = {}

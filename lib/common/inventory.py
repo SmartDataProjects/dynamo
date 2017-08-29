@@ -164,7 +164,7 @@ class InventoryManager(object):
                 # if running from_delta, all sites must be in the included sites list.
                 # replica_source.make_replica_links is responsible for updating on_tape flags of datasets
                 # we should get rid of this function once delta update is established and we include tape sites in included_sites
-                self.replica_source.find_tape_copies(self, last_update = last_update)
+                self.replica_source.find_tape_copies(self)
 
             logger.info('Saving data.')
             #logger.info(pprint.pformat(self.datasets.values()))

@@ -68,7 +68,7 @@ mysqlstore = Configuration(
 phedex = Configuration(
     url_base = 'https://cmsweb.cern.ch/phedex/datasvc/json/prod',
     subscription_chunk_size = 4.e+13, # 40 TB
-    cache_lifetime = 21600 # cache lifetime in seconds (6 hours)
+    cache_lifetime = 0 # cache lifetime in seconds (6 hours)
 )
 
 dbs = Configuration(

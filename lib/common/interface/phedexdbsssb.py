@@ -758,7 +758,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             logger.info('Checking for deleted dataset and block replicas.')
 
             for site in all_sites:
-                deletions = self._make_phedex_request('deletions', ['node=%s' % site.name] + ['request_since=%d' % last_update])
+                deletions = self._make_phedex_request('deletions', ['node=%s' % site.name, 'complete=y', 'complete_since=%d' % last_update])
 
                 for phedex_entry in deletions:
                     ds_name = phedex_entry['name']
@@ -1114,7 +1114,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     try:
                         ds_entry = result[dataset.name]
                     except KeyError:
-                        # This function is called after make_replica_ links
+                        # This function is called after make_replica_links
                         # i.e. "blockreplicas" knows about this dataset but "data" doesn't.
                         # i.e. something is screwed up.
                         # We used to set the status to IGNORED, but this would cause problems
@@ -1267,7 +1267,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         dataset = dataset_list[0]
                         logger.debug('set_dataset_details  DBS throws an error on %s.', dataset.name)
                         # this dataset is in PhEDEx but not in DBS - set to IGNORED and clean them up regularly
-                        dataset.status = Dataset.STAT_IGNORED
+                        dataset.status = Dataset.STAT_UNKNOWN
                         dataset.data_type = Dataset.TYPE_UNKNOWN
                     else:
                         # split the list in half and inquire DBS for each
