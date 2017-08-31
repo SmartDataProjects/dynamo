@@ -180,7 +180,7 @@ inventory = Configuration(
     # list of conditions for a PRODUCTION state dataset to become IGNORED (will still be reset to PRODUCTION if a new block replica is found)
     ignore_datasets = [
         lambda d: (time.time() - d.last_update) / 3600. / 24. > 180,
-        lambda d: re.match('.*test.*', d.name, re.IGNORECASE),
+        lambda d: re.match('/.+test.*', d.name, re.IGNORECASE), # don't match to TestEnables
         lambda d: re.match('.*BUNNIES.*', d.name),
         lambda d: re.match('.*/None.*', d.name),
         lambda d: re.match('.*FAKE.*', d.name)
