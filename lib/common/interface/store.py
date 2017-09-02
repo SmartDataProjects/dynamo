@@ -192,7 +192,7 @@ class LocalStoreInterface(object):
 
         return site_names
 
-    def load_data(self, site_filt = '*', dataset_filt = '/*/*/*', load_blocks = False, load_files = False, load_replicas = True):
+    def load_data(self, site_filt = '*', dataset_filt = '*', load_blocks = False, load_files = False, load_replicas = True):
         """
         Return lists loaded from persistent storage. Argument site_filt can be a wildcard string or a list
         of exact site names.
@@ -208,24 +208,40 @@ class LocalStoreInterface(object):
 
         return site_list, group_list, dataset_list
 
-    def load_dataset(self, dataset_name, load_blocks = False, load_files = False):
+    def load_dataset(self, dataset_name, load_blocks = False, load_files = False, load_replicas = False, sites = None, groups = None):
         """
         Load a dataset and create a Dataset object.
         """
 
         logger.debug('_do_load_dataset()')
 
+        if load_replicas and (sites is None or groups is None):
+            raise RuntimeError('Cannot load replicas without sites or groups')
+
         self.acquire_lock()
         try:
-            dataset = self._do_load_dataset(dataset_name, load_blocks, load_files)
+            dataset = self._do_load_dataset(dataset_name, load_blocks, load_files, load_replicas, sites, groups)
         finally:
             self.release_lock()
 
         return dataset
 
+    def load_replicas(self, dataset, sites = None, groups = None):
+        """
+        Load replicas for the given dataset.
+        """
+
+        logger.debug('_do_load_replicas()')
+
+        self.acquire_lock()
+        try:
+            self._do_load_replicas(dataset, sites, groups)
+        finally:
+            self.release_lock()
+
     def load_blocks(self, dataset):
         """
-        Load files for the given dataset.
+        Load blocks for the given dataset.
         """
 
         logger.debug('_do_load_blocks()')
@@ -287,7 +303,7 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
-    def save_data(self, sites, groups, datasets):
+    def save_data(self, sites, groups, datasets, delta = True):
         """
         Write information in memory into persistent storage.
         Remove information of datasets and blocks with no replicas.
@@ -295,6 +311,7 @@ class LocalStoreInterface(object):
         @param sites    list of sites
         @param groups   list of groups
         @param datasets list of datasets
+        @param delta    incrementally update the replicas
         """
 
         if config.read_only:
@@ -306,7 +323,11 @@ class LocalStoreInterface(object):
             self._do_save_sites(sites)
             self._do_save_groups(groups)
             self._do_save_datasets(datasets)
-            self._do_save_replicas(sites, groups, datasets)
+            if delta:
+                self._do_update_replicas(sites, groups, datasets)
+            else:
+                self._do_save_replicas(sites, groups, datasets)
+
             self.set_last_update()
         finally:
             self.release_lock()

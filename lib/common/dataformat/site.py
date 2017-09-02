@@ -188,7 +188,7 @@ class Site(object):
     def remove_block_replica(self, replica):
         try:
             self._block_replicas.remove(replica)
-        except ValueError:
+        except KeyError:
             print replica.site.name, replica.block.dataset.name, replica.block.name
             raise
 

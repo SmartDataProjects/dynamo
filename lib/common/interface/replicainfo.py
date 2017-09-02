@@ -6,17 +6,12 @@ class ReplicaInfoSourceInterface(object):
     def __init__(self):
         pass
 
-    def get_dataset_names(self, sites = [], groups = [], filt = '/*/*/*'):
-        """
-        Return a list of dataset names on the given site.
-        Argument groups is a name->group dict.
-        """
-
-        return []
-
-    def find_tape_copies(self, datasets):
+    def find_tape_copies(self, inventory, last_update = 0):
         """
         Set on_tape properties of datasets with on_tape != TAPE_FULL.
+        If from_delta is True, not all datasets may be loaded to memory.
+        @param inventory    InventoryManager instance
+        @param last_update  If set to > 0, delta update from the given unix time is performed.
         """
         pass
 
@@ -30,7 +25,7 @@ class ReplicaInfoSourceInterface(object):
 
         return False
 
-    def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '/*/*/*'):
+    def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '*', last_update = 0):
         """
         Create replica objects and update the site and dataset objects.
         Objects in sites and datasets should have replica information cleared.
@@ -39,5 +34,6 @@ class ReplicaInfoSourceInterface(object):
         @param site_filt    Limit to replicas on sites matching the pattern.
         @param group_filt   Limit to replicas owned by groups matching the pattern.
         @param dataset_filt Limit to replicas of datasets matching the pattern.
+        @param last_update  If set to > 0, delta update from the given unix time is performed.
         """
         pass

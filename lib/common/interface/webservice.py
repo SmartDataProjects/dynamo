@@ -183,6 +183,8 @@ class RESTService(object):
 
         wait = 1.
         exceptions = []
+        last_errorcode = 0
+        last_except = None
         while len(exceptions) != config.webservice.num_attempts:
             try:
                 if self.auth_handler:
@@ -259,6 +261,7 @@ class RESTService(object):
         logger.error('%s' % ' '.join(map(str, exceptions)))
 
         raise RuntimeError('webservice too many attempts')
+
 
 if __name__ == '__main__':
 

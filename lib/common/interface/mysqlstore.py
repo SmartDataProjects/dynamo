@@ -5,6 +5,7 @@ import re
 import socket
 import logging
 import fnmatch
+import pprint
 
 from common.interface.store import LocalStoreInterface
 from common.interface.mysql import MySQL
@@ -203,13 +204,17 @@ class MySQLStore(LocalStoreInterface):
         # Load datasets - only load ones with replicas on selected sites if load_replicas == True
         dataset_list = []
 
+        if dataset_filt == '':
+            # no dataset wanted
+            return site_list, group_list, dataset_list
+
         query = 'SELECT DISTINCT d.`name`, d.`size`, d.`num_files`, d.`status`+0, d.`on_tape`, d.`data_type`+0, d.`software_version_id`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
         query += ' FROM `datasets` AS d'
         conditions = []
         if load_replicas:
             query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
             conditions.append('dr.`site_id` IN (%s)' % sites_str)
-        if dataset_filt != '/*/*/*' and dataset_filt != '':
+        if dataset_filt != '*':
             conditions.append('d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%%'))
 
         if len(conditions) != 0:
@@ -241,7 +246,7 @@ class MySQLStore(LocalStoreInterface):
             if load_replicas:
                 query += ' INNER JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
                 conditions.append('br.`site_id` IN (%s)' % sites_str)
-            if dataset_filt != '/*/*/*' and dataset_filt != '':
+            if dataset_filt != '*':
                 query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
                 conditions.append('d.`name` LIKE \'%s\'' % dataset_filt.replace('*', '%%'))
     
@@ -291,7 +296,7 @@ class MySQLStore(LocalStoreInterface):
 
             num_files = 0
             for dataset in dataset_list:
-                self._do_load_files(dataset)
+                self.load_files(dataset)
                 num_files += len(dataset.files)
 
             logger.info('Loaded data for %d files in %.1f seconds.', num_files, time.time() - start)
@@ -311,7 +316,7 @@ class MySQLStore(LocalStoreInterface):
             sql += ' LEFT JOIN `block_replica_sizes` AS brs ON (brs.`block_id`, brs.`site_id`) = (br.`block_id`, br.`site_id`)'
 
             conditions = ['dr.`site_id` IN (%s)' % sites_str]
-            if dataset_filt != '/*/*/*' and dataset_filt != '':
+            if dataset_filt != '*':
                 conditions.append('dr.`dataset_id` IN (%s)' % (','.join(['%d' % i for i in id_dataset_map.keys()])))
 
             if len(conditions) != 0:
@@ -353,13 +358,14 @@ class MySQLStore(LocalStoreInterface):
         # Only the list of sites, groups, and datasets are returned
         return site_list, group_list, dataset_list
 
-    def _do_load_dataset(self, dataset_name, load_blocks, load_files):
+    def _do_load_dataset(self, dataset_name, load_blocks, load_files, load_replicas, sites, groups):
         query = 'SELECT d.`size`, d.`num_files`, d.`status`+0, d.`on_tape`, d.`data_type`+0, s.`cycle`, s.`major`, s.`minor`, s.`suffix`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open` FROM `datasets` AS d'
         query += ' LEFT JOIN `software_versions` AS s ON s.`id` = d.`software_version_id`'
         query += ' WHERE d.`name` = %s'
         result = self._mysql.query(query, dataset_name)
 
         if len(result) == 0:
+            logger.debug('Dataset %s not found in store.', dataset_name)
             return None
 
         size, num_files, status, on_tape, data_type, s_cycle, s_major, s_minor, s_suffix, last_update, is_open = result[0]
@@ -370,12 +376,75 @@ class MySQLStore(LocalStoreInterface):
             dataset.software_version = (s_cycle, s_major, s_minor, s_suffix)
 
         if load_blocks:
-            self._do_load_blocks(dataset)
+            self.load_blocks(dataset)
 
         if load_files:
-            self._do_load_files(dataset)
+            self.load_files(dataset)
+            
+        if load_replicas:
+            self.load_replicas(dataset, sites, groups)
 
         return dataset
+
+    def _do_load_replicas(self, dataset, sites, groups):
+        dataset.replicas = []
+
+        id_site_map = {}
+        self._make_site_map(sites, id_site_map = id_site_map)
+        id_group_map = {}
+        self._make_group_map(groups, id_group_map = id_group_map)
+
+        dataset_id = self._mysql.query('SELECT `id` FROM `datasets` WHERE `name` = %s', dataset.name)[0]
+
+        # cache blocks
+        id_block_map = {}
+
+        result = self._mysql.query('SELECT `site_id`, `completion`, `is_custodial`, UNIX_TIMESTAMP(`last_block_created`) FROM `dataset_replicas` WHERE `dataset_id` = %d' % dataset_id)
+        
+        # Load all the dataset_replicas
+        for site_id, completion, is_custodial, last_block_created in result:
+            try:
+                site = id_site_map[site_id]
+            except KeyError:
+                continue
+
+            dataset_replica = DatasetReplica(dataset, site, is_complete = (completion != 'incomplete'), is_custodial = is_custodial, last_block_created = last_block_created)
+
+            dataset.replicas.append(dataset_replica)
+            site.dataset_replicas.add(dataset_replica)
+
+            if dataset.blocks is not None:
+                block_query = 'SELECT b.`id`, b.`name`, br.`group_id`, br.`is_complete`, br.`is_custodial`, brs.`size` FROM `blocks` AS b'
+                block_query += ' INNER JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
+                block_query += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = br.`block_id` AND brs.`site_id` = br.`site_id`'
+                block_query += ' WHERE b.`dataset_id` = %d AND br.`site_id` = %d' % (dataset_id, site_id)
+    
+                block_entries = self._mysql.query(block_query)
+
+                for bid, bname, group_id, b_is_complete, b_is_custodial, br_size in block_entries:
+                    try:
+                        block = id_block_map[bid]
+                    except KeyError:
+                        block = dataset.find_block(Block.translate_name(bname))
+                        if block is None:
+                            raise RuntimeError('Block %s is supposed to be loaded in memory but could not be found' % bname)
+
+                        id_block_map[bid] = block
+
+                    if br_size is None:
+                        br_size = block.size
+
+                    block_replica = BlockReplica(
+                        block,
+                        site,
+                        id_group_map[group_id],
+                        b_is_complete,
+                        b_is_custodial,
+                        size = block.size
+                    )
+
+                    dataset_replica.block_replicas.append(block_replica)
+                    site.add_block_replica(block_replica)
 
     def _do_load_blocks(self, dataset):
         if dataset.blocks is not None:
@@ -383,19 +452,15 @@ class MySQLStore(LocalStoreInterface):
             for block in list(dataset.blocks):
                 dataset.remove_block(block)
 
-        dataset.blocks = None
-        dataset.size = 0
-        dataset.num_files = 0
+        query = 'SELECT b.`name`, b.`size`, b.`num_files`, b.`is_open` FROM `blocks` AS b'
+        query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
+        query += ' WHERE d.`name` = %s'
 
-        result = self._mysql.query('SELECT `id` FROM `datasets` WHERE `name` = %s', dataset.name)
-        if len(result) == 0:
-            return
-
-        dataset_id = result[0]
-
-        result = self._mysql.query('SELECT `name`, `size`, `num_files`, `is_open` FROM `blocks` WHERE `dataset_id` = %d' % dataset_id)
+        result = self._mysql.query(query, dataset.name)
 
         dataset.blocks = []
+        dataset.size = 0
+        dataset.num_files = 0
 
         for name, size, num_files, is_open in result:
             dataset.blocks.append(Block(Block.translate_name(name), dataset, size, num_files, is_open == 1))
@@ -590,21 +655,19 @@ class MySQLStore(LocalStoreInterface):
         # insert/update datasets
         logger.info('Inserting/updating %d datasets.', len(datasets))
 
-        # first delete datasets in UNKNOWN status if there are any
-        self._mysql.query('DELETE FROM `datasets` WHERE `status` = \'UNKNOWN\'')
-
         name_entry_map = {}
         query = 'SELECT `name`, `id`, `size`, `num_files`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`), `is_open` FROM `datasets`'
         for entry in self._mysql.query(query):
             name_entry_map[entry[0]] = entry[1:]
 
-        dataset_ids_to_delete = []
+        # delete datasets in UNKNOWN status if there are any
+        dataset_ids_to_delete = self._mysql.query('SELECT `id` FROM `datasets` WHERE `status` = \'UNKNOWN\'')
         datasets_to_update = []
         datasets_to_insert = []
 
         for dataset in datasets:
             try:
-                dataset_id, size, num_files, status, on_tape, data_type, software_version_id, last_update, is_open = name_entry_map[dataset.name]
+                dataset_id, size, num_files, status, on_tape, data_type, software_version_id, last_update, is_open = name_entry_map.pop(dataset.name)
             except KeyError:
                 if dataset.status != Dataset.STAT_UNKNOWN:
                     datasets_to_insert.append(dataset)
@@ -618,13 +681,20 @@ class MySQLStore(LocalStoreInterface):
                     version_map[dataset.software_version] != software_version_id or dataset.last_update != last_update or dataset.is_open != is_open:
                 datasets_to_update.append((dataset_id, dataset))
 
-        if len(dataset_ids_to_delete) != 0:
-            self._mysql.delete_many('datasets', 'id', dataset_ids_to_delete)
+        logger.info("%d datasets to delete", len(dataset_ids_to_delete))
+        sqlbase = 'DELETE d, b, f, dr, br, brs, da, req FROM `datasets` AS d'
+        sqlbase += ' LEFT JOIN `blocks` AS b ON b.`dataset_id` = d.`id`'
+        sqlbase += ' LEFT JOIN `files` AS f ON f.`dataset_id` = d.`id`'
+        sqlbase += ' LEFT JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
+        sqlbase += ' LEFT JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
+        sqlbase += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id`'
+        sqlbase += ' LEFT JOIN `dataset_accesses` AS da ON da.`dataset_id` = d.`id`'
+        sqlbase += ' LEFT JOIN `dataset_requests` AS req ON req.`dataset_id` = d.`id`'
 
-        # clean up orphans before making insertions
-        self._mysql.query('DELETE FROM `blocks` WHERE `dataset_id` NOT IN (SELECT `id` FROM `datasets`)')
-        self._mysql.query('DELETE FROM `files` WHERE `dataset_id` NOT IN (SELECT `id` FROM `datasets`)')
-        self._mysql.query('DELETE FROM `files` WHERE `block_id` NOT IN (SELECT `id` FROM `blocks`)')
+        self._mysql.execute_many(sqlbase, 'd.`id`', dataset_ids_to_delete)
+
+        logger.info("%d datasets to update", len(datasets_to_update))
+        logger.info("%d datasets to insert", len(datasets_to_insert))
 
         fields = ('id', 'name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
         # MySQL expects the local time for last_update
@@ -658,7 +728,7 @@ class MySQLStore(LocalStoreInterface):
             1 if d.is_open else 0
         )
 
-        self._mysql.insert_many('datasets', fields, mapping, datasets_to_insert)
+        self._mysql.insert_many('datasets', fields, mapping, datasets_to_insert, do_update = False)
 
         # load the dataset ids
         dataset_id_map = {}
@@ -703,7 +773,6 @@ class MySQLStore(LocalStoreInterface):
                 continue
 
             blocks = dict((b.real_name(), b) for b in dataset.blocks)
-            block_id_map = {}
 
             for block_id, name, size, num_files, is_open in block_entries[dataset_id]:
                 try:
@@ -712,18 +781,28 @@ class MySQLStore(LocalStoreInterface):
                     block_ids_to_delete.append(block_id)
                     continue
 
-                block_id_map[block] = block_id
-        
                 if size != block.size or num_files != block.num_files or is_open != block.is_open:
                     blocks_to_update.append((block_id, name, block.size, block.num_files, block.is_open))
 
-            for name, block in blocks.items():
-                block_id_map[block] = self._mysql.query('INSERT INTO `blocks` (`dataset_id`, `name`, `size`, `num_files`, `is_open`) VALUES (%s, %s, %s, %s, %s)',
-                    dataset_id, name, block.size, block.num_files, block.is_open)
+            # remaining items in blocks are all new
+            fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open')
+            mapping = lambda b: (dataset_id, b.real_name(), b.size, b.num_files, b.is_open)
+            self._mysql.insert_many('blocks', fields, mapping, blocks.values(), do_update = False)
 
             if dataset.files is None:
                 continue
-        
+
+            name_block_map = dict((b.real_name(), b) for b in dataset.blocks)
+            block_id_map = {}
+            for name, block_id in self._mysql.query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
+                try:
+                    block = name_block_map[name]
+                except KeyError:
+                    # excess block entry in DB - will be taken care of by block_ids_to_delete list
+                    continue
+
+                block_id_map[name_block_map[name]] = block_id
+
             files = dict((f.fullpath(), f) for f in dataset.files)
             
             for file_id, size, name in file_entries[dataset_id]:
@@ -745,19 +824,28 @@ class MySQLStore(LocalStoreInterface):
 
             dataset_id = dataset_id_map[dataset]
 
-            block_id_map = {}
-
-            for block in dataset.blocks:
-                block_id_map[block] = self._mysql.query('INSERT INTO `blocks` (`dataset_id`, `name`, `size`, `num_files`, `is_open`) VALUES (%s, %s, %s, %s, %s)',
-                    dataset_id, block.real_name(), block.size, block.num_files, block.is_open)
+            fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open')
+            mapping = lambda b: (dataset_id, b.real_name(), b.size, b.num_files, b.is_open)
+            self._mysql.insert_many('blocks', fields, mapping, dataset.blocks, do_update = False)
 
             if dataset.files is None:
                 continue
 
+            name_block_map = dict((b.real_name(), b) for b in dataset.blocks)
+            block_id_map = {}
+            for name, block_id in self._mysql.query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
+                block_id_map[name_block_map[name]] = block_id
+
             for lfile in dataset.files:
                 files_to_insert.append((block_id_map[lfile.block], dataset_id, lfile.size, lfile.fullpath()))
 
-        self._mysql.delete_many('blocks', 'id', block_ids_to_delete)
+        sqlbase = 'DELETE b, f, br, brs FROM `blocks` AS b'
+        sqlbase += ' LEFT JOIN `files` AS f ON f.`block_id` = b.`id`'
+        sqlbase += ' LEFT JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
+        sqlbase += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id`'
+
+        self._mysql.execute_many(sqlbase, 'b.`id`', block_ids_to_delete)
+
         self._mysql.delete_many('files', 'id', file_ids_to_delete)
         
         # update blocks
@@ -773,7 +861,81 @@ class MySQLStore(LocalStoreInterface):
         fields = ('block_id', 'dataset_id', 'size', 'name')
         self._mysql.insert_many('files', fields, None, files_to_insert, do_update = False)
 
+    def _do_update_replicas(self, sites, groups, datasets): #override
+        site_id_map = {}
+        self._make_site_map(sites, site_id_map = site_id_map)
+        group_id_map = {}
+        self._make_group_map(groups, group_id_map = group_id_map)
+        dataset_id_map = {}
+        self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
+
+        # insert/update dataset replicas
+        logger.info('Updating replicas.')
+
+        fields = ('dataset_id', 'site_id', 'completion', 'is_custodial', 'last_block_created')
+        mapping = lambda r: (dataset_id_map[r.dataset], site_id_map[r.site], 'partial' if r.is_partial() else ('full' if r.is_complete else 'incomplete'), r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.last_block_created)))
+
+        all_replicas = []
+        for dataset in datasets:
+            if dataset.status != Dataset.STAT_UNKNOWN and dataset.replicas is not None:
+                all_replicas.extend(dataset.replicas)
+
+        self._mysql.insert_many('dataset_replicas', fields, mapping, all_replicas, do_update = True)
+
+        # delete dataset replicas + insert/update/delete block replicas
+
+        all_replicas = []
+        replica_sizes = []
+        for dataset in datasets:
+            if dataset.status == Dataset.STAT_UNKNOWN or dataset.replicas is None:
+                continue
+            
+            # delta deletions: load here information of all dataset replicas/block replicas from inventory (inventory.store.load_dataset).
+            inventory_dataset = self.load_dataset(dataset.name, load_blocks = True, load_files = False, load_replicas = True, sites = sites, groups = groups)
+            
+            for replica in dataset.replicas:
+                site_id = site_id_map[replica.site]
+                inventory_dataset_replica = inventory_dataset.find_replica(replica.site)
+
+                block_replicas_to_delete = []
+                for inventory_block_replica in inventory_dataset_replica.block_replicas:
+                    if inventory_block_replica not in replica.block_replicas:
+                        block_replicas_to_delete.append(inventory_block_replica)
+
+                self.delete_blockreplicas(block_replicas_to_delete)
+
+            # delete dataset replicas that are in DB but not in memory
+            for inventory_replica in inventory_dataset.replicas:
+                site = inventory_replica.site
+                if site in sites and dataset.find_replica(site) is None:
+                    self.delete_datasetreplica(inventory_replica, delete_blockreplicas = True)
+                    
+            # end of delta deletions part
+            # remaining block replicas are to be inserted
+
+            block_name_to_id = {}
+            for block_id, block_name in self._mysql.query('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
+                block_name_to_id[Block.translate_name(block_name)] = block_id
+
+            for replica in dataset.replicas:
+                for block_replica in replica.block_replicas:
+                    block_id = block_name_to_id[block_replica.block.name]
+                    
+                    all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial))
+                    if not block_replica.is_complete:
+                        replica_sizes.append((block_id, site_id, block_replica.size))
+                    
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
+        self._mysql.insert_many('block_replicas', fields, None, all_replicas, do_update = True)
+
+        fields = ('block_id', 'site_id', 'size')
+        self._mysql.insert_many('block_replica_sizes', fields, None, replica_sizes, do_update = True)
+
     def _do_save_replicas(self, sites, groups, datasets): #override
+        if len(sites) == 0:
+            # we have no sites loaded in memory -> cannot have replicas -> nothing to do
+            return
+
         site_id_map = {}
         self._make_site_map(sites, site_id_map = site_id_map)
         group_id_map = {}
@@ -1016,6 +1178,9 @@ class MySQLStore(LocalStoreInterface):
     def _do_delete_blockreplicas(self, replica_list): #override
         # Mass block replica deletion typically happens for a few sites and a few datasets.
         # Fetch site id first to avoid a long query.
+
+        if len(replica_list) == 0:
+            return
 
         sites = list(set([r.site for r in replica_list])) # list of unique sites
         datasets = list(set([r.block.dataset for r in replica_list])) # list of unique sites
