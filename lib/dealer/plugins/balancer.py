@@ -1,4 +1,5 @@
 import logging
+import random
 
 from dealer.plugins import plugins
 from dealer.plugins.base import BaseHandler
@@ -31,14 +32,15 @@ class BalancingHandler(BaseHandler):
         last_copies = {} # {site: [datasets]}
 
         for site in inventory.sites.values():
-            # do not consider bad sites in balancing in any way (it's not this plugin's job to offload protected data from bad sites)
-            if site.status != Site.STAT_READY or not policy.target_site_def(site):
-                continue
-
             quota = site.partition_quota(policy.partition)
 
-            if quota == 0:
+            logger.debug('Site %s quota %f', site.name, quota)
+
+            if quota <= 0:
+                # if the site has 0 or infinite quota, don't consider in balancer
                 continue
+
+            logger.debug('Site %s in deletion_decisions %d', site.name, (site.name in deletion_decisions))
 
             try:
                 decisions = deletion_decisions[site.name]
@@ -58,7 +60,7 @@ class BalancingHandler(BaseHandler):
             last_copies[site] = []
 
             for ds_name, size, reason in protections:
-                if size > config.max_dataset_size:
+                if size * 1.e-12 > config.max_dataset_size:
                     # protections is ordered
                     break
 
@@ -84,6 +86,9 @@ class BalancingHandler(BaseHandler):
                         logger.debug('%s is a last copy at %s', ds_name, site.name)
                         last_copies[site].append(dataset)
 
+        for site, frac in sorted(protected_fractions.items(), key = lambda (s, f): f):
+            logger.debug('Site %s fraction %f', site.name, frac)
+
         request = []
 
         total_size = 0.
@@ -95,7 +100,8 @@ class BalancingHandler(BaseHandler):
             minsite, minfrac = min(protected_fractions.items(), key = lambda x: x[1])
 
             logger.debug('Protected fraction variation %f', maxfrac - minfrac)
-            
+            logger.debug('Max site: %s', maxsite.name)
+
             # if max - min is less than 5%, we are done
             if maxfrac - minfrac < 0.05:
                 break
@@ -106,9 +112,7 @@ class BalancingHandler(BaseHandler):
                 protected_fractions.pop(maxsite)
                 continue
 
-            logger.debug('Proposing to copy %s to %s', dataset.name, minsite.name)
-
-            request.append((dataset, minsite))
+            request.append(dataset)
 
             size = dataset.size * 1.e-12
             protected_fractions[maxsite] -= size / float(maxsite.partition_quota(policy.partition))

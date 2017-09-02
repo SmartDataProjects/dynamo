@@ -67,7 +67,8 @@ class DealerPolicy(object):
 
     def collect_requests(self, inventory):
         """
-        Collect requests from each plugin and return a prioritized list
+        Collect requests from each plugin and return a prioritized list.
+        @param inventory     An InventoryManager instance.
         """
 
         reqlists = []
@@ -83,12 +84,12 @@ class DealerPolicy(object):
             logger.debug('%s requesting %d items', plugin.name, len(plugin_requests))
 
             if len(plugin_requests) != 0:
-                reqlists.append((plugin_requests, priority))
+                reqlists.append((plugin_requests, plugin, priority))
 
         requests = []
 
         while len(reqlists) != 0:
-            pvalues = [1. / p for l, p in reqlists]
+            pvalues = [1. / r for l, p, r in reqlists]
             sums = [sum(pvalues[:i + 1]) for i in range(len(pvalues))]
 
             # Classic weighted random-picking algorithm
@@ -96,10 +97,31 @@ class DealerPolicy(object):
             x = random.uniform(0., sums[-1])
 
             ip = next(k for k in range(len(sums)) if x < sums[k])
+
             reqlist = reqlists[ip][0]
-            requests.append(reqlist.pop(0))
+            request = reqlist.pop(0)
+            requests.append(request)
+
+            if logger.getEffectiveLevel() == logging.DEBUG:
+                if type(request) is tuple:
+                    item, destination = request
+                    destname = destination.name
+                else:
+                    item = request
+                    destname = 'somewhere'
+    
+                if type(item).__name__ == 'Dataset':
+                    name = item.name
+                elif type(item).__name__ == 'Block':
+                    name = item.dataset.name + '#' + item.real_name()
+                elif type(item) is list:
+                    name = item[0].dataset.name + '#'
+                    name += ':'.join(block.real_name() for block in item)
+    
+                logger.debug('Selecting request from %s: %s to %s', reqlists[ip][1].name, name, destname)
 
             if len(reqlist) == 0:
+                logger.debug('No more requests from %s', reqlists[ip][1].name)
                 reqlists.pop(ip)
 
         return requests

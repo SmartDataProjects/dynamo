@@ -99,12 +99,12 @@ globalqueue = Configuration(
 
 weblock = Configuration(
     sources = [
-        ('https://vocms049.cern.ch/unified/public/globallocks.json', 'noauth', 'LIST_OF_DATASETS'),
-        ('https://cmst2.web.cern.ch/cmst2/unified-testbed/globallocks.json', 'cert', 'LIST_OF_DATASETS'),
-        ('https://cmst1.web.cern.ch/CMST1/lockedData/lockTestSamples.json', 'cert', 'SITE_TO_DATASETS'),
-        ('https://cmsweb.cern.ch/t0wmadatasvc/prod/dataset_locked', 'cert', 'CMSWEB_LIST_OF_DATASETS'),
-        ('https://cmsweb.cern.ch/t0wmadatasvc/replayone/dataset_locked', 'cert', 'CMSWEB_LIST_OF_DATASETS'),
-        ('https://cmsweb.cern.ch/t0wmadatasvc/replaytwo/dataset_locked', 'cert', 'CMSWEB_LIST_OF_DATASETS')
+        ('https://vocms049.cern.ch/unified/public/globallocks.json', 'noauth', 'LIST_OF_DATASETS', 'T*'),
+        ('https://cmst2.web.cern.ch/cmst2/unified-testbed/globallocks.json', 'cert', 'LIST_OF_DATASETS', 'T*'),
+        ('https://cmst1.web.cern.ch/CMST1/lockedData/lockTestSamples.json', 'cert', 'SITE_TO_DATASETS', 'T*'),
+        ('https://cmsweb.cern.ch/t0wmadatasvc/prod/dataset_locked', 'cert', 'CMSWEB_LIST_OF_DATASETS', 'T0_CH_CERN_Disk'),
+        ('https://cmsweb.cern.ch/t0wmadatasvc/replayone/dataset_locked', 'cert', 'CMSWEB_LIST_OF_DATASETS', 'T0_CH_CERN_Disk'),
+        ('https://cmsweb.cern.ch/t0wmadatasvc/replaytwo/dataset_locked', 'cert', 'CMSWEB_LIST_OF_DATASETS', 'T0_CH_CERN_Disk')
     ],
     lock = 'https://vocms049.cern.ch/unified/public/globallocks.json.lock'
 )
@@ -126,6 +126,7 @@ inventory = Configuration(
         'T1_US_FNAL_New_Disk', # not a valid site
         'T2_CH_CERNBOX', # not a valid site
         'T2_MY_UPM_BIRUNI', # site not in popDB
+        'T2_KR_KISTI' # site not in popDB
 #        'T2_PK_NCP', # inheriting from IntelROCCS status 0
 #        'T2_PL_Warsaw', # inheriting from IntelROCCS status 0
 #        'T2_RU_ITEP', # inheriting from IntelROCCS status 0
@@ -179,7 +180,7 @@ inventory = Configuration(
     # list of conditions for a PRODUCTION state dataset to become IGNORED (will still be reset to PRODUCTION if a new block replica is found)
     ignore_datasets = [
         lambda d: (time.time() - d.last_update) / 3600. / 24. > 180,
-        lambda d: re.match('.*test.*', d.name, re.IGNORECASE),
+        lambda d: re.match('/.+test.*', d.name, re.IGNORECASE), # don't match to TestEnables
         lambda d: re.match('.*BUNNIES.*', d.name),
         lambda d: re.match('.*/None.*', d.name),
         lambda d: re.match('.*FAKE.*', d.name)

@@ -10,6 +10,7 @@ import random
 import collections
 import csv
 import commands
+import json
 
 from glob import glob
 from datetime import datetime, timedelta
@@ -27,23 +28,24 @@ from common.misc import parallel_exec
 ####### yiiyama@mit.edu, bmaier@mit.edu #######################
 ###############################################################
 
-if int(commands.getstatusoutput('ps -Af | grep "python /usr/local/dynamo/bin/track_transfers" | wc -l')[1]) > 3:
-    print "Found another running instance of track_transfers. Exiting."
+if int(commands.getstatusoutput('ps -Af | grep "python /usr/local/dynamo/bin/track_phedex" | wc -l')[1]) > 3:
+    print "Found another running instance of track_phedex. Exiting."
     sys.exit(1)
 
 DEBUG = 0
 
 partitions = ['AnalysisOps','Physics']
 
-rrd_dir = config.paths.data + '/track_transfers'
+rrd_dir = config.paths.data + '/track_phedex'
+
 sites = glob(rrd_dir+'/*')
-sites.remove(config.paths.data + '/track_transfers/monitoring')
 try:
-    sites.remove(config.paths.data + '/track_transfers/total.rrd')
+    sites.remove(config.paths.data + '/track_phedex/total.rrd')
 except:
     pass
 
 # Interval of the rrd file timestamps
+maxtime=int(time.time())-30*24*60*60
 interval = 900
 
 try:
@@ -53,6 +55,7 @@ except:
 
 history = classes.default_interface['history']()
 
+dynamo_requests = []
 sites_with_open_transfers = []
 records = collections.defaultdict(set)
 
@@ -62,19 +65,13 @@ sites_copied = []
 sites_total_stuck = []
 sites_copied_stuck = []
 
-# Get all sites with ongoing transfers
+# Get all ongoing dynamo transfers
 
 for partition in partitions:
     partition_records = history.get_incomplete_copies(partition)    
     for record in partition_records:
-        site = history.get_site_name(record.operation_id)
-        records[site].add(record)
-        if site not in sites_with_open_transfers:
-            sites_with_open_transfers.append(site)
+        dynamo_requests.append(record.operation_id)
 
-
-if DEBUG:
-    print 'Incomplete copies at the moment: ', len(request_ids) 
 
 copy = classes.default_interface['copy']()
 
@@ -100,8 +97,10 @@ if not os.path.exists(total_rrdfile):
 # Now create new rrd files and create pngs
 def is_transfer_stuck(rrd_file):
     stuck = 0
+    
     result = rrdtool.fetch(rrd_file, "LAST")
-
+        
+    
     lasttime = result[0][1]
     firsttime = lasttime - 6*24*3600
 
@@ -120,7 +119,47 @@ def is_transfer_stuck(rrd_file):
 
     return stuck
 
+
+# Making wget calls to PhEDEx for JSON dumps of subscriptions                                                                                                                                                                                                                                                                  
+subprocess.call("wget -O %s/unfinished.txt --no-check-certificate 'https://cmsweb.cern.ch/phedex/datasvc/json/prod/subscriptions?percent_max=99.999&create_since=%s'" % (rrd_dir,str(maxtime)),shell=True)
+
+def get_query(filename):
+    """                                                                                                                                                                                                                                                                                                                        
+    This function returns an array of subscription ids, names, sites, copied amounts and total sizes. It opens the PhEDEx query (wget) txt files and collects id numbers from the JSON. IDs are looped through the copy.copy_status object to retrieve the remaining properties of the subscription. It also creates and writes RRD files for each dataset, organized by destination site.                                                                                                                                                                                                                                                                   
+    """
+    ids = []
+
+    with open(filename) as Tmp:
+        Pdict = json.load(Tmp)
+        for i in range(len(Pdict["phedex"]["dataset"])):
+            try:
+                for j in range(len(Pdict["phedex"]["dataset"][i]["block"])):
+                        for n in range(len(Pdict["phedex"]["dataset"][i]["block"][j]["subscription"])):
+                            request_id = Pdict["phedex"]["dataset"][i]["block"][j]["subscription"][n]["request"]
+                            if request_id not in dynamo_requests and request_id not in ids:
+                                site = Pdict["phedex"]["dataset"][i]["block"][j]["subscription"][n]["node"]
+                                ids.append(request_id)
+                                if site not in sites_with_open_transfers:
+                                    sites_with_open_transfers.append(site)
+                                records[site].add(request_id)
+                        
+            except:
+                for k in range(len(Pdict["phedex"]["dataset"][i]["subscription"])):
+                    request_id = Pdict["phedex"]["dataset"][i]["subscription"][k]["request"]
+                    if request_id not in dynamo_requests and request_id not in ids:
+                        site = Pdict["phedex"]["dataset"][i]["subscription"][k]["node"]
+                        ids.append(request_id)
+                        if site not in sites_with_open_transfers:
+                            sites_with_open_transfers.append(site)
+                        records[site].add(request_id)
+
+
+get_query("%s/unfinished.txt" % rrd_dir)
+
+
+
 def exec_get(sitename):
+    
     debug_counter = 0
 
     ongoings = []
@@ -129,7 +168,7 @@ def exec_get(sitename):
     site_total_stuck = 0
     site_copied_stuck = 0
 
-    rrd_filepath = rrd_dir + '/' + sitename
+    rrd_filepath = rrd_dir + '/' + str(sitename)
 
     if not os.path.exists(rrd_filepath):
         # Create path corresponding to site
@@ -141,14 +180,13 @@ def exec_get(sitename):
         pass
 
     for record in records[sitename]:
+
+
         debug_counter += 1
         #if debug_counter > 2:
         #    break    
 
-        request_id = record.operation_id
-
-        #print request_id
-
+        request_id = record
         status = copy.copy_status(request_id)
 
         request_total = 0
@@ -156,7 +194,6 @@ def exec_get(sitename):
 
         for (site, dataset), (total, copied, last_update) in status.items():
 
-            #print dataset
 
             if copied is not None:# That happens sometimes for very, very, very old requests
                 site_total += total
@@ -171,10 +208,13 @@ def exec_get(sitename):
                 start = (int(time.time()) / interval - 1) * interval
 
                 # Write rrd file
-                rrdtool.create(rrd_file, '--start', str(start), '--step', str(interval),
-                               'DS:copied:GAUGE:%d:0:U' % (interval * 800),
-                               'DS:total:GAUGE:%d:0:U' % (interval * 800),
-                               'RRA:LAST:0:1:%i' % 1344    )
+                try:
+                    rrdtool.create(rrd_file, '--start', str(start), '--step', str(interval),
+                                   'DS:copied:GAUGE:%d:0:U' % (interval * 800),
+                                   'DS:total:GAUGE:%d:0:U' % (interval * 800),
+                                   'RRA:LAST:0:1:%i' % 1344    )
+                except:
+                    pass
 
                 # data source
                 #  DS:<name>:<type>:<heartbeat>:<min>:<max>
@@ -199,11 +239,13 @@ def exec_get(sitename):
                 request_total += total
                 request_copied += copied            
                 if copied != total:
+
                     is_stuck = is_transfer_stuck(rrd_file)
                     ongoings.append([request_id,dataset,copied,total,is_stuck])
                     site_total_stuck += is_stuck*total
                     site_copied_stuck += is_stuck*copied
                     rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
+
                 else:
                     try:
                         subprocess.call("rm -f %s" % rrd_file, shell = True)
@@ -212,13 +254,6 @@ def exec_get(sitename):
             except:
                 pass
             
-        # Update history DB
-        if len(status) != 0:
-            if request_total != record.size or request_copied == request_total:
-                record.size = request_total
-                record.completed = (request_copied == request_total)        
-                #history.update_copy_entry(record)
-
 
     sites_ongoings.append([sitename,len(ongoings)])
     sites_total.append([sitename,site_total])
@@ -234,13 +269,7 @@ def exec_get(sitename):
             writer.writerow({"id" : ongoing[0], "name" : ongoing[1], "copied" : ongoing[2], "total" : ongoing[3], "stuck" : ongoing[4]})        
 
 
-parallel_exec(exec_get, sites_with_open_transfers, num_threads = min(64, len(sites_with_open_transfers)), print_progress = True, timeout = 12000)
-
-for site in sites_with_open_transfers:
-    for record in records[site]:
-        history.update_copy_entry(record)
-
-
+parallel_exec(exec_get, sites_with_open_transfers, num_threads = min(1, len(sites_with_open_transfers)), print_progress = True, timeout = 3600)
 
 # Creating overview files
 try:
@@ -268,27 +297,24 @@ except:
 
 
 # Deletion part - first delete rrd files of completed requests that are older than one week, since we do not want them to be a part of the graphs anymore 
-for site in sites:
-    try:
-        existing_rrds = glob(site+'/*.rrd')
-        
-        older_than = datetime.now() - timedelta(days=20)
-        
-        for existing_rrd in existing_rrds:
-            filetime = datetime.fromtimestamp(os.path.getmtime(existing_rrd))
-            if existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
-                # Delete pngs and rrd files
-                subprocess.call("rm -f %s" % existing_rrd, shell=True) 
+existing_rrds = glob(rrd_dir+'/*/*.rrd')
 
-    except:
-        pass
+older_than = datetime.now() - timedelta(days=20)
+
+for existing_rrd in existing_rrds:
+    filetime = datetime.fromtimestamp(os.path.getmtime(existing_rrd))
+    if existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
+        # Delete pngs and rrd files
+        subprocess.call("rm -f %s" % existing_rrd, shell=True) 
+
 
 # Copying rrds to the /var/www location
-subprocess.call("rm -rf /var/www/html/dynamo/dynamo/dealermon/monitoring/T*", shell=True)
-subprocess.call("cp -r /var/spool/dynamo/track_transfers/T* /var/www/html/dynamo/dynamo/dealermon/monitoring/", shell=True)
-subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring/total.rrd", shell=True)
-subprocess.call("cp /var/spool/dynamo/track_transfers/total.rrd /var/www/html/dynamo/dynamo/dealermon/monitoring/", shell=True)
-subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring/overview.txt", shell=True)
-subprocess.call("cp /var/spool/dynamo/track_transfers/overview.txt /var/www/html/dynamo/dynamo/dealermon/monitoring/", shell=True)
+
+subprocess.call("rm -rf /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/T*", shell=True)
+subprocess.call("cp -r /var/spool/dynamo/track_phedex/T* /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
+subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/total.rrd", shell=True)
+subprocess.call("cp /var/spool/dynamo/track_phedex/total.rrd /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
+subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/overview.txt", shell=True)
+subprocess.call("cp /var/spool/dynamo/track_phedex/overview.txt /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
 
 

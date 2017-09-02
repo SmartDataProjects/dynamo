@@ -77,7 +77,7 @@ stop() {
     echo "The main program ($PROGPID) will stay alive until normal termination."
   fi
 
-  [ $EXITCODE -eq 0 ] && rm -f $PIDFILE
+  rm -f $PIDFILE
 }
 
 # See how we were called.
