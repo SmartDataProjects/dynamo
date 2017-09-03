@@ -11,7 +11,11 @@ import threading
 
 import common.configuration as config
 from common.misc import unicode2str
-from common.interface.mysql import MySQL
+
+use_cache_global = False
+if config.webservice.isset('cache_db_params'):
+    from common.interface.mysql import MySQL
+    use_cache_global = True
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +100,7 @@ class RESTService(object):
         self.headers = list(headers)
         self.accept = accept
         self.auth_handler = auth_handler
-        if use_cache:
+        if use_cache_global and use_cache:
             self._cache_lock = threading.Lock() # webservice can be used by multiple threads
         else:
             self._cache_lock = None
