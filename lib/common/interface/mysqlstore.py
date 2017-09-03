@@ -901,6 +901,8 @@ class MySQLStore(LocalStoreInterface):
                 block_name_to_id[Block.translate_name(block_name)] = block_id
 
             for replica in dataset.replicas:
+                site_id = site_id_map[replica.site]
+
                 for block_replica in replica.block_replicas:
                     block_id = block_name_to_id[block_replica.block.name]
                     
