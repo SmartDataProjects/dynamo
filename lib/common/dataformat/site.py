@@ -284,8 +284,9 @@ class Site(object):
         quota = 0.
         for partition in partitions:
             q = self.partition_quota(partition)
-            if q < 0:
-                continue
+            if q < 0.:
+                # if one partition has "infinite" quota, the total quota is infinite
+                return -1.
 
             quota += q
 

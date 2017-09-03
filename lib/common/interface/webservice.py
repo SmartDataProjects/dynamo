@@ -5,6 +5,7 @@ import urllib2
 import httplib
 import time
 import json
+import re
 import logging
 import tempfile
 import threading
@@ -172,6 +173,9 @@ class RESTService(object):
                         elif type(opt) is str:
                             key, eq, value = opt.partition('=')
                             if eq == '=':
+                                if re.match('^\[.+\]$', value):
+                                    value = map(str.strip, value[1:-1].split(','))
+
                                 optlist.append((key, value))
     
                     options = optlist

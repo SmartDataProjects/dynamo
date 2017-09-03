@@ -570,43 +570,43 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             # delta deletions part
             self._check_deletions(inventory, all_sites, all_groups, dataset_filt, last_update)
 
-        logger.info('Checking dataset status changes.')
+        # Following dataset status check only works for full updates!! Need to come up with a way to do this in delta
+        if last_update == 0:
+            logger.info('Checking dataset status changes.')
 
-        invalid_or_deprecated = set(d for d in inventory.datasets.values() if d.status == Dataset.STAT_INVALID or d.status == Dataset.STAT_DEPRECATED)
+            if dataset_filt == '/*/*/*':    
+                invalid_or_deprecated_or_deleted = set(d for d in inventory.datasets.values() if d.status in (Dataset.STAT_INVALID, Dataset.STAT_DEPRECATED, Dataset.STAT_DELETED))
+            else:
+                invalid_or_deprecated_or_deleted = set(d for d in inventory.datasets.values() if d.status in (Dataset.STAT_INVALID, Dataset.STAT_DEPRECATED, Dataset.STAT_DELETED) and fnmatch.fnmatch(d.name, dataset_filt))
 
-        dbs_invalids = self._make_dbs_request('datasets', ['dataset_access_type=INVALID'])
-        for ds_entry in dbs_invalids:
-            try:
-                dataset = inventory.datasets[ds_entry['dataset']]
-            except KeyError:
-                continue
+            def confirm_status(status, status_bit):
+                options = ['dataset_access_type=' + status]
+                if dataset_filt != '/*/*/*':    
+                    options += ['dataset=' + dataset_filt]
 
-            dataset.status = Dataset.STAT_INVALID
+                dbs_entries = self._make_dbs_request('datasets', options)
+                for ds_entry in dbs_entries:
+                    try:
+                        dataset = inventory.datasets[ds_entry['dataset']]
+                    except KeyError:
+                        continue
+        
+                    dataset.status = status_bit
+        
+                    try:
+                        invalid_or_deprecated_or_deleted.remove(dataset)
+                    except KeyError:
+                        pass
 
-            try:
-                invalid_or_deprecated.remove(dataset)
-            except KeyError:
-                pass
-
-        dbs_deprecated = self._make_dbs_request('datasets', ['dataset_access_type=DEPRECATED'])
-        for ds_entry in dbs_deprecated:
-            try:
-                dataset = inventory.datasets[ds_entry['dataset']]
-            except KeyError:
-                continue
-
-            dataset.status = Dataset.STAT_DEPRECATED
-
-            try:
-                invalid_or_deprecated.remove(dataset)
-            except KeyError:
-                pass
-
-        # remaining datasets in the list must have been revalidated
-        # set it to production to trigger further inspection
-        for dataset in invalid_or_deprecated:
-            logger.info('%s was invalid or deprecated but not any more', dataset.name)
-            dataset.status = Dataset.STAT_PRODUCTION
+            confirm_status('INVALID', Dataset.STAT_INVALID)
+            confirm_status('DEPRECATED', Dataset.STAT_DEPRECATED)
+            confirm_status('DELETED', Dataset.STAT_DELETED)
+    
+            # remaining datasets in the list must have been revalidated
+            # set it to production to trigger further inspection
+            for dataset in invalid_or_deprecated_or_deleted:
+                logger.info('%s was invalid, deprecated, or deleted but not any more', dataset.name)
+                dataset.status = Dataset.STAT_PRODUCTION
 
         logger.info('Checking for updated datasets.')
 
@@ -944,7 +944,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         logger.info('Checking for deleted dataset and block replicas.')
 
         for site in site_list:
-            deletions = self._make_phedex_request('deletions', ['node=%s' % site.name, 'request_since=%d' % last_update, 'dataset=%s' % dataset_filt])
+            options = ['node=%s' % site.name, 'complete=y', 'complete_since=%d' % last_update]
+            if dataset_filt != '/*/*/*':
+                options += ['dataset=' + dataset_filt]
+
+            deletions = self._make_phedex_request('deletions', options)
 
             for phedex_entry in deletions:
                 ds_name = phedex_entry['name']
@@ -1228,7 +1232,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                     try:
                         ds_entry = result[dataset.name]
                     except KeyError:
-                        # This function is called after make_replica_ links
+                        # This function is called after make_replica_links
                         # i.e. "blockreplicas" knows about this dataset but "data" doesn't.
                         # i.e. something is screwed up.
                         # We used to set the status to IGNORED, but this would cause problems
@@ -1381,7 +1385,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         dataset = dataset_list[0]
                         logger.debug('set_dataset_details  DBS throws an error on %s.', dataset.name)
                         # this dataset is in PhEDEx but not in DBS - set to IGNORED and clean them up regularly
-                        dataset.status = Dataset.STAT_IGNORED
+                        dataset.status = Dataset.STAT_UNKNOWN
                         dataset.data_type = Dataset.TYPE_UNKNOWN
                     else:
                         # split the list in half and inquire DBS for each

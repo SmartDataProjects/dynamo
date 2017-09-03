@@ -96,8 +96,16 @@ class InventoryManager(object):
 
         logger.info('Data is loaded to memory. %d sites, %d groups, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.sites), len(self.groups), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
-    def update(self, dataset_filter = '*', load_first = True, make_snapshot = True, from_delta = True):
-        """Query the dataSource and get updated information."""
+    def update(self, dataset_filter = '*', load_first = True, make_snapshot = True, from_delta = True, last_update = 0):
+        """
+        Query the dataSource and get updated information.
+
+        @param dataset_filter  Name of datasets to update.
+        @param load_first      If True, loads from the store first. Need to revisit this option.
+        @param make_snapshot   If True, make a snapshot of the store first. Extremely inefficient.
+        @param from_delta      If True, execute a delta update from last_update timestamp in the store.
+        @param last_update     Override the last_update timestamp in the store for delta update.
+        """
 
         logger.info('Locking inventory.')
 
@@ -138,7 +146,8 @@ class InventoryManager(object):
             self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
             if from_delta:
-                last_update = self.store.get_last_update()
+                if last_update == 0:
+                    last_update = self.store.get_last_update()
             else:
                 last_update = 0
 
@@ -164,10 +173,9 @@ class InventoryManager(object):
                 # if running from_delta, all sites must be in the included sites list.
                 # replica_source.make_replica_links is responsible for updating on_tape flags of datasets
                 # we should get rid of this function once delta update is established and we include tape sites in included_sites
-                self.replica_source.find_tape_copies(self, last_update = last_update)
+                self.replica_source.find_tape_copies(self)
 
             logger.info('Saving data.')
-            #logger.info(pprint.pformat(self.datasets.values()))
 
             # Save inventory data to persistent storage
             # Datasets and groups with no replicas are removed
@@ -335,11 +343,13 @@ if __name__ == '__main__':
     parser.add_argument('--dataset-source', '-t', metavar = 'CLASS', dest = 'dataset_source_cls', default = '', help = 'DatasetInfoSourceInterface class to be used.')
     parser.add_argument('--replica-source', '-r', metavar = 'CLASS', dest = 'replica_source_cls', default = '', help = 'ReplicaInfoSourceInterface class to be used.')
     parser.add_argument('--dataset', '-d', metavar = 'EXPR', dest = 'dataset', default = '/*/*/*', help = 'Limit operation to datasets matching the expression.')
-    parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'sites', nargs = '+', default = ['@disk'], help = 'Site names or aggregate names (@disk, @tape, @all) to include.')
+    parser.add_argument('--site', '-e', metavar = 'SITE', dest = 'sites', nargs = '+', default = ['@all'], help = 'Site names or aggregate names (@disk, @tape, @all) to include.')
     parser.add_argument('--no-load', '-L', action = 'store_true', dest = 'no_load',  help = 'Do not load the existing inventory when updating.')
     parser.add_argument('--snapshot', '-S', action = 'store_true', dest = 'snapshot',  help = 'Make a snapshot of existing inventory when updating.')
     parser.add_argument('--single-thread', '-T', action = 'store_true', dest = 'singleThread', help = 'Do not parallelize (for debugging).')
     parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
+    parser.add_argument('--last-update', '-u', metavar = 'TIMESTAMP', dest = 'last_update', type = int, default = 0, help = 'Override last update timestamp.')
+    parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual changes to persistent store.')
 
     args = parser.parse_args()
 
@@ -352,6 +362,9 @@ if __name__ == '__main__':
 
     if args.singleThread:
         config.use_threads = False
+
+    if args.dry_run:
+        config.read_only = True
 
     kwd = {'load_data': False} # not loading data by default to speed up update process
 
@@ -384,7 +397,7 @@ if __name__ == '__main__':
         icmd += 1
     
         if command == 'update':
-            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = args.snapshot)
+            manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = args.snapshot, last_update = args.last_update)
 
         elif command == 'updatefull':
             manager.update(dataset_filter = args.dataset, load_first = not args.no_load, make_snapshot = args.snapshot, from_delta = False)
