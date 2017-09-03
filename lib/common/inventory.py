@@ -215,6 +215,18 @@ class InventoryManager(object):
 
         return self.store.find_block_of(fullpath, self.datasets)
 
+    def get_datasetreplica(self, dataset, site):
+        dataset_replica = dataset.find_replica(site)
+
+        if dataset_replica is None:
+            dataset_replica = DatasetReplica(dataset, site)
+            dataset.replicas.append(dataset_replica)
+            site.dataset_replicas.add(dataset_replica)
+
+            return dataset_replica, True
+        else:
+            return dataset_replica, False
+
     def unlink_datasetreplica(self, replica):
         """
         Remove link from datasets and sites to the replica. Don't remove the replica-to-dataset/site link;
