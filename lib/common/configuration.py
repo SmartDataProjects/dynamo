@@ -10,6 +10,10 @@ class Configuration(object):
         for key, value in kwd.items():
             setattr(self, key, value)
 
+    def isset(self, name):
+        return hasattr(self, name)
+
+
 logging.basicConfig(level = logging.INFO)
 
 hostname = socket.gethostname()
