@@ -64,7 +64,7 @@ inventory_manager = InventoryManager(load_data = False)
 if args.force_inventory_update:
     inventory_manager.update(make_snapshot = False)
 else:
-    inventory_manager.load()
+    inventory_manager.load(load_blocks = True, load_files = config.application.use_files, load_replicas = True)
 
 transaction_manager = TransactionManager()
 

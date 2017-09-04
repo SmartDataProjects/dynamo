@@ -32,6 +32,10 @@ multi_thread_repeat_exception = True # when a thread hits an exception, repeat t
 
 show_time_profile = True
 
+application = Configuration(
+    use_files = False
+)
+
 paths = Configuration(
     base = os.environ['DYNAMO_BASE'],
     data = os.environ['DYNAMO_DATADIR']
