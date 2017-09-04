@@ -26,7 +26,12 @@ def _Block_clone(self, **kwd):
         self.is_open if 'is_open' not in kwd else kwd['is_open']
     )
 
-Block.translate_name = staticmethod(_Block_translate_name)
+# LOCAL INSTANCE (TODO MAKE THIS NEATER)
+#Block.translate_name = staticmethod(lambda name: name)
+#Block.real_name = lambda self: self.name
+
+Block.translate_name = staticmethod(_Block_notranslate_name) 
+Block.real_name = _Block_original_name  
+
 Block.__str__ = _Block___str__
-Block.real_name = _Block_real_name
 Block.clone = _Block_clone

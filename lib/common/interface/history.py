@@ -448,6 +448,20 @@ class TransactionHistoryInterface(object):
 
         return test_id
 
+    def save_dataset_transfers(self,replica_list,replica_times):
+        self.acquire_lock()
+        try:
+            self._do_save_dataset_transfers(replica_list,replica_times)
+        finally:
+            self.release_lock()
+
+    def save_dataset_deletions(self,replica_list,replica_times):
+        self.acquire_lock()
+        try:
+            self._do_save_replica_deletions(replica_list,replica_times)
+        finally:
+            self.release_lock()
+
 
 if __name__ == '__main__':
 

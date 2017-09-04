@@ -8,6 +8,7 @@ __all__ = [
     'plugins',
     'BaseHandler',
     'PopularityHandler',
+    'DirectRequestsHandler',
     'BalancingHandler',
     'Undertaker'
 ]

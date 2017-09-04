@@ -366,7 +366,7 @@ if __name__ == '__main__':
     if args.dry_run:
         config.read_only = True
 
-    kwd = {'load_data': False} # not loading data by default to speed up update process
+    kwd = {'load_data': not args.no_load} # not loading data by default to speed up update process
 
     for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
         clsname = getattr(args, cls + '_cls')

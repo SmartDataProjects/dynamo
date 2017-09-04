@@ -1,11 +1,3 @@
-from common.interface.phedexdbsssb import PhEDExDBSSSB
-from common.interface.mysqlstore import MySQLStore
-from common.interface.dbs import DBS
-from common.interface.popdb import PopDB
-from common.interface.globalqueue import GlobalQueue
-from common.interface.mysqlhistory import MySQLHistory
-from common.interface.mysqllock import MySQLReplicaLock
-
 class Generator(object):
     """
     Generator of various objects with a storage for singleton objects.
@@ -13,15 +5,17 @@ class Generator(object):
 
     _singletons = {}
 
-    def __init__(self, cls):
-        self._cls = cls
+    def __init__(self, modname, clsname):
+        self._modname = modname
+        self._clsname = clsname
 
     def __call__(self):
         try:
-            obj = Generator._singletons[self._cls]
+            obj = Generator._singletons[self._clsname]
         except KeyError:
-            obj = self._cls()
-            Generator._singletons[self._cls] = obj
+            imp = __import__('common.interface.' + self._modname, globals(), locals(), [self._clsname], -1)
+            obj = getattr(imp, self._clsname)()
+            Generator._singletons[self._clsname] = obj
 
         return obj
 
@@ -29,20 +23,20 @@ class Generator(object):
 class DummyInterface(object):
     def __init__(self):
         pass
-            
 
 default_interface = {
-    'dataset_source': Generator(PhEDExDBSSSB),
-    'site_source': Generator(PhEDExDBSSSB),
-    'replica_source': Generator(PhEDExDBSSSB),
-    'copy': Generator(PhEDExDBSSSB),
-    'deletion': Generator(PhEDExDBSSSB),
-    'store': Generator(MySQLStore),
-    'history': Generator(MySQLHistory)
+    'dataset_source': Generator('phedexdbsssb', 'PhEDExDBSSSB'),
+    'site_source': Generator('phedexdbsssb', 'PhEDExDBSSSB'),
+    'replica_source': Generator('phedexdbsssb', 'PhEDExDBSSSB'),
+    'copy': Generator('phedexdbsssb', 'PhEDExDBSSSB'),
+    'deletion': Generator('phedexdbsssb', 'PhEDExDBSSSB'),
+    'store': Generator('mysqlstore', 'MySQLStore'),
+    'history': Generator('mysqlhistory', 'MySQLHistory')
 }
 
 demand_plugins = {
-    'replica_locks': Generator(MySQLReplicaLock),
-    'replica_access': Generator(PopDB),
-    'dataset_request': Generator(GlobalQueue)
+    'replica_locks': Generator('mysqllock', 'MySQLReplicaLock'),
+    'replica_access': Generator('popdb', 'PopDB'),
+    'replica_demands': Generator('localaccess', 'LocalAccess'),
+    'dataset_request': Generator('globalqueue', 'GlobalQueue')
 }

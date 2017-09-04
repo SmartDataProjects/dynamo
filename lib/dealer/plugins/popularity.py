@@ -1,14 +1,20 @@
+import time
+import datetime
 import math
 import logging
 
 from common.dataformat import Dataset
-from dealer.plugins._list import plugins
+import common.configuration as config
 from dealer.plugins.base import BaseHandler
-import dealer.configuration as config
+import dealer.configuration as dealer_config
 
 logger = logging.getLogger(__name__)
 
 class PopularityHandler(BaseHandler):
+    """
+    Request replication of datasets using information from dataset_request demand plugin.
+    """
+
     def __init__(self):
         BaseHandler.__init__(self, 'Popularity')
         self.used_demand_plugins.append('dataset_request')
@@ -32,7 +38,7 @@ class PopularityHandler(BaseHandler):
             if request_weight <= 0.:
                 continue
 
-            if dataset.size * 1.e-12 > config.max_dataset_size:
+            if dataset.size * 1.e-12 > dealer_config.max_dataset_size:
                 continue
 
             if len(dataset.replicas) == 0 and dataset.on_tape == Dataset.TAPE_NONE:
@@ -40,7 +46,7 @@ class PopularityHandler(BaseHandler):
 
             self._datasets.append(dataset)
 
-            num_requests = min(config.max_replicas, int(math.ceil(request_weight / config.request_to_replica_threshold))) - len(dataset.replicas)
+            num_requests = min(dealer_config.max_replicas, int(math.ceil(request_weight / dealer_config.request_to_replica_threshold))) - len(dataset.replicas)
             if num_requests <= 0:
                 continue
 
@@ -71,4 +77,5 @@ class PopularityHandler(BaseHandler):
         history.save_dataset_popularity(run_number, self._datasets)
 
 
+from dealer.plugins._list import plugins
 plugins['Popularity'] = PopularityHandler()

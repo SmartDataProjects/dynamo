@@ -144,7 +144,6 @@ class Site(object):
             for block_replica in replica.block_replicas:
                 # need to call remove before clearing the set for size accounting
                 self.remove_block_replica(block_replica)
-
             replica.block_replicas = []
 
         self._block_replicas.clear()

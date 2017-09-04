@@ -100,7 +100,6 @@ class Dealer(object):
         """
 
         quotas = dict((site, site.partition_quota(partition)) for site in self.inventory_manager.sites.values())
-
         copy_list = dict([(site, []) for site in target_sites]) # site -> [new_replica]
 
         site_occupancy = {}
@@ -171,10 +170,9 @@ class Dealer(object):
                 if destination not in site_occupancy or site_occupancy[destination] + item_size / quotas[destination] > 1.:
                     # a plugin specified the destination, but it's not in the list of potential target sites
                     logger.warning('Cannot copy %s to %s.', item_name, destination.name)
-
                     continue
 
-                if find_replica_at(destination) is not None:
+                if dealer_config.skip_existing and find_replica_at(destination) is not None:
                     logger.info('%s is already at %s', item_name, destination.name)
                     continue
 

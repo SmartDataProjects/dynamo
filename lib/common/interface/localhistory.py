@@ -4,6 +4,7 @@ import logging
 import time
 import re
 import collections
+import datetime
 
 from common.interface.history import TransactionHistoryInterface
 from common.interface.mysql import MySQL
@@ -12,7 +13,7 @@ import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-class MySQLHistory(TransactionHistoryInterface):
+class LocalHistory(TransactionHistoryInterface):
     """
     Transaction history interface implementation using MySQL as the backend.
     """
@@ -24,6 +25,62 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._site_id_map = {}
         self._dataset_id_map = {}
+
+    def _do_save_dataset_transfers(self,replica_list,replica_times):
+        print "will be saving new filled replicas"
+        timenow = datetime.datetime.now()
+        if len(self._site_id_map) == 0:
+            self._make_site_id_map()
+        if len(self._dataset_id_map) == 0:
+            self._make_dataset_id_map()
+
+        new_datasets = []
+        new_sites = []
+        for replica in replica_list:
+            if replica.dataset.name not in self._dataset_id_map:
+                new_datasets.append(replica.dataset.name)
+            if replica.site.name not in self._site_id_map:
+                new_sites.append(replica.site.name)
+        
+        if len(new_datasets) > 0:
+            self._mysql.insert_many('datasets', ('name',), lambda n: (n,), new_datasets)
+            self._make_dataset_id_map()
+        if len(new_sites) > 0:
+            self._mysql.insert_many('sites', ('name',), lambda n: (n,), new_sites)
+            self._make_site_id_map()
+
+        self._mysql.insert_many('copy_dataset', ('item_id', 'site_to','size','created','updated'), 
+                                lambda d: (self._dataset_id_map[d.dataset.name],
+                                           self._site_id_map[d.site.name],
+                                           d.dataset.size,replica_times[d],timenow), replica_list)
+
+    def _do_save_replica_deletions(self,replica_list,replica_times):
+        print "will be saving deleted replicas"
+        timenow = datetime.datetime.now()
+        if len(self._site_id_map) == 0:
+            self._make_site_id_map()
+        if len(self._dataset_id_map) == 0:
+            self._make_dataset_id_map()
+
+        new_datasets = []
+        new_sites = []
+        for replica in replica_list:
+            if replica.dataset.name not in self._dataset_id_map:
+                new_datasets.append(replica.dataset.name)
+            if replica.site.name not in self._site_id_map:
+                new_sites.append(replica.site.name)
+
+        if len(new_datasets) > 0:
+            self._mysql.insert_many('datasets', ('name',), lambda n: (n,), new_datasets)
+            self._make_dataset_id_map()
+        if len(new_sites) > 0:
+            self._mysql.insert_many('sites', ('name',), lambda n: (n,), new_sites)
+            self._make_site_id_map()
+
+        self._mysql.insert_many('delete_dataset', ('item_id', 'site','size','created','updated'),
+                                lambda d: (self._dataset_id_map[d.dataset.name],
+                                           self._site_id_map[d.site.name],
+                                           d.dataset.size,replica_times[d],timenow), replica_list)
 
     def _do_acquire_lock(self, blocking): #override
         while True:
@@ -173,7 +230,7 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_get_sites(self, run_number): #override
         partition_id = self._mysql.query('SELECT `partition_id` FROM runs WHERE `id` = %s', run_number)[0]
 
-        query = 'SELECT s.`name`, ss.`status`+0 FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
+        query = 'SELECT s.`name`, ss.`status` FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
         query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
         record = self._mysql.query(query)
 
@@ -458,15 +515,6 @@ class MySQLHistory(TransactionHistoryInterface):
 
         return id_to_record.values()
 
-    def _do_get_copied_replicas(self, run_number): #override
-        query = 'SELECT s.`name`, d.`name` FROM `copied_replicas` AS p'
-        query += ' INNER JOIN `copy_requests` AS r ON r.`id` = p.`copy_id`'
-        query += ' INNER JOIN `datasets` AS d ON d.`id` = p.`dataset_id`'
-        query += ' INNER JOIN `sites` AS s ON s.`id` = r.`site_id`'
-        query += ' WHERE r.`run_id` = %d' % run_number
-        
-        return self._mysql.query(query)
-
     def _do_get_site_name(self, operation_id): #override
         result = self._mysql.query('SELECT s.name FROM `sites` AS s INNER JOIN `copy_requests` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s', operation_id)
         if len(result) != 0:
@@ -478,47 +526,22 @@ class MySQLHistory(TransactionHistoryInterface):
 
         return ''
 
-    def _do_get_deletion_runs(self, partition, first, last): #override
+    def _do_get_latest_deletion_run(self, partition, before): #override
         result = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
         if len(result) == 0:
             return 0
 
         partition_id = result[0]
 
-        if first < 0:
-            sql = 'SELECT MAX(`id`)'
-        else:
-            sql = 'SELECT `id`'
+        sql = 'SELECT MAX(`id`) FROM `runs` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\')' % partition_id
+        if before > 0:
+            sql += ' AND `id` < %d' % before
 
-        sql += ' FROM `runs` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\')' % partition_id
-
-        if first >= 0:
-            sql += ' AND `id` >= %d' % first
-        if last >= 0:
-            sql += ' AND `id` <= %d' % last
-
-        return self._mysql.query(sql)
-
-    def _do_get_copy_runs(self, partition, first, last): #override
-        result = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
+        result = self._mysql.query(sql)
         if len(result) == 0:
             return 0
 
-        partition_id = result[0]
-
-        if first < 0:
-            sql = 'SELECT MAX(`id`)'
-        else:
-            sql = 'SELECT `id`'
-
-        sql += ' FROM `runs` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'copy\', \'copy_test\')' % partition_id
-
-        if first >= 0:
-            sql += ' AND `id` >= %d' % first
-        if last >= 0:
-            sql += ' AND `id` <= %d' % last
-
-        return self._mysql.query(sql)
+        return result[0]
 
     def _do_get_run_timestamp(self, run_number): #override
         result = self._mysql.query('SELECT UNIX_TIMESTAMP(`time_start`) FROM `runs` WHERE `id` = %s', run_number)
@@ -581,4 +604,3 @@ class MySQLHistory(TransactionHistoryInterface):
         num_deleted = self._mysql.query('DELETE FROM `replica_snapshot_cache_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
         if num_deleted != 0:
             self._mysql.query('OPTIMIZE TABLE `replica_snapshot_cache_usage`')
-

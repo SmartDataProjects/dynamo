@@ -10,6 +10,7 @@ import common.configuration as config
 from common.misc import parallel_exec
 
 logger = logging.getLogger(__name__)
+lock = threading.Lock()
 
 class PopDB(AccessHistory):
     """
@@ -29,48 +30,7 @@ class PopDB(AccessHistory):
         start_time = max(self._last_update, (time.time() - 3600 * 24 * config.popdb.max_back_query))
         logger.info('Updating dataset access info from %s to %s', time.strftime('%Y-%m-%d', time.gmtime(start_time)), time.strftime('%Y-%m-%d', time.gmtime()))
 
-        lock = threading.Lock()
         access_list = {}
-
-        def query_popdb(site, date):
-            if site.name.startswith('T0'):
-                return []
-            elif site.name.startswith('T1') and site.name.count('_') > 2:
-                nameparts = site.name.split('_')
-                sitename = '_'.join(nameparts[:3])
-                service = 'popularity/DSStatInTimeWindow/' # wtf
-            elif site.name == 'T2_CH_CERN':
-                sitename = site.name
-                service = 'xrdpopularity/DSStatInTimeWindow'
-            else:
-                sitename = site.name
-                service = 'popularity/DSStatInTimeWindow/'
-    
-            datestr = date.strftime('%Y-%m-%d')
-            result = self._make_request(service, ['sitename=' + sitename, 'tstart=' + datestr, 'tstop=' + datestr])
-            
-            with lock:
-                for ds_entry in result:
-                    try:
-                        dataset = inventory.datasets[ds_entry['COLLNAME']]
-                    except KeyError:
-                        continue
-
-                    if dataset.replicas is None:
-                        continue
-
-                    replica = dataset.find_replica(site)
-                    if replica is None:
-                        continue
-
-                    if replica not in full_access_list:
-                        full_access_list[replica] = {}
-
-                    if replica not in access_list:
-                        access_list[replica] = {}
-
-                    full_access_list[replica][date] = int(ds_entry['NACC'])
-                    access_list[replica][date] = (int(ds_entry['NACC']), float(ds_entry['TOTCPU']))
 
         utctoday = datetime.date(*time.gmtime()[:3])
 
@@ -78,16 +38,56 @@ class PopDB(AccessHistory):
         for site in inventory.sites.values():
             date = datetime.date(*time.gmtime(start_time)[:3])
             while date <= utctoday: # get records up to today
-                sitedates.append((site, date))
+                sitedates.append((site, date, access_list, full_access_list))
                 date += datetime.timedelta(1) # one day
 
-        parallel_exec(query_popdb, sitedates)
+        parallel_exec(self._query_popdb, sitedates)
 
         inventory.store.save_replica_accesses(access_list)
 
         self._last_update = time.time()
 
         self._compute(inventory, full_access_list)
+
+    def _query_popdb(self, site, date, access_list, full_access_list):
+        if site.name.startswith('T0'):
+            return []
+        elif site.name.startswith('T1') and site.name.count('_') > 2:
+            nameparts = site.name.split('_')
+            sitename = '_'.join(nameparts[:3])
+            service = 'popularity/DSStatInTimeWindow/' # wtf
+        elif site.name == 'T2_CH_CERN':
+            sitename = site.name
+            service = 'xrdpopularity/DSStatInTimeWindow'
+        else:
+            sitename = site.name
+            service = 'popularity/DSStatInTimeWindow/'
+
+        datestr = date.strftime('%Y-%m-%d')
+        result = self._make_request(service, ['sitename=' + sitename, 'tstart=' + datestr, 'tstop=' + datestr])
+        
+        with lock:
+            for ds_entry in result:
+                try:
+                    dataset = inventory.datasets[ds_entry['COLLNAME']]
+                except KeyError:
+                    continue
+
+                if dataset.replicas is None:
+                    continue
+
+                replica = dataset.find_replica(site)
+                if replica is None:
+                    continue
+
+                if replica not in full_access_list:
+                    full_access_list[replica] = {}
+
+                if replica not in access_list:
+                    access_list[replica] = {}
+
+                full_access_list[replica][date] = int(ds_entry['NACC'])
+                access_list[replica][date] = (int(ds_entry['NACC']), float(ds_entry['TOTCPU']))
 
     def _make_request(self, resource, options = [], method = GET, format = 'url'):
         """

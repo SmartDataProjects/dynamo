@@ -1,0 +1,240 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import logging
+import time
+import re
+import fnmatch
+import gfal2
+import datetime
+import subprocess,signal
+from threading import Timer
+
+from argparse import ArgumentParser
+from common.interface.mysql import MySQL
+from common.dataformat import Site
+from common.misc import parallel_exec
+import common.configuration as config
+
+class Alarm(Exception):
+    pass
+def alarm_handler(signum, frame):
+    raise Alarm
+
+parser = ArgumentParser(description = 'FileManager')
+parser.add_argument('--test-run', '-T', action = 'store_true', help = 'Make a test run (results recorded in local database).')
+parser.add_argument('--doremoves', "-D", default = False, help="perform deletions")
+parser.add_argument('--docopies', "-C", default=False, help="perform transfers")
+parser.add_argument('--nops',"-N", type=int, default=1000,help="number of operations per cycle")
+parser.add_argument('--threads',"-TH", type=int, default=10,help="number of parallel threads")
+
+mysql_com = MySQL(**config.mysqlstore.db_params)
+mysql_reg = MySQL(**config.registry.db_params)
+
+siteToSRM = {}
+logDelFile = 'done_deletions.log'
+logTraFile = 'done_transfers.log'
+
+def getSiteToSRM():
+    sqlline = 'select name,backend from sites'
+    results = mysql_com.query(sqlline)
+    for line in results:
+        siteToSRM[line[0]] = line[1]
+
+def extract_requests(table, nlines):
+    sqlline = 'select * from ' + table + " where status!='done' limit " + str(nlines) 
+    results = mysql_reg.query(sqlline)
+    return results
+
+def copy_file(destination, fileName, sources):
+    mysql_local = MySQL(**config.mysqlstore.db_params)
+
+    print ""
+    print ', '.join(sources) + " .. starting transfer at " + datetime.datetime.now().strftime("%I:%M %p")
+    destin_full = siteToSRM[destination] + fileName
+
+    #list destination and get the list of already existing files
+    cmd = 'gfal-ls ' + destin_full
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               bufsize=4096,shell=True)
+    strout, error = process.communicate()
+    if process.returncode != 0:
+        pass
+    else:
+        print ".. listed .. " + siteToSRM[destination]
+        print strout
+        sql = "update transfer_queue set status='done' where file='" + fileName + "'"
+        sql = sql + " and site_to='" + destination + "'"
+        mysql_reg.query(sql)
+        return (False,destination,fileName)
+
+    for oneSource in sources:
+        source_full = siteToSRM[oneSource] + fileName
+	print source_full
+	print destin_full
+        kill_proc = lambda p: p.kill()
+        cmd = 'gfal-copy -p -f ' + source_full + ' ' + destin_full
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   bufsize=4096,shell=True)
+        timer = Timer(300, kill_proc, [process])
+
+        try:
+            timer.start()
+            strout, error = process.communicate()
+            if process.returncode != 0:
+                print " Received non-zero exit status: " + str(process.returncode)
+                raise Exception(" FATAL -- Call to gfal-copy failed, stopping")
+            else:
+                print ".. copied ........................."  
+                sql = "update transfer_queue set status='done' where file='" + fileName + "'"
+                sql = sql + " and site_to='" + destination + "'"
+                mysql_reg.query(sql)
+                print ' .. finished at ' + datetime.datetime.now().strftime("%I:%M %p")
+                return (True,destination,fileName)
+
+        except Exception, e:
+            print " !!!!!!!!!!!!---------!!!!!!!!!!!!"
+            print ' .. bailed out at ' + datetime.datetime.now().strftime("%I:%M %p")
+            
+            if 'Permission' in str(e):
+                print "got deny permission, aborting"
+            elif 'No such file' in str(e):
+                print "file does not exist at source, aborting"
+            else:
+                print str(e)
+        finally:
+            timer.cancel()
+
+    sql = "update transfer_queue set status='failed' where file='" + fileName + "'"
+    sql = sql + " and site_to='" + destination + "'"
+    mysql_reg.query(sql)
+    return (False,destination,fileName)
+
+def remove_file(siteName,fileName):
+    mysql_local = MySQL(**config.registry.db_params)
+
+    attempts = 1
+    suspectDir = False
+    fullpath = siteToSRM[siteName] + fileName
+    print fullpath
+    while(True):
+        ctx = gfal2.creat_context()
+        try:
+            if attempts > 1 and suspectDir:
+                r = ctx.rmdir(fullpath)
+            else:
+                r = ctx.unlink(fullpath)
+            del ctx
+            print "deleted " + fileName
+            #mysql_local.delete_many('deletion_queue', ('site','file'),
+            #                        [(siteName,fileName)])
+
+            sql = "update deletion_queue set status='done' where file='" + fileName + "'"
+            sql = sql + " and site='" + siteName + "'"
+            mysql_local.query(sql)
+
+
+            return (True,siteName,fileName)
+        except Exception, e:
+            print " !!!!!!!!!!!!---------!!!!!!!!!!!!"
+            if 'Permission' in str(e):
+                print "got deny permission, aborting"
+                del ctx
+                return (False,siteName,fileName)
+            elif 'No such file' in str(e):
+                print "file does not exist, cleaning and aborting"
+                del ctx
+                return (False,siteName,fileName)
+            elif 'path is a dir' in str(e):
+                print "dealing with directory"
+                suspectDir = True
+            else:
+                try:
+                    r = ctx.listdir(fullpath)
+                    if len(r) > 0:
+                        print ' .. non empty dir, delete from database'
+                        #mysql_local.delete_many('deletion_queue', ('site','file'),
+                        #                        [(siteName,fileName)])
+                        sql = "update deletion_queue set status='done' where file='" + fileName + "'"
+                        sql = sql + " and site='" + siteName + "'"
+                        mysql_local.query(sql)
+                        return (True,siteName,fileName)
+                except Exception, ee:
+                    if 'No such file' in str(ee):
+                        print ' .. will delete from database'
+                        #mysql_local.delete_many('deletion_queue', ('site','file'),
+                        #                        [(siteName,fileName)])
+                        sql = "update deletion_queue set status='done' where file='" + fileName + "'"
+                        sql = sql + " and site='" + siteName + "'"
+                        mysql_local.query(sql)
+                        return (True,siteName,fileName)
+
+            del ctx
+            attempts += 1
+           
+        if attempts > 2:
+            return (False,siteName,fileName)
+
+
+def transfer_files():
+    #read first nops entries from transfer queue
+    table = 'transfer_queue'
+    transfers = extract_requests(table, args.nops)
+
+    #perform physical transfers
+    arguments = []
+    destinos = {}
+    for line in transfers:
+        fileName = line[1]
+        siteSource = line[2]
+        siteDestin = line[3]
+        #if siteDestin.startswith('T3'):
+        #    continue
+        keytuple = (siteDestin,fileName)
+        if keytuple not in destinos:
+            destinos[keytuple] = [siteSource]
+        else:
+            destinos[keytuple].append(siteSource)
+
+    for keytuple in sorted(destinos):
+        (siteDestin,fileName) = keytuple
+        siteSource = destinos[keytuple]
+        arguments.append((siteDestin,fileName,siteSource))
+
+    gfal2.set_verbose(gfal2.verbose_level.warning)
+    retValues = parallel_exec(copy_file, arguments, 10, args.threads, False, 0)
+
+def delete_files():
+    #read first nops entries from transfer queue
+    table = 'deletion_queue'
+    sqlline = 'select * from ' + table + " where status!='done' limit " + str(args.nops)
+    deletes = mysql_reg.query(sqlline)
+
+    #deletes = extract_requests(table, args.nops)
+
+    #perform physical transfers
+    arguments = []
+    for line in sorted(deletes, key=lambda x: len(x[1].split('/')), reverse=True):
+        fileName = line[1]
+        if '.root' not in fileName:
+            continue
+        siteName = line[2]
+        if siteName != 'T2_US_MIT':
+            continue
+        arguments.append((siteName,fileName))
+
+    print arguments
+    gfal2.set_verbose(gfal2.verbose_level.warning)
+    retValues = parallel_exec(remove_file, arguments, 10, args.threads, False, 0)
+
+
+args = parser.parse_args()
+getSiteToSRM()
+
+if args.docopies:
+    transfer_files()
+
+if args.doremoves:
+    delete_files()
+

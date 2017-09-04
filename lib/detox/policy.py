@@ -84,7 +84,6 @@ class Policy(object):
 
     def __init__(self, partition, lines, version, inventory):
         self.partition = partition
-
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
 
         self.static_optimization = True
@@ -162,11 +161,13 @@ class Policy(object):
                 else:
                     raise ConfigurationError(words[1])
 
-                for plugin, exprs in variables.required_plugins.items():
-                    if words[2] in exprs:
-                        self.used_demand_plugins.add(plugin)
+                # word[2:] is the list of variables to be used for sorting
+                for word in words[2:]:
+                    for plugin, exprs in variables.required_plugins.items():
+                        if word in exprs:
+                            self.used_demand_plugins.add(plugin)
 
-                sortkey = variables.replica_vardefs[words[2]][0]
+                sortkey = tuple(variables.replica_vardefs[w][0] for w in words[2:])
                 self.candidate_sort = lambda replicas: sorted(replicas, key = sortkey, reverse = reverse)
 
             else:
@@ -183,6 +184,7 @@ class Policy(object):
 
                 elif line_type == LINE_POLICY:
                     self.rules.append(PolicyLine(decision, cond_text))
+            
 
         if self.target_site_def is None:
             raise ConfigurationError('Target site definition missing.')

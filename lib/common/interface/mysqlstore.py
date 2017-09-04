@@ -331,6 +331,7 @@ class MySQLStore(LocalStoreInterface):
             for dataset_id, site_id, completion, is_custodial, last_block_created, block_id, group_id, is_complete, b_is_custodial, b_size in self._mysql.query(sql):
                 if dataset_id != _dataset_id:
                     _dataset_id = dataset_id
+
                     dataset = id_dataset_map[_dataset_id]
                     dataset.replicas = []
 
@@ -962,7 +963,6 @@ class MySQLStore(LocalStoreInterface):
                 site_id = site_id_map[replica.site]
                 for block_replica in replica.block_replicas:
                     block_id = block_name_to_id[block_replica.block.name]
-
                     all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial))
                     if not block_replica.is_complete:
                         replica_sizes.append((block_id, site_id, block_replica.size))
@@ -1040,7 +1040,6 @@ class MySQLStore(LocalStoreInterface):
         self._make_group_map(list(groups), group_id_map = group_id_map)
         dataset_id_map = {}
         self._make_dataset_map(list(set(r.dataset for r in replicas)), dataset_id_map = dataset_id_map)
-
         # insert/update dataset replicas
         logger.info('Inserting/updating %d dataset replicas.', len(replicas))
 
@@ -1082,7 +1081,6 @@ class MySQLStore(LocalStoreInterface):
         self._make_group_map(list(set(r.group for r in replicas)), group_id_map = group_id_map)
         dataset_id_map = {}
         self._make_dataset_map(list(set(r.block.dataset for r in replicas)), dataset_id_map = dataset_id_map)
-
         all_replicas = []
         replica_sizes = []
 

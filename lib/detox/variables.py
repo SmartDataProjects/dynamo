@@ -83,13 +83,21 @@ def replica_num_full_disk_copy_common_owner(replica):
 
     return num
 
+def dataset_demand_rank(replica):
+    if 'global_demand_rank' in replica.dataset.demand:
+        return replica.dataset.demand['global_demand_rank']
+    else:
+        return 0.
+
 replica_vardefs = {
     'dataset.name': (lambda r: r.dataset.name, TEXT_TYPE),
     'dataset.status': (lambda r: r.dataset.status, NUMERIC_TYPE, lambda v: eval('Dataset.STAT_' + v)),
     'dataset.on_tape': (lambda r: r.dataset.on_tape, NUMERIC_TYPE, lambda v: eval('Dataset.TAPE_' + v)),
+    'dataset.negative_size': (lambda r: -r.dataset.size, NUMERIC_TYPE),
     'dataset.last_update': (lambda r: r.dataset.last_update, TIME_TYPE),
     'dataset.num_full_disk_copy': (dataset_num_full_disk_copy, NUMERIC_TYPE),
     'dataset.usage_rank': (lambda r: r.dataset.demand['global_usage_rank'] if 'global_usage_rank' in r.dataset.demand else 0., NUMERIC_TYPE),
+    'dataset.demand_rank': (dataset_demand_rank, NUMERIC_TYPE),
     'dataset.release': (replica_dataset_release, TEXT_TYPE),
     'dataset.is_last_transfer_source': (lambda r: r.is_full() and dataset_num_full_copy(r) == 1 and dataset_has_incomplete_replica(r), BOOL_TYPE),
     'replica.incomplete': (replica_incomplete, BOOL_TYPE),
@@ -116,6 +124,7 @@ site_vardefs = {
 
 required_plugins = {
     'replica_access': ['dataset.last_used', 'dataset.usage_rank', 'replica.num_access'],
+    'replica_demands': ['dataset.demand_rank'],
     'dataset_request': [],
     'replica_locks': ['replica.has_locked_block']
 }
