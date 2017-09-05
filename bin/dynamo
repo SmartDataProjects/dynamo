@@ -66,6 +66,8 @@ if args.force_inventory_update:
 else:
     inventory_manager.load(load_blocks = True, load_files = config.application.use_files, load_replicas = True)
 
+config.phedex.auto_approve_deletions = not args.no_auto_approval
+
 transaction_manager = TransactionManager()
 
 demand_manager = DemandManager()
@@ -171,7 +173,7 @@ if 'detox' in args.module:
                 demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
 
         with ActivityLock('detox'):
-            detox.run(policy, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
+            detox.run(policy, is_test = args.test_run, comment = args.comment)
 
 if 'dealer' in args.module:
     # Main dealer object
@@ -201,4 +203,4 @@ if 'dealer' in args.module:
             demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
 
     with ActivityLock('dealer'):
-        dealer.run(policy, is_test = args.test_run, comment = args.comment, auto_approval = not args.no_auto_approval)
+        dealer.run(policy, is_test = args.test_run, comment = args.comment)

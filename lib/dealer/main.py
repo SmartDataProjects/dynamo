@@ -19,7 +19,7 @@ class Dealer(object):
         self.demand_manager = demand
         self.history = history
 
-    def run(self, policy, is_test = False, comment = '', auto_approval = True):
+    def run(self, policy, is_test = False, comment = ''):
         """
         1. Update site status.
         2. Take snapshots of the current status (datasets and sites).
@@ -80,7 +80,7 @@ class Dealer(object):
 
         logger.info('Committing copy.')
 
-        self.commit_copies(run_number, copy_list, policy.group, is_test, comment, auto_approval)
+        self.commit_copies(run_number, copy_list, policy.group, is_test, comment)
 
         self.history.close_copy_run(run_number)
 
@@ -203,12 +203,12 @@ class Dealer(object):
 
         return copy_list
 
-    def commit_copies(self, run_number, copy_list, group, is_test, comment, auto_approval):
+    def commit_copies(self, run_number, copy_list, group, is_test, comment):
         for site, replicas in copy_list.items():
             if len(replicas) == 0:
                 continue
 
-            copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, group, comments = comment, auto_approval = auto_approval, is_test = is_test)
+            copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, group, comments = comment, is_test = is_test)
             # copy_mapping .. {operation_id: (approved, [replica])}
     
             for operation_id, (approved, op_replicas) in copy_mapping.items():

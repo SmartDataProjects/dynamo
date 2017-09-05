@@ -46,7 +46,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         self._last_request_time = 0
         self._last_request_url = ''
 
-    def schedule_copy(self, dataset_replica, group, comments = '', auto_approval = True, is_test = False): #override (CopyInterface)
+    def schedule_copy(self, dataset_replica, group, comments = '', is_test = False): #override (CopyInterface)
         catalogs = {} # {dataset: [block]}. Content can be empty if inclusive deletion is desired.
 
         dataset = dataset_replica.dataset
@@ -96,7 +96,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
             return int(result[0]['id'])
 
-    def schedule_copies(self, replicas, group, comments = '', auto_approval = True, is_test = False): #override (CopyInterface)
+    def schedule_copies(self, replicas, group, comments = '', is_test = False): #override (CopyInterface)
         request_mapping = {}
 
         replicas_by_site = collections.defaultdict(list)
@@ -187,11 +187,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             
             request_mapping[request_id] = (True, replica_list)
 
-    def schedule_reassignments(self, replicas, group, comments = '', auto_approval = True, is_test = False): #override (CopyInterface)
+    def schedule_reassignments(self, replicas, group, comments = '', is_test = False): #override (CopyInterface)
         # for PhEDEx, copying and ownership reassignment are the same thing
-        self.schedule_copies(replicas, group, comments, auto_approval, is_test)
+        self.schedule_copies(replicas, group, comments, is_test)
 
-    def schedule_deletion(self, replica, comments = '', auto_approval = True, is_test = False): #override (DeletionInterface)
+    def schedule_deletion(self, replica, comments = '', is_test = False): #override (DeletionInterface)
         if replica.site.storage_type == Site.TYPE_MSS and config.daemon_mode:
             logger.warning('Deletion from MSS cannot be done in daemon mode.')
             return None
@@ -243,7 +243,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             return_value = (request_id, False, [replica])
 
-            if auto_approval:
+            if config.phedex.auto_approve_deletions:
                 try:
                     result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': replica.site.name}, method = POST)
                     return_value = (request_id, True, [replica])
@@ -252,7 +252,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
             return return_value
 
-    def schedule_deletions(self, replica_list, comments = '', auto_approval = True, is_test = False): #override (DeletionInterface)
+    def schedule_deletions(self, replica_list, comments = '', is_test = False): #override (DeletionInterface)
         request_mapping = {}
 
         replicas_by_site = collections.defaultdict(list)
@@ -278,12 +278,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 else:
                     deletion_lists['block'].append(replica)
 
-            self._run_deletion_request(request_mapping, site, 'dataset', deletion_lists['dataset'], comments, auto_approval, is_test)
-            self._run_deletion_request(request_mapping, site, 'block', deletion_lists['block'], comments, auto_approval, is_test)
+            self._run_deletion_request(request_mapping, site, 'dataset', deletion_lists['dataset'], comments, is_test)
+            self._run_deletion_request(request_mapping, site, 'block', deletion_lists['block'], comments, is_test)
 
         return request_mapping
 
-    def _run_deletion_request(self, request_mapping, site, level, deletion_list, comments, auto_approval, is_test):
+    def _run_deletion_request(self, request_mapping, site, level, deletion_list, comments, is_test):
         """
         Sometimes we have invalid data in the list of objects to delete.
         PhEDEx throws a 400 error in such a case. We have to then try to identify the
@@ -345,7 +345,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
     
         logger.warning('PhEDEx deletion request id: %d', request_id)
 
-        if auto_approval:
+        if config.phedex.auto_approve_deletions:
             try:
                 result = self._make_phedex_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
                 request_mapping[request_id] = (True, deletion_list)

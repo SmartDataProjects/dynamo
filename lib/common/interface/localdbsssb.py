@@ -170,7 +170,7 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
         DatasetInfoSourceInterface.__init__(self)
         self._mysql = MySQL(**config.mysqlregistry.db_params)
 
-    def schedule_copy(self, dataset_replica, group, comments = '', auto_approval = True, is_test = False): 
+    def schedule_copy(self, dataset_replica, group, comments = '', is_test = False): 
 #override (CopyInterface)
         pass
         
@@ -207,7 +207,7 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
         return sql
 
 
-    def schedule_copies(self, replica_list, group, comments = '', auto_approval = True, is_test = False): 
+    def schedule_copies(self, replica_list, group, comments = '', is_test = False): 
 #override (CopyInterface)
         #here we take user wishes and transfer them, if needed" into
         #entries for file management system (DFMS)
@@ -253,16 +253,16 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
 
         return request_mapping
 
-    def schedule_reassignments(self, replicas, group, comments = '', auto_approval = True, is_test = False): #override (CopyInterface)
+    def schedule_reassignments(self, replicas, group, comments = '', is_test = False): #override (CopyInterface)
         # for local, copying and ownership reassignment are the same thing
-        self.schedule_copies(replicas, group, comments, auto_approval, is_test)
+        self.schedule_copies(replicas, group, comments, is_test)
 
-    def schedule_deletion(self, replica, comments = '', auto_approval = True, is_test = False): #override (DeletionInterface)
+    def schedule_deletion(self, replica, comments = '', is_test = False): #override (DeletionInterface)
         #here we take user wishes and transfer them, if needed" into  
         #entries for file management system (DFMS)
         request_mapping = {}
 
-    def schedule_deletions(self, replica_list, comments = '', auto_approval = True, is_test = False): 
+    def schedule_deletions(self, replica_list, comments = '', is_test = False): 
 #override (DeletionInterface)
         request_mapping = {}
         nowTime = datetime.datetime.now()

@@ -329,6 +329,13 @@ class TransactionHistoryInterface(object):
     def save_deletion_decisions(self, run_number, deleted, kept, protected):
         """
         Save decisions and their reasons for all replicas.
+        @param run_number Cycle number.
+        @param deleted    {replica: condition or ([block_replica], condition)}
+        @param kept       {replica: condition or ([block_replica], condition)}
+        @param protected  {replica: condition or ([block_replica], condition)}
+
+        Note that in case of block-level operations, one dataset replica can appear
+        in multiple of deleted, kept, and protected.
         """
 
         if config.read_only:
