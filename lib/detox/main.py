@@ -56,6 +56,18 @@ class Detox(object):
 
         # Execute the policy within a try block to avoid dead locks
         try:
+            # insert new policy lines to the history database
+            logger.info('Saving policy conditions.')
+            self.history.save_conditions(policy.rules)
+    
+            logger.info('Updating dataset demands.')
+            # update requests, popularity, and locks
+            self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
+    
+            logger.info('Updating site status.')
+            # update site status
+            self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
+    
             self._execute_policy(policy, is_test, comment)
 
         finally:
@@ -73,15 +85,6 @@ class Detox(object):
                 if site.partition_quota(policy.partition) < 0.: # the site has infinite quota
                     logger.error('Finite quota for all sites is required for partition %s.', policy.partition.name)
                     return
-
-        # insert new policy lines to the history database
-        self.history.save_conditions(policy.rules)
-
-        # update requests, popularity, and locks
-        self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
-
-        # update site status
-        self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
         # fetch the copy/deletion run number
         run_number = self.history.new_deletion_run(policy.partition.name, policy.version, is_test = is_test, comment = comment)
