@@ -23,7 +23,7 @@ class PopDB(AccessHistory):
         self._popdb_interface = RESTService(url_base, use_cache = True)
 
     def update(self, inventory): #override
-        records = inventory.store.load_replica_accesses(inventory.sites.values(), inventory.datasets.values())
+        records = inventory.store.load_replica_accesses(inventory.sites.itervalues(), inventory.datasets.itervalues())
         self._last_update = records[0]
         full_access_list = records[1]
 
@@ -35,10 +35,10 @@ class PopDB(AccessHistory):
         utctoday = datetime.date(*time.gmtime()[:3])
 
         sitedates = []
-        for site in inventory.sites.values():
+        for site in inventory.sites.itervalues():
             date = datetime.date(*time.gmtime(start_time)[:3])
             while date <= utctoday: # get records up to today
-                sitedates.append((site, date, access_list, full_access_list))
+                sitedates.append((inventory, site, date, access_list, full_access_list))
                 date += datetime.timedelta(1) # one day
 
         parallel_exec(self._query_popdb, sitedates)
@@ -49,7 +49,7 @@ class PopDB(AccessHistory):
 
         self._compute(inventory, full_access_list)
 
-    def _query_popdb(self, site, date, access_list, full_access_list):
+    def _query_popdb(self, inventory, site, date, access_list, full_access_list):
         if site.name.startswith('T0'):
             return []
         elif site.name.startswith('T1') and site.name.count('_') > 2:

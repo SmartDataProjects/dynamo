@@ -1210,32 +1210,31 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('UPDATE `datasets` SET `status` = %s WHERE `name` LIKE %s', status_str, dataset_name)
 
     def _make_site_map(self, sites, site_id_map = None, id_site_map = None):
-        self._make_map('sites', sites, site_id_map, id_site_map)
+        self._make_map('sites', iter(sites), site_id_map, id_site_map)
 
     def _make_group_map(self, groups, group_id_map = None, id_group_map = None):
-        self._make_map('groups', groups, group_id_map, id_group_map)
+        self._make_map('groups', iter(groups), group_id_map, id_group_map)
         if group_id_map is not None:
             group_id_map[None] = 0
         if id_group_map is not None:
             id_group_map[0] = None
 
     def _make_dataset_map(self, datasets, dataset_id_map = None, id_dataset_map = None):
-        self._make_map('datasets', datasets, dataset_id_map, id_dataset_map, tmp_join = (len(datasets) < 1000))
+        try:
+            tmp_join = (len(datasets) < 1000)
+        except TypeError:
+            tmp_join = False
 
-    def _make_map(self, table, objects, object_id_map, id_object_map, tmp_join = False):
-        logger.debug('make_map %s (%d) obejcts', table, len(objects))
+        self._make_map('datasets', iter(datasets), dataset_id_map, id_dataset_map, tmp_join = tmp_join)
 
-        if len(objects) == 0:
-            return
-
+    def _make_map(self, table, objitr, object_id_map, id_object_map, tmp_join = False):
         if tmp_join:
             tmp_table = '%s_map_tmp' % table
             if self._mysql.table_exists(tmp_table):
                 self._mysql.query('DROP TABLE `%s`' % tmp_table)
 
             self._mysql.query('CREATE TABLE `%s` (`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL, PRIMARY KEY (`name`)) ENGINE=MyISAM DEFAULT CHARSET=latin1' % tmp_table)
-            obj_names = [(obj.name,) for obj in objects]
-            self._mysql.insert_many(tmp_table, ('name',), None, obj_names)
+            self._mysql.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objitr)
 
             name_to_id = dict(self._mysql.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_table)))
 
@@ -1244,7 +1243,9 @@ class MySQLStore(LocalStoreInterface):
         else:
             name_to_id = dict(self._mysql.xquery('SELECT `name`, `id` FROM `%s`' % table))
 
-        for obj in objects:
+        num_obj = 0
+        for obj in objitr:
+            num_obj += 1
             try:
                 obj_id = name_to_id[obj.name]
             except KeyError:
@@ -1254,3 +1255,5 @@ class MySQLStore(LocalStoreInterface):
                 object_id_map[obj] = obj_id
             if id_object_map is not None:
                 id_object_map[obj_id] = obj
+
+        logger.debug('make_map %s (%d) obejcts', table, num_obj)

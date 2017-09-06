@@ -382,11 +382,9 @@ class MySQL(object):
 
             while itr:
                 if type(obj) is str:
-                    item = "'%s'" % obj
+                    pool_expr += "'%s'" % obj
                 else:
-                    item = str(obj)
-
-                pool_expr += delim + item
+                    pool_expr += str(obj)
 
                 try:
                     obj = itr.next()

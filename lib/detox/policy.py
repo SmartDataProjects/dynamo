@@ -199,7 +199,7 @@ class Policy(object):
             self.used_demand_plugins.update(cond.used_demand_plugins)
 
         for rule in self.rules:
-            if not rule.condition.static:
+            if self.static_optimization and not rule.condition.static:
                 logger.info('Condition %s is dynamic. Turning off static policy evaluation for %s.', str(rule.condition), self.partition.name)
                 self.static_optimization = False
 

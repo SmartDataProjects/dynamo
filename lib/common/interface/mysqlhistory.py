@@ -263,14 +263,19 @@ class MySQLHistory(TransactionHistoryInterface):
         if len(self._dataset_id_map) == 0:
             self._make_dataset_id_map()
 
+        try:
+            os.makedirs(config.mysqlhistory.snapshot_db_path)
+        except OSError:
+            pass
+
         db_file_name = config.mysqlhistory.snapshot_db_path + '/replicas_%d.db' % run_number
         if os.path.exists(db_file_name):
             os.unlink(db_file_name)
 
         # hardcoded!!
-        delete = 0
-        keep = 1
-        protect = 2
+        delete = 1
+        keep = 2
+        protect = 3
 
         snapshot_db = sqlite3.connect(db_file_name)
 
