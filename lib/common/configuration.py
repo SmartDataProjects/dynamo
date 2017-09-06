@@ -46,7 +46,13 @@ mysqlhistory = Configuration(
         'config_file': '/etc/my.cnf',
         'config_group': 'mysql-dynamo',
         'db': 'dynamohistory'
-    }
+    },
+    cache_db_params = {
+        'config_file': '/etc/my.cnf',
+        'config_group': 'mysql-dynamo',
+        'db': 'dynamohistory_cache'
+    },
+    snapshot_db_path = '/local/dynamo/replica_snapshots'
 )
 
 webservice = Configuration(
