@@ -81,7 +81,7 @@ class Detox(object):
     def _execute_policy(self, policy, is_test, comment):
         # if no policy line requires iterative execution, we need the sites to have non-negative quotas
         if not policy.static_optimization:
-            for site in self.inventory_manager.sites.values():
+            for site in self.inventory_manager.sites.itervalues():
                 if site.partition_quota(policy.partition) < 0.: # the site has infinite quota
                     logger.error('Finite quota for all sites is required for partition %s.', policy.partition.name)
                     return
@@ -91,20 +91,12 @@ class Detox(object):
 
         logger.info('Preparing deletion run %d', run_number)
 
-        # update site and dataset lists
-        # take a snapshot of site status
-        self.history.save_sites(run_number, self.inventory_manager)
-        self.history.save_datasets(run_number, self.inventory_manager)
-        # take snapshots of quotas if updated
-        quotas = dict((site, site.partition_quota(policy.partition)) for site in self.inventory_manager.sites.values())
-        self.history.save_quotas(run_number, quotas)
-
         logger.info('Identifying target sites.')
 
         # Ask each site if deletion should be triggered.
         delete_target_sites = set()
         dismiss_target_sites = set()
-        for site in self.inventory_manager.sites.values():
+        for site in self.inventory_manager.sites.itervalues():
             if policy.target_site_def.match(site):
                 delete_target_sites.add(site)
                 if policy.deletion_trigger.match(site):
@@ -114,7 +106,15 @@ class Detox(object):
 
         # "partition" as a verb - selecting only the blockreps in the partition
         # will also select out replicas on sites with quotas
-        all_replicas = policy.partition_replicas(self.inventory_manager)
+        all_replicas = policy.partition_replicas(self.inventory_manager, delete_target_sites)
+
+        # update site and dataset lists
+        # take a snapshot of site status
+        self.history.save_sites(run_number, delete_target_sites)
+        self.history.save_datasets(run_number, set(r.dataset for r in all_replicas))
+        # take snapshots of quotas if updated
+        quotas = dict((site, site.partition_quota(policy.partition)) for site in self.inventory_manager.sites.itervalues())
+        self.history.save_quotas(run_number, quotas)
 
         logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(all_replicas))
 
@@ -289,7 +289,7 @@ class Detox(object):
 
                     apply_deleteblock(replica, block_replicas, condition)
 
-            logger.info(' %d dataset replicas in deletion candidates', sum(len(d) for d in deletion_candidates.values()))
+            logger.info(' %d dataset replicas in deletion candidates', sum(len(d) for d in deletion_candidates.itervalues()))
             logger.info(' %d dataset replicas in protection list', len(protected))
 
             if len(iter_keep) == len(all_replicas):
@@ -370,11 +370,11 @@ class Detox(object):
         logger.info('Restoring inventory state.')
 
         # first recover fragmented dataset replicas
-        for replica, data in protected.items():
+        for replica, data in protected.iteritems():
             if type(data) is tuple:
                 replica.block_replicas.extend(data[0])
 
-        for replica, data in deleted.items():
+        for replica, data in deleted.iteritems():
             if type(data) is tuple:
                 replica.block_replicas.extend(data[0])
 
@@ -420,7 +420,7 @@ class Detox(object):
         # organize the replicas into sites and set up block-level deletions
         deletions_by_site = collections.defaultdict(list)
         original_blocks = []
-        for replica, data in deletion_list.items():
+        for replica, data in deletion_list.iteritems():
             if type(data) is tuple: # block delete - data[0] is a list of blockreplicas
                 original_blocks.append((replica, replica.block_replicas))
                 replica.block_replicas = data[0]
@@ -428,7 +428,7 @@ class Detox(object):
             deletions_by_site[replica.site].append(replica)
 
         # now schedule deletion for each site
-        for site in sorted(deletions_by_site.keys()):
+        for site in sorted(deletions_by_site.iterkeys()):
             if site.storage_type == Site.TYPE_MSS:
                 if config.daemon_mode:
                     logger.warning('Deletion from MSS cannot be done in daemon mode.')
@@ -480,7 +480,7 @@ class Detox(object):
                 chunk_record = self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = comment, is_test = is_test)
                 if is_test:
                     # record deletion_id always starts from -1 and go negative
-                    for deletion_id, record in chunk_record.items():
+                    for deletion_id, record in chunk_record.iteritems():
                         while deletion_id in deletion_mapping:
                             deletion_id -= 1
                         deletion_mapping[deletion_id] = record
@@ -490,7 +490,7 @@ class Detox(object):
             total_size = 0
             num_deleted = 0
 
-            for deletion_id, (approved, replicas) in deletion_mapping.items():
+            for deletion_id, (approved, replicas) in deletion_mapping.iteritems():
                 if approved and not is_test:
                     for replica in replicas:
                         self.inventory_manager.store.delete_blockreplicas(replica.block_replicas)

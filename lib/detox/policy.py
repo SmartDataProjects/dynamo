@@ -163,7 +163,7 @@ class Policy(object):
 
                 # word[2:] is the list of variables to be used for sorting
                 for word in words[2:]:
-                    for plugin, exprs in variables.required_plugins.items():
+                    for plugin, exprs in variables.required_plugins.iteritems():
                         if word in exprs:
                             self.used_demand_plugins.add(plugin)
 
@@ -207,7 +207,7 @@ class Policy(object):
 
         logger.info('Policy stack for %s: %d rules using demand plugins %s', self.partition.name, len(self.rules), str(sorted(self.used_demand_plugins)))
 
-    def partition_replicas(self, inventory):
+    def partition_replicas(self, inventory, target_sites):
         """
         Take the full list of datasets and pick out block replicas that are not in the partition.
         If a dataset replica loses all block replicas, take the dataset replica itself out of inventory.
@@ -217,10 +217,10 @@ class Policy(object):
         all_replicas = set()
 
         # stacking up replicas (rather than removing them one by one) for efficiency
-        site_all_dataset_replicas = dict((site, []) for site in inventory.sites.values())
-        site_all_block_replicas = dict((site, []) for site in inventory.sites.values())
+        site_all_dataset_replicas = dict((site, []) for site in target_sites)
+        site_all_block_replicas = dict((site, []) for site in target_sites)
 
-        for dataset in inventory.datasets.values():
+        for dataset in inventory.datasets.itervalues():
             if dataset.replicas is None:
                 continue
 
@@ -233,18 +233,19 @@ class Policy(object):
                 block_replicas = []                    
                 not_in_partition = []
 
-                for block_replica in replica.block_replicas:
-                    if self.partition(block_replica):
-                        # this block replica is in partition
-                        if len(block_replicas) == 0:
-                            # first block replica
-                            site_all_dataset_replicas[site].append(replica)
-                            site_block_replicas = site_all_block_replicas[site]
-
-                        site_block_replicas.append(block_replica)
-                        block_replicas.append(block_replica)
-                    else:
-                        not_in_partition.append(block_replica)
+                if site in target_sites:
+                    for block_replica in replica.block_replicas:
+                        if self.partition(block_replica):
+                            # this block replica is in partition
+                            if len(block_replicas) == 0:
+                                # first block replica
+                                site_all_dataset_replicas[site].append(replica)
+                                site_block_replicas = site_all_block_replicas[site]
+    
+                            site_block_replicas.append(block_replica)
+                            block_replicas.append(block_replica)
+                        else:
+                            not_in_partition.append(block_replica)
 
                 if len(block_replicas) == 0:
                     # no block was in the partition
@@ -262,10 +263,10 @@ class Policy(object):
                     all_replicas.add(replica)
                     ir += 1
 
-        for site, dataset_replicas in site_all_dataset_replicas.items():
+        for site, dataset_replicas in site_all_dataset_replicas.iteritems():
             site.dataset_replicas = set(dataset_replicas)
 
-        for site, block_replicas in site_all_block_replicas.items():
+        for site, block_replicas in site_all_block_replicas.iteritems():
             site.set_block_replicas(block_replicas)
 
         return all_replicas

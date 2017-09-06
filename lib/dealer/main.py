@@ -38,11 +38,11 @@ class Dealer(object):
         self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
-        quotas = dict((site, site.partition_quota(policy.partition)) for site in self.inventory_manager.sites.values())
+        quotas = dict((site, site.partition_quota(policy.partition)) for site in self.inventory_manager.sites.itervalues())
 
         # Ask each site if it should be considered as a copy destination.
         target_sites = set()
-        for site in self.inventory_manager.sites.values():
+        for site in self.inventory_manager.sites.itervalues():
             if quotas[site] > 0. and \
                     site.status == Site.STAT_READY and \
                     policy.target_site_def(site) and \
@@ -59,8 +59,8 @@ class Dealer(object):
         # update site and dataset lists
         # take a snapshot of site status
         # take snapshots of quotas if updated
-        self.history.save_sites(run_number, self.inventory_manager)
-        self.history.save_datasets(run_number, self.inventory_manager)
+        self.history.save_sites(run_number, self.inventory_manager.sites.values())
+        self.history.save_datasets(run_number, self.inventory_manager.datasets.values())
         self.history.save_quotas(run_number, quotas)
 
         pending_volumes = collections.defaultdict(float)
@@ -99,7 +99,7 @@ class Dealer(object):
         @param pending_volumes Volumes pending transfer
         """
 
-        quotas = dict((site, site.partition_quota(partition)) for site in self.inventory_manager.sites.values())
+        quotas = dict((site, site.partition_quota(partition)) for site in self.inventory_manager.sites.itervalues())
         copy_list = dict([(site, []) for site in target_sites]) # site -> [new_replica]
 
         site_occupancy = {}
@@ -146,7 +146,7 @@ class Dealer(object):
             if destination is None:
                 # randomly choose the destination site with probability proportional to free space
                 site_array = []
-                for site, occupancy in site_occupancy.items():
+                for site, occupancy in site_occupancy.iteritems():
                     if occupancy + item_size / quotas[site] > 1. or find_replica_at(site) is not None:
                         continue
 
@@ -193,25 +193,25 @@ class Dealer(object):
                 site_occupancy.pop(destination)
 
             # check if we should stop copying
-            if min(pending_volumes.values()) > dealer_config.max_copy_per_site:
+            if min(pending_volumes.itervalues()) > dealer_config.max_copy_per_site:
                 logger.warning('All sites have exceeded copy volume target. No more copies will be made.')
                 break
 
-            if sum(pending_volumes.values()) > dealer_config.max_copy_total:
+            if sum(pending_volumes.itervalues()) > dealer_config.max_copy_total:
                 logger.warning('Total copy volume has exceeded the limit. No more copies will be made.')
                 break
 
         return copy_list
 
     def commit_copies(self, run_number, copy_list, group, is_test, comment):
-        for site, replicas in copy_list.items():
+        for site, replicas in copy_list.iteritems():
             if len(replicas) == 0:
                 continue
 
             copy_mapping = self.transaction_manager.copy.schedule_copies(replicas, group, comments = comment, is_test = is_test)
             # copy_mapping .. {operation_id: (approved, [replica])}
     
-            for operation_id, (approved, op_replicas) in copy_mapping.items():
+            for operation_id, (approved, op_replicas) in copy_mapping.iteritems():
                 if approved and not is_test:
                     self.inventory_manager.store.add_datasetreplicas(op_replicas)
     
