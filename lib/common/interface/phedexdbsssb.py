@@ -433,8 +433,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 sites[entry['name']] = site
         
     def set_site_status(self, sites): #override (SiteInfoSourceInterface)
-        logger.info('set_site_status  Fetching the site status from SSB')
-
         for site in sites.values():
             site.status = Site.STAT_READY
 

@@ -150,7 +150,7 @@ class MySQLStore(LocalStoreInterface):
         elif type(site_filt) is list:
             query += ' WHERE `name` IN (%s)' % (','.join('\'%s\'' % s for s in site_filt))
 
-        for name, host, storage_type, backend, storage, cpu, status in self._mysql.query(query):
+        for name, host, storage_type, backend, storage, cpu, status in self._mysql.xquery(query):
             site = Site(name, host = host, storage_type = Site.storage_type_val(storage_type), backend = backend, storage = storage, cpu = cpu, status = status)
             site_list.append(site)
 
@@ -167,7 +167,7 @@ class MySQLStore(LocalStoreInterface):
         # Load groups
         group_list = []
 
-        for name, olname in self._mysql.query('SELECT `name`, `olevel` FROM `groups`'):
+        for name, olname in self._mysql.xquery('SELECT `name`, `olevel` FROM `groups`'):
             if olname == 'Dataset':
                 olevel = Dataset
             else:
@@ -182,8 +182,8 @@ class MySQLStore(LocalStoreInterface):
         self._make_group_map(group_list, id_group_map = id_group_map)
 
         # Load site quotas
-        quotas = self._mysql.query('SELECT q.`site_id`, p.`name`, q.`storage` FROM `quotas` AS q INNER JOIN `partitions` AS p ON p.`id` = q.`partition_id`')
-        for site_id, partition_name, storage in quotas:
+        sql = 'SELECT q.`site_id`, p.`name`, q.`storage` FROM `quotas` AS q INNER JOIN `partitions` AS p ON p.`id` = q.`partition_id`'
+        for site_id, partition_name, storage in self._mysql.xquery(sql):
             try:
                 site = id_site_map[site_id]
             except KeyError:
@@ -198,7 +198,7 @@ class MySQLStore(LocalStoreInterface):
 
         # Load software versions - treat directly as tuples with id in first column
         software_version_map = {0: None}
-        for vtuple in self._mysql.query('SELECT * FROM `software_versions`'):
+        for vtuple in self._mysql.xquery('SELECT * FROM `software_versions`'):
             software_version_map[vtuple[0]] = vtuple[1:]
 
         # Load datasets - only load ones with replicas on selected sites if load_replicas == True
@@ -220,7 +220,7 @@ class MySQLStore(LocalStoreInterface):
         if len(conditions) != 0:
             query += ' WHERE ' + (' AND '.join(conditions))
 
-        for name, size, num_files, status, on_tape, data_type, software_version_id, last_update, is_open in self._mysql.query(query):
+        for name, size, num_files, status, on_tape, data_type, software_version_id, last_update, is_open in self._mysql.xquery(query):
             dataset = Dataset(name, size = size, num_files = num_files, status = int(status), on_tape = on_tape, data_type = int(data_type), last_update = last_update, is_open = (is_open == 1))
             dataset.software_version = software_version_map[software_version_id]
 
@@ -258,7 +258,7 @@ class MySQLStore(LocalStoreInterface):
             num_blocks = 0
     
             start = time.time()
-            results = self._mysql.query(query)
+            results = self._mysql.xquery(query)
             logger.info('Query took %.1f seconds.', time.time() - start)
     
             _dataset_id = 0
@@ -328,7 +328,7 @@ class MySQLStore(LocalStoreInterface):
             _site_id = 0
             dataset_replica = None
     
-            for dataset_id, site_id, completion, is_custodial, last_block_created, block_id, group_id, is_complete, b_is_custodial, b_size in self._mysql.query(sql):
+            for dataset_id, site_id, completion, is_custodial, last_block_created, block_id, group_id, is_complete, b_is_custodial, b_size in self._mysql.xquery(sql):
                 if dataset_id != _dataset_id:
                     _dataset_id = dataset_id
 
@@ -399,7 +399,8 @@ class MySQLStore(LocalStoreInterface):
 
         # cache blocks
         id_block_map = {}
-
+    
+        # cannot use xquery here because we need to query for block replicas below
         result = self._mysql.query('SELECT `site_id`, `completion`, `is_custodial`, UNIX_TIMESTAMP(`last_block_created`) FROM `dataset_replicas` WHERE `dataset_id` = %d' % dataset_id)
         
         # Load all the dataset_replicas
@@ -420,9 +421,7 @@ class MySQLStore(LocalStoreInterface):
                 block_query += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = br.`block_id` AND brs.`site_id` = br.`site_id`'
                 block_query += ' WHERE b.`dataset_id` = %d AND br.`site_id` = %d' % (dataset_id, site_id)
     
-                block_entries = self._mysql.query(block_query)
-
-                for bid, bname, group_id, b_is_complete, b_is_custodial, br_size in block_entries:
+                for bid, bname, group_id, b_is_complete, b_is_custodial, br_size in self._mysql.xquery(block_query):
                     try:
                         block = id_block_map[bid]
                     except KeyError:
@@ -457,13 +456,11 @@ class MySQLStore(LocalStoreInterface):
         query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         query += ' WHERE d.`name` = %s'
 
-        result = self._mysql.query(query, dataset.name)
-
         dataset.blocks = []
         dataset.size = 0
         dataset.num_files = 0
 
-        for name, size, num_files, is_open in result:
+        for name, size, num_files, is_open in self._mysql.xquery(query, dataset.name):
             dataset.blocks.append(Block(Block.translate_name(name), dataset, size, num_files, is_open == 1))
             dataset.size += size
             dataset.num_files += num_files
@@ -481,8 +478,10 @@ class MySQLStore(LocalStoreInterface):
 
         block_map = dict((b.real_name(), b) for b in dataset.blocks)
 
+        sql = 'SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %d' % dataset_id
+
         block_id_map = dict()
-        for block_id, name in self._mysql.query('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %d' % dataset_id):
+        for block_id, name in self._mysql.xquery(sql):
             try:
                 block_id_map[block_id] = block_map[name]
             except KeyError:
@@ -493,7 +492,7 @@ class MySQLStore(LocalStoreInterface):
 
         _block_id = 0
         block = None
-        for block_id, name, size in self._mysql.query(query):
+        for block_id, name, size in self._mysql.xquery(query):
             if block_id != _block_id:
                 try:
                     block = block_id_map[block_id]
@@ -543,13 +542,18 @@ class MySQLStore(LocalStoreInterface):
 
         # pick up all accesses that are less than 1 year old
         # old accesses will eb removed automatically next time the access information is saved from memory
-        records = self._mysql.query('SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses` FROM `dataset_accesses` WHERE `date` > DATE_SUB(NOW(), INTERVAL 2 YEAR) ORDER BY `dataset_id`, `site_id`, `date`')
+        sql = 'SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses` FROM `dataset_accesses`'
+        sql += ' WHERE `date` > DATE_SUB(NOW(), INTERVAL 2 YEAR) ORDER BY `dataset_id`, `site_id`, `date`'
+
+        num_records = 0
 
         # little speedup by not repeating lookups for the same replica
         current_dataset_id = 0
         current_site_id = 0
         replica = None
-        for dataset_id, site_id, year, month, day, access_type, num_accesses in records:
+        for dataset_id, site_id, year, month, day, access_type, num_accesses in self._mysql.xquery(sql):
+            num_records += 1
+
             if dataset_id != current_dataset_id:
                 try:
                     dataset = id_dataset_map[dataset_id]
@@ -590,7 +594,7 @@ class MySQLStore(LocalStoreInterface):
 
         last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
 
-        logger.info('Loaded %d replica access data. Last update on %s UTC', len(records), time.strftime('%Y-%m-%d', time.gmtime(last_update)))
+        logger.info('Loaded %d replica access data. Last update on %s UTC', num_records, time.strftime('%Y-%m-%d', time.gmtime(last_update)))
 
         return (last_update, access_list)
 
@@ -600,13 +604,18 @@ class MySQLStore(LocalStoreInterface):
 
         # pick up requests that are less than 1 year old
         # old requests will be removed automatically next time the access information is saved from memory
-        records = self._mysql.query('SELECT `dataset_id`, `id`, UNIX_TIMESTAMP(`queue_time`), UNIX_TIMESTAMP(`completion_time`), `nodes_total`, `nodes_done`, `nodes_failed`, `nodes_queued` FROM `dataset_requests` WHERE `queue_time` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY `dataset_id`, `queue_time`')
+        sql = 'SELECT `dataset_id`, `id`, UNIX_TIMESTAMP(`queue_time`), UNIX_TIMESTAMP(`completion_time`), `nodes_total`, `nodes_done`, `nodes_failed`, `nodes_queued` FROM `dataset_requests`'
+        sql += ' WHERE `queue_time` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY `dataset_id`, `queue_time`'
+
+        num_records = 0
 
         requests = {}
 
         # little speedup by not repeating lookups for the same dataset
         current_dataset_id = 0
-        for dataset_id, job_id, queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued in records:
+        for dataset_id, job_id, queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued in self._mysql.xquery(sql):
+            num_records += 1
+
             if dataset_id != current_dataset_id:
                 try:
                     dataset = id_dataset_map[dataset_id]
@@ -620,7 +629,7 @@ class MySQLStore(LocalStoreInterface):
 
         last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
 
-        logger.info('Loaded %d dataset request data. Last update at %s UTC', len(records), time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(last_update)))
+        logger.info('Loaded %d dataset request data. Last update at %s UTC', num_records, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(last_update)))
 
         return (last_update, requests)
 
@@ -643,7 +652,7 @@ class MySQLStore(LocalStoreInterface):
         # insert/update software versions
 
         version_map = {None: 0} # tuple -> id
-        for vtuple in self._mysql.query('SELECT * FROM `software_versions`'):
+        for vtuple in self._mysql.xquery('SELECT * FROM `software_versions`'):
             version_map[vtuple[1:]] = vtuple[0]
 
         all_versions = set([d.software_version for d in datasets])
@@ -658,7 +667,7 @@ class MySQLStore(LocalStoreInterface):
 
         name_entry_map = {}
         query = 'SELECT `name`, `id`, `size`, `num_files`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`), `is_open` FROM `datasets`'
-        for entry in self._mysql.query(query):
+        for entry in self._mysql.xquery(query):
             name_entry_map[entry[0]] = entry[1:]
 
         datasets_to_update = []
@@ -777,7 +786,7 @@ class MySQLStore(LocalStoreInterface):
 
             name_block_map = dict((b.real_name(), b) for b in dataset.blocks)
             block_id_map = {}
-            for name, block_id in self._mysql.query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
+            for name, block_id in self._mysql.xquery('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
                 try:
                     block = name_block_map[name]
                 except KeyError:
@@ -817,7 +826,7 @@ class MySQLStore(LocalStoreInterface):
 
             name_block_map = dict((b.real_name(), b) for b in dataset.blocks)
             block_id_map = {}
-            for name, block_id in self._mysql.query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
+            for name, block_id in self._mysql.xquery('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
                 block_id_map[name_block_map[name]] = block_id
 
             for lfile in dataset.files:
@@ -898,7 +907,7 @@ class MySQLStore(LocalStoreInterface):
             # remaining block replicas are to be inserted
 
             block_name_to_id = {}
-            for block_id, block_name in self._mysql.query('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
+            for block_id, block_name in self._mysql.xquery('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
                 block_name_to_id[Block.translate_name(block_name)] = block_id
 
             for replica in dataset.replicas:
@@ -956,7 +965,7 @@ class MySQLStore(LocalStoreInterface):
                 continue
 
             block_name_to_id = {}
-            for block_id, block_name in self._mysql.query('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
+            for block_id, block_name in self._mysql.xquery('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
                 block_name_to_id[Block.translate_name(block_name)] = block_id
 
             for replica in dataset.replicas:
@@ -1057,7 +1066,7 @@ class MySQLStore(LocalStoreInterface):
             site_id = site_id_map[replica.site]
             
             block_ids = {}
-            for name_str, block_id in self._mysql.query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
+            for name_str, block_id in self._mysql.xquery('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
                 block_ids[Block.translate_name(name_str)] = block_id
 
             # add the block replicas on this site to block_replicas together with SQL ID
@@ -1089,7 +1098,7 @@ class MySQLStore(LocalStoreInterface):
             site_id = site_id_map[replica.site]
             
             block_ids = {}
-            for name_str, block_id in self._mysql.query('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
+            for name_str, block_id in self._mysql.xquery('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
                 block_ids[Block.translate_name(name_str)] = block_id
 
             block_id = block_ids[replica.block.name]
@@ -1175,14 +1184,12 @@ class MySQLStore(LocalStoreInterface):
         dataset_ids = {}
 
         sql = 'SELECT `name`, `id` FROM `sites` WHERE `name` IN ({names})'
-        result = self._mysql.query(sql.format(names = site_names))
-        for site_name, site_id in result:
+        for site_name, site_id in self._mysql.xquery(sql.format(names = site_names)):
             site = next(s for s in sites if s.name == site_name)
             site_ids[site] = site_id
 
         sql = 'SELECT `name`, `id` FROM `datasets` WHERE `name` IN ({names})'
-        result = self._mysql.query(sql.format(names = dataset_names))
-        for dataset_name, dataset_id in result:
+        for dataset_name, dataset_id in self._mysql.xquery(sql.format(names = dataset_names)):
             dataset = next(d for d in datasets if d.name == dataset_name)
             dataset_ids[dataset] = dataset_id
 
@@ -1233,12 +1240,12 @@ class MySQLStore(LocalStoreInterface):
             obj_names = [(obj.name,) for obj in objects]
             self._mysql.insert_many(tmp_table, ('name',), None, obj_names)
 
-            name_to_id = dict(self._mysql.query('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_table)))
+            name_to_id = dict(self._mysql.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_table)))
 
             self._mysql.query('DROP TABLE `%s`' % tmp_table)
 
         else:
-            name_to_id = dict(self._mysql.query('SELECT `name`, `id` FROM `%s`' % table))
+            name_to_id = dict(self._mysql.xquery('SELECT `name`, `id` FROM `%s`' % table))
 
         for obj in objects:
             try:

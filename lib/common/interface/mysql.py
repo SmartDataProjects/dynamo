@@ -236,6 +236,12 @@ class MySQL(object):
         # iter() of iterator returns the iterator itself
         itr = iter(objects)
 
+        try:
+            # we'll need to have the first element ready below anyway; do it here
+            obj = itr.next()
+        except StopIteration:
+            return
+
         sqlbase = 'INSERT INTO `{table}` ({fields}) VALUES %s'.format(table = table, fields = ','.join(['`%s`' % f for f in fields]))
         if do_update:
             sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join(['`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields])
@@ -246,17 +252,18 @@ class MySQL(object):
         while True:
             values = ''
 
-            while True:
-                try:
-                    obj = itr.next()
-                except StopIteration:
-                    break
-
+            while itr:
                 if mapping is None:
                     values += template % MySQLdb.escape(obj, MySQLdb.converters.conversions)
                 else:
                     values += template % MySQLdb.escape(mapping(obj), MySQLdb.converters.conversions)
     
+                try:
+                    obj = itr.next()
+                except StopIteration:
+                    itr = None
+                    break
+
                 # MySQL allows queries up to 1M characters
                 if len(values) > config.mysql.max_query_len:
                     break
@@ -354,36 +361,45 @@ class MySQL(object):
 
             return
 
-        elif type(pool) is list:
+        # case: container or iterator
+
+        try:
             if len(pool) == 0:
                 return
+        except TypeError:
+            pass
 
-            itr = iter(pool)
+        itr = iter(pool)
 
-        elif hasattr(pool, 'next'):
-            itr = pool
+        try:
+            obj = itr.next()
+        except StopIteration:
+            return
 
         # need to repeat in case pool is a long list
         while True:
-            pool_expr = ''
+            pool_expr = '('
 
-            # prepend a '(' instead of ',' for the first item
-            delim = '('
-            while len(pool_expr) < config.mysql.max_query_len:
-                try:
-                    itm = itr.next()
-                except StopIteration:
-                    break
-
-                if type(itm) is str:
-                    item = "'%s'" % itm
+            while itr:
+                if type(obj) is str:
+                    item = "'%s'" % obj
                 else:
-                    item = str(itm)
+                    item = str(obj)
 
                 pool_expr += delim + item
-                delim = ','
 
-            if pool_expr == '':
+                try:
+                    obj = itr.next()
+                except StopIteration:
+                    itr = None
+                    break
+
+                if len(pool_expr) < config.mysql.max_query_len:
+                    break
+
+                pool_expr += ','
+
+            if pool_expr == '(':
                 break
 
             pool_expr += ')'

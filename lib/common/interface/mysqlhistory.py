@@ -145,18 +145,18 @@ class MySQLHistory(TransactionHistoryInterface):
                 sites_to_insert.append(site_name)
 
         if len(sites_to_insert) != 0:
-            self._mysql.insert_many('sites', ('name',), lambda n: (n,), sites_to_insert)
+            self._mysql.insert_many('sites', ('name',), None, sites_to_insert)
             self._make_site_id_map()        
 
         sites_in_record = set()
 
-        insert_query = 'INSERT INTO `site_status_snapshots` (`site_id`, `run_id`, `status`) VALUES (%s, {run_number}, %s)'.format(run_number = run_number)
-
-        query = 'SELECT s.`name`, ss.`status`+0 FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
+        query = 'SELECT s.`name`, ss.`status`+0 FROM `site_status_snapshots` AS ss'
+        query += ' INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
         query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
-        record = self._mysql.query(query)
+        record = self._mysql.xquery(query)
 
         sites_in_record = set()
+        to_insert = []
 
         for site_name, status in record:
             try:
@@ -167,30 +167,29 @@ class MySQLHistory(TransactionHistoryInterface):
             sites_in_record.add(site)
 
             if site.status != status:
-                self._mysql.query(insert_query, self._site_id_map[site.name], site.status)
+                to_insert.append((self._site_id_map[site.name], site.status))
 
-        for site in inventory.sites.values():
+        for site in inventory.sites.itervalues():
             if site not in sites_in_record:
-                self._mysql.query(insert_query, self._site_id_map[site.name], site.status)
+                to_insert.append((self._site_id_map[site.name], site.status))
+
+        self._mysql.insert_many('site_status_snapshots', ('site_id', 'run_id', 'status'), lambda (site_id, status): (site_id, run_number, status), to_insert)
 
     def _do_get_sites(self, run_number): #override
         partition_id = self._mysql.query('SELECT `partition_id` FROM runs WHERE `id` = %s', run_number)[0]
 
         query = 'SELECT s.`name`, ss.`status`+0 FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
         query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
-        record = self._mysql.query(query)
-
-        status_map = dict([(site_name, status) for site_name, status in record])
+        status_records = self._mysql.xquery(query)
 
         query = 'SELECT s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id`'
         query += ' WHERE q.`partition_id` = %d' % partition_id
         query += ' AND q.`run_id` = (SELECT MAX(q2.`run_id`) FROM `quota_snapshots` AS q2 WHERE q2.`partition_id` = %d AND q2.`site_id` = q.`site_id` AND q2.`run_id` <= %d)' % (partition_id, run_number)
-
-        quota_map = dict(self._mysql.query(query))
+        quota_map = dict(self._mysql.xquery(query))
 
         sites_dict = {}
 
-        for site_name, status in status_map.items():
+        for site_name, status in status_records:
             try:
                 quota = quota_map[site_name]
             except KeyError:
@@ -212,7 +211,7 @@ class MySQLHistory(TransactionHistoryInterface):
         if len(datasets_to_insert) == 0:
             return
 
-        self._mysql.insert_many('datasets', ('name',), lambda n: (n,), datasets_to_insert)
+        self._mysql.insert_many('datasets', ('name',), None, datasets_to_insert)
         self._make_dataset_id_map()
 
     def _do_save_quotas(self, run_number, quotas): #override
@@ -221,30 +220,33 @@ class MySQLHistory(TransactionHistoryInterface):
 
         partition_id = self._mysql.query('SELECT `partition_id` FROM runs WHERE `id` = %s', run_number)[0]
 
-        insert_query = 'INSERT INTO `quota_snapshots` (`site_id`, `partition_id`, `run_id`, `quota`) VALUES (%s, {partition_id}, {run_number}, %s)'.format(partition_id = partition_id, run_number = run_number)
-
         query = 'SELECT s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE'
         query += ' q.`partition_id` = %d' % partition_id
         query += ' AND q.`run_id` = (SELECT MAX(q2.`run_id`) FROM `quota_snapshots` AS q2 WHERE q2.`partition_id` = %d AND q2.`site_id` = q.`site_id` AND q2.`run_id` <= %d)' % (partition_id, run_number)
 
-        record = self._mysql.query(query)
+        record = self._mysql.xquery(query)
 
         sites_in_record = set()
+        to_insert = []
+
+        name_map = dict((site.name, (site, quota)) for site, quota in quotas.iteritems())
 
         for site_name, last_quota in record:
             try:
-                site, quota = next(item for item in quotas.items() if item[0].name == site_name)
-            except StopIteration:
+                site, quota = name_map[site_name]
+            except KeyError:
                 continue
 
             sites_in_record.add(site)
 
             if last_quota != quota:
-                self._mysql.query(insert_query, self._site_id_map[site.name], quota)
+                to_insert.append((self._site_id_map[site.name], quota))
 
-        for site, quota in quotas.items():
+        for site, quota in quotas.iteritems():
             if site not in sites_in_record:
-                self._mysql.query(insert_query, self._site_id_map[site.name], quota)
+                to_insert.append((self._site_id_map[site.name], quota))
+
+        self._mysql.insert_many('quota_snapshots', ('site_id', 'partition_id', 'run_id', 'quota'), lambda (site_id, quota): (site_id, partition_id, run_number, quota), to_insert)
 
     def _do_save_conditions(self, rules):
         for rule in rules:
@@ -389,14 +391,14 @@ class MySQLHistory(TransactionHistoryInterface):
         query += ' INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id`'
         query += ' INNER JOIN `sites` AS s ON s.`id` = h.`site_id`'
         query += ' WHERE h.`id` > 0 AND p.`name` LIKE \'%s\' AND h.`completed` = 0 AND h.`run_id` > 0' % partition
-        history_entries = self._mysql.query(query)
+        history_entries = self._mysql.xquery(query)
         
         id_to_record = {}
         for eid, timestamp, approved, site_name, size in history_entries:
             id_to_record[eid] = HistoryRecord(HistoryRecord.OP_COPY, eid, site_name, timestamp = timestamp, approved = approved, size = size)
 
-        id_to_dataset = dict(self._mysql.query('SELECT `id`, `name` FROM `datasets`'))
-        id_to_site = dict(self._mysql.query('SELECT `id`, `name` FROM `sites`'))
+        id_to_dataset = dict(self._mysql.xquery('SELECT `id`, `name` FROM `datasets`'))
+        id_to_site = dict(self._mysql.xquery('SELECT `id`, `name` FROM `sites`'))
 
         replicas = self._mysql.select_many('copied_replicas', ('copy_id', 'dataset_id'), 'copy_id', id_to_record.keys())
 
@@ -492,18 +494,18 @@ class MySQLHistory(TransactionHistoryInterface):
 
     def _make_site_id_map(self):
         self._site_id_map = {}
-        for name, site_id in self._mysql.query('SELECT `name`, `id` FROM `sites`'):
+        for name, site_id in self._mysql.xquery('SELECT `name`, `id` FROM `sites`'):
             self._site_id_map[name] = int(site_id)
 
     def _make_dataset_id_map(self):
         self._dataset_id_map = {}
-        for name, dataset_id in self._mysql.query('SELECT `name`, `id` FROM `datasets`'):
+        for name, dataset_id in self._mysql.xquery('SELECT `name`, `id` FROM `datasets`'):
             self._dataset_id_map[name] = int(dataset_id)
 
     def _fill_snapshot_cache(self, run_number):
         table_name = 'replicas_%d' % run_number
         sql = 'SELECT COUNT(*) FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = \'dynamohistory_cache\' AND `TABLE_NAME` = %s'
-        if self._mysql.query(sql, table_name) == 0:
+        if self._mysql.query(sql, table_name)[0] == 0:
             # cache table does not exist; fill from sqlite
 
             db_file_name = '%s/%s.db' % (config.mysqlhistory.snapshot_db_path, table_name)
