@@ -30,8 +30,8 @@ def _Block_clone(self, **kwd):
 #Block.translate_name = staticmethod(lambda name: name)
 #Block.real_name = lambda self: self.name
 
-Block.translate_name = staticmethod(_Block_notranslate_name) 
-Block.real_name = _Block_original_name  
+Block.translate_name = staticmethod(_Block_translate_name) 
+Block.real_name = _Block_real_name
 
 Block.__str__ = _Block___str__
 Block.clone = _Block_clone

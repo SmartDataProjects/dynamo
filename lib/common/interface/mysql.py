@@ -143,16 +143,13 @@ class MySQL(object):
             raise
 
         if cursor.description is None:
-            if cursor.lastrowid != 0:
-                # insert query
-                return cursor.lastrowid
-            else:
-                return cursor.rowcount
+            raise RuntimeError('xquery cannot be used for non-SELECT statements')
 
         row = cursor.fetchone()
         if row is None:
             cursor.close()
-            return # having yield statements below makes this a 0-element iterator
+            # having yield statements below makes this a 0-element iterator
+            return
 
         single_column = (len(row) == 1)
 
@@ -230,13 +227,14 @@ class MySQL(object):
          objects: list or iterator of objects to insert.
         """
 
-        if type(objects) is list:
+        try:
             if len(objects) == 0:
                 return
+        except TypeError:
+            pass
 
-            itr = iter(objects)
-        else:
-            itr = objects
+        # iter() of iterator returns the iterator itself
+        itr = iter(objects)
 
         sqlbase = 'INSERT INTO `{table}` ({fields}) VALUES %s'.format(table = table, fields = ','.join(['`%s`' % f for f in fields]))
         if do_update:

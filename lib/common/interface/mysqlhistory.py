@@ -204,8 +204,8 @@ class MySQLHistory(TransactionHistoryInterface):
         if len(self._dataset_id_map) == 0:
             self._make_dataset_id_map()
 
-        datasets_to_insert = []
-        for dataset_name in inventory.datasets.keys():
+        datasets_to_insert = set(inventory.datasets.iterkeys()) - set(self._dataset_id_map.iterkeys())
+        for dataset_name in inventory.datasets.iterkeys():
             if dataset_name not in self._dataset_id_map:
                 datasets_to_insert.append(dataset_name)
 
@@ -246,14 +246,14 @@ class MySQLHistory(TransactionHistoryInterface):
             if site not in sites_in_record:
                 self._mysql.query(insert_query, self._site_id_map[site.name], quota)
 
-    def _do_save_conditions(self, policies):
-        for policy in policies:
-            text = re.sub('\s+', ' ', policy.condition.text)
+    def _do_save_conditions(self, rules):
+        for rule in rules:
+            text = re.sub('\s+', ' ', rule.condition.text)
             ids = self._mysql.query('SELECT `id` FROM `policy_conditions` WHERE `text` LIKE %s', text)
             if len(ids) == 0:
-                policy.condition_id = self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
+                rule.condition_id = self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
             else:
-                policy.condition_id = ids[0]
+                rule.condition_id = ids[0]
 
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
@@ -283,7 +283,9 @@ class MySQLHistory(TransactionHistoryInterface):
         sql += '`value` TEXT NOT NULL'
         sql += ')'
         snapshot_db.execute(sql)
-        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'delete\'), (%d, \'keep\'), (%d, \'protect\')' % (delete, keep, protect))
+        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'delete\')' % delete)
+        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'keep\')' % keep)
+        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'protect\')' % protect)
         
         sql = 'CREATE TABLE `replicas` ('
         sql += '`site_id` SMALLINT NOT NULL,'
@@ -538,7 +540,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
             self._mysql.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
 
-        sql = 'SELECT `run_id` FROM (SELECT `run_id`, MAX(`timestamp`) AS m FROM `replica_cache_usage` GROUP BY `run_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
+        sql = 'SELECT `run_id` FROM (SELECT `run_id`, MAX(`timestamp`) AS m FROM `replica_snapshot_cache_usage` GROUP BY `run_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
         old_runs = self._mysql.xquery(sql)
         for old_run in old_runs:
             table_name = 'replicas_%d' % old_run
