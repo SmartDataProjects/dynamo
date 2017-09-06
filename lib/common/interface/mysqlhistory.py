@@ -135,12 +135,14 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_update_deletion_entry(self, deletion_record): #override
         self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, `size` = %s WHERE `id` = %s', deletion_record.approved, deletion_record.size, deletion_record.operation_id)
 
-    def _do_save_sites(self, run_number, inventory): #override
+    def _do_save_sites(self, run_number, sites): #override
         if len(self._site_id_map) == 0:
             self._make_site_id_map()
 
+        names_to_sites = dict((s.name, s) for s in sites)
+
         sites_to_insert = []
-        for site_name in inventory.sites.keys():
+        for site_name in names_to_sites.iterkeys():
             if site_name not in self._site_id_map:
                 sites_to_insert.append(site_name)
 
@@ -155,23 +157,19 @@ class MySQLHistory(TransactionHistoryInterface):
         query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
         record = self._mysql.xquery(query)
 
-        sites_in_record = set()
         to_insert = []
 
         for site_name, status in record:
             try:
-                site = inventory.sites[site_name]
+                site = names_to_sites.pop(site_name)
             except KeyError:
                 continue
-
-            sites_in_record.add(site)
 
             if site.status != status:
                 to_insert.append((self._site_id_map[site.name], site.status))
 
-        for site in inventory.sites.itervalues():
-            if site not in sites_in_record:
-                to_insert.append((self._site_id_map[site.name], site.status))
+        for site in names_to_sites.itervalues():
+            to_insert.append((self._site_id_map[site.name], site.status))
 
         self._mysql.insert_many('site_status_snapshots', ('site_id', 'run_id', 'status'), lambda (site_id, status): (site_id, run_number, status), to_insert)
 
@@ -199,15 +197,11 @@ class MySQLHistory(TransactionHistoryInterface):
 
         return sites_dict
 
-    def _do_save_datasets(self, run_number, inventory): #override
+    def _do_save_datasets(self, run_number, datasets): #override
         if len(self._dataset_id_map) == 0:
             self._make_dataset_id_map()
 
-        datasets_to_insert = set(inventory.datasets.iterkeys()) - set(self._dataset_id_map.iterkeys())
-        for dataset_name in inventory.datasets.iterkeys():
-            if dataset_name not in self._dataset_id_map:
-                datasets_to_insert.append(dataset_name)
-
+        datasets_to_insert = set(d.name for d in datasets) - set(self._dataset_id_map.iterkeys())
         if len(datasets_to_insert) == 0:
             return
 
@@ -336,7 +330,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
             for decision in ['protect', 'delete', 'keep']:
                 volumes[decision] = dict(self._mysql.xquery(query, decision))
-                sites.update(set(volumes[decision].keys()))
+                sites.update(set(volumes[decision].iterkeys()))
 
             self._mysql.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
                 
@@ -400,7 +394,7 @@ class MySQLHistory(TransactionHistoryInterface):
         id_to_dataset = dict(self._mysql.xquery('SELECT `id`, `name` FROM `datasets`'))
         id_to_site = dict(self._mysql.xquery('SELECT `id`, `name` FROM `sites`'))
 
-        replicas = self._mysql.select_many('copied_replicas', ('copy_id', 'dataset_id'), 'copy_id', id_to_record.keys())
+        replicas = self._mysql.select_many('copied_replicas', ('copy_id', 'dataset_id'), 'copy_id', id_to_record.iterkeys())
 
         current_copy_id = 0
         for copy_id, dataset_id in replicas:

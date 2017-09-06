@@ -225,9 +225,9 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def save_sites(self, run_number, inventory):
+    def save_sites(self, run_number, sites):
         """
-        Save sites that are in the inventory but not in the history records.
+        Save status of sites.
         """
 
         if config.read_only:
@@ -236,7 +236,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_sites(run_number, inventory)
+            self._do_save_sites(run_number, sites)
         finally:
             self.release_lock()
 
@@ -266,7 +266,7 @@ class TransactionHistoryInterface(object):
 
         return sites_info
 
-    def save_datasets(self, run_number, inventory):
+    def save_datasets(self, run_number, datasets):
         """
         Save datasets that are in the inventory but not in the history records.
         """
@@ -277,7 +277,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_datasets(run_number, inventory)
+            self._do_save_datasets(run_number, datasets)
         finally:
             self.release_lock()
 
