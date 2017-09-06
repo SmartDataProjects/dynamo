@@ -52,7 +52,7 @@ mysqlhistory = Configuration(
         'config_group': 'mysql-dynamo',
         'db': 'dynamohistory_cache'
     },
-    snapshot_db_path = '/local/dynamo/replica_snapshots'
+    snapshot_db_path = os.environ['DYNAMO_DATADIR'] + '/replica_snapshots'
 )
 
 webservice = Configuration(
@@ -136,7 +136,7 @@ tape_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']
 disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
 
 inventory = Configuration(
-    included_sites = disk_sites,
+    included_sites = tape_sites + disk_sites,
     excluded_sites = [
         'T1_US_FNAL_New_Disk', # not a valid site
         'T2_CH_CERNBOX', # not a valid site
