@@ -4,6 +4,7 @@ Generic MySQL interface (for an interface).
 
 import MySQLdb
 import MySQLdb.converters
+import MySQLdb.cursors
 import sys
 import logging
 import time
@@ -101,6 +102,70 @@ class MySQL(object):
 
         else:
             return list(result)
+
+    def xquery(self, sql, *args):
+        """
+        Execute an SQL query. If the query is an INSERT, return the inserted row id (0 if no insertion happened).
+        If the query is a SELECT, return an iterator of:
+         - tuples if multiple columns are called
+         - values if one column is called
+        """
+
+        cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
+
+        if logger.getEffectiveLevel() == logging.DEBUG:
+            if len(args) == 0:
+                logger.debug(sql)
+            else:
+                logger.debug(sql + ' % ' + str(args))
+
+        try:
+            for attempt in range(10):
+                try:
+                    cursor.execute(sql, args)
+                    break
+                except MySQLdb.OperationalError:
+                    logger.error(str(sys.exc_info()[1]))
+                    last_except = sys.exc_info()[1]
+                    # reconnect to server
+                    cursor.close()
+                    self._connection = MySQLdb.connect(**self._connection_parameters)
+                    cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
+    
+            else: # 10 failures
+                logger.error('Too many OperationalErrors. Last exception:')
+                raise last_except
+
+        except:
+            logger.error('There was an error executing the following statement:')
+            logger.error(sql[:10000])
+            logger.error(sys.exc_info()[1])
+            raise
+
+        if cursor.description is None:
+            if cursor.lastrowid != 0:
+                # insert query
+                return cursor.lastrowid
+            else:
+                return cursor.rowcount
+
+        row = cursor.fetchone()
+        if row is None:
+            cursor.close()
+            return # having yield statements below makes this a 0-element iterator
+
+        single_column = (len(row) == 1)
+
+        while row:
+            if single_column:
+                yield row[0]
+            else:
+                yield row
+
+            row = cursor.fetchone()
+
+        cursor.close()
+        return
 
     def execute_many(self, sqlbase, key, pool, additional_conditions = [], exec_on_match = True, order_by = ''):
         result = []
