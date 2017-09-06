@@ -236,6 +236,7 @@ class MySQLStore(LocalStoreInterface):
         if load_blocks or load_files or load_replicas:
             # Load blocks
             logger.info('Loading blocks.')
+            start = time.time()
     
             self._make_dataset_map(dataset_list, id_dataset_map = id_dataset_map)
     
@@ -257,13 +258,9 @@ class MySQLStore(LocalStoreInterface):
     
             num_blocks = 0
     
-            start = time.time()
-            results = self._mysql.xquery(query)
-            logger.info('Query took %.1f seconds.', time.time() - start)
-    
             _dataset_id = 0
             dataset = None
-            for block_id, dataset_id, name, size, num_files, is_open in results:
+            for block_id, dataset_id, name, size, num_files, is_open in self._mysql.xquery(query):
                 if dataset_id != _dataset_id:
                     try:
                         dataset = id_dataset_map[dataset_id]

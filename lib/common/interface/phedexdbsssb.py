@@ -103,7 +103,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         for replica in replicas:
             replicas_by_site[replica.site].append(replica)
 
-        for site, replica_list in replicas_by_site.items():
+        for site, replica_list in replicas_by_site.iteritems():
             subscription_chunk = []
             chunk_size = 0
             for replica in replica_list:
@@ -266,7 +266,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             logger.warning('Deletion from MSS cannot be done in daemon mode.')
             return {}
 
-        for site, replica_list in replicas_by_site.items():
+        for site, replica_list in replicas_by_site.iteritems():
             # execute the deletions in two steps: one for dataset-level and one for block-level
             deletion_lists = {'dataset': [], 'block': []}
 
@@ -433,7 +433,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 sites[entry['name']] = site
         
     def set_site_status(self, sites): #override (SiteInfoSourceInterface)
-        for site in sites.values():
+        for site in sites.itervalues():
             site.status = Site.STAT_READY
 
         # get list of sites in waiting room (153) and morgue (199)
@@ -530,8 +530,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             'new_blocks': 0
         }
 
-        all_sites = [site for name, site in inventory.sites.items() if fnmatch.fnmatch(name, site_filt)]
-        all_groups = [group for name, group in inventory.groups.items() if fnmatch.fnmatch(name, group_filt)]
+        all_sites = [site for name, site in inventory.sites.iteritems() if fnmatch.fnmatch(name, site_filt)]
+        all_groups = [group for name, group in inventory.groups.iteritems() if fnmatch.fnmatch(name, group_filt)]
 
         if dataset_filt == '*':
             # PhEDEx only accepts form /*/*/*
@@ -573,9 +573,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
             logger.info('Checking dataset status changes.')
 
             if dataset_filt == '/*/*/*':    
-                invalid_or_deprecated_or_deleted = set(d for d in inventory.datasets.values() if d.status in (Dataset.STAT_INVALID, Dataset.STAT_DEPRECATED, Dataset.STAT_DELETED))
+                invalid_or_deprecated_or_deleted = set(d for d in inventory.datasets.itervalues() if d.status in (Dataset.STAT_INVALID, Dataset.STAT_DEPRECATED, Dataset.STAT_DELETED))
             else:
-                invalid_or_deprecated_or_deleted = set(d for d in inventory.datasets.values() if d.status in (Dataset.STAT_INVALID, Dataset.STAT_DEPRECATED, Dataset.STAT_DELETED) and fnmatch.fnmatch(d.name, dataset_filt))
+                invalid_or_deprecated_or_deleted = set(d for d in inventory.datasets.itervalues() if d.status in (Dataset.STAT_INVALID, Dataset.STAT_DEPRECATED, Dataset.STAT_DELETED) and fnmatch.fnmatch(d.name, dataset_filt))
 
             def confirm_status(status, status_bit):
                 options = ['dataset_access_type=' + status]
@@ -608,7 +608,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
         logger.info('Checking for updated datasets.')
 
-        for dataset in inventory.datasets.values():
+        for dataset in inventory.datasets.itervalues():
             if dataset.status != Dataset.STAT_VALID:
                 # dataset is already marked for further inspection or ignored
                 continue
@@ -994,9 +994,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         site=T*MSS -> tape
         """
 
-        all_sites = inventory.sites.values()
-        all_groups = inventory.groups.values()
- 
         # Routine to fetch data and fill the list of blocks on tape
         def inquire_phedex(dataset_list):
             options = [('create_since', 0), ('node', 'T*_MSS')]
@@ -1066,7 +1063,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 blocks_at_sites[bl_subscription['node']].add(block_name)
 
                     # if there is at least one tape site with a full list of block replicas, set on_tape to TAPE_FULL and be done
-                    for names in blocks_at_sites.values():
+                    for names in blocks_at_sites.itervalues():
                         if names == block_names:
                             dataset.on_tape = Dataset.TAPE_FULL
                             break
@@ -1077,7 +1074,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         dataset_chunks = [[]]
 
         # Loop over datasets not on tape
-        for dataset in inventory.datasets.values():
+        for dataset in inventory.datasets.itervalues():
            # on_tape is TAPE_NONE by default
            if dataset.on_tape == Dataset.TAPE_FULL:
                continue
@@ -1513,7 +1510,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         else:
             xml = '<data version="2.0"><dbs name="%s">' % config.dbs.url_base
 
-        for dataset, blocks in file_catalogs.items():
+        for dataset, blocks in file_catalogs.iteritems():
             if human_readable:
                 xml += '  '
 
@@ -1656,7 +1653,7 @@ if __name__ == '__main__':
             dataset = Dataset(dname)
             replicas.append(DatasetReplica(dataset, site))
 
-        for dname, bnames in blocks.items():
+        for dname, bnames in blocks.iteritems():
             dataset = Dataset(dname)
             dataset_replica = DatasetReplica(dataset, site)
             replicas.append(dataset_replica)
