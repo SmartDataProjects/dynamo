@@ -227,11 +227,16 @@ class MySQL(object):
          table: table name.
          fields: name of columns.
          mapping: typically a lambda that takes an element in the objects list and return a tuple corresponding to a row to insert.
-         objects: list of objects to insert.
+         objects: list or iterator of objects to insert.
         """
 
-        if len(objects) == 0:
-            return
+        if type(objects) is list:
+            if len(objects) == 0:
+                return
+
+            itr = iter(objects)
+        else:
+            itr = objects
 
         sqlbase = 'INSERT INTO `{table}` ({fields}) VALUES %s'.format(table = table, fields = ','.join(['`%s`' % f for f in fields]))
         if do_update:
@@ -240,21 +245,30 @@ class MySQL(object):
         template = '(' + ','.join(['%s'] * len(fields)) + ')'
         # template = (%s, %s, ...)
 
-        values = ''
-        for obj in objects:
-            if mapping is None:
-                values += template % MySQLdb.escape(obj, MySQLdb.converters.conversions)
-            else:
-                values += template % MySQLdb.escape(mapping(obj), MySQLdb.converters.conversions)
-            
-            # MySQL allows queries up to 1M characters
-            if len(values) > config.mysql.max_query_len or obj == objects[-1]:
-                self.query(sqlbase % values)
+        while True:
+            values = ''
 
-                values = ''
+            while True:
+                try:
+                    obj = itr.next()
+                except StopIteration:
+                    break
 
-            else:
+                if mapping is None:
+                    values += template % MySQLdb.escape(obj, MySQLdb.converters.conversions)
+                else:
+                    values += template % MySQLdb.escape(mapping(obj), MySQLdb.converters.conversions)
+    
+                # MySQL allows queries up to 1M characters
+                if len(values) > config.mysql.max_query_len:
+                    break
+
                 values += ','
+
+            if values == '':
+                break
+
+            self.query(sqlbase % values)
 
     def make_snapshot(self, tag):
         snapshot_db = self.db_name() + '_' + tag
