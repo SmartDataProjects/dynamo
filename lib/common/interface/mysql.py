@@ -335,34 +335,48 @@ class MySQL(object):
 
                 self._execute_in_batches(nested_execute, pool[3])
 
+            return
+
+        elif type(pool) is str:
+            execute(pool)
+
+            return
+
         elif type(pool) is list:
             if len(pool) == 0:
                 return
 
-            # need to repeat in case pool is a long list
-            iP = 0
-            while iP < len(pool):
-                pool_expr = '('
+            itr = iter(pool)
 
-                query_len = len(pool_expr)
-                items = []
-                while query_len < config.mysql.max_query_len and iP < len(pool):
-                    if type(pool[iP]) is str:
-                        item = "'%s'" % pool[iP]
-                    else:
-                        item = str(pool[iP])
+        elif hasattr(pool, 'next'):
+            itr = pool
 
-                    query_len += len(item)
-                    items.append(item)
-                    iP += 1
+        # need to repeat in case pool is a long list
+        while True:
+            pool_expr = ''
 
-                pool_expr += ','.join(items)
-                pool_expr += ')'
-    
-                execute(pool_expr)
+            # prepend a '(' instead of ',' for the first item
+            delim = '('
+            while len(pool_expr) < config.mysql.max_query_len:
+                try:
+                    itm = itr.next()
+                except StopIteration:
+                    break
 
-        elif type(pool) is str:
-            execute(pool)
+                if type(itm) is str:
+                    item = "'%s'" % itm
+                else:
+                    item = str(itm)
+
+                pool_expr += delim + item
+                delim = ','
+
+            if pool_expr == '':
+                break
+
+            pool_expr += ')'
+
+            execute(pool_expr)
 
     def table_exists(self, table):
         return len(self.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s LIMIT 1', self.db_name(), table)) != 0
