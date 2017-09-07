@@ -22,4 +22,6 @@ foreach ($mycnf as $line) {
   }
 }
 
+$snapshot_db_path = '/local/dynamo/replica_snapshots';
+
 ?>

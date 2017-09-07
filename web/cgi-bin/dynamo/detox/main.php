@@ -5,7 +5,10 @@ include(__DIR__ . '/check_cache.php');
 
 date_default_timezone_set('America/New_York');
 
-$history_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamohistory');
+$history_db_name = 'dynamohistory';
+$cache_db_name = $history_db_name . '_cache';
+
+$history_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $history_db_name);
 
 $operation = 'deletion';
 
@@ -15,7 +18,7 @@ if (isset($TESTMODE) && $TESTMODE)
 if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getPartitions') {
   $data = array();
   
-  $stmt = $history_db->prepare('SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `runs` INNER JOIN `partitions` ON `partitions`.`id` = `runs`.`partition_id` WHERE `runs`.`operation` LIKE ? ORDER BY `partitions`.`id`');
+  $stmt = $history_db->prepare('SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `runs` INNER JOIN `partitions` ON `partitions`.`id` = `runs`.`partition_id` WHERE `runs`.`operation` = ? ORDER BY `partitions`.`id`');
   $stmt->bind_param('s', $operation);
   $stmt->bind_result($id, $name);
   $stmt->execute();
@@ -58,7 +61,7 @@ $partition_id = 0;
 
 if (isset($_REQUEST['cycleNumber'])) {
   $cycle = 0 + $_REQUEST['cycleNumber'];
-  $stmt = $history_db->prepare('SELECT `partition_id`, `policy_version`, `comment`, `time_start` FROM `runs` WHERE `id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ?');
+  $stmt = $history_db->prepare('SELECT `partition_id`, `policy_version`, `comment`, `time_start` FROM `runs` WHERE `id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ?');
   $stmt->bind_param('is', $cycle, $operation);
   $stmt->bind_result($partition_id, $policy_version, $comment, $timestamp);
   $stmt->execute();
@@ -67,7 +70,7 @@ if (isset($_REQUEST['cycleNumber'])) {
   $stmt->close();
 }
 else if (isset($_REQUEST['partition'])) {
-  $stmt = $history_db->prepare('SELECT `id` FROM `partitions` WHERE `name` LIKE ?');
+  $stmt = $history_db->prepare('SELECT `id` FROM `partitions` WHERE `name` = ?');
   $stmt->bind_param('s', $_REQUEST['partition']);
   $stmt->bind_result($partition_id);
   $stmt->execute();
@@ -82,7 +85,7 @@ if ($cycle == 0) {
   if ($partition_id == 0)
     $partition_id = 10;
 
-  $stmt = $history_db->prepare('SELECT `id`, `policy_version`, `comment`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` DESC LIMIT 1');
+  $stmt = $history_db->prepare('SELECT `id`, `policy_version`, `comment`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ? ORDER BY `id` DESC LIMIT 1');
   $stmt->bind_param('is', $partition_id, $operation);
   $stmt->bind_result($cycle, $policy_version, $comment, $timestamp);
   $stmt->execute();
@@ -95,19 +98,22 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'checkUpdate') {
   exit(0);
 }
 
-check_cache($history_db, $cycle, $partition_id);
+if (!check_cache($history_db, $cycle, $partition_id, $snapshot_db_path)) {
+  // we should emit some error here
+  exit(1);
+}
+
+$cache_table_name = sprintf('`%s`.`replicas_%d`', $cache_db_name, $cycle);
 
 if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
   // return
   // {"results": [{"siteData": [{"name": site, "datasets": [datasets]}]}], "conditions": [conditions]}
 
-  $query = 'SELECT s.`name`, d.`name`, r.`size` * 1.e-9, l.`decision`, l.`matched_condition`';
-  $query .= ' FROM `replica_snapshot_cache` AS c';
-  $query .= ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`';
-  $query .= ' INNER JOIN `deletion_decisions` AS l ON l.`id` = c.`decision_id`';
+  $query = 'SELECT s.`name`, d.`name`, c.`size` * 1.e-9, c.`decision`, c.`condition`';
+  $query .= ' FROM ' . $cache_table_name . ' AS c';
   $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
   $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
-  $query .= ' WHERE c.`run_id` = ? AND d.`name` LIKE ?';
+  $query .= ' WHERE d.`name` LIKE ?';
 
   $results_data = array();
 
@@ -118,7 +124,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
       $dataset_pattern = str_replace('?', '_', $dataset_pattern);
  
       $stmt = $history_db->prepare($query);
-      $stmt->bind_param('is', $cycle, $dataset_pattern);
+      $stmt->bind_param('s', $dataset_pattern);
       $stmt->bind_result($site_name, $dataset_name, $size, $decision, $condition_id);
       $stmt->execute();
   
@@ -137,9 +143,9 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
   
       $json_texts = array();
       foreach ($json_data as $site_name => $datasets)
-        $json_texts[] = sprintf('{"name": "%s", "datasets": [%s]}', $site_name, implode(',', $datasets));
+        $json_texts[] = sprintf('{"name":"%s","datasets":[%s]}', $site_name, implode(',', $datasets));
   
-      $results_data[] = '{"pattern": "' . $pattern . '", "siteData": [' . implode(',', $json_texts) . ']}';
+      $results_data[] = '{"pattern":"' . $pattern . '","siteData":[' . implode(',', $json_texts) . ']}';
     }
   }
  
@@ -164,13 +170,12 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
 else if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'dumpDeletions') {
   $list = '';
 
-  $query = 'SELECT s.`name`, d.`name`, z.`size` * 1.e-9 FROM `deleted_replicas` AS r';
+  $query = 'SELECT s.`name`, d.`name`, c.`size` * 1.e-9 FROM `deleted_replicas` AS r';
   $query .= ' INNER JOIN `deletion_requests` AS q ON q.`id` = r.`deletion_id`';
   $query .= ' INNER JOIN `sites` AS s ON s.`id` = q.`site_id`';
   $query .= ' INNER JOIN `datasets` AS d ON d.`id` = r.`dataset_id`';
-  $query .= ' INNER JOIN `replica_snapshot_cache` AS c ON (c.`run_id`, c.`site_id`, c.`dataset_id`) = (q.`run_id`, q.`site_id`, r.`dataset_id`)';
-  $query .= ' INNER JOIN `replica_size_snapshots` AS z ON z.`id` = c.`size_snapshot_id`';
-  $query .= ' WHERE q.`run_id` = ?';
+  $query .= ' INNER JOIN ' . $cache_table_name . ' AS c ON (c.`site_id`, c.`dataset_id`) = (q.`site_id`, r.`dataset_id`)';
+  $query .= ' WHERE q.`run_id` = ? AND c.`decision` = \'delete\'';
   $query .= ' ORDER BY s.`name`, d.`name`';
 
   $stmt = $history_db->prepare($query);
@@ -189,7 +194,7 @@ else if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'dumpDeletions')
   exit(0);
 }
 
-$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` > ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` ASC LIMIT 1');
+$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` > ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ? ORDER BY `id` ASC LIMIT 1');
 $stmt->bind_param('iis', $cycle, $partition_id, $operation);
 $stmt->bind_result($next_cycle);
 $stmt->execute();
@@ -197,7 +202,7 @@ if (!$stmt->fetch())
   $next_cycle = 0;
 $stmt->close();
 
-$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` < ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` LIKE ? ORDER BY `id` DESC LIMIT 1');
+$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` < ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ? ORDER BY `id` DESC LIMIT 1');
 $stmt->bind_param('iis', $cycle, $partition_id, $operation);
 $stmt->bind_result($prev_cycle);
 $stmt->execute();
@@ -224,7 +229,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     $ts = strptime($timestamp, '%Y-%m-%d %H:%M:%S');
     // converting a local time tuple to unix time
     $unixtime = mktime($ts['tm_hour'], $ts['tm_min'], $ts['tm_sec'], 1 + $ts['tm_mon'], $ts['tm_mday'], 1900 + $ts['tm_year']);
-    $data['timestampWarning'] = ($unixtime < mktime() - 3600 * 18); // warn if timestamp is more than 18 hours in the past
+    $data['timestampWarning'] = ($unixtime < mktime() - 3600 * 1); // warn if timestamp is more than 18 hours in the past
   }
   else
     $data['timestampWarning'] = false;
@@ -290,15 +295,11 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
 
     $site_total['protect'][0] = $site_total['keep'][0] = $site_total['delete'][0] = $site_total['protectPrev'][0] = $site_total['keepPrev'][0] = 0.;
 
-    $query = 'SELECT c.`site_id`, l.`decision`, SUM(r.`size`) * 1.e-12';
-    $query .= ' FROM `replica_snapshot_cache` AS c';
-    $query .= ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`';
-    $query .= ' INNER JOIN `deletion_decisions` AS l ON l.`id` = c.`decision_id`';
-    $query .= ' WHERE c.`run_id` = ?';
-    $query .= ' GROUP BY c.`site_id`, l.`decision`';
+    $query = 'SELECT `site_id`, `decision`, SUM(`size`) * 1.e-12';
+    $query .= ' FROM ' . $cache_table_name . '';
+    $query .= ' GROUP BY `site_id`, `decision`';
 
     $stmt = $history_db->prepare($query);
-    $stmt->bind_param('i', $cycle);
     $stmt->bind_result($site_id, $decision, $size);
     $stmt->execute();
     while ($stmt->fetch()) {
@@ -307,17 +308,19 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     }
     $stmt->close();
 
-    check_cache($history_db, $prev_cycle, $partition_id);
+    if (!check_cache($history_db, $prev_cycle, $partition_id, $snapshot_db_path)) {
+      // emit some error
+      exit(1);
+    }
 
-    $query = 'SELECT c.`site_id`, CONCAT(l.`decision`, \'Prev\'), SUM(r.`size`) * 1.e-12';
-    $query .= ' FROM `replica_snapshot_cache` AS c';
-    $query .= ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`';
-    $query .= ' INNER JOIN `deletion_decisions` AS l ON l.`id` = c.`decision_id`';
-    $query .= ' WHERE c.`run_id` = ? AND l.`decision` != \'delete\'';
-    $query .= ' GROUP BY c.`site_id`, l.`decision`';
+    $prev_cache_table_name = sprintf('`%s`.`replicas_%d`', $cache_db_name, $prev_cycle);
+
+    $query = 'SELECT `site_id`, CONCAT(`decision`, \'Prev\'), SUM(`size`) * 1.e-12';
+    $query .= ' FROM ' . $prev_cache_table_name . '';
+    $query .= ' WHERE `decision` != \'delete\'';
+    $query .= ' GROUP BY `site_id`, `decision`';
 
     $stmt = $history_db->prepare($query);
-    $stmt->bind_param('i', $prev_cycle);
     $stmt->bind_result($site_id, $decision, $size);
     $stmt->execute();
     while ($stmt->fetch()) {
@@ -358,28 +361,29 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     $data['content'] = array('name' => $site_name, 'datasets' => array());
     $datasets = &$data['content']['datasets'];
 
-    $query = 'SELECT d.`name`, r.`size` * 1.e-9, l.`decision`, l.`matched_condition`';
-    $query .= ' FROM `replica_snapshot_cache` AS c';
-    $query .= ' INNER JOIN `replica_size_snapshots` AS r ON r.`id` = c.`size_snapshot_id`';
-    $query .= ' INNER JOIN `deletion_decisions` AS l ON l.`id` = c.`decision_id`';
+    $query = 'SELECT d.`name`, c.`size` * 1.e-9, c.`decision`, c.`condition`';
+    $query .= ' FROM ' . $cache_table_name . ' AS c';
     $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
     $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
-    $query .= ' WHERE c.`run_id` = ? AND s.`name` LIKE ?';
-    $query .= ' ORDER BY r.`size` DESC';
+    $query .= ' WHERE s.`name` = ?';
+    $query .= ' ORDER BY c.`size` DESC';
 
     $conditions = array();
 
     $stmt = $history_db->prepare($query);
-    $stmt->bind_param('is', $cycle, $site_name);
+    $stmt->bind_param('s', $site_name);
     $stmt->bind_result($name, $size, $decision, $condition_id);
     $stmt->execute();
     while ($stmt->fetch()) {
+      // there will be duplicate dataset entries when block-level actions are taken - just have multiple entries in the table, no big deal
       $datasets[] = array('name' => $name, 'size' => $size, 'decision' => $decision, 'conditionId' => $condition_id);
       $condition_ids[] = $condition_id;
     }
     $stmt->close();
 
     $data['conditions'] = array();
+
+    error_log(print_r($condition_ids, true));
 
     $condition_ids = array_unique($condition_ids);
 
