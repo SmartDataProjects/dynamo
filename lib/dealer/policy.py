@@ -12,7 +12,7 @@ random.seed(time.time())
 
 def target_site_def(site):
     matches = False
-    for pattern in dealer_config.target_sites:
+    for pattern in dealer_config.main.target_sites:
         if pattern.startswith('!'):
             if fnmatch.fnmatch(site.name, pattern[1:]):
                 matches = False

@@ -3,16 +3,7 @@ import socket
 import re
 import time
 import logging
-from common.dataformat import Site
-
-class Configuration(object):
-    def __init__(self, **kwd):
-        for key, value in kwd.items():
-            setattr(self, key, value)
-
-    def isset(self, name):
-        return hasattr(self, name)
-
+from common.dataformat import Configuration, Site
 
 logging.basicConfig(level = logging.INFO)
 
@@ -57,7 +48,7 @@ mysqlhistory = Configuration(
 
 webservice = Configuration(
     x509_key = os.environ['X509_USER_PROXY'],
-    cookie_file = os.environ['DYNAMO_DATADIR'] + '/cookies.txt',
+    cookie_file = os.environ['DYNAMO_SPOOL'] + '/cookies.txt',
     num_attempts = 20,
     cache_db_params = {
         'config_file': '/etc/my.cnf',

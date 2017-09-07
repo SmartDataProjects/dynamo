@@ -74,14 +74,14 @@ else
 fi
 
 # Check database backups
-BACKUP=$(/bin/find _DYNAMO_BACKUP_PATH_ -name dynamo_*.sql.gz -mtime -1)
+BACKUP=$(/bin/find _DYNAMO_DATADIR_ -name dynamo_*.sql.gz -mtime -1)
 if ! [ $BACKUP ]
 then
   append_info "inventory DB backup younger than 24 hours does not exist"
   RETURN_STATUS=$STATUS_CRITICAL
 fi
 
-BACKUP=$(/bin/find _DYNAMO_BACKUP_PATH_ -name dynamohistory_*.sql.gz -mtime -1)
+BACKUP=$(/bin/find _DYNAMO_DATADIR_ -name dynamohistory_*.sql.gz -mtime -1)
 if ! [ $BACKUP ]
 then
   append_info "history DB backup younger than 24 hours does not exist"

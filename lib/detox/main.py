@@ -45,13 +45,13 @@ class Detox(object):
 #        if not config.read_only and not is_test:
 #            # write a file indicating detox activity
 #            while True:
-#                if os.path.exists(detox_config.activity_indicator):
+#                if os.path.exists(detox_config.main.activity_indicator):
 #                    logger.info('Detox activity indicator exists. Waiting for 60 seconds.')
 #                    time.sleep(60)
 #                else:
 #                    break
 #
-#            with open(detox_config.activity_indicator, 'w') as indicator:
+#            with open(detox_config.main.activity_indicator, 'w') as indicator:
 #                indicator.write('Detox started: ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
 
         # Execute the policy within a try block to avoid dead locks
@@ -72,8 +72,8 @@ class Detox(object):
 
         finally:
             pass
-#            if not config.read_only and not is_test and os.path.exists(detox_config.activity_indicator):
-#                os.remove(detox_config.activity_indicator)
+#            if not config.read_only and not is_test and os.path.exists(detox_config.main.activity_indicator):
+#                os.remove(detox_config.main.activity_indicator)
 #        Activity lock file is now written by dynamod
 
         logger.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
@@ -340,7 +340,7 @@ class Detox(object):
     
                     if not policy.static_optimization and quota > 0.:
                         deleted_volume += size
-                        if deleted_volume / quota > detox_config.deletion_per_iteration:
+                        if deleted_volume / quota > detox_config.main.deletion_per_iteration:
                             break
 
             if policy.static_optimization:
@@ -448,7 +448,7 @@ class Detox(object):
 
             deletion_mapping = {} #{deletion_id: (approved, [replicas])}
 
-            chunk_size = detox_config.deletion_volume_per_request * 1.e+12
+            chunk_size = detox_config.main.deletion_volume_per_request * 1.e+12
 
             while len(site_deletion_list) != 0:
                 # stack up replicas up to 110% of volume_per_request

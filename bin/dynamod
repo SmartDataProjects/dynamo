@@ -85,7 +85,7 @@ do
     if [ $(($IHOUR%$INVENTORY_UPDATE_INTERVAL)) -eq 0 ]
     then
       echo "Updating the inventory."
-      $DYNAMO_BASE/bin/execlib common/inventory.py update --no-snapshot
+      $DYNAMO_BASE/bin/execlib common/inventory.py update
     fi
 
     IHOUR=$(($IHOUR+1))
@@ -100,7 +100,7 @@ do
       if [[ $APPLICATIONS =~ detox ]] && ! [ "$TEST" ]
       then
         echo "Loading web-based replica locks to registry."
-        touch /home/cmsprod/public_html/IntelROCCS/Detox/inActionLock.txt
+        touch $($DYNAMO_BASE/bin/readconf --module detox 'main.activity_indicator')
       fi
   
       echo "Starting the main program."
@@ -114,7 +114,7 @@ do
 
       if [[ $APPLICATIONS =~ detox ]] && ! [ "$TEST" ]
       then
-        rm /home/cmsprod/public_html/IntelROCCS/Detox/inActionLock.txt
+        rm $($DYNAMO_BASE/bin/readconf --module detox 'main.activity_indicator')
       fi
   
       if [ $RC -ne 0 ] && [ $RC -ne 130 ]

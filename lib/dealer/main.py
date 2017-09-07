@@ -46,7 +46,7 @@ class Dealer(object):
             if quotas[site] > 0. and \
                     site.status == Site.STAT_READY and \
                     policy.target_site_def(site) and \
-                    site.storage_occupancy(policy.partition, physical = False) < dealer_config.target_site_occupancy:
+                    site.storage_occupancy(policy.partition, physical = False) < dealer_config.main.target_site_occupancy:
 
                 target_sites.add(site)
 
@@ -172,7 +172,7 @@ class Dealer(object):
                     logger.warning('Cannot copy %s to %s.', item_name, destination.name)
                     continue
 
-                if dealer_config.skip_existing and find_replica_at(destination) is not None:
+                if dealer_config.main.skip_existing and find_replica_at(destination) is not None:
                     logger.info('%s is already at %s', item_name, destination.name)
                     continue
 
@@ -186,18 +186,18 @@ class Dealer(object):
             pending_volumes[destination] += item_size
             site_occupancy[destination] += item_size / quotas[destination]
 
-            if site_occupancy[destination] > dealer_config.target_site_occupancy or \
-                    pending_volumes[destination] > dealer_config.max_copy_per_site:
+            if site_occupancy[destination] > dealer_config.main.target_site_occupancy or \
+                    pending_volumes[destination] > dealer_config.main.max_copy_per_site:
                 logger.info('Site %s projected occupancy exceeded the limit.', destination.name)
                 # this site should get no more copies
                 site_occupancy.pop(destination)
 
             # check if we should stop copying
-            if min(pending_volumes.itervalues()) > dealer_config.max_copy_per_site:
+            if min(pending_volumes.itervalues()) > dealer_config.main.max_copy_per_site:
                 logger.warning('All sites have exceeded copy volume target. No more copies will be made.')
                 break
 
-            if sum(pending_volumes.itervalues()) > dealer_config.max_copy_total:
+            if sum(pending_volumes.itervalues()) > dealer_config.main.max_copy_total:
                 logger.warning('Total copy volume has exceeded the limit. No more copies will be made.')
                 break
 

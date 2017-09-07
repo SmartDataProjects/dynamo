@@ -60,7 +60,7 @@ class BalancingHandler(BaseHandler):
             last_copies[site] = []
 
             for ds_name, size, reason in protections:
-                if size * 1.e-12 > config.max_dataset_size:
+                if size * 1.e-12 > config.main.max_dataset_size:
                     # protections is ordered
                     break
 
@@ -73,7 +73,7 @@ class BalancingHandler(BaseHandler):
                     # this replica has disappeared since then
                     continue
 
-                for target_reason, num_rep in config.balancer_target_reasons:
+                for target_reason, num_rep in config.balancer.target_reasons:
                     if reason != target_reason:
                         continue
 
@@ -95,7 +95,7 @@ class BalancingHandler(BaseHandler):
         variation = 1.
         # The actual cutoff will be imposed by Dealer later
         # This cutoff is just to not make copy proposals that are never fulfilled
-        while len(protected_fractions) != 0 and total_size < config.max_copy_total:
+        while len(protected_fractions) != 0 and total_size < config.main.max_copy_total:
             maxsite, maxfrac = max(protected_fractions.items(), key = lambda x: x[1])
             minsite, minfrac = min(protected_fractions.items(), key = lambda x: x[1])
 

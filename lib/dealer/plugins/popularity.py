@@ -38,7 +38,7 @@ class PopularityHandler(BaseHandler):
             if request_weight <= 0.:
                 continue
 
-            if dataset.size * 1.e-12 > dealer_config.max_dataset_size:
+            if dataset.size * 1.e-12 > dealer_config.main.max_dataset_size:
                 continue
 
             if len(dataset.replicas) == 0 and dataset.on_tape == Dataset.TAPE_NONE:
@@ -46,7 +46,7 @@ class PopularityHandler(BaseHandler):
 
             self._datasets.append(dataset)
 
-            num_requests = min(dealer_config.max_replicas, int(math.ceil(request_weight / dealer_config.request_to_replica_threshold))) - len(dataset.replicas)
+            num_requests = min(dealer_config.popularity.max_replicas, int(math.ceil(request_weight / dealer_config.popularity.request_to_replica_threshold))) - len(dataset.replicas)
             if num_requests <= 0:
                 continue
 

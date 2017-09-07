@@ -503,8 +503,8 @@ class MySQLHistory(TransactionHistoryInterface):
 
     def _fill_snapshot_cache(self, run_number):
         table_name = 'replicas_%d' % run_number
-        sql = 'SELECT COUNT(*) FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = \'dynamohistory_cache\' AND `TABLE_NAME` = %s'
-        if self._mysql.query(sql, table_name)[0] == 0:
+        sql = 'SELECT COUNT(*) FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = %s AND `TABLE_NAME` = %s'
+        if self._mysql.query(sql, self._cache_db.db_name(), table_name)[0] == 0:
             # cache table does not exist; fill from sqlite
 
             db_file_name = '%s/%s.db' % (config.mysqlhistory.snapshot_db_path, table_name)
@@ -521,7 +521,9 @@ class MySQLHistory(TransactionHistoryInterface):
             snapshot_cursor = snapshot_db.cursor()
 
             def make_snapshot_reader():
-                snapshot_cursor.execute('SELECT `site_id`, `dataset_id`, `size`, `decision_id`, `condition` FROM `replicas`')
+                sql = 'SELECT r.`site_id`, r.`dataset_id`, r.`size`, d.`value`, r.`condition` FROM `replicas` AS r'
+                sql += ' INNER JOIN `decisions` AS d ON d.`id` = r.`decision_id`'
+                snapshot_cursor.execute(sql)
                 
                 while True:
                     row = snapshot_cursor.fetchone()
@@ -539,7 +541,7 @@ class MySQLHistory(TransactionHistoryInterface):
             snapshot_cursor.close()
             snapshot_db.close()
 
-            self._mysql.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
+        self._mysql.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
 
         sql = 'SELECT `run_id` FROM (SELECT `run_id`, MAX(`timestamp`) AS m FROM `replica_snapshot_cache_usage` GROUP BY `run_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
         old_runs = self._mysql.xquery(sql)
