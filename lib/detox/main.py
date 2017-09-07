@@ -134,7 +134,8 @@ class Detox(object):
         def apply_protect(replica, condition):
             all_replicas.remove(replica)
 
-            protected[replica] = condition
+            # we have a dataset-level protection
+            # revert whatever we have done at block level
 
             if replica in deleted: # if the replica had matched DeleteBlock
                 block_replicas, condition = deleted.pop(replica)
@@ -142,6 +143,12 @@ class Detox(object):
                 replica.block_replicas.extend(block_replicas)
                 for block_replica in block_replicas:
                     dataset_replica.site.add_block_replica(block_replica)
+
+            if replica in protected:
+                block_replicas, condition = protected.pop(replica)
+                replica.block_replicas.extend(block_replicas)
+
+            protected[replica] = condition
 
             return replica.size()
 
@@ -169,7 +176,7 @@ class Detox(object):
                     kept[replica] = condition
                     return 0
 
-        def apply_deleteowner(replica, condition):
+        def apply_deleteowner(replica, groups, condition):
             # This is a rather specific operation. The assumptions are that
             #  . owner groups that are targeted have block-level ownership (e.g. DataOps)
             #  . there may be a block that is owned by a group that has dataset-level ownership (e.g. AnalysisOps)
@@ -181,7 +188,7 @@ class Detox(object):
                     # there is a dataset-level owner
                     dr_owner = block_replica.group
 
-                if block_replica.group in decision.groups:
+                if block_replica.group in groups:
                     matching_brs.append(block_replica)
 
             if len(matching_brs) != 0:
@@ -203,36 +210,36 @@ class Detox(object):
 
         def apply_protectblock(replica, block_replicas, condition):
             for block_replica in block_replicas:
-                dataset_replica.block_replicas.remove(block_replica)
+                replica.block_replicas.remove(block_replica)
 
-            protected[dataset_replica] = (block_replicas, condition)
+            protected[replica] = (block_replicas, condition)
 
-            if len(dataset_replica.block_replicas) == 0:
+            if len(replica.block_replicas) == 0:
                 # take this out of policy evaluation for the next round
-                all_replicas.remove(dataset_replica)
+                all_replicas.remove(replica)
 
             return sum(br.size for br in block_replicas)
 
         def apply_deleteblock(replica, block_replicas, condititon):
-            site = dataset_replica.site
+            site = replica.site
             do_delete = (site in delete_target_sites)
 
             for block_replica in block_replicas:
-                dataset_replica.block_replicas.remove(block_replica)
+                replica.block_replicas.remove(block_replica)
                 if do_delete:
                     site.remove_block_replica(block_replica)
 
-            empty = (len(dataset_replica.block_replicas) == 0)
+            empty = (len(replica.block_replicas) == 0)
 
             if empty:
                 # take this out of policy evaluation for the next round
-                all_replicas.remove(dataset_replica)
+                all_replicas.remove(replica)
            
             if do_delete:
                 if empty:
-                    self.inventory_manager.unlink_datasetreplica(dataset_replica)
+                    self.inventory_manager.unlink_datasetreplica(replica)
 
-                deleted[dataset_replica] = (block_replicas, condition)
+                deleted[replica] = (block_replicas, condition)
                 return sum(br.size for br in block_replicas)
             else:
                 return 0
@@ -256,38 +263,31 @@ class Detox(object):
             iter_keep = {}
 
             # sort the evaluation results into protected, deleted, owner-deleted, and deletion_candidates
-            # replica is a DatasetReplica object for dataset-level decisions, and a tuple (DatasetReplica, [BlockReplica]) for block-level decisions
-            for replica, decision, condition in eval_results:
-                if isinstance(decision, Protect):
+            for replica, action, condition in eval_results:
+                if isinstance(action, Protect):
                     size = apply_protect(replica, condition)
                     if not policy.static_optimization:
                         update_protected_fraction(replica.site, size)
 
-                elif isinstance(decision, Delete):
+                elif isinstance(action, Delete):
                     apply_delete(replica, condition)
 
-                elif isinstance(decision, DeleteOwner):
-                    apply_deleteowner(replica, condition)
+                elif isinstance(action, DeleteOwner):
+                    apply_deleteowner(replica, action.groups, condition)
 
-                elif isinstance(decision, Dismiss):
+                elif isinstance(action, Dismiss):
                     if replica.site in dismiss_target_sites:
                         deletion_candidates[replica.site][replica] = condition
                     else:
                         iter_keep[replica] = condition
 
-                elif isinstance(decision, ProtectBlock):
-                    dataset_replica = replica[0]
-                    block_replicas = replica[1]
-
-                    size = apply_protectblock(replica, block_replicas, condition)
+                elif isinstance(action, ProtectBlock):
+                    size = apply_protectblock(replica, action.block_replicas, condition)
                     if not policy.static_optimization:
                         update_protected_fraction(replica.site, size)
 
-                elif isinstance(decision, DeleteBlock):
-                    dataset_replica = replica[0]
-                    block_replicas = replica[1]
-
-                    apply_deleteblock(replica, block_replicas, condition)
+                elif isinstance(action, DeleteBlock):
+                    apply_deleteblock(replica, action.block_replicas, condition)
 
             logger.info(' %d dataset replicas in deletion candidates', sum(len(d) for d in deletion_candidates.itervalues()))
             logger.info(' %d dataset replicas in protection list', len(protected))
@@ -318,7 +318,7 @@ class Detox(object):
                 site_candidates = deletion_candidates[site]
 
                 # sort the candidates within the site
-                sorted_candidates = policy.candidate_sort(site_candidates.keys())
+                sorted_candidates = sorted(site_candidates.iterkeys(), key = policy.candidate_sort_key)
     
                 deleted_volume = 0.
     

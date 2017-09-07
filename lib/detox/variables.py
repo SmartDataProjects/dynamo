@@ -2,9 +2,111 @@
 Define translations from text-based detox configuration to actual python expressions here
 """
 
-from common.dataformat import Dataset, Site
+from common.dataformat import Dataset, Site, DatasetReplica, BlockReplica
 
 BOOL_TYPE, NUMERIC_TYPE, TEXT_TYPE, TIME_TYPE = range(4)
+
+class DatasetAttr(object):
+    """Extract an attribute from the dataset regardless of the type of replica passed __call__"""
+
+    def __init__(self, attr):
+        self.attr = attr
+        self._is_func = callable(attr)
+
+    def __call__(self, replica):
+        if type(replica) is DatasetReplica:
+            dataset = replica.dataset
+        else:
+            dataset = replica.block.dataset
+
+        if self._is_func:
+            return self.attr(dataset)
+        else:
+            return getattr(dataset, self.attr)
+
+class ReplicaAttr(object):
+    """Extract an attribute from the replica. If dataset replica is passed, switch behavior depending on _algo."""
+
+    NOBLOCK, SUM, MAX, MIN = range(5)
+
+    def __init__(self, attr, algo):
+        self.attr = attr
+        self._is_func = callable(attr)
+        self._algo = algo
+
+    def __call__(self, replica):
+        if type(replica) is BlockReplica:
+            if self._is_func:
+                return self.attr(replica)
+            else:
+                return getattr(replica, self.attr)
+        else:
+            if self._algo == ReplicaAttr.NOBLOCK:
+                if self._is_func:
+                    return self.attr(replica)
+                else:
+                    return getattr(replica, self.attr)
+            else:
+                if len(replica.block_replicas) == 0:
+                    # not sure if this is what we want..
+                    raise RuntimeError('Empty dataset replica in SUM, MAX, or MIN')
+
+                values = []
+                for block_replica in replica.block_replicas:
+                    if self._is_func:
+                        values.append(self.attr(replica))
+                    else:
+                        values.append(getattr(replica, self.attr))
+
+                if self._algo == ReplicaAttr.SUM:
+                    return sum(values)
+                elif self._algo == ReplicaAttr.MAX:
+                    return max(values)
+                elif self._algo == ReplicaAttr.MIN:
+                    return min(values)
+
+
+def dataset_has_incomplete_replica(dataset):
+    for rep in replica.dataset.replicas:
+        if replica_incomplete(rep):
+            return True
+
+    return False
+
+def dataset_release(dataset):
+    version = dataset.software_version
+    if version[3] == '':
+        return '%d_%d_%d' % version[:3]
+    else:
+        return '%d_%d_%d_%s' % version
+
+def dataset_num_full_disk_copy(dataset):
+    num = 0
+    for rep in dataset.replicas:
+        if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.is_full():
+            num += 1
+
+    return num
+
+def dataset_num_full_copy(dataset):
+    num = dataset_num_full_disk_copy(dataset)
+    if dataset.on_tape == Dataset.TAPE_FULL:
+        num += 1
+
+    return num
+
+def dataset_demand_rank(dataset):
+    try:
+        return dataset.demand['global_demand_rank']
+    except KeyError:
+        return 0.
+
+def dataset_usage_rank(dataset):
+    try:
+        return dataset.demand['global_usage_rank']
+    except KeyError:
+        return 0.
+
 
 def replica_incomplete(replica):
     if replica.is_complete:
@@ -12,13 +114,6 @@ def replica_incomplete(replica):
 
     for block_replica in replica.block_replicas:
         if not block_replica.is_complete:
-            return True
-
-    return False
-
-def dataset_has_incomplete_replica(replica):
-    for rep in replica.dataset.replicas:
-        if replica_incomplete(rep):
             return True
 
     return False
@@ -31,12 +126,6 @@ def replica_has_locked_block(replica):
 
     return replica.site in locked_blocks and len(locked_blocks[replica.site]) != 0
 
-def replica_dataset_release(replica):
-    version = replica.dataset.software_version
-    if version[3] == '':
-        return '%d_%d_%d' % version[:3]
-    else:
-        return '%d_%d_%d_%s' % version
 
 def replica_last_used(replica):
     try:
@@ -51,21 +140,6 @@ def replica_num_access(replica):
         return replica.dataset.demand['local_usage'][replica.site].num_access
     except KeyError:
         return 0
-
-def dataset_num_full_disk_copy(replica):
-    num = 0
-    for rep in replica.dataset.replicas:
-        if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.is_full():
-            num += 1
-
-    return num
-
-def dataset_num_full_copy(replica):
-    num = dataset_num_full_disk_copy(replica)
-    if replica.dataset.on_tape == Dataset.TAPE_FULL:
-        num += 1
-
-    return num
 
 def replica_num_full_disk_copy_common_owner(replica):
     owners = set(br.group for br in replica.block_replicas if br.group is not None)
@@ -83,23 +157,19 @@ def replica_num_full_disk_copy_common_owner(replica):
 
     return num
 
-def dataset_demand_rank(replica):
-    if 'global_demand_rank' in replica.dataset.demand:
-        return replica.dataset.demand['global_demand_rank']
-    else:
-        return 0.
 
 replica_vardefs = {
-    'dataset.name': (lambda r: r.dataset.name, TEXT_TYPE),
-    'dataset.status': (lambda r: r.dataset.status, NUMERIC_TYPE, lambda v: eval('Dataset.STAT_' + v)),
-    'dataset.on_tape': (lambda r: r.dataset.on_tape, NUMERIC_TYPE, lambda v: eval('Dataset.TAPE_' + v)),
-    'dataset.negative_size': (lambda r: -r.dataset.size, NUMERIC_TYPE),
-    'dataset.last_update': (lambda r: r.dataset.last_update, TIME_TYPE),
-    'dataset.num_full_disk_copy': (dataset_num_full_disk_copy, NUMERIC_TYPE),
-    'dataset.usage_rank': (lambda r: r.dataset.demand['global_usage_rank'] if 'global_usage_rank' in r.dataset.demand else 0., NUMERIC_TYPE),
-    'dataset.demand_rank': (dataset_demand_rank, NUMERIC_TYPE),
-    'dataset.release': (replica_dataset_release, TEXT_TYPE),
-    'dataset.is_last_transfer_source': (lambda r: r.is_full() and dataset_num_full_copy(r) == 1 and dataset_has_incomplete_replica(r), BOOL_TYPE),
+    'dataset.name': (DatasetAttr('name'), TEXT_TYPE),
+    'dataset.status': (DatasetAttr('status'), NUMERIC_TYPE, lambda v: eval('Dataset.STAT_' + v)),
+    'dataset.on_tape': (DatasetAttr('on_tape'), NUMERIC_TYPE, lambda v: eval('Dataset.TAPE_' + v)),
+    'dataset.size': (DatasetAttr('size'), NUMERIC_TYPE),
+    'dataset.last_update': (DatasetAttr('last_update'), TIME_TYPE),
+    'dataset.num_full_disk_copy': (DatasetAttr(dataset_num_full_disk_copy), NUMERIC_TYPE),
+    'dataset.usage_rank': (DatasetAttr(dataset_usage_rank), NUMERIC_TYPE),
+    'dataset.demand_rank': (DatasetAttr(dataset_demand_rank), NUMERIC_TYPE),
+    'dataset.release': (DatasetAttr(dataset_release), TEXT_TYPE),
+    'replica.is_last_transfer_source': (lambda r: r.is_full() and dataset_num_full_copy(r.dataset) == 1 and dataset_has_incomplete_replica(r.dataset), BOOL_TYPE),
+    'replica.size': (lambda r: r.size(), NUMERIC_TYPE),
     'replica.incomplete': (replica_incomplete, BOOL_TYPE),
     'replica.last_block_created': (lambda r: r.last_block_created, TIME_TYPE),
     'replica.last_used': (replica_last_used, TIME_TYPE),

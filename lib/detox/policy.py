@@ -20,23 +20,69 @@ class ConfigurationError(Exception):
         return repr(self.str)
 
 class Decision(object):
+    """Generator of decisions. An instance of cls is created for each replica."""
+
+    def __init__(self, cls, *common_args):
+        self.action_cls = cls
+        self.common_args = common_args
+
+    def action(self, *args):
+        return self.action_cls(*(args + self.common_args))
+
+class Action(object):
     pass
 
-class Dismiss(Decision):
+class Dismiss(Action):
     pass
 
-class Delete(Decision):
+class Delete(Action):
     pass
 
-class DeleteOwner(Decision):
+class DeleteOwner(Action):
     def __init__(self, groups):
         self.groups = groups
 
-class Keep(Decision):
+class Keep(Action):
     pass
 
-class Protect(Decision):
+class Protect(Action):
     pass
+
+class BlockAction(Action):
+    def __init__(self, block_replicas = []):
+        self.block_replicas = list(block_replicas)
+
+class ProtectBlock(BlockAction):
+    @staticmethod
+    def dataset_level():
+        return Protect
+
+    def __init__(self, block_replicas = []):
+        BlockAction.__init__(self, block_replicas)
+
+class DeleteBlock(BlockAction):
+    @staticmethod
+    def dataset_level():
+        return Delete
+
+    def __init__(self, block_replicas = []):
+        BlockAction.__init__(self, block_replicas)
+
+class SortKey(object):
+    """
+    Used for sorting replicas.
+    """
+    def __init__(self):
+        self.vars = []
+
+    def addvar(self, var, reverse):
+        if reverse:
+            self.vars.append(lambda r: -var(r))
+        else:
+            self.vars.append(var)
+
+    def __call__(self, replica):
+        return tuple(v(replica) for v in self.vars)
 
 class PolicyLine(object):
     """
@@ -66,11 +112,23 @@ class PolicyLine(object):
 
         if self.condition.match(replica):
             self.has_match = True
-            result = (replica, self.decision, self.condition_id)
+
+            if issubclass(self.decision.action_cls, BlockAction):
+                # block-level
+                block_replicas = self.condition.get_matching_blocks(replica)
+                if len(block_replicas) == len(replica.block_replicas):
+                    # but all blocks matched - return dataset level
+                    result = (replica, self.decision.action.dataset_level(), self.condition_id)
+                else:
+                    result = (replica, self.decision.action(block_replicas), self.condition_id)
+            else:
+                result = (replica, self.decision.action(), self.condition_id)
+
             if self.condition.static:
                 self.cached_result[replica] = result
 
             return result
+
         else:
             if self.condition.static:
                 self.cached_result[replica] = None
@@ -109,8 +167,8 @@ class Policy(object):
         self.deletion_trigger = None
         self.stop_condition = None
         self.rules = []
-        self.default_decision = -1
-        self.candidate_sort = None
+        self.default_decision = None
+        self.candidate_sort_key = None
 
         LINE_SITE_TARGET, LINE_DELETION_TRIGGER, LINE_STOP_CONDITION, LINE_POLICY, LINE_ORDER = range(5)
 
@@ -126,19 +184,13 @@ class Policy(object):
                 line_type = LINE_STOP_CONDITION
             elif words[0] == 'Order':
                 line_type = LINE_ORDER
-            elif words[0] == 'Protect':
-                decision = Protect()
-                line_type = LINE_POLICY
-            elif words[0] == 'Dismiss':
-                decision = Dismiss()
-                line_type = LINE_POLICY
-            elif words[0] == 'Delete':
-                decision = Delete()
+            elif words[0] in ('Protect', 'Dismiss', 'Delete', 'ProtectBlock', 'DeleteBlock'):
+                decision = Decision(eval(words[0]))
                 line_type = LINE_POLICY
             elif words[0].startswith('DeleteOwner'):
                 group_names = re.match('DeleteOwner\(([^)]+)\)', words[0]).group(1).split(',')
                 groups = [inventory.groups[n] for n in group_names]
-                decision = DeleteOwner(groups)
+                decision = Decision(DeleteOwner, groups)
                 line_type = LINE_POLICY
             else:
                 raise ConfigurationError(line)
@@ -151,24 +203,35 @@ class Policy(object):
                     raise ConfigurationError(line)
 
             if line_type == LINE_ORDER:
-                if words[1] == 'increasing':
-                    reverse = False
-                elif words[1] == 'decreasing':
-                    reverse = True
-                elif words[1] == 'none':
-                    self.candidate_sort = lambda replicas: replicas
-                    continue
-                else:
-                    raise ConfigurationError(words[1])
+                # will update this lambda
+                iw = 1
+                while iw < len(words):
+                    direction = words[iw]
+                    if direction == 'none':
+                        break
+                    elif direction == 'increasing':
+                        reverse = False
+                    elif direction == 'decreasing':
+                        reverse = True
+                    else:
+                        raise ConfigurationError('Invalid sorting order: ' + words[1])
 
-                # word[2:] is the list of variables to be used for sorting
-                for word in words[2:]:
+                    varname = words[iw + 1]
+                    iw += 2
+
+                    # check if this variable requires some plugin
                     for plugin, exprs in variables.required_plugins.iteritems():
                         if word in exprs:
                             self.used_demand_plugins.add(plugin)
 
-                sortkey = tuple(variables.replica_vardefs[w][0] for w in words[2:])
-                self.candidate_sort = lambda replicas: sorted(replicas, key = sortkey, reverse = reverse)
+                    vardef = variables.replica_vardefs[varname]
+                    if vardef[1] != variables.NUMERIC_TYPE and vardef[1] != variables.TIME_TYPE:
+                        raise ConfigurationError('Cannot use non-numeric type to sort: ' + line)
+
+                    if self.candidate_sort_key is None:
+                        self.candidate_sort_key = SortKey()
+
+                    self.candidate_sort_key.addvar(vardef[0], reverse)
 
             else:
                 cond_text = ' '.join(words[1:])
@@ -190,10 +253,8 @@ class Policy(object):
             raise ConfigurationError('Target site definition missing.')
         if self.deletion_trigger is None or self.stop_condition is None:
             raise ConfigurationError('Deletion trigger and release expressions are missing.')
-        if self.default_decision == -1:
+        if self.default_decision == None:
             raise ConfigurationError('Default decision not given.')
-        if self.candidate_sort is None:
-            raise ConfiguraitonError('Deletion candidate sorting is not specified.')
 
         for cond in [self.target_site_def, self.deletion_trigger, self.stop_condition]:
             self.used_demand_plugins.update(cond.used_demand_plugins)
@@ -294,6 +355,6 @@ class Policy(object):
             if result is not None:
                 break
         else:
-            return replica, self.default_decision, 0
+            return replica, self.default_decision.action(), 0
 
         return result

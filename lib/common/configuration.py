@@ -124,10 +124,12 @@ activitylock = Configuration(
 )
 
 tape_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']
-disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
+#disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
+disk_sites = ['T2_HU_Budapest']
 
 inventory = Configuration(
-    included_sites = tape_sites + disk_sites,
+#    included_sites = tape_sites + disk_sites,
+    included_sites = disk_sites,
     excluded_sites = [
         'T1_US_FNAL_New_Disk', # not a valid site
         'T2_CH_CERNBOX', # not a valid site
