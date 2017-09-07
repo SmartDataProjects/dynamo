@@ -107,16 +107,27 @@ do
       $DYNAMO_BASE/bin/dynamo $APPLICATIONS $TEST $COMMENT --log-level INFO --load-locks
       RC=$?
 
+      if [[ $APPLICATIONS =~ detox ]] && ! [ "$TEST" ]
+      then
+        rm $($DYNAMO_BASE/bin/readconf --module detox 'main.activity_indicator')
+      fi
+
+      if ! [ "$TEST" ] && [[ $APPLICATIONS =~ detox ]] && [ $RC -eq 0 ]
+      then
+        # test run to produce sites info
+        if ! [ -e /var/run/dynamod.pid ]
+        then
+          # this is a non-daemon execution (test run?) - we need to set a comment
+          COMMENT='--comment "Test run under command line execution."'
+        fi
+        $DYNAMO_BASE/bin/dynamo detox --test-run --detox-partition 'DataOps' 'caf-comm:MinimumCopies' 'caf-alca:MinimumCopies' 'local:MinimumCopies' 'IB RelVal:MinimumCopies' --log-level INFO $COMMENT
+      fi
+
       if ! [ "$TEST" ] && [[ $APPLICATIONS =~ detox ]] && [ $RC -ne 130 ]
       then
         $DYNAMO_BASE/bin/siteinfo --out /home/cmsprod/public_html/IntelROCCS/Detox
       fi
 
-      if [[ $APPLICATIONS =~ detox ]] && ! [ "$TEST" ]
-      then
-        rm $($DYNAMO_BASE/bin/readconf --module detox 'main.activity_indicator')
-      fi
-  
       if [ $RC -ne 0 ] && [ $RC -ne 130 ]
       then
         # this is a crash of some sort
@@ -145,23 +156,12 @@ do
         fi
       fi
   
-      if ! [ "$TEST" ] && [[ $APPLICATIONS =~ detox ]] && [ $RC -ne 130 ]
-      then
-        # test run to produce sites info
-        if ! [ -e /var/run/dynamod.pid ]
-        then
-          # this is a non-daemon execution (test run?) - we need to set a comment
-          COMMENT='--comment "Test run under command line execution."'
-        fi
-        $DYNAMO_BASE/bin/dynamo detox --test-run --detox-partition 'DataOps' 'caf-comm:MinimumCopies' 'caf-alca:MinimumCopies' 'local:MinimumCopies' 'IB RelVal:MinimumCopies' --log-level INFO $COMMENT
-      fi
-  
-      if [ $IHOUR -eq $HOURS_PER_LOGFILE ] && [ $RC -ne 130 ]
-      then
-        # Clean unsubscribed data once every HOURS_PER_LOGFILE cycles
-        echo "Cleaning unsubscribed data."
-        $DYNAMO_BASE/bin/dynamo detox $TEST $COMMENT --detox-partition 'Unsubscribed' --log-level INFO
-      fi
+#      if [ $IHOUR -eq $HOURS_PER_LOGFILE ] && [ $RC -ne 130 ]
+#      then
+#        # Clean unsubscribed data once every HOURS_PER_LOGFILE cycles
+#        echo "Cleaning unsubscribed data."
+#        $DYNAMO_BASE/bin/dynamo detox $TEST $COMMENT --detox-partition 'Unsubscribed' --log-level INFO
+#      fi
   
       $DYNAMO_BASE/bin/execlib common/interface/history.py clean last
   
