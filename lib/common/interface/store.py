@@ -50,7 +50,10 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
-    def set_last_update(self, tm = time.time()):
+    def set_last_update(self, tm = -1):
+        if tm < 0:
+            tm = time.time()
+
         self.last_update = tm
 
         if config.read_only:
@@ -303,7 +306,7 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
-    def save_data(self, sites, groups, datasets, delta = True):
+    def save_data(self, sites, groups, datasets, timestamp = -1, delta = True):
         """
         Write information in memory into persistent storage.
         Remove information of datasets and blocks with no replicas.
@@ -328,7 +331,7 @@ class LocalStoreInterface(object):
             else:
                 self._do_save_replicas(sites, groups, datasets)
 
-            self.set_last_update()
+            self.set_last_update(timestamp)
         finally:
             self.release_lock()
 

@@ -1,6 +1,7 @@
 import logging
 import fnmatch
 import re
+import time
 import pprint
 
 from common.interface.classes import default_interface
@@ -117,6 +118,10 @@ class InventoryManager(object):
                 logger.info('Making a snapshot of inventory.')
                 snapshot_tag = self.store.make_snapshot()
 
+            # we need to save the *beginning* of the update as the last_update timestamp in store
+            # otherwise we will miss what happened during the phedex call and store write when we run the update next time
+            update_start = time.time()
+
             if load_first and len(self.sites) == 0:
                 logger.info('Loading data from local storage.')
 
@@ -179,7 +184,7 @@ class InventoryManager(object):
 
             # Save inventory data to persistent storage
             # Datasets and groups with no replicas are removed
-            self.store.save_data(self.sites.values(), self.groups.values(), self.datasets.values(), delta = from_delta)
+            self.store.save_data(self.sites.values(), self.groups.values(), self.datasets.values(), timestamp = update_start, delta = from_delta)
 
             if make_snapshot:
                 logger.info('Removing the snapshot.')
