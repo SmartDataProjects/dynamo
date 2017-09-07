@@ -305,7 +305,7 @@ class MySQLStore(LocalStoreInterface):
                 self._make_dataset_map(dataset_list, id_dataset_map = id_dataset_map)
 
             sql = 'SELECT dr.`dataset_id`, dr.`site_id`, dr.`completion`, dr.`is_custodial`, UNIX_TIMESTAMP(dr.`last_block_created`),'
-            sql += ' br.`block_id`, br.`group_id`, br.`is_complete`, br.`is_custodial`, brs.`size`'
+            sql += ' br.`block_id`, br.`group_id`, br.`is_complete`, br.`is_custodial`, brs.`size`, UNIX_TIMESTAMP(br.`last_update`)'
             sql += ' FROM `dataset_replicas` AS dr'
             sql += ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`'
             sql += ' INNER JOIN `blocks` AS b ON b.`dataset_id` = d.`id`'
@@ -325,7 +325,7 @@ class MySQLStore(LocalStoreInterface):
             _site_id = 0
             dataset_replica = None
     
-            for dataset_id, site_id, completion, is_custodial, last_block_created, block_id, group_id, is_complete, b_is_custodial, b_size in self._mysql.xquery(sql):
+            for dataset_id, site_id, completion, is_custodial, last_block_created, block_id, group_id, is_complete, b_is_custodial, b_size, b_last_update in self._mysql.xquery(sql):
                 if dataset_id != _dataset_id:
                     _dataset_id = dataset_id
 
@@ -339,7 +339,13 @@ class MySQLStore(LocalStoreInterface):
                     site = id_site_map[site_id]
 
                 if dataset_replica is None or dataset != dataset_replica.dataset or site != dataset_replica.site:
-                    dataset_replica = DatasetReplica(dataset, site, is_complete = (completion != 'incomplete'), is_custodial = is_custodial, last_block_created = last_block_created)
+                    dataset_replica = DatasetReplica(
+                        dataset,
+                        site,
+                        is_complete = (completion != 'incomplete'),
+                        is_custodial = is_custodial,
+                        last_block_created = last_block_created
+                    )
 
                     dataset.replicas.append(dataset_replica)
                     site.dataset_replicas.add(dataset_replica)
@@ -348,7 +354,15 @@ class MySQLStore(LocalStoreInterface):
 
                 group = id_group_map[group_id]
 
-                block_replica = BlockReplica(block, site, group = group, is_complete = is_complete, is_custodial = b_is_custodial, size = block.size if b_size is None else b_size)
+                block_replica = BlockReplica(
+                    block,
+                    site,
+                    group = group,
+                    is_complete = is_complete,
+                    is_custodial = b_is_custodial,
+                    size = block.size if b_size is None else b_size,
+                    last_update = b_last_update
+                )
 
                 dataset_replica.block_replicas.append(block_replica)
                 site.add_block_replica(block_replica)
@@ -407,18 +421,24 @@ class MySQLStore(LocalStoreInterface):
             except KeyError:
                 continue
 
-            dataset_replica = DatasetReplica(dataset, site, is_complete = (completion != 'incomplete'), is_custodial = is_custodial, last_block_created = last_block_created)
+            dataset_replica = DatasetReplica(
+                dataset,
+                site,
+                is_complete = (completion != 'incomplete'),
+                is_custodial = is_custodial,
+                last_block_created = last_block_created
+            )
 
             dataset.replicas.append(dataset_replica)
             site.dataset_replicas.add(dataset_replica)
 
             if dataset.blocks is not None:
-                block_query = 'SELECT b.`id`, b.`name`, br.`group_id`, br.`is_complete`, br.`is_custodial`, brs.`size` FROM `blocks` AS b'
+                block_query = 'SELECT b.`id`, b.`name`, br.`group_id`, br.`is_complete`, br.`is_custodial`, brs.`size`, br.`last_update` FROM `blocks` AS b'
                 block_query += ' INNER JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
                 block_query += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = br.`block_id` AND brs.`site_id` = br.`site_id`'
                 block_query += ' WHERE b.`dataset_id` = %d AND br.`site_id` = %d' % (dataset_id, site_id)
     
-                for bid, bname, group_id, b_is_complete, b_is_custodial, br_size in self._mysql.xquery(block_query):
+                for bid, bname, group_id, b_is_complete, b_is_custodial, br_size, br_last_update in self._mysql.xquery(block_query):
                     try:
                         block = id_block_map[bid]
                     except KeyError:
@@ -437,7 +457,8 @@ class MySQLStore(LocalStoreInterface):
                         id_group_map[group_id],
                         b_is_complete,
                         b_is_custodial,
-                        size = block.size
+                        size = block.size,
+                        last_update = br_last_update
                     )
 
                     dataset_replica.block_replicas.append(block_replica)
@@ -913,11 +934,12 @@ class MySQLStore(LocalStoreInterface):
                 for block_replica in replica.block_replicas:
                     block_id = block_name_to_id[block_replica.block.name]
                     
-                    all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial))
+                    last_update_timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update))
+                    all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial, last_update_timestamp))
                     if not block_replica.is_complete:
                         replica_sizes.append((block_id, site_id, block_replica.size))
                     
-        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
         self._mysql.insert_many('block_replicas', fields, None, all_replicas, do_update = True)
 
         fields = ('block_id', 'site_id', 'size')
@@ -969,13 +991,15 @@ class MySQLStore(LocalStoreInterface):
                 site_id = site_id_map[replica.site]
                 for block_replica in replica.block_replicas:
                     block_id = block_name_to_id[block_replica.block.name]
-                    all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial))
+
+                    last_update_timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update))
+                    all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial, last_update_timestamp))
                     if not block_replica.is_complete:
                         replica_sizes.append((block_id, site_id, block_replica.size))
 
         self._mysql.query('DELETE FROM `block_replicas` WHERE `site_id` IN ' + site_id_list)
 
-        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
         self._mysql.insert_many('block_replicas', fields, None, all_replicas, do_update = False)
 
         self._mysql.query('DELETE FROM `block_replica_sizes` WHERE `site_id` IN ' + site_id_list)
@@ -1070,11 +1094,12 @@ class MySQLStore(LocalStoreInterface):
             for block_replica in replica.block_replicas:
                 block_id = block_ids[block_replica.block.name]
 
-                all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial))
+                last_update_timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update))
+                all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial, last_update_timestamp))
                 if not block_replica.is_complete:
                     replica_sizes.append((block_id, site_id, block_replica.size))
 
-        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
         self._mysql.insert_many('block_replicas', fields, None, all_replicas)
 
         fields = ('block_id', 'site_id', 'size')
@@ -1100,11 +1125,12 @@ class MySQLStore(LocalStoreInterface):
 
             block_id = block_ids[replica.block.name]
 
-            all_replicas.append((block_id, site_id, group_id_map[replica.group], replica.is_complete, replica.is_custodial))
+            last_update_timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update))
+            all_replicas.append((block_id, site_id, group_id_map[replica.group], replica.is_complete, replica.is_custodial, last_update_timestamp))
             if not replica.is_complete:
                 replica_sizes.append((block_id, site_id, replica.size))
 
-        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial')
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
         self._mysql.insert_many('block_replicas', fields, None, all_replicas)
 
         fields = ('block_id', 'site_id', 'size')

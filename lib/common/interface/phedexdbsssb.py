@@ -793,7 +793,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                 group,
                                 is_complete, 
                                 is_custodial,
-                                size = replica_entry['bytes']
+                                size = replica_entry['bytes'],
+                                last_update = int(replica_entry['time_update'])
                             )
 
                             dataset_replica.block_replicas.append(block_replica)
@@ -802,10 +803,11 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         elif block_replica.group != group or \
                                 block_replica.is_complete != is_complete or \
                                 block_replica.is_custodial != is_custodial or \
-                                block_replica.size != replica_entry['bytes']:
+                                block_replica.size != replica_entry['bytes'] or \
+                                block_replica.last_update != int(replica_entry['time_update']):
 
                             logger.debug('Updating BlockReplica of %s', block.real_name())
-                            dataset_replica.update_block_replica(block, group, is_complete, is_custodial, replica_entry['bytes'])
+                            dataset_replica.update_block_replica(block, group, is_complete, is_custodial, replica_entry['bytes'], int(replica_entry['time_update']))
 
                         if site.storage_type == Site.TYPE_MSS:
                             # ask whether the dataset replica is full after encountering each block
@@ -929,14 +931,15 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                                     group,
                                     False,
                                     is_custodial,
-                                    size = 0
+                                    size = 0,
+                                    last_update = 0
                                 )
 
                                 dataset_replica.block_replicas.append(block_replica)
                                 site.add_block_replica(block_replica)
 
-                            elif block_replica.group != group or block_replica.is_complete or block_replica.is_custodial != is_custodial or block_replica.size != 0:
-                                dataset_replica.update_block_replica(block, group, False, is_custodial, 0)
+                            elif block_replica.group != group or block_replica.is_complete or block_replica.is_custodial != is_custodial or block_replica.size != 0 or block_replica.last_update != 0:
+                                dataset_replica.update_block_replica(block, group, False, is_custodial, 0, 0)
 
     def _check_deletions(self, inventory, site_list, group_list, dataset_filt, last_update):
         logger.info('Checking for deleted dataset and block replicas.')
@@ -1661,7 +1664,7 @@ if __name__ == '__main__':
             for bname in bnames:
                 block = Block(Block.translate_name(bname), dataset, 0, 0, False)
                 # don't add the block to dataset (otherwise will become a dataset-level operation)
-                block_replica = BlockReplica(block, site, group, True, False, 0)
+                block_replica = BlockReplica(block, site, group, True, False, 0, 0)
                 dataset_replica.block_replicas.append(block_replica)
 
         print 'Replicas', replicas

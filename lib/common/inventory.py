@@ -283,7 +283,7 @@ class InventoryManager(object):
             blocks = dataset.blocks
 
         for block in blocks:
-            block_replica = BlockReplica(block, site, group, is_complete = False, is_custodial = False, size = 0)
+            block_replica = BlockReplica(block, site, group, is_complete = False, is_custodial = False, size = 0, last_update = 0)
             new_replica.block_replicas.append(block_replica)
             site.add_block_replica(block_replica)
 
@@ -309,7 +309,7 @@ class InventoryManager(object):
             dataset.replicas.append(drep)
             site.dataset_replicas.add(drep)
 
-        new_replica = BlockReplica(block, site, group, is_complete = False, is_custodial = False, size = 0)    
+        new_replica = BlockReplica(block, site, group, is_complete = False, is_custodial = False, size = 0, last_update = 0)
         drep.block_replicas.append(new_replica)
         site.add_block_replica(new_replica)
 

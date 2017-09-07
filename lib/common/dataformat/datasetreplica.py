@@ -95,7 +95,7 @@ class DatasetReplica(object):
         except StopIteration:
             return None
 
-    def update_block_replica(self, block, group, is_complete, is_custodial, size):
+    def update_block_replica(self, block, group, is_complete, is_custodial, size, last_update):
         old_replica = next(b for b in self.block_replicas if b.block == block)
         self.block_replicas.remove(old_replica)
 
@@ -105,7 +105,8 @@ class DatasetReplica(object):
             group,
             is_complete, 
             is_custodial,
-            size = size
+            size = size,
+            last_update = last_update
         )
         self.block_replicas.append(new_replica)
 

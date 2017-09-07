@@ -473,10 +473,14 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
                             continue
                         block_replica = sites[csite].find_block_replica(block)
                         if block_replica == None:
-                            block_replica = BlockReplica(block,sites[csite],groups['AnalysisOps'],
-                                                         blockObj.isComplete(csite),
-                                                         custodial,
-                                                         blockObj.sizeAtSite(csite))
+                            block_replica = BlockReplica(
+                                block,sites[csite],
+                                groups['AnalysisOps'],
+                                blockObj.isComplete(csite),
+                                custodial,
+                                blockObj.sizeAtSite(csite),
+                                0
+                            )
                             dataset_replica.block_replicas.append(block_replica)
                             sites[csite].add_block_replica(block_replica)
 

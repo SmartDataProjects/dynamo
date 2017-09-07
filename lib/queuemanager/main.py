@@ -153,7 +153,7 @@ class QueueManager(object):
                     
                 if size > blockRep.size:
                     print 'updating block replica ...'
-                    dsetRep.update_block_replica(block, targetGroup, complete, False, size)
+                    dsetRep.update_block_replica(block, targetGroup, complete, False, size, time.time())
                     
 
             #here we enter done requests into the history databas
