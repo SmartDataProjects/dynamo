@@ -1,7 +1,7 @@
 import collections
 
 # Block and BlockReplica implemented as tuples to reduce memory footprint
-BlockReplica = collections.namedtuple('BlockReplica', ['block', 'site', 'group', 'is_complete', 'is_custodial', 'size', 'last_updated'])
+BlockReplica = collections.namedtuple('BlockReplica', ['block', 'site', 'group', 'is_complete', 'is_custodial', 'size', 'last_update'])
 
 def _BlockReplica_clone(self, **kwd):
     return BlockReplica(
@@ -11,7 +11,7 @@ def _BlockReplica_clone(self, **kwd):
         self.is_complete if 'is_complete' not in kwd else kwd['is_complete'],
         self.is_custodial if 'is_custodial' not in kwd else kwd['is_custodial'],
         self.size if 'size' not in kwd else kwd['size'],
-        self.last_updated if 'last_updated' not in kwd else kwd['last_updated']
+        self.last_update if 'last_update' not in kwd else kwd['last_update']
     )
 
 BlockReplica.clone = _BlockReplica_clone
