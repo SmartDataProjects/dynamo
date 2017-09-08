@@ -753,7 +753,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
 
                         if dataset_replica is None or dataset_replica.site != site:
                             logger.debug('New site %s', site.name)
-                            dataset_replica, new_replica = inventory.get_datasetreplica(dataset, site)
+                            dataset_replica, new_replica = dataset.get_replica(site)
 
                         if new_replica:
                             # first time associating this dataset with this site
@@ -876,7 +876,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                         
                         site = inventory.sites[subscription['node']]
 
-                        dataset_replica, new_replica = inventory.get_datasetreplica(dataset, site)
+                        dataset_replica, new_replica = dataset.get_replica(site)
 
                         dataset_replica.is_custodial = (subscription['custodial'] == 'y')
 
@@ -917,7 +917,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                             else:
                                 group = None
 
-                            dataset_replica, new_replica = inventory.get_datasetreplica(dataset, site)
+                            dataset_replica, new_replica = dataset.get_replica(site)
 
                             is_custodial = (subscription['custodial'] == 'y')
                             dataset_replica.is_custodial = is_custodial

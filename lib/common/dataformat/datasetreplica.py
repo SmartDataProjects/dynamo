@@ -11,18 +11,6 @@ class DatasetReplica(object):
         self.last_block_created = last_block_created
         self.block_replicas = []
 
-    def unlink(self):
-        self.dataset.replicas.remove(self)
-        self.dataset = None
-
-        self.site.dataset_replicas.remove(self)
-
-        for block_replica in self.block_replicas:
-            self.site.remove_block_replica(block_replica)
-
-        self.block_replicas = []
-        self.site = None
-
     def __str__(self):
         return 'DatasetReplica {site}:{dataset} (is_complete={is_complete}, is_custodial={is_custodial},' \
             ' {block_replicas_size} block_replicas)'.format(
@@ -38,6 +26,26 @@ class DatasetReplica(object):
         rep += '    last_block_created=%d)' % self.last_block_created
 
         return rep
+
+    def unlink(self):
+        # Detach this replica from owning containers but retain references from this replica
+
+        self.dataset.replicas.remove(self)
+
+        self.site.dataset_replicas.remove(self)
+
+        for block_replica in self.block_replicas:
+            self.site.remove_block_replica(block_replica)
+
+    def link(self):
+        # Reverse operation of unlink
+
+        self.dataset.replicas.append(self)
+
+        self.site.dataset_replicas.add(self)
+
+        for block_replica in self.block_replicas:
+            self.site.add_block_replica(block_replica)
 
     def clone(self, block_replicas = True):
         # Create a detached clone. Detached in the sense that it is not linked from dataset or site.

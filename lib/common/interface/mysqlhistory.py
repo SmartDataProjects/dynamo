@@ -254,7 +254,7 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
 
-    def _do_save_deletion_decisions(self, run_number, deleted, kept, protected): #override
+    def _do_save_deletion_decisions(self, run_number, deleted_list, kept_list, protected_list): #override
         # First save the size snapshots of the replicas, which will be referenced when reconstructing the history.
         # Decisions are saved only if they changed from the last run
 
@@ -301,17 +301,23 @@ class MySQLHistory(TransactionHistoryInterface):
         snapshot_cursor = snapshot_db.cursor()
         sql = 'INSERT INTO `replicas` VALUES (?, ?, ?, ?, ?)'
 
-        for replica, condition_id in deleted.iteritems():
-            snapshot_cursor.execute(sql, (self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name], replica.size(), delete, condition_id))
-        snapshot_db.commit()
+        def do_insert(entries, decision):
+            for replica, condition_id in entries:
+                if type(replica) is list: # list of block replicas
+                    site_name = replica[0].site.name
+                    dataset_name = replica[0].block.dataset.name
+                    size = sum(r.size for r in replica)
+                else:
+                    site_name = replica.site.name
+                    dataset_name = replica.dataset.name
+                    size = replica.size()
 
-        for replica, condition_id in kept.iteritems():
-            snapshot_cursor.execute(sql, (self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name], replica.size(), keep, condition_id))
-        snapshot_db.commit()
-
-        for replica, condition_id in protected.iteritems():
-            snapshot_cursor.execute(sql, (self._site_id_map[replica.site.name], self._dataset_id_map[replica.dataset.name], replica.size(), protect, condition_id))
-        snapshot_db.commit()
+                snapshot_cursor.execute(sql, (self._site_id_map[site_name], self._dataset_id_map[dataset_name], size, decision, condition_id))
+            snapshot_db.commit()
+        
+        do_insert(deleted_list, delete)
+        do_insert(kept_list, keep)
+        do_insert(protected_list, protect)
         
         snapshot_cursor.close()
         snapshot_db.close()

@@ -212,7 +212,7 @@ class QueueManager(object):
                 replica_timestamps[dsetRep] = uRequest._created
                 done_requests.append(uRequest._reqid)
                 print dsetRep.block_replicas
-                self._inventory.unlink_datasetreplica(dsetRep)
+                dsetRep.unlink()
 
         #save complete requests into history
         self._history.save_dataset_deletions(gone_dataset_replicas,replica_timestamps)

@@ -228,34 +228,6 @@ class InventoryManager(object):
 
         return self.store.find_block_of(fullpath, self.datasets)
 
-    def get_datasetreplica(self, dataset, site):
-        dataset_replica = dataset.find_replica(site)
-
-        if dataset_replica is None:
-            dataset_replica = DatasetReplica(dataset, site)
-            dataset.replicas.append(dataset_replica)
-            site.dataset_replicas.add(dataset_replica)
-
-            return dataset_replica, True
-        else:
-            return dataset_replica, False
-
-    def unlink_datasetreplica(self, replica):
-        """
-        Remove link from datasets and sites to the replica. Don't remove the replica-to-dataset/site link;
-        replica objects may be still being used in the program.
-        """
-
-        dataset = replica.dataset
-        site = replica.site
-
-        # Remove block replicas from the site
-        for block_replica in replica.block_replicas:
-            site.remove_block_replica(block_replica)
-
-        site.dataset_replicas.remove(replica)
-        dataset.replicas.remove(replica)
-
     def unlink_all_replicas(self):
         for dataset in self.datasets.values():
             dataset.replicas = None

@@ -55,7 +55,7 @@ class BlockAction(Action):
 class ProtectBlock(BlockAction):
     @staticmethod
     def dataset_level():
-        return Protect
+        return Protect()
 
     def __init__(self, block_replicas = []):
         BlockAction.__init__(self, block_replicas)
@@ -63,7 +63,7 @@ class ProtectBlock(BlockAction):
 class DeleteBlock(BlockAction):
     @staticmethod
     def dataset_level():
-        return Delete
+        return Delete()
 
     def __init__(self, block_replicas = []):
         BlockAction.__init__(self, block_replicas)
@@ -118,7 +118,7 @@ class PolicyLine(object):
                 block_replicas = self.condition.get_matching_blocks(replica)
                 if len(block_replicas) == len(replica.block_replicas):
                     # but all blocks matched - return dataset level
-                    result = (replica, self.decision.action.dataset_level(), self.condition_id)
+                    result = (replica, self.decision.action_cls.dataset_level(), self.condition_id)
                 else:
                     result = (replica, self.decision.action(block_replicas), self.condition_id)
             else:
@@ -144,7 +144,7 @@ class Policy(object):
         self.partition = partition
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
 
-        self.static_optimization = True
+        self.need_iteration = False
         self.used_demand_plugins = set()
         self.parse_rules(lines, inventory)
 
@@ -221,7 +221,7 @@ class Policy(object):
 
                     # check if this variable requires some plugin
                     for plugin, exprs in variables.required_plugins.iteritems():
-                        if word in exprs:
+                        if varname in exprs:
                             self.used_demand_plugins.add(plugin)
 
                     vardef = variables.replica_vardefs[varname]
@@ -260,9 +260,9 @@ class Policy(object):
             self.used_demand_plugins.update(cond.used_demand_plugins)
 
         for rule in self.rules:
-            if self.static_optimization and not rule.condition.static:
-                logger.info('Condition %s is dynamic. Turning off static policy evaluation for %s.', str(rule.condition), self.partition.name)
-                self.static_optimization = False
+            if not self.need_iteration and not rule.condition.static:
+                logger.info('Condition %s is dynamic. Policy will be evaluated iteratively.', str(rule.condition))
+                self.need_iteration = True
 
             self.used_demand_plugins.update(rule.condition.used_demand_plugins)
 

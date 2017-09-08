@@ -326,13 +326,13 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
       
-    def save_deletion_decisions(self, run_number, deleted, kept, protected):
+    def save_deletion_decisions(self, run_number, deleted_list, kept_list, protected_list):
         """
         Save decisions and their reasons for all replicas.
-        @param run_number Cycle number.
-        @param deleted    {replica: condition or ([block_replica], condition)}
-        @param kept       {replica: condition or ([block_replica], condition)}
-        @param protected  {replica: condition or ([block_replica], condition)}
+        @param run_number      Cycle number.
+        @param deleted_list    [(dataset_replica, condition) or ([block_replica], condition)]
+        @param kept_list       [(dataset_replica, condition) or ([block_replica], condition)]
+        @param protected_list  [(dataset_replica, condition) or ([block_replica], condition)]
 
         Note that in case of block-level operations, one dataset replica can appear
         in multiple of deleted, kept, and protected.

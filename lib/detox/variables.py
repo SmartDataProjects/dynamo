@@ -27,7 +27,7 @@ class DatasetAttr(object):
 class ReplicaAttr(object):
     """Extract an attribute from the replica. If dataset replica is passed, switch behavior depending on _algo."""
 
-    NOBLOCK, SUM, MAX, MIN = range(5)
+    NOBLOCK, SUM, MAX, MIN = range(4)
 
     def __init__(self, attr, algo):
         self.attr = attr
@@ -54,9 +54,9 @@ class ReplicaAttr(object):
                 values = []
                 for block_replica in replica.block_replicas:
                     if self._is_func:
-                        values.append(self.attr(replica))
+                        values.append(self.attr(block_replica))
                     else:
-                        values.append(getattr(replica, self.attr))
+                        values.append(getattr(block_replica, self.attr))
 
                 if self._algo == ReplicaAttr.SUM:
                     return sum(values)
@@ -67,7 +67,7 @@ class ReplicaAttr(object):
 
 
 def dataset_has_incomplete_replica(dataset):
-    for rep in replica.dataset.replicas:
+    for rep in dataset.replicas:
         if replica_incomplete(rep):
             return True
 
@@ -176,7 +176,8 @@ replica_vardefs = {
     'replica.num_access': (replica_num_access, NUMERIC_TYPE),
     'replica.has_locked_block': (replica_has_locked_block, BOOL_TYPE),
     'replica.owners': (lambda r: list(set(br.group.name for br in r.block_replicas if br.group is not None)), TEXT_TYPE),
-    'replica.num_full_disk_copy_common_owner': (replica_num_full_disk_copy_common_owner, NUMERIC_TYPE)
+    'replica.num_full_disk_copy_common_owner': (replica_num_full_disk_copy_common_owner, NUMERIC_TYPE),
+    'blockreplica.updated': (ReplicaAttr('last_update', ReplicaAttr.MAX), TIME_TYPE)
 }
 
 # Variables that may change their values during a single program execution

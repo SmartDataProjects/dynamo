@@ -147,6 +147,21 @@ class Dataset(object):
         except StopIteration:
             return None
 
+    def get_replica(self, site):
+        # create and link a replica if one does not exist
+        # returns (replica, created)
+
+        replica = self.find_replica(site)
+
+        if replica is None:
+            replica = DatasetReplica(self, site)
+            self.replicas.append(replica)
+            site.dataset_replicas.add(replica)
+
+            return replica, True
+        else:
+            return replica, False
+
     def update_block(self, name, size, num_files, is_open):
         if self.blocks is None:
             raise ObjectError('Blocks are not loaded for %s' % self.name)
