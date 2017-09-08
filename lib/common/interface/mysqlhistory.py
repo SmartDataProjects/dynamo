@@ -524,6 +524,7 @@ class MySQLHistory(TransactionHistoryInterface):
                         db_file.write(lzma.decompress(xz_file.read()))
 
             snapshot_db = sqlite3.connect(db_file_name)
+            snapshot_db.text_factory = str # otherwise we'll get unicode and MySQLdb cannot convert that
             snapshot_cursor = snapshot_db.cursor()
 
             def make_snapshot_reader():

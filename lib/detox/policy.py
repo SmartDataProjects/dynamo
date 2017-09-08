@@ -54,16 +54,16 @@ class BlockAction(Action):
 
 class ProtectBlock(BlockAction):
     @staticmethod
-    def dataset_level():
-        return Protect()
+    def dataset_level(*args):
+        return Protect(*args)
 
     def __init__(self, block_replicas = []):
         BlockAction.__init__(self, block_replicas)
 
 class DeleteBlock(BlockAction):
     @staticmethod
-    def dataset_level():
-        return Delete()
+    def dataset_level(*args):
+        return Delete(*args)
 
     def __init__(self, block_replicas = []):
         BlockAction.__init__(self, block_replicas)
@@ -133,11 +133,13 @@ class PolicyLine(object):
             if self.condition.static:
                 self.cached_result[replica] = None
 
+            return None
+
 class Policy(object):
     """
     Responsible for partitioning the replicas and activating deletion on sites, and making deletion decisions on replicas.
-    The core of the object is a stack of rules (specific rules first) with a fall-back default decision.
-    A rule is a callable object that takes a dataset replica as an argument and returns None or (replica, decision, reason)
+    The core of the object is a stack of policy lines (specific policies first) with a fall-back default decision.
+    A policy line is a callable object that takes a dataset replica as an argument and returns None or (replica, decision, reason)
     """
 
     def __init__(self, partition, lines, version, inventory):
@@ -146,11 +148,11 @@ class Policy(object):
 
         self.need_iteration = False
         self.used_demand_plugins = set()
-        self.parse_rules(lines, inventory)
+        self.parse_lines(lines, inventory)
 
         self.version = version
 
-    def parse_rules(self, lines, inventory):
+    def parse_lines(self, lines, inventory):
         logger.info('Parsing policy stack for partition %s.', self.partition.name)
 
         if type(lines) is file:
@@ -166,7 +168,7 @@ class Policy(object):
         self.target_site_def = None
         self.deletion_trigger = None
         self.stop_condition = None
-        self.rules = []
+        self.policy_lines = []
         self.default_decision = None
         self.candidate_sort_key = None
 
@@ -246,7 +248,7 @@ class Policy(object):
                     self.stop_condition = SiteCondition(cond_text, self.partition)
 
                 elif line_type == LINE_POLICY:
-                    self.rules.append(PolicyLine(decision, cond_text))
+                    self.policy_lines.append(PolicyLine(decision, cond_text))
             
 
         if self.target_site_def is None:
@@ -259,14 +261,14 @@ class Policy(object):
         for cond in [self.target_site_def, self.deletion_trigger, self.stop_condition]:
             self.used_demand_plugins.update(cond.used_demand_plugins)
 
-        for rule in self.rules:
-            if not self.need_iteration and not rule.condition.static:
-                logger.info('Condition %s is dynamic. Policy will be evaluated iteratively.', str(rule.condition))
+        for line in self.policy_lines:
+            if not self.need_iteration and not line.condition.static:
+                logger.info('Condition %s is dynamic. Policy will be evaluated iteratively.', str(line.condition))
                 self.need_iteration = True
 
-            self.used_demand_plugins.update(rule.condition.used_demand_plugins)
+            self.used_demand_plugins.update(line.condition.used_demand_plugins)
 
-        logger.info('Policy stack for %s: %d rules using demand plugins %s', self.partition.name, len(self.rules), str(sorted(self.used_demand_plugins)))
+        logger.info('Policy stack for %s: %d lines using demand plugins %s', self.partition.name, len(self.policy_lines), str(sorted(self.used_demand_plugins)))
 
     def partition_replicas(self, inventory, target_sites):
         """
@@ -350,8 +352,8 @@ class Policy(object):
                 site.add_block_replica(block_replica)
 
     def evaluate(self, replica):
-        for rule in self.rules:
-            result = rule(replica)
+        for line in self.policy_lines:
+            result = line(replica)
             if result is not None:
                 break
         else:

@@ -1008,21 +1008,24 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.insert_many('block_replica_sizes', fields, None, replica_sizes, do_update = False)
 
     def _do_save_replica_accesses(self, access_list): #override
-        replicas = access_list.keys()
-
         site_id_map = {}
-        self._make_site_map(list(set(r.site for r in replicas)), site_id_map = site_id_map)
+        self._make_site_map(set(r.site for r in access_list.iterkeys()), site_id_map = site_id_map)
+        logger.info('saving access of %d replicas', len(access_list))
         dataset_id_map = {}
-        self._make_dataset_map(list(set(r.dataset for r in replicas)), dataset_id_map = dataset_id_map)
+        datasets = set(r.dataset for r in access_list.iterkeys())
+        logger.info('%d datasets', len(datasets))
+        self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
+
+        logger.info('save_replica_access %d', len(dataset_id_map))
 
         fields = ('dataset_id', 'site_id', 'date', 'access_type', 'num_accesses', 'cputime')
 
         data = []
-        for replica, replica_access_list in access_list.items():
+        for replica, replica_access_list in access_list.iteritems():
             dataset_id = dataset_id_map[replica.dataset]
             site_id = site_id_map[replica.site]
 
-            for date, (num_accesses, cputime) in replica_access_list.items():
+            for date, (num_accesses, cputime) in replica_access_list.iteritems():
                 data.append((dataset_id, site_id, date.strftime('%Y-%m-%d'), 'local', num_accesses, cputime))
 
         self._mysql.insert_many('dataset_accesses', fields, None, data, do_update = True)
@@ -1252,6 +1255,8 @@ class MySQLStore(LocalStoreInterface):
             tmp_join = False
 
         self._make_map('datasets', iter(datasets), dataset_id_map, id_dataset_map, tmp_join = tmp_join)
+        if dataset_id_map is not None:
+            logger.info('make_dataset_map %d', len(dataset_id_map))
 
     def _make_map(self, table, objitr, object_id_map, id_object_map, tmp_join = False):
         if tmp_join:
@@ -1259,8 +1264,12 @@ class MySQLStore(LocalStoreInterface):
             if self._mysql.table_exists(tmp_table):
                 self._mysql.query('DROP TABLE `%s`' % tmp_table)
 
+            # need to create a list first because iterator can iterate only once
+            objlist = list(objitr)
+            objitr = iter(objlist)
+
             self._mysql.query('CREATE TABLE `%s` (`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL, PRIMARY KEY (`name`)) ENGINE=MyISAM DEFAULT CHARSET=latin1' % tmp_table)
-            self._mysql.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objitr)
+            self._mysql.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist)
 
             name_to_id = dict(self._mysql.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_table)))
 
@@ -1283,3 +1292,5 @@ class MySQLStore(LocalStoreInterface):
                 id_object_map[obj_id] = obj
 
         logger.debug('make_map %s (%d) obejcts', table, num_obj)
+        if object_id_map is not None:
+            logger.info('object_id_map %d elements %d objects', len(object_id_map), num_obj)

@@ -181,7 +181,7 @@ replica_vardefs = {
 }
 
 # Variables that may change their values during a single program execution
-replica_dynamic_variables = ['dataset.num_full_disk_copy', 'replica.owners', 'replica.num_full_disk_copy_common_owner']
+replica_dynamic_variables = ['dataset.num_full_disk_copy', 'replica.owners', 'replica.num_full_disk_copy_common_owner', 'blockreplica.updated']
 
 # site variable definition: partition -> (site -> value)
 site_vardefs = {

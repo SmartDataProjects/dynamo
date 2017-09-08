@@ -58,7 +58,7 @@ class Detox(object):
         try:
             # insert new policy lines to the history database
             logger.info('Saving policy conditions.')
-            self.history.save_conditions(policy.rules)
+            self.history.save_conditions(policy.policy_lines)
     
             logger.info('Updating dataset demands.')
             # update requests, popularity, and locks
@@ -95,7 +95,7 @@ class Detox(object):
                 if policy.deletion_trigger.match(site):
                     triggered_sites.add(site)
 
-        quotas = dict((s, s.partition_quota(policy.partition) * 1.e+12) for s in target_sites)
+        quotas = dict((s, s.partition_quota(policy.partition)) for s in target_sites)
 
         # if a policy line requires iterative execution, we need the sites to have non-negative quotas
         if policy.need_iteration:
@@ -111,13 +111,15 @@ class Detox(object):
         # will also select out replicas on sites with quotas
         all_replicas = policy.partition_replicas(self.inventory_manager, target_sites)
 
+        logger.info('Saving site and dataset states.')
+
         # update site and dataset lists
         # take a snapshot of site status
         self.history.save_sites(run_number, target_sites)
-        self.history.save_datasets(run_number, set(r.dataset for r in all_replicas))
         self.history.save_quotas(run_number, quotas)
+        self.history.save_datasets(run_number, set(r.dataset for r in all_replicas))
 
-        logger.info('Start deletion. Evaluating %d rules against %d replicas.', len(policy.rules), len(all_replicas))
+        logger.info('Start deletion. Evaluating %d lines against %d replicas.', len(policy.policy_lines), len(all_replicas))
 
         protected = {} # {replica: condition_id}
         deleted = {}
@@ -198,7 +200,7 @@ class Detox(object):
                 else:
                     # dr_owner is taking over
                     # not ideal to make reassignments here, but this operation affects later iterations
-                    # not popping from all_replicas because different rules may now apply
+                    # not popping from all_replicas because different lines may now apply
                     self.reassign_owner(replica, matching_brs, dr_owner, policy.partition, is_test)
                     return 0
 
@@ -244,10 +246,10 @@ class Detox(object):
             # call policy.evaluate for each replica
             # parallel_exec is just a speed optimization (may not be meaningful in the presence of python Global Interpreter Lock)
             start = time.time()
-#            eval_results = parallel_exec(policy.evaluate, list(all_replicas), per_thread = 100)
             eval_results = []
             for replica in all_replicas:
                 eval_results.append(policy.evaluate(replica))
+
             logger.info('Took %f seconds to evaluate', time.time() - start)
 
             deletion_candidates = collections.defaultdict(dict) # {site: {replica: condition_id or ([block_replica], condition_id)}}
@@ -303,7 +305,7 @@ class Detox(object):
 
                 # first update the protected fractions
                 for site, size in protect_sizes.iteritems():
-                    quota = quotas[site]
+                    quota = quotas[site] * 1.e+12
                     if quota > 0.:
                         protected_fraction[site] += size / quota
                     else:
@@ -328,7 +330,7 @@ class Detox(object):
     
                 deleted_volume = 0.
     
-                quota = quotas[site]
+                quota = quotas[site] * 1.e+12
     
                 for replica in sorted_candidates:
                     if policy.stop_condition.match(site):
@@ -360,9 +362,9 @@ class Detox(object):
 
         # done iterating
 
-        for rule in policy.rules:
-            if hasattr(rule, 'has_match') and not rule.has_match:
-                logger.warning('Policy %s had no matching replica.' % str(rule))
+        for line in policy.policy_lines:
+            if hasattr(line, 'has_match') and not line.has_match:
+                logger.warning('Policy %s had no matching replica.' % str(line))
 
         # save replica snapshots and all deletion decisions
         logger.info('Saving deletion decisions.')
@@ -477,7 +479,7 @@ class Detox(object):
                     if deletion_size > chunk_size and deletion_size + size > chunk_size * 1.1:
                         # put the excess back
                         list_above_chunk.reverse()
-                        replica_list.extend(list_above_chunk)
+                        site_deletion_list.extend(list_above_chunk)
                         list_above_chunk = []
                         break
 

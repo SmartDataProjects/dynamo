@@ -344,7 +344,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_deletion_decisions(run_number, deleted, kept, protected)
+            self._do_save_deletion_decisions(run_number, deleted_list, kept_list, protected_list)
         finally:
             self.release_lock()
 
