@@ -10,29 +10,28 @@ class InvalidOperator(Exception):
 class InvalidExpression(Exception):
     pass
 
+##################
+## Base classes ##
+##################
+
 class Predicate(object):
     @staticmethod
     def get(vardef, op = '', rhs_expr = ''):
         if op in UnaryExpr.operators:
             if rhs_expr != '':
                 raise InvalidOperator(op)
-
             return UnaryExpr.get(vardef, op)
+
         elif op in BinaryExpr.operators:
             if rhs_expr == '':
                 raise InvalidOperator(op)
-
             return BinaryExpr.get(vardef, op, rhs_expr)
-        elif op in RightSetExpr.operators:
+
+        elif op in SetElementExpr.operators:
             if rhs_expr == '':
                 raise InvalidOperator(op)
+            return SetElementExpr.get(vardef, op, rhs_expr)
 
-            return RightSetExpr.get(vardef, op, rhs_expr)
-        elif op in LeftSetExpr.operators:
-            if rhs_expr == '':
-                raise InvalidOperator(op)
-
-            return LeftSetExpr.get(vardef, op, rhs_expr)
         else:
             raise InvalidOperator(op)
 
@@ -41,7 +40,29 @@ class Predicate(object):
         self.vtype = vtype
 
     def __call__(self, obj):
-        return self.vmap(obj)
+        """
+        Call _eval of the inherited classes.
+        In case the LHS is a container (can happen when evaluating a block-level
+        expression over a dataset replica), return the OR of _eval calls over the
+        container elements.
+        """
+
+        lhs = self.vmap(obj)
+
+        if not isinstance(lhs, basestring):
+            try:
+                # LHS may be a container
+                # Then we return the result of OR over all elements
+                for l in lhs:
+                    if self._eval(l):
+                        return True
+
+                return False
+
+            except TypeError:
+                pass
+
+        return self._eval(lhs)
 
 class UnaryExpr(Predicate):
     operators = ['', 'not']
@@ -49,19 +70,15 @@ class UnaryExpr(Predicate):
     @staticmethod
     def get(vardef, op):
         if op == '':
-            return Predicate(*vardef)
+            return Assert(vardef)
         elif op == 'not':
-            return Negate(*vardef)
+            return Negate(vardef)
 
     def __init__(self, vardef):
         Predicate.__init__(self, *vardef)
 
         if self.vtype != variables.BOOL_TYPE:
             raise InvalidOperator(op)
-
-class Negate(UnaryExpr):
-    def __call__(self, obj):
-        return not self.vmap(obj)
 
 class BinaryExpr(Predicate):
     operators = ['==', '!=', '<', '>', 'older_than', 'newer_than']
@@ -102,64 +119,7 @@ class BinaryExpr(Predicate):
             except:
                 raise InvalidExpression('Invalid time expression %s' % rhs_expr)
 
-class Eq(BinaryExpr):
-    def __init__(self, vardef, rhs_expr):
-        BinaryExpr.__init__(self, vardef, rhs_expr)
-
-        if type(self.rhs) is re._pattern_type:
-            self._call = lambda obj: self.rhs.match(self.vmap(obj)) is not None
-        else:
-            self._call = lambda obj: self.vmap(obj) == self.rhs
-
-    def __call__(self, obj):
-        return self._call(obj)
-
-class Neq(BinaryExpr):
-    def __init__(self, vardef, rhs_expr):
-        BinaryExpr.__init__(self, vardef, rhs_expr)
-
-        if type(self.rhs) is re._pattern_type:
-            self._call = lambda obj: self.rhs.match(self.vmap(obj)) is None
-        else:
-            self._call = lambda obj: self.vmap(obj) != self.rhs
-
-    def __call__(self, obj):
-        return self._call(obj)
-
-class Lt(BinaryExpr):
-    def __call__(self, obj):
-        return self.vmap(obj) < self.rhs
-
-class Gt(BinaryExpr):
-    def __call__(self, obj):
-        return self.vmap(obj) > self.rhs
-
-class PatternExpr(BinaryExpr):
-    def __init__(self, vardef, pattern):
-        Predicate.__init__(self, *vardef)
-
-        if '*' in pattern:
-            self.rhs = re.compile(fnmatch.translate(pattern))
-            self.is_re = True
-        else:
-            self.rhs = pattern
-            self.is_re = False
-
-class Match(PatternExpr):
-    def __call__(self, obj):
-        if self.is_re:
-            return self.rhs.match(self.vmap(obj)) is not None
-        else:
-            return self.vmap(obj) == self.rhs
-
-class Unmatch(PatternExpr):
-    def __call__(self, obj):
-        if self.is_re:
-            return self.rhs.match(self.vmap(obj)) is None
-        else:
-            return self.vmap(obj) != self.rhs
-
-class RightSetExpr(Predicate):
+class SetElementExpr(Predicate):
     operators = ['in', 'notin']
 
     @staticmethod
@@ -168,10 +128,6 @@ class RightSetExpr(Predicate):
             return In(vardef, elems_expr)
         elif op == 'notin':
             return Notin(vardef, elems_expr)
-        elif op == 'contains':
-            return Contains(vardef, elems_expr)
-        elif op == 'doesnotcontain':
-            return DoesNotContain(vardef, elems_expr)
         else:
             raise InvalidOperator(op)
 
@@ -194,59 +150,69 @@ class RightSetExpr(Predicate):
         except:
             raise InvalidExpression(matches.group(1))
 
-class In(RightSetExpr):
-    def __call__(self, obj):
-        if self.vtype == variables.NUMERIC_TYPE:
-            return self.vmap(obj) in self.elems
-        else:
-            v = self.vmap(obj)
-            try:
-                next(e for e in self.elems if e.match(v))
-                return True
-            except StopIteration:
-                return False
+#################################
+## Unary (boolean) expressions ##
+#################################
 
-class Notin(RightSetExpr):
-    def __call__(self, obj):
-        return not In.__call__(self, obj)
+class Assert(UnaryExpr):
+    def _eval(self, boolexpr):
+        return boolexpr
 
-class LeftSetExpr(Predicate):
-    operators = ['contains', 'doesnotcontain']
+class Negate(UnaryExpr):
+    def _eval(self, boolexpr):
+        return not boolexpr
 
-    @staticmethod
-    def get(vardef, op, rhs_expr):
-        if op == 'contains':
-            return Contains(vardef, rhs_expr)
-        elif op == 'doesnotcontain':
-            return DoesNotContain(vardef, rhs_expr)
-        else:
-            raise InvalidOperator(op)
+#####################################
+## Binary (comparison) expressions ##
+#####################################
 
+class Eq(BinaryExpr):
     def __init__(self, vardef, rhs_expr):
-        Predicate.__init__(self, *vardef)
+        BinaryExpr.__init__(self, vardef, rhs_expr)
 
-        try:
-            if self.vtype == variables.NUMERIC_TYPE:
-                self.test = int(rhs_expr)
-            elif self.vtype == variables.TEXT_TYPE:
-                self.test = re.compile(fnmatch.translate(rhs_expr))
-            else:
-                raise Exception()
-        except:
-            raise InvalidExpression(rhs_expr)
-
-class Contains(LeftSetExpr):
-    def __call__(self, obj):
-        if self.vtype == variables.NUMERIC_TYPE:
-            return self.test in self.vmap(obj)
+        if type(self.rhs) is re._pattern_type:
+            self._call = lambda lhs: self.rhs.match(lhs) is not None
         else:
-            elems = self.vmap(obj)
+            self._call = lambda lhs: lhs == self.rhs
+
+    def _eval(self, lhs):
+        return self._call(lhs)
+
+class Neq(BinaryExpr):
+    def __init__(self, vardef, rhs_expr):
+        BinaryExpr.__init__(self, vardef, rhs_expr)
+
+        if type(self.rhs) is re._pattern_type:
+            self._call = lambda lhs: self.rhs.match(lhs) is None
+        else:
+            self._call = lambda lhs: lhs != self.rhs
+
+    def _eval(self, lhs):
+        return self._call(lhs)
+
+class Lt(BinaryExpr):
+    def _eval(self, lhs):
+        return lhs < self.rhs
+
+class Gt(BinaryExpr):
+    def _eval(self, lhs):
+        return lhs > self.rhs
+
+#########################################
+## Set-element (inclusion) expressions ##
+#########################################
+
+class In(SetElementExpr):
+    def _eval(self, elem):
+        if self.vtype == variables.NUMERIC_TYPE:
+            return elem in self.elems
+        else:
             try:
-                next(e for e in elems if self.test.match(e))
+                next(e for e in self.elems if e.match(elem))
                 return True
             except StopIteration:
                 return False
 
-class DoesNotContain(RightSetExpr):
-    def __call__(self, obj):
-        return not Contains.__call__(self, obj)
+class Notin(SetElementExpr):
+    def _eval(self, elem):
+        return not In._eval(self, elem)

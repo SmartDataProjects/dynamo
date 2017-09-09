@@ -9,7 +9,7 @@ import os
 
 import common.configuration as config
 from common.dataformat import Dataset, Site
-from policy import Dismiss, Delete, DeleteOwner, Keep, Protect, DeleteBlock, ProtectBlock
+from policy import Dismiss, Delete, Keep, Protect, DeleteBlock, ProtectBlock
 import detox.configuration as detox_config
 from common.misc import timer, parallel_exec, sigint
 
@@ -95,6 +95,10 @@ class Detox(object):
                 if policy.deletion_trigger.match(site):
                     triggered_sites.add(site)
 
+        if len(target_sites) == 0:
+            logger.info('No site matches the target definition.')
+            return
+
         quotas = dict((s, s.partition_quota(policy.partition)) for s in target_sites)
 
         # if a policy line requires iterative execution, we need the sites to have non-negative quotas
@@ -130,17 +134,30 @@ class Detox(object):
 
         def apply_protect(replica, condition):
             # we have a dataset-level protection
-            # revert whatever we have done at block level
 
-            if replica in deleted_blocks:
+            logger.debug('apply_protect: %s %s, condition %d', replica.site.name, replica.dataset.name, condition)
+
+            try:
                 match_list = deleted_blocks.pop(replica)
+            except KeyError:
+                pass
+            else:
+                # revert whatever we have done at block level
+                logger.debug('cancelling and consolidating %d deleted blocks', sum(len(l) for l, _ in match_list))
+
                 for block_replicas, _ in match_list:
                     replica.block_replicas.extend(block_replicas)
                     for block_replica in block_replicas:
                         dataset_replica.site.add_block_replica(block_replica)
 
-            if replica in protected_blocks:
+            try:
                 match_list = protected_blocks.pop(replica)
+            except KeyError:
+                pass
+            else:
+                # revert whatever we have done at block level
+                logger.debug('consolidating %d protected blocks', sum(len(l) for l, _ in match_list))
+
                 for block_replicas, _ in match_list:
                     replica.block_replicas.extend(block_replicas)
 
@@ -150,18 +167,27 @@ class Detox(object):
             return replica.size()
 
         def apply_delete(replica, condition):
-            if replica in deleted_blocks:
-                # revert what is done under DeleteBlock
+
+            logger.debug('apply_delete: %s %s, condition %d', replica.site.name, replica.dataset.name, condition)
+
+            try:
                 match_list = deleted_blocks.pop(replica)
+            except KeyError:
+                pass
+            else:
+                # revert what is done under DeleteBlock
+                logger.debug('consolidating %d protected blocks', sum(len(l) for l, _ in match_list))
+
                 for block_replicas, _ in match_list:
                     replica.block_replicas.extend(block_replicas)
                     for block_replica in block_replicas:
-                        dataset_replica.site.add_block_replica(block_replica)
+                        replica.site.add_block_replica(block_replica)
 
             if replica in protected_blocks:
+                logger.debug('replica is partially protected, switching to deleteblock for %d blockreps', len(replica.block_replicas))
                 # if there was a block-level protection, do a block-level deletion
                 # protected blocks are removed from replica.block_replicas already
-                return apply_deleteblock(replica, replica.block_replicas, condition)
+                return apply_deleteblock(replica, list(replica.block_replicas), condition)
 
             # We need to detach the replica from owning containers (dataset and site) for policy evaluation
             # in the later iterations - will be relinked if deletion fails in commit_deletion
@@ -172,58 +198,67 @@ class Detox(object):
 
             return replica.size()
 
-        def apply_deleteowner(replica, groups, condition):
-            # This is a rather specific operation. The assumptions are that
-            #  . owner groups that are targeted have block-level ownership (e.g. DataOps)
-            #  . there may be a block that is owned by a group that has dataset-level ownership (e.g. AnalysisOps)
-
-            dr_owner = None
-            matching_brs = []
-            for block_replica in replica.block_replicas:
-                if block_replica.group.olevel is Dataset and dr_owner is None:
-                    # there is a dataset-level owner
-                    dr_owner = block_replica.group
-
-                if block_replica.group in groups:
-                    matching_brs.append(block_replica)
-
-            if len(matching_brs) != 0:
-                # act only when there is a block replica to do something on
-                if len(matching_brs) == len(replica.block_replicas):
-                    # all blocks matched - not reassigning to any group but deleting
-                    return apply_delete(replica, condition)
-
-                elif dr_owner is None:
-                    # block replicas are marked for deletion, but we do not have a group that can take over
-                    return apply_deleteblock(replica, matching_brs, condition)
-
-                else:
-                    # dr_owner is taking over
-                    # not ideal to make reassignments here, but this operation affects later iterations
-                    # not popping from all_replicas because different lines may now apply
-                    self.reassign_owner(replica, matching_brs, dr_owner, policy.partition, is_test)
-                    return 0
-
         def apply_protectblock(replica, block_replicas, condition):
+
+            logger.debug('apply_protectblock: %s %s %d blocks, condition %d', replica.site.name, replica.dataset.name, len(block_replicas), condition)
+
             for block_replica in block_replicas:
                 replica.block_replicas.remove(block_replica)
 
             protected_blocks[replica].append((block_replicas, condition))
 
             if len(replica.block_replicas) == 0:
+                logger.debug('replica is now empty - removing from all_replicas')
                 # take this out of policy evaluation for the next round
                 all_replicas.remove(replica)
 
             return sum(br.size for br in block_replicas)
 
         def apply_deleteblock(replica, block_replicas, condititon):
-            for block_replica in block_replicas:
-                replica.block_replicas.remove(block_replica)
-                replica.site.remove_block_replica(block_replica)
+            # Special operation - if we are deleting block replicas owned by group B, whose
+            # ownership level (see dataformats/group) is Block, but the block replicas belong
+            # to a dataset replica otherwise owned by group D, whose ownership level is Dataset,
+            # then we don't delete the block replicas but hand them over to D.
 
-            deleted_blocks[replica].append((block_replicas, condition))
+            logger.debug('apply_deleteblock: %s %s %d blocks, condition %d', replica.site.name, replica.dataset.name, len(block_replicas), condition)
+
+            # establish a dataset-level owner
+            dr_owner = None
+            for block_replica in replica.block_replicas:
+                if block_replica.group.olevel is Dataset:
+                    # there is a dataset-level owner
+                    dr_owner = block_replica.group
+                    break
+
+            if dr_owner is None:
+                blocks_to_hand_over = []
+                blocks_to_delete = list(block_replicas)
+            else:
+                blocks_to_hand_over = []
+                blocks_to_delete = []
+                for block_replica in block_replicas:
+                    if block_replica.group.olevel is Block:
+                        blocks_to_hand_over.append(block_replica)
+                    else:
+                        blocks_to_delete.append(block_replica)
+
+            if len(blocks_to_hand_over) != 0:
+                logger.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
+                # not ideal to make reassignments here, but this operation affects later iterations
+                self.reassign_owner(replica, blocks_to_hand_over, dr_owner, policy.partition, is_test)
+
+            if len(blocks_to_delete) != 0:
+                logger.debug('%d blocks to delete', len(blocks_to_delete))
+                deleted_blocks[replica].append((blocks_to_delete, condition))
+
+                for block_replica in blocks_to_delete:
+                    replica.block_replicas.remove(block_replica)
+                    replica.site.remove_block_replica(block_replica)
+
+            logger.debug('replica is left with %d block replicas', len(replica.block_replicas))
 
             if len(replica.block_replicas) == 0:
+                logger.debug('replica is now empty - removing from all_replicas')
                 # take this out of policy evaluation for the next round
                 all_replicas.remove(replica)
 
@@ -231,13 +266,13 @@ class Detox(object):
                 # in the later iterations - will be relinked if deletion fails in commit_deletion
                 replica.unlink()
 
-            return sum(br.size for br in block_replicas)
+            return sum(br.size for br in blocks_to_delete)
 
 
         iteration = 0
 
         # now iterate through deletions, updating site usage as we go
-        # if need_iteration is False, break after first pass
+        # if policy.need_iteration is False, break after first pass
         while True:
             if policy.need_iteration:
                 iteration += 1
@@ -266,9 +301,6 @@ class Detox(object):
 
                 elif isinstance(action, Delete):
                     apply_delete(replica, condition)
-
-                elif isinstance(action, DeleteOwner):
-                    apply_deleteowner(replica, action.groups, condition)
 
                 elif isinstance(action, Dismiss):
                     if replica.site in triggered_sites:
@@ -382,7 +414,6 @@ class Detox(object):
         logger.info('Committing deletion.')
 
         deletion_list = set(deleted.iterkeys())
-
         # we have recorded deletion reasons; we can now consolidate deleted block replicas
         for replica, block_level_list in deleted_blocks.iteritems():
             if replica not in deletion_list:
@@ -423,6 +454,7 @@ class Detox(object):
             new_replicas.append(new_replica)
 
         if not is_test:
+            # are we relying on do_update = True in insert_many <- add_blockreplicas here?
             self.inventory_manager.store.add_blockreplicas(new_replicas)
 
     def commit_deletions(self, run_number, policy, deletion_list, is_test, comment):

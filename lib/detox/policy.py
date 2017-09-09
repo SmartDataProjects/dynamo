@@ -38,10 +38,6 @@ class Dismiss(Action):
 class Delete(Action):
     pass
 
-class DeleteOwner(Action):
-    def __init__(self, groups):
-        self.groups = groups
-
 class Keep(Action):
     pass
 
@@ -189,11 +185,6 @@ class Policy(object):
             elif words[0] in ('Protect', 'Dismiss', 'Delete', 'ProtectBlock', 'DeleteBlock'):
                 decision = Decision(eval(words[0]))
                 line_type = LINE_POLICY
-            elif words[0].startswith('DeleteOwner'):
-                group_names = re.match('DeleteOwner\(([^)]+)\)', words[0]).group(1).split(',')
-                groups = [inventory.groups[n] for n in group_names]
-                decision = Decision(DeleteOwner, groups)
-                line_type = LINE_POLICY
             else:
                 raise ConfigurationError(line)
 
@@ -242,6 +233,7 @@ class Policy(object):
                     self.target_site_def = SiteCondition(cond_text, self.partition)
 
                 elif line_type == LINE_DELETION_TRIGGER:
+                    print line
                     self.deletion_trigger = SiteCondition(cond_text, self.partition)
 
                 elif line_type == LINE_STOP_CONDITION:
@@ -262,11 +254,14 @@ class Policy(object):
             self.used_demand_plugins.update(cond.used_demand_plugins)
 
         for line in self.policy_lines:
-            if not self.need_iteration and not line.condition.static:
-                logger.info('Condition %s is dynamic. Policy will be evaluated iteratively.', str(line.condition))
-                self.need_iteration = True
-
             self.used_demand_plugins.update(line.condition.used_demand_plugins)
+            if not self.need_iteration:
+                if not line.condition.static:
+                    logger.info('Condition %s is dynamic. Policy will be evaluated iteratively.', str(line.condition))
+                    self.need_iteration = True
+                elif issubclass(line.decision.action_cls, BlockAction):
+                    logger.info('Block-level action is required. Policy will be evaluated iteratively.', str(line.condition))
+                    self.need_iteration = True
 
         logger.info('Policy stack for %s: %d lines using demand plugins %s', self.partition.name, len(self.policy_lines), str(sorted(self.used_demand_plugins)))
 

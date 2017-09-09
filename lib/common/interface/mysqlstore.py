@@ -1010,13 +1010,8 @@ class MySQLStore(LocalStoreInterface):
     def _do_save_replica_accesses(self, access_list): #override
         site_id_map = {}
         self._make_site_map(set(r.site for r in access_list.iterkeys()), site_id_map = site_id_map)
-        logger.info('saving access of %d replicas', len(access_list))
         dataset_id_map = {}
-        datasets = set(r.dataset for r in access_list.iterkeys())
-        logger.info('%d datasets', len(datasets))
-        self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
-
-        logger.info('save_replica_access %d', len(dataset_id_map))
+        self._make_dataset_map(set(r.dataset for r in access_list.iterkeys()), dataset_id_map = dataset_id_map)
 
         fields = ('dataset_id', 'site_id', 'date', 'access_type', 'num_accesses', 'cputime')
 
@@ -1255,8 +1250,6 @@ class MySQLStore(LocalStoreInterface):
             tmp_join = False
 
         self._make_map('datasets', iter(datasets), dataset_id_map, id_dataset_map, tmp_join = tmp_join)
-        if dataset_id_map is not None:
-            logger.info('make_dataset_map %d', len(dataset_id_map))
 
     def _make_map(self, table, objitr, object_id_map, id_object_map, tmp_join = False):
         if tmp_join:
@@ -1292,5 +1285,3 @@ class MySQLStore(LocalStoreInterface):
                 id_object_map[obj_id] = obj
 
         logger.debug('make_map %s (%d) obejcts', table, num_obj)
-        if object_id_map is not None:
-            logger.info('object_id_map %d elements %d objects', len(object_id_map), num_obj)

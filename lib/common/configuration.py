@@ -124,7 +124,8 @@ activitylock = Configuration(
 )
 
 tape_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']
-disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
+#disk_sites = ['T2_*', 'T1_*_Disk', 'T0_CH_CERN_Disk']
+disk_sites = ['T2_CH_CERN']
 
 inventory = Configuration(
 #    included_sites = tape_sites + disk_sites,
@@ -182,7 +183,8 @@ inventory = Configuration(
         ('IB RelVal', lambda r: r.group is not None and r.group.name == 'IB RelVal'),
         ('Tape', lambda r: r.site.storage_type == Site.TYPE_MSS),
         ('Unsubscribed', lambda r: r.group is None),
-        ('Physics', ['AnalysisOps', 'DataOps'])
+        ('Express', lambda r: r.group is not None and re.match('/.*Express.*/.+/.+', r.block.dataset.name)),
+        ('Physics', ['AnalysisOps', 'DataOps']),
     ],
     # list of conditions for a PRODUCTION state dataset to become IGNORED (will still be reset to PRODUCTION if a new block replica is found)
     ignore_datasets = [

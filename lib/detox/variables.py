@@ -27,7 +27,7 @@ class DatasetAttr(object):
 class ReplicaAttr(object):
     """Extract an attribute from the replica. If dataset replica is passed, switch behavior depending on _algo."""
 
-    NOBLOCK, SUM, MAX, MIN = range(4)
+    NOBLOCK, SUM, MAX, MIN, SET = range(5)
 
     def __init__(self, attr, algo):
         self.attr = attr
@@ -64,6 +64,23 @@ class ReplicaAttr(object):
                     return max(values)
                 elif self._algo == ReplicaAttr.MIN:
                     return min(values)
+                elif self._algo == ReplicaAttr.SET:
+                    return set(values)
+
+class SiteAttr(object):
+    """Extract an attribute from a site."""
+
+    def __init__(self, attr):
+        self.attr = attr
+        self._is_func = callable(attr)
+        self.partition = None
+
+    def __call__(self, site):
+        if self._is_func:
+            # if attr is a callable, pass the partition as the second argument
+            return self.attr(site, self.partition)
+        else:
+            return getattr(site, self.attr)
 
 
 def dataset_has_incomplete_replica(dataset):
@@ -175,22 +192,28 @@ replica_vardefs = {
     'replica.last_used': (replica_last_used, TIME_TYPE),
     'replica.num_access': (replica_num_access, NUMERIC_TYPE),
     'replica.has_locked_block': (replica_has_locked_block, BOOL_TYPE),
-    'replica.owners': (lambda r: list(set(br.group.name for br in r.block_replicas if br.group is not None)), TEXT_TYPE),
     'replica.num_full_disk_copy_common_owner': (replica_num_full_disk_copy_common_owner, NUMERIC_TYPE),
-    'blockreplica.updated': (ReplicaAttr('last_update', ReplicaAttr.MAX), TIME_TYPE)
+    'blockreplica.last_update': (ReplicaAttr('last_update', ReplicaAttr.MAX), TIME_TYPE),
+    'blockreplica.owner': (ReplicaAttr(lambda r: r.group.name, ReplicaAttr.SET), TEXT_TYPE)
 }
 
 # Variables that may change their values during a single program execution
-replica_dynamic_variables = ['dataset.num_full_disk_copy', 'replica.owners', 'replica.num_full_disk_copy_common_owner', 'blockreplica.updated']
+replica_dynamic_variables = [
+    'dataset.num_full_disk_copy',
+    'replica.owners',
+    'replica.num_full_disk_copy_common_owner',
+    'blockreplica.last_update',
+    'blockreplica.owner'
+]
 
 # site variable definition: partition -> (site -> value)
 site_vardefs = {
-    'site.name': (lambda p: lambda s: s.name, TEXT_TYPE),
-    'site.status': (lambda p: lambda s: s.status, NUMERIC_TYPE, lambda v: eval('Site.STAT_' + v)),
-    'site.occupancy': (lambda p: lambda s: s.storage_occupancy([p]), NUMERIC_TYPE),
-    'site.quota': (lambda p: lambda s: s.partition_quota(p), NUMERIC_TYPE),
-    'never': (lambda p: lambda s: False, BOOL_TYPE),
-    'always': (lambda p: lambda s: True, BOOL_TYPE)
+    'site.name': (SiteAttr('name'), TEXT_TYPE),
+    'site.status': (SiteAttr('status'), NUMERIC_TYPE, lambda v: eval('Site.STAT_' + v)),
+    'site.occupancy': (SiteAttr(lambda s, p: s.storage_occupancy([p])), NUMERIC_TYPE),
+    'site.quota': (SiteAttr(lambda s, p: s.partition_quota(p)), NUMERIC_TYPE),
+    'never': (lambda s: False, BOOL_TYPE),
+    'always': (lambda s: True, BOOL_TYPE)
 }
 
 required_plugins = {

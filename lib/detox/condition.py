@@ -82,4 +82,7 @@ class SiteCondition(Condition):
 
     def get_vardef(self, expr):
         vardef = variables.site_vardefs[expr]
-        return (vardef[0](self.partition),) + vardef[1:]
+        if type(vardef) is variables.SiteAttr:
+            vardef.partition = self.partition
+
+        return vardef

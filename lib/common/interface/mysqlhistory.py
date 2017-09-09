@@ -272,6 +272,8 @@ class MySQLHistory(TransactionHistoryInterface):
         if os.path.exists(db_file_name):
             os.unlink(db_file_name)
 
+        logger.info('Creating snapshot SQLite3 DB %s', db_file_name)
+
         # hardcoded!!
         delete = 1
         keep = 2
@@ -554,7 +556,7 @@ class MySQLHistory(TransactionHistoryInterface):
         old_runs = self._mysql.xquery(sql)
         for old_run in old_runs:
             table_name = 'replicas_%d' % old_run
-            self._cache_db.query('DROP TABLE `%s`' % table_name)
+            self._cache_db.query('DROP TABLE IF EXISTS `%s`' % table_name)
 
         self._mysql.query('DELETE FROM `replica_snapshot_cache_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
         self._mysql.query('OPTIMIZE TABLE `replica_snapshot_cache_usage`')

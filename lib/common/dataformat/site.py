@@ -188,7 +188,7 @@ class Site(object):
         try:
             self._block_replicas.remove(replica)
         except KeyError:
-            print replica.site.name, replica.block.dataset.name, replica.block.name
+            print replica.site.name, replica.block.dataset.name, replica.block.real_name()
             raise
 
         for ip, partition in enumerate(Site._partitions_order):

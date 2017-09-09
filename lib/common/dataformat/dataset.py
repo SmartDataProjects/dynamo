@@ -2,6 +2,7 @@ import time
 
 from block import Block
 from lfile import File
+from datasetreplica import DatasetReplica
 from exceptions import ObjectError
 
 class Dataset(object):
