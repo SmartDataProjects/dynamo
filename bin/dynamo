@@ -16,6 +16,7 @@ parser.add_argument('--detox-partition', '-p', metavar = 'PARTITION', dest = 'de
 parser.add_argument('--dealer-plugins', '-g', metavar = 'PLUGIN:PRIORITY', dest = 'dealer_plugins', nargs = '+', default = ['Popularity:3', 'Balancer:2', 'Undertaker:1'], help = 'Name:Priority of the dealer plugins to run.')
 parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
 parser.add_argument('--no-auto-approval', '-P', action = 'store_true', dest = 'no_auto_approval', help = 'Do not approve deletion and transfer requests automatically.')
+parser.add_argument('--included-sites', '-s', metavar = 'SITE', dest = 'included_sites', nargs = '+', default = [], help = 'Included sites, overriding included sites in inventory configuration.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
 parser.add_argument('--log-file', '-o', metavar = 'PATH', dest = 'log_file', default = '', help = 'Log output file.')
 parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to local databases.')
@@ -58,6 +59,9 @@ if args.dry_run:
 elif not args.comment and not config.daemon_mode:
     print 'Non-dry run from command line requires a comment (-m).'
     sys.exit(1)
+
+if len(args.included_sites) != 0:
+    config.inventory.included_sites = args.included_sites
 
 inventory_manager = InventoryManager(load_data = False)
 

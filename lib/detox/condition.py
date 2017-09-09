@@ -62,6 +62,8 @@ class Condition(object):
 
 class ReplicaCondition(Condition):
     def get_vardef(self, expr):
+        """Return a tuple containing (callable variable definition, variable type, ...)"""
+
         return variables.replica_vardefs[expr]
 
     def get_matching_blocks(self, replica):
@@ -81,8 +83,11 @@ class SiteCondition(Condition):
         Condition.__init__(self, text)
 
     def get_vardef(self, expr):
+        """Return a tuple containing (callable variable definition, variable type, ...)"""
+
         vardef = variables.site_vardefs[expr]
-        if type(vardef) is variables.SiteAttr:
-            vardef.partition = self.partition
+        if type(vardef[0]) is variables.SiteAttr:
+            print 'Passing partition', self.partition.name, 'to', expr
+            vardef[0].partition = self.partition
 
         return vardef

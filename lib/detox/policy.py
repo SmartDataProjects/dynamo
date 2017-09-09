@@ -26,11 +26,13 @@ class Decision(object):
         self.action_cls = cls
         self.common_args = common_args
 
-    def action(self, *args):
-        return self.action_cls(*(args + self.common_args))
+    def action(self, replica, condition, *args):
+        return self.action_cls(replica, condition, *(args + self.common_args))
 
 class Action(object):
-    pass
+    def __init__(self, replica, condition):
+        self.replica = replica
+        self.condition = condition
 
 class Dismiss(Action):
     pass
@@ -45,24 +47,20 @@ class Protect(Action):
     pass
 
 class BlockAction(Action):
-    def __init__(self, block_replicas = []):
+    def __init__(self, replica, condition, block_replicas = []):
+        Action.__init__(self, replica, condition)
+
         self.block_replicas = list(block_replicas)
 
 class ProtectBlock(BlockAction):
     @staticmethod
-    def dataset_level(*args):
-        return Protect(*args)
-
-    def __init__(self, block_replicas = []):
-        BlockAction.__init__(self, block_replicas)
+    def dataset_level(replica, condition, *args):
+        return Protect(replica, condition)
 
 class DeleteBlock(BlockAction):
     @staticmethod
-    def dataset_level(*args):
-        return Delete(*args)
-
-    def __init__(self, block_replicas = []):
-        BlockAction.__init__(self, block_replicas)
+    def dataset_level(replica, condition, *args):
+        return Delete(replica, condition)
 
 class SortKey(object):
     """
@@ -91,7 +89,7 @@ class PolicyLine(object):
         self.decision = decision
         self.has_match = False
         if self.condition.static:
-            self.cached_result = {}
+            self.cached_action = {}
 
         # filled by history interface
         self.condition_id = 0
@@ -99,10 +97,10 @@ class PolicyLine(object):
     def __str__(self):
         return self.condition.text
 
-    def __call__(self, replica):
+    def evaluate(self, replica):
         if self.condition.static:
             try:
-                return self.cached_result[replica]
+                return self.cached_action[replica]
             except KeyError:
                 pass
 
@@ -114,20 +112,20 @@ class PolicyLine(object):
                 block_replicas = self.condition.get_matching_blocks(replica)
                 if len(block_replicas) == len(replica.block_replicas):
                     # but all blocks matched - return dataset level
-                    result = (replica, self.decision.action_cls.dataset_level(), self.condition_id)
+                    action = self.decision.action_cls.dataset_level(replica, self.condition_id)
                 else:
-                    result = (replica, self.decision.action(block_replicas), self.condition_id)
+                    action = self.decision.action(replica, self.condition_id, block_replicas)
             else:
-                result = (replica, self.decision.action(), self.condition_id)
+                action = self.decision.action(replica, self.condition_id)
 
             if self.condition.static:
-                self.cached_result[replica] = result
+                self.cached_action[replica] = action
 
-            return result
+            return action
 
         else:
             if self.condition.static:
-                self.cached_result[replica] = None
+                self.cached_action[replica] = None
 
             return None
 
@@ -233,7 +231,6 @@ class Policy(object):
                     self.target_site_def = SiteCondition(cond_text, self.partition)
 
                 elif line_type == LINE_DELETION_TRIGGER:
-                    print line
                     self.deletion_trigger = SiteCondition(cond_text, self.partition)
 
                 elif line_type == LINE_STOP_CONDITION:
@@ -348,10 +345,11 @@ class Policy(object):
 
     def evaluate(self, replica):
         for line in self.policy_lines:
-            result = line(replica)
-            if result is not None:
+            action = line.evaluate(replica)
+            if action is not None:
                 break
         else:
-            return replica, self.default_decision.action(), 0
+            # condition 0 -> no policy match
+            return self.default_decision.action(replica, 0)
 
-        return result
+        return action

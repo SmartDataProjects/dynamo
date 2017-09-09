@@ -8,7 +8,7 @@ import sys
 import os
 
 import common.configuration as config
-from common.dataformat import Dataset, Site
+from common.dataformat import Dataset, Block, Site
 from policy import Dismiss, Delete, Keep, Protect, DeleteBlock, ProtectBlock
 import detox.configuration as detox_config
 from common.misc import timer, parallel_exec, sigint
@@ -101,14 +101,6 @@ class Detox(object):
 
         quotas = dict((s, s.partition_quota(policy.partition)) for s in target_sites)
 
-        # if a policy line requires iterative execution, we need the sites to have non-negative quotas
-        if policy.need_iteration:
-            if min(quotas.itervalues()) < 0.: # at least one site has infinite quota
-                logger.error('Finite quota for all sites is required for partition %s.', policy.partition.name)
-                return
-
-            protected_fraction = dict((s, 0.) for s in target_sites)
-
         logger.info('Identifying dataset replicas in the partition.')
 
         # "partition" as a verb - selecting only the blockreps in the partition
@@ -124,6 +116,10 @@ class Detox(object):
         self.history.save_datasets(run_number, set(r.dataset for r in all_replicas))
 
         logger.info('Start deletion. Evaluating %d lines against %d replicas.', len(policy.policy_lines), len(all_replicas))
+
+        if policy.need_iteration:
+            # if quota is 0, protected fraction is identically 1
+            protected_fraction = dict((s, 1. if q == 0 else 0.) for s, q in quotas.iteritems())
 
         protected = {} # {replica: condition_id}
         deleted = {}
@@ -237,10 +233,10 @@ class Detox(object):
                 blocks_to_hand_over = []
                 blocks_to_delete = []
                 for block_replica in block_replicas:
-                    if block_replica.group.olevel is Block:
-                        blocks_to_hand_over.append(block_replica)
-                    else:
+                    if block_replica.group.olevel is Dataset:
                         blocks_to_delete.append(block_replica)
+                    else:
+                        blocks_to_hand_over.append(block_replica)
 
             if len(blocks_to_hand_over) != 0:
                 logger.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
@@ -293,7 +289,10 @@ class Detox(object):
             protect_sizes = collections.defaultdict(int)
 
             # sort the evaluation results into containers
-            for replica, action, condition in eval_results:
+            for action in eval_results:
+                replica = action.replica
+                condition = action.condition
+
                 if isinstance(action, Protect):
                     size = apply_protect(replica, condition)
                     if policy.need_iteration:
@@ -340,8 +339,6 @@ class Detox(object):
                     quota = quotas[site] * 1.e+12
                     if quota > 0.:
                         protected_fraction[site] += size / quota
-                    else:
-                        protected_fraction[site] = 1.
         
                 if len(protected) != 0:
                     # find the site with the highest protected fraction

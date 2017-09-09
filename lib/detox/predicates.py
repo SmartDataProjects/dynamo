@@ -3,6 +3,7 @@ import fnmatch
 import subprocess
 
 import detox.variables as variables
+import detox.configuration as detox_config
 
 class InvalidOperator(Exception):
     pass
@@ -115,7 +116,7 @@ class BinaryExpr(Predicate):
                 raise InvalidExpression('Invalid time expression %s' % rhs_expr)
 
             try:
-                self.rhs = float(out.strip())
+                self.rhs = float(out.strip()) + (detox_config.main.time_shift * 24. * 3600.)
             except:
                 raise InvalidExpression('Invalid time expression %s' % rhs_expr)
 
