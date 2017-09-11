@@ -60,10 +60,12 @@ sites_with_open_transfers = []
 records = collections.defaultdict(set)
 
 sites_ongoings = []
-sites_total = []
-sites_copied = []
-sites_total_stuck = []
-sites_copied_stuck = []
+sites_total = [] # request level
+sites_copied = [] # request level
+sites_total_stuck = [] # dataset level
+sites_copied_stuck = [] # dataset level
+sites_total_ongoing = [] # dataset level
+sites_copied_ongoing = [] # dataset level
 
 # Get all ongoing dynamo transfers
 
@@ -167,6 +169,8 @@ def exec_get(sitename):
     site_copied = 0
     site_total_stuck = 0
     site_copied_stuck = 0
+    site_total_ongoing = 0
+    site_copied_ongoing = 0
 
     rrd_filepath = rrd_dir + '/' + str(sitename)
 
@@ -244,6 +248,8 @@ def exec_get(sitename):
                     ongoings.append([request_id,dataset,copied,total,is_stuck])
                     site_total_stuck += is_stuck*total
                     site_copied_stuck += is_stuck*copied
+                    site_total_ongoing += total
+                    site_copied_ongoing += copied
                     rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
 
                 else:
@@ -260,6 +266,8 @@ def exec_get(sitename):
     sites_copied.append([sitename,site_copied])
     sites_total_stuck.append([sitename,site_total_stuck])
     sites_copied_stuck.append([sitename,site_copied_stuck])
+    sites_total_ongoing.append([sitename,site_total_ongoing])
+    sites_copied_ongoing.append([sitename,site_copied_ongoing])
 
     with open("%s/filelist.txt" % rrd_filepath, "w") as csvfilelist:
         fieldnames = ["id","name","copied","total","stuck"]
@@ -284,8 +292,8 @@ with open("%s/overview.txt" % rrd_dir, "w") as overview:
     for site in sites_with_open_transfers:
         if sum(x[1] for x in sites_total if x[0] == site) == 0:
             continue
-        writer.writerow({"sitename" : site, "ongoing" : sum(x[1] for x in sites_ongoings if x[0] == site), "total" : sum(x[1] for x in sites_total if x[0] == site), 
-                         "copied" : sum(x[1] for x in sites_copied if x[0] == site), "total_stuck" : sum(x[1] for x in sites_total_stuck if x[0] == site), "copied_stuck" : sum(x[1] for x in sites_copied_stuck if x[0] == site)})
+        writer.writerow({"sitename" : site, "ongoing" : sum(x[1] for x in sites_ongoings if x[0] == site), "total" : sum(x[1] for x in sites_total_ongoing if x[0] == site), 
+                         "copied" : sum(x[1] for x in sites_copied_ongoing if x[0] == site), "total_stuck" : sum(x[1] for x in sites_total_stuck if x[0] == site), "copied_stuck" : sum(x[1] for x in sites_copied_stuck if x[0] == site)})
 
 total_volume = sum((x[1] for x in sites_total))
 copied_volume = sum((x[1] for x in sites_copied))
