@@ -22,6 +22,22 @@ def target_site_def(site):
 
     return matches
 
+
+class ReplicaPlacementRule(object):
+    """
+    Defining the interface for replica placement rules.
+    """
+
+    def __init__(self):
+        pass
+
+    def dataset_allowed(self, dataset, site):
+        return True
+
+    def block_allowed(self, block, site):
+        return True
+
+
 class DealerPolicy(object):
     """
     Defined for each partition and implements the concrete conditions for copies.
@@ -34,6 +50,7 @@ class DealerPolicy(object):
         # target site can change between policies, but we only have one policy running at the moment
         self.target_site_def = target_site_def
         self.used_demand_plugins = set()
+        self.placement_rules = []
         
         self._request_plugins = []
 
@@ -129,3 +146,24 @@ class DealerPolicy(object):
     def record(self, run_number, history, copy_list):
         for plugin, priority in self._request_plugins:
             plugin.save_record(run_number, history, copy_list)
+
+    def is_allowed_destination(self, item, site):
+        """
+        Check if the item (= Dataset, Block, or [Block]) is allowed to be at site, according to the set of rules.
+        """
+
+        for rule in self.placement_rules:
+            if type(item).__name__ == 'Dataset':
+                if not rule.dataset_allowed(item, site):
+                    return False
+
+            elif type(item).__name__ == 'Block':
+                if not rule.block_allowed(item, site):
+                    return False
+
+            elif type(item) is list:
+                for block in item:
+                    if not rule.block_allowed(block, site):
+                        return False
+
+        return True

@@ -74,7 +74,7 @@ class Dealer(object):
 
         logger.info('Determining the list of transfers to make.')
 
-        copy_list = self.determine_copies(target_sites, requests, policy.partition, policy.group, pending_volumes)
+        copy_list = self.determine_copies(target_sites, requests, policy, pending_volumes)
 
         policy.record(run_number, self.history, copy_list)
 
@@ -86,26 +86,26 @@ class Dealer(object):
 
         logger.info('Finished dealer run at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
 
-    def determine_copies(self, target_sites, requests, partition, group, pending_volumes):
+    def determine_copies(self, target_sites, requests, policy, pending_volumes):
         """
         Algorithm:
         1. Compute a time-weighted sum of number of requests for the last three days.
         2. Decide the sites least-occupied by analysis activities.
         3. Copy datasets with number of requests > available replicas to empty sites.
 
-        @param sites  List of target sites
-        @param items  ([datasets], [blocks], [files]) where each list element can be the object or (object, destination_site)
-        @param policy Dealer policy
-        @param pending_volumes Volumes pending transfer
+        @param target_sites    List of target sites
+        @param requests        [(item, destination) or item], where item is a Dataset, Block, or [Block]
+        @param policy          Dealer policy
+        @param pending_volumes Volumes pending transfer, to be updated
         """
 
-        quotas = dict((site, site.partition_quota(partition)) for site in self.inventory_manager.sites.itervalues())
+        quotas = dict((site, site.partition_quota(policy.partition)) for site in self.inventory_manager.sites.itervalues())
         copy_list = dict([(site, []) for site in target_sites]) # site -> [new_replica]
 
         site_occupancy = {}
         for site in target_sites:
             # At the moment we don't have the information of exactly how many jobs are running at each site, so we are simply sorting the sites by occupancy.
-            site_occupancy[site] = site.storage_occupancy(partition, physical = False)
+            site_occupancy[site] = site.storage_occupancy(policy.partition, physical = False)
 
         candidates = []
         for request in requests:
@@ -120,13 +120,13 @@ class Dealer(object):
                 item_name = item.name
                 item_size = item.size * 1.e-12
                 find_replica_at = lambda s: s.find_dataset_replica(item)
-                make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(item, s, group)
+                make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(item, s, policy.group)
 
             elif type(item) is Block:
                 item_name = item.dataset.name + '#' + item.real_name()
                 item_size = item.size * 1.e-12
                 find_replica_at = lambda s: s.find_block_replica(item)
-                make_new_replica_at = lambda s: self.inventory_manager.add_block_to_site(item, s, group)
+                make_new_replica_at = lambda s: self.inventory_manager.add_block_to_site(item, s, policy.group)
 
             elif type(item) is list:
                 # list of blocks (must belong to the same dataset)
@@ -137,7 +137,7 @@ class Dealer(object):
                 item_name = dataset.name
                 item_size = sum(b.size for b in item) * 1.e-12
                 find_replica_at = lambda s: s.find_dataset_replica(dataset)
-                make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(dataset, s, group, blocks = item)
+                make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(dataset, s, policy.group, blocks = item)
 
             else:
                 logger.warning('Invalid request found. Skipping.')
@@ -148,6 +148,9 @@ class Dealer(object):
                 site_array = []
                 for site, occupancy in site_occupancy.iteritems():
                     if occupancy + item_size / quotas[site] > 1. or find_replica_at(site) is not None:
+                        continue
+
+                    if not policy.is_allowed_destination(item, site):
                         continue
 
                     p = 1. - occupancy
@@ -167,7 +170,9 @@ class Dealer(object):
                 destination = site_array[isite][0]
 
             else:
-                if destination not in site_occupancy or site_occupancy[destination] + item_size / quotas[destination] > 1.:
+                if destination not in site_occupancy or \
+                        site_occupancy[destination] + item_size / quotas[destination] > 1. or \
+                        not policy.is_allowed_destination(item, destination):
                     # a plugin specified the destination, but it's not in the list of potential target sites
                     logger.warning('Cannot copy %s to %s.', item_name, destination.name)
                     continue

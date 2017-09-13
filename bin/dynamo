@@ -206,5 +206,8 @@ if 'dealer' in args.module:
         if plugin not in demand_manager.calculators:
             demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
 
+    import dealer.inst.cms as cms
+    policy.placement_rules.append(cms.NoHIAtUSSites())
+
     with ActivityLock('dealer'):
         dealer.run(policy, is_test = args.test_run, comment = args.comment)
