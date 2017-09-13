@@ -146,6 +146,11 @@ class Policy(object):
 
         self.version = version
 
+        # Check if the replicas can be deleted just before making the deletion requests.
+        # Set to a function that takes a list of dataset replicas and removes from it
+        # the replicas that should not be deleted.
+        self.predelete_check = None
+
     def parse_lines(self, lines, inventory):
         logger.info('Parsing policy stack for partition %s.', self.partition.name)
 
@@ -353,3 +358,4 @@ class Policy(object):
             return self.default_decision.action(replica, 0)
 
         return action
+        

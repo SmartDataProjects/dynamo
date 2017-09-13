@@ -41,19 +41,6 @@ class Detox(object):
 
         logger.info('Detox cycle for %s starting at %s', policy.partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
 
-#        Activity lock file is now written by dynamod
-#        if not config.read_only and not is_test:
-#            # write a file indicating detox activity
-#            while True:
-#                if os.path.exists(detox_config.main.activity_indicator):
-#                    logger.info('Detox activity indicator exists. Waiting for 60 seconds.')
-#                    time.sleep(60)
-#                else:
-#                    break
-#
-#            with open(detox_config.main.activity_indicator, 'w') as indicator:
-#                indicator.write('Detox started: ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
-
         # Execute the policy within a try block to avoid dead locks
         try:
             # insert new policy lines to the history database
@@ -72,9 +59,6 @@ class Detox(object):
 
         finally:
             pass
-#            if not config.read_only and not is_test and os.path.exists(detox_config.main.activity_indicator):
-#                os.remove(detox_config.main.activity_indicator)
-#        Activity lock file is now written by dynamod
 
         logger.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
 
@@ -413,11 +397,10 @@ class Detox(object):
         deletion_list = set(deleted.iterkeys())
         # we have recorded deletion reasons; we can now consolidate deleted block replicas
         for replica, block_level_list in deleted_blocks.iteritems():
-            if replica not in deletion_list:
-                deletion_list.add(replica)
-
             for block_replicas, _ in block_level_list:
                 replica.block_replicas.extend(block_replicas)
+
+            deletion_list.add(replica)
 
         self.commit_deletions(run_number, policy, deletion_list, is_test, comment)
 
@@ -512,16 +495,23 @@ class Detox(object):
                         list_above_chunk = []
                         break
 
-                    deletion = site_deletion_list.pop()
+                    replica = site_deletion_list.pop()
 
                     if deletion_size > chunk_size:
-                        list_above_chunk.append(deletion)
+                        list_above_chunk.append(replica)
                     else:
-                        list_chunk.append(deletion)
+                        list_chunk.append(replica)
 
                     deletion_size += size
 
                 list_chunk.extend(list_above_chunk)
+
+                # Do a last-minute check whether we can really delete these replicas
+                # Replicas that shouldn't be deleted are removed from list_chunk
+                # Decision here is not recorded in the replica snapshots - should really
+                # be an emergency measure
+                if policy.predelete_check is not None:
+                    policy.predelete_check(list_chunk)
                 
                 chunk_record = self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = comment, is_test = is_test)
                 if is_test:
