@@ -22,10 +22,26 @@ mkdir -p $DYNAMO_LOGDIR
 chmod 775 $DYNAMO_LOGDIR
 chown root:$(id -gn $USER) $DYNAMO_LOGDIR
 
-mkdir -p $DYNAMO_DATADIR
-chmod 775 $DYNAMO_DATADIR
-chown $USER:$(id -gn $USER) $DYNAMO_DATADIR
-mkdir -p $DYNAMO_DATADIR/replica_snapshots
+mkdir -p $DYNAMO_ARCHIVE
+chmod 775 $DYNAMO_ARCHIVE
+chown $USER:$(id -gn $USER) $DYNAMO_ARCHIVE
+mkdir -p $DYNAMO_ARCHIVE/db
+mkdir -p $DYNAMO_ARCHIVE/replica_snapshots
+
+mkdir -p $DYNAMO_SPOOL
+
+# DATABASES
+for SQL in $(ls $DYNAMO_BASE/etc/db)
+do
+  DB=$(echo $SQL | sed 's/.sql$//')
+  if ! [ -d /var/lib/mysql/$DB ]
+  then
+    mysql --default-group-suffix=-dynamo < $DYNAMO_BASE/etc/db/$SQL
+  fi
+
+  chmod 755 /var/lib/mysql/$DB
+  chmod 666 /var/lib/mysql/$DB/*
+done
 
 # WEB INTERFACE
 $DYNAMO_BASE/web/install.sh
@@ -56,7 +72,7 @@ then
   # NRPE PLUGINS
   if [ -d /usr/lib64/nagios/plugins ]
   then
-    sed "s|_DYNAMO_DATADIR_|$DYNAMO_DATADIR|" $DYNAMO_BASE/etc/nrpe/check_dynamo.sh > /usr/lib64/nagios/plugins/check_dynamo.sh
+    sed "s|_DYNAMO_ARCHIVE_|$DYNAMO_ARCHIVE|" $DYNAMO_BASE/etc/nrpe/check_dynamo.sh > /usr/lib64/nagios/plugins/check_dynamo.sh
     chmod +x /usr/lib64/nagios/plugins/check_dynamo.sh
   fi
 fi

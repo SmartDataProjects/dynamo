@@ -12,6 +12,6 @@ source $DYNAMO_BASE/etc/profile.d/init.sh
 TMP=$(mktemp -d)
 
 cern-get-sso-cookie --nocertverify -u https://vocms049.cern.ch/unified/globallocks.json --cert .globus/usercert.pem --key .globus/userkey.rsa -o $TMP/vocms049.cookies
-mv $TMP/vocms049.cookies $DYNAMO_DATADIR/cookies.txt
+mv $TMP/vocms049.cookies $DYNAMO_SPOOL/cookies.txt
 
 rmdir $TMP
