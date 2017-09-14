@@ -66,18 +66,48 @@ class MySQLHistory(TransactionHistoryInterface):
             raise TransactionHistoryInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
     def _do_make_snapshot(self, tag): #override
-        new_db = self._mysql.make_snapshot(tag)
+        # If binary logging is turned on, insert a timestamp in the snapshots table
+        binlog_on = (self._mysql.query('SHOW VARIABLES LIKE \'log_bin\'')[0][1] == 'ON')
 
-        self._mysql.query('UPDATE `%s`.`lock` SET `lock_host` = \'\', `lock_process` = 0' % new_db)
+        if binlog_on:
+            self._mysql.query('INERT INTO `snapshots` (`tag`, `timestamp`) VALUES (%s, NOW())', tag)
+        else:
+            new_db = self._mysql.make_snapshot(tag)
+            self._mysql.query('UPDATE `%s`.`lock` SET `lock_host` = \'\', `lock_process` = 0' % new_db)
 
     def _do_remove_snapshot(self, tag, newer_than, older_than): #override
-        self._mysql.remove_snapshot(tag = tag, newer_than = newer_than, older_than = older_than)
+        # If binary logging is turned on, insert a timestamp in the snapshots table
+        binlog_on = (self._mysql.query('SHOW VARIABLES LIKE \'log_bin\'')[0][1] == 'ON')
+
+        if binlog_on:
+            if tag:
+                self._mysql.query('DELETE FROM `snapshots` WHERE `tag` = %s', tag)
+            else:
+                self._mysql.query('DELETE FROM `snapshots` WHERE `timestamp` >= FROM_UNIXTIME(%s) AND `timestamp` < FROM_UNIXTIME(%s)', newer_than, older_than)
+        else:
+            self._mysql.remove_snapshot(tag = tag, newer_than = newer_than, older_than = older_than)
 
     def _do_list_snapshots(self, timestamp_only): #override
-        return self._mysql.list_snapshots(timestamp_only)
+        # If binary logging is turned on, insert a timestamp in the snapshots table
+        binlog_on = (self._mysql.query('SHOW VARIABLES LIKE \'log_bin\'')[0][1] == 'ON')
+
+        if binlog_on:
+            return self._mysql.query('SELECT `tag` FROM `snapshots` ORDER BY `tag`')
+        else:
+            return self._mysql.list_snapshots(timestamp_only)
 
     def _do_recover_from(self, tag): #override
-        self._mysql.recover_from(tag)
+        binlog_on = (self._mysql.query('SHOW VARIABLES LIKE \'log_bin\'')[0][1] == 'ON')
+
+        if binlog_on:
+            result = self._mysql.query('SELECT `timestamp` FROM `snapshots` WHERE `tag` = %s', tag)
+            if len(result) == 0:
+                logger.error('Binary logging is ON, and tag %s is not found.', tag)
+            else:
+                logger.error('Binary logging is ON. To recover the state at snapshot %s, revert the database to the latest backup, and execute `mysqlbinlog --stop-datetime=%s`.', tag, result[0].strftime('%Y-%m-%d %H:%M:%S'))
+
+        else:
+            self._mysql.recover_from(tag)
 
     def _do_new_run(self, operation, partition, policy_version, is_test, comment): #override
         part_ids = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
@@ -262,13 +292,16 @@ class MySQLHistory(TransactionHistoryInterface):
             self._make_site_id_map()
         if len(self._dataset_id_map) == 0:
             self._make_dataset_id_map()
+            
+        srun = '%09d' % run_number
+        spool_dir_name = '%s/replica_snapshots/%s/%s' % (config.path.spool, srun[:3], srun[3:6])
+        db_file_name = '%s/replicas_%d.db' % (spool_dir_name, run_number)
 
         try:
-            os.makedirs(config.mysqlhistory.snapshot_db_path)
+            os.makedirs(spool_dir_name)
         except OSError:
             pass
 
-        db_file_name = config.mysqlhistory.snapshot_db_path + '/replicas_%d.db' % run_number
         if os.path.exists(db_file_name):
             os.unlink(db_file_name)
 
@@ -324,12 +357,26 @@ class MySQLHistory(TransactionHistoryInterface):
         snapshot_cursor.close()
         snapshot_db.close()
 
+        archive_dir_name = '%s/replica_snapshots/%s/%s' % (config.path.archive, srun[:3], srun[3:6])
+        xz_file_name = '%s/replicas_%d.db.xz' % (archive_dir_name, run_number)
+
+        try:
+            os.makedirs(archive_dir_name)
+        except OSError:
+            pass
+
+        with open(db_file_name, 'rb') as db_file:
+            with open(xz_file_name, 'wb') as xz_file:
+                xz_file.write(lzma.compress(db_file.read()))
+
         self._fill_snapshot_cache(run_number)
 
     def _do_get_deletion_decisions(self, run_number, size_only): #override
         self._fill_snapshot_cache(run_number)
 
         table_name = 'replicas_%d' % run_number
+
+        self._cache_db.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
 
         if size_only:
             # return {site_name: (protect_size, delete_size, keep_size)}
@@ -344,9 +391,7 @@ class MySQLHistory(TransactionHistoryInterface):
             for decision in ['protect', 'delete', 'keep']:
                 volumes[decision] = dict(self._mysql.xquery(query, decision))
                 sites.update(set(volumes[decision].iterkeys()))
-
-            self._mysql.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
-                
+               
             product = {}
             for site_name in sites:
                 v = {}
@@ -373,7 +418,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
             _site_name = ''
 
-            for site_name, dataset_name, size, decision, reason in self._mysql.xquery(query):
+            for site_name, dataset_name, size, decision, reason in self._cache_db.xquery(query):
                 if site_name != _site_name:
                     product[site_name] = []
                     current = product[site_name]
@@ -515,9 +560,11 @@ class MySQLHistory(TransactionHistoryInterface):
         if self._mysql.query(sql, self._cache_db.db_name(), table_name)[0] == 0:
             # cache table does not exist; fill from sqlite
 
-            db_file_name = '%s/%s.db' % (config.mysqlhistory.snapshot_db_path, table_name)
+            srun = '%09d' % run_number
+
+            db_file_name = '%s/replica_snapshots/%s/%s/%s.db' % (config.path.spool, srun[:3], srun[3:6], table_name)
             if not os.path.exists(db_file_name):
-                xz_file_name = db_file_name + '.xz'
+                xz_file_name = '%s/replica_snapshots/%s/%s/%s.db.xz' % (config.path.archive, srun[:3], srun[3:6], table_name)
                 if not os.path.exists(xz_file_name):
                     raise RuntimeError('Snapshot DB ' + db_file_name + ' does not exist')
 
@@ -550,7 +597,13 @@ class MySQLHistory(TransactionHistoryInterface):
             snapshot_cursor.close()
             snapshot_db.close()
 
-        self._mysql.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
+            try:
+                os.unlink(db_file_name)
+            except:
+                logger.error('Failed to delete %s' % db_file_name)
+                pass
+
+        self._cache_db.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
 
         sql = 'SELECT `run_id` FROM (SELECT `run_id`, MAX(`timestamp`) AS m FROM `replica_snapshot_cache_usage` GROUP BY `run_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
         old_runs = self._mysql.xquery(sql)
@@ -558,5 +611,5 @@ class MySQLHistory(TransactionHistoryInterface):
             table_name = 'replicas_%d' % old_run
             self._cache_db.query('DROP TABLE IF EXISTS `%s`' % table_name)
 
-        self._mysql.query('DELETE FROM `replica_snapshot_cache_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
-        self._mysql.query('OPTIMIZE TABLE `replica_snapshot_cache_usage`')
+        self._cache_db.query('DELETE FROM `replica_snapshot_cache_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
+        self._cache_db.query('OPTIMIZE TABLE `replica_snapshot_cache_usage`')
