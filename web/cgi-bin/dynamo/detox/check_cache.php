@@ -1,6 +1,6 @@
 <?php
 
-function check_cache($history_db, $cycle, $partition_id, $snapshot_db_path)
+function check_cache($history_db, $cycle, $partition_id, $snapshot_archive_path)
 {
   $stmt = $history_db->prepare('SELECT DATABASE()');
   $stmt->bind_result($db_name);
@@ -19,19 +19,18 @@ function check_cache($history_db, $cycle, $partition_id, $snapshot_db_path)
   $stmt->close();
 
   if ($num_table == 0) {
-    $sqlite_file_name = sprintf('%s/%s.db', $snapshot_db_path, $cache_table_name);
+    $srun = sprintf('%09d', $cycle);
+    $xz_file_name = sprintf('%s/%s/%s/%s.db.xz', $snapshot_archive_path, substr($srun, 0, 3), substr($srun, 3, 3), $cache_table_name);
+    if (!file_exists($xz_file_name))
+      return false;
 
-    if (!file_exists($sqlite_file_name)) {
-      $xz_file_name = $sqlite_file_name . '.xz';
-      if (!file_exists($xz_file_name))
-        return false;
+    exec('which unxz > /dev/null 2>&1', $stdout, $rc);
+    if ($rc != 0)
+      return false;
 
-      exec('which unxz > /dev/null 2>&1', $stdout, $rc);
-      if ($rc != 0)
-        return false;
+    $sqlite_file_name = sprintf('var/spool/dynamo/replica_snapshots/%s.db', $cache_table_name);
       
-      exec('unxz -k ' . $xz_file_name);
-    }
+    exec(sprintf('unxz -k -c %s > %s', $xz_file_name, $sqlite_file_name));
 
     $snapshot_db = new SQLite3($sqlite_file_name);
     $sql = 'SELECT r.`site_id`, r.`dataset_id`, r.`size`, d.`value`, r.`condition` FROM `replicas` AS r';
@@ -57,6 +56,8 @@ function check_cache($history_db, $cycle, $partition_id, $snapshot_db_path)
     $in_stmt->close();
     $stmt->close();
     $snapshot_db->close();
+
+    unlink($sqlite_file_name);
   }
 
   $stmt = $history_db->prepare('INSERT INTO `replica_snapshot_cache_usage` VALUES (?, NOW())');

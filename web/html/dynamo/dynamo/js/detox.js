@@ -674,27 +674,35 @@ function displayDatasetSearch(data)
                 if (x == siteData.length)
                     return;
 
-                var siteDatasets = siteData[x].datasets;
-                if (siteAllDatasets[site.name] === undefined)
-                    siteAllDatasets[site.name] = siteDatasets;
-                else
-                    siteAllDatasets[site.name] = siteAllDatasets[site.name].concat(siteDatasets);
-    
                 var protectTotal = 0;
                 var keepTotal = 0;
                 var deleteTotal = 0;
-                for (var x in siteDatasets) {
-                    var dataset = siteDatasets[x];
-                    if (dataset.decision == 'protect')
-                        protectTotal += dataset.size;
-                    else if (dataset.decision == 'keep')
-                        keepTotal += dataset.size;
-                    else
-                        deleteTotal += dataset.size;
+
+                if (site.name == 'Total') {
+                    protectTotal = siteData[x].protect / 1000.;
+                    keepTotal = siteData[x].keep / 1000.;
+                    deleteTotal = siteData[x].delete / 1000.;
                 }
-                protectTotal /= 1000.;
-                keepTotal /= 1000.;
-                deleteTotal /= 1000.;
+                else {
+                    var siteDatasets = siteData[x].datasets;
+                    if (siteAllDatasets[site.name] === undefined)
+                        siteAllDatasets[site.name] = siteDatasets;
+                    else
+                        siteAllDatasets[site.name] = siteAllDatasets[site.name].concat(siteDatasets);
+    
+                    for (var x in siteDatasets) {
+                        var dataset = siteDatasets[x];
+                        if (dataset.decision == 'protect')
+                            protectTotal += dataset.size;
+                        else if (dataset.decision == 'keep')
+                            keepTotal += dataset.size;
+                        else
+                            deleteTotal += dataset.size;
+                    }
+                    protectTotal /= 1000.;
+                    keepTotal /= 1000.;
+                    deleteTotal /= 1000.;
+                }
     
                 var bar = d3.select(this);
                 var barWidth = bar.select('.barComponent').attr('width');

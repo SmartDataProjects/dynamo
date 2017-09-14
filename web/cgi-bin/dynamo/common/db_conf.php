@@ -22,6 +22,6 @@ foreach ($mycnf as $line) {
   }
 }
 
-$snapshot_db_path = '/local/dynamo/replica_snapshots';
+$snapshot_archive_path = '/mnt/hadoop/dynamo/replica_snapshots';
 
 ?>

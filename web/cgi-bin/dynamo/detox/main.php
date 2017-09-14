@@ -98,7 +98,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'checkUpdate') {
   exit(0);
 }
 
-if (!check_cache($history_db, $cycle, $partition_id, $snapshot_db_path)) {
+if (!check_cache($history_db, $cycle, $partition_id, $snapshot_archive_path)) {
   // we should emit some error here
   exit(1);
 }
@@ -131,10 +131,21 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
       $condition_ids = array();
 
       $json_data = array();
+
+      $protect_total = 0.;
+      $keep_total = 0.;
+      $delete_total = 0.;
   
       while ($stmt->fetch()) {
         if (!array_key_exists($site_name, $json_data))
           $json_data[$site_name] = array();
+
+        if ($decision == 'protect')
+          $protect_total += $size;
+        else if ($decision == 'keep')
+          $keep_total += $size;
+        else
+          $delete_total += $size;
   
         $json_data[$site_name][] = sprintf('{"name":"%s","size":%f,"decision":"%s","conditionId":"%s"}', $dataset_name, $size, $decision, $condition_id);
         $condition_ids[] = $condition_id;
@@ -142,6 +153,8 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
       $stmt->close();
   
       $json_texts = array();
+      // for Total as a site, we have a different format: just report total size
+      $json_texts[] = sprintf('{"name":"Total","protect":%f,"keep":%f,"delete":%f}', $protect_total, $keep_total, $delete_total);
       foreach ($json_data as $site_name => $datasets)
         $json_texts[] = sprintf('{"name":"%s","datasets":[%s]}', $site_name, implode(',', $datasets));
   
@@ -251,8 +264,9 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     $stmt->bind_result($site_id, $quota);
     $stmt->execute();
     while ($stmt->fetch()) {
-      if ($quota != 0)
-        $quotas[$site_id] = $quota;
+      /* if ($quota != 0) */
+      /*   $quotas[$site_id] = $quota; */
+      $quotas[$site_id] = $quota;
       $quotas[0] += $quota;
     }
     $stmt->close();
@@ -269,7 +283,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
 
     $statuses = array(0 => 1);
 
-    $query = 'SELECT `site_id`, `active`, `status` FROM `site_status_snapshots` AS s1';
+    $query = 'SELECT `site_id`, `status` FROM `site_status_snapshots` AS s1';
     $query .= ' WHERE `run_id` = (';
     $query .= '  SELECT MAX(`run_id`) FROM `site_status_snapshots` AS s2';
     $query .= '   WHERE s2.`site_id` = s1.`site_id` AND s2.`run_id` <= ?';
@@ -277,13 +291,11 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
 
     $stmt = $history_db->prepare($query);
     $stmt->bind_param('i', $cycle);
-    $stmt->bind_result($site_id, $active, $status);
+    $stmt->bind_result($site_id, $status);
     $stmt->execute();
     while ($stmt->fetch()) {
-      if ($status == 'morgue' || $status == 'waitroom' || $active == 0)
+      if ($status == 'morgue' || $status == 'waitroom')
         $statuses[$site_id] = 0;
-      else if ($active == 2)
-        $statuses[$site_id] = 2;
       else
         $statuses[$site_id] = 1;
     }
@@ -308,26 +320,29 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     }
     $stmt->close();
 
-    if (!check_cache($history_db, $prev_cycle, $partition_id, $snapshot_db_path)) {
-      // emit some error
-      exit(1);
+    if (check_cache($history_db, $prev_cycle, $partition_id, $snapshot_archive_path)) {
+      $prev_cache_table_name = sprintf('`%s`.`replicas_%d`', $cache_db_name, $prev_cycle);
+
+      $query = 'SELECT `site_id`, CONCAT(`decision`, \'Prev\'), SUM(`size`) * 1.e-12';
+      $query .= ' FROM ' . $prev_cache_table_name . '';
+      $query .= ' WHERE `decision` != \'delete\'';
+      $query .= ' GROUP BY `site_id`, `decision`';
+
+      $stmt = $history_db->prepare($query);
+      $stmt->bind_result($site_id, $decision, $size);
+      $stmt->execute();
+      while ($stmt->fetch()) {
+        $site_total[$decision][$site_id] = $size;
+        $site_total[$decision][0] += $size;
+      }
+      $stmt->close();
     }
-
-    $prev_cache_table_name = sprintf('`%s`.`replicas_%d`', $cache_db_name, $prev_cycle);
-
-    $query = 'SELECT `site_id`, CONCAT(`decision`, \'Prev\'), SUM(`size`) * 1.e-12';
-    $query .= ' FROM ' . $prev_cache_table_name . '';
-    $query .= ' WHERE `decision` != \'delete\'';
-    $query .= ' GROUP BY `site_id`, `decision`';
-
-    $stmt = $history_db->prepare($query);
-    $stmt->bind_result($site_id, $decision, $size);
-    $stmt->execute();
-    while ($stmt->fetch()) {
-      $site_total[$decision][$site_id] = $size;
-      $site_total[$decision][0] += $size;
+    else {
+      foreach($quotas as $site_id => $quota) {
+        $site_total['keepPrev'][$site_id] = 0.;
+        $site_total['protectPrev'][$site_id] = 0.;
+      }
     }
-    $stmt->close();
 
     $data['siteData'] = array();
     foreach ($index_to_id as $id) {
@@ -361,29 +376,58 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     $data['content'] = array('name' => $site_name, 'datasets' => array());
     $datasets = &$data['content']['datasets'];
 
+    $data['conditions'] = array();
+
+    $site_id = 0;
+    $query = 'SELECT `id` FROM `sites` WHERE `name` = ?';
+    $stmt = $history_db->prepare($query);
+    $stmt->bind_param('s', $site_name);
+    $stmt->bind_result($site_id);
+    $stmt->execute();
+    $stmt->fetch();
+    $stmt->close();
+    if ($site_id == 0) {
+      echo json_encode($data);
+      exit(1);
+    }
+
+    // first collect info about double-action items
+    $double_action_datasets = array();
+
+    $query = 'SELECT d.`name`, COUNT(*) FROM ' . $cache_table_name . ' AS c';
+    $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
+    $query .= ' WHERE c.`site_id` = ? GROUP BY d.`name`';
+
+    $stmt = $history_db->prepare($query);
+    $stmt->bind_param('i', $site_id);
+    $stmt->bind_result($name, $count);
+    $stmt->execute();
+    while ($stmt->fetch()) {
+      if ($count != 1)
+        $double_action_datasets[] = $name;
+    }
+    $stmt->close();
+
     $query = 'SELECT d.`name`, c.`size` * 1.e-9, c.`decision`, c.`condition`';
     $query .= ' FROM ' . $cache_table_name . ' AS c';
-    $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
     $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
-    $query .= ' WHERE s.`name` = ?';
+    $query .= ' WHERE c.`site_id` = ?';
     $query .= ' ORDER BY c.`size` DESC';
 
     $conditions = array();
 
     $stmt = $history_db->prepare($query);
-    $stmt->bind_param('s', $site_name);
+    $stmt->bind_param('i', $site_id);
     $stmt->bind_result($name, $size, $decision, $condition_id);
     $stmt->execute();
     while ($stmt->fetch()) {
-      // there will be duplicate dataset entries when block-level actions are taken - just have multiple entries in the table, no big deal
+      if (in_array($name, $double_action_datasets))
+        $decision .= " *";
+      
       $datasets[] = array('name' => $name, 'size' => $size, 'decision' => $decision, 'conditionId' => $condition_id);
       $condition_ids[] = $condition_id;
     }
     $stmt->close();
-
-    $data['conditions'] = array();
-
-    error_log(print_r($condition_ids, true));
 
     $condition_ids = array_unique($condition_ids);
 
