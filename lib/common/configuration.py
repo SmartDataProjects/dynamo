@@ -29,7 +29,8 @@ application = Configuration(
 
 paths = Configuration(
     base = os.environ['DYNAMO_BASE'],
-    data = os.environ['DYNAMO_DATADIR']
+    archive = os.environ['DYNAMO_ARCHIVE'],
+    spool = os.environ['DYNAMO_SPOOL']
 )
 
 mysqlhistory = Configuration(
@@ -42,8 +43,7 @@ mysqlhistory = Configuration(
         'config_file': '/etc/my.cnf',
         'config_group': 'mysql-dynamo',
         'db': 'dynamohistory_cache'
-    },
-    snapshot_db_path = os.environ['DYNAMO_DATADIR'] + '/replica_snapshots'
+    }
 )
 
 webservice = Configuration(
