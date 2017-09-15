@@ -1,0 +1,138 @@
+html *
+{
+   font-family: Sans-Serif !important;
+}
+
+#tableBox {
+    height: 1000px;
+
+}
+
+#graphModal{
+    width:100%
+}
+
+#graphModal1{
+
+    height:300px;
+    width:700px;
+    margin-left: auto;
+    margin-right:auto;
+    position:relative;
+}
+.modal {
+    display: none; /* Hidden by default */
+    position: fixed; /* Stay in place */
+    z-index: 1; /* Sit on top */
+    left:0;
+    top: 0;
+    width: 50%; /* Full width */
+    height: 100%; /* Full height */
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgb(0,0,0); /* Fallback color */
+    background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+    -webkit-transition: opacity 500ms ease-in;
+    -moz-transition: opacity 500ms ease-in;
+    transition: opacity 500ms ease-in;
+}
+
+.modal-content{
+    background-color: #fefefe;
+    margin: 15% auto; /* 15% from the top and centered */
+    padding: 20px;
+    border: 1px solid #888;
+    width: 65%; /* Could be more or less, depending on screen size */
+
+}
+
+@-webkit-keyframes bounce {
+  0% {
+    -webkit-transform: scale3d(0.1,0.1,1);
+    box-shadow: 0 3px 20px rgba(0,0,0,0.9);
+  }
+  55% {
+    -webkit-transform: scale3d(1.08,1.08,1);
+    box-shadow: 0 10px 20px rgba(0,0,0,0);
+  }
+  75% {
+    -webkit-transform: scale3d(0.95,0.95,1);
+    box-shadow: 0 0 20px rgba(0,0,0,0.9);
+  }
+  100% {
+    -webkit-transform: scale3d(1,1,1);
+    box-shadow: 0 3px 20px rgba(0,0,0,0.9);
+  }
+}
+
+@-webkit-keyframes minimise {
+  0% {
+    -webkit-transform: scale3d(1,1,1);
+  }
+  100% {
+    -webkit-transform: scale3d(0.1,0.1,1);
+  }
+}
+
+.modal > div {
+  -webkit-animation: bounce 300ms linear;
+}
+
+.modal:target > div {
+  -webkit-animation-name: bounce;
+}
+
+.modal a[href="#close"] {
+  color: transparent;
+}
+
+.modal a[href="#close"]:after {
+  content: 'X';
+  display: block;
+}
+
+.modal a[href="#close"]:focus:after,
+.modal a[href="#close"]:hover:after {
+  -webkit-transform: scale(1.1,1.1);
+  -moz-transform: scale(1.1,1.1);
+}
+
+.modal a[href="#close"]:focus:after {
+  outline: 1px solid #000;
+}
+/*
+.modal.fade .modal-dialog {
+    -webkit-transform: scale(0.1);
+    -moz-transform: scale(0.1);
+    -ms-transform: scale(0.1);
+    transform: scale(0.1);
+    top: 300px;
+    opacity: 0;
+    -webkit-transition: all 0.3s;
+    -moz-transition: all 0.3s;
+    transition: all 0.3s;
+}
+
+.modal.fade.in .modal-dialog {
+    -webkit-transform: scale(1);
+    -moz-transform: scale(1);
+    -ms-transform: scale(1);
+    transform: scale(1);
+    -webkit-transform: translate3d(0, -300px, 0);
+    transform: translate3d(0, -300px, 0);
+    opacity: 1;
+}
+*/
+.close {
+    color: #aaa;
+    float: right;
+    top:0;
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.close:hover,
+.close:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
