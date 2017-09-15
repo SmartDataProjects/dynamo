@@ -60,7 +60,7 @@ function check_cache($history_db, $cycle, $partition_id, $snapshot_archive_path)
     unlink($sqlite_file_name);
   }
 
-  $stmt = $history_db->prepare('INSERT INTO `replica_snapshot_cache_usage` VALUES (?, NOW())');
+  $stmt = $history_db->prepare('INSERT INTO `' . $cache_db_name . '`.`replica_snapshot_usage` VALUES (?, NOW())');
   $stmt->bind_param('i', $cycle);
   $stmt->execute();
   $stmt->close();
