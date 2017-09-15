@@ -9,7 +9,7 @@ class NoHIAtUSSites(ReplicaPlacementRule):
             if dataset.replicas is not None:
                 for replica in dataset.replicas:
                     for block_replica in replica.block_replicas:
-                        if block_replica.group.name == 'heavy-ions':
+                        if block_replica.group is not None and block_replica.group.name == 'heavy-ions':
                             # if even one block replica belongs to HI, it must be a HI dataset
                             return False
 

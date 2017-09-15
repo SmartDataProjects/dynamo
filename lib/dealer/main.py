@@ -38,11 +38,13 @@ class Dealer(object):
         self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
         self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
 
-        quotas = dict((site, site.partition_quota(policy.partition)) for site in self.inventory_manager.sites.itervalues())
+        all_sites = self.inventory_manager.sites.values()
+
+        quotas = dict((site, site.partition_quota(policy.partition)) for site in all_sites)
 
         # Ask each site if it should be considered as a copy destination.
         target_sites = set()
-        for site in self.inventory_manager.sites.itervalues():
+        for site in all_sites:
             if quotas[site] > 0. and \
                     site.status == Site.STAT_READY and \
                     policy.target_site_def(site) and \
@@ -59,9 +61,8 @@ class Dealer(object):
         # update site and dataset lists
         # take a snapshot of site status
         # take snapshots of quotas if updated
-        self.history.save_sites(run_number, self.inventory_manager.sites.values())
-        self.history.save_datasets(run_number, self.inventory_manager.datasets.values())
-        self.history.save_quotas(run_number, quotas)
+        self.history.save_sites(all_sites)
+        self.history.save_datasets(self.inventory_manager.datasets.values())
 
         pending_volumes = collections.defaultdict(float)
         # TODO get input from transfer monitor and update the pending volumes

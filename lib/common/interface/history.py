@@ -225,9 +225,10 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def save_sites(self, run_number, sites):
+    def save_sites(self, sites):
         """
         Save status of sites.
+        @param sites       List of sites
         """
 
         if config.read_only:
@@ -236,7 +237,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_sites(run_number, sites)
+            self._do_save_sites(sites)
         finally:
             self.release_lock()
 
@@ -266,7 +267,7 @@ class TransactionHistoryInterface(object):
 
         return sites_info
 
-    def save_datasets(self, run_number, datasets):
+    def save_datasets(self, datasets):
         """
         Save datasets that are in the inventory but not in the history records.
         """
@@ -277,22 +278,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_datasets(run_number, datasets)
-        finally:
-            self.release_lock()
-
-    def save_quotas(self, run_number, quotas):
-        """
-        Update quota snapshots.
-        """
-
-        if config.read_only:
-            logger.info('save_quotas')
-            return
-
-        self.acquire_lock()
-        try:
-            self._do_save_quotas(run_number, quotas)
+            self._do_save_datasets(datasets)
         finally:
             self.release_lock()
 
@@ -326,10 +312,11 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
       
-    def save_deletion_decisions(self, run_number, deleted_list, kept_list, protected_list):
+    def save_deletion_decisions(self, run_number, quotas, deleted_list, kept_list, protected_list):
         """
         Save decisions and their reasons for all replicas.
         @param run_number      Cycle number.
+        @param quotas          {site: quota in TB}
         @param deleted_list    [(dataset_replica, condition) or ([block_replica], condition)]
         @param kept_list       [(dataset_replica, condition) or ([block_replica], condition)]
         @param protected_list  [(dataset_replica, condition) or ([block_replica], condition)]
@@ -344,7 +331,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_deletion_decisions(run_number, deleted_list, kept_list, protected_list)
+            self._do_save_deletion_decisions(run_number, quotas, deleted_list, kept_list, protected_list)
         finally:
             self.release_lock()
 

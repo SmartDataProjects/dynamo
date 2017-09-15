@@ -98,19 +98,20 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'checkUpdate') {
   exit(0);
 }
 
-if (!check_cache($history_db, $cycle, $partition_id, $snapshot_archive_path)) {
+if (!check_cache($history_db, $cycle, $partition_id, $snapshot_spool_path, $snapshot_archive_path)) {
   // we should emit some error here
   exit(1);
 }
 
-$cache_table_name = sprintf('`%s`.`replicas_%d`', $cache_db_name, $cycle);
+$replica_cache_table_name = sprintf('`%s`.`replicas_%d`', $cache_db_name, $cycle);
+$site_cache_table_name = sprintf('`%s`.`sites_%d`', $cache_db_name, $cycle);
 
 if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
   // return
   // {"results": [{"siteData": [{"name": site, "datasets": [datasets]}]}], "conditions": [conditions]}
 
   $query = 'SELECT s.`name`, d.`name`, c.`size` * 1.e-9, c.`decision`, c.`condition`';
-  $query .= ' FROM ' . $cache_table_name . ' AS c';
+  $query .= ' FROM ' . $replica_cache_table_name . ' AS c';
   $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
   $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
   $query .= ' WHERE d.`name` LIKE ?';
@@ -187,7 +188,7 @@ else if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'dumpDeletions')
   $query .= ' INNER JOIN `deletion_requests` AS q ON q.`id` = r.`deletion_id`';
   $query .= ' INNER JOIN `sites` AS s ON s.`id` = q.`site_id`';
   $query .= ' INNER JOIN `datasets` AS d ON d.`id` = r.`dataset_id`';
-  $query .= ' INNER JOIN ' . $cache_table_name . ' AS c ON (c.`site_id`, c.`dataset_id`) = (q.`site_id`, r.`dataset_id`)';
+  $query .= ' INNER JOIN ' . $replica_cache_table_name . ' AS c ON (c.`site_id`, c.`dataset_id`) = (q.`site_id`, r.`dataset_id`)';
   $query .= ' WHERE q.`run_id` = ? AND c.`decision` = \'delete\'';
   $query .= ' ORDER BY s.`name`, d.`name`';
 
@@ -248,83 +249,62 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     $data['timestampWarning'] = false;
 
   if (isset($_REQUEST['dataType']) && $_REQUEST['dataType'] == 'summary') {
-    $index_to_id = array(0);
-    $site_names = array(0 => 'Total');
-    
-    $quotas = array(0 => 0);
+    $data['siteData'] = array();
+    $data['siteData'][] = array('name' => 'Total', 'quota' => 0., 'status' => 1, 'protect' => 0., 'keep' => 0., 'delete' => 0., 'protectPrev' => 0., 'keepPrev' => 0.);
 
-    $query = 'SELECT `site_id`, `quota` FROM `quota_snapshots` AS q1';
-    $query .= ' WHERE `partition_id` = ? AND `run_id` = (';
-    $query .= '  SELECT MAX(`run_id`) FROM `quota_snapshots` AS q2';
-    $query .= '   WHERE q2.`site_id` = q1.`site_id` AND q2.`partition_id` = ? AND q2.`run_id` <= ?';
-    $query .= ' )';
+    $id_to_site = array();
+
+    $query = 'SELECT s.`id`, s.`name`, c.`status`, c.`quota` FROM ' . $site_cache_table_name . ' AS c';
+    $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
 
     $stmt = $history_db->prepare($query);
-    $stmt->bind_param('iii', $partition_id, $partition_id, $cycle);
-    $stmt->bind_result($site_id, $quota);
+    $stmt->bind_result($site_id, $site_name, $status, $quota);
     $stmt->execute();
     while ($stmt->fetch()) {
-      /* if ($quota != 0) */
-      /*   $quotas[$site_id] = $quota; */
-      $quotas[$site_id] = $quota;
-      $quotas[0] += $quota;
-    }
-    $stmt->close();
+      $id_to_site[$site_id] = count($data['siteData']);
 
-    $query = sprintf('SELECT `id`, `name` FROM `sites` WHERE `id` IN (%s) ORDER BY `name`', implode(',', array_keys($quotas)));
-    $stmt = $history_db->prepare($query);
-    $stmt->bind_result($id, $name);
-    $stmt->execute();
-    while ($stmt->fetch()) {
-      $index_to_id[] = $id;
-      $site_names[$id] = $name;
-    }
-    $stmt->close();
-
-    $statuses = array(0 => 1);
-
-    $query = 'SELECT `site_id`, `status` FROM `site_status_snapshots` AS s1';
-    $query .= ' WHERE `run_id` = (';
-    $query .= '  SELECT MAX(`run_id`) FROM `site_status_snapshots` AS s2';
-    $query .= '   WHERE s2.`site_id` = s1.`site_id` AND s2.`run_id` <= ?';
-    $query .= ' )';
-
-    $stmt = $history_db->prepare($query);
-    $stmt->bind_param('i', $cycle);
-    $stmt->bind_result($site_id, $status);
-    $stmt->execute();
-    while ($stmt->fetch()) {
       if ($status == 'morgue' || $status == 'waitroom')
-        $statuses[$site_id] = 0;
+        $status_bit = 0;
       else
-        $statuses[$site_id] = 1;
+        $status_bit = 1;
+
+      $data['siteData'][] = array(
+        'name' => $site_name,
+        'quota' => $quota,
+        'status' => $status_bit,
+        'protect' => 0.,
+        'keep' => 0.,
+        'delete' => 0.,
+        'protectPrev' => 0.,
+        'keepPrev' => 0.
+      );
+
+      $data['siteData'][0]['quota'] += $quota;
     }
     $stmt->close();
-
-    $site_total = array('protect' => array(), 'keep' => array(), 'delete' => array(), 'protectPrev' => array(), 'keepPrev' => array());
-    foreach ($index_to_id as $id)
-      $site_total['protect'][$id] = $site_total['keep'][$id] = $site_total['delete'][$id] = $site_total['protectPrev'][$id] = $site_total['keepPrev'][$id] = 0.;
-
-    $site_total['protect'][0] = $site_total['keep'][0] = $site_total['delete'][0] = $site_total['protectPrev'][0] = $site_total['keepPrev'][0] = 0.;
 
     $query = 'SELECT `site_id`, `decision`, SUM(`size`) * 1.e-12';
-    $query .= ' FROM ' . $cache_table_name . '';
+    $query .= ' FROM ' . $replica_cache_table_name . '';
     $query .= ' GROUP BY `site_id`, `decision`';
 
     $stmt = $history_db->prepare($query);
     $stmt->bind_result($site_id, $decision, $size);
     $stmt->execute();
     while ($stmt->fetch()) {
-      $site_total[$decision][$site_id] = $size;
-      $site_total[$decision][0] += $size;
+      if (!in_array($site_id, $id_to_site))
+        continue;
+
+      $idx = $id_to_site[$site_id];
+      $data['siteData'][$idx][$decision] = $size;
+      $data['siteData'][0][$decision] += $size;
     }
     $stmt->close();
 
-    if (check_cache($history_db, $prev_cycle, $partition_id, $snapshot_archive_path)) {
-      $prev_cache_table_name = sprintf('`%s`.`replicas_%d`', $cache_db_name, $prev_cycle);
+    if (check_cache($history_db, $prev_cycle, $partition_id, $snapshot_spool_path, $snapshot_archive_path)) {
+      $prev_replica_cache_table_name = sprintf('`%s`.`replicas_%d`', $cache_db_name, $prev_cycle);
 
       $query = 'SELECT `site_id`, CONCAT(`decision`, \'Prev\'), SUM(`size`) * 1.e-12';
-      $query .= ' FROM ' . $prev_cache_table_name . '';
+      $query .= ' FROM ' . $prev_replica_cache_table_name . '';
       $query .= ' WHERE `decision` != \'delete\'';
       $query .= ' GROUP BY `site_id`, `decision`';
 
@@ -332,32 +312,14 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
       $stmt->bind_result($site_id, $decision, $size);
       $stmt->execute();
       while ($stmt->fetch()) {
-        $site_total[$decision][$site_id] = $size;
-        $site_total[$decision][0] += $size;
+        if (!in_array($site_id, $id_to_site))
+          continue;
+
+        $idx = $id_to_site[$site_id];
+        $data['siteData'][$idx][$decision] = $size;
+        $data['siteData'][0][$decision] += $size;
       }
       $stmt->close();
-    }
-    else {
-      foreach($quotas as $site_id => $quota) {
-        $site_total['keepPrev'][$site_id] = 0.;
-        $site_total['protectPrev'][$site_id] = 0.;
-      }
-    }
-
-    $data['siteData'] = array();
-    foreach ($index_to_id as $id) {
-      $data['siteData'][] =
-        array(
-              'id' => $id,
-              'name' => $site_names[$id],
-              'quota' => $quotas[$id],
-              'status' => $statuses[$id],
-              'protect' => 0. + $site_total['protect'][$id],
-              'keep' => 0. + $site_total['keep'][$id],
-              'delete' => 0. + $site_total['delete'][$id],
-              'protectPrev' => 0. + $site_total['protectPrev'][$id],
-              'keepPrev' => 0. + $site_total['keepPrev'][$id]
-              );
     }
 
     $data['requestIds'] = array();
@@ -394,7 +356,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     // first collect info about double-action items
     $double_action_datasets = array();
 
-    $query = 'SELECT d.`name`, COUNT(*) FROM ' . $cache_table_name . ' AS c';
+    $query = 'SELECT d.`name`, COUNT(*) FROM ' . $replica_cache_table_name . ' AS c';
     $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
     $query .= ' WHERE c.`site_id` = ? GROUP BY d.`name`';
 
@@ -409,7 +371,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     $stmt->close();
 
     $query = 'SELECT d.`name`, c.`size` * 1.e-9, c.`decision`, c.`condition`';
-    $query .= ' FROM ' . $cache_table_name . ' AS c';
+    $query .= ' FROM ' . $replica_cache_table_name . ' AS c';
     $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
     $query .= ' WHERE c.`site_id` = ?';
     $query .= ' ORDER BY c.`size` DESC';

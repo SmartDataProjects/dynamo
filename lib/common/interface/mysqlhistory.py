@@ -165,7 +165,7 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_update_deletion_entry(self, deletion_record): #override
         self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, `size` = %s WHERE `id` = %s', deletion_record.approved, deletion_record.size, deletion_record.operation_id)
 
-    def _do_save_sites(self, run_number, sites): #override
+    def _do_save_sites(self, sites): #override
         if len(self._site_id_map) == 0:
             self._make_site_id_map()
 
@@ -178,56 +178,24 @@ class MySQLHistory(TransactionHistoryInterface):
 
         if len(sites_to_insert) != 0:
             self._mysql.insert_many('sites', ('name',), None, sites_to_insert)
-            self._make_site_id_map()        
-
-        sites_in_record = set()
-
-        query = 'SELECT s.`name`, ss.`status`+0 FROM `site_status_snapshots` AS ss'
-        query += ' INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
-        query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
-        record = self._mysql.xquery(query)
-
-        to_insert = []
-
-        for site_name, status in record:
-            try:
-                site = names_to_sites.pop(site_name)
-            except KeyError:
-                continue
-
-            if site.status != status:
-                to_insert.append((self._site_id_map[site.name], site.status))
-
-        for site in names_to_sites.itervalues():
-            to_insert.append((self._site_id_map[site.name], site.status))
-
-        self._mysql.insert_many('site_status_snapshots', ('site_id', 'run_id', 'status'), lambda (site_id, status): (site_id, run_number, status), to_insert)
+            self._make_site_id_map()
 
     def _do_get_sites(self, run_number): #override
-        partition_id = self._mysql.query('SELECT `partition_id` FROM runs WHERE `id` = %s', run_number)[0]
+        self._fill_site_snapshot_cache(run_number)
 
-        query = 'SELECT s.`name`, ss.`status`+0 FROM `site_status_snapshots` AS ss INNER JOIN `sites` AS s ON s.`id` = ss.`site_id`'
-        query += ' WHERE ss.`run_id` = (SELECT MAX(ss2.`run_id`) FROM `site_status_snapshots` AS ss2 WHERE ss2.`site_id` = ss.`site_id` AND ss2.`run_id` <= %d)' % run_number
-        status_records = self._mysql.xquery(query)
+        table_name = 'sites_%d' % run_number
 
-        query = 'SELECT s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id`'
-        query += ' WHERE q.`partition_id` = %d' % partition_id
-        query += ' AND q.`run_id` = (SELECT MAX(q2.`run_id`) FROM `quota_snapshots` AS q2 WHERE q2.`partition_id` = %d AND q2.`site_id` = q.`site_id` AND q2.`run_id` <= %d)' % (partition_id, run_number)
-        quota_map = dict(self._mysql.xquery(query))
+        sql = 'SELECT s.`name`, n.`status`, n.`quota` FROM `%s`.`%s` AS n' % (self._cache_db.db_name(), table_name)
+        sql += ' INNER JOIN `%s`.`sites` AS s ON s.`id` = n.`site_id`' % self._mysql.db_name()
 
         sites_dict = {}
 
-        for site_name, status in status_records:
-            try:
-                quota = quota_map[site_name]
-            except KeyError:
-                quota = 0
-
+        for site_name, status, quota in self._mysql.xquery(sql):
             sites_dict[site_name] = (status, quota)
 
         return sites_dict
 
-    def _do_save_datasets(self, run_number, datasets): #override
+    def _do_save_datasets(self, datasets): #override
         if len(self._dataset_id_map) == 0:
             self._make_dataset_id_map()
 
@@ -237,40 +205,6 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._mysql.insert_many('datasets', ('name',), None, datasets_to_insert)
         self._make_dataset_id_map()
-
-    def _do_save_quotas(self, run_number, quotas): #override
-        if len(self._site_id_map) == 0:
-            self._make_site_id_map()
-
-        partition_id = self._mysql.query('SELECT `partition_id` FROM runs WHERE `id` = %s', run_number)[0]
-
-        query = 'SELECT s.`name`, q.`quota` FROM `quota_snapshots` AS q INNER JOIN `sites` AS s ON s.`id` = q.`site_id` WHERE'
-        query += ' q.`partition_id` = %d' % partition_id
-        query += ' AND q.`run_id` = (SELECT MAX(q2.`run_id`) FROM `quota_snapshots` AS q2 WHERE q2.`partition_id` = %d AND q2.`site_id` = q.`site_id` AND q2.`run_id` <= %d)' % (partition_id, run_number)
-
-        record = self._mysql.xquery(query)
-
-        sites_in_record = set()
-        to_insert = []
-
-        name_map = dict((site.name, (site, quota)) for site, quota in quotas.iteritems())
-
-        for site_name, last_quota in record:
-            try:
-                site, quota = name_map[site_name]
-            except KeyError:
-                continue
-
-            sites_in_record.add(site)
-
-            if last_quota != quota:
-                to_insert.append((self._site_id_map[site.name], quota))
-
-        for site, quota in quotas.iteritems():
-            if site not in sites_in_record:
-                to_insert.append((self._site_id_map[site.name], quota))
-
-        self._mysql.insert_many('quota_snapshots', ('site_id', 'partition_id', 'run_id', 'quota'), lambda (site_id, quota): (site_id, partition_id, run_number, quota), to_insert)
 
     def _do_save_conditions(self, rules):
         for rule in rules:
@@ -284,21 +218,19 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
 
-    def _do_save_deletion_decisions(self, run_number, deleted_list, kept_list, protected_list): #override
-        # First save the size snapshots of the replicas, which will be referenced when reconstructing the history.
-        # Decisions are saved only if they changed from the last run
-
+    def _do_save_deletion_decisions(self, run_number, quotas, deleted_list, kept_list, protected_list): #override
         if len(self._site_id_map) == 0:
             self._make_site_id_map()
         if len(self._dataset_id_map) == 0:
             self._make_dataset_id_map()
             
         srun = '%09d' % run_number
-        spool_dir_name = '%s/replica_snapshots/%s/%s' % (config.path.spool, srun[:3], srun[3:6])
-        db_file_name = '%s/replicas_%d.db' % (spool_dir_name, run_number)
+        spool_dir_name = '%s/detox_snapshots' % (config.paths.spool)
+        db_file_name = '%s/snapshot_%d.db' % (spool_dir_name, run_number)
 
         try:
             os.makedirs(spool_dir_name)
+            os.chmod(spool_dir_name, 0777)
         except OSError:
             pass
 
@@ -308,21 +240,44 @@ class MySQLHistory(TransactionHistoryInterface):
         logger.info('Creating snapshot SQLite3 DB %s', db_file_name)
 
         # hardcoded!!
-        delete = 1
-        keep = 2
-        protect = 3
+        replica_delete = 1
+        replica_keep = 2
+        replica_protect = 3
+
+        site_ready = 1
+        site_waitroom = 2
+        site_morgue = 3
+        site_unknown = 4
 
         snapshot_db = sqlite3.connect(db_file_name)
+        snapshot_cursor = snapshot_db.cursor()
 
         sql = 'CREATE TABLE `decisions` ('
         sql += '`id` TINYINT PRIMARY KEY NOT NULL,'
         sql += '`value` TEXT NOT NULL'
         sql += ')'
         snapshot_db.execute(sql)
-        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'delete\')' % delete)
-        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'keep\')' % keep)
-        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'protect\')' % protect)
-        
+        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'delete\')' % replica_delete)
+        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'keep\')' % replica_keep)
+        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'protect\')' % replica_protect)
+
+        sql = 'CREATE TABLE `statuses` ('
+        sql += '`id` TINYINT PRIMARY KEY NOT NULL,'
+        sql += '`value` TEXT NOT NULL'
+        sql += ')'
+        snapshot_db.execute(sql)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'ready\')' % site_ready)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'waitroom\')' % site_waitroom)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'morgue\')' % site_morgue)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'unknown\')' % site_unknown)
+
+        sql = 'CREATE TABLE `sites` ('
+        sql += '`site_id` SMALLINT PRIMARY KEY NOT NULL,'
+        sql += '`status_id` TINYINT NOT NULL REFERENCES `statuses`(`id`),'
+        sql += '`quota` INT NOT NULL'
+        sql += ')'
+        snapshot_db.execute(sql)
+
         sql = 'CREATE TABLE `replicas` ('
         sql += '`site_id` SMALLINT NOT NULL,'
         sql += '`dataset_id` INT NOT NULL,'
@@ -333,7 +288,13 @@ class MySQLHistory(TransactionHistoryInterface):
         snapshot_db.execute(sql)
         snapshot_db.execute('CREATE INDEX `site_dataset` ON `replicas` (`site_id`, `dataset_id`)')
 
-        snapshot_cursor = snapshot_db.cursor()
+        sql = 'INSERT INTO `sites` VALUES (?, ?, ?)'
+
+        for site, quota in quotas.iteritems():
+            snapshot_cursor.execute(sql, (self._site_id_map[site.name], site.status, quota))
+
+        snapshot_db.commit()
+        
         sql = 'INSERT INTO `replicas` VALUES (?, ?, ?, ?, ?)'
 
         def do_insert(entries, decision):
@@ -350,15 +311,17 @@ class MySQLHistory(TransactionHistoryInterface):
                 snapshot_cursor.execute(sql, (self._site_id_map[site_name], self._dataset_id_map[dataset_name], size, decision, condition_id))
             snapshot_db.commit()
         
-        do_insert(deleted_list, delete)
-        do_insert(kept_list, keep)
-        do_insert(protected_list, protect)
+        do_insert(deleted_list, replica_delete)
+        do_insert(kept_list, replica_keep)
+        do_insert(protected_list, replica_protect)
         
         snapshot_cursor.close()
         snapshot_db.close()
 
-        archive_dir_name = '%s/replica_snapshots/%s/%s' % (config.path.archive, srun[:3], srun[3:6])
-        xz_file_name = '%s/replicas_%d.db.xz' % (archive_dir_name, run_number)
+        os.chmod(db_file_name, 0777)
+
+        archive_dir_name = '%s/detox_snapshots/%s/%s' % (config.paths.archive, srun[:3], srun[3:6])
+        xz_file_name = '%s/snapshot_%d.db.xz' % (archive_dir_name, run_number)
 
         try:
             os.makedirs(archive_dir_name)
@@ -369,14 +332,13 @@ class MySQLHistory(TransactionHistoryInterface):
             with open(xz_file_name, 'wb') as xz_file:
                 xz_file.write(lzma.compress(db_file.read()))
 
-        self._fill_snapshot_cache(run_number)
+        self._fill_replica_snapshot_cache(run_number)
+        self._fill_site_snapshot_cache(run_number) 
 
     def _do_get_deletion_decisions(self, run_number, size_only): #override
-        self._fill_snapshot_cache(run_number)
+        self._fill_replica_snapshot_cache(run_number)
 
         table_name = 'replicas_%d' % run_number
-
-        self._cache_db.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
 
         if size_only:
             # return {site_name: (protect_size, delete_size, keep_size)}
@@ -554,7 +516,7 @@ class MySQLHistory(TransactionHistoryInterface):
         for name, dataset_id in self._mysql.xquery('SELECT `name`, `id` FROM `datasets`'):
             self._dataset_id_map[name] = int(dataset_id)
 
-    def _fill_snapshot_cache(self, run_number):
+    def _fill_replica_snapshot_cache(self, run_number):
         table_name = 'replicas_%d' % run_number
         sql = 'SELECT COUNT(*) FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = %s AND `TABLE_NAME` = %s'
         if self._mysql.query(sql, self._cache_db.db_name(), table_name)[0] == 0:
@@ -562,9 +524,9 @@ class MySQLHistory(TransactionHistoryInterface):
 
             srun = '%09d' % run_number
 
-            db_file_name = '%s/replica_snapshots/%s/%s/%s.db' % (config.path.spool, srun[:3], srun[3:6], table_name)
+            db_file_name = '%s/detox_snapshots/snapshot_%d.db' % (config.paths.spool, run_number)
             if not os.path.exists(db_file_name):
-                xz_file_name = '%s/replica_snapshots/%s/%s/%s.db.xz' % (config.path.archive, srun[:3], srun[3:6], table_name)
+                xz_file_name = '%s/detox_snapshots/%s/%s/snapshot_%d.db.xz' % (config.paths.archive, srun[:3], srun[3:6], run_number)
                 if not os.path.exists(xz_file_name):
                     raise RuntimeError('Snapshot DB ' + db_file_name + ' does not exist')
 
@@ -597,19 +559,79 @@ class MySQLHistory(TransactionHistoryInterface):
             snapshot_cursor.close()
             snapshot_db.close()
 
-            try:
-                os.unlink(db_file_name)
-            except:
-                logger.error('Failed to delete %s' % db_file_name)
-                pass
+        self._cache_db.query('INSERT INTO `replica_snapshot_usage` VALUES (%s, NOW())', run_number)
 
-        self._cache_db.query('INSERT INTO `replica_snapshot_cache_usage` VALUES (%s, NOW())', run_number)
+        self._clean_old_cache()
 
-        sql = 'SELECT `run_id` FROM (SELECT `run_id`, MAX(`timestamp`) AS m FROM `replica_snapshot_cache_usage` GROUP BY `run_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
-        old_runs = self._mysql.xquery(sql)
-        for old_run in old_runs:
+    def _fill_site_snapshot_cache(self, run_number):
+        table_name = 'sites_%d' % run_number
+        sql = 'SELECT COUNT(*) FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = %s AND `TABLE_NAME` = %s'
+        if self._mysql.query(sql, self._cache_db.db_name(), table_name)[0] == 0:
+            # cache table does not exist; fill from sqlite
+
+            srun = '%09d' % run_number
+
+            db_file_name = '%s/detox_snapshots/snapshot_%d.db' % (config.paths.spool, run_number)
+            if not os.path.exists(db_file_name):
+                xz_file_name = '%s/detox_snapshots/%s/%s/snapshot_%d.db.xz' % (config.paths.archive, srun[:3], srun[3:6], run_number)
+                if not os.path.exists(xz_file_name):
+                    raise RuntimeError('Snapshot DB ' + db_file_name + ' does not exist')
+
+                with open(xz_file_name, 'rb') as xz_file:
+                    with open(db_file_name, 'wb') as db_file:
+                        db_file.write(lzma.decompress(xz_file.read()))
+
+            snapshot_db = sqlite3.connect(db_file_name)
+            snapshot_db.text_factory = str # otherwise we'll get unicode and MySQLdb cannot convert that
+            snapshot_cursor = snapshot_db.cursor()
+
+            def make_snapshot_reader():
+                sql = 'SELECT s.`site_id`, t.`value`, s.`quota` FROM `sites` AS s'
+                sql += ' INNER JOIN `statuses` AS t ON t.`id` = s.`status_id`'
+                snapshot_cursor.execute(sql)
+                
+                while True:
+                    row = snapshot_cursor.fetchone()
+                    if row is None:
+                        return
+
+                    yield row
+
+            snapshot_reader = make_snapshot_reader()
+
+            self._cache_db.query('CREATE TABLE `%s` LIKE `sites`' % table_name)
+
+            self._cache_db.insert_many(table_name, ('site_id', 'status', 'quota'), None, snapshot_reader, do_update = False)
+
+            snapshot_cursor.close()
+            snapshot_db.close()
+
+        self._cache_db.query('INSERT INTO `site_snapshot_usage` VALUES (%s, NOW())', run_number)
+
+        self._clean_old_cache()
+
+    def _clean_old_cache(self):
+        sql = 'SELECT `run_id` FROM (SELECT `run_id`, MAX(`timestamp`) AS m FROM `replica_snapshot_usage` GROUP BY `run_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
+        old_replica_runs = self._cache_db.query(sql)
+        for old_run in old_replica_runs:
             table_name = 'replicas_%d' % old_run
             self._cache_db.query('DROP TABLE IF EXISTS `%s`' % table_name)
 
-        self._cache_db.query('DELETE FROM `replica_snapshot_cache_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
-        self._cache_db.query('OPTIMIZE TABLE `replica_snapshot_cache_usage`')
+        sql = 'SELECT `run_id` FROM (SELECT `run_id`, MAX(`timestamp`) AS m FROM `site_snapshot_usage` GROUP BY `run_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
+        old_site_runs = self._cache_db.query(sql)
+        for old_run in old_site_runs:
+            table_name = 'sites_%d' % old_run
+            self._cache_db.query('DROP TABLE IF EXISTS `%s`' % table_name)
+
+        for old_run in set(old_replica_runs) & set(old_site_runs):
+            srun = '%09d' % old_run
+            db_file_name = '%s/detox_snapshots/snapshot_.db' % (config.paths.spool, old_run)
+            if os.path.exists(db_file_name):
+                try:
+                    os.unlink(db_file_name)
+                except:
+                    logger.error('Failed to delete %s' % db_file_name)
+                    pass
+
+        self._cache_db.query('DELETE FROM `replica_snapshot_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
+        self._cache_db.query('OPTIMIZE TABLE `replica_snapshot_usage`')

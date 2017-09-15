@@ -22,6 +22,7 @@ foreach ($mycnf as $line) {
   }
 }
 
-$snapshot_archive_path = '/mnt/hadoop/dynamo/replica_snapshots';
+$snapshot_archive_path = '/mnt/hadoop/dynamo/dynamo/detox_snapshots';
+$snapshot_spool_path = '/var/spool/dynamo/detox_snapshots';
 
 ?>

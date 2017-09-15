@@ -94,10 +94,8 @@ class Detox(object):
         logger.info('Saving site and dataset states.')
 
         # update site and dataset lists
-        # take a snapshot of site status
-        self.history.save_sites(run_number, target_sites)
-        self.history.save_quotas(run_number, quotas)
-        self.history.save_datasets(run_number, set(r.dataset for r in all_replicas))
+        self.history.save_sites(target_sites)
+        self.history.save_datasets(set(r.dataset for r in all_replicas))
 
         logger.info('Start deletion. Evaluating %d lines against %d replicas.', len(policy.policy_lines), len(all_replicas))
 
@@ -390,7 +388,7 @@ class Detox(object):
         for block_level_list in protected_blocks.itervalues():
             protected_list.extend(block_level_list)
 
-        self.history.save_deletion_decisions(run_number, deleted_list, kept.items(), protected_list)
+        self.history.save_deletion_decisions(run_number, quotas, deleted_list, kept.items(), protected_list)
         
         logger.info('Committing deletion.')
 
