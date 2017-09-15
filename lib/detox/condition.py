@@ -87,7 +87,6 @@ class SiteCondition(Condition):
 
         vardef = variables.site_vardefs[expr]
         if type(vardef[0]) is variables.SiteAttr:
-            print 'Passing partition', self.partition.name, 'to', expr
             vardef[0].partition = self.partition
 
         return vardef
