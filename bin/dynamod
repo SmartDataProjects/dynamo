@@ -83,14 +83,17 @@ do
       APPLICATIONS="detox"
     elif [ $(($IHOUR%$DEALER_INTERVAL)) -eq 0 ]
     then
-      APPLICATIONS="dealer"
+      APPLICATIONS="$APPLICATIONS dealer"
     fi
 
     if [ $(($IHOUR%$INVENTORY_FULL_UPDATE_INTERVAL)) -eq 0 ]
     then
       echo "Performing the full update of inventory"
       $DYNAMO_BASE/bin/execlib common/inventory.py updatefull --site @disk
-      $DYNAMO_BASE/bin/execlib common/inventory.py updatefull --site @tape
+      $DYNAMO_BASE/bin/execlib common/inventory.py updatefull --site T1_DE_KIT_MSS T1_ES_PIC_MSS T1_FR_CCIN2P3_MSS
+      $DYNAMO_BASE/bin/execlib common/inventory.py updatefull --site T1_IT_CNAF_MSS T1_RU_JINR_MSS T1_UK_RAL_MSS
+      $DYNAMO_BASE/bin/execlib common/inventory.py updatefull --site T1_US_FNAL_MSS
+      $DYNAMO_BASE/bin/execlib common/inventory.py updatefull --site T0_CH_CERN_MSS
     else
       echo "Updating the inventory"
       $DYNAMO_BASE/bin/execlib common/inventory.py update
