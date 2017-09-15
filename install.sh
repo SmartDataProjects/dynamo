@@ -29,6 +29,7 @@ mkdir -p $DYNAMO_ARCHIVE/db
 mkdir -p $DYNAMO_ARCHIVE/replica_snapshots
 
 mkdir -p $DYNAMO_SPOOL
+chmod 777 $DYNAMO_SPOOL
 
 # DATABASES
 for SQL in $(ls $DYNAMO_BASE/etc/db)

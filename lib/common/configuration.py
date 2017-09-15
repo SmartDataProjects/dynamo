@@ -30,7 +30,8 @@ application = Configuration(
 paths = Configuration(
     base = os.environ['DYNAMO_BASE'],
     archive = os.environ['DYNAMO_ARCHIVE'],
-    spool = os.environ['DYNAMO_SPOOL']
+    spool = os.environ['DYNAMO_SPOOL'],
+    data = os.environ['DYNAMO_DATADIR']
 )
 
 mysqlhistory = Configuration(
