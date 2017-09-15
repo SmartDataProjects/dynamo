@@ -158,6 +158,9 @@ def exec_get(sitename):
         request_total = 0
         request_copied = 0
 
+        if len(status) == 0:
+            record.completed = 1 #old transfer. seems to not exist anymore.
+
         for (site, dataset), (total, copied, last_update) in status.items():
 
             #print dataset
@@ -242,7 +245,7 @@ def exec_get(sitename):
             writer.writerow({"id" : ongoing[0], "name" : ongoing[1], "copied" : ongoing[2], "total" : ongoing[3], "stuck" : ongoing[4]})        
 
 
-parallel_exec(exec_get, sites_with_open_transfers, num_threads = min(64, len(sites_with_open_transfers)), print_progress = True, timeout = 12000)
+parallel_exec(exec_get, sites_with_open_transfers, num_threads = min(32, len(sites_with_open_transfers)), print_progress = True, timeout = 12000)
 
 for site in sites_with_open_transfers:
     for record in records[site]:
