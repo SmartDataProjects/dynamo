@@ -226,7 +226,7 @@ class MySQLHistory(TransactionHistoryInterface):
             
         srun = '%09d' % run_number
         spool_dir_name = '%s/detox_snapshots' % (config.paths.spool)
-        db_file_name = '%s/snapshot_%d.db' % (spool_dir_name, run_number)
+        db_file_name = '%s/snapshot_%09d.db' % (spool_dir_name, run_number)
 
         try:
             os.makedirs(spool_dir_name)
@@ -318,10 +318,10 @@ class MySQLHistory(TransactionHistoryInterface):
         snapshot_cursor.close()
         snapshot_db.close()
 
-        os.chmod(db_file_name, 0777)
+        os.chmod(db_file_name, 0666)
 
         archive_dir_name = '%s/detox_snapshots/%s/%s' % (config.paths.archive, srun[:3], srun[3:6])
-        xz_file_name = '%s/snapshot_%d.db.xz' % (archive_dir_name, run_number)
+        xz_file_name = '%s/snapshot_%09d.db.xz' % (archive_dir_name, run_number)
 
         try:
             os.makedirs(archive_dir_name)
@@ -524,9 +524,9 @@ class MySQLHistory(TransactionHistoryInterface):
 
             srun = '%09d' % run_number
 
-            db_file_name = '%s/detox_snapshots/snapshot_%d.db' % (config.paths.spool, run_number)
+            db_file_name = '%s/detox_snapshots/snapshot_%09d.db' % (config.paths.spool, run_number)
             if not os.path.exists(db_file_name):
-                xz_file_name = '%s/detox_snapshots/%s/%s/snapshot_%d.db.xz' % (config.paths.archive, srun[:3], srun[3:6], run_number)
+                xz_file_name = '%s/detox_snapshots/%s/%s/snapshot_%09d.db.xz' % (config.paths.archive, srun[:3], srun[3:6], run_number)
                 if not os.path.exists(xz_file_name):
                     raise RuntimeError('Snapshot DB ' + db_file_name + ' does not exist')
 
@@ -571,9 +571,9 @@ class MySQLHistory(TransactionHistoryInterface):
 
             srun = '%09d' % run_number
 
-            db_file_name = '%s/detox_snapshots/snapshot_%d.db' % (config.paths.spool, run_number)
+            db_file_name = '%s/detox_snapshots/snapshot_%09d.db' % (config.paths.spool, run_number)
             if not os.path.exists(db_file_name):
-                xz_file_name = '%s/detox_snapshots/%s/%s/snapshot_%d.db.xz' % (config.paths.archive, srun[:3], srun[3:6], run_number)
+                xz_file_name = '%s/detox_snapshots/%s/%s/snapshot_%09d.db.xz' % (config.paths.archive, srun[:3], srun[3:6], run_number)
                 if not os.path.exists(xz_file_name):
                     raise RuntimeError('Snapshot DB ' + db_file_name + ' does not exist')
 
@@ -625,7 +625,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         for old_run in set(old_replica_runs) & set(old_site_runs):
             srun = '%09d' % old_run
-            db_file_name = '%s/detox_snapshots/snapshot_.db' % (config.paths.spool, old_run)
+            db_file_name = '%s/detox_snapshots/snapshot_%09d.db' % (config.paths.spool, old_run)
             if os.path.exists(db_file_name):
                 try:
                     os.unlink(db_file_name)
