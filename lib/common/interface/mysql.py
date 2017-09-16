@@ -175,9 +175,11 @@ class MySQL(object):
             key_str = key
 
         sqlbase += ' WHERE '
+
         for add in additional_conditions:
-            sqlbase += add + ' AND '
-        sqlbase += key_str
+            sqlbase += '(%s) AND ' % add
+
+        sqlbase += key_str + ' IN '
 
         def execute(pool_expr):
             sql = sqlbase + pool_expr
