@@ -123,12 +123,12 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
       $dataset_pattern = str_replace('_', '\_', $pattern);
       $dataset_pattern = str_replace('*', '%', $dataset_pattern);
       $dataset_pattern = str_replace('?', '_', $dataset_pattern);
- 
+
       $stmt = $history_db->prepare($query);
       $stmt->bind_param('s', $dataset_pattern);
       $stmt->bind_result($site_name, $dataset_name, $size, $decision, $condition_id);
       $stmt->execute();
-  
+
       $condition_ids = array();
 
       $json_data = array();
@@ -256,6 +256,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
 
     $query = 'SELECT s.`id`, s.`name`, c.`status`, c.`quota` FROM ' . $site_cache_table_name . ' AS c';
     $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
+    $query .= ' ORDER BY s.`name`';
 
     $stmt = $history_db->prepare($query);
     $stmt->bind_result($site_id, $site_name, $status, $quota);
@@ -291,7 +292,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     $stmt->bind_result($site_id, $decision, $size);
     $stmt->execute();
     while ($stmt->fetch()) {
-      if (!in_array($site_id, $id_to_site))
+      if (!array_key_exists($site_id, $id_to_site))
         continue;
 
       $idx = $id_to_site[$site_id];
@@ -312,7 +313,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
       $stmt->bind_result($site_id, $decision, $size);
       $stmt->execute();
       while ($stmt->fetch()) {
-        if (!in_array($site_id, $id_to_site))
+        if (!array_key_exists($site_id, $id_to_site))
           continue;
 
         $idx = $id_to_site[$site_id];

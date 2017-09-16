@@ -26,11 +26,11 @@ function check_cache($history_db, $cycle, $partition_id, $snapshot_spool_path, $
   $stmt->close();
 
   if ($num_replica_table == 0 || $num_site_table == 0) {
-    $sqlite_file_name = sprintf('%s/snapshot_%d.db', $snapshot_spool_path, $cycle);
+    $sqlite_file_name = sprintf('%s/snapshot_%09d.db', $snapshot_spool_path, $cycle);
 
     if (!file_exists($sqlite_file_name)) {
       $srun = sprintf('%09d', $cycle);
-      $xz_file_name = sprintf('%s/%s/%s/snapshot_%d.db.xz', $snapshot_archive_path, substr($srun, 0, 3), substr($srun, 3, 3), $cycle);
+      $xz_file_name = sprintf('%s/%s/%s/snapshot_%09d.db.xz', $snapshot_archive_path, substr($srun, 0, 3), substr($srun, 3, 3), $cycle);
       if (!file_exists($xz_file_name))
         return false;
 
@@ -39,6 +39,7 @@ function check_cache($history_db, $cycle, $partition_id, $snapshot_spool_path, $
         return false;
       
       exec(sprintf('unxz -k -c %s > %s', $xz_file_name, $sqlite_file_name));
+      chmod($sqlite_file_name, 0666);
     }
 
     $snapshot_db = new SQLite3($sqlite_file_name);
