@@ -57,10 +57,12 @@ sites_with_open_transfers = []
 records = collections.defaultdict(set)
 
 sites_ongoings = []
-sites_total = []
-sites_copied = []
-sites_total_stuck = []
-sites_copied_stuck = []
+sites_total = [] # only requests with copied != total
+sites_copied = [] # only requests with copied != total
+sites_total_stuck = [] # only datasets with copied != total
+sites_copied_stuck = [] # only datasets with copied != total
+sites_total_ongoing = [] # only datasets with copied != total
+sites_copied_ongoing = [] # only datasets with copied != total
 
 # Get all sites with ongoing transfers
 
@@ -124,10 +126,12 @@ def exec_get(sitename):
     debug_counter = 0
 
     ongoings = []
-    site_total = 0
-    site_copied = 0
-    site_total_stuck = 0
-    site_copied_stuck = 0
+    site_total = 0 # request level
+    site_copied = 0 # request level
+    site_total_stuck = 0 # dataset level
+    site_copied_stuck = 0 # dataset level
+    site_total_ongoing = 0 # dataset level
+    site_copied_ongoing = 0 # dataset level
 
     rrd_filepath = rrd_dir + '/' + sitename
 
@@ -153,6 +157,9 @@ def exec_get(sitename):
 
         request_total = 0
         request_copied = 0
+
+        if len(status) == 0:
+            record.completed = 1 #old transfer. seems to not exist anymore.
 
         for (site, dataset), (total, copied, last_update) in status.items():
 
@@ -203,6 +210,8 @@ def exec_get(sitename):
                     ongoings.append([request_id,dataset,copied,total,is_stuck])
                     site_total_stuck += is_stuck*total
                     site_copied_stuck += is_stuck*copied
+                    site_total_ongoing += total
+                    site_copied_ongoing += copied
                     rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
                 else:
                     try:
@@ -225,6 +234,8 @@ def exec_get(sitename):
     sites_copied.append([sitename,site_copied])
     sites_total_stuck.append([sitename,site_total_stuck])
     sites_copied_stuck.append([sitename,site_copied_stuck])
+    sites_total_ongoing.append([sitename,site_total_ongoing])
+    sites_copied_ongoing.append([sitename,site_copied_ongoing])
 
     with open("%s/filelist.txt" % rrd_filepath, "w") as csvfilelist:
         fieldnames = ["id","name","copied","total","stuck"]
@@ -234,7 +245,7 @@ def exec_get(sitename):
             writer.writerow({"id" : ongoing[0], "name" : ongoing[1], "copied" : ongoing[2], "total" : ongoing[3], "stuck" : ongoing[4]})        
 
 
-parallel_exec(exec_get, sites_with_open_transfers, num_threads = min(64, len(sites_with_open_transfers)), print_progress = True, timeout = 12000)
+parallel_exec(exec_get, sites_with_open_transfers, num_threads = min(32, len(sites_with_open_transfers)), print_progress = True, timeout = 12000)
 
 for site in sites_with_open_transfers:
     for record in records[site]:
@@ -255,8 +266,8 @@ with open("%s/overview.txt" % rrd_dir, "w") as overview:
     for site in sites_with_open_transfers:
         if sum(x[1] for x in sites_total if x[0] == site) == 0:
             continue
-        writer.writerow({"sitename" : site, "ongoing" : sum(x[1] for x in sites_ongoings if x[0] == site), "total" : sum(x[1] for x in sites_total if x[0] == site), 
-                         "copied" : sum(x[1] for x in sites_copied if x[0] == site), "total_stuck" : sum(x[1] for x in sites_total_stuck if x[0] == site), "copied_stuck" : sum(x[1] for x in sites_copied_stuck if x[0] == site)})
+        writer.writerow({"sitename" : site, "ongoing" : sum(x[1] for x in sites_ongoings if x[0] == site), "total" : sum(x[1] for x in sites_total_ongoing if x[0] == site), 
+                         "copied" : sum(x[1] for x in sites_copied_ongoing if x[0] == site), "total_stuck" : sum(x[1] for x in sites_total_stuck if x[0] == site), "copied_stuck" : sum(x[1] for x in sites_copied_stuck if x[0] == site)})
 
 total_volume = sum((x[1] for x in sites_total))
 copied_volume = sum((x[1] for x in sites_copied))
