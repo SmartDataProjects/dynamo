@@ -20,13 +20,11 @@ class Generator(object):
         return obj
 
 
-class DummyInterface(object):
-    def __init__(self):
-        pass
-
 default_interface = {
     'dataset_source': Generator('phedexdbsssb', 'PhEDExDBSSSB'),
     'site_source': Generator('phedexdbsssb', 'PhEDExDBSSSB'),
+    'user_source': Generator('sitedb', 'SiteDB'),
+    'group_source': Generator('phedexdbsssb', 'PhEDExDBSSSB'),
     'replica_source': Generator('phedexdbsssb', 'PhEDExDBSSSB'),
     'copy': Generator('phedexdbsssb', 'PhEDExDBSSSB'),
     'deletion': Generator('phedexdbsssb', 'PhEDExDBSSSB'),

@@ -23,15 +23,6 @@ class SiteInfoSourceInterface(object):
         """
         pass
 
-    def get_group_list(self, groups, filt = '*'):
-        """
-        Fill the list of groups with groups that match the wildcard name.
-        Arguments:
-          groups: the name->group dict to be filled. Information of the groups already in the list will be updated.
-          filt: a wildcard string or a list of wildcard strings.
-        """
-        pass
-
 
 if __name__ == '__main__':
 

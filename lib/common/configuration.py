@@ -121,7 +121,7 @@ mysqllock = Configuration(
 )
 
 activitylock = Configuration(
-    default_user = 'paus'
+    default_user = 'dynamo@dynamo.mit.edu'
 )
 
 tape_sites = ['T1_*_MSS', 'T0_CH_CERN_MSS']

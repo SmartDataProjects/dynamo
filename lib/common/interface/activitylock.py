@@ -2,6 +2,7 @@ import time
 import logging
 
 from common.interface.mysql import MySQL
+from common.interface.classes import default_interface
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,8 @@ class ActivityLock(object):
             self.user = asuser
         else:
             self.user = config.activitylock.default_user
+
+        self._userinfo = default_interface['user_source']()
 
     def __enter__(self):
         self.lock()
@@ -50,6 +53,13 @@ class ActivityLock(object):
             logger.info('Activity lock for %s in place: user = %s, service = %s', self.application, *result[0])
             self._mysql.query('UNLOCK TABLES')
             time.sleep(60)
+
+        if self._mysql.query('SELECT COUNT(*) FROM `users` WHERE `name` = %s', self.user)[0] == 0:
+            user_data = self._userinfo.get_user(self.user)
+            if user_data is None:
+                raise RuntimeError('Invalid user %s used for activity lock' % self.user)
+
+            self._mysql.query('INSERT INTO `users` (`name`, `email`, `dn`) VALUES (%s, %s, %s)', *user_data)
 
         query = 'INSERT INTO `activity_lock` (`user_id`, `service_id`, `application`, `timestamp`, `note`)'
         query += ' SELECT `users`.`id`, `services`.`id`, %s, NOW(), \'Dynamo running\' FROM `users`, `services`'

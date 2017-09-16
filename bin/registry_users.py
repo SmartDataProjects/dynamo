@@ -42,11 +42,10 @@ if args.command[0] == 'update':
 
     updated_users = []
 
-    for user_info in sitedb._make_request('people'):
-        name = user_info[0]
-        email = user_info[1]
-        dn = user_info[4]
+    sitedb_users = {}
+    sitedb.get_user_list(sitedb_users)
 
+    for name, email, dn in sitedb_users.itervalues():
         try:
             known_user = known_users.pop(name)
         except KeyError:

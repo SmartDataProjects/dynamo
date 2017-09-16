@@ -4,17 +4,18 @@ import logging
 import datetime
 
 from common.interface.siteinfo import SiteInfoSourceInterface
+from common.interface.userinfo import UserInfoSourceInterface
 from common.interface.webservice import RESTService, GET, POST
 from common.dataformat import Site
 import common.configuration as config
 
 logger = logging.getLogger(__name__)
 
-class SiteDB(SiteInfoSourceInterface):
+class SiteDB(SiteInfoSourceInterface, UserInfoSourceInterface):
     def __init__(self):
         self._interface = RESTService(config.sitedb.url_base)
 
-    def get_site_list(self, sites, filt = '*'): #override
+    def get_site_list(self, sites, filt = '*'): #override (SiteInfoSourceInterface)
         """
         Fill the list of sites with sites that match the wildcard name.
         Arguments:
@@ -81,6 +82,30 @@ class SiteDB(SiteInfoSourceInterface):
 
                 sites[name] = site
 
+    def get_user(self, name): #override (UserInfoSourceInterface)
+        result = self._interface.make_request('people', ['match=%s' % name])
+
+        if len(result) == 0:
+            return None
+        else:
+            user_info = result[0]
+            name = user_info[0]
+            email = user_info[1]
+            dn = user_info[4]
+
+            return (name, email, dn)
+
+    def get_user_list(self, users, filt = '*'): #override (UserInfoSourceInterface)
+        result = self._interface.make_request('people')
+
+        for user in users:
+            user_info = result[0]
+            name = user_info[0]
+            email = user_info[1]
+            dn = user_info[4]
+            
+            users[name] = (name, email, dn)
+
     def _make_request(self, resource, options = []):
         """
         Make a single API call to SiteDB, strip the "header" and return the body JSON.
@@ -118,3 +143,8 @@ if __name__ == '__main__':
                     continue
 
                 out.write('UPDATE `sites` SET storage = %f, cpu = %f WHERE `name` LIKE \'%s\';\n' % (site.storage, site.cpu, site.name))
+
+    elif args.command == 'api':
+        result = interface._make_request(args.options[0], args.options[1:])
+
+        pprint.pprint(result)

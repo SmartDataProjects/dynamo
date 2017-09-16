@@ -11,6 +11,7 @@ import pprint
 from common.interface.copy import CopyInterface
 from common.interface.deletion import DeletionInterface
 from common.interface.siteinfo import SiteInfoSourceInterface
+from common.interface.groupinfo import GroupInfoSourceInterface
 from common.interface.replicainfo import ReplicaInfoSourceInterface
 from common.interface.datasetinfo import DatasetInfoSourceInterface
 from common.interface.webservice import RESTService, GET, POST
@@ -27,7 +28,7 @@ if config.use_threads:
 # PhEDEx does not document a hard limit on the length of POST request list.
 # 10000 was experimentally verified to be OK.
 
-class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, ReplicaInfoSourceInterface, DatasetInfoSourceInterface):
+class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, GroupInfoSourceInterface, ReplicaInfoSourceInterface, DatasetInfoSourceInterface):
     """
     Interface to PhEDEx/DBS/SSB using datasvc REST API.
     """
@@ -36,6 +37,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
         CopyInterface.__init__(self)
         DeletionInterface.__init__(self)
         SiteInfoSourceInterface.__init__(self)
+        GroupInfoSourceInterface.__init__(self)
         ReplicaInfoSourceInterface.__init__(self)
         DatasetInfoSourceInterface.__init__(self)
 
@@ -465,7 +467,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Re
                 else:
                     site.status = Site.STAT_READY
 
-    def get_group_list(self, groups, filt = '*'): #override (SiteInfoSourceInterface)
+    def get_group_list(self, groups, filt = '*'): #override (GroupInfoSourceInterface)
         logger.info('get_group_list  Fetching the list of groups from PhEDEx')
         source = self._make_phedex_request('groups')
 

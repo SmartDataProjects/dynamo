@@ -22,7 +22,7 @@ Site.set_partitions(config.inventory.partitions)
 class InventoryManager(object):
     """Bookkeeping class to bridge the communication between remote and local data sources."""
 
-    def __init__(self, load_data = True, store_cls = None, site_source_cls = None, dataset_source_cls = None, replica_source_cls = None):
+    def __init__(self, load_data = True, store_cls = None, site_source_cls = None, group_source_cls = None, dataset_source_cls = None, replica_source_cls = None):
         if store_cls:
             self.store = store_cls()
         else:
@@ -32,6 +32,11 @@ class InventoryManager(object):
             self.site_source = site_source_cls()
         else:
             self.site_source = default_interface['site_source']()
+
+        if group_source_cls:
+            self.group_source = group_source_cls()
+        else:
+            self.group_source = default_interface['group_source']()
 
         if dataset_source_cls:
             self.dataset_source = dataset_source_cls()
@@ -148,7 +153,7 @@ class InventoryManager(object):
 
             self.site_source.set_site_status(self.sites)
 
-            self.site_source.get_group_list(self.groups, filt = config.inventory.included_groups)
+            self.group_source.get_group_list(self.groups, filt = config.inventory.included_groups)
 
             if from_delta:
                 if last_update == 0:
