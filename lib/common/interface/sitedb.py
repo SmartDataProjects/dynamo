@@ -81,12 +81,12 @@ class SiteDB(SiteInfoSourceInterface):
 
                 sites[name] = site
 
-    def _make_request(self, resource):
+    def _make_request(self, resource, options = []):
         """
         Make a single API call to SiteDB, strip the "header" and return the body JSON.
         """
 
-        resp = self._interface.make_request(resource)
+        resp = self._interface.make_request(resource, options)
 
         return resp['result']
 

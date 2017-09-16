@@ -164,7 +164,7 @@ class MySQL(object):
         cursor.close()
         return
 
-    def execute_many(self, sqlbase, key, pool, additional_conditions = [], exec_on_match = True, order_by = ''):
+    def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = ''):
         result = []
 
         if type(key) is tuple:
@@ -178,10 +178,6 @@ class MySQL(object):
         for add in additional_conditions:
             sqlbase += add + ' AND '
         sqlbase += key_str
-        if exec_on_match:
-            sqlbase += ' IN '
-        else:
-            sqlbase += ' NOT IN '
 
         def execute(pool_expr):
             sql = sqlbase + pool_expr
@@ -196,7 +192,7 @@ class MySQL(object):
 
         return result
 
-    def select_many(self, table, fields, key, pool, additional_conditions = [], select_match = True, order_by = ''):
+    def select_many(self, table, fields, key, pool, additional_conditions = [], order_by = ''):
         if type(fields) is str:
             fields_str = '`%s`' % fields
         else:
@@ -204,18 +200,12 @@ class MySQL(object):
 
         sqlbase = 'SELECT {fields} FROM `{table}`'.format(fields = fields_str, table = table)
 
-        return self.execute_many(sqlbase, key, pool, additional_conditions, select_match, order_by = order_by)
+        return self.execute_many(sqlbase, key, pool, additional_conditions, order_by = order_by)
 
-    def delete_many(self, table, key, pool, additional_conditions = [], delete_match = True):
+    def delete_many(self, table, key, pool, additional_conditions = []):
         sqlbase = 'DELETE FROM `{table}`'.format(table = table)
 
-        self.execute_many(sqlbase, key, pool, additional_conditions, delete_match)
-
-    def delete_in(self, table, key, pool, additional_conditions = []):
-        self.delete_many(table, key, pool, additional_conditions = additional_conditions, delete_match = True)
-
-    def delete_not_in(self, table, key, pool, additional_conditions = []):
-        self.delete_many(table, key, pool, additional_conditions = additional_conditions, delete_match = False)
+        self.execute_many(sqlbase, key, pool, additional_conditions)
 
     def insert_many(self, table, fields, mapping, objects, do_update = True):
         """

@@ -36,23 +36,29 @@ if args.command[0] == 'update':
 
     domain_id = store.query('SELECT `id` FROM `domains` WHERE `name` = \'cern.ch\'')[0]
 
-    query = 'INSERT INTO `users` (`name`, `domain_id`, `email`, `dn`) VALUES (%s, ' + str(domain_id) +', %s, %s) ON DUPLICATE KEY UPDATE `email` = `email`, `dn` = `dn`'
+    known_users = {}
+    for name, email, dn in store.xquery('SELECT `name`, `email`, `dn` FROM `users` WHERE `domain_id` = %s', domain_id):
+        known_users[name] = (email, dn)
 
-    names = []
+    updated_users = []
 
     for user_info in sitedb._make_request('people'):
         name = user_info[0]
         email = user_info[1]
         dn = user_info[4]
 
-        if dn is None:
-            continue
+        try:
+            known_user = known_users.pop(name)
+        except KeyError:
+            updated_users.append((name, domain_id, email, dn))
+        else:
+            if known_user != (email, dn):
+                updated_users.append((name, domain_id, email, dn))
 
-        names.append(name)
- 
-        store.query(query, name, email, dn)
+    store.insert_many('users', ('name', 'domain_id', 'email', 'dn'), None, updated_users, do_update = True)
 
-    store.delete_not_in('users', 'name', names)
+    if len(known_users) != 0:
+        store.delete_in('users', 'name', known_users.iterkeys())
 
 elif args.command[0] == 'service':
     if args.command[1] == 'add':

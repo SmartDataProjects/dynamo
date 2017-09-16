@@ -749,22 +749,20 @@ class MySQLStore(LocalStoreInterface):
         # speedup - fetch all blocks and files of updated datasets
         # if size, num_file, or is_open of a block or a file is updated, its dataset also is
 
-        pool = [did for did, dataset in datasets_to_update if dataset.blocks is not None]
-        block_entries = dict((i, []) for i in pool)
+        block_entries = dict((i, []) for i in did for did, dataset in datasets_to_update if dataset.blocks is not None)
 
         _dataset_id = 0
-        for entry in self._mysql.select_many('blocks', ('dataset_id', 'id', 'name', 'size', 'num_files', 'is_open'), 'dataset_id', pool, order_by = '`dataset_id`'):
+        for entry in self._mysql.select_many('blocks', ('dataset_id', 'id', 'name', 'size', 'num_files', 'is_open'), 'dataset_id', block_entries.iterkeys(), order_by = '`dataset_id`'):
             if entry[0] != _dataset_id:
                 _dataset_id = entry[0]
                 entry_list = block_entries[entry[0]] = []
 
             entry_list.append(entry[1:])
 
-        pool = [did for did, dataset in datasets_to_update if dataset.files is not None]
-        file_entries = dict((i, []) for i in pool)
+        file_entries = dict((i, []) for i in did for did, dataset in datasets_to_update if dataset.files is not None)
 
         _dataset_id = 0
-        for entry in self._mysql.select_many('files', ('dataset_id', 'id', 'size', 'name'), 'dataset_id', pool, order_by = '`dataset_id`'):
+        for entry in self._mysql.select_many('files', ('dataset_id', 'id', 'size', 'name'), 'dataset_id', file_entries.iterkeys(), order_by = '`dataset_id`'):
             if entry[0] != _dataset_id:
                 _dataset_id = entry[0]
                 entry_list = file_entries[entry[0]] = []
@@ -1153,7 +1151,7 @@ class MySQLStore(LocalStoreInterface):
         """
         Delete everything related to the datasets
         """
-        dataset_ids = self._mysql.select_many('datasets', 'id', 'name', [d.name for d in datasets])
+        dataset_ids = self._mysql.select_many('datasets', 'id', 'name', (d.name for d in datasets))
 
         ids_str = ','.join(['%d' % i for i in dataset_ids])
 
@@ -1179,9 +1177,9 @@ class MySQLStore(LocalStoreInterface):
     def _do_delete_datasetreplicas(self, site, datasets, delete_blockreplicas): #override
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        dataset_ids = self._mysql.select_many('datasets', 'id', 'name', [d.name for d in datasets])
+        dataset_ids = self._mysql.select_many('datasets', 'id', 'name', (d.name for d in datasets))
 
-        self._mysql.delete_in('dataset_replicas', 'dataset_id', dataset_ids, additional_conditions = ['site_id = %d' % site_id])
+        self._mysql.delete_many('dataset_replicas', 'dataset_id', dataset_ids, additional_conditions = ['site_id = %d' % site_id])
 
         if delete_blockreplicas:
             ids_str = ','.join(['%d' % i for i in dataset_ids])
