@@ -749,7 +749,7 @@ class MySQLStore(LocalStoreInterface):
         # speedup - fetch all blocks and files of updated datasets
         # if size, num_file, or is_open of a block or a file is updated, its dataset also is
 
-        block_entries = dict((i, []) for i in did for did, dataset in datasets_to_update if dataset.blocks is not None)
+        block_entries = dict((did, []) for did, dataset in datasets_to_update if dataset.blocks is not None)
 
         _dataset_id = 0
         for entry in self._mysql.select_many('blocks', ('dataset_id', 'id', 'name', 'size', 'num_files', 'is_open'), 'dataset_id', block_entries.iterkeys(), order_by = '`dataset_id`'):
@@ -759,7 +759,7 @@ class MySQLStore(LocalStoreInterface):
 
             entry_list.append(entry[1:])
 
-        file_entries = dict((i, []) for i in did for did, dataset in datasets_to_update if dataset.files is not None)
+        file_entries = dict((did, []) for did, dataset in datasets_to_update if dataset.files is not None)
 
         _dataset_id = 0
         for entry in self._mysql.select_many('files', ('dataset_id', 'id', 'size', 'name'), 'dataset_id', file_entries.iterkeys(), order_by = '`dataset_id`'):

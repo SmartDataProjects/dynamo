@@ -517,8 +517,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
         @param dataset_filt Limit to replicas of datasets matching the pattern.
         """
 
-        logger.info('make_replica_links  Fetching block replica information from PhEDEx')
-
         if last_update > 0:
             # query URL will be different every time - need to turn caching off
             cache_lifetime = config.phedex.cache_lifetime
@@ -559,11 +557,15 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                 else:
                     items.append((inventory, [site], all_groups, ['/*/*/*'], last_update, counters))
 
+            logger.info('make_replica_links  Fetching block replica information from PhEDEx')
             parallel_exec(self._check_blockreplicas, items, num_threads = min(32, len(items)), print_progress = True, timeout = 3600)
+            logger.info('make_replica_links  Fetching subscription information from PhEDEx')
             parallel_exec(self._check_subscriptions, items, num_threads = min(32, len(items)), print_progress = True, timeout = 3600)
             del items
         else:
+            logger.info('make_replica_links  Fetching block replica information from PhEDEx')
             self._check_blockreplicas(inventory, all_sites, all_groups, [dataset_filt], last_update, counters)
+            logger.info('make_replica_links  Fetching subscription information from PhEDEx')
             self._check_subscriptions(inventory, all_sites, all_groups, [dataset_filt], last_update, counters)
             
         if last_update > 0:
@@ -831,7 +833,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
 
         gname_list = [g.name for g in group_list] + [None]
 
-        options = []
+        options = ['percent_max=0']
         
         if last_update > 0:
             options.append('create_since=%d' % last_update)
@@ -841,7 +843,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
 
         for dname in dname_list:
             options.append('dataset=' + dname)
-            options.append('block=' + dname + '%23*')
+            # we will only query for dataset-level subscriptions
+            # missing empty block-level subscriptions are marginal accounting errors, and block= query is VERY slow.
+            # options.append('block=' + dname + '%23*')
 
         source = self._make_phedex_request('subscriptions', options)
 
@@ -1687,9 +1691,14 @@ if __name__ == '__main__':
     elif command == 'updaterequest' or command == 'updatesubscription' or command == 'data':
         method = POST
 
+    start = time.time()
     result = interface._make_phedex_request(command, options, method = method, raw_output = args.raw_output)
+    end = time.time()
 
     if command == 'requestlist':
         result.sort(key = lambda x: x['id'])
 
     pprint.pprint(result)
+    printed = time.time()
+
+    logger.info('Took %f seconds to retrieve data, %f seconds to print', end - start, printed - end)
