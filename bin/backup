@@ -48,5 +48,5 @@ done
 echo "UNLOCK TABLES;" >&3
 exec 3>&-
 
-echo "DELETE FROM \`snapshots\` WHERE \`timestamp\` < '$NOW'; OPTIMIZE TABLE \`snapshots\`;" | mysql --defaults-group-suffix=-dynamo -D dynamohistory
-echo "PURGE BINARY LOGS BEFORE '$NOW';" | mysql --defaults-group-suffix=-dynamo
+echo "INSERT INTO \`snapshots\` VALUES ('$TAG', '$NOW'); DELETE FROM \`snapshots\` WHERE \`timestamp\` < '$NOW';" | mysql --defaults-group-suffix=-dynamo -D dynamohistory
+#echo "PURGE BINARY LOGS BEFORE '$NOW';" | mysql --defaults-group-suffix=-dynamo
