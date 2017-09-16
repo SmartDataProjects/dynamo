@@ -117,7 +117,7 @@ weblock = Configuration(
 )
 
 mysqllock = Configuration(
-    users = [('%%', '%%')] # list of (user, service) 2-tuples
+    users = [] # list of (user, service) 2-tuples
 )
 
 activitylock = Configuration(
