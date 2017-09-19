@@ -317,9 +317,9 @@ class TransactionHistoryInterface(object):
         Save decisions and their reasons for all replicas.
         @param run_number      Cycle number.
         @param quotas          {site: quota in TB}
-        @param deleted_list    [(dataset_replica, condition) or ([block_replica], condition)]
-        @param kept_list       [(dataset_replica, condition) or ([block_replica], condition)]
-        @param protected_list  [(dataset_replica, condition) or ([block_replica], condition)]
+        @param deleted_list    {replica: [condition or ([block_replica], condition)]}
+        @param kept_list       {replica: [condition or ([block_replica], condition)]}
+        @param protected_list  {replica: [condition or ([block_replica], condition)]}
 
         Note that in case of block-level operations, one dataset replica can appear
         in multiple of deleted, kept, and protected.

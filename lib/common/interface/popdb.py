@@ -121,13 +121,13 @@ if __name__== '__main__':
     popdb = PopDB()
 
     if args.command == 'dsstat':
-        service = 'popularity'
+        service = 'popularity/DSStatInTimeWindow/'
         for opt in args.options:
             if 'sitename=' in opt:
                 sitename = opt[opt.find('=') + 1:]
                 if sitename == 'T2_CH_CERN':
-                    service = 'xrdpopularity'
+                    service = 'xrdpopularity/DSStatInTimeWindow'
 
-        result = popdb._make_request(service + '/DSStatInTimeWindow', args.options)
+        result = popdb._make_request(service, args.options)
 
     pprint.pprint(result)

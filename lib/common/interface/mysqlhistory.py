@@ -298,17 +298,20 @@ class MySQLHistory(TransactionHistoryInterface):
         sql = 'INSERT INTO `replicas` VALUES (?, ?, ?, ?, ?)'
 
         def do_insert(entries, decision):
-            for replica, condition_id in entries:
-                if type(replica) is list: # list of block replicas
-                    site_name = replica[0].site.name
-                    dataset_name = replica[0].block.dataset.name
-                    size = sum(r.size for r in replica)
-                else:
-                    site_name = replica.site.name
-                    dataset_name = replica.dataset.name
-                    size = replica.size()
+            for replica, matches in entries.iteritems():
+                site_id = self._site_id_map[replica.site.name]
+                dataset_id = self._dataset_id_map[replica.dataset.name]
 
-                snapshot_cursor.execute(sql, (self._site_id_map[site_name], self._dataset_id_map[dataset_name], size, decision, condition_id))
+                for match in matches:
+                    if type(match) is tuple: # ([block_replica], condition)
+                        condition_id = match[1]
+                        size = sum(r.size for r in match[0])
+                    else:
+                        condition_id = match
+                        size = replica.size()
+
+                    snapshot_cursor.execute(sql, (site_id, dataset_id, size, decision, condition_id))
+
             snapshot_db.commit()
         
         do_insert(deleted_list, replica_delete)

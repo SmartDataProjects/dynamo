@@ -761,14 +761,14 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
 
                             if new_replica:
                                 # first time associating this dataset with this site
-                                logger.info('Instantiating dataset replica at %s', site.name)
+                                logger.debug('Instantiating dataset replica at %s', site.name)
     
                                 # start with is_complete = True, update if any block replica is incomplete
                                 dataset_replica.is_complete = True
 
-                        if site.storage_type == Site.TYPE_MSS:
-                            # start with partial - update to full if the dataset replica is indeed full
-                            dataset.on_tape = Dataset.TAPE_PARTIAL
+                                if site.storage_type == Site.TYPE_MSS:
+                                    # start with partial - update to full if the dataset replica is indeed full
+                                    dataset.on_tape = Dataset.TAPE_PARTIAL
 
                         if int(replica_entry['time_update']) > dataset_replica.last_block_created:
                             dataset_replica.last_block_created = int(replica_entry['time_update'])
