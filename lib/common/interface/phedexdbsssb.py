@@ -558,9 +558,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                     items.append((inventory, [site], all_groups, ['/*/*/*'], last_update, counters))
 
             logger.info('make_replica_links  Fetching block replica information from PhEDEx')
-            parallel_exec(self._check_blockreplicas, items, num_threads = min(32, len(items)), print_progress = True, timeout = 3600)
+            parallel_exec(self._check_blockreplicas, items, num_threads = min(32, len(items)), print_progress = True, timeout = 7200)
             logger.info('make_replica_links  Fetching subscription information from PhEDEx')
-            parallel_exec(self._check_subscriptions, items, num_threads = min(32, len(items)), print_progress = True, timeout = 3600)
+            parallel_exec(self._check_subscriptions, items, num_threads = min(32, len(items)), print_progress = True, timeout = 7200)
             del items
         else:
             logger.info('make_replica_links  Fetching block replica information from PhEDEx')

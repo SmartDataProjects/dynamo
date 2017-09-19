@@ -319,10 +319,10 @@ for existing_rrd in existing_rrds:
 # Copying rrds to the /var/www location
 
 subprocess.call("rm -rf /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/T*", shell=True)
-subprocess.call("cp -r /var/spool/dynamo/track_phedex/T* /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
+subprocess.call("cp -r /local/dynamo/dynamo/track_phedex/T* /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
 subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/total.rrd", shell=True)
-subprocess.call("cp /var/spool/dynamo/track_phedex/total.rrd /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
+subprocess.call("cp /local/dynamo/dynamo/track_phedex/total.rrd /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
 subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/overview.txt", shell=True)
-subprocess.call("cp /var/spool/dynamo/track_phedex/overview.txt /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
+subprocess.call("cp /local/dynamo/dynamo/track_phedex/overview.txt /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
 
 
