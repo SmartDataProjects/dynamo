@@ -110,15 +110,18 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
   // return
   // {"results": [{"siteData": [{"name": site, "datasets": [datasets]}]}], "conditions": [conditions]}
 
-  $query = 'SELECT s.`name`, d.`name`, c.`size` * 1.e-9, c.`decision`, c.`condition`';
-  $query .= ' FROM ' . $replica_cache_table_name . ' AS c';
-  $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
-  $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
-  $query .= ' WHERE d.`name` LIKE ?';
-
   $results_data = array();
 
   if (isset($_REQUEST['datasetNames']) && is_array($_REQUEST['datasetNames'])) {
+    $query = 'SELECT s.`id`, s.`name`, d.`name`, c.`size` * 1.e-9, c.`decision`, c.`condition`, t.`count`';
+    $query .= ' FROM ' . $replica_cache_table_name . ' AS c';
+    $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
+    $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
+    $query .= ' INNER JOIN (SELECT `site_id`, `dataset_id`, COUNT(*) AS count FROM ' . $replica_cache_table_name . ' GROUP BY `site_id`, `dataset_id`) AS t';
+    $query .= '  ON t.`site_id` = c.`site_id` AND t.`dataset_id` = c.`dataset_id`';
+    $query .= ' WHERE d.`name` LIKE ?';
+    $query .= ' ORDER BY s.`id`, d.`id`';
+
     foreach ($_REQUEST['datasetNames'] as $pattern) {
       $dataset_pattern = str_replace('_', '\_', $pattern);
       $dataset_pattern = str_replace('*', '%', $dataset_pattern);
@@ -126,7 +129,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
 
       $stmt = $history_db->prepare($query);
       $stmt->bind_param('s', $dataset_pattern);
-      $stmt->bind_result($site_name, $dataset_name, $size, $decision, $condition_id);
+      $stmt->bind_result($sid, $site_name, $dataset_name, $size, $decision, $condition_id, $count);
       $stmt->execute();
 
       $condition_ids = array();
@@ -136,10 +139,13 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
       $protect_total = 0.;
       $keep_total = 0.;
       $delete_total = 0.;
-  
+
+      $_sid = 0;
       while ($stmt->fetch()) {
-        if (!array_key_exists($site_name, $json_data))
+        if ($sid != $_sid) {
           $json_data[$site_name] = array();
+          $_sid = $sid;
+        }
 
         if ($decision == 'protect')
           $protect_total += $size;
@@ -147,6 +153,9 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
           $keep_total += $size;
         else
           $delete_total += $size;
+
+        if ($count != 1)
+          $decision .= ' *';
   
         $json_data[$site_name][] = sprintf('{"name":"%s","size":%f,"decision":"%s","conditionId":"%s"}', $dataset_name, $size, $decision, $condition_id);
         $condition_ids[] = $condition_id;
@@ -243,7 +252,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     $ts = strptime($timestamp, '%Y-%m-%d %H:%M:%S');
     // converting a local time tuple to unix time
     $unixtime = mktime($ts['tm_hour'], $ts['tm_min'], $ts['tm_sec'], 1 + $ts['tm_mon'], $ts['tm_mday'], 1900 + $ts['tm_year']);
-    $data['timestampWarning'] = ($unixtime < mktime() - 3600 * 1); // warn if timestamp is more than 18 hours in the past
+    $data['timestampWarning'] = ($unixtime < mktime() - 3600 * 18); // warn if timestamp is more than 18 hours in the past
   }
   else
     $data['timestampWarning'] = false;
@@ -354,24 +363,25 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
       exit(1);
     }
 
-    // first collect info about double-action items
-    $double_action_datasets = array();
+    // first collect info about multi-action items
+    $multi_action_datasets = array();
 
-    $query = 'SELECT d.`name`, COUNT(*) FROM ' . $replica_cache_table_name . ' AS c';
-    $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
-    $query .= ' WHERE c.`site_id` = ? GROUP BY d.`name`';
+    $query = 'SELECT c.`dataset_id`, COUNT(*) FROM ' . $replica_cache_table_name . ' AS c';
+    $query .= ' WHERE c.`site_id` = ? GROUP BY c.`dataset_id`';
 
     $stmt = $history_db->prepare($query);
     $stmt->bind_param('i', $site_id);
-    $stmt->bind_result($name, $count);
+    $stmt->bind_result($did, $count);
     $stmt->execute();
     while ($stmt->fetch()) {
       if ($count != 1)
-        $double_action_datasets[] = $name;
+        $multi_action_datasets[] = $did;
     }
     $stmt->close();
 
-    $query = 'SELECT d.`name`, c.`size` * 1.e-9, c.`decision`, c.`condition`';
+    error_log(print_r($multi_action_datasets, true));
+
+    $query = 'SELECT d.`id`, d.`name`, c.`size` * 1.e-9, c.`decision`, c.`condition`';
     $query .= ' FROM ' . $replica_cache_table_name . ' AS c';
     $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
     $query .= ' WHERE c.`site_id` = ?';
@@ -381,10 +391,10 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
 
     $stmt = $history_db->prepare($query);
     $stmt->bind_param('i', $site_id);
-    $stmt->bind_result($name, $size, $decision, $condition_id);
+    $stmt->bind_result($did, $name, $size, $decision, $condition_id);
     $stmt->execute();
     while ($stmt->fetch()) {
-      if (in_array($name, $double_action_datasets))
+      if (in_array($did, $multi_action_datasets))
         $decision .= " *";
       
       $datasets[] = array('name' => $name, 'size' => $size, 'decision' => $decision, 'conditionId' => $condition_id);

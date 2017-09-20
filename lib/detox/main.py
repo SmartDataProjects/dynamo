@@ -185,10 +185,8 @@ class Detox(object):
                     matched_line = action.matched_line
                     if matched_line is None:
                         condition_id = 0
-                        condition = 'null'
                     else:
                         condition_id = matched_line.condition_id
-                        condition = matched_line.condition.text
 
                     if isinstance(action, ProtectBlock):
                         protect_candidates[replica].append((action.block_replicas, condition_id))
@@ -197,9 +195,10 @@ class Detox(object):
     
                     elif isinstance(action, DeleteBlock):
                         unlinked_replicas = unlink_block_replicas(replica, action.block_replicas)
-                        deleted[replica].append((unlinked_replicas, condition_id))
+                        if len(unlinked_replicas) != 0:
+                            deleted[replica].append((unlinked_replicas, condition_id))
 
-                        block_replicas -= set(action.block_replicas)
+                            block_replicas -= set(unlinked_replicas)
 
                     elif isinstance(action, DismissBlock):
                         if replica.site in triggered_sites:
@@ -214,7 +213,8 @@ class Detox(object):
     
                     elif isinstance(action, Delete):
                         unlinked_replicas = unlink_block_replicas(replica, block_replicas)
-                        deleted[replica].append((unlinked_replicas, condition_id))
+                        if len(unlinked_replicas) != 0:
+                            deleted[replica].append((unlinked_replicas, condition_id))
 
                         if len(replica.block_replicas) == 0:
                             # if all blocks were deleted, take the replica off all_replicas for later iterations
@@ -275,8 +275,9 @@ class Detox(object):
     
                     for match in matches:
                         unlinked_replicas = unlink_block_replicas(replica, match[0])
-                        deleted_volume[site] += sum(br.size for br in unlinked_replicas)
-                        deleted[replica].append((unlinked_replicas, match[1]))
+                        if len(unlinked_replicas) != 0:
+                            deleted_volume[site] += sum(br.size for br in unlinked_replicas)
+                            deleted[replica].append((unlinked_replicas, match[1]))
 
                     if len(replica.block_replicas) == 0:
                         all_replicas.remove(replica)
@@ -370,7 +371,7 @@ class Detox(object):
 
         new_replicas = []
         for old_replica in block_replicas:
-            site.remove_block_replica(old_replica)
+            old_replica.unlink()
 
             new_replica = old_replica.clone(group = new_owner)
 
