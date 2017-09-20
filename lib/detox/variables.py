@@ -265,15 +265,6 @@ replica_variables = {
     'blockreplica.is_locked': ReplicaIsLocked()
 }
 
-# Variables that may change their values during a single program execution
-replica_dynamic_variables = [
-    'dataset.num_full_disk_copy',
-    'replica.owners',
-    'replica.num_full_disk_copy_common_owner',
-    'blockreplica.last_update',
-    'blockreplica.owner'
-]
-
 # site variable definition: partition -> (site -> value)
 site_variables = {
     'site.name': SiteAttr(Attr.TEXT_TYPE, 'name'),

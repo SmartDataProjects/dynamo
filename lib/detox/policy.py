@@ -27,17 +27,16 @@ class Decision(object):
         self.action_cls = cls
         self.common_args = common_args
 
-    def action(self, replica, condition, *args):
-        return self.action_cls(replica, condition, *(args + self.common_args))
+    def action(self, matched_line, *args):
+        return self.action_cls(matched_line, *(args + self.common_args))
 
 class Action(object):
-    def __init__(self, replica, condition):
-        self.replica = replica
-        self.condition = condition
+    def __init__(self, matched_line):
+        self.matched_line = matched_line
 
 class DatasetAction(Action):
-    def __init__(self, replica, condition):
-        Action.__init__(self, replica, condition)
+    def __init__(self, matched_line):
+        Action.__init__(self, matched_line)
 
 class Protect(DatasetAction):
     pass
@@ -49,25 +48,25 @@ class Dismiss(DatasetAction):
     pass
 
 class BlockAction(Action):
-    def __init__(self, replica, condition, block_replicas = []):
-        Action.__init__(self, replica, condition)
+    def __init__(self, matched_line, block_replicas = []):
+        Action.__init__(self, matched_line)
 
         self.block_replicas = list(block_replicas)
 
 class ProtectBlock(BlockAction):
     @staticmethod
-    def dataset_level(replica, condition, *args):
-        return Protect(replica, condition)
+    def dataset_level(matched_line, *args):
+        return Protect(matched_line)
 
 class DeleteBlock(BlockAction):
     @staticmethod
-    def dataset_level(replica, condition, *args):
-        return Delete(replica, condition)
+    def dataset_level(matched_line, *args):
+        return Delete(matched_line)
 
 class DismissBlock(BlockAction):
     @staticmethod
-    def dataset_level(replica, condition, *args):
-        return Dismiss(replica, condition)
+    def dataset_level(matched_line, *args):
+        return Dismiss(matched_line)
 
 class SortKey(object):
     """
@@ -99,8 +98,6 @@ class PolicyLine(object):
         self.condition = ReplicaCondition(text)
         self.decision = decision
         self.has_match = False
-        if self.condition.static:
-            self.cached_action = {}
 
         # filled by history interface
         self.condition_id = 0
@@ -109,12 +106,6 @@ class PolicyLine(object):
         return self.condition.text
 
     def evaluate(self, replica):
-        if self.condition.static:
-            try:
-                return self.cached_action[replica]
-            except KeyError:
-                pass
-
         if self.condition.match(replica):
             self.has_match = True
 
@@ -123,25 +114,19 @@ class PolicyLine(object):
                 block_replicas = self.condition.get_matching_blocks(replica)
                 if len(block_replicas) == len(replica.block_replicas):
                     # but all blocks matched - return dataset level
-                    action = self.decision.action_cls.dataset_level(replica, self.condition_id)
+                    action = self.decision.action_cls.dataset_level(self)
                 else:
                     # strip the block replicas from dataset replica
                     for block_replica in block_replicas:
                         replica.block_replicas.remove(block_replica)
 
-                    action = self.decision.action(replica, self.condition_id, block_replicas)
+                    action = self.decision.action(self, block_replicas)
             else:
-                action = self.decision.action(replica, self.condition_id)
-
-            if self.condition.static:
-                self.cached_action[replica] = action
+                action = self.decision.action(self)
 
             return action
 
         else:
-            if self.condition.static:
-                self.cached_action[replica] = None
-
             return None
 
 class Policy(object):
@@ -155,7 +140,6 @@ class Policy(object):
         self.partition = partition
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
 
-        self.need_iteration = False
         self.used_demand_plugins = set()
         self.parse_lines(lines, inventory)
 
@@ -272,10 +256,6 @@ class Policy(object):
 
         for line in self.policy_lines:
             self.used_demand_plugins.update(line.condition.used_demand_plugins)
-            if not self.need_iteration:
-                if not line.condition.static:
-                    logger.info('Condition %s is dynamic. Policy will be evaluated iteratively.', str(line.condition))
-                    self.need_iteration = True
 
         logger.info('Policy stack for %s: %d lines using demand plugins %s', self.partition.name, len(self.policy_lines), str(sorted(self.used_demand_plugins)))
 
@@ -364,14 +344,20 @@ class Policy(object):
         actions = []
         for line in self.policy_lines:
             action = line.evaluate(replica)
-            if action is not None:
-                actions.append(action)
-                if isinstance(action, DatasetAction):
-                    break
+            if action is None:
+                continue
+
+            actions.append(action)
+            if isinstance(action, DatasetAction):
+                break
 
         else:
-            # condition 0 -> no policy match
-            actions.append(self.default_decision.action(replica, 0))
+            actions.append(self.default_decision.action(None))
+        
+        # return block replicas taken away by BlockActions
+        for action in actions:
+            if isinstance(action, BlockAction):
+                replica.block_replicas.extend(action.block_replicas)
 
         return actions
         

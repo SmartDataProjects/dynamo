@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 class Condition(object):
     def __init__(self, text):
-        self.static = True
         self.text = text
         self.predicates = []
         self.used_demand_plugins = set()
@@ -22,10 +21,6 @@ class Condition(object):
             if expr == 'not': # special case for English language
                 expr = words[1]
                 words[1] = 'not'
-
-            # we can optimize execution if all predicates are based on static variables
-            if expr in variables.replica_dynamic_variables:
-                self.static = False
 
             # flags to determine which demand information should be updated
             for plugin, exprs in variables.required_plugins.items():
