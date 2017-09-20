@@ -206,14 +206,14 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('datasets', ('name',), None, datasets_to_insert)
         self._make_dataset_id_map()
 
-    def _do_save_conditions(self, rules):
-        for rule in rules:
-            text = re.sub('\s+', ' ', rule.condition.text)
+    def _do_save_conditions(self, policy_lines):
+        for line in policy_lines:
+            text = re.sub('\s+', ' ', line.condition.text)
             ids = self._mysql.query('SELECT `id` FROM `policy_conditions` WHERE `text` LIKE %s', text)
             if len(ids) == 0:
-                rule.condition_id = self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
+                line.condition_id = self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
             else:
-                rule.condition_id = ids[0]
+                line.condition_id = ids[0]
 
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
@@ -303,12 +303,8 @@ class MySQLHistory(TransactionHistoryInterface):
                 dataset_id = self._dataset_id_map[replica.dataset.name]
 
                 for match in matches:
-                    if type(match) is tuple: # ([block_replica], condition)
-                        condition_id = match[1]
-                        size = sum(r.size for r in match[0])
-                    else:
-                        condition_id = match
-                        size = replica.size()
+                    condition_id = match[1]
+                    size = sum(r.size for r in match[0])
 
                     snapshot_cursor.execute(sql, (site_id, dataset_id, size, decision, condition_id))
 
