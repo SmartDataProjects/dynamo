@@ -18,7 +18,7 @@ def _BlockReplica_unlink(self):
     # Detach this replica from owning containers but retain references from this replica
 
     dataset_replica = self.block.dataset.find_replica(self.site)
-    dataset_replica.remove(self)
+    dataset_replica.block_replicas.remove(self)
 
     self.site.remove_block_replica(self)
 
