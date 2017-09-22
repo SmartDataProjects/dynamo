@@ -275,7 +275,7 @@ function displaySummary(data)
 
     var onlyAbsolute = false;
     for (var s in data.siteData) {
-        if (data.siteData[s].quota < 0) {
+        if (data.siteData[s].quota <= 0) {
             currentNorm = "absolute";
             titleRelative.style('fill', '#808080');
             selectRelative.attr('stroke', '#808080');
@@ -397,7 +397,7 @@ function displaySummary(data)
             .append('g').classed('refMarkers', true)
             .attr('transform', function (d) { return 'translate(' + xmapping(d.name) + ',0)'; })
             .each(function (d) {
-                    if (d.quota < 0)
+                    if (d.quota <= 0)
                         return;
 
                     d3.select(this).append('line').classed('refMarker quota', true)
@@ -426,7 +426,7 @@ function displaySummary(data)
         .attr('transform', function (d) { return 'translate(0,-' + ynorm(d.protectPrev, d.quota) + ')'; })
         .attr('height', function (d) { return ynorm(d.protectPrev, d.quota)})
         .each(function (d) {
-                if (d.quota < 0)
+                if (d.quota <= 0)
                     return;
 
                 if (d.protectPrev > d.quota)
@@ -451,7 +451,7 @@ function displaySummary(data)
         .attr('transform', function (d) { return 'translate(0,-' + ynorm(d.protect, d.quota) + ')'; })
         .attr('height', function (d) { return ynorm(d.protect, d.quota); })
         .each(function (d) {
-                if (d.quota < 0)
+                if (d.quota <= 0)
                     return;
 
                 if (d.protect > d.quota)
@@ -639,7 +639,7 @@ function displayDatasetSearch(data)
     var ynorm;
 
     if (currentNorm == 'relative')
-        ynorm = function (site, val) { if (site.quota == 0.) return 0.; else return summary.ymax - summary.yscale(val / site.quota); }
+        ynorm = function (site, val) { if (site.quota <= 0.) return 0.; else return summary.ymax - summary.yscale(val / site.quota); }
     else
         ynorm = function (site, val) { return (summary.ymax - summary.yscale(val)) / 1000.; }
 
