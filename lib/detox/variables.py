@@ -191,6 +191,18 @@ class ReplicaIsLastSource(DatasetReplicaAttr):
 
         return nfull == 1 and nincomplete != 0
 
+class ReplicaFirstBlockCreated(DatasetReplicaAttr):
+    def __init__(self):
+        DatasetReplicaAttr.__init__(self, Attr.TIME_TYPE)
+
+    def _get(self, replica):
+        value = 0xffffffff
+        for block_replica in replica.block_replicas:
+            if block_replica.last_update < value:
+                value = block_replica.last_update
+
+        return value
+
 class ReplicaOwner(BlockReplicaAttr):
     def __init__(self):
         BlockReplicaAttr.__init__(self, Attr.TEXT_TYPE)
@@ -257,6 +269,7 @@ replica_variables = {
     'replica.size': ReplicaSize(),
     'replica.incomplete': ReplicaIncomplete(),
     'replica.last_block_created': DatasetReplicaAttr(Attr.TIME_TYPE, 'last_block_created'),
+    'replica.first_block_created': ReplicaFirstBlockCreated(),
     'replica.last_used': ReplicaLastUsed(),
     'replica.num_access': ReplicaNumAccess(),
     'replica.num_full_disk_copy_common_owner': ReplicaNumFullDiskCopyCommonOwner(),
