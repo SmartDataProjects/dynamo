@@ -3,6 +3,7 @@ var nextCycle = 0;
 var previousCycle = 0;
 var latestCycle = 0;
 var currentPartition = 0;
+var currentPartitionName = '';
 var currentNorm = 'relative';
 
 var summary = {
@@ -210,7 +211,7 @@ function displaySummary(data)
     if (data.cyclePolicy != '') {
         cycleHeader.append('span').text(data.cyclePolicy)
             .classed('clickable', true)
-            .on('click', function () { window.open('https://github.com/SmartDataProjects/dynamo-policies/tree/' + this.textContent); });
+            .on('click', function () { window.open('https://github.com/SmartDataProjects/dynamo-policies/blob/' + this.textContent + '/detox/' + currentPartitionName + '.txt'); });
     }
     else {
         cycleHeader.append('span').text('unknown');
@@ -856,8 +857,9 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
     d3.selectAll('.partitionTab')
         .classed('selected', false);
     
-    d3.select('#partition' + partitionId)
-        .classed('selected', true);
+    var currentTab = d3.select('#partition' + partitionId);
+    currentTab.classed('selected', true);
+    currentPartitionName = currentTab.text();
 
     d3.select('#cycleHeader').selectAll('span').remove();
     d3.select('#cycleComments').selectAll('span').remove();
