@@ -5,7 +5,7 @@ Define translations from text-based detox configuration to actual python express
 import re
 import fnmatch
 from common.dataformat import Dataset, Site
-from detox.attrs import Attr, DatasetAttr, DatasetReplicaAttr, BlockReplicaAttr, SiteAttr, InvalidExpression
+from detox.attrs import Attr, DatasetAttr, DatasetReplicaAttr, BlockReplicaAttr, ReplicaSiteAttr, SiteAttr, InvalidExpression
 
 class DatasetHasIncompleteReplica(DatasetAttr):
     def __init__(self):
@@ -225,6 +225,13 @@ class ReplicaIsLocked(BlockReplicaAttr):
 
         return replica.block in locked_blocks
 
+class ReplicaSiteStatus(ReplicaSiteAttr):
+    def __init__(self):
+        ReplicaSiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
+
+    def rhs_map(self, expr):
+        return getattr(Site, 'STAT_' + expr)
+
 class SiteStatus(SiteAttr):
     def __init__(self):
         SiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
@@ -275,7 +282,8 @@ replica_variables = {
     'replica.num_full_disk_copy_common_owner': ReplicaNumFullDiskCopyCommonOwner(),
     'blockreplica.last_update': BlockReplicaAttr(Attr.TIME_TYPE, 'last_update'),
     'blockreplica.owner': ReplicaOwner(),
-    'blockreplica.is_locked': ReplicaIsLocked()
+    'blockreplica.is_locked': ReplicaIsLocked(),
+    'site.status': ReplicaSiteStatus()
 }
 
 # site variable definition: partition -> (site -> value)

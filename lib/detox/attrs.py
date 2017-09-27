@@ -91,6 +91,16 @@ class BlockReplicaAttr(Attr):
             return map(self._get, replica.block_replicas)
 
 
+class ReplicaSiteAttr(Attr):
+    """Extract an attribute from the site of a replica."""
+
+    def __init__(self, vtype, attr = None):
+        Attr.__init__(self, vtype, attr = attr)
+
+    def get(self, replica):
+        return self._get(replica.site)
+
+
 class SiteAttr(Attr):
     """Extract an attribute from a site."""
 
