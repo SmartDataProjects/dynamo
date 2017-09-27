@@ -74,10 +74,18 @@ class Detox(object):
         target_sites = set() # target sites of this detox cycle
         triggered_sites = set() # sites that are e.g. getting full and need dismiss calls
         for site in self.inventory_manager.sites.itervalues():
-            if policy.target_site_def.match(site):
-                target_sites.add(site)
-                if policy.deletion_trigger.match(site):
+            for targdef in policy.target_site_def:
+                if targdef.match(site):
+                    target_sites.add(site)
+                    break
+            else:
+                # not a target site
+                continue
+
+            for trigger in policy.deletion_trigger:
+                if trigger.match(site):
                     triggered_sites.add(site)
+                    break
 
         if len(target_sites) == 0:
             logger.info('No site matches the target definition.')
@@ -259,8 +267,14 @@ class Detox(object):
     
                 for replica in replicas_to_delete:
                     site = replica.site
-    
-                    if policy.stop_condition.match(site):
+
+                    offtrigger = False
+                    for cond in policy.stop_condition:
+                        if cond.match(site):
+                            offtrigger = True
+                            break
+
+                    if offtrigger:
                         continue
     
                     quota = quotas[site] * 1.e+12
@@ -313,8 +327,10 @@ class Detox(object):
     
                 # update the list of target sites
                 for site in list(triggered_sites):
-                    if policy.stop_condition.match(site):
-                        triggered_sites.remove(site)
+                    for cond in policy.stop_condition:
+                        if cond.match(site):
+                            triggered_sites.remove(site)
+                            break
 
         # done iterating
 

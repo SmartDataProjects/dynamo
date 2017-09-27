@@ -163,9 +163,9 @@ class Policy(object):
                 else:
                     il += 1
 
-        self.target_site_def = None
-        self.deletion_trigger = None
-        self.stop_condition = None
+        self.target_site_def = []
+        self.deletion_trigger = []
+        self.stop_condition = []
         self.policy_lines = []
         self.default_decision = None
         self.candidate_sort_key = None
@@ -232,27 +232,28 @@ class Policy(object):
                 cond_text = ' '.join(words[1:])
 
                 if line_type == LINE_SITE_TARGET:
-                    self.target_site_def = SiteCondition(cond_text, self.partition)
+                    self.target_site_def.append(SiteCondition(cond_text, self.partition))
 
                 elif line_type == LINE_DELETION_TRIGGER:
-                    self.deletion_trigger = SiteCondition(cond_text, self.partition)
+                    self.deletion_trigger.append(SiteCondition(cond_text, self.partition))
 
                 elif line_type == LINE_STOP_CONDITION:
-                    self.stop_condition = SiteCondition(cond_text, self.partition)
+                    self.stop_condition.append(SiteCondition(cond_text, self.partition))
 
                 elif line_type == LINE_POLICY:
                     self.policy_lines.append(PolicyLine(decision, cond_text))
             
 
-        if self.target_site_def is None:
+        if len(self.target_site_def) == 0:
             raise ConfigurationError('Target site definition missing.')
-        if self.deletion_trigger is None or self.stop_condition is None:
+        if len(self.deletion_trigger) == 0 or len(self.stop_condition) == 0:
             raise ConfigurationError('Deletion trigger and release expressions are missing.')
         if self.default_decision == None:
             raise ConfigurationError('Default decision not given.')
 
-        for cond in [self.target_site_def, self.deletion_trigger, self.stop_condition]:
-            self.used_demand_plugins.update(cond.used_demand_plugins)
+        for conds in [self.target_site_def, self.deletion_trigger, self.stop_condition]:
+            for cond in conds:
+                self.used_demand_plugins.update(cond.used_demand_plugins)
 
         for line in self.policy_lines:
             self.used_demand_plugins.update(line.condition.used_demand_plugins)
