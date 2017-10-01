@@ -313,14 +313,14 @@ class DetoxLock {
 
   private function sanitize_request($command, &$request)
   {
-    $allowed_fields = array('lockid', 'item', 'sites', 'groups');
+    $allowed_fields = array('lockid', 'item', 'sites', 'groups', 'user', 'service');
 
     if ($command == 'lock')
       $allowed_fields = array_merge($allowed_fields, array('expires', 'comment'));
     else if ($command == 'unlock')
       $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after'));
     else if ($command == 'list')
-      $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after', 'showall', 'user', 'service'));
+      $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after', 'showall'));
 
     foreach (array_keys($request) as $key) {
       if (in_array($key, $allowed_fields)) {
