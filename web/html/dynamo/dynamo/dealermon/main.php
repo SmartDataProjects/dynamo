@@ -37,6 +37,10 @@ if ((isset($_REQUEST['getServices']) && $_REQUEST['getServices']) ) {
   $type_name = 'Compare';
   $elem = array('id' => $type_id, 'name' => $type_name);
   $data[] = $elem;
+  $type_id = 4;
+  $type_name = 'Tape';
+  $elem = array('id' => $type_id, 'name' => $type_name);
+  $data[] = $elem;
 
   echo json_encode($data);
 }
@@ -44,12 +48,14 @@ if ((isset($_REQUEST['getServices']) && $_REQUEST['getServices']) ) {
 
 // Dynamo is default
 $service_id = 1;
+$rrdfile = array('total.rrd');
 $rrdpaths = array('./monitoring/');
 $overviewpaths = array('monitoring/overview.txt');
 $summarypaths = array('./monitoring');
 
 if ((isset($_REQUEST['serviceId']) && $_REQUEST['serviceId'] == 2)){
   $service_id = 2;
+  $rrdfile = array('total_disk.rrd');
   $rrdpaths = array('./monitoring_phedex/');
   $overviewpaths = array("monitoring_phedex/overview.txt");
   $summarypaths[0] = './monitoring_phedex';
@@ -57,9 +63,18 @@ if ((isset($_REQUEST['serviceId']) && $_REQUEST['serviceId'] == 2)){
 
 if ((isset($_REQUEST['serviceId']) && $_REQUEST['serviceId'] == 3)){
   $service_id = 3;
+  $rrdfile = array('total.rrd','total_disk.rrd');
   $rrdpaths = array('./monitoring_phedex/');
-  $overviewpaths = array('monitoring_phedex/overview.txt','monitoring/overview.txt');
+  $overviewpaths = array('monitoring/overview.txt','monitoring_phedex/overview.txt');
   $summarypaths[] = './monitoring_phedex';
+}
+
+if ((isset($_REQUEST['serviceId']) && $_REQUEST['serviceId'] == 4)){
+  $service_id = 4;
+  $rrdfile = array('total_tape.rrd');
+  $rrdpaths = array('./monitoring_phedex/');
+  $overviewpaths = array("monitoring_phedex/overview.txt");
+  $summarypaths[0] = './monitoring_phedex';
 }
 
 
@@ -125,9 +140,9 @@ if (isset($_REQUEST['getSummary']) && $_REQUEST['getSummary']) {
   $Summary = array();
   
   for($i = 0; $i < count($summarypaths); $i++){  
-      $Summary[] = single_rrd_to_array('total.rrd',$summarypaths[$i]);
-    }
-	
+    $Summary[] = single_rrd_to_array($rrdfile[$i],$summarypaths[$i]);
+  }
+  
   echo json_encode($Summary);
 
 }
