@@ -184,7 +184,7 @@ inventory = Configuration(
         ('IB RelVal', lambda r: r.group is not None and r.group.name == 'IB RelVal'),
         ('Tape', lambda r: r.site.storage_type == Site.TYPE_MSS),
         ('Unsubscribed', lambda r: r.group is None),
-        ('Express', lambda r: r.group is not None and r.group.name == 'express' and re.match('/.*Express.*/.+/.+', r.block.dataset.name)),
+        ('Express', lambda r: r.group is not None and r.group.name == 'express' and re.match('(?:/.*Express.*/.+|/.+/.*Express.*)/.+$', r.block.dataset.name)),
         ('Physics', ['AnalysisOps', 'DataOps']),
     ],
     # list of conditions for a PRODUCTION state dataset to become IGNORED (will still be reset to PRODUCTION if a new block replica is found)
