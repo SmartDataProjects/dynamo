@@ -537,7 +537,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
             # PhEDEx only accepts form /*/*/*
             dataset_filt = '/*/*/*'
 
-        if dataset_filt == '/*/*/*':
+        if dataset_filt == '/*/*/*' and last_update == 0:
             items = []
             for site in all_sites:
                 total_quota = site.quota()
@@ -562,14 +562,19 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
             logger.info('make_replica_links  Fetching subscription information from PhEDEx')
             parallel_exec(self._check_subscriptions, items, num_threads = min(32, len(items)), print_progress = True, timeout = 7200)
             del items
-        else:
+        elif dataset_filt != '/*/*/*' and last_update == 0:
             logger.info('make_replica_links  Fetching block replica information from PhEDEx')
             self._check_blockreplicas(inventory, all_sites, all_groups, [dataset_filt], last_update, counters)
             logger.info('make_replica_links  Fetching subscription information from PhEDEx')
             self._check_subscriptions(inventory, all_sites, all_groups, [dataset_filt], last_update, counters)
-            
+
         if last_update > 0:
-            # delta deletions part
+            # delta part - can go serial (in fact HAS TO!)
+            logger.info('make_replica_links  Fetching block replica information from PhEDEx')
+            self._check_blockreplicas(inventory, all_sites, all_groups, [dataset_filt], last_update, counters)
+            logger.info('make_replica_links  Fetching subscription information from PhEDEx')
+            self._check_subscriptions(inventory, all_sites, all_groups, [dataset_filt], last_update, counters)
+            logger.info('make_replica_links  Fetching deletion information from PhEDEx')
             self._check_deletions(inventory, all_sites, all_groups, dataset_filt, last_update)
 
         # Following dataset status check only works for full updates!! Need to come up with a way to do this in delta
