@@ -2,12 +2,18 @@ html *
 {
    font-family: Sans-Serif !important;
 }
-
+#main{
+    postion: relative;
+}
 #tableBox {
     height: 1000px;
 
 }
-
+#download {
+    position: absolute;
+    right:10px;
+    top: 30px;
+    }
 #graphModal{
     width:100%
 }

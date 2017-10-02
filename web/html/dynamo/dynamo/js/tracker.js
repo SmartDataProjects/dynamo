@@ -505,6 +505,7 @@ function drawSiteOverview(data,serviceId) {
     
     // sort sites according to overall volume of ongoing transfers
     indices.sort(function (a, b) { return data_total[a] > data_total[b] ? -1 : data_total[a] < data_total[b] ? 1 : 0; });
+
     
     var data_name_sorted = [];
     var data_total_sorted = [];
@@ -515,32 +516,71 @@ function drawSiteOverview(data,serviceId) {
     var data_copied_stuck_sorted = [];
     var data_copied_not_stuck_sorted = [];
     var data_nreplicas_sorted = [];
-    var data_color_sorted = [];
     var data_url_sorted = [];    
+
+    var indices_tape = [];
+    var indices_d = [];
+    var indices_t = [];
+
+    for (var i = 0; i < len; i++){
+	if (data_total[indices[i]]!=0){
+	    if (!data_name[indices[i]].includes("MSS")){
+		indices_tape.push(indices[i]);
+		indices_d.push(indices[i]);
+	    }
+	}
+    }
+
+    var number_tape_sites = 0;
+    var max_tape = 0;
     
     for (var i = 0; i < len; i++){
 	if (data_total[indices[i]]!=0){
-
-	    data_name_sorted[i]=data_name[indices[i]];
-	    data_total_sorted[i]=data_total[indices[i]];
-	    data_total_stuck_sorted[i]=data_total_stuck[indices[i]];
-	    data_total_subtract_copied_sorted[i]=data_total_subtract_copied[indices[i]];
-	    data_missing_stuck_sorted[i]=data_missing_stuck[indices[i]];
-	    data_missing_not_stuck_sorted[i]=data_missing_not_stuck[indices[i]];
-	    data_copied_stuck_sorted[i]=data_copied_stuck[indices[i]];
-	    data_copied_not_stuck_sorted[i]=data_copied_not_stuck[indices[i]];
-	    data_nreplicas_sorted[i]=data_nreplicas[indices[i]];
-
-	    if (data_problematic[indices[i]]){//stuck data color
-		data_color_sorted[i]='rgba(255,0,0,1.0)';
+	    if (data_name[indices[i]].includes("MSS")){
+		number_tape_sites += 1;
+		indices_tape.push(indices[i]);
+		indices_t.push(indices[i]);
+		if (data_total[indices[i]] > max_tape){
+		    max_tape = data_total[indices[i]];
+		}
 	    }
-	    else {//fine data color
-		data_color_sorted[i]='rgba(0, 103, 113, 0.6)';
-	    }	
-	    data_url_sorted[i]=data_url[indices[i]];
 	}
     }
+
+    final_indices = [];
+
+    if (serviceId == 1){
+	final_indices = indices;
+    }
+    else if (serviceId == 2 || serviceId == 3){
+	for (var j = 0; j < indices_d.length; j++){
+	    final_indices.push(indices_d[j]);
+	}
+    }
+    else {
+	for (var j = 0; j < indices_t.length; j++){
+            final_indices.push(indices_t[j]);
+        }
+    }
     
+    len = final_indices.length;
+
+    for (var i = 0; i < len; i++){
+
+	if (data_total[final_indices[i]]!=0){	    
+	    data_name_sorted[i] = data_name[final_indices[i]];
+	    data_total_sorted[i] = data_total[final_indices[i]];
+	    data_total_stuck_sorted[i] = data_total_stuck[final_indices[i]];
+	    data_total_subtract_copied_sorted[i] = data_total_subtract_copied[final_indices[i]];
+	    data_missing_stuck_sorted[i] = data_missing_stuck[final_indices[i]];
+	    data_missing_not_stuck_sorted[i] = data_missing_not_stuck[final_indices[i]];
+	    data_copied_stuck_sorted[i] = data_copied_stuck[final_indices[i]];
+	    data_copied_not_stuck_sorted[i] = data_copied_not_stuck[final_indices[i]];
+	    data_nreplicas_sorted[i] = data_nreplicas[final_indices[i]];
+	    data_url_sorted[i] = data_url[final_indices[i]];
+	}
+    }
+
     var data_sorted = [
 		       data_name_sorted, 
 		       data_total_subtract_copied_sorted, 
@@ -657,19 +697,30 @@ function drawSiteOverview(data,serviceId) {
     
     var data = [data_copied_stuck_plot, data_copied_not_stuck_plot, data_total_stuck_plot,data_total_not_stuck_plot,data_dummy,data_dummy_2];
 
+
     var service = " Dynamo + Other";
+    var tapestring = "";
+    var tape_xposition = 1-(1.0+0.03*indices.length)*number_tape_sites/(indices.length);
+    if (number_tape_sites == 0){
+	tapestring = "";
+    }
+
     if (serviceId == 2)
 	service = " Other";
-    if (serviceId == 1)
+    if (serviceId == 4)
+	service = " Tape";
+    if (serviceId == 1){
 	service = " Dynamo";
+	tapestring = "";
+    }
     var layout = {
 	annotations: 
 	[{
 		xref: 'paper',
 		yref: 'paper',
-		x: 0.7,
+		x: 0.5,
 		xanchor: 'left',
-		y: 0.54,
+		y: 0.94,
 		yanchor: 'bottom',
 		text: 'Stuck transfers <br>(<1% within 5 days)',
 		showarrow: false,
@@ -678,10 +729,26 @@ function drawSiteOverview(data,serviceId) {
 		    size: 16,
 		    color: '#000'
 		}
-	    },    
+	    },   
+		{
+		    xref: 'paper',
+		    yref: 'paper',
+		    x: tape_xposition,
+		    xanchor: 'left',
+		    y: max_tape/(1.3*Math.max(...data_sorted[2])),
+		    yanchor: 'top',
+		    text: tapestring,
+		    textangle: 270,
+		    showarrow: false,
+		    font: {
+			family: 'sans-serif',
+			size: 16,
+			color: '#000'
+		    }
+		},    	    
     {
-	x: 0.68,
-	y: 0.585,
+	x: 0.48,
+	y: 0.975,
 	xref: 'paper',
 	yref: 'paper',
 	text: '',
@@ -745,6 +812,19 @@ function drawSiteOverview(data,serviceId) {
 	    size: 14,
 	    color: '#7f7f7f'
 	},
+	shapes:    {
+	    type: 'line',
+	    xref: 'paper',
+	    yref: 'paper',
+	    x0: 0,
+	    y0: 0.3,
+	    x1: 0.7,
+	    y1: 0.6,
+	    line: {
+		color: 'rgba(50, 171, 96, 0.4)',
+		width: 5,
+	    }
+	}
     };
     
     var siteoverview = document.getElementById('SiteOverview');
