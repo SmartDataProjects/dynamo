@@ -42,7 +42,7 @@ function writeDownload(data, site, serviceId){
 	if (replica[4] == 0){
 	    continue;
 	}
-	list_stuck.push([replica[1],"/" + replica[0].slice(1)]);
+	list_stuck.push([replica[1],"/" + replica[0].slice(1).replace('+','/').replace('+','/')]);
 	
     }
    
@@ -63,9 +63,7 @@ function writeDownload(data, site, serviceId){
 
     var encodedURI = encodeURI(csvContent);
     var download_button =  document.getElementById("download");
-    //  window.alert(download_button);
     download_button.onclick = function() {
-	//	window.open(csvContent, '_blank');
 	downloadLink.click();
 	setTimeout(function(){
 		URL.revokeObjectURL(url);
