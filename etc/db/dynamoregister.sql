@@ -105,6 +105,20 @@ CREATE TABLE `domains` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `invalidations`
+--
+
+DROP TABLE IF EXISTS `invalidations`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `invalidations` (
+  `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `user_id` int(10) unsigned NOT NULL DEFAULT '0',
+  `timestamp` datetime NOT NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `requests`
 --
 
