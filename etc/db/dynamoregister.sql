@@ -2,7 +2,7 @@
 --
 -- Host: localhost    Database: dynamoregister
 -- ------------------------------------------------------
--- Server version	5.1.73
+-- Server version	5.1.73-log
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -55,10 +55,11 @@ DROP TABLE IF EXISTS `deletion_queue`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `deletion_queue` (
+  `reqid` int(10) unsigned NOT NULL DEFAULT '0',
   `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
-  `target` varchar(64) COLLATE latin1_general_cs NOT NULL,
-  `created` datetime NOT NULL,
-  UNIQUE KEY `files` (`file`,`target`)
+  `site` varchar(32) COLLATE latin1_general_cs NOT NULL,
+  `status` enum('new','done','failed') COLLATE latin1_general_cs NOT NULL,
+  UNIQUE KEY `file` (`file`,`site`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -101,6 +102,57 @@ CREATE TABLE `domains` (
   `name` varchar(32) COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `invalidations`
+--
+
+DROP TABLE IF EXISTS `invalidations`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `invalidations` (
+  `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `user_id` int(10) unsigned NOT NULL DEFAULT '0',
+  `timestamp` datetime NOT NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `requests`
+--
+
+DROP TABLE IF EXISTS `requests`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `requests` (
+  `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
+  `datatype` enum('dataset','block') CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
+  `site` varchar(32) NOT NULL,
+  `reqtype` enum('copy','delete') NOT NULL,
+  `created` datetime NOT NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `requests_unified`
+--
+
+DROP TABLE IF EXISTS `requests_unified`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `requests_unified` (
+  `reqid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
+  `datatype` enum('dataset','block') CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
+  `site` varchar(32) NOT NULL,
+  `reqtype` enum('copy','delete') NOT NULL,
+  `rank` int(10) unsigned DEFAULT '0',
+  `status` enum('new','queued') NOT NULL,
+  `created` datetime NOT NULL,
+  `updated` datetime DEFAULT NULL,
+  PRIMARY KEY (`reqid`)
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -162,4 +214,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-06-26 15:52:45
+-- Dump completed on 2017-10-07 11:12:50
