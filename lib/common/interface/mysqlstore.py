@@ -457,7 +457,7 @@ class MySQLStore(LocalStoreInterface):
                         id_group_map[group_id],
                         b_is_complete,
                         b_is_custodial,
-                        size = block.size,
+                        size = br_size,
                         last_update = br_last_update
                     )
 
