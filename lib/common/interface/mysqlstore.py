@@ -1252,7 +1252,7 @@ class MySQLStore(LocalStoreInterface):
 
         all_replicas = []
         for replica in replica_list:
-            all_replicas.append((block_name_to_id[replica.block.name], site_id_map[replica.site], group_id_map[replica.group], replica.is_complete, replica.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update))))
+            all_replicas.append((block_name_to_id[replica.block.name], site_id_map[replica.site], group_id_map[replica.group], replica.is_complete, replica.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update))))
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
         self._mysql.insert_many('block_replicas', fields, None, all_replicas, do_update = True)
