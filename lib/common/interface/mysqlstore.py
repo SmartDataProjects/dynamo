@@ -1237,7 +1237,17 @@ class MySQLStore(LocalStoreInterface):
 
         sites = list(set([r.site for r in replica_list])) # list of sites
         datasets = list(set([r.block.dataset for r in replica_list])) # list of datasets
-        groups = list(set([r.block.group for r in replica_list])) # list of groups
+        # Load all groups - otherwise it won't pass obj.name in the make_map function if group == None. 
+        # This must be appended separately in make_group_map
+        groups = []
+        for name, olname in self._mysql.xquery('SELECT `name`, `olevel` FROM `groups`'):
+            if olname == 'Dataset':
+                olevel = Dataset
+            else:
+                olevel = Block
+
+            group = Group(name, olevel)
+            groups.append(group)
 
         site_id_map = {}
         self._make_site_map(sites, site_id_map = site_id_map)
@@ -1246,6 +1256,7 @@ class MySQLStore(LocalStoreInterface):
         dataset_id_map = {}
         self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
 
+        block_name_to_id = {}
         for dataset in datasets:
             for block_id, block_name in self._mysql.xquery('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
                 block_name_to_id[Block.translate_name(block_name)] = block_id
