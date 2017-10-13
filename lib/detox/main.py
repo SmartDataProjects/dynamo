@@ -494,16 +494,7 @@ class Detox(object):
                 for replica in replicas:
                     blockreplicas = []
                     for block_replica in replica.block_replicas:
-
-                        blockreplica = BlockReplica(
-                            block_replica.block,
-                            block_replica.site,
-                            None,
-                            block_replica.is_complete,
-                            block_replica.is_custodial,
-                            size = block_replica.size,
-                            last_update = block_replica.last_update)
-                        
+                        blockreplica = block_replica.clone(group = None)
                         blockreplicas.append(blockreplica)
                          
                     self.inventory_manager.store.update_blockreplicas(blockreplicas)
