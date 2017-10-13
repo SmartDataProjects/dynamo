@@ -1228,6 +1228,35 @@ class MySQLStore(LocalStoreInterface):
 
             self._mysql.query(sql)
 
+    def _do_update_blockreplicas(self, replica_list): #override
+        # Mass block replica update (e.g. unsubscription after a deletion) typically happens for a few sites and a few datasets.
+        # Fetch site id first to avoid a long query.
+
+        if len(replica_list) == 0:
+            return
+
+        sites = list(set([r.site for r in replica_list])) # list of sites
+        datasets = list(set([r.block.dataset for r in replica_list])) # list of datasets
+        groups = list(set([r.block.group for r in replica_list])) # list of groups
+
+        site_id_map = {}
+        self._make_site_map(sites, site_id_map = site_id_map)
+        group_id_map = {}
+        self._make_group_map(groups, group_id_map = group_id_map)
+        dataset_id_map = {}
+        self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
+
+        for dataset in datasets:
+            for block_id, block_name in self._mysql.xquery('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
+                block_name_to_id[Block.translate_name(block_name)] = block_id
+
+        all_replicas = []
+        for replica in replica_list:
+            all_replicas.append((block_name_to_id[replica.block.name], site_id_map[replica.site], group_id_map[replica.group] if replica.group != None else None, replica.is_complete, replica.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update))))
+
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
+        self._mysql.insert_many('block_replicas', fields, None, all_replicas, do_update = True)
+
     def _do_set_dataset_status(self, dataset_name, status_str): #override
         self._mysql.query('UPDATE `datasets` SET `status` = %s WHERE `name` LIKE %s', status_str, dataset_name)
 
