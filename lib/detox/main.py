@@ -494,7 +494,6 @@ class Detox(object):
                 for replica in replicas:
                     blockreplicas = []
                     for block_replica in replica.block_replicas:
-                        block_replica.group = None
 
                         blockreplica = BlockReplica(
                             block_replica.block,
