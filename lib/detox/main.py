@@ -491,6 +491,13 @@ class Detox(object):
 
             for deletion_id, (approved, replicas) in deletion_mapping.iteritems():
                 size = sum([r.size() for r in replicas])
+                for replica in replicas:
+                    blockreplicas = []
+                    for block_replica in replica.block_replicas:
+                        blockreplica = block_replica.clone(group = None)
+                        blockreplicas.append(blockreplica)
+                         
+                    self.inventory_manager.store.update_blockreplicas(blockreplicas)
 
                 if approved and not is_test:
                     total_size += size
