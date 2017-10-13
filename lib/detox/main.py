@@ -499,7 +499,7 @@ class Detox(object):
                             block_replica.block,
                             block_replica.site,
                             None,
-                            block_replicais_complete,
+                            block_replica.is_complete,
                             block_replica.is_custodial,
                             size = block_replica.size,
                             last_update = block_replica.last_update)
