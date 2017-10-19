@@ -135,12 +135,6 @@ inventory = Configuration(
         'T1_UK_RAL_ECHO_Disk', # not an actual site
         'T2_CH_CERNBOX', # not a valid site
         'T2_MY_UPM_BIRUNI', # site not in popDB
-        'T2_KR_KISTI' # site not in popDB
-#        'T2_PK_NCP', # inheriting from IntelROCCS status 0
-#        'T2_PL_Warsaw', # inheriting from IntelROCCS status 0
-#        'T2_RU_ITEP', # inheriting from IntelROCCS status 0
-#        'T2_RU_PNPI', # inheriting from IntelROCCS status 0
-#        'T2_TH_CUNSTDA' # inheriting from IntelROCCS status 0
     ],
     included_groups = [
         'AnalysisOps', 'DataOps', 'FacOps', 'IB RelVal', 'RelVal',
