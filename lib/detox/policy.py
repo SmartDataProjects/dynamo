@@ -116,10 +116,6 @@ class PolicyLine(object):
                     # but all blocks matched - return dataset level
                     action = self.decision.action_cls.dataset_level(self)
                 else:
-                    # strip the block replicas from dataset replica
-                    for block_replica in block_replicas:
-                        replica.block_replicas.remove(block_replica)
-
                     action = self.decision.action(self, block_replicas)
             else:
                 action = self.decision.action(self)
@@ -351,6 +347,12 @@ class Policy(object):
             actions.append(action)
             if isinstance(action, DatasetAction):
                 break
+
+            else:
+                # strip the block replicas from dataset replica so the successive
+                # policy lines don't see them any more
+                for block_replica in action.block_replicas:
+                    replica.block_replicas.remove(block_replica)
 
         else:
             actions.append(self.default_decision.action(None))
