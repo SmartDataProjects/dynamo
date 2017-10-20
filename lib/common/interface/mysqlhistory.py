@@ -634,3 +634,5 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._cache_db.query('DELETE FROM `replica_snapshot_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
         self._cache_db.query('OPTIMIZE TABLE `replica_snapshot_usage`')
+        self._cache_db.query('DELETE FROM `site_snapshot_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
+        self._cache_db.query('OPTIMIZE TABLE `site_snapshot_usage`')
