@@ -151,7 +151,7 @@ class Detox(object):
                         block_replicas -= set(action.block_replicas)
     
                     elif isinstance(action, DeleteBlock):
-                        unlinked_replicas, reowned_replicas = self.unlink_block_replicas(replica, action.block_replicas)
+                        unlinked_replicas, reowned_replicas = self.unlink_block_replicas(replica, action.block_replicas, policy, is_test)
                         if len(unlinked_replicas) != 0:
                             deleted[replica].append((unlinked_replicas, condition_id))
 
@@ -175,7 +175,7 @@ class Detox(object):
                         protect_candidates[replica].append((list(block_replicas), condition_id))
     
                     elif isinstance(action, Delete):
-                        unlinked_replicas, reowned_replicas = self.unlink_block_replicas(replica, block_replicas)
+                        unlinked_replicas, reowned_replicas = self.unlink_block_replicas(replica, block_replicas, policy, is_test)
                         if len(unlinked_replicas) != 0:
                             deleted[replica].append((unlinked_replicas, condition_id))
 
@@ -249,7 +249,7 @@ class Detox(object):
     
                     for match in matches:
                         # match = ([block_replica], condition_id)
-                        unlinked_replicas, _ = self.unlink_block_replicas(replica, match[0])
+                        unlinked_replicas, _ = self.unlink_block_replicas(replica, match[0], policy, is_test)
                         if len(unlinked_replicas) != 0:
                             deleted_volume[site] += sum(br.size for br in unlinked_replicas)
                             deleted[replica].append((unlinked_replicas, match[1]))
@@ -337,7 +337,7 @@ class Detox(object):
 
         self.history.close_deletion_run(run_number)
 
-    def unlink_block_replicas(self, replica, block_replicas):
+    def unlink_block_replicas(self, replica, block_replicas, policy, is_test):
         """
         Unlink the dataset replica or parts of it from the owning containers.
         Return the list of unlinked block replicas and reowned block replicas.
@@ -384,6 +384,8 @@ class Detox(object):
                 logger.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
                 # not ideal to make reassignments here, but this operation affects later iterations
                 reassigned_blocks = self.reassign_owner(replica, blocks_to_hand_over, dr_owner, policy.partition, is_test)
+            else:
+                reassigned_blocks = []
 
             if len(blocks_to_unlink) != 0:
                 logger.debug('%d blocks to unlink', len(blocks_to_unlink))
