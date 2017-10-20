@@ -113,57 +113,6 @@ class Detox(object):
         deleted = collections.defaultdict(list) # same
         kept = collections.defaultdict(list) # same
 
-        def unlink_block_replicas(replica, block_replicas):
-            """Unlink the dataset replica or parts of it from the owning containers and return the list of unlinked block replicas."""
-
-            if len(block_replicas) == len(replica.block_replicas):
-                for block_replica in block_replicas:
-                    block_replica.unlink()
-
-                replica.unlink()
-
-                return block_replicas
-
-            else:
-                # Special operation - if we are deleting block replicas owned by group B, whose
-                # ownership level (see dataformats/group) is Block, but the block replicas belong
-                # to a dataset replica otherwise owned by group D, whose ownership level is Dataset,
-                # then we don't delete the block replicas but hand them over to D.
-    
-                # establish a dataset-level owner
-                dr_owner = None
-                for block_replica in replica.block_replicas:
-                    if block_replica.group.olevel is Dataset:
-                        # there is a dataset-level owner
-                        dr_owner = block_replica.group
-                        break
-    
-                if dr_owner is None:
-                    blocks_to_hand_over = []
-                    blocks_to_unlink = list(block_replicas)
-                else:
-                    blocks_to_hand_over = []
-                    blocks_to_unlink = []
-                    for block_replica in block_replicas:
-                        if block_replica.group.olevel is Dataset:
-                            blocks_to_unlink.append(block_replica)
-                        else:
-                            blocks_to_hand_over.append(block_replica)
-    
-                if len(blocks_to_hand_over) != 0:
-                    logger.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
-                    # not ideal to make reassignments here, but this operation affects later iterations
-                    self.reassign_owner(replica, blocks_to_hand_over, dr_owner, policy.partition, is_test)
-
-                if len(blocks_to_unlink) != 0:
-                    logger.debug('%d blocks to unlink', len(blocks_to_unlink))
-    
-                    for block_replica in blocks_to_unlink:
-                        block_replica.unlink()
-
-                return blocks_to_unlink
-
-
         iteration = 0
 
         # now iterate through deletions, updating site usage as we go
@@ -202,11 +151,17 @@ class Detox(object):
                         block_replicas -= set(action.block_replicas)
     
                     elif isinstance(action, DeleteBlock):
-                        unlinked_replicas = unlink_block_replicas(replica, action.block_replicas)
+                        unlinked_replicas, reowned_replicas = self.unlink_block_replicas(replica, action.block_replicas, policy, is_test)
                         if len(unlinked_replicas) != 0:
                             deleted[replica].append((unlinked_replicas, condition_id))
 
                             block_replicas -= set(unlinked_replicas)
+
+                        # need to swap out block replicas with groups reassigned because blockreplica is immutable
+                        for new_replica in reowned_replicas:
+                            old_replica = next(r for r in block_replicas if r.block == new_replica.block)
+                            block_replicas.remove(old_replica)
+                            block_replicas.add(new_replica)
 
                     elif isinstance(action, DismissBlock):
                         if replica.site in triggered_sites:
@@ -220,7 +175,7 @@ class Detox(object):
                         protect_candidates[replica].append((list(block_replicas), condition_id))
     
                     elif isinstance(action, Delete):
-                        unlinked_replicas = unlink_block_replicas(replica, block_replicas)
+                        unlinked_replicas, reowned_replicas = self.unlink_block_replicas(replica, block_replicas, policy, is_test)
                         if len(unlinked_replicas) != 0:
                             deleted[replica].append((unlinked_replicas, condition_id))
 
@@ -228,6 +183,9 @@ class Detox(object):
                             # if all blocks were deleted, take the replica off all_replicas for later iterations
                             # this is the only place where the replica can become empty
                             empty_replicas.append(replica)
+
+                        # no need to update block_replicas set with reassigned blockreplicas because we don't
+                        # need it any more
     
                     elif isinstance(action, Dismiss):
                         if replica.site in triggered_sites:
@@ -268,6 +226,7 @@ class Detox(object):
                 for replica in replicas_to_delete:
                     site = replica.site
 
+                    # has the site reached the stop-deletion threshold?
                     offtrigger = False
                     for cond in policy.stop_condition:
                         if cond.match(site):
@@ -278,7 +237,8 @@ class Detox(object):
                         continue
     
                     quota = quotas[site] * 1.e+12
-    
+
+                    # have we deleted more than allowed in a single iteration?
                     if quota > 0. and deleted_volume[site] / quota > detox_config.main.deletion_per_iteration:
                         continue
     
@@ -288,7 +248,8 @@ class Detox(object):
                     matches = delete_candidates.pop(replica)
     
                     for match in matches:
-                        unlinked_replicas = unlink_block_replicas(replica, match[0])
+                        # match = ([block_replica], condition_id)
+                        unlinked_replicas, _ = self.unlink_block_replicas(replica, match[0], policy, is_test)
                         if len(unlinked_replicas) != 0:
                             deleted_volume[site] += sum(br.size for br in unlinked_replicas)
                             deleted[replica].append((unlinked_replicas, match[1]))
@@ -376,6 +337,64 @@ class Detox(object):
 
         self.history.close_deletion_run(run_number)
 
+    def unlink_block_replicas(self, replica, block_replicas, policy, is_test):
+        """
+        Unlink the dataset replica or parts of it from the owning containers.
+        Return the list of unlinked block replicas and reowned block replicas.
+        The second list is necessary for the caller to update its list of block
+        replicas to process, because owner change amounts to a rewrite of the
+        entire object under the current immutable blockreplica format.
+        """
+
+        if len(block_replicas) == len(replica.block_replicas):
+            for block_replica in block_replicas:
+                block_replica.unlink()
+
+            replica.unlink()
+
+            return block_replicas, []
+
+        else:
+            # Special operation - if we are deleting block replicas owned by group B, whose
+            # ownership level (see dataformats/group) is Block, but the block replicas belong
+            # to a dataset replica otherwise owned by group D, whose ownership level is Dataset,
+            # then we don't delete the block replicas but hand them over to D.
+
+            # establish a dataset-level owner
+            dr_owner = None
+            for block_replica in replica.block_replicas:
+                if block_replica.group.olevel is Dataset:
+                    # there is a dataset-level owner
+                    dr_owner = block_replica.group
+                    break
+
+            if dr_owner is None:
+                blocks_to_hand_over = []
+                blocks_to_unlink = list(block_replicas)
+            else:
+                blocks_to_hand_over = []
+                blocks_to_unlink = []
+                for block_replica in block_replicas:
+                    if block_replica.group.olevel is Dataset:
+                        blocks_to_unlink.append(block_replica)
+                    else:
+                        blocks_to_hand_over.append(block_replica)
+
+            if len(blocks_to_hand_over) != 0:
+                logger.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
+                # not ideal to make reassignments here, but this operation affects later iterations
+                reassigned_blocks = self.reassign_owner(replica, blocks_to_hand_over, dr_owner, policy.partition, is_test)
+            else:
+                reassigned_blocks = []
+
+            if len(blocks_to_unlink) != 0:
+                logger.debug('%d blocks to unlink', len(blocks_to_unlink))
+
+                for block_replica in blocks_to_unlink:
+                    block_replica.unlink()
+
+            return blocks_to_unlink, reassigned_blocks
+
     def reassign_owner(self, dataset_replica, block_replicas, new_owner, partition, is_test):
         """
         Add back the block replicas to dataset replica under the new owner.
@@ -399,6 +418,8 @@ class Detox(object):
         if not is_test:
             # are we relying on do_update = True in insert_many <- add_blockreplicas here?
             self.inventory_manager.store.add_blockreplicas(new_replicas)
+
+        return new_replicas
 
     def commit_deletions(self, run_number, policy, deletion_list, is_test, comment):
         """
