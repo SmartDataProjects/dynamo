@@ -1237,17 +1237,7 @@ class MySQLStore(LocalStoreInterface):
 
         sites = list(set([r.site for r in replica_list])) # list of sites
         datasets = list(set([r.block.dataset for r in replica_list])) # list of datasets
-        # Load all groups - otherwise it won't pass obj.name in the make_map function if group == None. 
-        # This must be appended separately in make_group_map
-        groups = []
-        for name, olname in self._mysql.xquery('SELECT `name`, `olevel` FROM `groups`'):
-            if olname == 'Dataset':
-                olevel = Dataset
-            else:
-                olevel = Block
-
-            group = Group(name, olevel)
-            groups.append(group)
+        groups = list(set([r.group for r in replica_list])) # list of datasets
 
         site_id_map = {}
         self._make_site_map(sites, site_id_map = site_id_map)
@@ -1275,7 +1265,11 @@ class MySQLStore(LocalStoreInterface):
         self._make_map('sites', iter(sites), site_id_map, id_site_map)
 
     def _make_group_map(self, groups, group_id_map = None, id_group_map = None):
-        self._make_map('groups', iter(groups), group_id_map, id_group_map)
+        # Sometimes when calling do_update_blockreplicas it can be we're handing over group 'None'
+        cleansed_groups = [g for g in groups if g != None] 
+        
+        if len(cleansed_groups) > 0:
+            self._make_map('groups', iter(cleansed_groups), group_id_map, id_group_map)
         if group_id_map is not None:
             group_id_map[None] = 0
         if id_group_map is not None:
