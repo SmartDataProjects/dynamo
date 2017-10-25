@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Dynamo deletion campaign interface</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <link href="css/dynamo.css" rel="stylesheet">
+    <link href="css/interface.css" rel="stylesheet">
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
+    <script type="text/javascript" src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+    <script type="text/javascript" src="http://spin.js.org/spin.min.js"></script>
+    <script type="text/javascript" src="js/utils.js"></script>
+    <script type="text/javascript" src="js/interface.js"></script>
+  </head>
+  <body>
+    <header id="header">
+      <h1 id="pageTitle">Dynamo deletion campaign interface</h1>
+    </header>
+    <main id="main">
+      <section id="viewSelection">
+	<form action="http://t3desk006.mit.edu/dynamo/dynamo/upload_file.php" method="post"
+	      enctype="multipart/form-data">
+	  <label for="emailAddress">Email address:</label><br>
+	  <input id="emailAddress" type="email"><br>
+	  <label for="file">Policy file</label><br>
+	  <input type="file" name="file" id="file"><br>
+	  <button class="button">Sumbit</button>
+	</form>
+      </section>
+    </main>
+    <footer id="footer">
+    </footer>
+  </body>
+</html>
