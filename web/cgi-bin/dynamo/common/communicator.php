@@ -1,8 +1,6 @@
 <?php
 
-
 function execQuery($qstring,$db){
-
   $locvar = 0;
   $stmt = $db->prepare($qstring);
   $stmt->bind_result($locvar);
@@ -26,12 +24,29 @@ function execQuery($qstring,$db){
   return $retvar;
 }
 
-function communicate($filename,$db){
+function check_authentication($email,$db){
+  if (!$email){
+    echo "Please specify your email address for the results to be sent to."; echo "\n";
+    exit();
+  }
+  else{
+    $qstring ="SELECT 1 FROM users WHERE lower(`email`) = lower('$email')";
+  }
+  if (!execQuery($qstring,$db)){
+   echo "Not a valid user."; echo "\n";
+    exit();
+  } 
+}
+
+function communicate($filename,$db,$info,$type){
   $status = 'new';
-  $qstring = 'insert into action(file,status) values'.
-    '(\''.$filename.'\',\''.$status.'\')';
-  echo $qstring; echo "\n";
+  $qstring = 'insert into action(file,status,info,type) values'.
+    '(\''.$filename.'\',\''.$status.'\',\''.$info.'\',\''.$type.'\')';
+
+  echo "File successfully uploaded. Results will be sent to $info. Be patient."; echo "\n";
+
   return execQuery($qstring,$db);
+
 }
 
 ?>
