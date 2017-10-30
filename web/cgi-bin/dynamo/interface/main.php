@@ -8,10 +8,12 @@ $db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $db_n
 
 $uploadpath = "/var/www/html/dynamo/dynamo/images/";
 $email = $_REQUEST['email'];
+
 $type = 'gi'; // generic interaction
 $filedata = $_FILES['file']['tmp_name'];
 $filename = $_FILES['file']['name'];
 if ($filedata != ''){
+  check_authentication($email,$db);
   $hash = hash_file('md5',$filedata);
   copy($filedata,$uploadpath.$hash);
   communicate($hash,$db,$email,$type);
