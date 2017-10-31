@@ -40,7 +40,7 @@ class PopularityHandler(BaseHandler):
                 for br in dr.block_replicas:
                     if br.group.name in dealer_config.main.source_groups:
                         # found at least one block/dataset replica in source groups
-                        # therefore it is a valid dataset to replicate
+                        # therefore it is a legit dataset to replicate
                         dataset_in_source_groups = True
 
             if not dataset_in_source_groups:
