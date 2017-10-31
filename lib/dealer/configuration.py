@@ -5,13 +5,13 @@ main = Configuration(
     max_dataset_size = 50., # Maximum dataset size to consider for copy in TB
     max_copy_per_site = 50., # Maximum volume to be copied per site in TB
     max_copy_total = 200.,
-    source_groups = ['AnalysisOps'],
     target_site_occupancy = 0.9,
     skip_existing = True
 )
 
 popularity = Configuration(
     request_to_replica_threshold = 1.75, # (weighted number of requests) / (number of replicas) above which replication happens
+    source_groups = ['AnalysisOps'],
     max_replicas = 10
 )
 
