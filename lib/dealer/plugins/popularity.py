@@ -35,6 +35,17 @@ class PopularityHandler(BaseHandler):
             except KeyError:
                 continue
 
+            dataset_in_source_groups = False
+            for dr in dataset.replicas:
+                for br in dr.block_replicas:
+                    if br.group.name in dealer_config.main.source_groups:
+                        # found at least one block/dataset replica in source groups
+                        # therefore it is a valid dataset to replicate
+                        dataset_in_source_groups = True
+
+            if not dataset_in_source_groups:
+                continue
+
             if request_weight <= 0.:
                 continue
 
