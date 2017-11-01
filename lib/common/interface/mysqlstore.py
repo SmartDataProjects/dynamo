@@ -1266,7 +1266,7 @@ class MySQLStore(LocalStoreInterface):
 
     def _make_group_map(self, groups, group_id_map = None, id_group_map = None):
         # Sometimes when calling do_update_blockreplicas it can be we're handing over group 'None'
-        cleansed_groups = [g for g in groups if g != None] 
+        cleansed_groups = [g for g in groups if g is not None] 
         
         if len(cleansed_groups) > 0:
             self._make_map('groups', iter(cleansed_groups), group_id_map, id_group_map)
