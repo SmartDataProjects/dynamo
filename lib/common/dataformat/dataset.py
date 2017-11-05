@@ -85,25 +85,6 @@ class Dataset(object):
         self.blocks = []
         self.replicas = []
 
-    def unlink(self):
-        # unlink objects to avoid ref cycles - should be called when this dataset is absolutely not needed
-
-        if self.replicas is not None:
-            for replica in self.replicas:
-                replica.dataset = None
-                site = replica.site
-    
-                for block_replica in replica.block_replicas:
-                    site.remove_block_replica(block_replica)
-    
-                replica.block_replicas = []
-                site.dataset_replicas.remove(replica)
-
-        # by removing the dataset replicas, the block replicas should become deletable (site->blockrep link is cut)
-        self.replicas = None
-        self.demand = {}
-        self.blocks = None
-
     def find_block(self, block_name):
         if self.blocks is None:
             raise ObjectError('Blocks are not loaded for %s' % self.name)
@@ -136,3 +117,17 @@ class Dataset(object):
 
         except StopIteration:
             return None
+
+    def remove_block(self, block):
+        if self.blocks is None:
+            raise ObjectError('Blocks are not loaded for %s' % self.name)
+
+        self.blocks.remove(block)
+        self.size -= block.size
+        self.num_files -= block.num_files
+
+        if self.replicas is not None:
+            for replica in self.replicas:
+                block_replica = replica.find_block_replica(block)
+                if block_replica is not None:
+                    replica.remove_block_replica(block_replica)

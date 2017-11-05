@@ -519,7 +519,7 @@ class MySQLStore(LocalStoreInterface):
 
                 _block_id = block_id
 
-            lfile = File.create(name, block, size)
+            lfile = File(name, block, size)
 
             dataset.files.add(lfile)
 

@@ -53,8 +53,10 @@ class DBS(DatasetInfoSourceInterface):
                         dataset.size += block.size
                         dataset.num_files += block.num_files
 
-                    elif block.size != block_record['block_size'] or block.num_files != block_record['file_count'] or block.is_open != is_open:
-                        dataset.update_block(block_name, block_record['block_size'], block_record['file_count'], is_open)
+                    else:
+                        block.size = block_record['block_size']
+                        block.num_files = block_record['file_count']
+                        block.is_open = is_open
 
     def _make_request(self, resource, options = [], method = GET, format = 'url'):
         """

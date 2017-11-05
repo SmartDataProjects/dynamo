@@ -153,8 +153,11 @@ class QueueManager(object):
                     
                 if size > blockRep.size:
                     print 'updating block replica ...'
-                    dsetRep.update_block_replica(block, targetGroup, complete, False, size, time.time())
-                    
+                    blockRep.group = targetGroup
+                    blockRep.is_complete = complete
+                    blockRep.is_custodial = False
+                    blockRep.size = size
+                    blockRep.last_update = time.time()
 
             #here we enter done requests into the history databas
             #and delete them them from ongoing activities
@@ -212,7 +215,8 @@ class QueueManager(object):
                 replica_timestamps[dsetRep] = uRequest._created
                 done_requests.append(uRequest._reqid)
                 print dsetRep.block_replicas
-                dsetRep.unlink()
+                dataset.replicas.remove(dsetRep)
+                site.remove_dataset_replica(dsetRep)
 
         #save complete requests into history
         self._history.save_dataset_deletions(gone_dataset_replicas,replica_timestamps)

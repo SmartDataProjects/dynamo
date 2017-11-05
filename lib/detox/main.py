@@ -341,10 +341,8 @@ class Detox(object):
         """
 
         if len(block_replicas) == len(replica.block_replicas):
-            for block_replica in block_replicas:
-                block_replica.unlink()
-
-            replica.unlink()
+            replica.dataset.remove(replica)
+            replica.site.remove_dataset_replica(replica)
 
             blocks_to_unlink = list(block_replicas)
 
@@ -383,7 +381,9 @@ class Detox(object):
                 logger.debug('%d blocks to unlink', len(blocks_to_unlink))
 
                 for block_replica in blocks_to_unlink:
-                    block_replica.unlink()
+                    replica.block_replicas.remove(block_replica)
+
+                replica.site.update_partitioning(replica)
 
         return blocks_to_unlink
 
@@ -505,8 +505,10 @@ class Detox(object):
 
                 else:
                     # restore dataset-replica and site-replica links
+                    # TODO IS THIS CORRECT?? Don't I double count block replicas??
                     for replica in replicas:
-                        replica.link()
+                        replica.dataset.replicas.append(replica)
+                        replica.site.add_dataset_replica(replica)
 
                 self.history.make_deletion_entry(run_number, site, deletion_id, approved, [r.dataset for r in replicas], size)
 

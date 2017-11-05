@@ -31,9 +31,12 @@ class Block(object):
 
         return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]
 
+    def full_name(self):
+        return self.dataset.name + '#' + self.real_name()
+
     def find_file(self, path):
         if self.files is None:
-            raise ObjectError('Files are not loaded for %s' % self.real_name())
+            raise ObjectError('Files are not loaded for %s' % self.full_name())
 
         try:
             return next(f for f in self.files if f.fullpath() == pathx)
@@ -42,7 +45,7 @@ class Block(object):
 
     def find_replica(self, site):
         if self.replicas is None:
-            raise ObjectError('Replicas are not loaded for %s' % self.real_name())
+            raise ObjectError('Replicas are not loaded for %s' % self.full_name())
 
         try:
             if type(site) is str:
@@ -52,3 +55,22 @@ class Block(object):
 
         except StopIteration:
             return None
+
+    def remove_file(self, lfile):
+        if self.blocks is None:
+            raise ObjectError('Files are not loaded for %s' % self.full_name())
+
+        self.files.remove(lfile)
+        self.size -= lfile.size
+        self.num_files -= 1
+
+        if self.replicas is not None:
+            for replica in self.replicas:
+                if replica.files is not None:
+                    try:
+                        replica.files.remove(lfile)
+                    except ValueError:
+                        pass
+                    else:
+                        replica.size -= lfile.size
+

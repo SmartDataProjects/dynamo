@@ -450,7 +450,7 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
                     fileObj = blockObj.getKid(rfile)
                     fiSize = fileObj.getMaxSize()
                     if dfile is None:
-                        dfile = File.create(rfile,block,fiSize)
+                        dfile = File(rfile,block,fiSize)
                         dataset.files.add(dfile)
                     #carefull here, we are looping over all locations for the dataset
                     #have to check if the block or file actually exists here

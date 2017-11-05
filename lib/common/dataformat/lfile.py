@@ -22,13 +22,9 @@ class File(object):
     def get_basename(path):
         return path[path.rfind('/') + 1:]
 
-    @staticmethod
-    def create(path, block, size):
-        return File(File.get_basename(path), File.get_directory_id(path), block, size)
-
-    def __init__(self, name, directory_id, block = None, size = 0):
-        self.name = name
-        self.directory_id = directory_id
+    def __init__(self, path, block = None, size = 0):
+        self.name = File.get_basename(path)
+        self.directory_id = File.get_directory_id(path)
         self.block = block
         self.size = size
     

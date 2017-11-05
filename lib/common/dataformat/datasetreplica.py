@@ -27,26 +27,6 @@ class DatasetReplica(object):
 
         return rep
 
-    def unlink(self):
-        # Detach this replica from owning containers but retain references from this replica
-
-        self.dataset.replicas.remove(self)
-
-        self.site.dataset_replicas.remove(self)
-
-        for block_replica in self.block_replicas:
-            self.site.remove_block_replica(block_replica)
-
-    def link(self):
-        # Reverse operation of unlink
-
-        self.dataset.replicas.append(self)
-
-        self.site.dataset_replicas.add(self)
-
-        for block_replica in self.block_replicas:
-            self.site.add_block_replica(block_replica)
-
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1 and self.dataset.replicas[0] == self
 
@@ -92,3 +72,7 @@ class DatasetReplica(object):
 
         except StopIteration:
             return None
+
+    def remove_block_replica(self, block_replica):
+        self.block_replicas.remove(block_replica)
+        self.site.update_partitioning(self)

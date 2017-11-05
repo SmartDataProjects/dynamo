@@ -137,23 +137,6 @@ class Site(object):
         return 'Site(\'%s\', host=\'%s\', storage_type=%d, backend=\'%s\', storage=%d, cpu=%f, status=%d)' % \
             (self.name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
 
-    def unlink(self):
-        # unlink objects to avoid ref cycles - should be called when this site is absolutely not needed
-        self.partitions.clear()
-
-        while True:
-            try:
-                dataset, replica = self._dataset_replicas.popitem()
-            except KeyError:
-                break
-
-            if type(dataset) is str:
-                # we create two entries per replica, one with the name key and the other with the dataset key
-                continue
-
-            replica.dataset.replicas.remove(replica)
-            replica.initialize()
-
     def find_dataset_replica(self, dataset):
         try:
             return self._dataset_replicas[dataset]
@@ -202,16 +185,29 @@ class Site(object):
             try:
                 block_replicas = site_partition.replicas[replica]
             except KeyError:
-                continue
+                block_replicas = set()
 
             if block_replicas is None:
                 # previously, was all contained - need to check again
                 self.add_dataset_replica(replica)
             else:
+                # remove block replicas that were deleted
+                deleted_replicas = block_replicas - replica.block_replicas
+                block_replicas -= deleted_replicas
+
+                # add new block replicas
                 new_replicas = replica.block_replicas - block_replicas
                 for block_replica in new_replicas:
                     if partition.contains(block_replica):
                         block_replicas.add(block_replica)
+               
+                if len(block_replicas) == 0:
+                    try:
+                        site_partition.replicas.pop(replica)
+                    except KeyError:
+                        pass
+                else:
+                    site_partition.replicas[replica] = block_replicas
 
     def remove_dataset_replica(self, replica):
         self._dataset_replicas.pop(replica.dataset)

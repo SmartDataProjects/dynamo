@@ -739,7 +739,10 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                         # block record was updated
                         logger.debug('Block %s record was updated', block.real_name())
 
-                        block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
+                        block.size = block_entry['bytes']
+                        block.num_files = block_entry['files']
+                        block.is_open = (block_entry['is_open'] == 'y')
+
                         if dataset.status == Dataset.STAT_VALID:
                             dataset.status = Dataset.STAT_PRODUCTION
 
@@ -813,14 +816,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                             dataset_replica.block_replicas.append(block_replica)
                             site.add_block_replica(block_replica)
 
-                        elif block_replica.group != group or \
-                                block_replica.is_complete != is_complete or \
-                                block_replica.is_custodial != is_custodial or \
-                                block_replica.size != replica_entry['bytes'] or \
-                                block_replica.last_update != int(replica_entry['time_update']):
-
-                            logger.debug('Updating BlockReplica of %s', block.real_name())
-                            dataset_replica.update_block_replica(block, group, is_complete, is_custodial, replica_entry['bytes'], int(replica_entry['time_update']))
+                        else:
+                            block_replica.group = group
+                            block_replica.is_complete = is_complete
+                            block_replica.is_custodial = is_custodial
+                            block_replica.size = replica_entry['bytes']
+                            block_replica.last_update = int(replica_entry['time_update'])
 
                         if site.storage_type == Site.TYPE_MSS:
                             # ask whether the dataset replica is full after encountering each block
@@ -963,8 +964,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                                 dataset_replica.block_replicas.append(block_replica)
                                 site.add_block_replica(block_replica)
 
-                            elif block_replica.group != group or block_replica.is_complete or block_replica.is_custodial != is_custodial or block_replica.size != 0 or block_replica.last_update != 0:
-                                dataset_replica.update_block_replica(block, group, False, is_custodial, 0, 0)
+                            else:
+                                block_replica.group = group
+                                block_replica.is_complete = False
+                                block_replica.is_custodial = is_custodial
+                                block_replica.size = 0
+                                block_replica.last_update = 0
 
     def _check_deletions(self, inventory, site_list, group_list, dataset_filt, last_update):
         logger.info('Checking for deleted dataset and block replicas.')
@@ -999,11 +1004,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                         continue
                     else:
                         dataset_replica.block_replicas.remove(block_replica)
-                        site.remove_block_replica(block_replica)
 
                 if len(dataset_replica.block_replicas) == 0:
                     dataset.replicas.remove(dataset_replica)
-                    site.dataset_replicas.remove(dataset_replica)
+                    site.remove_dataset_replica(dataset_replica)
+                else:
+                    site.update_partitioning(dataset_replica)
 
                 if site.storage_type == Site.TYPE_MSS:
                     # A (part of) tape replica was deleted. Update the on_tape flag of the dataset.
@@ -1274,8 +1280,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                     # start from the full list of blocks and files and remove ones found in PhEDEx
                     invalidated_blocks = set(dataset.blocks)
 
-                    files = [] # list of (lfn, block, size)
-
                     for block_entry in ds_entry['block']:
                         try:
                             block_name = Block.translate_name(block_entry['name'].replace(dataset.name + '#', ''))
@@ -1293,6 +1297,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                                 num_files = block_entry['files'],
                                 is_open = (block_entry['is_open'] == 'y')
                             )
+                            block.files = tuple()
+
                             dataset.blocks.append(block)
 
                             dataset.size += block.size
@@ -1300,78 +1306,30 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
     
                         else:
                             invalidated_blocks.remove(block)
-                            if block.size != block_entry['bytes'] or block.num_files != block_entry['files'] or block.is_open != (block_entry['is_open'] == 'y'):
-                                block = dataset.update_block(block_name, block_entry['bytes'], block_entry['files'], (block_entry['is_open'] == 'y'))
+                            block.size = block_entry['bytes']
+                            block.num_files = block_entry['files']
+                            block.is_open = (block_entry['is_open'] == 'y')
+                            if block.files is None:
+                                block.files = tuple()
 
                         if block_entry['time_update'] is not None and int(block_entry['time_update']) > dataset.last_update:
                             dataset.last_update = int(block_entry['time_update'])
 
+                        invalidated_files = dict((f.fullpath(), f) for f in block.files)
                         for file_entry in block_entry['file']:
-                            files.append((file_entry['lfn'], block, file_entry['size']))
+                            try:
+                                lfile = invalidated_files.pop(file_entry['lfn'])
+                            except KeyError:
+                                block.files += (File(file_entry['lfn'], block, file_entry['size']),)
+                            else:
+                                lfile.size = file_entry['size']
+
+                        for lfile in invalidated_files.itervalues():
+                            block.remove_file(lfile)
 
                     for block in invalidated_blocks:
                         logger.info('Removing block %s from dataset %s', block.real_name(), dataset.name)
                         dataset.remove_block(block)
-
-                    if dataset.files is None:
-                        dataset.files = set()
-                        for file_info in files:
-                            dataset.files.add(File.create(*file_info))
-
-                    else:
-                        # file structure already exists for the dataset. compare to query results and update.
-
-                        files.sort()
-    
-                        # files in invalidated blocks are already removed by Dataset.remove_block()
-                        known_files = sorted(dataset.files, key = lambda f: f.fullpath())
-    
-                        invalidated_files = []
-    
-                        # compare two sorted lists side-by-side
-                        isource = 0
-                        iknown = 0
-                        while True:
-                            if isource == len(files):
-                                # no more from phedex; rest is known but invalidated
-                                invalidated_files.extend(known_files[iknown:])
-                                break
-    
-                            elif iknown == len(known_files):
-                                # all remaining files are new
-                                for file_info in files[isource:]:
-                                    dataset.files.add(File.create(*file_info))
-                                break
-    
-                            else:
-                                phed_name, block, phed_size = files[isource]
-                                known_file = known_files[iknown]
-                                known_path = known_file.fullpath()
-    
-                                pathcmp = cmp(phed_name, known_path)
-    
-                                if pathcmp == 0:
-                                    # same file
-                                    if phed_size != known_file.size:
-                                        dataset.update_file(phed_name, phed_size)
-        
-                                    isource += 1
-                                    iknown += 1
-    
-                                elif pathcmp < 0:
-                                    # new file
-                                    dataset.files.add(File.create(phed_name, block, phed_size))
-                                    isource += 1
-    
-                                else:
-                                    # invalidated file
-                                    invalidated_files.append(known_file)
-                                    iknown += 1
-    
-                        for lfile in invalidated_files:
-                            logger.info('Removing file %s from dataset %s', lfile.fullpath(), dataset.name)
-                            dataset.files.remove(lfile)
-
 
         # set_constituent can take 10000 datasets at once, make it smaller and more parallel
         chunk_size = 100
