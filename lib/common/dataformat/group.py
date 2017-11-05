@@ -6,6 +6,8 @@ class Group(object):
     olevel: ownership level: Dataset or Block
     """
 
+    __slots__ = ['name', 'olevel']
+
     def __init__(self, name, olevel = Block):
         self.name = name
         self.olevel = olevel

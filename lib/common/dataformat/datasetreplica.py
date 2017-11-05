@@ -3,6 +3,8 @@ from blockreplica import BlockReplica
 class DatasetReplica(object):
     """Represents a dataset replica. Combines dataset and site information."""
 
+    __slots__ = ['dataset', 'site', 'is_complete', 'is_custodial', 'last_block_created', 'block_replicas']
+
     def __init__(self, dataset, site, is_complete = False, is_custodial = False, last_block_created = 0):
         self.dataset = dataset
         self.site = site

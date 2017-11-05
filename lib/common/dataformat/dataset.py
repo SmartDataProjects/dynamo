@@ -8,6 +8,10 @@ from exceptions import ObjectError
 class Dataset(object):
     """Represents a dataset."""
 
+    __slots__ = ['name', 'size', 'num_files',
+        'status', 'on_tape', 'data_type', 'software_version', 'last_update', 'is_open',
+        'blocks', 'files', 'replicas', 'requests', 'demand']
+
     # Enumerator for dataset type.
     # Starting from 1 to play better with MySQL
     TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, 10)

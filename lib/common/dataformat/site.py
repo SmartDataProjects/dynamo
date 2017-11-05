@@ -1,6 +1,12 @@
 import sys
 
 class Site(object):
+
+    __slots__ = ['name', 'host', 'storage_type',
+        'backend', 'storage', 'cpu', 'status',
+        'dataset_replicas', '_block_replicas',
+        '_partition_quota', '_occupancy_projected', '_occupancy_physical']
+
     TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, 5)
     STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, 5)
 
