@@ -1,5 +1,9 @@
+from common.dataformat.exceptions import ObjectError
+
 class Block(object):
-    __slots__ = ['name', 'dataset', 'size', 'num_files', 'is_open']
+    """Smallest data unit for data management."""
+
+    __slots__ = ['name', 'dataset', 'size', 'num_files', 'is_open', 'replicas', 'files']
 
     @staticmethod
     def translate_name(name_str):
@@ -13,6 +17,10 @@ class Block(object):
         self.num_files = num_files
         self.is_open = is_open
 
+        # optionally loaded
+        self.replicas = None
+        self.files = None
+
     def __str__(self):
         return 'Block %s#%s (size=%d, num_files=%d, is_open=%s)' % (self.dataset.name, self.real_name(), self.size, self.num_files, self.is_open)
 
@@ -23,11 +31,24 @@ class Block(object):
 
         return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]
 
-    def clone(self, **kwd):
-        return Block(
-            self.name,
-            self.dataset if 'dataset' not in kwd else kwd['dataset'],
-            self.size if 'size' not in kwd else kwd['size'],
-            self.num_files if 'num_files' not in kwd else kwd['num_files'],
-            self.is_open if 'is_open' not in kwd else kwd['is_open']
-        )
+    def find_file(self, path):
+        if self.files is None:
+            raise ObjectError('Files are not loaded for %s' % self.real_name())
+
+        try:
+            return next(f for f in self.files if f.fullpath() == pathx)
+        except StopIteration:
+            return None
+
+    def find_replica(self, site):
+        if self.replicas is None:
+            raise ObjectError('Replicas are not loaded for %s' % self.real_name())
+
+        try:
+            if type(site) is str:
+                return next(r for r in self.replicas if r.site.name == site)
+            else:
+                return next(r for r in self.replicas if r.site == site)
+
+        except StopIteration:
+            return None

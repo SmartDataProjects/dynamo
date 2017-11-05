@@ -1,11 +1,53 @@
 import sys
+from common.dataformat.exceptions import IntegrityError
+
+class SitePartition(object):
+    """State of a partition at a site."""
+
+    __slots__ = ['site', 'partition', 'quota', 'replicas']
+
+    def __init__(self, site, partition):
+        self.site = site
+        self.partition = partition
+        self.quota = 0.
+        # {dataset_replica: set(block_replicas) or None (if all blocks are in)}
+        self.replicas = {}
+
+    def set_quota(self, quota):
+        if self.partition.parent is not None:
+            # this is a subpartition. Update the parent partition quota
+            if quota < 0:
+                # quota < 0 -> infinite. This partition cannot be a subpartition
+                raise IntegrityError('Infinite quota set for a subpartition')
+
+            self.site.partitions[self.partition.parent].quota += quota - self.quota
+
+        self.quota = quota
+
+    def occupancy_fraction(self, physical = True):
+        if self.quota == 0.:
+            return sys.float_info.max
+        elif self.quota < 0.:
+            return 0.
+        else:
+            total_size = 0.
+            for replica, block_replicas in self.replicas.iteritems():
+                if block_replicas is None:
+                    total_size += replica.size(physica = physical)
+                elif physical:
+                    total_size += sum(br.size for br in block_replicas)
+                else:
+                    total_size += sum(br.block.size for br in block_replicas)
+
+            return total_size / self.quota
+
 
 class Site(object):
+    """Represents a site. Owns lists of dataset and block replicas, which are organized into partitions."""
 
-    __slots__ = ['name', 'host', 'storage_type',
-        'backend', 'storage', 'cpu', 'status',
-        'dataset_replicas', '_block_replicas',
-        '_partition_quota', '_occupancy_projected', '_occupancy_physical']
+    __slots__ = ['name', 'host', 'storage_type', 'backend',
+        'storage', 'cpu', 'status',
+        '_dataset_replicas', 'partitions']
 
     TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, 5)
     STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, 5)
@@ -72,61 +114,20 @@ class Site(object):
         else:
             return arg
 
-    class Partition(object):
-        """
-        Defines storage partitioning.
-        _partitioning: A function that takes a block replica and return whether the replica is in partition
-        """
-
-        def __init__(self, name, partitioning):
-            self.name = name
-            if type(partitioning) is list:
-                self.subpartitions = [Site.partitions[p] for p in partitioning]
-
-                def inpartition(block_replica):
-                    for p in self.subpartitions:
-                        if p(block_replica):
-                            return True
-
-                self._partitioning = inpartition
-            else:
-                self.subpartitions = []
-                # must be a function block_replica -> bool
-                self._partitioning = partitioning
-
-        def __call__(self, replica):
-            return self._partitioning(replica)
-
-    partitions = {} # name -> Partition
-    _partitions_order = [] # list of partitions
-
-    # must be called before any Site is instantiated
-    @staticmethod
-    def set_partitions(config):
-        for name, func in config:
-            partition = Site.Partition(name, func)
-            Site.partitions[name] = partition
-            Site._partitions_order.append(partition)
-
-
     def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN):
         self.name = name
         self.host = host
+        if type(storage_type) is str:
+            storage_type = Site.storage_type_val(storage_type)
         self.storage_type = storage_type
         self.backend = backend
         self.storage = storage # in TB
         self.cpu = cpu # in kHS06
         self.status = status
 
-        self.dataset_replicas = set()
+        self._dataset_replicas = {} # {Dataset: [DatasetReplica]}
 
-        self._block_replicas = set()
-
-        # Each block replica can have multiple owners but will always have one "accounting owner", whose quota the replica counts toward.
-        # When the accounting owner disowns the replica, the software must reassign the ownership to another.
-        self._partition_quota = [0] * len(Site.partitions) # in TB
-        self._occupancy_projected = [0] * len(Site.partitions) # cached sum of block sizes
-        self._occupancy_physical = [0] * len(Site.partitions) # cached sum of block replica sizes
+        self.partitions = {} # {Partition: SitePartition}
 
     def __str__(self):
         return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s)' % \
@@ -138,161 +139,86 @@ class Site(object):
 
     def unlink(self):
         # unlink objects to avoid ref cycles - should be called when this site is absolutely not needed
+        self.partitions.clear()
+
         while True:
             try:
-                replica = self.dataset_replicas.pop()
+                dataset, replica = self._dataset_replicas.popitem()
             except KeyError:
                 break
 
-            replica.dataset.replicas.remove(replica)
-            replica.dataset = None
-            replica.site = None
-            for block_replica in replica.block_replicas:
-                # need to call remove before clearing the set for size accounting
-                self.remove_block_replica(block_replica)
-            replica.block_replicas = []
+            if type(dataset) is str:
+                # we create two entries per replica, one with the name key and the other with the dataset key
+                continue
 
-        self._block_replicas.clear()
+            replica.dataset.replicas.remove(replica)
+            replica.initialize()
 
     def find_dataset_replica(self, dataset):
-        # very inefficient operation
         try:
-            if type(dataset).__name__ == 'Dataset':
-                return next(d for d in list(self.dataset_replicas) if d.dataset == dataset)
-            else:
-                return next(d for d in list(self.dataset_replicas) if d.dataset.name == dataset)
-
-        except StopIteration:
+            return self._dataset_replicas[dataset]
+        except KeyError:
             return None
 
     def find_block_replica(self, block):
-        try:
-            if type(block).__name__ == 'Block':
-                return next(b for b in list(self._block_replicas) if b.block == block)
-            else:
-                return next(b for b in list(self._block_replicas) if b.block.name == block)
+        if type(block).__name__ == 'Block':
+            try:
+                dataset_replica = self._dataset_replicas[block.dataset]
+                return dataset_replica.find_block_replica(block)
+            except KeyError:
+                return None
+        else:
+            # very inefficient operation
+            for dataset_replica in self._dataset_replicas.itervalues():
+                for block_replica in dataset_replica.block_replicas:
+                    if block_replica.block.name == block:
+                        return block_replica
 
-        except StopIteration:
             return None
 
-    def add_block_replica(self, replica, partitions = None):
-        self._block_replicas.add(replica)
+    def replica_iter(self):
+        return self._dataset_replicas.itervalues()
 
-        if partitions is None:
-            for ip, partition in enumerate(Site._partitions_order):
-                if partition(replica):
-                    self._occupancy_projected[ip] += replica.block.size
-                    self._occupancy_physical[ip] += replica.size
+    def add_dataset_replica(self, replica):
+        self._dataset_replicas[replica.dataset] = replica
+        self._dataset_replicas[replica.dataset.name] = replica
 
-        else:
-            for partition in partitions:
-                ip = Site._partitions_order.index(partition)
-                self._occupancy_projected[ip] += replica.block.size
-                self._occupancy_physical[ip] += replica.size
+        for partition, site_partition in self.partitions.iteritems():
+            block_replicas = set()
+            for block_replica in replica.block_replicas:
+                if partition.contains(block_replica):
+                    block_replicas.add(block_replica)
 
-    def remove_block_replica(self, replica):
-        try:
-            self._block_replicas.remove(replica)
-        except KeyError:
-            print 'Cannot remove block replica:', replica.site.name, replica.block.dataset.name, replica.block.real_name()
-            raise
-
-        for ip, partition in enumerate(Site._partitions_order):
-            if partition(replica):
-                self._occupancy_projected[ip] -= replica.block.size
-                self._occupancy_physical[ip] -= replica.size
-
-    def clear_block_replicas(self):
-        self._block_replicas.clear()
-
-        for ip in xrange(len(Site.partitions)):
-            self._occupancy_projected[ip] = 0
-            self._occupancy_physical[ip] = 0
-
-    def set_block_replicas(self, replicas):
-        self._block_replicas.clear()
-        self._block_replicas.update(replicas)
-
-        for ip in xrange(len(Site.partitions)):
-            partition = Site._partitions_order[ip]
-            self._occupancy_projected[ip] = 0
-            self._occupancy_physical[ip] = 0
-            for replica in self._block_replicas:
-                if partition(replica):
-                    self._occupancy_projected[ip] += replica.block.size
-                    self._occupancy_physical[ip] += replica.size
-
-    def partition_quota(self, partition):
-        index = Site._partitions_order.index(partition)
-
-        return self._partition_quota[index]
-
-    def set_partition_quota(self, partition, quota):
-        index = Site._partitions_order.index(partition)
-
-        self._partition_quota[index] = quota
-
-        if quota < 0:
-            # quota < 0 -> infinite. This partition cannot be a subpartition
-            for sup in Site._partitions_order:
-                if partition in sup.subpartitions:
-                    raise RuntimeError('Infinite quota set for a subpartition')
-
-        elif quota > 0:
-            # if this is a subpartition of another partition, recompute the quota of the superpartition
-            for ip, sup in enumerate(Site._partitions_order):
-                if partition in sup.subpartitions:
-                    self._partition_quota[ip] = sum(self._partition_quota[Site._partitions_order.index(p)] for p in sup.subpartitions)
-
-    def storage_occupancy(self, partitions = [], physical = True):
-        """
-        Returns the occupancy fraction for the partition, excluding the partitions with negative (i.e. infinite) quota.
-        """
-
-        if type(partitions) is not list:
-            partitions = [partitions]
-
-        if len(partitions) == 0:
-            partitions = list(Site._partitions_order)
-
-        numer = 0.
-        denom = 0.
-        for partition in partitions:
-            index = Site._partitions_order.index(partition)
-
-            quota = self._partition_quota[index]
-            if quota < 0:
+            if len(block_replicas) == 0:
                 continue
 
-            denom += quota
-            if physical:
-                numer += self._occupancy_physical[index] * 1.e-12
+            if block_replicas == replica.block_replicas:
+                site_partition.replicas[replica] = None
             else:
-                numer += self._occupancy_projected[index] * 1.e-12
-                
-        if numer == 0.:
-            return 0.
+                site_partition.replicas[replica] = block_replicas
 
-        if denom == 0.:
-            return sys.float_info.max
-        else:
-            return numer / denom
+    def update_partitioning(self, replica):
+        for partition, site_partition in self.partitions.iteritems():
+            try:
+                block_replicas = site_partition.replicas[replica]
+            except KeyError:
+                continue
 
-    def quota(self, partitions = []):
-        """
-        Returns site quota for the partition in TB, exclusing negative quotas.
-        """
+            if block_replicas is None:
+                # previously, was all contained - need to check again
+                self.add_dataset_replica(replica)
+            else:
+                new_replicas = replica.block_replicas - block_replicas
+                for block_replica in new_replicas:
+                    if partition.contains(block_replica):
+                        block_replicas.add(block_replica)
 
-        if len(partitions) == 0:
-            partitions = list(Site._partitions_order)
+    def remove_dataset_replica(self, replica):
+        self._dataset_replicas.pop(replica.dataset)
+        self._dataset_replicas.pop(replica.dataset.name)
 
-        quota = 0.
-        for partition in partitions:
-            q = self.partition_quota(partition)
-            if q < 0.:
-                # if one partition has "infinite" quota, the total quota is infinite
-                return -1.
-
-            quota += q
-
-        return quota
+        for site_partition in self.partitions.itervalues():
+            try:
+                site_partition.replicas.pop(replica)
+            except KeyError:
+                pass

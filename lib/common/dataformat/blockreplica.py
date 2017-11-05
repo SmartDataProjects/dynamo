@@ -1,25 +1,23 @@
 class BlockReplica(object):
-    __slots__ = ['block', 'site', 'group', 'is_complete', 'is_custodial', 'size', 'last_update']
+    """Block placement at a site. Holds an attribute 'group' which can be None.
+    BlockReplica size can be different from that of the Block."""
 
-    def __init__(self, block, site, group = None, is_complete = False, is_custodial = False, size = 0, last_update = 0):
+    __slots__ = ['block', 'site', 'group', 'is_complete', 'is_custodial', 'size', 'last_update', 'files']
+
+    def __init__(self, block, site, group = None, is_complete = False, is_custodial = False, size = -1, last_update = 0):
         self.block = block
         self.site = site
         self.group = group
         self.is_complete = is_complete
         self.is_custodial = is_custodial
-        self.size = size
+        if size < 0:
+            self.size = block.size
+        else:
+            self.size = size
         self.last_update = last_update
 
-    def clone(self, **kwd):
-        return BlockReplica(
-            self.block if 'block' not in kwd else kwd['block'],
-            self.site if 'site' not in kwd else kwd['site'],
-            self.group if 'group' not in kwd else kwd['group'],
-            self.is_complete if 'is_complete' not in kwd else kwd['is_complete'],
-            self.is_custodial if 'is_custodial' not in kwd else kwd['is_custodial'],
-            self.size if 'size' not in kwd else kwd['size'],
-            self.last_update if 'last_update' not in kwd else kwd['last_update']
-        )
+        # list of File objects for incomplete replicas
+        self.files = None
 
     def unlink(self):
         # Detach this replica from owning containers but retain references from this replica

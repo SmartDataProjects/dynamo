@@ -762,9 +762,13 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
 
                         if dataset_replica is None or dataset_replica.site != site:
                             logger.debug('New site %s', site.name)
-                            dataset_replica, new_replica = dataset.get_replica(site)
+                            dataset_replica = dataset.find_replica(site)
 
-                            if new_replica:
+                            if dataset_replica is None:
+                                dataset_replica = DatasetReplica(dataset, site)
+                                dataset.replicas.append(dataset_replica)
+                                site.dataset_replicas.add(dataset_replica)
+
                                 # first time associating this dataset with this site
                                 logger.debug('Instantiating dataset replica at %s', site.name)
     
@@ -887,7 +891,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                         
                         site = inventory.sites[subscription['node']]
 
-                        dataset_replica, new_replica = dataset.get_replica(site)
+                        dataset_replica = dataset.find_replica(site)
+
+                        if dataset_replica is None:
+                            dataset_replica = DatasetReplica(dataset, site)
+                            dataset.replicas.append(dataset_replica)
+                            site.dataset_replicas.add(dataset_replica)
 
                         dataset_replica.is_custodial = (subscription['custodial'] == 'y')
 
@@ -928,7 +937,12 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                             else:
                                 group = None
 
-                            dataset_replica, new_replica = dataset.get_replica(site)
+                            dataset_replica = dataset.find_replica(site)
+                            
+                            if dataset_replica is None:
+                                dataset_replica = DatasetReplica(dataset, site)
+                                dataset.replicas.append(dataset_replica)
+                                site.dataset_replicas.add(dataset_replica)
 
                             is_custodial = (subscription['custodial'] == 'y')
                             dataset_replica.is_custodial = is_custodial

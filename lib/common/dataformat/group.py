@@ -1,4 +1,4 @@
-from block import Block
+from common.dataformat.block import Block
 
 class Group(object):
     """
@@ -17,4 +17,3 @@ class Group(object):
 
     def __repr__(self):
         return 'Group(\'%s\', %s)' % (self.name, self.olevel.__name__)
-

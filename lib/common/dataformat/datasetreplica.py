@@ -1,5 +1,3 @@
-from blockreplica import BlockReplica
-
 class DatasetReplica(object):
     """Represents a dataset replica. Combines dataset and site information."""
 
@@ -49,16 +47,6 @@ class DatasetReplica(object):
         for block_replica in self.block_replicas:
             self.site.add_block_replica(block_replica)
 
-    def clone(self, block_replicas = True):
-        # Create a detached clone. Detached in the sense that it is not linked from dataset or site.
-        replica = DatasetReplica(dataset = self.dataset, site = self.site, is_complete = self.is_complete, is_custodial = self.is_custodial, last_block_created = self.last_block_created)
-
-        if block_replicas:
-            for brep in self.block_replicas:
-                replica.block_replicas.append(brep.clone())
-
-        return replica
-
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1 and self.dataset.replicas[0] == self
 
@@ -104,21 +92,3 @@ class DatasetReplica(object):
 
         except StopIteration:
             return None
-
-    def update_block_replica(self, block, group, is_complete, is_custodial, size, last_update):
-        old_replica = next(b for b in self.block_replicas if b.block == block)
-        self.block_replicas.remove(old_replica)
-
-        new_replica = BlockReplica(
-            block,
-            self.site,
-            group,
-            is_complete, 
-            is_custodial,
-            size = size,
-            last_update = last_update
-        )
-        self.block_replicas.append(new_replica)
-
-        self.site.remove_block_replica(old_replica)
-        self.site.add_block_replica(new_replica)

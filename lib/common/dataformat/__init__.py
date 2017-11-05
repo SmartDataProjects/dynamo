@@ -1,4 +1,3 @@
-from configuration import Configuration
 from exceptions import IntegrityError, ObjectError
 from dataset import Dataset
 from block import Block
@@ -10,7 +9,6 @@ from blockreplica import BlockReplica
 from history import HistoryRecord
 
 __all__ = [
-    'Configuration',
     'IntegrityError',
     'ObjectError',
     'Dataset',

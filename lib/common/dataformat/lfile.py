@@ -1,4 +1,5 @@
 class File(object):
+    """Represents a file. Atomic unit of data, but not used in data management."""
 
     __slots__ = ['name', 'directory_id', 'block', 'size']
 
@@ -33,19 +34,3 @@ class File(object):
     
     def fullpath(self):
         return File.directories[self.directory_id] + '/' + self.name
-    
-    def clone(self, **kwd):
-        if 'path' in kwd:
-            path = kwd['path']
-            name = File.get_basename(path)
-            directory_id = File.get_directory_id(path)
-        else:
-            name = self.name
-            directory_id = self.directory_id
-    
-        return File(
-            name,
-            directory_id,
-            self.block if 'block' not in kwd else kwd['block'],
-            self.size if 'size' not in kwd else kwd['size']
-        )
