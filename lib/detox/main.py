@@ -151,17 +151,11 @@ class Detox(object):
                         block_replicas -= set(action.block_replicas)
     
                     elif isinstance(action, DeleteBlock):
-                        unlinked_replicas, reowned_replicas = self.unlink_block_replicas(replica, action.block_replicas, policy, is_test)
+                        unlinked_replicas = self.unlink_block_replicas(replica, action.block_replicas, policy, is_test)
                         if len(unlinked_replicas) != 0:
                             deleted[replica].append((unlinked_replicas, condition_id))
 
                             block_replicas -= set(unlinked_replicas)
-
-                        # need to swap out block replicas with groups reassigned because blockreplica is immutable
-                        for new_replica in reowned_replicas:
-                            old_replica = next(r for r in block_replicas if r.block == new_replica.block)
-                            block_replicas.remove(old_replica)
-                            block_replicas.add(new_replica)
 
                     elif isinstance(action, DismissBlock):
                         if replica.site in triggered_sites:
@@ -175,7 +169,7 @@ class Detox(object):
                         protect_candidates[replica].append((list(block_replicas), condition_id))
     
                     elif isinstance(action, Delete):
-                        unlinked_replicas, reowned_replicas = self.unlink_block_replicas(replica, block_replicas, policy, is_test)
+                        unlinked_replicas = self.unlink_block_replicas(replica, block_replicas, policy, is_test)
                         if len(unlinked_replicas) != 0:
                             deleted[replica].append((unlinked_replicas, condition_id))
 
@@ -249,7 +243,7 @@ class Detox(object):
     
                     for match in matches:
                         # match = ([block_replica], condition_id)
-                        unlinked_replicas, _ = self.unlink_block_replicas(replica, match[0], policy, is_test)
+                        unlinked_replicas = self.unlink_block_replicas(replica, match[0], policy, is_test)
                         if len(unlinked_replicas) != 0:
                             deleted_volume[site] += sum(br.size for br in unlinked_replicas)
                             deleted[replica].append((unlinked_replicas, match[1]))
@@ -352,7 +346,7 @@ class Detox(object):
 
             replica.unlink()
 
-            return block_replicas, []
+            blocks_to_unlink = list(block_replicas)
 
         else:
             # Special operation - if we are deleting block replicas owned by group B, whose
@@ -383,9 +377,7 @@ class Detox(object):
             if len(blocks_to_hand_over) != 0:
                 logger.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
                 # not ideal to make reassignments here, but this operation affects later iterations
-                reassigned_blocks = self.reassign_owner(replica, blocks_to_hand_over, dr_owner, policy.partition, is_test)
-            else:
-                reassigned_blocks = []
+                self.reassign_owner(replica, blocks_to_hand_over, dr_owner, policy.partition, is_test)
 
             if len(blocks_to_unlink) != 0:
                 logger.debug('%d blocks to unlink', len(blocks_to_unlink))
@@ -393,7 +385,7 @@ class Detox(object):
                 for block_replica in blocks_to_unlink:
                     block_replica.unlink()
 
-            return blocks_to_unlink, reassigned_blocks
+        return blocks_to_unlink
 
     def reassign_owner(self, dataset_replica, block_replicas, new_owner, partition, is_test):
         """
@@ -402,24 +394,12 @@ class Detox(object):
 
         self.transaction_manager.copy.schedule_reassignments(block_replicas, new_owner, comments = 'Dynamo -- Group reassignment', is_test = is_test)
 
-        site = dataset_replica.site
-
-        new_replicas = []
-        for old_replica in block_replicas:
-            old_replica.unlink()
-
-            new_replica = old_replica.clone(group = new_owner)
-
-            dataset_replica.block_replicas.append(new_replica)
-            site.add_block_replica(new_replica, partitions = [partition])
-            
-            new_replicas.append(new_replica)
+        for replica in block_replicas:
+            block_replica.group = new_owner
 
         if not is_test:
             # are we relying on do_update = True in insert_many <- add_blockreplicas here?
-            self.inventory_manager.store.add_blockreplicas(new_replicas)
-
-        return new_replicas
+            self.inventory_manager.store.update_blockreplicas(block_replicas)
 
     def commit_deletions(self, run_number, policy, deletion_list, is_test, comment):
         """
@@ -513,13 +493,11 @@ class Detox(object):
             for deletion_id, (approved, replicas) in deletion_mapping.iteritems():
                 size = sum([r.size() for r in replicas])
                 for replica in replicas:
-                    blockreplicas = []
                     for block_replica in replica.block_replicas:
-                        blockreplica = block_replica.clone(group = None)
-                        blockreplicas.append(blockreplica)
+                        block_replica.group = None
                     
                     if not is_test:
-                        self.inventory_manager.store.update_blockreplicas(blockreplicas)
+                        self.inventory_manager.store.update_blockreplicas(replica.block_replicas)
 
                 if approved and not is_test:
                     total_size += size
