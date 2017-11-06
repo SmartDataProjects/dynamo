@@ -5,7 +5,7 @@ from dataformat import Dataset
 
 logger = logging.getLogger(__name__)
 
-class InventoryPersistency(object):
+class InventoryStore(object):
     """Interface definition for local inventory data store."""
 
     def __init__(self, config):

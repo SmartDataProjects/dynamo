@@ -1,7 +1,7 @@
 import re
 import fnmatch
 import subprocess
-from common.dataformat import DatasetReplica, BlockReplica
+from dataformat import DatasetReplica, BlockReplica
 
 class InvalidExpression(Exception):
     pass

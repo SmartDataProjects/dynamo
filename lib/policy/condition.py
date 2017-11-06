@@ -1,13 +1,7 @@
-import re
-import logging
-
-import detox.variables as variables
-from detox.predicates import Predicate
-
-logger = logging.getLogger(__name__)
+from policy.predicates import Predicate
 
 class Condition(object):
-    def __init__(self, text):
+    def __init__(self, text, variables):
         self.text = text
         self.predicates = []
         self.used_demand_plugins = set()
@@ -23,12 +17,12 @@ class Condition(object):
                 words[1] = 'not'
 
             # flags to determine which demand information should be updated
-            for plugin, exprs in variables.required_plugins.items():
-                if expr in exprs:
-                    self.used_demand_plugins.add(plugin)
+#            for plugin, exprs in variables.required_plugins.items():
+#                if expr in exprs:
+#                    self.used_demand_plugins.add(plugin)
 
             try:
-                variable = self.get_variable(expr)
+                variable = self.get_variable(expr, variables)
             except KeyError:
                 raise RuntimeError('Unknown variable ' + expr)
 
@@ -51,32 +45,7 @@ class Condition(object):
 
         return True
 
-class ReplicaCondition(Condition):
-    def get_variable(self, expr):
-        """Return a tuple containing (callable variable definition, variable type, ...)"""
+    def get_variable(self, expr, variables):
+        """Return an Attr object using the expr from the given variables dictionary."""
 
-        return variables.replica_variables[expr]
-
-    def get_matching_blocks(self, replica):
-        """If this is a block-level condition, return the list of matching block replicas."""
-
-        matching_blocks = []
-        for block_replica in replica.block_replicas:
-            if self.match(block_replica):
-                matching_blocks.append(block_replica)
-
-        return matching_blocks
-
-class SiteCondition(Condition):
-    def __init__(self, text, partition):
-        self.partition = partition
-
-        Condition.__init__(self, text)
-
-    def get_variable(self, expr):
-        """Return a tuple containing (callable variable definition, variable type, ...)"""
-
-        variable = variables.site_variables[expr]
-        variable.partition = self.partition
-
-        return variable
+        return variables[expr]

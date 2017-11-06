@@ -26,7 +26,7 @@ class MySQL(object):
     def escape_string(string):
         return MySQLdb.escape_string(string)
     
-    def __init__(self, host = '', user = '', passwd = '', config_file = '', config_group = '', db = ''):
+    def __init__(self, host = '', user = '', passwd = '', config_file = '', config_group = '', db = '', max_query_len = 0):
         self._connection_parameters = {}
         if config_file:
             self._connection_parameters['read_default_file'] = config_file
@@ -41,6 +41,8 @@ class MySQL(object):
             self._connection_parameters['db'] = db
 
         self._connection = MySQLdb.connect(**self._connection_parameters)
+
+        self.max_query_len = max_query_len
 
     def db_name(self):
         return self._connection_parameters['db']
@@ -257,7 +259,7 @@ class MySQL(object):
                     break
 
                 # MySQL allows queries up to 1M characters
-                if len(values) > config.mysql.max_query_len:
+                if self.max_query_len > 0 and len(values) > self.max_query_len:
                     break
 
                 values += ','
@@ -384,7 +386,7 @@ class MySQL(object):
                     itr = None
                     break
 
-                if len(pool_expr) < config.mysql.max_query_len:
+                if self.max_query_len > 0 and len(pool_expr) < self.max_query_len:
                     break
 
                 pool_expr += ','

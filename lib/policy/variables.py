@@ -1,11 +1,12 @@
 """
-Define translations from text-based detox configuration to actual python expressions here
+Define translations from text-based policies to actual python expressions here
 """
 
 import re
 import fnmatch
-from common.dataformat import Dataset, Site
-from detox.attrs import Attr, DatasetAttr, DatasetReplicaAttr, BlockReplicaAttr, ReplicaSiteAttr, SiteAttr, InvalidExpression
+
+from dataformat import Dataset, Site
+from policy.attrs import Attr, DatasetAttr, DatasetReplicaAttr, BlockReplicaAttr, ReplicaSiteAttr, SiteAttr, InvalidExpression
 
 class DatasetHasIncompleteReplica(DatasetAttr):
     def __init__(self):
@@ -232,12 +233,26 @@ class ReplicaSiteStatus(ReplicaSiteAttr):
     def rhs_map(self, expr):
         return getattr(Site, 'STAT_' + expr)
 
+class ReplicaSiteStorageType(ReplicaSiteAttr):
+    def __init__(self):
+        ReplicaSiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'storage_type')
+
+    def rhs_map(self, expr):
+        return getattr(Site, 'TYPE_' + expr)
+
 class SiteStatus(SiteAttr):
     def __init__(self):
         SiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
 
     def rhs_map(self, expr):
         return getattr(Site, 'STAT_' + expr)
+
+class SiteStorageType(SiteAttr):
+    def __init__(self):
+        SiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'storage_type')
+
+    def rhs_map(self, expr):
+        return getattr(Site, 'TYPE_' + expr)
 
 class SiteOccupancy(SiteAttr):
     def __init__(self):
@@ -283,13 +298,15 @@ replica_variables = {
     'blockreplica.last_update': BlockReplicaAttr(Attr.TIME_TYPE, 'last_update'),
     'blockreplica.owner': ReplicaOwner(),
     'blockreplica.is_locked': ReplicaIsLocked(),
-    'site.status': ReplicaSiteStatus()
+    'site.status': ReplicaSiteStatus(),
+    'site.storage_type': ReplicaSiteStorageType()
 }
 
 # site variable definition: partition -> (site -> value)
 site_variables = {
     'site.name': SiteAttr(Attr.TEXT_TYPE, 'name'),
     'site.status': SiteStatus(),
+    'site.storage_type': SiteStorageType(),
     'site.occupancy': SiteOccupancy(),
     'site.quota': SiteQuota(),
     'never': SiteBool(False),

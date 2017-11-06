@@ -1,4 +1,4 @@
-from common.dataformat.exceptions import ObjectError
+from dataformat.exceptions import ObjectError
 
 class Block(object):
     """Smallest data unit for data management."""
@@ -60,7 +60,8 @@ class Block(object):
         if self.blocks is None:
             raise ObjectError('Files are not loaded for %s' % self.full_name())
 
-        self.files.remove(lfile)
+        idx = self.files.index(lfile)
+        self.files = self.files[:idx] + self.files[idx + 1:]
         self.size -= lfile.size
         self.num_files -= 1
 

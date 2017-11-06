@@ -1,7 +1,6 @@
 import re
 
-import detox.attrs as attrs
-import detox.configuration as detox_config
+import policy.attrs as attrs
 
 class InvalidOperator(Exception):
     pass
@@ -98,9 +97,6 @@ class BinaryExpr(Predicate):
         Predicate.__init__(self, variable)
 
         self.rhs = self.variable.rhs_map(rhs_expr)
-
-        if self.variable.vtype == attrs.Attr.TIME_TYPE:
-            self.rhs += detox_config.main.time_shift * 24. * 3600.
 
 class SetElementExpr(Predicate):
     operators = ['in', 'notin']

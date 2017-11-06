@@ -1,4 +1,4 @@
-from common.dataformat.block import Block
+from dataformat.block import Block
 
 class Group(object):
     """

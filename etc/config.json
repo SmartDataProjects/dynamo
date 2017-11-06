@@ -2,11 +2,11 @@
   "general": {
     "threads": 32,
     "paths": {
-      "base": "$(DYNAMO_BASE)"
-      "archive": "$(DYNAMO_ARCHIVE)"
-      "spool": "$(DYNAMO_SPOOL)"
+      "base": "$(DYNAMO_BASE)",
+      "archive": "$(DYNAMO_ARCHIVE)",
+      "spool": "$(DYNAMO_SPOOL)",
       "datadir": "$(DYNAMO_DATADIR)"
-    },
+    }
   },
   "system_diagnostics": {
     "debug_thread": true,
@@ -20,13 +20,13 @@
   },
   "inventory": {
     "persistency": {
-      "module": "MySQLStore",
+      "module": "MySQLInventoryStore",
       "config": {
         "db_params": {"db": "dynamo"}
-      },
+      }
     },
-    "included_sites" = ["T0_CH_CERN_Disk", "T1_*", "T2_*"],
-    "excluded_sites" = ["T1_UK_RAL_ECHO_Disk", "T2_CH_CERNBOX", "T2_MY_UPM_BIRUNI"]
+    "included_sites": ["T0_CH_CERN_Disk", "T1_*", "T2_*"],
+    "excluded_sites": ["T1_UK_RAL_ECHO_Disk", "T2_CH_CERNBOX", "T2_MY_UPM_BIRUNI"]
   },
   "history": {
     "persistency": {
@@ -47,6 +47,10 @@
   "mysql": {
     "config_file": "/etc/my.cnf",
     "config_group": "mysql-dynamo",
-    "max_query_len": 100000 // allows up to 1M characters; allowing 90% safety margin
+    "max_query_len": 100000
   },
+  "debug": {
+    "time_profile": true,
+    "repeat_failed_thread": true
+  }
 }

@@ -4,9 +4,11 @@ import logging
 import collections
 import subprocess
 
-import detox.variables as variables
-import detox.attrs as attrs
-from detox.condition import ReplicaCondition, SiteCondition
+import detox.configuration as detox_config
+import policy.variables as variables
+import policy.attrs as attrs
+import policy.predicates as predicates
+from policy.condition import ReplicaCondition, SiteCondition
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +98,11 @@ class PolicyLine(object):
 
     def __init__(self, decision, text):
         self.condition = ReplicaCondition(text)
+        # apply time shift depending on the configuration
+        for pred in self.condition.predicates:
+            if type(pred) is predicates.BinaryExpr and pred.variable.vtype == attrs.Attr.TIME_TYPE:
+                pred.rhs += detox_config.main.time_shift * 24. * 3600.
+
         self.decision = decision
         self.has_match = False
 

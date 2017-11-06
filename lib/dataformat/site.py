@@ -1,5 +1,6 @@
 import sys
-from common.dataformat.exceptions import IntegrityError
+
+from dataformat.exceptions import IntegrityError
 
 class SitePartition(object):
     """State of a partition at a site."""

@@ -2,11 +2,12 @@ import logging
 import re
 
 from common.configuration import common_config
-from dataformat import Dataset, Site, DatasetReplica, BlockReplica
+from dataformat import Dataset, DatasetReplica, BlockReplica, Partition, IntegrityError
 from policy.condition import Condition
+from policy.variables import replica_variables
 import core.impl
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class DynamoInventory(object):
     def __init__(self, load_data = True):
@@ -22,14 +23,16 @@ class DynamoInventory(object):
             self.load()
 
     def load(self, dataset_filter = '*', load_blocks = True, load_files = False, load_replicas = True):
-        logger.info('Loading data from local persistent storage.')
-
         self.sites.clear()
         self.groups.clear()
         self.datasets.clear()
         self.partitions.clear()
 
+        LOG.info('Setting up partitions.')
+
         self.load_partitions()
+
+        LOG.info('Loading data from local persistent storage.')
         
         site_names = self.store.get_site_list(include = common_config.inventory.included_sites, exclude = common_config.inventory.excluded_sites)
 
@@ -52,7 +55,7 @@ class DynamoInventory(object):
             num_dataset_replicas += len(dataset.replicas)
             num_block_replicas += sum(len(r.block_replicas) for r in dataset.replicas)
 
-        logger.info('Data is loaded to memory. %d sites, %d groups, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.sites), len(self.groups), len(self.datasets), num_dataset_replicas, num_block_replicas)
+        LOG.info('Data is loaded to memory. %d sites, %d groups, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.sites), len(self.groups), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
     def load_dataset(self, dataset_name, load_blocks = False, load_files = False, load_replicas = False, sites = None, groups = None):
         """
@@ -63,7 +66,7 @@ class DynamoInventory(object):
         dataset = self.store.load_dataset(dataset_name, load_blocks = load_blocks, load_files = load_files, load_replicas = load_replicas, sites = sites, groups = groups)
 
         if dataset is None:
-            logger.debug('Creating new dataset %s', dataset_name)
+            LOG.debug('Creating new dataset %s', dataset_name)
             dataset = Dataset(dataset_name, status = Dataset.STAT_PRODUCTION)
             in_store = False
 
@@ -85,7 +88,7 @@ class DynamoInventory(object):
         with open(common_config.general.paths.base + '/policies/partitions.txt') as defsource:
             subpartitions = {}
             for line in defsource:
-                matches = re.match('([^:]+): *(.+)')
+                matches = re.match('([^:]+): *(.+)', line.strip())
                 if matches is None:
                     continue
         
@@ -94,16 +97,19 @@ class DynamoInventory(object):
 
                 matches = re.match('\[(.+)\]$', condition_text)
                 if matches:
-                    partition = self.partitions.add_new(name, None)
+                    partition = Partition(name, None)
                     subpartitions[partition] = map(str.strip, matches.group(1).split(','))
                 else:
-                    self.partitions.add_new(name, Condition(condition_text))
+                    partition = Partition(name, Condition(condition_text, replica_variables))
 
-        for partition, subp_names in subpartitions:
+                self.partitions[name] = partition
+
+        for partition, subp_names in subpartitions.iteritems():
             try:
                 subparts = tuple(self.partitions[name] for name in subp_names)
             except KeyError:
-                raise RuntimeError('Unknown partition ' + name + ' specified in subpartition list for ' + partition.name)
+                raise IntegrityError('Unknown partition ' + name + ' specified in subpartition list for ' + partition.name)
+
             partition.subpartitions = subparts
             for subp in subparts:
                 subp.parent = partition
