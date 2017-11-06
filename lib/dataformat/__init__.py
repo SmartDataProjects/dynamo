@@ -7,6 +7,7 @@ from group import Group
 from datasetreplica import DatasetReplica
 from blockreplica import BlockReplica
 from history import HistoryRecord
+from configuration import Configuration
 
 __all__ = [
     'IntegrityError',
@@ -18,5 +19,6 @@ __all__ = [
     'Group',
     'DatasetReplica',
     'BlockReplica',
-    'HistoryRecord'
+    'HistoryRecord',
+    'Configuration'
 ]
