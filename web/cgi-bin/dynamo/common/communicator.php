@@ -24,29 +24,30 @@ function execQuery($qstring,$db){
   return $retvar;
 }
 
-function check_authentication($email,$db){
-  if (!$email){
-    echo "Please specify your email address for the results to be sent to."; echo "\n";
+function check_authentication($user,$db){
+  if (!$user){
+    echo "Something went wrong."; echo "\n";
     exit();
   }
   else{
-    $qstring ="SELECT 1 FROM users WHERE lower(`email`) = lower('$email')";
+    $qstring ="SELECT u.`email` FROM users AS u INNER JOIN authorized_users as au WHERE lower(u.`name`) = lower('$user') AND u.`id` = au.`user_id`";
   }
   if (!execQuery($qstring,$db)){
    echo "Not a valid user."; echo "\n";
     exit();
-  } 
+  }
+  else{
+    return execQuery($qstring,$db);
+  }
 }
 
 function communicate($filename,$db,$info,$type){
   $status = 'new';
   $qstring = 'insert into action(file,status,info,type) values'.
     '(\''.$filename.'\',\''.$status.'\',\''.$info.'\',\''.$type.'\')';
-
-  echo "File successfully uploaded. Results will be sent to $info. Be patient."; echo "\n";
+  echo "File successfully uploaded."; echo "\n";
 
   return execQuery($qstring,$db);
-
 }
 
 ?>

@@ -18,12 +18,13 @@
     <main id="main">
       <section id="hSpace">
       </section>
+	<center>
+	  <div> You are currently using this tool as: ${USER}. </div>
+	</center>
       <section id="uploadSection">
 	<center>
-	  <form action="http://t3desk006.mit.edu/dynamo/dynamo/upload_file.php" method="post"
+	  <form action="http://t3desk006.mit.edu/dynamo/dynamo/upload_file.php?user=${USER}" method="post"
 		enctype="multipart/form-data">
-	    <label for="emailAddress">Email address</label><br>
-	    <input type="email" name="email" id="emailAddress"><br>
 	    <br></br>
 	    <label for="file">Policy file</label><br>
 	    <input type="file" name="file" id="file">

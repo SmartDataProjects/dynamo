@@ -18,17 +18,22 @@ elseif ( end(explode('.', $filename)) != "txt" )
   }
 else
   {
+    $username=$_REQUEST['user'];
     $db_name = 'dynamoregister';
     $db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $db_name);
 
-    $email=$_POST['email'];
-    check_authentication($email,$db);
+    check_authentication($username,$db);
     $hash = hash_file('md5',$filedata);
-    if (copy($filedata,$uploadpath.$hash)){
-      communicate($hash,$db,$email,"dc");
+    if (!file_exists($uploadpath.$hash)){
+      if (copy($filedata,$uploadpath.$hash)){
+	communicate($hash,$db,$username,"dc");
+      }
+      else{
+	echo "Something went wrong."; echo "\n";
+      }
     }
     else{
-      echo "Something went wrong.";
+      echo "File already exists. Probably it is just being acted upon."; echo "\n";
     }
   }
 ?>
