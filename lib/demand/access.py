@@ -2,6 +2,8 @@ import time
 import datetime
 import collections
 
+from demand.impl.mysqlaccess import MySQLAccessHistoryStore
+
 # last_access is unix time
 DatasetReplicaUsage = collections.namedtuple('DatasetReplicaUsage', ['rank', 'num_access', 'last_access'])
 
@@ -15,9 +17,10 @@ class AccessHistory(object):
 
     def __init__(self):
         self._last_update = 0 # unix time of last update
+        self.persistency = MySQLAccessHistoryStore({'db_params': {'db': 'dynamo'}})
 
     def load(self, inventory):
-        records = inventory.store.load_replica_accesses(inventory.sites.values(), inventory.datasets.values())
+        records = self.persistency.load_replica_accesses(inventory.sites.values(), inventory.datasets.values())
         self._last_update = records[0]
 
         self._compute(inventory, records[1])

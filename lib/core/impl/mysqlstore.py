@@ -7,105 +7,24 @@ import logging
 import fnmatch
 import pprint
 
-from common.interface.store import LocalStoreInterface
+from common.configuration import common_config
+from core.persistency import InventoryStore
 from common.interface.mysql import MySQL
-from common.dataformat import Dataset, Block, File, Site, Group, DatasetReplica, BlockReplica
-import common.configuration as config
+from dataformat import Dataset, Block, File, Site, Group, DatasetReplica, BlockReplica
 
 logger = logging.getLogger(__name__)
 
-class MySQLStore(LocalStoreInterface):
-    """Interface to MySQL."""
+class MySQLInventoryStore(InventoryStore):
+    """InventoryPersistency based on MySQL."""
 
-    class DatabaseError(Exception):
-        pass
+    def __init__(self, config):
+        super(self.__class__, self).__init__(config)
 
-    def __init__(self):
-        super(self.__class__, self).__init__()
+        db_params = common_config.mysql
+        if 'db_params' in config:
+            db_params.update(config['db_params'])
 
-        self._mysql = MySQL(**config.mysqlstore.db_params)
-
-        self.last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0] # MySQL displays last_update in local time, but returns the UTC timestamp
-
-    def _do_acquire_lock(self, blocking): #override
-        while True:
-            # Use the system table to "software-lock" the database
-            self._mysql.query('LOCK TABLES `system` WRITE')
-            self._mysql.query('UPDATE `system` SET `lock_host` = %s, `lock_process` = %s WHERE `lock_host` LIKE \'\' AND `lock_process` = 0', socket.gethostname(), os.getpid())
-
-            # Did the update go through?
-            host, pid = self._mysql.query('SELECT `lock_host`, `lock_process` FROM `system`')[0]
-            self._mysql.query('UNLOCK TABLES')
-
-            if host == socket.gethostname() and pid == os.getpid():
-                # The database is locked.
-                break
-
-            if blocking:
-                logger.warning('Failed to lock database. Waiting 30 seconds..')
-                time.sleep(30)
-            else:
-                logger.warning('Failed to lock database.')
-                return False
-
-        return True
-
-    def _do_release_lock(self, force): #override
-        self._mysql.query('LOCK TABLES `system` WRITE')
-        if force:
-            self._mysql.query('UPDATE `system` SET `lock_host` = \'\', `lock_process` = 0')
-        else:
-            self._mysql.query('UPDATE `system` SET `lock_host` = \'\', `lock_process` = 0 WHERE `lock_host` LIKE %s AND `lock_process` = %s', socket.gethostname(), os.getpid())
-
-        # Did the update go through?
-        host, pid = self._mysql.query('SELECT `lock_host`, `lock_process` FROM `system`')[0]
-        self._mysql.query('UNLOCK TABLES')
-
-        if host != '' or pid != 0:
-            raise LocalStoreInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
-
-    def _do_make_snapshot(self, tag, clear): #override
-        new_db = self._mysql.make_snapshot(tag)
-        
-        self._mysql.query('UPDATE `%s`.`system` SET `lock_host` = \'\', `lock_process` = 0' % new_db)
-
-        tables = []
-        if clear == LocalStoreInterface.CLEAR_ALL:
-            tables = self._mysql.query('SHOW TABLES')
-        elif clear == LocalStoreInterface.CLEAR_REPLICAS:
-            tables = ['dataset_replicas', 'block_replicas', 'block_replica_sizes']
-
-        for table in tables:
-            if table == 'system':
-                continue
-
-            # drop the original table and copy back the format from the snapshot
-            self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._mysql.db_name(), table = table))
-
-    def _do_remove_snapshot(self, tag, newer_than, older_than): #override
-        if tag:
-            self._mysql.remove_snapshot(tag = tag)
-        else:
-            self._mysql.remove_snapshot(newer_than = newer_than, older_than = older_than)
-
-    def _do_list_snapshots(self, timestamp_only):
-        return self._mysql.list_snapshots(timestamp_only)
-
-    def _do_clear(self):
-        tables = self._mysql.query('SHOW TABLES')
-        tables.remove('system')
-
-        for table in tables:
-            # drop the original table and copy back the format from the snapshot
-            self._mysql.query('TRUNCATE TABLE `{orig}`.`{table}`'.format(orig = self._mysql.db_name(), table = table))
-
-    def _do_recover_from(self, tag): #override
-        self._mysql.recover_from(tag)
-
-    def _do_switch_snapshot(self, tag): #override
-        snapshot_name = self._mysql.db_name() + '_' + tag
-
-        self._mysql.query('USE ' + snapshot_name)
+        self._mysql = MySQL(**db_params)
 
     def _do_get_last_update(self): #override
         return self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
@@ -546,111 +465,6 @@ class MySQLStore(LocalStoreInterface):
 
         return dataset.find_block(Block.translate_name(bname))
 
-    def _do_load_replica_accesses(self, sites, datasets): #override
-        id_site_map = {}
-        self._make_site_map(sites, id_site_map = id_site_map)
-        id_dataset_map = {}
-        self._make_dataset_map(datasets, id_dataset_map = id_dataset_map)
-
-        for dataset in datasets:
-            if dataset.replicas is None:
-                continue
-
-        access_list = {}
-
-        # pick up all accesses that are less than 1 year old
-        # old accesses will eb removed automatically next time the access information is saved from memory
-        sql = 'SELECT `dataset_id`, `site_id`, YEAR(`date`), MONTH(`date`), DAY(`date`), `access_type`+0, `num_accesses` FROM `dataset_accesses`'
-        sql += ' WHERE `date` > DATE_SUB(NOW(), INTERVAL 2 YEAR) ORDER BY `dataset_id`, `site_id`, `date`'
-
-        num_records = 0
-
-        # little speedup by not repeating lookups for the same replica
-        current_dataset_id = 0
-        current_site_id = 0
-        replica = None
-        for dataset_id, site_id, year, month, day, access_type, num_accesses in self._mysql.xquery(sql):
-            num_records += 1
-
-            if dataset_id != current_dataset_id:
-                try:
-                    dataset = id_dataset_map[dataset_id]
-                except KeyError:
-                    continue
-
-                if dataset.replicas is None:
-                    continue
-
-                current_dataset_id = dataset_id
-                replica = None
-                current_site_id = 0
-
-            if site_id != current_site_id:
-                try:
-                    site = id_site_map[site_id]
-                except KeyError:
-                    continue
-
-                current_site_id = site_id
-                replica = None
-
-            elif replica is None:
-                # this dataset-site pair is checked and no replica was found
-                continue
-
-            if replica is None:
-                replica = dataset.find_replica(site)
-                if replica is None:
-                    # this dataset is not at the site any more
-                    continue
-
-                access_list[replica] = {}
-
-            date = datetime.date(year, month, day)
-
-            access_list[replica][date] = num_accesses
-
-        last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
-
-        logger.info('Loaded %d replica access data. Last update on %s UTC', num_records, time.strftime('%Y-%m-%d', time.gmtime(last_update)))
-
-        return (last_update, access_list)
-
-    def _do_load_dataset_requests(self, datasets): #override
-        id_dataset_map = {}
-        self._make_dataset_map(datasets, id_dataset_map = id_dataset_map)
-
-        # pick up requests that are less than 1 year old
-        # old requests will be removed automatically next time the access information is saved from memory
-        sql = 'SELECT `dataset_id`, `id`, UNIX_TIMESTAMP(`queue_time`), UNIX_TIMESTAMP(`completion_time`), `nodes_total`, `nodes_done`, `nodes_failed`, `nodes_queued` FROM `dataset_requests`'
-        sql += ' WHERE `queue_time` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY `dataset_id`, `queue_time`'
-
-        num_records = 0
-
-        requests = {}
-
-        # little speedup by not repeating lookups for the same dataset
-        current_dataset_id = 0
-        for dataset_id, job_id, queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued in self._mysql.xquery(sql):
-            num_records += 1
-
-            if dataset_id != current_dataset_id:
-                try:
-                    dataset = id_dataset_map[dataset_id]
-                except KeyError:
-                    continue
-
-                current_dataset_id = dataset_id
-                requests[dataset] = {}
-
-            requests[dataset][job_id] = (queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued)
-
-        last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
-
-        logger.info('Loaded %d dataset request data. Last update at %s UTC', num_records, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(last_update)))
-
-        return (last_update, requests)
-
     def _do_save_sites(self, sites): #override
         # insert/update sites
         logger.info('Inserting/updating %d sites.', len(sites))
@@ -1005,56 +819,6 @@ class MySQLStore(LocalStoreInterface):
         fields = ('block_id', 'site_id', 'size')
         self._mysql.insert_many('block_replica_sizes', fields, None, replica_sizes, do_update = False)
 
-    def _do_save_replica_accesses(self, access_list): #override
-        site_id_map = {}
-        self._make_site_map(set(r.site for r in access_list.iterkeys()), site_id_map = site_id_map)
-        dataset_id_map = {}
-        self._make_dataset_map(set(r.dataset for r in access_list.iterkeys()), dataset_id_map = dataset_id_map)
-
-        fields = ('dataset_id', 'site_id', 'date', 'access_type', 'num_accesses', 'cputime')
-
-        data = []
-        for replica, replica_access_list in access_list.iteritems():
-            dataset_id = dataset_id_map[replica.dataset]
-            site_id = site_id_map[replica.site]
-
-            for date, (num_accesses, cputime) in replica_access_list.iteritems():
-                data.append((dataset_id, site_id, date.strftime('%Y-%m-%d'), 'local', num_accesses, cputime))
-
-        self._mysql.insert_many('dataset_accesses', fields, None, data, do_update = True)
-
-        # remove old entries
-        self._mysql.query('DELETE FROM `dataset_accesses` WHERE `date` < DATE_SUB(NOW(), INTERVAL 2 YEAR)')
-        self._mysql.query('UPDATE `system` SET `dataset_accesses_last_update` = NOW()')
-
-    def _do_save_dataset_requests(self, request_list): #override
-        datasets = request_list.keys()
-
-        dataset_id_map = {}
-        self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
-
-        fields = ('id', 'dataset_id', 'queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued')
-
-        data = []
-        for dataset, dataset_request_list in request_list.items():
-            dataset_id = dataset_id_map[dataset]
-
-            for job_id, (queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued) in dataset_request_list.items():
-                data.append((
-                    job_id,
-                    dataset_id,
-                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(queue_time)),
-                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(completion_time)) if completion_time > 0 else '0000-00-00 00:00:00',
-                    nodes_total,
-                    nodes_done,
-                    nodes_failed,
-                    nodes_queued
-                ))
-
-        self._mysql.insert_many('dataset_requests', fields, None, data, do_update = True)
-
-        self._mysql.query('DELETE FROM `dataset_requests` WHERE `queue_time` < DATE_SUB(NOW(), INTERVAL 1 YEAR)')
-        self._mysql.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()')
 
     def _do_add_datasetreplicas(self, replicas): #override
         site_id_map = {}
@@ -1262,14 +1026,14 @@ class MySQLStore(LocalStoreInterface):
         self._mysql.query('UPDATE `datasets` SET `status` = %s WHERE `name` LIKE %s', status_str, dataset_name)
 
     def _make_site_map(self, sites, site_id_map = None, id_site_map = None):
-        self._make_map('sites', iter(sites), site_id_map, id_site_map)
+        self._mysql.make_map('sites', sites, site_id_map, id_site_map)
 
     def _make_group_map(self, groups, group_id_map = None, id_group_map = None):
         # Sometimes when calling do_update_blockreplicas it can be we're handing over group 'None'
         cleansed_groups = [g for g in groups if g is not None] 
         
         if len(cleansed_groups) > 0:
-            self._make_map('groups', iter(cleansed_groups), group_id_map, id_group_map)
+            self._mysql.make_map('groups', cleansed_groups, group_id_map, id_group_map)
         if group_id_map is not None:
             group_id_map[None] = 0
         if id_group_map is not None:
@@ -1281,39 +1045,5 @@ class MySQLStore(LocalStoreInterface):
         except TypeError:
             tmp_join = False
 
-        self._make_map('datasets', iter(datasets), dataset_id_map, id_dataset_map, tmp_join = tmp_join)
+        self._mysql.make_map('datasets', datasets, dataset_id_map, id_dataset_map, tmp_join = tmp_join)
 
-    def _make_map(self, table, objitr, object_id_map, id_object_map, tmp_join = False):
-        if tmp_join:
-            tmp_table = '%s_map_tmp' % table
-            if self._mysql.table_exists(tmp_table):
-                self._mysql.query('DROP TABLE `%s`' % tmp_table)
-
-            # need to create a list first because iterator can iterate only once
-            objlist = list(objitr)
-            objitr = iter(objlist)
-
-            self._mysql.query('CREATE TABLE `%s` (`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL, PRIMARY KEY (`name`)) ENGINE=MyISAM DEFAULT CHARSET=latin1' % tmp_table)
-            self._mysql.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist)
-
-            name_to_id = dict(self._mysql.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_table)))
-
-            self._mysql.query('DROP TABLE `%s`' % tmp_table)
-
-        else:
-            name_to_id = dict(self._mysql.xquery('SELECT `name`, `id` FROM `%s`' % table))
-
-        num_obj = 0
-        for obj in objitr:
-            num_obj += 1
-            try:
-                obj_id = name_to_id[obj.name]
-            except KeyError:
-                continue
-
-            if object_id_map is not None:
-                object_id_map[obj] = obj_id
-            if id_object_map is not None:
-                id_object_map[obj_id] = obj
-
-        logger.debug('make_map %s (%d) obejcts', table, num_obj)

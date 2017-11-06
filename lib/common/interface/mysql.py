@@ -398,3 +398,40 @@ class MySQL(object):
 
     def table_exists(self, table):
         return len(self.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s LIMIT 1', self.db_name(), table)) != 0
+
+    def make_map(self, table, objects, object_id_map = None, id_object_map = None, tmp_join = False):
+        objitr = iter(objects)
+
+        if tmp_join:
+            tmp_table = '%s_map_tmp' % table
+            if self.table_exists(tmp_table):
+                self.query('DROP TABLE `%s`' % tmp_table)
+
+            # need to create a list first because objects can already be an iterator and iterators can iterate only once
+            objlist = list(objitr)
+            objitr = iter(objlist)
+
+            self.query('CREATE TABLE `%s` (`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL, PRIMARY KEY (`name`)) ENGINE=MyISAM DEFAULT CHARSET=latin1' % tmp_table)
+            self.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist)
+
+            name_to_id = dict(self.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_table)))
+
+            self.query('DROP TABLE `%s`' % tmp_table)
+
+        else:
+            name_to_id = dict(self.xquery('SELECT `name`, `id` FROM `%s`' % table))
+
+        num_obj = 0
+        for obj in objitr:
+            num_obj += 1
+            try:
+                obj_id = name_to_id[obj.name]
+            except KeyError:
+                continue
+
+            if object_id_map is not None:
+                object_id_map[obj] = obj_id
+            if id_object_map is not None:
+                id_object_map[obj_id] = obj
+
+        logger.debug('make_map %s (%d) obejcts', table, num_obj)
