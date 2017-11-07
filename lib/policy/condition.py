@@ -36,7 +36,10 @@ class Condition(object):
             self.predicates.append(Predicate.get(variable, operator, rhs_expr))
 
     def __str__(self):
-        return self.text
+        return 'Condition \'%s\'' % self.text
+
+    def __repr__(self):
+        return 'Condition(\'%s\')' % self.text
 
     def match(self, obj):
         for predicate in self.predicates:

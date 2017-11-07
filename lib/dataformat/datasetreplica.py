@@ -9,7 +9,7 @@ class DatasetReplica(object):
         self.is_complete = is_complete # = complete subscription. Can still be partial
         self.is_custodial = is_custodial
         self.last_block_created = last_block_created
-        self.block_replicas = []
+        self.block_replicas = set()
 
     def __str__(self):
         return 'DatasetReplica {site}:{dataset} (is_complete={is_complete}, is_custodial={is_custodial},' \
@@ -19,13 +19,7 @@ class DatasetReplica(object):
                 block_replicas_size = len(self.block_replicas))
 
     def __repr__(self):
-        rep = 'DatasetReplica(%s,\n' % repr(self.dataset)
-        rep += '    %s,\n' % repr(self.site)
-        rep += '    is_complete=%s,\n' % str(self.is_complete)
-        rep += '    is_custodial=%s,\n' % str(self.is_custodial)
-        rep += '    last_block_created=%d)' % self.last_block_created
-
-        return rep
+        return 'DatasetReplica(%s, %s)' % (repr(self.dataset), repr(self.site))
 
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1 and self.dataset.replicas[0] == self

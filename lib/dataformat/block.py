@@ -10,19 +10,22 @@ class Block(object):
         # block name format: [8]-[4]-[4]-[4]-[12] where [n] is an n-digit hex.
         return int(name_str.replace('-', ''), 16)
 
-    def __init__(self, name, dataset = None, size = 0, num_files = 0, is_open = False):
+    def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False):
         self.name = name
         self.dataset = dataset
         self.size = size
         self.num_files = num_files
         self.is_open = is_open
 
-        # optionally loaded
+        # sets when loaded
         self.replicas = None
         self.files = None
 
     def __str__(self):
         return 'Block %s#%s (size=%d, num_files=%d, is_open=%s)' % (self.dataset.name, self.real_name(), self.size, self.num_files, self.is_open)
+
+    def __repr__(self):
+        return 'Block(translate_name(\'%s\'), %s)' % (self.real_name(), repr(self.dataset))
 
     def real_name(self):
         full_string = hex(self.name).replace('0x', '')[:-1] # last character is 'L'
@@ -39,7 +42,7 @@ class Block(object):
             raise ObjectError('Files are not loaded for %s' % self.full_name())
 
         try:
-            return next(f for f in self.files if f.fullpath() == pathx)
+            return next(f for f in self.files if f.fullpath() == path)
         except StopIteration:
             return None
 
@@ -60,8 +63,7 @@ class Block(object):
         if self.blocks is None:
             raise ObjectError('Files are not loaded for %s' % self.full_name())
 
-        idx = self.files.index(lfile)
-        self.files = self.files[:idx] + self.files[idx + 1:]
+        self.files.remove(lfile)
         self.size -= lfile.size
         self.num_files -= 1
 
@@ -74,4 +76,3 @@ class Block(object):
                         pass
                     else:
                         replica.size -= lfile.size
-

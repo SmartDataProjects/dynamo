@@ -61,8 +61,8 @@ class Dataset(object):
         self.is_open = is_open
 
         # "transient" members
-        self.blocks = None # is a list when loaded
-        self.replicas = None # is a list when loaded
+        self.blocks = None # is a set when loaded
+        self.replicas = None # is a set when loaded
         self.demand = {} # freeform key-value pairs
 
     def __str__(self):
@@ -77,13 +77,12 @@ class Dataset(object):
             '?' if self.blocks is None else str(len(self.blocks)), replica_sites)
 
     def __repr__(self):
-        return 'Dataset(\'%s\', size=%d, num_files=%d, status=%d, on_tape=%d, data_type=%d, software_version=%s, last_update=%d, is_open=%s)' % \
-            (self.name, self.size, self.num_files, self.status, self.on_tape, self.data_type, str(self.software_version), self.last_update, str(self.is_open))
+        return 'Dataset(\'%s\')' % self.name
 
     def make_valid(self):
         self.status = Dataset.STAT_VALID
-        self.blocks = []
-        self.replicas = []
+        self.blocks = set()
+        self.replicas = set()
 
     def find_block(self, block_name):
         if self.blocks is None:

@@ -235,7 +235,7 @@ class MySQLInventoryStore(InventoryStore):
                     _dataset_id = dataset_id
 
                     dataset = id_dataset_map[dataset_id]
-                    dataset.blocks = []
+                    dataset.blocks = set()
                     dataset.size = 0
                     dataset.num_files = 0
 
@@ -249,7 +249,7 @@ class MySQLInventoryStore(InventoryStore):
                     is_open
                 )
 
-                dataset.blocks.append(block)
+                dataset.blocks.add(block)
                 dataset.size += block.size
                 dataset.num_files += block.num_files
 
@@ -305,7 +305,7 @@ class MySQLInventoryStore(InventoryStore):
 
                 dataset.size += lfile.size
                 dataset.num_files += 1
-                block.files += (lfile,)
+                block.files.add(lfile)
                 block.size += lfile.size
                 block.num_files += 1
 
@@ -346,7 +346,7 @@ class MySQLInventoryStore(InventoryStore):
                     _dataset_id = dataset_id
 
                     dataset = id_dataset_map[_dataset_id]
-                    dataset.replicas = DatasetReplicaList()
+                    dataset.replicas = set()
 
                     block_id_map = block_id_maps[dataset_id]
 
@@ -363,7 +363,7 @@ class MySQLInventoryStore(InventoryStore):
                         last_block_created = last_block_created
                     )
 
-                    dataset.replicas.append(dataset_replica)
+                    dataset.replicas.add(dataset_replica)
                     site.add_dataset_replica(dataset_replica)
 
                     num_dataset_replicas += 1
@@ -382,7 +382,7 @@ class MySQLInventoryStore(InventoryStore):
                     last_update = b_last_update
                 )
 
-                dataset_replica.block_replicas.append(block_replica)
+                dataset_replica.block_replicas.add(block_replica)
                 site.update_partitioning(dataset_replica)
 
                 num_block_replicas += 1
@@ -422,7 +422,7 @@ class MySQLInventoryStore(InventoryStore):
         return dataset
 
     def _do_load_replicas(self, dataset, sites, groups):
-        dataset.replicas = []
+        dataset.replicas = set()
 
         id_site_map = {}
         self._make_site_map(sites, id_site_map = id_site_map)
@@ -452,8 +452,8 @@ class MySQLInventoryStore(InventoryStore):
                 last_block_created = last_block_created
             )
 
-            dataset.replicas.append(dataset_replica)
-            site.dataset_replicas.add(dataset_replica)
+            dataset.replicas.add(dataset_replica)
+            site.add_dataset_replica(dataset_replica)
 
             if dataset.blocks is not None:
                 block_query = 'SELECT b.`id`, b.`name`, br.`group_id`, br.`is_complete`, br.`is_custodial`, brs.`size`, UNIX_TIMESTAMP(br.`last_update`) FROM `blocks` AS b'
@@ -484,7 +484,7 @@ class MySQLInventoryStore(InventoryStore):
                         last_update = br_last_update
                     )
 
-                    dataset_replica.block_replicas.append(block_replica)
+                    dataset_replica.block_replicas.add(block_replica)
                     site.add_block_replica(block_replica)
 
     def _do_load_blocks(self, dataset):
@@ -497,54 +497,31 @@ class MySQLInventoryStore(InventoryStore):
         query += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         query += ' WHERE d.`name` = %s'
 
-        dataset.blocks = []
+        dataset.blocks = set()
         dataset.size = 0
         dataset.num_files = 0
 
         for name, size, num_files, is_open in self._mysql.xquery(query, dataset.name):
-            dataset.blocks.append(Block(Block.translate_name(name), dataset, size, num_files, is_open == 1))
+            dataset.blocks.add(Block(Block.translate_name(name), dataset, size, num_files, is_open == 1))
             dataset.size += size
             dataset.num_files += num_files
 
-    def _do_load_files(self, dataset): #override
-        dataset.files = set()
+    def _do_load_files(self, block): #override
+        block.files = set()
 
-        query = 'SELECT `id` FROM `datasets` WHERE `name` = %s'
-        results = self._mysql.query(query, dataset.name)
+        query = 'SELECT `id` FROM `blocks` WHERE `name` = %s'
+        results = self._mysql.query(query, block.real_name())
 
         if len(results) == 0:
             return
 
-        dataset_id = results[0]
-
-        block_map = dict((b.real_name(), b) for b in dataset.blocks)
-
-        sql = 'SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %d' % dataset_id
-
-        block_id_map = dict()
-        for block_id, name in self._mysql.xquery(sql):
-            try:
-                block_id_map[block_id] = block_map[name]
-            except KeyError:
-                continue
+        block_id = results[0]
 
         # Load files
-        query = 'SELECT `block_id`, `name`, `size` FROM `files` WHERE `dataset_id` = %d ORDER BY `block_id`' % dataset_id
+        query = 'SELECT `name`, `size` FROM `files` WHERE `block_id` = %d' % block_id
 
-        _block_id = 0
-        block = None
-        for block_id, name, size in self._mysql.xquery(query):
-            if block_id != _block_id:
-                try:
-                    block = block_id_map[block_id]
-                except KeyError:
-                    continue
-
-                _block_id = block_id
-
-            lfile = File(name, block, size)
-
-            dataset.files.add(lfile)
+        for name, size in self._mysql.xquery(query):
+            block.files.add(File(name, block, size))
 
     def _do_find_block_of(self, fullpath, datasets): #override
         query = 'SELECT d.`name`, b.`name` FROM `files` AS f'
@@ -657,35 +634,14 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql.insert_many('datasets', fields, mapping, datasets_to_insert, do_update = False)
 
-        # load the dataset ids
+        # load the ids of the inserted datasets and append to the update list
         dataset_id_map = {}
-        self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
+        self._make_dataset_map(datasets_to_insert, dataset_id_map = dataset_id_map)
+        for dataset in datasets_to_insert:
+            datasets_to_update.append((dataset_id_map[dataset], dataset))
 
         # insert/update blocks and files
         LOG.info('Inserting/updating blocks and files.')
-
-        # speedup - fetch all blocks and files of updated datasets
-        # if size, num_file, or is_open of a block or a file is updated, its dataset also is
-
-        block_entries = dict((did, []) for did, dataset in datasets_to_update if dataset.blocks is not None)
-
-        _dataset_id = 0
-        for entry in self._mysql.select_many('blocks', ('dataset_id', 'id', 'name', 'size', 'num_files', 'is_open'), 'dataset_id', block_entries.iterkeys(), order_by = '`dataset_id`'):
-            if entry[0] != _dataset_id:
-                _dataset_id = entry[0]
-                entry_list = block_entries[entry[0]] = []
-
-            entry_list.append(entry[1:])
-
-        file_entries = dict((did, []) for did, dataset in datasets_to_update if dataset.files is not None)
-
-        _dataset_id = 0
-        for entry in self._mysql.select_many('files', ('dataset_id', 'id', 'size', 'name'), 'dataset_id', file_entries.iterkeys(), order_by = '`dataset_id`'):
-            if entry[0] != _dataset_id:
-                _dataset_id = entry[0]
-                entry_list = file_entries[entry[0]] = []
-
-            entry_list.append(entry[1:])
 
         block_ids_to_delete = []
         blocks_to_update = []
@@ -693,79 +649,56 @@ class MySQLInventoryStore(InventoryStore):
         files_to_update = []
         files_to_insert = []
 
+        # loop over all datasets that were updated or inserted
         for dataset_id, dataset in datasets_to_update:
             if dataset.blocks is None:
                 continue
 
-            blocks = dict((b.real_name(), b) for b in dataset.blocks)
-
-            for block_id, name, size, num_files, is_open in block_entries[dataset_id]:
+            blocks_in_mem = dict((b.real_name(), b) for b in dataset.blocks)
+            blocks_in_db = self._mysql.xquery('SELECT `id`, `name`, `size`, `num_files`, `is_open` FROM `blocks` WHERE `dataset_id` = %s', dataset_id)
+            for block_id, name, size, num_files, is_open in blocks_in_db:
                 try:
-                    block = blocks.pop(name)
+                    block = blocks_in_mem.pop(name)
                 except KeyError:
                     # in DB but not in memory - TODO need to have "invalidated" flag and not delete
                     block_ids_to_delete.append(block_id)
                     continue
 
                 if size != block.size or num_files != block.num_files or is_open != block.is_open:
-                    blocks_to_update.append((block_id, name, block.size, block.num_files, block.is_open))
+                    blocks_to_update.append((block_id, block.size, block.num_files, block.is_open))
 
-            # remaining items in blocks are all new
+            # remaining items in blocks_in_mem are all new
+            # need to insert here to create block ids
             fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open')
             mapping = lambda b: (dataset_id, b.real_name(), b.size, b.num_files, b.is_open)
-            self._mysql.insert_many('blocks', fields, mapping, blocks.values(), do_update = False)
+            self._mysql.insert_many('blocks', fields, mapping, blocks_in_mem.itervalues(), do_update = False)
 
-            if dataset.files is None:
-                continue
-
-            name_block_map = dict((b.real_name(), b) for b in dataset.blocks)
             block_id_map = {}
-            for name, block_id in self._mysql.xquery('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
-                try:
-                    block = name_block_map[name]
-                except KeyError:
-                    # excess block entry in DB - will be taken care of by block_ids_to_delete list
+            self._mysql.make_map('blocks', dataset.blocks, object_id_map = block_id_map, key = lambda b: b.real_name())
+
+            for block in dataset.blocks:
+                if block.files is None:
                     continue
 
-                block_id_map[name_block_map[name]] = block_id
+                block_id = block_id_map[block]
 
-            files = dict((f.fullpath(), f) for f in dataset.files)
-            
-            for file_id, size, name in file_entries[dataset_id]:
-                try:
-                    lfile = files.pop(name)
-                except KeyError:
-                    # in DB but not in memory - TODO also invalidate, not delete
-                    file_ids_to_delete.append(file_id)
-                    continue
-                    
-                if size != lfile.size:
-                    files_to_update.append((file_id, lfile.size, name))
+                files_in_mem = dict((f.fullpath(), f) for f in block.files)
+                files_in_db = self._mysql.xquery('SELECT `id`, `name`, `size` FROM `files` WHERE `block_id` = %s', block_id)
+                for file_id, name, size in files_in_db:
+                    try:
+                        lfile = files_in_mem.pop(name)
+                    except KeyError:
+                        file_ids_to_delete.append(file_id)
+                        continue
 
-            for name, lfile in files.items():
-                files_to_insert.append((block_id_map[lfile.block], dataset_id, lfile.size, name))
+                    if size != lfile.size:
+                        files_to_update.append((file_id, size))
 
-        for dataset in datasets_to_insert:
-            if dataset.blocks is None:
-                continue
+                # remaining items in files_in_mem are all new
+                for name, lfile in files_in_mem.iteritems():
+                    files_to_insert.append((block_id, dataset_id, lfile.size, name))
 
-            dataset_id = dataset_id_map[dataset]
-
-            fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open')
-            mapping = lambda b: (dataset_id, b.real_name(), b.size, b.num_files, b.is_open)
-            self._mysql.insert_many('blocks', fields, mapping, dataset.blocks, do_update = False)
-
-            if dataset.files is None:
-                continue
-
-            name_block_map = dict((b.real_name(), b) for b in dataset.blocks)
-            block_id_map = {}
-            for name, block_id in self._mysql.xquery('SELECT `name`, `id` FROM `blocks` WHERE `dataset_id` = %s', dataset_id):
-                block_id_map[name_block_map[name]] = block_id
-
-            for lfile in dataset.files:
-                files_to_insert.append((block_id_map[lfile.block], dataset_id, lfile.size, lfile.fullpath()))
-
+        # delete blocks, files, block_replicas, and block_replica_sizes
         sqlbase = 'DELETE b, f, br, brs FROM `blocks` AS b'
         sqlbase += ' LEFT JOIN `files` AS f ON f.`block_id` = b.`id`'
         sqlbase += ' LEFT JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
@@ -773,15 +706,16 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql.execute_many(sqlbase, 'b.`id`', block_ids_to_delete)
 
+        # delete files
         self._mysql.delete_many('files', 'id', file_ids_to_delete)
         
         # update blocks
-        fields = ('id', 'name', 'size', 'num_files', 'is_open')
+        fields = ('id', 'size', 'num_files', 'is_open')
         # use INSERT ON DUPLICATE KEY UPDATE query
         self._mysql.insert_many('blocks', fields, None, blocks_to_update, do_update = True)
 
         # update files
-        fields = ('id', 'size', 'name')
+        fields = ('id', 'size')
         self._mysql.insert_many('files', fields, None, files_to_update, do_update = True)
 
         # insert files

@@ -1,6 +1,6 @@
 import sys
 
-from dataformat.exceptions import IntegrityError
+from dataformat.exceptions import ObjectError, IntegrityError
 
 class SitePartition(object):
     """State of a partition at a site."""
@@ -13,6 +13,12 @@ class SitePartition(object):
         self.quota = 0.
         # {dataset_replica: set(block_replicas) or None (if all blocks are in)}
         self.replicas = {}
+
+    def __str__(self):
+        return 'SitePartition %s/%s (quota %f, occupancy %f)' % (self.site.name, self.partition.name, self.quota, self.occupancy_fraction())
+
+    def __repr__(self):
+        return 'SitePartition(%s, %s)' % (repr(self.site), repr(self.partition))
 
     def set_quota(self, quota):
         if self.partition.parent is not None:
@@ -135,8 +141,7 @@ class Site(object):
             (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu, Site.status_name(self.status))
 
     def __repr__(self):
-        return 'Site(\'%s\', host=\'%s\', storage_type=%d, backend=\'%s\', storage=%d, cpu=%f, status=%d)' % \
-            (self.name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
+        return 'Site(\'%s\')' % self.name
 
     def find_dataset_replica(self, dataset):
         try:
@@ -180,6 +185,40 @@ class Site(object):
                 site_partition.replicas[replica] = None
             else:
                 site_partition.replicas[replica] = block_replicas
+
+    def add_block_replica(self, replica):
+        # this function should be called automatically to avoid integrity errors
+
+        try:
+            dataset_replica = self._dataset_replicas[replica.block.dataset]
+        except KeyError:
+            raise ObjectError('Dataset %s is not at %s' % (dataset.name, self.name))
+
+        if replica not in dataset_replica.block_replicas:
+            raise IntegrityError('%s is not a block replica of %s' % (str(replica), str(dataset_replica)))
+
+        for partition, site_partition in self.partitions.iteritems():
+            if not partition.contains(replica):
+                continue
+
+            try:
+                block_replica_list = site_partition.replicas[dataset_replica]
+            except KeyError:
+                if len(dataset_replica.block_replicas) == 1:
+                    # this is the sole block replica
+                    site_partition.replicas[dataset_replica] = None
+                else:
+                    site_partition.replicas[dataset_replica] = set(replica)
+            else:
+                if block_replica_list is None:
+                    # assume this function was called for all new block replicas
+                    # then we are just adding another replica to this partition
+                    pass
+                else:
+                    # again assuming this function is called for all new block replicas,
+                    # block_replica_list not being None implies that adding this new
+                    # replica will not make the dataset replica in this partition complete
+                    block_replica_list.add(replica)
 
     def update_partitioning(self, replica):
         for partition, site_partition in self.partitions.iteritems():

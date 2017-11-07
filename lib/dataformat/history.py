@@ -19,5 +19,19 @@ class HistoryRecord(object):
         self.completed = completed
         self.replicas = []
 
-    def __del__(self):
-        del self.replicas
+    def __str__(self):
+        if self.operation_type == HistoryRecord.OP_COPY:
+            op = 'COPY'
+        else:
+            op = 'DELETE'
+
+        return 'HistoryRecord (%s, id=%d, site=%s, timestamp=%d, approved=%s)' % \
+            (op, self.operation_id, self.site_name, self.timestamp, self.approved)
+
+    def __repr__(self):
+        if self.operation_type == HistoryRecord.OP_COPY:
+            op = 'OP_COPY'
+        else:
+            op = 'OP_DELETE'
+
+        return 'HistoryRecord(%s, %d, %s)' % (op, self.operation_id, self.site_name)

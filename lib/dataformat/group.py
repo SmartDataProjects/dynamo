@@ -16,4 +16,4 @@ class Group(object):
         return 'Group %s (olevel=%s)' % (self.name, self.olevel.__name__)
 
     def __repr__(self):
-        return 'Group(\'%s\', %s)' % (self.name, self.olevel.__name__)
+        return 'Group(\'%s\')' % (self.name)

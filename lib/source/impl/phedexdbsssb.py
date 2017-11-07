@@ -691,7 +691,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                 dataset.is_open = (dataset_entry['is_open'] == 'y')
 
                 if dataset.replicas is None:
-                    dataset.replicas = []
+                    dataset.replicas = set()
 
                 dataset_replica = None
 
@@ -722,7 +722,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                             is_open = (block_entry['is_open'] == 'y')
                         )
 
-                        dataset.blocks.append(block)
+                        dataset.blocks.add(block)
                         dataset.size += block.size
                         dataset.num_files += block.num_files
                         if dataset.status == Dataset.STAT_VALID:
@@ -769,8 +769,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
 
                             if dataset_replica is None:
                                 dataset_replica = DatasetReplica(dataset, site)
-                                dataset.replicas.append(dataset_replica)
-                                site.dataset_replicas.add(dataset_replica)
+                                dataset.replicas.add(dataset_replica)
+                                site.add_dataset_replica(dataset_replica)
 
                                 # first time associating this dataset with this site
                                 logger.debug('Instantiating dataset replica at %s', site.name)
@@ -813,7 +813,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                                 last_update = int(replica_entry['time_update'])
                             )
 
-                            dataset_replica.block_replicas.append(block_replica)
+                            dataset_replica.block_replicas.add(block_replica)
                             site.add_block_replica(block_replica)
 
                         else:
@@ -879,7 +879,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                         counters['new_datasets'] += 1
 
                 if dataset.replicas is None:
-                    dataset.replicas = []
+                    dataset.replicas = set()
 
                 if 'subscription' in dataset_entry:
                     for subscription in dataset_entry['subscription']:
@@ -896,8 +896,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
 
                         if dataset_replica is None:
                             dataset_replica = DatasetReplica(dataset, site)
-                            dataset.replicas.append(dataset_replica)
-                            site.dataset_replicas.add(dataset_replica)
+                            dataset.replicas.add(dataset_replica)
+                            site.add_dataset_replica(dataset_replica)
 
                         dataset_replica.is_custodial = (subscription['custodial'] == 'y')
 
@@ -942,8 +942,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                             
                             if dataset_replica is None:
                                 dataset_replica = DatasetReplica(dataset, site)
-                                dataset.replicas.append(dataset_replica)
-                                site.dataset_replicas.add(dataset_replica)
+                                dataset.replicas.add(dataset_replica)
+                                site.add_dataset_replica(dataset_replica)
 
                             is_custodial = (subscription['custodial'] == 'y')
                             dataset_replica.is_custodial = is_custodial
@@ -961,7 +961,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                                     last_update = 0
                                 )
 
-                                dataset_replica.block_replicas.append(block_replica)
+                                dataset_replica.block_replicas.add(block_replica)
                                 site.add_block_replica(block_replica)
 
                             else:
@@ -1273,7 +1273,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                     dataset.is_open = (ds_entry['is_open'] == 'y')
 
                     if dataset.blocks is None:
-                        dataset.blocks = []
+                        dataset.blocks = set()
                         dataset.size = 0
                         dataset.num_files = 0
 
@@ -1297,9 +1297,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                                 num_files = block_entry['files'],
                                 is_open = (block_entry['is_open'] == 'y')
                             )
-                            block.files = tuple()
+                            block.files = set()
 
-                            dataset.blocks.append(block)
+                            dataset.blocks.add(block)
 
                             dataset.size += block.size
                             dataset.num_files += block.num_files
@@ -1310,7 +1310,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                             block.num_files = block_entry['files']
                             block.is_open = (block_entry['is_open'] == 'y')
                             if block.files is None:
-                                block.files = tuple()
+                                block.files = set()
 
                         if block_entry['time_update'] is not None and int(block_entry['time_update']) > dataset.last_update:
                             dataset.last_update = int(block_entry['time_update'])
@@ -1320,7 +1320,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                             try:
                                 lfile = invalidated_files.pop(file_entry['lfn'])
                             except KeyError:
-                                block.files += (File(file_entry['lfn'], block, file_entry['size']),)
+                                block.files.add(File(file_entry['lfn'], block, file_entry['size']))
                             else:
                                 lfile.size = file_entry['size']
 
@@ -1529,153 +1529,3 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
             xml += '</dbs></data>'
 
         return xml
-
-
-if __name__ == '__main__':
-
-    import sys
-    from argparse import ArgumentParser
-
-    parser = ArgumentParser(description = 'PhEDEx interface')
-
-    parser.add_argument('command', metavar = 'COMMAND', help = 'Command to execute.')
-    parser.add_argument('options', metavar = 'EXPR', nargs = '*', default = [], help = 'Option string as passed to PhEDEx datasvc.')
-    parser.add_argument('--url', '-u', dest = 'phedex_url', metavar = 'URL', default = config.phedex.url_base, help = 'PhEDEx URL base.')
-    parser.add_argument('--method', '-m', dest = 'method', metavar = 'METHOD', default = 'GET', help = 'HTTP method.')
-    parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
-    parser.add_argument('--raw', '-A', dest = 'raw_output', action = 'store_true', help = 'Print RAW PhEDEx response.')
-    parser.add_argument('--test', '-T', dest = 'is_test', action = 'store_true', help = 'Test mode for commands delete and subscribe.')
- 
-    args = parser.parse_args()
-    sys.argv = []
-
-    if args.log_level:
-        try:
-            level = getattr(logging, args.log_level.upper())
-            logging.getLogger().setLevel(level)
-        except AttributeError:
-            logging.warning('Log level ' + args.log_level + ' not defined')
-
-    command = args.command
-
-    interface = PhEDExDBSSSB(phedex_url = args.phedex_url)
-
-    if args.method == 'POST':
-        method = POST
-    else:
-        method = GET
-
-    options = args.options
-
-    if command == 'delete' or command == 'subscribe':
-        method = POST
-
-        if not args.is_test and (args.phedex_url == config.phedex.url_base or 'prod' in args.phedex_url):
-            print 'Are you sure you want to run this command on a prod instance? [Y/n]'
-            response = sys.stdin.readline().strip()
-            if response != 'Y':
-                sys.exit(0)
-
-        site = None
-        group = None
-        datasets = []
-        blocks = {}
-        comments = ''
-        for io in xrange(len(args.options)):
-            opt = args.options[io]
-            matches = re.match('(node|group|dataset|block|comments)=(.+)', opt)
-            if not matches:
-                print 'Invalid argument ' + opt
-                sys.exit(1)
-
-            key = matches.group(1)
-            value = matches.group(2)
-
-            if key == 'node':
-                site = Site(value)
-            elif key == 'group':
-                group = Group(value)
-            elif key == 'dataset':
-                if not re.match('/[^/]+/[^/]+/[^/]+', value):
-                    print 'Invalid dataset name ' + value
-                    sys.exit(1)
-
-                if value not in datasets:
-                    datasets.append(value)
-            elif key == 'block':
-                if '#' in value:
-                    dname, bnane = value.split('#')
-                else:
-                    dname, bnane = value.split('%23')
-
-                if not re.match('/[^/]+/[^/]+/[^/]+', dname):
-                    print 'Invalid dataset name ' + dname
-                    sys.exit(1)
-    
-                if len(bnane) != 36:
-                    print 'Invalid block name ' + dname + '#' + bnane
-                    sys.exit(1)
-
-                try:
-                    if bname not in blocks[dname]:
-                        blocks[dname].append(bnane)
-                except KeyError:
-                    blocks[dname] = [bnane]
-
-            elif key == 'comments':
-                comments = value
-
-        if site is None or (command == 'subscribe' and group is None) or (len(datasets) == 0 and len(blocks) == 0) or comments == '':
-            print 'Must specify node, group, comments, and dataset or block'
-            sys.exit(1)
-
-        for dname in datasets:
-            if dname in blocks:
-                print 'Cannot make dataset-level and block-level requests of a same dataset.'
-                sys.exit(1)
-
-        replicas = []
-        for dname in datasets:
-            dataset = Dataset(dname)
-            replicas.append(DatasetReplica(dataset, site))
-
-        for dname, bnames in blocks.iteritems():
-            dataset = Dataset(dname)
-            dataset_replica = DatasetReplica(dataset, site)
-            replicas.append(dataset_replica)
-
-            for bname in bnames:
-                block = Block(Block.translate_name(bname), dataset, 0, 0, False)
-                # don't add the block to dataset (otherwise will become a dataset-level operation)
-                block_replica = BlockReplica(block, site, group, True, False, 0, 0)
-                dataset_replica.block_replicas.append(block_replica)
-
-        print 'Replicas', replicas
-        print 'Comments', comments
-        print 'Confirm ' + command + ' [Y/n]'
-        response = sys.stdin.readline().strip()
-        if response != 'Y':
-            sys.exit(0)
-
-        if command == 'delete':
-            interface.schedule_deletions(replicas, comments = comments, is_test = args.is_test)
-
-        elif command == 'subscribe':
-            interface.schedule_copies(replicas, group, comments = comments, is_test = args.is_test)
-
-        sys.exit(0)
-
-    elif command == 'updaterequest' or command == 'updatesubscription' or command == 'data':
-        method = POST
-
-    start = time.time()
-    result = interface._make_phedex_request(command, options, method = method, raw_output = args.raw_output)
-    end = time.time()
-
-    if command == 'requestlist':
-        result.sort(key = lambda x: x['id'])
-
-    pprint.pprint(result)
-    printed = time.time()
-
-    logger.info('Took %f seconds to retrieve data, %f seconds to print', end - start, printed - end)

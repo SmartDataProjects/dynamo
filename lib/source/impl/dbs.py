@@ -32,7 +32,7 @@ class DBS(DatasetInfoSourceInterface):
                 dataset.status = Dataset.status_val(ds_record['dataset_access_type'])
                 dataset.data_type = Dataset.data_type_val(ds_record['primary_ds_type'])
                 dataset.last_update = ds_record['last_modification_date']
-                dataset.blocks = []
+                dataset.blocks = set()
 
                 block_records = self._make_request('blocksummaries', ['dataset=' + ds_record['dataset'], 'detail=True'])
                 for block_record in block_records:
@@ -49,7 +49,7 @@ class DBS(DatasetInfoSourceInterface):
                     if block is None:
                         block = Block(block_name, dataset = dataset, size = block_record['block_size'], num_files = block_record['file_count'], is_open = is_open)
                 
-                        dataset.blocks.append(block)
+                        dataset.blocks.add(block)
                         dataset.size += block.size
                         dataset.num_files += block.num_files
 

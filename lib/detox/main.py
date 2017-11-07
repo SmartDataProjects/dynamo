@@ -166,7 +166,7 @@ class Detox(object):
                         block_replicas -= set(action.block_replicas)
     
                     elif isinstance(action, Protect):
-                        protect_candidates[replica].append((list(block_replicas), condition_id))
+                        protect_candidates[replica].append((set(block_replicas), condition_id))
     
                     elif isinstance(action, Delete):
                         unlinked_replicas = self.unlink_block_replicas(replica, block_replicas, policy, is_test)
@@ -183,9 +183,9 @@ class Detox(object):
     
                     elif isinstance(action, Dismiss):
                         if replica.site in triggered_sites:
-                            delete_candidates[replica].append((list(block_replicas), condition_id))
+                            delete_candidates[replica].append((set(block_replicas), condition_id))
                         else:
-                            keep_candidates[replica].append((list(block_replicas), condition_id))
+                            keep_candidates[replica].append((set(block_replicas), condition_id))
 
             for replica in empty_replicas:
                 all_replicas.remove(replica)
@@ -312,9 +312,9 @@ class Detox(object):
         deletion_list = []
         for replica, matches in deleted.iteritems():
             keep_parts[replica] = replica.block_replicas
-            replica.block_replicas = []
+            replica.block_replicas = set()
             for match in matches:
-                replica.block_replicas.extend(match[0])
+                replica.block_replicas.update(match[0])
 
             deletion_list.append(replica)
 
@@ -324,7 +324,7 @@ class Detox(object):
 
         # recover fragmented dataset replicas
         for replica, block_replicas in keep_parts.iteritems():
-            replica.block_replicas.extend(block_replicas)
+            replica.block_replicas.update(block_replicas)
 
         # then bring back replicas not in the partition
         policy.restore_replicas()

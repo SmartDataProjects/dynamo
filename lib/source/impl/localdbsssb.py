@@ -443,7 +443,7 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
                 block = dataset.find_block(bl_name)
                 if block is None:
                     block = Block(bl_name,dataset, blSize, nFiles, False)
-                    dataset.blocks.append(block)
+                    dataset.blocks.add(block)
 
                 for rfile in blockObj.allKids():
                     dfile = dataset.find_file(rfile)
@@ -464,7 +464,7 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
                                                              dsetObj.isComplete(csite),
                                                              custodial,
                                                              dsetObj.lastUpdated(csite))
-                            dataset.replicas.append(dataset_replica)
+                            dataset.replicas.add(dataset_replica)
                             sites[csite].dataset_replicas.add(dataset_replica)
                         else:
                             "dataset replica already exists"

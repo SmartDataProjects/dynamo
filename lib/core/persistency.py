@@ -103,14 +103,14 @@ class InventoryStore(object):
 
         self._do_load_blocks(dataset)
 
-    def load_files(self, dataset):
+    def load_files(self, block):
         """
         Load files for the given dataset.
         """
 
         logger.debug('load_files()')
         
-        self._do_load_files(dataset)
+        self._do_load_files(block)
 
     def find_block_of(self, fullpath, datasets):
         """

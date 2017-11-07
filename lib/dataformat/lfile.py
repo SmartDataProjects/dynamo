@@ -27,6 +27,12 @@ class File(object):
         self.directory_id = File.get_directory_id(path)
         self.block = block
         self.size = size
+
+    def __str__(self):
+        return 'File %s (size=%d, block=%s)' % (self.fullpath(), self.size, repr(self.block))
+
+    def __repr__(self):
+        return 'File(path=\'%s\', block=%s, size=%d)' % (self.fullpath(), repr(self.block), self.size)
     
     def fullpath(self):
         return File.directories[self.directory_id] + '/' + self.name

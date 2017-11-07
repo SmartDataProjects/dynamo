@@ -71,11 +71,11 @@ class DynamoInventory(object):
             in_store = False
 
             if load_blocks:
-                dataset.blocks = []
+                dataset.blocks = set()
             if load_files:
-                dataset.files = []
+                dataset.files = set()
             if load_replicas:
-                dataset.replicas = []
+                dataset.replicas = set()
 
         else:
             in_store = True
@@ -97,7 +97,7 @@ class DynamoInventory(object):
 
                 matches = re.match('\[(.+)\]$', condition_text)
                 if matches:
-                    partition = Partition(name, None)
+                    partition = Partition(name)
                     subpartitions[partition] = map(str.strip, matches.group(1).split(','))
                 else:
                     partition = Partition(name, Condition(condition_text, replica_variables))
@@ -116,18 +116,10 @@ class DynamoInventory(object):
 
     def find_block_of(self, fullpath):
         """
-        Return the Block that the file belongs to. If no Block is in memory, returns None.
+        Return the Block that the file belongs to.
         """
 
         return self.store.find_block_of(fullpath, self.datasets)
-
-    def unlink_all_replicas(self):
-        for dataset in self.datasets.values():
-            dataset.replicas = None
-
-        for site in self.sites.values():
-            site.dataset_replicas.clear()
-            site.clear_block_replicas()
 
     def add_dataset_to_site(self, dataset, site, group = None, blocks = None):
         """
@@ -136,12 +128,11 @@ class DynamoInventory(object):
 
         if dataset.replicas is None:
             # this would be a case where a dataset previously completely absent from the pool is added back, e.g. when staging a dataset from tape.
-            dataset.replicas = []
+            dataset.replicas = set()
 
         new_replica = DatasetReplica(dataset, site)
 
-        dataset.replicas.append(new_replica)
-        site.dataset_replicas.add(new_replica)
+        dataset.replicas.add(new_replica)
 
         if blocks is None:
             # dataset.blocks cannot be None at this point
@@ -149,8 +140,9 @@ class DynamoInventory(object):
 
         for block in blocks:
             block_replica = BlockReplica(block, site, group, is_complete = False, is_custodial = False, size = 0, last_update = 0)
-            new_replica.block_replicas.append(block_replica)
-            site.add_block_replica(block_replica)
+            new_replica.block_replicas.add(block_replica)
+
+        site.add_dataset_replica(new_replica)
 
         return new_replica
 
@@ -161,21 +153,21 @@ class DynamoInventory(object):
 
         dataset = block.dataset
 
-        drep = None
+        dataset_replica = None
         if dataset.replicas is None:
             # see note in add_dataset_to_site
-            dataset.replicas = []
+            dataset.replicas = set()
         else:
-            drep = dataset.find_replica(site)
+            dataset_replica = dataset.find_replica(site)
 
-        if drep is None:
-            drep = DatasetReplica(dataset, site)
+        if dataset_replica is None:
+            dataset_replica = DatasetReplica(dataset, site)
     
-            dataset.replicas.append(drep)
-            site.dataset_replicas.add(drep)
+            dataset.replicas.add(dataset_replica)
+            site.add_dataset_replica(dataset_replica)
 
         new_replica = BlockReplica(block, site, group, is_complete = False, is_custodial = False, size = 0, last_update = 0)
-        drep.block_replicas.append(new_replica)
+        dataset_replica.block_replicas.add(new_replica)
         site.add_block_replica(new_replica)
 
         return new_replica

@@ -53,7 +53,7 @@ class BlockAction(Action):
     def __init__(self, matched_line, block_replicas = []):
         Action.__init__(self, matched_line)
 
-        self.block_replicas = list(block_replicas)
+        self.block_replicas = set(block_replicas)
 
 class ProtectBlock(BlockAction):
     @staticmethod
@@ -273,21 +273,19 @@ class Policy(object):
         all_replicas = set()
 
         # stacking up replicas (rather than removing them one by one) for efficiency
-        site_all_dataset_replicas = dict((site, []) for site in target_sites)
-        site_all_block_replicas = dict((site, []) for site in target_sites)
+        site_all_dataset_replicas = dict((site, set()) for site in target_sites)
+        site_all_block_replicas = dict((site, set()) for site in target_sites)
 
         for dataset in inventory.datasets.itervalues():
             if dataset.replicas is None:
                 continue
 
-            ir = 0
-            while ir != len(dataset.replicas):
-                replica = dataset.replicas[ir]
+            for replica in list(dataset.replicas):
                 site = replica.site
                 # site occupancy is computed at the end by set_block_replicas
 
-                block_replicas = []                    
-                not_in_partition = []
+                block_replicas = set()
+                not_in_partition = set()
 
                 if site in target_sites:
                     for block_replica in replica.block_replicas:
@@ -295,19 +293,19 @@ class Policy(object):
                             # this block replica is in partition
                             if len(block_replicas) == 0:
                                 # first block replica
-                                site_all_dataset_replicas[site].append(replica)
+                                site_all_dataset_replicas[site].add(replica)
                                 site_block_replicas = site_all_block_replicas[site]
     
-                            site_block_replicas.append(block_replica)
-                            block_replicas.append(block_replica)
+                            site_block_replicas.add(block_replica)
+                            block_replicas.add(block_replica)
                         else:
-                            not_in_partition.append(block_replica)
+                            not_in_partition.add(block_replica)
 
                 if len(block_replicas) == 0:
                     # no block was in the partition
                     self.untracked_replicas[replica] = replica.block_replicas
-                    replica.block_replicas = []
-                    dataset.replicas.pop(ir)
+                    replica.block_replicas = set()
+                    dataset.replicas.remove(replica)
 
                 else:
                     replica.block_replicas = block_replicas
@@ -317,7 +315,6 @@ class Policy(object):
                         self.untracked_replicas[replica] = not_in_partition
 
                     all_replicas.add(replica)
-                    ir += 1
 
         for site, dataset_replicas in site_all_dataset_replicas.iteritems():
             site.dataset_replicas = set(dataset_replicas)
@@ -335,13 +332,13 @@ class Policy(object):
             site = replica.site
 
             if replica not in dataset.replicas:
-                dataset.replicas.append(replica)
+                dataset.replicas.add(replica)
 
             if replica not in site.dataset_replicas:
                 site.dataset_replicas.add(replica)
 
             for block_replica in block_replicas:
-                replica.block_replicas.append(block_replica)
+                replica.block_replicas.add(block_replica)
                 site.add_block_replica(block_replica)
 
     def evaluate(self, replica):
@@ -367,7 +364,7 @@ class Policy(object):
         # return block replicas taken away by BlockActions
         for action in actions:
             if isinstance(action, BlockAction):
-                replica.block_replicas.extend(action.block_replicas)
+                replica.block_replicas.update(action.block_replicas)
 
         return actions
         

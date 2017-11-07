@@ -401,7 +401,7 @@ class MySQL(object):
     def table_exists(self, table):
         return len(self.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s LIMIT 1', self.db_name(), table)) != 0
 
-    def make_map(self, table, objects, object_id_map = None, id_object_map = None, tmp_join = False):
+    def make_map(self, table, objects, object_id_map = None, id_object_map = None, key = None, tmp_join = False):
         objitr = iter(objects)
 
         if tmp_join:
@@ -414,7 +414,11 @@ class MySQL(object):
             objitr = iter(objlist)
 
             self.query('CREATE TABLE `%s` (`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL, PRIMARY KEY (`name`)) ENGINE=MyISAM DEFAULT CHARSET=latin1' % tmp_table)
-            self.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist)
+
+            if key is None:
+                self.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist)
+            else:
+                self.insert_many(tmp_table, ('name',), lambda obj: (key(obj),), objlist)
 
             name_to_id = dict(self.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_table)))
 
@@ -427,7 +431,10 @@ class MySQL(object):
         for obj in objitr:
             num_obj += 1
             try:
-                obj_id = name_to_id[obj.name]
+                if key is None:
+                    obj_id = name_to_id[obj.name]
+                else:
+                    obj_id = name_to_id[key(obj)]
             except KeyError:
                 continue
 
