@@ -1,3 +1,5 @@
+import copy
+
 class Partition(object):
     """
     Defines storage partitioning. Instances must replace contains() to a callable
@@ -17,6 +19,27 @@ class Partition(object):
 
     def __repr__(self):
         return 'Partition(name=\'%s\')' % self.name
+
+    def copy(self, other):
+        self._condition = copy.deepcopy(self._condition)
+
+    def unlinked_clone(self):
+        return Partition(self.name, copy.deepcopy(self._condition))
+
+    def linked_clone(self, inventory):
+        partition = self.unlinked_clone()
+
+        if self.subpartitions is not None:
+            partition.subpartitions = []
+            for subp in self.subpartitions:
+                partition.subpartions.append(inventory.partitions[subp.name])
+
+        if self.parent is not None:
+            partition.parent = inventory.partitions[self.parent.name]
+
+        inventory.partitions[partition.name] = partition
+
+        return partition
 
     def contains(self, replica):
         if self.subpartitions is None:

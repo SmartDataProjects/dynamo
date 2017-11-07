@@ -17,3 +17,15 @@ class Group(object):
 
     def __repr__(self):
         return 'Group(\'%s\')' % (self.name)
+    
+    def copy(self, other):
+        self.olevel = other.olevel
+
+    def unlinked_clone(self):
+        return Group(self.name, self.olevel)
+
+    def linked_clone(self, inventory):
+        group = Group(self.name, self.olevel)
+        inventory.groups[group.name] = group
+
+        return group

@@ -1,53 +1,4 @@
-import sys
-
 from dataformat.exceptions import ObjectError, IntegrityError
-
-class SitePartition(object):
-    """State of a partition at a site."""
-
-    __slots__ = ['site', 'partition', 'quota', 'replicas']
-
-    def __init__(self, site, partition):
-        self.site = site
-        self.partition = partition
-        self.quota = 0.
-        # {dataset_replica: set(block_replicas) or None (if all blocks are in)}
-        self.replicas = {}
-
-    def __str__(self):
-        return 'SitePartition %s/%s (quota %f, occupancy %f)' % (self.site.name, self.partition.name, self.quota, self.occupancy_fraction())
-
-    def __repr__(self):
-        return 'SitePartition(%s, %s)' % (repr(self.site), repr(self.partition))
-
-    def set_quota(self, quota):
-        if self.partition.parent is not None:
-            # this is a subpartition. Update the parent partition quota
-            if quota < 0:
-                # quota < 0 -> infinite. This partition cannot be a subpartition
-                raise IntegrityError('Infinite quota set for a subpartition')
-
-            self.site.partitions[self.partition.parent].quota += quota - self.quota
-
-        self.quota = quota
-
-    def occupancy_fraction(self, physical = True):
-        if self.quota == 0.:
-            return sys.float_info.max
-        elif self.quota < 0.:
-            return 0.
-        else:
-            total_size = 0.
-            for replica, block_replicas in self.replicas.iteritems():
-                if block_replicas is None:
-                    total_size += replica.size(physica = physical)
-                elif physical:
-                    total_size += sum(br.size for br in block_replicas)
-                else:
-                    total_size += sum(br.block.size for br in block_replicas)
-
-            return total_size / self.quota
-
 
 class Site(object):
     """Represents a site. Owns lists of dataset and block replicas, which are organized into partitions."""
@@ -132,7 +83,7 @@ class Site(object):
         self.cpu = cpu # in kHS06
         self.status = status
 
-        self._dataset_replicas = {} # {Dataset: [DatasetReplica]}
+        self._dataset_replicas = {} # {Dataset: DatasetReplica}
 
         self.partitions = {} # {Partition: SitePartition}
 
@@ -142,6 +93,31 @@ class Site(object):
 
     def __repr__(self):
         return 'Site(\'%s\')' % self.name
+
+    def copy(self, other):
+        """Only copy simple member variables."""
+
+        self.host = other.host
+        self.storage_type = other.storage_type
+        self.backend = other.backend
+        self.storage = other.storage
+        self.cpu = other.cpu
+        self.status = other.status
+
+    def unlinked_clone(self):
+        return Site(self.name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
+
+    def linked_clone(self, inventory):
+        """Does not clone replicas."""
+
+        site = self.unlinked_clone()
+        inventory.sites[site.name] = site
+
+        for partition, site_partition in self.partitions.iteritems():
+            known_partition = inventory.partitions[partition.name]
+            site_partition.linked_clone(inventory) # gets added to site.partitions
+
+        return site
 
     def find_dataset_replica(self, dataset):
         try:

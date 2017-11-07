@@ -28,6 +28,25 @@ class Block(object):
     def __repr__(self):
         return 'Block(translate_name(\'%s\'), %s)' % (self.real_name(), repr(self.dataset))
 
+    def copy(self, other):
+        """Only copy simple member variables."""
+
+        self.dataset = other.dataset
+        self.size = other.size
+        self.num_files = other.num_files
+        self.is_open = other.is_open
+
+    def unlinked_clone(self):
+        dataset = self.dataset.unlinked_clone()
+        return Block(self.name, dataset, self.size, self.num_files, self.is_open)
+
+    def linked_clone(self, inventory):
+        dataset = inventory.datasets[self.dataset.name]
+        block = Block(self.name, dataset, self.size, self.num_files, self.is_open)
+        dataset.blocks.add(block)
+
+        return block
+
     def real_name(self):
         full_string = hex(self.name).replace('0x', '')[:-1] # last character is 'L'
         if len(full_string) < 32:
@@ -57,7 +76,19 @@ class Block(object):
         except StopIteration:
             return None
 
+    def add_file(self, lfile):
+        # this function can change block_replica.is_complete
+
+        if self.files is None:
+            raise ObjectError('Files are not loaded for %s' % self.full_name())
+
+        self.files.add(lfile)
+        self.size += lfile.size
+        self.num_files += 1
+
     def remove_file(self, lfile):
+        # this function can change block_replica.is_complete
+
         if self.files is None:
             raise ObjectError('Files are not loaded for %s' % self.full_name())
 

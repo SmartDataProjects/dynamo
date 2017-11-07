@@ -21,6 +21,26 @@ class DatasetReplica(object):
     def __repr__(self):
         return 'DatasetReplica(%s, %s)' % (repr(self.dataset), repr(self.site))
 
+    def copy(self, other):
+        self.is_complete = other.is_complete
+        self.is_custodial = other.is_custodial
+        self.last_block_created = other.last_block_created
+
+    def unlinked_clone(self):
+        dataset = self.dataset.unlinked_clone()
+        site = self.site.unlinked_clone()
+        return DatasetReplica(dataset, site, self.is_complete, self.is_custodial, self.last_block_created)
+
+    def linked_clone(self, inventory):
+        dataset = inventory.datasets[self.dataset.name]
+        site = inventory.sites[self.site.name]
+        replica = DatasetReplica(dataset, site, self.is_complete, self.is_custodial, self.last_block_created)
+
+        dataset.replicas.add(replica)
+        site.add_dataset_replica(replica)
+
+        return replica
+
     def is_last_copy(self):
         return len(self.dataset.replicas) == 1 and self.dataset.replicas[0] == self
 

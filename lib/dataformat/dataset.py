@@ -1,4 +1,5 @@
 import time
+import copy
 
 from dataformat.exceptions import ObjectError
 
@@ -77,21 +78,55 @@ class Dataset(object):
     def __repr__(self):
         return 'Dataset(\'%s\')' % self.name
 
-    def find_block(self, block_name):
+    def copy(self, other):
+        self.size = other.size
+        self.num_files = other.num_files
+        self.status = other.status
+        self.on_tape = other.on_tape
+        self.data_type = other.data_type
+        self.software_version = other.software_version
+        self.last_update = other.last_update
+        self.is_open = other.is_open
+
+        self.demand = copy.deepcopy(other.demand)
+
+    def unlinked_clone(self):
+        dataset = Dataset(self.name, self.size, self.num_files, self.status, self.on_tape, self.data_type,
+            self.software_version, self.last_update, self.is_open)
+
+        dataset.demand = copy.deepcopy(other.demand)
+
+    def linked_clone(self, inventory):
+        """Does not clone replicas."""
+        dataset = self.unlinked_clone()
+        inventory.datasets[dataset.name] = dataset
+
+        for block in self.blocks:
+            block.linked_clone(inventory) # gets added to dataset.blocks
+            
+        return dataset
+
+    def find_block(self, block_name, must_find = False):
         try:
             return next(b for b in self.blocks if b.name == block_name)
         except StopIteration:
-            return None
+            if must_find:
+                raise ObjectError('Could not find block %s in %s', block_name, self.name)
+            else:
+                return None
 
-    def find_file(self, path):
+    def find_file(self, path, must_find = False):
         for block in self.blocks:
             f = block.find_file(path)
             if f is not None:
                 return f
 
-        return None
+        if must_find:
+            raise ObjectError('Could not find file %s in %s', path, self.name)
+        else:
+            return None
 
-    def find_replica(self, site):
+    def find_replica(self, site, must_find = False):
         try:
             if type(site) is str:
                 return next(r for r in self.replicas if r.site.name == site)
@@ -99,7 +134,15 @@ class Dataset(object):
                 return next(r for r in self.replicas if r.site == site)
 
         except StopIteration:
-            return None
+            if must_find:
+                raise ObjectError('Could not find replica on %s of %s', str(site), self.name)
+            else:
+                return None
+
+    def add_block(self, block):
+        self.blocks.add(block)
+        self.size += block.size
+        self.num_files += block.num_files
 
     def remove_block(self, block):
         self.blocks.remove(block)
