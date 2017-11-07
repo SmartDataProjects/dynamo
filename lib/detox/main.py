@@ -399,7 +399,8 @@ class Detox(object):
 
         if not is_test:
             # are we relying on do_update = True in insert_many <- add_blockreplicas here?
-            self.inventory_manager.store.update_blockreplicas(block_replicas)
+            # report back to main thread
+            pass
 
     def commit_deletions(self, run_number, policy, deletion_list, is_test, comment):
         """
@@ -497,7 +498,8 @@ class Detox(object):
                         block_replica.group = None
                     
                     if not is_test:
-                        self.inventory_manager.store.update_blockreplicas(replica.block_replicas)
+                        # report back to main thread
+                        pass
 
                 if approved and not is_test:
                     total_size += size

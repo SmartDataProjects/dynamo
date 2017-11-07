@@ -622,10 +622,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                 # dataset is already marked for further inspection or ignored
                 continue
 
-            if dataset.blocks is None or dataset.replicas is None:
-                # dataset is not loaded up
-                continue
-
             # check for potentially invalidated blocks
             blocks_with_replicas = set()
             for replica in dataset.replicas:
@@ -677,10 +673,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
 
                 try:
                     dataset = inventory.datasets[ds_name]
-
-                    if dataset.blocks is None:
-                        inventory.store.load_blocks(dataset)
-
                 except KeyError:
                     dataset, in_store = inventory.load_dataset(ds_name, load_blocks = True, load_files = False, load_replicas = (last_update > 0), sites = site_list, groups = group_list)
 
@@ -689,9 +681,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                         counters['new_datasets'] += 1
 
                 dataset.is_open = (dataset_entry['is_open'] == 'y')
-
-                if dataset.replicas is None:
-                    dataset.replicas = set()
+                dataset.replicas.clear()
 
                 dataset_replica = None
 
@@ -867,10 +857,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
 
                 try:
                     dataset = inventory.datasets[ds_name]
-
-                    if dataset.blocks is None:
-                        inventory.store.load_blocks(dataset)
-
                 except KeyError:
                     dataset, in_store = inventory.load_dataset(ds_name, load_blocks = True, load_files = False, load_replicas = (last_update > 0), sites = site_list, groups = group_list)
 
@@ -878,8 +864,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                         new_dataset = True
                         counters['new_datasets'] += 1
 
-                if dataset.replicas is None:
-                    dataset.replicas = set()
+                    dataset.replicas.clear()
 
                 if 'subscription' in dataset_entry:
                     for subscription in dataset_entry['subscription']:
@@ -1116,10 +1101,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
            if dataset.status != Dataset.STAT_VALID and dataset.status != Dataset.STAT_PRODUCTION:
                continue
 
-           if dataset.blocks is None:
-               # this dataset is not loaded at the moment
-               continue
- 
            # set it back to NONE first
            dataset.on_tape = Dataset.TAPE_NONE
 
@@ -1271,11 +1252,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                         continue
     
                     dataset.is_open = (ds_entry['is_open'] == 'y')
-
-                    if dataset.blocks is None:
-                        dataset.blocks = set()
-                        dataset.size = 0
-                        dataset.num_files = 0
+                    dataset.blocks.clear()
+                    dataset.size = 0
+                    dataset.num_files = 0
 
                     # start from the full list of blocks and files and remove ones found in PhEDEx
                     invalidated_blocks = set(dataset.blocks)

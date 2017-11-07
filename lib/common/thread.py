@@ -1,10 +1,8 @@
 import threading
 import time
 import logging
-from functools import wraps
 
 from common.configuration import common_config
-
 
 class FunctionWrapper(object):
     def __init__(self, function):

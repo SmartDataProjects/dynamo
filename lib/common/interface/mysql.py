@@ -26,7 +26,7 @@ class MySQL(object):
     def escape_string(string):
         return MySQLdb.escape_string(string)
     
-    def __init__(self, host = '', user = '', passwd = '', config_file = '', config_group = '', db = '', max_query_len = 0):
+    def __init__(self, host = '', user = '', passwd = '', config_file = '', config_group = '', db = '', max_query_len = 0, reuse_connection = True):
         self._connection_parameters = {}
         if config_file:
             self._connection_parameters['read_default_file'] = config_file
@@ -40,7 +40,8 @@ class MySQL(object):
         if db:
             self._connection_parameters['db'] = db
 
-        self._connection = MySQLdb.connect(**self._connection_parameters)
+        self.reuse_connection = reuse_connection
+        self._connection = None
 
         self.max_query_len = max_query_len
 
@@ -48,7 +49,8 @@ class MySQL(object):
         return self._connection_parameters['db']
 
     def close(self):
-        self._connection.close()
+        if self._connection is not None:
+            self._connection.close()
 
     def query(self, sql, *args):
         """
@@ -58,52 +60,63 @@ class MySQL(object):
          - values if one column is called
         """
 
+        if self._connection is None:
+            self._connection = MySQLdb.connect(**self._connection_parameters)
+
         cursor = self._connection.cursor()
 
-        if logger.getEffectiveLevel() == logging.DEBUG:
-            if len(args) == 0:
-                logger.debug(sql)
-            else:
-                logger.debug(sql + ' % ' + str(args))
-
         try:
-            for attempt in range(10):
-                try:
-                    cursor.execute(sql, args)
-                    break
-                except MySQLdb.OperationalError:
-                    logger.error(str(sys.exc_info()[1]))
-                    last_except = sys.exc_info()[1]
-                    # reconnect to server
-                    cursor.close()
-                    self._connection = MySQLdb.connect(**self._connection_parameters)
-                    cursor = self._connection.cursor()
+            if logger.getEffectiveLevel() == logging.DEBUG:
+                if len(args) == 0:
+                    logger.debug(sql)
+                else:
+                    logger.debug(sql + ' % ' + str(args))
     
-            else: # 10 failures
-                logger.error('Too many OperationalErrors. Last exception:')
-                raise last_except
-
-        except:
-            logger.error('There was an error executing the following statement:')
-            logger.error(sql[:10000])
-            logger.error(sys.exc_info()[1])
-            raise
-
-        result = cursor.fetchall()
-
-        if cursor.description is None:
-            if cursor.lastrowid != 0:
-                # insert query
-                return cursor.lastrowid
+            try:
+                for attempt in range(10):
+                    try:
+                        cursor.execute(sql, args)
+                        break
+                    except MySQLdb.OperationalError:
+                        logger.error(str(sys.exc_info()[1]))
+                        last_except = sys.exc_info()[1]
+                        # reconnect to server
+                        cursor.close()
+                        self._connection = MySQLdb.connect(**self._connection_parameters)
+                        cursor = self._connection.cursor()
+        
+                else: # 10 failures
+                    logger.error('Too many OperationalErrors. Last exception:')
+                    raise last_except
+    
+            except:
+                logger.error('There was an error executing the following statement:')
+                logger.error(sql[:10000])
+                logger.error(sys.exc_info()[1])
+                raise
+    
+            result = cursor.fetchall()
+    
+            if cursor.description is None:
+                if cursor.lastrowid != 0:
+                    # insert query
+                    return cursor.lastrowid
+                else:
+                    return cursor.rowcount
+    
+            elif len(result) != 0 and len(result[0]) == 1:
+                # single column requested
+                return [row[0] for row in result]
+    
             else:
-                return cursor.rowcount
+                return list(result)
 
-        elif len(result) != 0 and len(result[0]) == 1:
-            # single column requested
-            return [row[0] for row in result]
-
-        else:
-            return list(result)
+        finally:
+            cursor.close()
+    
+            if not self.reuse_connection:
+                self._connection.close()
+                self._connection = None
 
     def xquery(self, sql, *args):
         """
@@ -113,68 +126,78 @@ class MySQL(object):
          - values if one column is called
         """
 
+        if self._connection is None:
+            self._connection = MySQLdb.connect(**self._connection_parameters)
+
         cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
 
-        if logger.getEffectiveLevel() == logging.DEBUG:
-            if len(args) == 0:
-                logger.debug(sql)
-            else:
-                logger.debug(sql + ' % ' + str(args))
-
         try:
-            for attempt in range(10):
-                try:
-                    cursor.execute(sql, args)
-                    break
-                except MySQLdb.OperationalError:
-                    logger.error(str(sys.exc_info()[1]))
-                    last_except = sys.exc_info()[1]
-                    # reconnect to server
-                    cursor.close()
-                    self._connection = MySQLdb.connect(**self._connection_parameters)
-                    cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
+            if logger.getEffectiveLevel() == logging.DEBUG:
+                if len(args) == 0:
+                    logger.debug(sql)
+                else:
+                    logger.debug(sql + ' % ' + str(args))
     
-            else: # 10 failures
-                logger.error('Too many OperationalErrors. Last exception:')
-                raise last_except
-
-        except:
-            logger.error('There was an error executing the following statement:')
-            logger.error(sql[:10000])
-            logger.error(sys.exc_info()[1])
-            raise
-
-        if cursor.description is None:
-            raise RuntimeError('xquery cannot be used for non-SELECT statements')
-
-        row = cursor.fetchone()
-        if row is None:
-            cursor.close()
-            # having yield statements below makes this a 0-element iterator
+            try:
+                for attempt in range(10):
+                    try:
+                        cursor.execute(sql, args)
+                        break
+                    except MySQLdb.OperationalError:
+                        logger.error(str(sys.exc_info()[1]))
+                        last_except = sys.exc_info()[1]
+                        # reconnect to server
+                        cursor.close()
+                        self._connection = MySQLdb.connect(**self._connection_parameters)
+                        cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
+        
+                else: # 10 failures
+                    logger.error('Too many OperationalErrors. Last exception:')
+                    raise last_except
+    
+            except:
+                logger.error('There was an error executing the following statement:')
+                logger.error(sql[:10000])
+                logger.error(sys.exc_info()[1])
+                raise
+    
+            if cursor.description is None:
+                raise RuntimeError('xquery cannot be used for non-SELECT statements')
+    
+            row = cursor.fetchone()
+            if row is None:
+                # having yield statements below makes this a 0-element iterator
+                return
+    
+            single_column = (len(row) == 1)
+    
+            while row:
+                if single_column:
+                    yield row[0]
+                else:
+                    yield row
+    
+                row = cursor.fetchone()
+    
             return
 
-        single_column = (len(row) == 1)
-
-        while row:
-            if single_column:
-                yield row[0]
-            else:
-                yield row
-
-            row = cursor.fetchone()
-
-        cursor.close()
-        return
+        finally:
+            # only called on exception or return
+            cursor.close()
+    
+            if not self.reuse_connection:
+                self._connection.close()
+                self._connection = None
 
     def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = ''):
         result = []
 
         if type(key) is tuple:
             key_str = '(' + ','.join('`%s`' % k for k in key) + ')'
-        elif '`' not in key:
-            key_str = '`%s`' % key
-        else:
+        elif '`' in key or '(' in key:
             key_str = key
+        else:
+            key_str = '`%s`' % key
 
         sqlbase += ' WHERE '
 
@@ -198,9 +221,16 @@ class MySQL(object):
 
     def select_many(self, table, fields, key, pool, additional_conditions = [], order_by = ''):
         if type(fields) is str:
-            fields_str = '`%s`' % fields
-        else:
-            fields_str = ','.join('`%s`' % f for f in fields)
+            fields = (fields,)
+
+        quoted = []
+        for field in fields:
+            if '(' in field or '`' in field:
+                quoted.append(field)
+            else:
+                quoted.append('`%s`' % field)
+
+        fields_str = ','.join(quoted)
 
         sqlbase = 'SELECT {fields} FROM `{table}`'.format(fields = fields_str, table = table)
 

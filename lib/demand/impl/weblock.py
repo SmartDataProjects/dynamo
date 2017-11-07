@@ -148,16 +148,10 @@ class WebReplicaLock(object):
                             logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                             continue
 
-                        if dataset.replicas is None:
-                            continue
-
                         replica = dataset.find_replica(site)
                         if replica is None:
                             logger.debug('Replica of %s is not at %s in %s', dataset_name, site_name, source.url_base)
                             continue
-
-                        if dataset.blocks is None:
-                            inventory.store.load_blocks(dataset)
 
                         if block_real_name is None:
                             blocks = list(dataset.blocks)

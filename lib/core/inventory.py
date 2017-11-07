@@ -10,7 +10,7 @@ import core.impl
 LOG = logging.getLogger(__name__)
 
 class DynamoInventory(object):
-    def __init__(self, load_data = True):
+    def __init__(self):
         persistency_cls = getattr(core.impl, common_config.inventory.persistency.module)
         self.store = persistency_cls(common_config.inventory.persistency.config)
 
@@ -19,10 +19,9 @@ class DynamoInventory(object):
         self.datasets = {}
         self.partitions = {}
 
-        if load_data:
-            self.load()
+        self.load()
 
-    def load(self, dataset_filter = '*', load_blocks = True, load_files = False, load_replicas = True):
+    def load(self):
         self.sites.clear()
         self.groups.clear()
         self.datasets.clear()
@@ -33,56 +32,38 @@ class DynamoInventory(object):
         self.load_partitions()
 
         LOG.info('Loading data from local persistent storage.')
-        
-        site_names = self.store.get_site_list(include = common_config.inventory.included_sites, exclude = common_config.inventory.excluded_sites)
+
+        if common_config.debug.included_groups != '*':
+            group_names = self.store.get_group_names(include = [common_config.debug.included_groups])
+            LOG.debug('Group names %s', group_names)
+        else:
+            group_names = []
+       
+        site_names = self.store.get_site_names(include = common_config.inventory.included_sites, exclude = common_config.inventory.excluded_sites)
+
+        LOG.debug('Site names %s', site_names)
+
+        if common_config.debug.included_datasets != '*':
+            dataset_names = self.store.get_dataset_names(include = [common_config.debug.included_datasets])
+            LOG.debug('Dataset names %s', dataset_names)
+        else:
+            dataset_names = []
 
         self.store.load_data(
             self,
-            site_filt = site_names,
-            dataset_filt = dataset_filter,
-            load_blocks = load_blocks,
-            load_files = load_files,
-            load_replicas = load_replicas
+            group_names = group_names,
+            site_names = site_names,
+            dataset_names = dataset_names
         )
 
         num_dataset_replicas = 0
         num_block_replicas = 0
 
         for dataset in self.datasets.itervalues():
-            if dataset.replicas is None:
-                continue
-
             num_dataset_replicas += len(dataset.replicas)
             num_block_replicas += sum(len(r.block_replicas) for r in dataset.replicas)
 
         LOG.info('Data is loaded to memory. %d sites, %d groups, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.sites), len(self.groups), len(self.datasets), num_dataset_replicas, num_block_replicas)
-
-    def load_dataset(self, dataset_name, load_blocks = False, load_files = False, load_replicas = False, sites = None, groups = None):
-        """
-        Load a dataset from the store, and if it exists, add to self.datasets.
-        Maybe add an option to load from DatasetSource too?
-        """
-
-        dataset = self.store.load_dataset(dataset_name, load_blocks = load_blocks, load_files = load_files, load_replicas = load_replicas, sites = sites, groups = groups)
-
-        if dataset is None:
-            LOG.debug('Creating new dataset %s', dataset_name)
-            dataset = Dataset(dataset_name, status = Dataset.STAT_PRODUCTION)
-            in_store = False
-
-            if load_blocks:
-                dataset.blocks = set()
-            if load_files:
-                dataset.files = set()
-            if load_replicas:
-                dataset.replicas = set()
-
-        else:
-            in_store = True
-
-        self.datasets[dataset_name] = dataset
-
-        return dataset, in_store
 
     def load_partitions(self):
         with open(common_config.general.paths.base + '/policies/partitions.txt') as defsource:
@@ -113,13 +94,6 @@ class DynamoInventory(object):
             partition.subpartitions = subparts
             for subp in subparts:
                 subp.parent = partition
-
-    def find_block_of(self, fullpath):
-        """
-        Return the Block that the file belongs to.
-        """
-
-        return self.store.find_block_of(fullpath, self.datasets)
 
     def add_dataset_to_site(self, dataset, site, group = None, blocks = None):
         """

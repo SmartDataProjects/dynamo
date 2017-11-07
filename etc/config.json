@@ -51,6 +51,8 @@
   },
   "debug": {
     "time_profile": true,
-    "repeat_failed_thread": true
+    "repeat_failed_thread": true,
+    "included_groups": "*",
+    "included_datasets": "*"
   }
 }

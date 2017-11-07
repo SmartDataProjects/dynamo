@@ -60,43 +60,30 @@ class Dataset(object):
         self.last_update = last_update # in UNIX time
         self.is_open = is_open
 
+        self.blocks = set()
+        self.replicas = set()
+
         # "transient" members
-        self.blocks = None # is a set when loaded
-        self.replicas = None # is a set when loaded
         self.demand = {} # freeform key-value pairs
 
     def __str__(self):
-        if self.replicas is None:
-            replica_sites = '?'
-        else:
-            replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
+        replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset(\'%s\', size=%d, num_files=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %s blocks, replicas=%s)' % \
+        return 'Dataset(\'%s\', size=%d, num_files=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
             (self.name, self.size, self.num_files, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
             str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), \
-            '?' if self.blocks is None else str(len(self.blocks)), replica_sites)
+            len(self.blocks), replica_sites)
 
     def __repr__(self):
         return 'Dataset(\'%s\')' % self.name
 
-    def make_valid(self):
-        self.status = Dataset.STAT_VALID
-        self.blocks = set()
-        self.replicas = set()
-
     def find_block(self, block_name):
-        if self.blocks is None:
-            raise ObjectError('Blocks are not loaded for %s' % self.name)
-
         try:
             return next(b for b in self.blocks if b.name == block_name)
         except StopIteration:
             return None
 
     def find_file(self, path):
-        if self.blocks is None:
-            raise ObjectError('Blocks are not loaded for %s' % self.name)
-
         for block in self.blocks:
             f = block.find_file(path)
             if f is not None:
@@ -105,9 +92,6 @@ class Dataset(object):
         return None
 
     def find_replica(self, site):
-        if self.replicas is None:
-            raise ObjectError('Replicas are not loaded for %s' % self.name)
-
         try:
             if type(site) is str:
                 return next(r for r in self.replicas if r.site.name == site)
@@ -118,15 +102,11 @@ class Dataset(object):
             return None
 
     def remove_block(self, block):
-        if self.blocks is None:
-            raise ObjectError('Blocks are not loaded for %s' % self.name)
-
         self.blocks.remove(block)
         self.size -= block.size
         self.num_files -= block.num_files
 
-        if self.replicas is not None:
-            for replica in self.replicas:
-                block_replica = replica.find_block_replica(block)
-                if block_replica is not None:
-                    replica.remove_block_replica(block_replica)
+        for replica in self.replicas:
+            block_replica = replica.find_block_replica(block)
+            if block_replica is not None:
+                replica.remove_block_replica(block_replica)

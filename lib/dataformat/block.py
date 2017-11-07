@@ -17,8 +17,9 @@ class Block(object):
         self.num_files = num_files
         self.is_open = is_open
 
-        # sets when loaded
-        self.replicas = None
+        self.replicas = set()
+
+        # needs to be a weak set - weakref.WeakSet is only available for py2.7
         self.files = None
 
     def __str__(self):
@@ -47,9 +48,6 @@ class Block(object):
             return None
 
     def find_replica(self, site):
-        if self.replicas is None:
-            raise ObjectError('Replicas are not loaded for %s' % self.full_name())
-
         try:
             if type(site) is str:
                 return next(r for r in self.replicas if r.site.name == site)
@@ -60,19 +58,18 @@ class Block(object):
             return None
 
     def remove_file(self, lfile):
-        if self.blocks is None:
+        if self.files is None:
             raise ObjectError('Files are not loaded for %s' % self.full_name())
 
         self.files.remove(lfile)
         self.size -= lfile.size
         self.num_files -= 1
 
-        if self.replicas is not None:
-            for replica in self.replicas:
-                if replica.files is not None:
-                    try:
-                        replica.files.remove(lfile)
-                    except ValueError:
-                        pass
-                    else:
-                        replica.size -= lfile.size
+        for replica in self.replicas:
+            if replica.files is not None:
+                try:
+                    replica.files.remove(lfile)
+                except ValueError:
+                    pass
+                else:
+                    replica.size -= lfile.size

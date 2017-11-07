@@ -54,12 +54,6 @@ class MySQLReplicaLock(object):
 
             dataset_blocks = []
             for dataset in datasets:
-                if dataset.replicas is None:
-                    continue
-    
-                if dataset.blocks is None:
-                    inventory.store.load_blocks(dataset)
-
                 if block_pattern is None:
                     blocks = set(dataset.blocks)
 

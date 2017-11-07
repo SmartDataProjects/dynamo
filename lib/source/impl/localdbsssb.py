@@ -429,12 +429,11 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
             dataset = block = dfile = None
             if ds_name not in datasets:
                 dataset = Dataset(ds_name)
-                dataset.make_valid()
+                dataset.status = Dataset.STAT_VALID
                 datasets[ds_name] = dataset
             else:
                 dataset = datasets[ds_name]
-                if dataset.replicas is None:
-                    dataset.replicas = []
+                dataset.replicas.clear()
 
             for bl_name in dsetObj.allKids():
                 blockObj = dsetObj.getKid(bl_name)
