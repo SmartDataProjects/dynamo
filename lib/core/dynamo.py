@@ -14,8 +14,13 @@ LOG = logging.getLogger(__name__)
 class Dynamo(object):
     """Main daemon class."""
 
+    CMD_UPDATE, CMD_DELETE = range(2)
+
     def __init__(self):
-        pass
+        db_config = dict(common_config.mysql)
+        db_config['db'] = 'dynamoregister'
+        db_config['reuse_connection'] = False
+        self.registry = MySQL(**db_config)
 
     def run(self):
         """
@@ -31,11 +36,6 @@ class Dynamo(object):
 
         inventory = DynamoInventory()
 
-        db_config = dict(common_config.mysql)
-        db_config['db'] = 'dynamoregister'
-        db_config['reuse_connection'] = False
-        registry = MySQL(**db_config)
-
         child_processes = []
 
         LOG.info('Start polling for executables.')
@@ -44,11 +44,11 @@ class Dynamo(object):
             while True:
                 LOG.debug('Polling for executables.')
     
-                query = 'SELECT s.`id`, s.`title`, s.`file`, s.`user_id`, u.`name`, s.`content`, s.`type`, s.`write_request`'
-                query += ' FROM `action` AS s INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
-                query += ' WHERE s.`status` = \'new\''
-                query += ' ORDER BY s.`timestamp` LIMIT 1'
-                result = registry.query(query)
+                sql = 'SELECT s.`id`, s.`title`, s.`file`, s.`user_id`, u.`name`, s.`content`, s.`type`, s.`write_request`'
+                sql += ' FROM `action` AS s INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
+                sql += ' WHERE s.`status` = \'new\''
+                sql += ' ORDER BY s.`timestamp` LIMIT 1'
+                result = self.registry.query(sql)
 
                 sleep_time = 0
                 if len(result) == 0:
@@ -57,32 +57,21 @@ class Dynamo(object):
     
                 else:
                     exec_id, title, path, user_id, user_name, content, content_type, write_request = result[0]
-                    registry.query('UPDATE `action` SET `status` = \'run\' WHERE `id` = %s', exec_id)
+                    self.registry.query('UPDATE `action` SET `status` = \'run\' WHERE `id` = %s', exec_id)
 
                     if content_type == 'deletion_policy':
                         # this is a detox test run
                         pass
                     elif content_type == 'executable':
                         LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
-        
+
                         if write_request:
-                            # check authorization
-                            if content is None:
-                                checksum = None
-                            else:
-                                checksum = hashlib.md5(content).hexdigest()
-        
-                            query = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = %s'
-                            for auth_user_id in registry.query(query, title, checksum):
-                                if auth_user_id == 0 or auth_user_id == user_id:
-                                    break
-                            else:
+                            if not self.check_write_auth(title, user_id, content):
                                 LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
                                 # send a message
                                 continue
         
                             queue = multiprocessing.Queue(64)
-        
                         else:
                             queue = None
         
@@ -93,42 +82,9 @@ class Dynamo(object):
                         proc.start()
         
                         LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
-    
-                ichild = 0
-                while ichild != len(child_processes):
-                    exec_id, proc, user_name, path, queue = child_processes[ichild]
-    
-                    if queue is not None and not queue.empty():
-                        # the child process is wrapping up and wants to send us the list of updated objects
-                        # pool all updated objects into a list first
-                        updated_objects = []
-    
-                        while True:
-                            try:
-                                obj = queue.get(block = True, timeout = 1)
-                            except Queue.Empty:
-                                if proc.is_alive():
-                                    # still trying to say something
-                                    continue
-                                else:
-                                    break
-    
-                            updated_objects.append(obj)
-    
-                        if len(updated_objects) != 0:
-                            # process data
-                            sigint.block()
-                            inventory.update_objects(updated_objects)
-                            sigint.unblock()
-    
-                    if proc.is_alive():
-                        ichild += 1
-                    else:
-                        LOG.info('Executable %s (%s) from user %s completed (Exit code %d).', proc.name, path, user_name, proc.exitcode)
-                        child_processes.pop(ichild)
 
-                        registry.query('UPDATE `action` SET `status` = %s where `id` = %s', 'done' if proc.exitcode == 0 else 'fail', exec_id)
-    
+                self.collect_processes(inventory, child_processes)
+   
                 time.sleep(sleep_time)
 
         except KeyboardInterrupt:
@@ -146,20 +102,80 @@ class Dynamo(object):
                 if proc.is_alive():
                     LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
 
-                registry.query('UPDATE `action` SET `status` = \'terminated\' where `id` = %s', exec_id)
+                self.registry.query('UPDATE `action` SET `status` = \'terminated\' where `id` = %s', exec_id)
+
+    def check_write_auth(self, title, user, content):
+        # check authorization
+        if content is None:
+            checksum = None
+        else:
+            checksum = hashlib.md5(content).hexdigest()
+        
+        sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = %s'
+        for auth_user_id in self.registry.query(sql, title, checksum):
+            if auth_user_id == 0 or auth_user_id == user_id:
+                return True
+
+        return False
+
+    def collect_processes(self, inventory, child_processes):
+        ichild = 0
+        while ichild != len(child_processes):
+            exec_id, proc, user_name, path, queue = child_processes[ichild]
+    
+            if queue is not None and not queue.empty():
+                # the child process is wrapping up and wants to send us the list of updated objects
+                # pool all updated objects into a list first
+                updated_objects = []
+                deleted_objects = []
+    
+                while True:
+                    try:
+                        cmd, obj = queue.get(block = True, timeout = 1)
+                    except Queue.Empty:
+                        if proc.is_alive():
+                            # still trying to say something
+                            continue
+                        else:
+                            break
+                    else:
+                        if cmd == Dynamo.CMD_UPDATE:
+                            updated_objects.append(obj)
+                        elif cmd == Dynamo.CMD_DELETE:
+                            deleted_objects.append(obj)
+    
+                if len(updated_objects) != 0 or len(deleted_objects) != 0:
+                    # process data
+                    sigint.block()
+                    for obj in updated_objects:
+                        inventory.update(obj)
+                    for obj in deleted_objects:
+                        inventory.delete(obj)
+                    sigint.unblock()
+    
+            if proc.is_alive():
+                ichild += 1
+            else:
+                LOG.info('Executable %s (%s) from user %s completed (Exit code %d).', proc.name, path, user_name, proc.exitcode)
+                child_processes.pop(ichild)
+
+                self.registry.query('UPDATE `action` SET `status` = %s where `id` = %s', 'done' if proc.exitcode == 0 else 'fail', exec_id)
 
         
     @staticmethod
     def _run_one(inventory, executable, queue):
         if queue is not None:
             # create a list of updated objects the executable can fill
-            inventory.updated_objects = []
+            inventory._updated_objects = []
+            inventory._deleted_objects = []
 
         exec(executable, {'dynamo': inventory})
 
         if queue is not None:
-            for obj in inventory.updated_objects:
-                queue.put(obj)
+            for obj in inventory._updated_objects:
+                queue.put((Dynamo.CMD_UPDATE, obj))
+            for obj in inventory._deleted_objects:
+                queue.put((Dynamo.CMD_DELETE, obj))
 
             # can we close and quit here?
             while not queue.empty():

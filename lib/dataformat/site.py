@@ -133,7 +133,7 @@ class Site(object):
             except KeyError:
                 return None
         else:
-            # very inefficient operation
+            # lookup by block name - very inefficient operation
             for dataset_replica in self._dataset_replicas.itervalues():
                 for block_replica in dataset_replica.block_replicas:
                     if block_replica.block.name == block:
@@ -146,7 +146,6 @@ class Site(object):
 
     def add_dataset_replica(self, replica):
         self._dataset_replicas[replica.dataset] = replica
-        self._dataset_replicas[replica.dataset.name] = replica
 
         for partition, site_partition in self.partitions.iteritems():
             block_replicas = set()
@@ -227,10 +226,18 @@ class Site(object):
 
     def remove_dataset_replica(self, replica):
         self._dataset_replicas.pop(replica.dataset)
-        self._dataset_replicas.pop(replica.dataset.name)
 
         for site_partition in self.partitions.itervalues():
             try:
                 site_partition.replicas.pop(replica)
+            except KeyError:
+                pass
+
+    def remove_block_replica(self, replica):
+        dataset_replica = self._dataset_replicas[replica.block.dataset]
+
+        for site_partition in self.partitions.itervalues():
+            try:
+                block_replicas = site_partition.replicas[dataset_replica].remove(replica)
             except KeyError:
                 pass
