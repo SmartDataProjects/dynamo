@@ -40,9 +40,9 @@ class Dynamo(object):
         child_processes = []
 
         LOG.info('Start polling for executables.')
-        sleep_time = 0
 
         try:
+            first_wait = True
             while True:
                 LOG.debug('Polling for executables.')
     
@@ -53,16 +53,15 @@ class Dynamo(object):
                 result = self.registry.query(sql)
 
                 if len(result) == 0:
-                    if sleep_time == 0:
+                    if len(child_processes) == 0 and first_wait:
                         LOG.info('Waiting for executables.')
-                    else:
-                        LOG.debug('No executable found, sleeping for 5 seconds.')
+                        first_wait = False
 
                     sleep_time = 5
-    
-                else:
-                    sleep_time = 0
 
+                    LOG.debug('No executable found, sleeping for %d seconds.', sleep_time)
+
+                else:
                     exec_id, title, path, user_id, user_name, content, content_type, write_request = result[0]
                     self.registry.query('UPDATE `action` SET `status` = \'run\' WHERE `id` = %s', exec_id)
 
@@ -90,6 +89,9 @@ class Dynamo(object):
         
                         LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
 
+                    first_wait = True
+                    sleep_time = 0
+
                 self.collect_processes(inventory, child_processes)
    
                 time.sleep(sleep_time)
@@ -100,6 +102,7 @@ class Dynamo(object):
         except:
             # log the exception
             LOG.warning('Exception in main process. Terminating all child processes.')
+            raise
 
         finally:
             for exec_id, proc, user_name, path, pipe in child_processes:
@@ -166,7 +169,7 @@ class Dynamo(object):
                 LOG.info('Executable %s (%s) from user %s completed (Exit code %d).', proc.name, path, user_name, proc.exitcode)
                 child_processes.pop(ichild)
 
-                self.registry.query('UPDATE `action` SET `status` = %s where `id` = %s', 'done' if proc.exitcode == 0 else 'fail', exec_id)
+                self.registry.query('UPDATE `action` SET `status` = %s where `id` = %s', 'done' if proc.exitcode == 0 else 'failed', exec_id)
 
         
     @staticmethod
@@ -176,7 +179,13 @@ class Dynamo(object):
             inventory._updated_objects = []
             inventory._deleted_objects = []
 
+        stdout = sys.stdout
+        stderr = sys.stderr
         sys.stdout = open('/tmp/test.out', 'w')
+        sys.stderr = open('/tmp/test.err', 'w')
+
+        logging.shutdown()
+        reload(logging)
 
         exec(executable, {'dynamo': inventory})
 
@@ -191,3 +200,7 @@ class Dynamo(object):
                 time.sleep(1)
 
         sys.stdout.close()
+        sys.stderr.close()
+        sys.stdout = stdout
+        sys.stderr = stderr
+        

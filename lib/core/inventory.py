@@ -37,7 +37,7 @@ class DynamoInventory(object):
             group_names = self.store.get_group_names(include = [common_config.debug.included_groups])
             LOG.debug('Group names %s', group_names)
         else:
-            group_names = []
+            group_names = None
        
         site_names = self.store.get_site_names(include = common_config.inventory.included_sites, exclude = common_config.inventory.excluded_sites)
 
@@ -47,7 +47,7 @@ class DynamoInventory(object):
             dataset_names = self.store.get_dataset_names(include = [common_config.debug.included_datasets])
             LOG.debug('Dataset names %s', dataset_names)
         else:
-            dataset_names = []
+            dataset_names = None
 
         self.store.load_data(
             self,

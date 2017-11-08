@@ -125,6 +125,7 @@ class MySQLInventoryStore(InventoryStore):
 
         ## Load datasets
         LOG.info('Loading datasets.')
+        start = time.time()
 
         if self._mysql.table_exists('datasets_load_tmp'):
             self._mysql.query('DROP TABLE `datasets_load_tmp`')
@@ -132,7 +133,7 @@ class MySQLInventoryStore(InventoryStore):
         id_dataset_map = {}
         self._load_datasets(inventory, dataset_names, id_dataset_map)
 
-        LOG.info('Loaded %d datasets.', len(inventory.datasets))
+        LOG.info('Loaded %d datasets in %.1f seconds.', len(inventory.datasets), time.time() - start)
 
         ## Load blocks
         LOG.info('Loading blocks.')
@@ -309,8 +310,8 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' INNER JOIN `block_replicas` AS br ON (br.`block_id`, br.`site_id`) = (b.`id`, dr.`site_id`)'
         sql += ' LEFT JOIN `block_replica_sizes` AS brs ON (brs.`block_id`, brs.`site_id`) = (br.`block_id`, br.`site_id`)'
 
-        if self._mysql.table_exists('groupss_load_tmp'):
-            sql += ' INNER JOIN `groupss_load_tmp` AS gt ON gt.`id` = br.`group_id`'
+        if self._mysql.table_exists('groups_load_tmp'):
+            sql += ' INNER JOIN `groups_load_tmp` AS gt ON gt.`id` = br.`group_id`'
 
         if self._mysql.table_exists('sites_load_tmp'):
             sql += ' INNER JOIN `sites_load_tmp` AS st ON st.`id` = dr.`site_id`'
