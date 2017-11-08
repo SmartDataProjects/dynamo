@@ -50,7 +50,7 @@ class InventoryStore(object):
         
         raise NotImplementedError('get_dataset_names')
 
-    def load_data(self, inventory, group_names = [], site_names = [], dataset_names = []):
+    def load_data(self, inventory, group_names = None, site_names = None, dataset_names = None):
         """
         Load data into inventory.
         

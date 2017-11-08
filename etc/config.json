@@ -53,6 +53,6 @@
     "time_profile": true,
     "repeat_failed_thread": true,
     "included_groups": "*",
-    "included_datasets": "/*/RunIISummer1680*/*"
+    "included_datasets": "/*/RunIISummer16*/*"
   }
 }

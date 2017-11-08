@@ -35,7 +35,7 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql.query('UPDATE `system` SET `last_update` = FROM_UNIXTIME(%d)' % int(tm))
 
-    def get_group_names(self, include, exclude): #override
+    def get_group_names(self, include = ['*'], exclude = []): #override
         # Load groups
         group_names = []
 
@@ -58,7 +58,7 @@ class MySQLInventoryStore(InventoryStore):
 
         return group_names
 
-    def get_site_names(self, include, exclude): #override
+    def get_site_names(self, include = ['*'], exclude = []): #override
         # Load sites
         site_names = []
 
@@ -81,29 +81,25 @@ class MySQLInventoryStore(InventoryStore):
 
         return site_names
 
-    def get_dataset_names(self, include, exclude): #override
+    def get_dataset_names(self, include = ['*'], exclude = []): #override
         dataset_names = []
 
-        names = self._mysql.xquery('SELECT `name` FROM `datasets`')
-
-        for name in names:
-            for filt in include:
-                if fnmatch.fnmatch(name, filt):
-                    break
-            else:
-                # no match
-                continue
-
-            for filt in exclude:
-                if fnmatch.fnmatch(name, filt):
-                    break
-            else:
-                # no match
-                dataset_names.append(name)
+        include_patterns = []
+        for pattern in include:
+            sql = 'SELECT `name` FROM `datasets` WHERE `name` LIKE %s'
+            names = self._mysql.xquery(sql, pattern.replace('*', '%').replace('?', '_'))
+    
+            for name in names:
+                for filt in exclude:
+                    if fnmatch.fnmatch(name, filt):
+                        break
+                else:
+                    # no match
+                    dataset_names.append(name)
 
         return dataset_names
 
-    def load_data(self, inventory, group_names, site_names, dataset_names): #override
+    def load_data(self, inventory, group_names = None, site_names = None, dataset_names = None): #override
         ## Load groups
         LOG.info('Loading groups.')
 
@@ -174,7 +170,7 @@ class MySQLInventoryStore(InventoryStore):
     def _load_groups(self, inventory, group_names, id_group_map):
         sql = 'SELECT g.`id`, g.`name`, g.`olevel` FROM `groups` AS g'
 
-        if len(group_names) != 0:
+        if group_names is not None:
             # first dump the group ids into a temporary table, then constrain the original table
             self._mysql.query('CREATE TABLE `groups_load_tmp` (`id` int(11) unsigned NOT NULL, PRIMARY KEY (`id`))')
             sqlbase = 'INSERT INTO `groups_load_tmp` SELECT `id` FROM `groups`'
@@ -196,7 +192,7 @@ class MySQLInventoryStore(InventoryStore):
     def _load_sites(self, inventory, site_names, id_site_map):
         sql = 'SELECT s.`id`, s.`name`, s.`host`, s.`storage_type`+0, s.`backend`, s.`storage`, s.`cpu`, `status`+0 FROM `sites` AS s'
 
-        if len(site_names) != 0:
+        if site_names is not None:
             # first dump the site ids into a temporary table, then constrain the original table
             self._mysql.query('CREATE TABLE `sites_load_tmp` (`id` int(11) unsigned NOT NULL, PRIMARY KEY (`id`))')
             sqlbase = 'INSERT INTO `sites_load_tmp` SELECT `id` FROM `sites`'
@@ -224,7 +220,7 @@ class MySQLInventoryStore(InventoryStore):
         # Load site quotas
         sql = 'SELECT q.`site_id`, p.`name`, q.`storage` FROM `quotas` AS q INNER JOIN `partitions` AS p ON p.`id` = q.`partition_id`'
 
-        if len(site_names) != 0:
+        if site_names is not None:
             sql += ' INNER JOIN `sites_load_tmp` AS t ON t.`id` = q.`site_id`'
 
         for site_id, partition_name, storage in self._mysql.xquery(sql):
@@ -241,7 +237,7 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' FROM `datasets` AS d'
         sql += ' LEFT JOIN `software_versions` AS s ON s.`id` = d.`software_version_id`'
 
-        if len(dataset_names) != 0:
+        if dataset_names is not None:
             # first dump the dataset ids into a temporary table, then constrain the original table
             self._mysql.query('CREATE TABLE `datasets_load_tmp` (`id` int(11) unsigned NOT NULL, PRIMARY KEY (`id`))')
             sqlbase = 'INSERT INTO `datasets_load_tmp` SELECT `id` FROM `datasets`'

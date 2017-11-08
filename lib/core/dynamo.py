@@ -1,3 +1,4 @@
+import sys
 import time
 import logging
 import hashlib
@@ -39,6 +40,7 @@ class Dynamo(object):
         child_processes = []
 
         LOG.info('Start polling for executables.')
+        sleep_time = 0
 
         try:
             while True:
@@ -50,12 +52,17 @@ class Dynamo(object):
                 sql += ' ORDER BY s.`timestamp` LIMIT 1'
                 result = self.registry.query(sql)
 
-                sleep_time = 0
                 if len(result) == 0:
-                    LOG.debug('No executable found, sleeping for 5 seconds.')
+                    if sleep_time == 0:
+                        LOG.info('Waiting for executables.')
+                    else:
+                        LOG.debug('No executable found, sleeping for 5 seconds.')
+
                     sleep_time = 5
     
                 else:
+                    sleep_time = 0
+
                     exec_id, title, path, user_id, user_name, content, content_type, write_request = result[0]
                     self.registry.query('UPDATE `action` SET `status` = \'run\' WHERE `id` = %s', exec_id)
 
@@ -102,7 +109,7 @@ class Dynamo(object):
                 if proc.is_alive():
                     LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
 
-                self.registry.query('UPDATE `action` SET `status` = \'terminated\' where `id` = %s', exec_id)
+                self.registry.query('UPDATE `action` SET `status` = \'killed\' where `id` = %s', exec_id)
 
     def check_write_auth(self, title, user, content):
         # check authorization
@@ -169,6 +176,8 @@ class Dynamo(object):
             inventory._updated_objects = []
             inventory._deleted_objects = []
 
+        sys.stdout = open('/tmp/test.out', 'w')
+
         exec(executable, {'dynamo': inventory})
 
         if queue is not None:
@@ -180,3 +189,5 @@ class Dynamo(object):
             # can we close and quit here?
             while not queue.empty():
                 time.sleep(1)
+
+        sys.stdout.close()
