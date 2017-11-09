@@ -107,7 +107,7 @@ class MySQLInventoryStore(InventoryStore):
         if self._mysql.table_exists('groups_load_tmp'):
             self._mysql.query('DROP TABLE `groups_load_tmp`')
 
-        id_group_map = {}
+        id_group_map = {0: None}
         self._load_groups(inventory, group_names, id_group_map)
 
         LOG.info('Loaded %d groups.', len(inventory.groups))

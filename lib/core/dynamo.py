@@ -17,11 +17,22 @@ class Dynamo(object):
 
     CMD_UPDATE, CMD_DELETE = range(2)
 
-    def __init__(self):
-        db_config = dict(common_config.mysql)
-        db_config['db'] = 'dynamoregister'
-        db_config['reuse_connection'] = False
-        self.registry = MySQL(**db_config)
+    def __init__(self, config):
+        """
+        @param config  Content of root-privileged config file.
+        """
+
+        common_db_config = dict(common_config.mysql)
+        common_db_config.update(config.mysql)
+
+        registry_config = dict(common_db_config)
+        registry_config.update(config.registry.db_params)
+        registry_config['reuse_connection'] = False
+        self.registry = MySQL(**registry_config)
+
+        store_config = dict(common_db_config)
+        store_config.update(config.inventory.persistency)
+        self.inventory = DynamoInventory(persistency_config = store_config, load = False)
 
     def run(self):
         """
@@ -35,7 +46,7 @@ class Dynamo(object):
 
         LOG.info('Started dynamo daemon.')
 
-        inventory = DynamoInventory()
+        self.inventory.load()
 
         child_processes = []
 
@@ -81,7 +92,7 @@ class Dynamo(object):
                         else:
                             queue = None
         
-                        proc = multiprocessing.Process(target = Dynamo._run_one, name = title, args = (inventory, content, queue))
+                        proc = multiprocessing.Process(target = self._run_one, name = title, args = (content, queue))
                         child_processes.append((exec_id, proc, user_name, path, queue))
         
                         proc.daemon = True
@@ -92,7 +103,7 @@ class Dynamo(object):
                     first_wait = True
                     sleep_time = 0
 
-                self.collect_processes(inventory, child_processes)
+                self.collect_processes(child_processes)
    
                 time.sleep(sleep_time)
 
@@ -128,7 +139,7 @@ class Dynamo(object):
 
         return False
 
-    def collect_processes(self, inventory, child_processes):
+    def collect_processes(self, child_processes):
         ichild = 0
         while ichild != len(child_processes):
             exec_id, proc, user_name, path, queue = child_processes[ichild]
@@ -158,9 +169,9 @@ class Dynamo(object):
                     # process data
                     sigint.block()
                     for obj in updated_objects:
-                        inventory.update(obj)
+                        self.inventory.update(obj, write = True)
                     for obj in deleted_objects:
-                        inventory.delete(obj)
+                        self.inventory.delete(obj, write = True)
                     sigint.unblock()
     
             if proc.is_alive():
@@ -172,27 +183,34 @@ class Dynamo(object):
                 self.registry.query('UPDATE `action` SET `status` = %s where `id` = %s', 'done' if proc.exitcode == 0 else 'failed', exec_id)
 
         
-    @staticmethod
-    def _run_one(inventory, executable, queue):
+    def _run_one(self, executable, queue):
         if queue is not None:
             # create a list of updated objects the executable can fill
-            inventory._updated_objects = []
-            inventory._deleted_objects = []
+            self.inventory._updated_objects = []
+            self.inventory._deleted_objects = []
 
+        # Redirect STDOUT and STDERR to file, close STDIN
         stdout = sys.stdout
         stderr = sys.stderr
         sys.stdout = open('/tmp/test.out', 'w')
         sys.stderr = open('/tmp/test.err', 'w')
+        sys.stdin.close()
 
+        # Restart logging
         logging.shutdown()
         reload(logging)
 
-        exec(executable, {'dynamo': inventory})
+        # Re-initialize the inventory store with read-only connection
+        # This is for security and simply for concurrency - multiple processes
+        # should not share the same DB connection
+        self.inventory.init_store()
+
+        exec(executable, {'dynamo': self.inventory})
 
         if queue is not None:
-            for obj in inventory._updated_objects:
+            for obj in self.inventory._updated_objects:
                 queue.put((Dynamo.CMD_UPDATE, obj))
-            for obj in inventory._deleted_objects:
+            for obj in self.inventory._deleted_objects:
                 queue.put((Dynamo.CMD_DELETE, obj))
 
             # can we close and quit here?

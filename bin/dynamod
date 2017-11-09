@@ -1,21 +1,60 @@
 #!/usr/bin/env python
 
+import os
+import sys
+import pwd
+import json
 import logging
+import logging.handlers
 
 from core.dynamo import Dynamo
+from dataformat import Configuration
+from common.misc import unicode2str
 
-log_level = logging.INFO
+try:
+    debug = (os.environ['DYNAMO_SERVER_DEBUG'] == '1')
+except:
+    debug = 0
+
+if not debug:
+    if os.geteuid() != 0:
+        sys.stderr.write('Root privilege required\n')
+        sys.exit(1)
+
+    pidfile_path = '/var/run/dynamod.pid'
+    with open(pidfile_path, 'w') as pidfile:
+        pidfile.write('%d' % os.getpid())
+
+## Read server config (should be readable only to root)
+if 'DYNAMO_SERVER_CONFIG' in os.environ:
+    config_path = os.environ['DYNAMO_SERVER_CONFIG']
+else:
+    config_path = '/etc/dynamo/server_config.json'
+
+with open(config_path) as source:
+    config_dict = json.loads(source.read())
+    unicode2str(config_dict)
+    server_config = Configuration(**config_dict)
+
+log_level = getattr(logging, server_config.logging.level.upper())
 log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 
-logging.basicConfig(level = log_level, format = log_format)
+LOG = logging.getLogger()
+LOG.setLevel(log_level)
+if server_config.logging.path:
+    log_handler = logging.handlers.RotatingFileHandler(server_config.logging.path, maxBytes = 1000000, backupCount = 100)
+else:
+    log_handler = logging.StreamHandler()
+log_handler.setFormatter(logging.Formatter(fmt = log_format))
+LOG.addHandler(log_handler)
 
-#logname = '/var/log/dynamo/dynamod.log'
-#LOG = logging.getLogger()
-#LOG.setLevel(log_level)
-#log_handler = logging.handlers.RotatingFileHandler(logname, maxBytes = 1000000, backupCount = 100)
-#log_handler.setFormatter(logging.Formatter(fmt = log_format))
-#LOG.addHandler(log_handler)
+if not debug:
+    ## Now set effective user id to server_config.user
+    os.seteuid(pwd.getpwnam(server_config.user).pw_uid)
 
-daemon = Dynamo()
-
+daemon = Dynamo(server_config)
 daemon.run()
+
+if not debug:
+    os.seteuid(0)
+    os.unlink(pidfile_path)

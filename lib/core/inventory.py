@@ -10,16 +10,26 @@ import core.impl
 LOG = logging.getLogger(__name__)
 
 class DynamoInventory(object):
-    def __init__(self):
-        persistency_cls = getattr(core.impl, common_config.inventory.persistency.module)
-        self.store = persistency_cls(common_config.inventory.persistency.config)
-
+    def __init__(self, persistency_config = None, load = True):
         self.groups = {}
         self.sites = {}
         self.datasets = {}
         self.partitions = {}
 
-        self.load()
+        self.init_store(persistency_config)
+
+        if load:
+            self.load()
+
+    def init_store(self, config = None):
+        persistency_cls = getattr(core.impl, common_config.inventory.persistency.module)
+
+        if config is not None:
+            # can be privileged store instance
+            self.store = persistency_cls(config)
+        else:
+            # unprivileged read-only store instance
+            self.store = persistency_cls(common_config.inventory.persistency.config)
 
     def load(self):
         self.groups.clear()
@@ -137,7 +147,7 @@ class DynamoInventory(object):
 
         return new_replica
 
-    def update(self, obj):
+    def update(self, obj, write = False):
         """
         Update an object. Only update the member values of the immediate object.
         When calling from a subprocess, pass an unlinked copy to _updated_objects.
@@ -259,7 +269,11 @@ class DynamoInventory(object):
         if hasattr(self, '_updated_objects'):
             self._updated_objects.append(obj.unlinked_clone())
 
-    def delete(self, obj):
+        if write:
+            # do something with self.store
+            pass
+
+    def delete(self, obj, write = False):
         """
         Delete an object. Behavior over other objects linked to the one deleted
         depends on the type.
@@ -348,3 +362,7 @@ class DynamoInventory(object):
 
         if hasattr(self, '_deleted_objects'):
             self._deleted_objects.append(obj.unlinked_clone())
+
+        if write:
+            # do something with self.store
+            pass
