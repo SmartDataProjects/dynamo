@@ -1,9 +1,7 @@
 <?php
 
-include('/var/www/cgi-bin/dynamo/common/db_conf.php');
 include('/var/www/cgi-bin/dynamo/common/communicator.php');
 
-$uploadpath = '/var/www/html/dynamo/dynamo/images/';
 $filename=$_FILES['file']['name'];
 $filedata = $_FILES['file']['tmp_name'];
 
@@ -19,21 +17,24 @@ elseif ( end(explode('.', $filename)) != "txt" )
 else
   {
     $username=$_REQUEST['user'];
-    $db_name = 'dynamoregister';
-    $db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $db_name);
+    //$db_name = 'dynamoregister';
+    //$db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $db_name);
 
-    check_authentication($username,$db);
+    $userid = check_authentication($username,$db);
     $hash = hash_file('md5',$filedata);
-    if (!file_exists($uploadpath.$hash)){
-      if (copy($filedata,$uploadpath.$hash)){
-	communicate($hash,$db,$username,"dc");
-      }
-      else{
-	echo "Something went wrong."; echo "\n";
-      }
+    $rand = rand(1,10000000);
+
+    while (is_dir($uploadpath.$hash.$rand)){
+      $rand = rand(1,10000000);
+    }
+
+    if (!filecopy($filedata,$uploadpath.$hash.$rand."/policystack.txt")){
+      $filecontent = file_get_contents($uploadpath.$hash.$rand);//currently not used
+      communicate(0,"DeletionCampaign",$hash.$rand,$db,$userid,"deletion_policy");
+      echo "Results will be sent to you shortly."; echo "\n";
     }
     else{
-      echo "File already exists. Probably it is just being acted upon."; echo "\n";
+      echo "Something went wrong."; echo "\n";
     }
   }
 ?>

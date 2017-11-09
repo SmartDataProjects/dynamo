@@ -1,5 +1,25 @@
 <?php
 
+include('/var/www/cgi-bin/dynamo/common/db_conf.php');
+
+$uploadpath = '/local/dynamo/interface/';
+$db_name = 'dynamoregister';
+$db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $db_name);
+
+function filecopy($s1,$s2) {
+  $path = pathinfo($s2);
+  if (!file_exists($path['dirname'])) {
+    mkdir($path['dirname'], 0777, true);
+  }
+  if (!copy($s1,$s2)) {
+    echo "copy failed \n";
+  }
+  else{
+    chmod($path['dirname'], 0777);
+    chmod($s2, 0777);
+  }
+}
+
 function execQuery($qstring,$db){
   $locvar = 0;
   $stmt = $db->prepare($qstring);
@@ -30,7 +50,7 @@ function check_authentication($user,$db){
     exit();
   }
   else{
-    $qstring ="SELECT u.`email` FROM users AS u INNER JOIN authorized_users as au WHERE lower(u.`name`) = lower('$user') AND u.`id` = au.`user_id`";
+    $qstring ="SELECT au.`user_id` FROM users AS u INNER JOIN authorized_users as au WHERE lower(u.`name`) = lower('$user') AND u.`id` = au.`user_id`";
   }
   if (!execQuery($qstring,$db)){
    echo "Not a valid user."; echo "\n";
@@ -41,10 +61,13 @@ function check_authentication($user,$db){
   }
 }
 
-function communicate($filename,$db,$info,$type){
+function communicate($write,$title,$filename,$db,$username,$type){
   $status = 'new';
-  $qstring = 'insert into action(file,status,info,type) values'.
-    '(\''.$filename.'\',\''.$status.'\',\''.$info.'\',\''.$type.'\')';
+  date_default_timezone_set("EST");
+  $timestamp = date("Y-m-d H:i:s", time());
+
+  $qstring = 'insert into action(write_request,title,path,status,user_id,type,timestamp) values'.
+    '(\''.$write.'\',\''.$title.'\',\''.$filename.'\',\''.$status.'\',\''.$username.'\',\''.$type.'\',\''.$timestamp.'\')';
   echo "File successfully uploaded."; echo "\n";
 
   return execQuery($qstring,$db);
