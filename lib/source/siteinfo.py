@@ -3,52 +3,19 @@ class SiteInfoSourceInterface(object):
     Interface specs for probe to the site information source.
     """
 
-    def __init__(self):
+    def __init__(self, config):
         pass
 
-    def get_site_list(self, sites, include = ['*'], exclude = []):
+    def get_site_list(self):
         """
-        Fill the list of sites with sites that match the wildcard name.
-        Arguments:
-          sites: the name->site dict to be filled. Information of the sites already in the list will be updated.
-          filt: a wildcard string or a list of wildcard strings.
+        Return a list of unlinked site objects.
         """
-        pass
+        raise NotImplementedError('get_site_list')
 
-    def set_site_status(self, sites):
+    def get_site_status(self, site):
         """
-        Set site status.
-        Arguments:
-          sites: name->site dict to be updated.
+        Return the site status.
+        @param site  Site object
+        @returns Site.STAT_X flag
         """
-        pass
-
-
-if __name__ == '__main__':
-
-    from argparse import ArgumentParser
-    import common.interface.classes as classes
-
-    parser = ArgumentParser(description = 'Site information source interface')
-
-    parser.add_argument('command', metavar = 'COMMAND', nargs = '+', help = 'Command to execute.')
-    parser.add_argument('--class', '-c', metavar = 'CLASS', dest = 'class_name', default = '', help = 'SiteInfoSourceInterface class to be used.')
-
-    args = parser.parse_args()
-
-    command = args.command[0]
-    cmd_args = args.command[1:]
-
-    if args.class_name == '':
-        interface = classes.default_interface['site_source']()
-    else:
-        interface = getattr(classes, args.class_name)()
-
-    if command == 'list':
-        results = {}
-        if len(cmd_args) != 0:
-            interface.get_site_list(results, cmd_args[0])
-        else:
-            interface.get_site_list(results)
-
-        print results.keys()
+        raise NotImplementedError('get_site_status')

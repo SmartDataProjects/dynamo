@@ -34,8 +34,9 @@ else:
 with open(config_path) as source:
     config_dict = json.loads(source.read())
     unicode2str(config_dict)
-    server_config = Configuration(**config_dict)
+    server_config = Configuration(config_dict)
 
+## Set up logging (write to stderr unless path is given)
 log_level = getattr(logging, server_config.logging.level.upper())
 log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 

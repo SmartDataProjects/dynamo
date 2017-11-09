@@ -12,4 +12,4 @@ else:
 with open(config_path) as source:
     config_dict = json.loads(source.read())
     unicode2str(config_dict)
-    common_config = Configuration(**config_dict)
+    common_config = Configuration(config_dict)

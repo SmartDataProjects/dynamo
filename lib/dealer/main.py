@@ -121,13 +121,13 @@ class Dealer(object):
                 item_name = item.name
                 item_size = item.size * 1.e-12
                 find_replica_at = lambda s: s.find_dataset_replica(item)
-                make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(item, s, policy.group)
+                make_new_replica = self._add_dataset_to_site
 
             elif type(item) is Block:
                 item_name = item.dataset.name + '#' + item.real_name()
                 item_size = item.size * 1.e-12
                 find_replica_at = lambda s: s.find_block_replica(item)
-                make_new_replica_at = lambda s: self.inventory_manager.add_block_to_site(item, s, policy.group)
+                make_new_replica = self._add_block_to_site
 
             elif type(item) is list:
                 # list of blocks (must belong to the same dataset)
@@ -138,7 +138,7 @@ class Dealer(object):
                 item_name = dataset.name
                 item_size = sum(b.size for b in item) * 1.e-12
                 find_replica_at = lambda s: s.find_dataset_replica(dataset)
-                make_new_replica_at = lambda s: self.inventory_manager.add_dataset_to_site(dataset, s, policy.group, blocks = item)
+                make_new_replica = self._add_blocks_to_site
 
             else:
                 logger.warning('Invalid request found. Skipping.')
@@ -184,7 +184,7 @@ class Dealer(object):
 
             logger.info('Copying %s to %s', item_name, destination.name)
 
-            new_replica = make_new_replica_at(destination)
+            new_replica = make_new_replica(item, destination, policy.group)
 
             copy_list[destination].append(new_replica)
 
@@ -233,6 +233,30 @@ class Dealer(object):
 
                 self.history.make_copy_entry(run_number, site, operation_id, approved, [r.dataset for r in op_replicas], size)
 
+    def _add_dataset_to_site(self, dataset, site, group):
+        replica = DatasetReplica(dataset, site)
+        self.inventory_manager.update(replica)
+        for block in dataset.blocks:
+            block_replica = BlockReplica(block, site, group, size = 0, last_update = 0)
+            self.inventory_manager.update(block_replica)
+
+        return replica
+
+    def _add_block_to_site(self, block, site, group):
+        block_replica = BlockReplica(block, site, group, size = 0, last_update = 0)
+        self.inventory_manager.update(block_replica)
+
+        return block_replica
+
+    def _add_blocks_to_site(self, blocks, site, group):
+        dataset = blocks[0].dataset
+        replica = DatasetReplica(dataset, site)
+        self.inventory_manager.update(replica)
+        for block in blocks:
+            block_replica = BlockReplica(block, site, group, size = 0, last_update = 0)
+            self.inventory_manager.update(block_replica)
+        
+        return replica
 
 if __name__ == '__main__':
 

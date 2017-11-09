@@ -5,57 +5,51 @@ import collections
 import fnmatch
 import threading
 
-from source.siteinfo import SiteInfoSourceInterface
 from source.groupinfo import GroupInfoSourceInterface
-from source.replicainfo import ReplicaInfoSourceInterface
+from source.siteinfo import SiteInfoSourceInterface
 from source.datasetinfo import DatasetInfoSourceInterface
+from source.replicainfo import ReplicaInfoSourceInterface
 from common.interface.webservice import RESTService, GET, POST
 from dataformat import Dataset, Block, File, Site, Group, DatasetReplica, BlockReplica
 from common.thread import parallel_exec
 import common.configuration as config
 
-logger = logging.getLogger(__name__)
-if config.use_threads:
-    lock = threading.Lock()
+LOG = logging.getLogger(__name__)
 
 # Using POST requests with PhEDEx:
 # Accumulate dataset=/A/B/C options and make a query once every 10000 entries
 # PhEDEx does not document a hard limit on the length of POST request list.
 # 10000 was experimentally verified to be OK.
 
-class PhEDExDBSSSB(SiteInfoSourceInterface, GroupInfoSourceInterface, ReplicaInfoSourceInterface, DatasetInfoSourceInterface):
+class PhEDExDBSSSB(GroupInfoSourceInterface, SiteInfoSourceInterface, DatasetInfoSourceInterface, ReplicaInfoSourceInterface):
     """
     Interface to PhEDEx/DBS/SSB using datasvc REST API.
     """
 
-    def __init__(self, phedex_url = config.phedex.url_base, dbs_url = config.dbs.url_base, ssb_url = config.ssb.url_base):
-        SiteInfoSourceInterface.__init__(self)
-        GroupInfoSourceInterface.__init__(self)
-        ReplicaInfoSourceInterface.__init__(self)
-        DatasetInfoSourceInterface.__init__(self)
+    def __init__(self, config):
+        GroupInfoSourceInterface.__init__(self, config)
+        SiteInfoSourceInterface.__init__(self, config)
+        DatasetInfoSourceInterface.__init__(self, config)
+        ReplicaInfoSourceInterface.__init__(self, config)
 
-        self._phedex_interface = RESTService(phedex_url, use_cache = True)
-        self._dbs_interface = RESTService(dbs_url) # needed for detailed dataset info
-        self._ssb_interface = RESTService(ssb_url) # needed for site status
+        self._phedex_interface = RESTService(config.phedex_url, use_cache = True)
+        self._dbs_interface = RESTService(config.dbs_url) # needed for detailed dataset info
+        self._ssb_interface = RESTService(config.ssb_url) # needed for site status
 
-        self._last_request_time = 0
-        self._last_request_url = ''
-
-    def get_site_list(self, sites, include = ['*'], exclude = []): #override (SiteInfoSourceInterface)
+    def get_site_list(self): #override (SiteInfoSourceInterface)
         options = []
-        if len(include) == 0:
-            return
 
-        if len(include) > 1 or include[0] != '*':
-            options = ['node=%s' % s for s in include]
+        if include is not None:
+            options.extend('node=%s' % s for s in include)
 
-        logger.info('get_site_list  Fetching the list of nodes from PhEDEx')
-        source = self._make_phedex_request('nodes', options)
+        LOG.info('get_site_list  Fetching the list of nodes from PhEDEx')
 
-        for entry in source:
-            if entry['name'] not in sites and entry['name'] not in exclude:
-                site = Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology'])
-                sites[entry['name']] = site
+        site_list = []
+
+        for entry in self._make_phedex_request('nodes', options):
+            site_list.append(Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology']))
+
+        return site_list
         
     def set_site_status(self, sites): #override (SiteInfoSourceInterface)
         for site in sites.itervalues():
@@ -1056,9 +1050,6 @@ class PhEDExDBSSSB(SiteInfoSourceInterface, GroupInfoSourceInterface, ReplicaInf
         except KeyError:
             logger.error(resp)
             return
-
-        self._last_request = result['request_timestamp']
-        self._last_request_url = result['request_url']
 
         if logger.getEffectiveLevel() == logging.DEBUG:
             logger.debug(pprint.pformat(result))

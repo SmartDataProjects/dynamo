@@ -138,7 +138,12 @@ class QueueManager(object):
 
             #ask for size, update only if size is changing
             if dsetRep == None:
-                dsetRep = self._inventory.add_dataset_to_site(dataset,site,targetGroup)
+                dsetRep = DatasetReplica(dataset, site)
+                self._inventory.update(dsetRep)
+                for block in dataset.blocks:
+                    blockRep = BlockReplica(block, site, targetGroup, size = 0, last_update = 0)
+                    self._inventory.update(blockRep)
+
                 print "making new dataset replica"
 
             dsetDone = True
