@@ -30,7 +30,7 @@ if ($filedata != ''){
   }
 
   if (!filecopy($filedata,$uploadpath.$hash.$rand."/executable.py")){
-    communicate($write,$title,$hash,$db,$userid,$type,$email);
+    communicate($write,$title,$hash.$rand,$db,$userid,$type,$email);
   }
   else{
     echo "Something went wrong."; echo "\n";
