@@ -243,7 +243,7 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
                     continue
                 sourceSite = repl.site.name
                 for fileObj in fileList:
-                    requests.append((reqid,fileObj.fullpath(),sourceSite,targetSite,'new'))
+                    requests.append((reqid,fileObj.lfn,sourceSite,targetSite,'new'))
                 
             self._mysql.insert_many('transfer_queue',trqnames, lambda x: x, requests)
             request_mapping[reqid] = (True, [replica])
@@ -302,7 +302,7 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
             if status == 'new':
                 requests = []
                 for fileObj in fileList:
-                    requests.append((reqid,fileObj.fullpath(),targetSite,'new'))
+                    requests.append((reqid,fileObj.lfn,targetSite,'new'))
                 self._mysql.insert_many('deletion_queue',trqnames, lambda x: x, requests)
 
                 sql = "update requests_unified set status='queued' where reqid=" + str(reqid)

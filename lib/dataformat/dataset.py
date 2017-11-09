@@ -6,7 +6,7 @@ from dataformat.exceptions import ObjectError
 class Dataset(object):
     """Represents a dataset."""
 
-    __slots__ = ['name', 'size', 'num_files', 'status', 'on_tape',
+    __slots__ = ['_name', 'size', 'num_files', 'status', 'on_tape',
         'data_type', 'software_version', 'last_update', 'is_open',
         'blocks', 'replicas', 'requests', 'demand']
 
@@ -15,6 +15,10 @@ class Dataset(object):
     TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, 10)
     STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, 8)
     TAPE_NONE, TAPE_FULL, TAPE_PARTIAL = range(3)
+
+    @property
+    def name(self):
+        return self._name
 
     @staticmethod
     def data_type_name(arg):
@@ -51,7 +55,7 @@ class Dataset(object):
             return arg
 
     def __init__(self, name, size = 0, num_files = 0, status = STAT_UNKNOWN, on_tape = TAPE_NONE, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True):
-        self.name = name
+        self._name = name
         self.size = size # redundant with sum of block sizes when blocks are loaded
         self.num_files = num_files # redundant with sum of block num_files and len(files)
         self.status = status
@@ -71,12 +75,12 @@ class Dataset(object):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
         return 'Dataset(\'%s\', size=%d, num_files=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
-            (self.name, self.size, self.num_files, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
+            (self._name, self.size, self.num_files, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
             str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), \
             len(self.blocks), replica_sites)
 
     def __repr__(self):
-        return 'Dataset(\'%s\')' % self.name
+        return 'Dataset(\'%s\')' % self._name
 
     def copy(self, other):
         self.size = other.size
@@ -91,27 +95,36 @@ class Dataset(object):
         self.demand = copy.deepcopy(other.demand)
 
     def unlinked_clone(self):
-        dataset = Dataset(self.name, self.size, self.num_files, self.status, self.on_tape, self.data_type,
+        dataset = Dataset(self._name, self.size, self.num_files, self.status, self.on_tape, self.data_type,
             self.software_version, self.last_update, self.is_open)
 
-        dataset.demand = copy.deepcopy(other.demand)
+        dataset.demand = copy.deepcopy(self.demand)
 
-    def linked_clone(self, inventory):
-        """Does not clone replicas."""
-        dataset = self.unlinked_clone()
-        inventory.datasets[dataset.name] = dataset
+    def embed_into(self, inventory):
+        try:
+            dataset = inventory.datasets[self._name]
+        except KeyError:
+            dataset = self.unlinked_clone()
+            inventory.datasets.add(dataset)
+    
+            for block in self.blocks:
+                block.embed_into(inventory) # gets added to dataset.blocks
+        else:
+            dataset.copy(self)
 
-        for block in self.blocks:
-            block.linked_clone(inventory) # gets added to dataset.blocks
-            
-        return dataset
+    def delete_from(self, inventory):
+        # Pop the dataset from the main list, and remove all replicas.
+        dataset = inventory.datasets.pop(self._name)
+
+        for replica in dataset.replicas:
+            replica.site.remove_dataset_replica(replica)
 
     def find_block(self, block_name, must_find = False):
         try:
             return next(b for b in self.blocks if b.name == block_name)
         except StopIteration:
             if must_find:
-                raise ObjectError('Could not find block %s in %s', block_name, self.name)
+                raise ObjectError('Could not find block %s in %s', block_name, self._name)
             else:
                 return None
 
@@ -122,7 +135,7 @@ class Dataset(object):
                 return f
 
         if must_find:
-            raise ObjectError('Could not find file %s in %s', path, self.name)
+            raise ObjectError('Could not find file %s in %s', path, self._name)
         else:
             return None
 
@@ -135,7 +148,7 @@ class Dataset(object):
 
         except StopIteration:
             if must_find:
-                raise ObjectError('Could not find replica on %s of %s', str(site), self.name)
+                raise ObjectError('Could not find replica on %s of %s', str(site), self._name)
             else:
                 return None
 

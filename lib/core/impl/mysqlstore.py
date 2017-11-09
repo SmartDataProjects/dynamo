@@ -506,7 +506,7 @@ class MySQLInventoryStore(InventoryStore):
 
                 block_id = block_id_map[block]
 
-                files_in_mem = dict((f.fullpath(), f) for f in block.files)
+                files_in_mem = dict((f.lfn, f) for f in block.files)
                 files_in_db = self._mysql.xquery('SELECT `id`, `name`, `size` FROM `files` WHERE `block_id` = %s', block_id)
                 for file_id, name, size in files_in_db:
                     try:

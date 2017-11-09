@@ -917,7 +917,7 @@ class PhEDExDBSSSB(SiteInfoSourceInterface, GroupInfoSourceInterface, ReplicaInf
                         if block_entry['time_update'] is not None and int(block_entry['time_update']) > dataset.last_update:
                             dataset.last_update = int(block_entry['time_update'])
 
-                        invalidated_files = dict((f.fullpath(), f) for f in block.files)
+                        invalidated_files = dict((f.lfn, f) for f in block.files)
                         for file_entry in block_entry['file']:
                             try:
                                 lfile = invalidated_files.pop(file_entry['lfn'])

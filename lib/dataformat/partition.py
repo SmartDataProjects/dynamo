@@ -1,5 +1,7 @@
 import copy
 
+from dataformat.sitepartition import SitePartition
+
 class Partition(object):
     """
     Defines storage partitioning. Instances must replace contains() to a callable
@@ -21,25 +23,39 @@ class Partition(object):
         return 'Partition(name=\'%s\')' % self.name
 
     def copy(self, other):
-        self._condition = copy.deepcopy(self._condition)
+        self._condition = copy.deepcopy(other._condition)
 
     def unlinked_clone(self):
         return Partition(self.name, copy.deepcopy(self._condition))
 
-    def linked_clone(self, inventory):
-        partition = self.unlinked_clone()
+    def embed_into(self, inventory):
+        try:
+            partition = inventory.partitions[self.name]
+        except KeyError:
+            partition = self.unlinked_clone()
+    
+            if self.subpartitions is not None:
+                partition.subpartitions = []
+                for subp in self.subpartitions:
+                    partition.subpartions.append(inventory.partitions[subp.name])
+    
+            if self.parent is not None:
+                partition.parent = inventory.partitions[self.parent.name]
+    
+            inventory.partitions.add(partition)
 
-        if self.subpartitions is not None:
-            partition.subpartitions = []
-            for subp in self.subpartitions:
-                partition.subpartions.append(inventory.partitions[subp.name])
+            # update the site partition list at sites
+            for site in inventory.sites.itervalues():
+                site.partitions[partition] = SitePartition(site, partition)
+        else:
+            partition.copy(self)
 
-        if self.parent is not None:
-            partition.parent = inventory.partitions[self.parent.name]
+    def delete_from(self, inventory):
+        # Pop the partition from the main list, and remove site_partitions.
+        partition = inventory.partitions.pop(self.name)
 
-        inventory.partitions[partition.name] = partition
-
-        return partition
+        for site in inventory.sites.itervalues():
+            site.partitions.pop(partition)
 
     def contains(self, replica):
         if self.subpartitions is None:
@@ -50,4 +66,3 @@ class Partition(object):
                     return True
 
             return False
-

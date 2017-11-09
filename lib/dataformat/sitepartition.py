@@ -5,49 +5,63 @@ from dataformat.exceptions import IntegrityError
 class SitePartition(object):
     """State of a partition at a site."""
 
-    __slots__ = ['site', 'partition', 'quota', 'replicas']
+    __slots__ = ['_site', '_partition', 'quota', 'replicas']
+
+    @property
+    def site(self):
+        return self._site
+
+    @property
+    def partition(self):
+        return self._partition
 
     def __init__(self, site, partition, quota = 0.):
-        self.site = site
-        self.partition = partition
+        self._site = site
+        self._partition = partition
         self.quota = quota
         # {dataset_replica: set(block_replicas) or None (if all blocks are in)}
         self.replicas = {}
 
     def __str__(self):
-        return 'SitePartition %s/%s (quota %f, occupancy %f)' % (self.site.name, self.partition.name, self.quota, self.occupancy_fraction())
+        return 'SitePartition %s/%s (quota %f, occupancy %f)' % (self._site.name, self._partition.name, self.quota, self.occupancy_fraction())
 
     def __repr__(self):
-        return 'SitePartition(%s, %s)' % (repr(self.site), repr(self.partition))
+        return 'SitePartition(%s, %s)' % (repr(self._site), repr(self._partition))
 
     def copy(self, other):
+        # does not copy replicas
         self.quota = other.quota
 
     def unlinked_clone(self):
-        site = self.site.unlinked_clone()
-        partition = self.partition.unlinked_clone()
+        site = self._site.unlinked_clone()
+        partition = self._partition.unlinked_clone()
         return SitePartition(site, partition, self.quota)
 
-    def linked_clone(self, inventory):
-        """Does not clone replicas."""
+    def embed_into(self, inventory):
+        try:
+            site = inventory.sites[self._site.name]
+        except KeyError:
+            raise ObjectError('Unknown site %s', self._site.name)
 
-        site = inventory.sites[self.site.name]
-        partition = inventory.partitions[self.partition.name]
+        try:
+            partition = inventory.partitions[self._partition.name]
+        except KeyError:
+            raise ObjectError('Unknown partition %s', self._partition.name)
 
-        site_partition = SitePartition(site, partition, self.quota)
+        site_partition = site.partitions[partition]
+        site_partition.copy(self)
 
-        site.partitions[partition] = site_partition
-
-        return site_partition
+    def delete_from(self, inventory):
+        raise ObjectError('Deleting a single SitePartition is not allowed.')
 
     def set_quota(self, quota):
-        if self.partition.parent is not None:
+        if self._partition.parent is not None:
             # this is a subpartition. Update the parent partition quota
             if quota < 0:
                 # quota < 0 -> infinite. This partition cannot be a subpartition
                 raise IntegrityError('Infinite quota set for a subpartition')
 
-            self.site.partitions[self.partition.parent].quota += quota - self.quota
+            self._site.partitions[self._partition.parent].quota += quota - self.quota
 
         self.quota = quota
 

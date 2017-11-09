@@ -3,7 +3,15 @@ from dataformat.exceptions import ObjectError
 class Block(object):
     """Smallest data unit for data management."""
 
-    __slots__ = ['name', 'dataset', 'size', 'num_files', 'is_open', 'replicas', 'files']
+    __slots__ = ['_name', '_dataset', 'size', 'num_files', 'is_open', 'replicas', 'files']
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def dataset(self):
+        return self._dataset
 
     @staticmethod
     def translate_name(name_str):
@@ -11,8 +19,8 @@ class Block(object):
         return int(name_str.replace('-', ''), 16)
 
     def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False):
-        self.name = name
-        self.dataset = dataset
+        self._name = name
+        self._dataset = dataset
         self.size = size
         self.num_files = num_files
         self.is_open = is_open
@@ -23,50 +31,74 @@ class Block(object):
         self.files = None
 
     def __str__(self):
-        return 'Block %s#%s (size=%d, num_files=%d, is_open=%s)' % (self.dataset.name, self.real_name(), self.size, self.num_files, self.is_open)
+        return 'Block %s#%s (size=%d, num_files=%d, is_open=%s)' % (self._dataset.name, self.real_name(), self.size, self.num_files, self.is_open)
 
     def __repr__(self):
-        return 'Block(translate_name(\'%s\'), %s)' % (self.real_name(), repr(self.dataset))
+        return 'Block(translate_name(\'%s\'), %s)' % (self.real_name(), repr(self._dataset))
 
     def copy(self, other):
         """Only copy simple member variables."""
 
-        self.dataset = other.dataset
+        self._dataset = other.dataset
         self.size = other.size
         self.num_files = other.num_files
         self.is_open = other.is_open
 
     def unlinked_clone(self):
-        dataset = self.dataset.unlinked_clone()
-        return Block(self.name, dataset, self.size, self.num_files, self.is_open)
+        dataset = self._dataset.unlinked_clone()
+        return Block(self._name, dataset, self.size, self.num_files, self.is_open)
 
-    def linked_clone(self, inventory):
-        dataset = inventory.datasets[self.dataset.name]
-        block = Block(self.name, dataset, self.size, self.num_files, self.is_open)
-        dataset.blocks.add(block)
+    def embed_into(self, inventory):
+        try:
+            dataset = inventory.datasets[self._dataset.name]
+        except KeyError:
+            raise ObjectError('Unknown dataset %s', self._dataset.name)
 
-        return block
+        block = dataset.find_block(self._name)
+        if block is None:
+            dataset = inventory.datasets[self._dataset.name]
+            block = Block(self._name, dataset, self.size, self.num_files, self.is_open)
+            dataset.blocks.add(block)
+        else:
+            block.copy(self)
+
+    def delete_from(self, inventory):
+        # Remove the block from the dataset, and remove all replicas.
+        dataset = inventory.datasets[self._dataset.name]
+        block = dataset.find_block(self._name, must_find = True)
+        dataset.remove_block(block)
+        
+        for replica in block.replicas:
+            replica.site.remove_block_replica(replica)
 
     def real_name(self):
-        full_string = hex(self.name).replace('0x', '')[:-1] # last character is 'L'
+        full_string = hex(self._name).replace('0x', '')[:-1] # last character is 'L'
         if len(full_string) < 32:
             full_string = '0' * (32 - len(full_string)) + full_string
 
         return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]
 
     def full_name(self):
-        return self.dataset.name + '#' + self.real_name()
+        return self._dataset.name + '#' + self.real_name()
 
-    def find_file(self, path):
+    def find_file(self, lfn, must_find = False):
         if self.files is None:
             raise ObjectError('Files are not loaded for %s' % self.full_name())
 
         try:
-            return next(f for f in self.files if f.fullpath() == path)
-        except StopIteration:
-            return None
+            if type(lfn) is str:
+                return next(f for f in self.files if f.lfn == lfn)
+            else:
+                # can be a tuple (directory_id, basename)
+                return next(f for f in self.files if f.fid() == lfn)
 
-    def find_replica(self, site):
+        except StopIteration:
+            if must_find:
+                raise ObjectError('Cannot find file %s', str(lfn))
+            else:
+                return None
+
+    def find_replica(self, site, must_find = False):
         try:
             if type(site) is str:
                 return next(r for r in self.replicas if r.site.name == site)
@@ -74,7 +106,10 @@ class Block(object):
                 return next(r for r in self.replicas if r.site == site)
 
         except StopIteration:
-            return None
+            if must_find:
+                raise ObjectError('Cannot find replica at %s for %s', site.name, self.full_name())
+            else:
+                return None
 
     def add_file(self, lfile):
         # this function can change block_replica.is_complete

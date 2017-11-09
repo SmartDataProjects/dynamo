@@ -1,11 +1,21 @@
+from dataformat.exceptions import ObjectError
+
 class DatasetReplica(object):
     """Represents a dataset replica. Combines dataset and site information."""
 
-    __slots__ = ['dataset', 'site', 'is_complete', 'is_custodial', 'last_block_created', 'block_replicas']
+    __slots__ = ['_dataset', '_site', 'is_complete', 'is_custodial', 'last_block_created', 'block_replicas']
+
+    @property
+    def dataset(self):
+        return self._dataset
+
+    @property
+    def site(self):
+        return self._site
 
     def __init__(self, dataset, site, is_complete = False, is_custodial = False, last_block_created = 0):
-        self.dataset = dataset
-        self.site = site
+        self._dataset = dataset
+        self._site = site
         self.is_complete = is_complete # = complete subscription. Can still be partial
         self.is_custodial = is_custodial
         self.last_block_created = last_block_created
@@ -14,12 +24,12 @@ class DatasetReplica(object):
     def __str__(self):
         return 'DatasetReplica {site}:{dataset} (is_complete={is_complete}, is_custodial={is_custodial},' \
             ' {block_replicas_size} block_replicas)'.format(
-                site = self.site.name, dataset = self.dataset.name, is_complete = self.is_complete,
+                site = self._site.name, dataset = self._dataset.name, is_complete = self.is_complete,
                 is_custodial = self.is_custodial,
                 block_replicas_size = len(self.block_replicas))
 
     def __repr__(self):
-        return 'DatasetReplica(%s, %s)' % (repr(self.dataset), repr(self.site))
+        return 'DatasetReplica(%s, %s)' % (repr(self._dataset), repr(self._site))
 
     def copy(self, other):
         self.is_complete = other.is_complete
@@ -27,30 +37,51 @@ class DatasetReplica(object):
         self.last_block_created = other.last_block_created
 
     def unlinked_clone(self):
-        dataset = self.dataset.unlinked_clone()
-        site = self.site.unlinked_clone()
+        dataset = self._dataset.unlinked_clone()
+        site = self._site.unlinked_clone()
         return DatasetReplica(dataset, site, self.is_complete, self.is_custodial, self.last_block_created)
 
-    def linked_clone(self, inventory):
-        dataset = inventory.datasets[self.dataset.name]
-        site = inventory.sites[self.site.name]
-        replica = DatasetReplica(dataset, site, self.is_complete, self.is_custodial, self.last_block_created)
+    def embed_into(self, inventory):
+        try:
+            dataset = inventory.datasets[self._dataset.name]
+        except KeyError:
+            raise ObjectError('Unknown dataset %s', self._dataset.name)
 
-        dataset.replicas.add(replica)
-        site.add_dataset_replica(replica)
+        try:
+            site = inventory.sites[self._site.name]
+        except KeyError:
+            raise ObjectError('Unknown site %s', self._site.name)
 
-        return replica
+        replica = dataset.find_replica(site)
+        if replica is None:
+            replica = DatasetReplica(dataset, site, self.is_complete, self.is_custodial, self.last_block_created)
+    
+            dataset.replicas.add(replica)
+            site.add_dataset_replica(replica)
+        else:
+            replica.copy(self)
+
+    def delete_from(self, inventory):
+        dataset = inventory.datasets[self._dataset.name]
+        site = inventory.sites[self._site.name]
+        replica = site.find_dataset_replica(dataset)
+
+        dataset.replicas.remove(replica)
+        for block_replica in replica.block_replicas:
+            block_replica.block.replicas.remove(block_replica)
+
+        site.remove_dataset_replica(replica)
 
     def is_last_copy(self):
-        return len(self.dataset.replicas) == 1 and self.dataset.replicas[0] == self
+        return len(self._dataset.replicas) == 1 and self._dataset.replicas[0] == self
 
     def is_partial(self):
         # dataset.blocks must be loaded if a replica is created for the dataset
-        return self.is_complete and len(self.block_replicas) != len(self.dataset.blocks)
+        return self.is_complete and len(self.block_replicas) != len(self._dataset.blocks)
 
     def is_full(self):
         # dataset.blocks must be loaded if a replica is created for the dataset
-        return self.is_complete and len(self.block_replicas) == len(self.dataset.blocks)
+        return self.is_complete and len(self.block_replicas) == len(self._dataset.blocks)
 
     def size(self, groups = [], physical = True):
         if type(groups) is not list:
@@ -64,7 +95,7 @@ class DatasetReplica(object):
             if len(groups) == 0:
                 # no group spec
                 if self.is_full():
-                    return self.dataset.size
+                    return self._dataset.size
                 else:
                     if physical:
                         return sum([r.size for r in self.block_replicas])
@@ -77,7 +108,7 @@ class DatasetReplica(object):
                 else:
                     return sum([r.block.size for r in self.block_replicas if r.group in groups])
 
-    def find_block_replica(self, block):
+    def find_block_replica(self, block, must_find = False):
         try:
             if type(block).__name__ == 'Block':
                 return next(b for b in self.block_replicas if b.block == block)
@@ -85,8 +116,11 @@ class DatasetReplica(object):
                 return next(b for b in self.block_replicas if b.block.name == block)
 
         except StopIteration:
-            return None
+            if must_find:
+                raise ObjectError('Cannot find block replica %s/%s', self._site.name, block.full_name())
+            else:
+                return None
 
     def remove_block_replica(self, block_replica):
         self.block_replicas.remove(block_replica)
-        self.site.update_partitioning(self)
+        self._site.update_partitioning(self)

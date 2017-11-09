@@ -1,14 +1,19 @@
 from dataformat.exceptions import ObjectError, IntegrityError
+from dataformat.sitepartition import SitePartition
 
 class Site(object):
     """Represents a site. Owns lists of dataset and block replicas, which are organized into partitions."""
 
-    __slots__ = ['name', 'host', 'storage_type', 'backend',
+    __slots__ = ['_name', 'host', 'storage_type', 'backend',
         'storage', 'cpu', 'status',
         '_dataset_replicas', 'partitions']
 
     TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, 5)
     STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, 5)
+
+    @property
+    def name(self):
+        return self._name
 
     @staticmethod
     def storage_type_val(arg):
@@ -73,7 +78,7 @@ class Site(object):
             return arg
 
     def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN):
-        self.name = name
+        self._name = name
         self.host = host
         if type(storage_type) is str:
             storage_type = Site.storage_type_val(storage_type)
@@ -89,10 +94,10 @@ class Site(object):
 
     def __str__(self):
         return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s)' % \
-            (self.name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu, Site.status_name(self.status))
+            (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu, Site.status_name(self.status))
 
     def __repr__(self):
-        return 'Site(\'%s\')' % self.name
+        return 'Site(\'%s\')' % self._name
 
     def copy(self, other):
         """Only copy simple member variables."""
@@ -105,33 +110,55 @@ class Site(object):
         self.status = other.status
 
     def unlinked_clone(self):
-        return Site(self.name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
+        return Site(self._name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
 
-    def linked_clone(self, inventory):
-        """Does not clone replicas."""
+    def embed_into(self, inventory):
+        try:
+            site = inventory.sites[self._name]
+        except KeyError:
+            site = self.unlinked_clone()
+            inventory.sites.add(site)
+   
+            # this operation does not copy the list of replicas in the site partition
+            # because there may be unknown datasets / blocks
+            for site_partition in self.partitions.itervalues():
+                site_partition.embed_into(inventory)
+        else:
+            site.copy(self)
 
-        site = self.unlinked_clone()
-        inventory.sites[site.name] = site
+    def delete_from(self, inventory):
+        # Pop the site from the main list, and remove all replicas on the site.
+        site = inventory.sites.pop(self._name)
+        
+        for dataset in inventory.datasets.itervalues():
+            replica = dataset.find_replica(site)
+            if replica is None:
+                continue
 
-        for partition, site_partition in self.partitions.iteritems():
-            known_partition = inventory.partitions[partition.name]
-            site_partition.linked_clone(inventory) # gets added to site.partitions
+            dataset.replicas.remove(replica)
+            for block_replica in replica.block_replicas:
+                block_replica.block.replicas.remove(block_replica)
 
-        return site
-
-    def find_dataset_replica(self, dataset):
+    def find_dataset_replica(self, dataset, must_find = False):
         try:
             return self._dataset_replicas[dataset]
         except KeyError:
-            return None
+            if must_find:
+                raise ObjectError('Could not find replica of %s in %s', dataset.name, self._name)
+            else:
+                return None
 
-    def find_block_replica(self, block):
+    def find_block_replica(self, block, must_find = False):
         if type(block).__name__ == 'Block':
             try:
                 dataset_replica = self._dataset_replicas[block.dataset]
-                return dataset_replica.find_block_replica(block)
             except KeyError:
-                return None
+                if must_find:
+                    raise ObjectError('Could not find replica of %s in %s', block.dataset.name, self._name)
+                else:
+                    return None
+            else:
+                return dataset_replica.find_block_replica(block, must_find = must_find)
         else:
             # lookup by block name - very inefficient operation
             for dataset_replica in self._dataset_replicas.itervalues():
@@ -139,7 +166,10 @@ class Site(object):
                     if block_replica.block.name == block:
                         return block_replica
 
-            return None
+            if must_find:
+                raise ObjectError('Could not find replica of %s in %s', block.full_name(), self._name)
+            else:
+                return None
 
     def replica_iter(self):
         return self._dataset_replicas.itervalues()
@@ -167,7 +197,7 @@ class Site(object):
         try:
             dataset_replica = self._dataset_replicas[replica.block.dataset]
         except KeyError:
-            raise ObjectError('Dataset %s is not at %s' % (dataset.name, self.name))
+            raise ObjectError('Dataset %s is not at %s' % (dataset.name, self._name))
 
         if replica not in dataset_replica.block_replicas:
             raise IntegrityError('%s is not a block replica of %s' % (str(replica), str(dataset_replica)))

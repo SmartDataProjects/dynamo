@@ -1,14 +1,22 @@
 class File(object):
     """Represents a file. Atomic unit of data, but not used in data management."""
 
-    __slots__ = ['name', 'directory_id', 'block', 'size']
+    __slots__ = ['_directory_id', '_basename', '_block', 'size']
 
     directories = []
     directory_ids = {}
 
+    @property
+    def lfn(self):
+        return File.directories[self._directory_id] + '/' + self._basename
+
+    @property
+    def block(self):
+        return self._block
+
     @staticmethod
-    def get_directory_id(path):
-        directory = path[:path.rfind('/')]
+    def get_directory_id(lfn):
+        directory = lfn[:lfn.rfind('/')]
         try:
             directory_id = File.directory_ids[directory]
         except:
@@ -19,34 +27,56 @@ class File(object):
         return directory_id
 
     @staticmethod
-    def get_basename(path):
-        return path[path.rfind('/') + 1:]
+    def get_basename(lfn):
+        return lfn[lfn.rfind('/') + 1:]
 
-    def __init__(self, path, block = None, size = 0):
-        self.name = File.get_basename(path)
-        self.directory_id = File.get_directory_id(path)
-        self.block = block
+    def __init__(self, lfn, block = None, size = 0):
+        if type(lfn) is str:
+            self._directory_id = File.get_directory_id(lfn)
+            self._basename = File.get_basename(lfn)
+        else:
+            # can pass (directory_id, basename)
+            self._directory_id = lfn[0]
+            self._basename = lfn[1]
+
+        self._block = block
         self.size = size
 
     def __str__(self):
-        return 'File %s (size=%d, block=%s)' % (self.fullpath(), self.size, repr(self.block))
+        return 'File %s (block=%s, size=%d)' % (self.lfn, repr(self._block), self.size)
 
     def __repr__(self):
-        return 'File(path=\'%s\', block=%s, size=%d)' % (self.fullpath(), repr(self.block), self.size)
+        return 'File(lfn=\'%s\', block=%s, size=%d)' % (self.lfn, repr(self._block), self.size)
 
     def copy(self, other):
         self.size = other.size
 
     def unlinked_clone(self):
-        block = self.block.unlinked_clone()
-        return File(self.fullpath(), block, self.size)
+        block = self._block.unlinked_clone()
+        return File(self.lfn, block, self.size)
 
-    def linked_clone(self, inventory):
-        dataset = inventory.datasets[self.block.dataset.name]
-        block = dataset.find_block(self.block.name)
-        lfile = File(self.fullpath(), block, self.size)
-        block.add_file(lfile)
-        return lfile
-    
-    def fullpath(self):
-        return File.directories[self.directory_id] + '/' + self.name
+    def embed_into(self, inventory):
+        try:
+            dataset = inventory.datasets[self._block.dataset.name]
+        except KeyError:
+            raise SelfectError('Unknown dataset %s', self._block.dataset.name)
+
+        block = dataset.find_block(self._block.name, must_find = True)
+
+        fid = self.fid()
+
+        lfile = block.find_file(fid)
+        if lfile is None:
+            lfile = File(fid, block, self.size)
+            block.add_file(lfile)
+        else:
+            lfile.copy(self)
+
+    def delete_from(self, inventory):
+        dataset = inventory.datasets[self._block.dataset.name]
+        block = dataset.find_block(self._block.name)
+        lfile = block.find_file(self.fid())
+        block.remove_file(lfile)
+
+    def fid(self):
+        return (self._directory_id, self._basename)
