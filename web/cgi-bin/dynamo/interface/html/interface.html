@@ -13,18 +13,21 @@
   </head>
   <body>
     <header id="header">
-      <h1 id="pageTitle">Dynamo deletion campaign interface</h1>
+      <h1 id="pageTitle">Dynamo deletion planning</h1>
     </header>
     <main id="main">
       <section id="hSpace">
       </section>
 	<center>
-	  <div> You are currently using this tool as: ${USER}. </div>
+	  <div> You are currently using this tool as user '${USER}'. </div>
 	</center>
       <section id="uploadSection">
 	<center>
 	  <form action="http://t3desk006.mit.edu/dynamo/dynamo/upload_file.php?user=${USER}" method="post"
 		enctype="multipart/form-data">
+	    <br></br>
+	    <label for="emailAddress">Email address results should be sent to:</label><br>
+	    <input type="email" name="email" id="emailAddress"><br>
 	    <br></br>
 	    <label for="file">Policy file</label><br>
 	    <input type="file" name="file" id="file">

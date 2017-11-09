@@ -4,6 +4,8 @@ include('/var/www/cgi-bin/dynamo/common/communicator.php');
 
 $filename=$_FILES['file']['name'];
 $filedata = $_FILES['file']['tmp_name'];
+$email = $email=$_POST['email'];
+
 
 if ($_FILES['file']['error'] > 0)
   {
@@ -30,7 +32,19 @@ else
 
     if (!filecopy($filedata,$uploadpath.$hash.$rand."/policystack.txt")){
       $filecontent = file_get_contents($uploadpath.$hash.$rand);//currently not used
-      communicate(0,"DeletionCampaign",$hash.$rand,$db,$userid,"deletion_policy");
+
+      if(!$email){
+	$qstring ="SELECT u.`email` FROM users AS u INNER JOIN authorized_users as au WHERE lower(u.`name`) = lower('$username') AND u.`id` = au.`user_id`";
+	if (!execQuery($qstring,$db)){
+	  echo "Not a valid user."; echo "\n";
+	  exit();
+	}
+	else{
+	  $email = execQuery($qstring,$db);
+	}
+      }
+
+      communicate(0,"DeletionCampaign",$hash.$rand,$db,$userid,"deletion_policy",$email);
       echo "Results will be sent to you shortly."; echo "\n";
     }
     else{

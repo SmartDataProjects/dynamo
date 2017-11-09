@@ -8,6 +8,7 @@ $type = $_REQUEST['service'];
 $title = $_REQUEST['title'];
 $write = $_REQUEST['write'];
 $write = min(1,intval($write));
+$email = $_REQUEST['email'];
 
 if(!$type){
   $type = 'executable';//generic interaction
@@ -29,7 +30,7 @@ if ($filedata != ''){
   }
 
   if (!filecopy($filedata,$uploadpath.$hash.$rand."/executable.py")){
-    communicate($write,$title,$hash,$db,$userid,$type);
+    communicate($write,$title,$hash,$db,$userid,$type,$email);
   }
   else{
     echo "Something went wrong."; echo "\n";
