@@ -11,6 +11,7 @@ main = Configuration(
 
 popularity = Configuration(
     request_to_replica_threshold = 1.75, # (weighted number of requests) / (number of replicas) above which replication happens
+    source_groups = ['AnalysisOps'],
     max_replicas = 10
 )
 
