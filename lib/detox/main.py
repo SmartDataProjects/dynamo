@@ -203,23 +203,27 @@ class Detox(object):
             if len(delete_candidates) != 0:
                 # now figure out which of deletion candidates to actually delete
                 # first determine which sites to process
+
+                if detox_config.main.deletion_per_iteration > 0:
+                    # delete from one site at a time
+
+                    # compute the increment on the protected fractions
+                    fraction_increments = dict((site, 0.) for site in protected_fraction.iterkeys())
+                    for replicas, matches in protect_candidates.iteritems():
+                        quota = quotas[replica.site] * 1.e+12
+                        if quota > 0.:
+                            size = sum(sum(br.size for br in match[0]) for match in matches)
+                            fraction_increments[replica.site] += size / quota
+           
+                    # find the site with the highest protected fraction
+                    candidate_sites = set(r.site for r in delete_candidates.iterkeys())
+                    selected_site = max(candidate_sites, key = lambda site: protected_fraction[site] + fraction_increments[site])
     
-                # delete from one site at a time
+                    candidates_at_site = [r for r in delete_candidates.iterkeys() if r.site == selected_site]
+                    replicas_to_delete = sorted(candidates_at_site, key = policy.candidate_sort_key)
 
-                # compute the increment on the protected fractions
-                fraction_increments = dict((site, 0.) for site in protected_fraction.iterkeys())
-                for replicas, matches in protect_candidates.iteritems():
-                    quota = quotas[replica.site] * 1.e+12
-                    if quota > 0.:
-                        size = sum(sum(br.size for br in match[0]) for match in matches)
-                        fraction_increments[replica.site] += size / quota
-       
-                # find the site with the highest protected fraction
-                candidate_sites = set(r.site for r in delete_candidates.iterkeys())
-                selected_site = max(candidate_sites, key = lambda site: protected_fraction[site] + fraction_increments[site])
-
-                candidates_at_site = [r for r in delete_candidates.iterkeys() if r.site == selected_site]
-                replicas_to_delete = sorted(candidates_at_site, key = policy.candidate_sort_key)
+                else:
+                    replicas_to_delete = sorted(delete_candidates.iterkeys(), key = policy.candidate_sort_key)
     
                 deleted_volume = collections.defaultdict(float)
     
@@ -239,7 +243,7 @@ class Detox(object):
                     quota = quotas[site] * 1.e+12
 
                     # have we deleted more than allowed in a single iteration?
-                    if quota > 0. and deleted_volume[site] / quota > detox_config.main.deletion_per_iteration:
+                    if detox_config.main.deletion_per_iteration > 0. and quota > 0. and deleted_volume[site] / quota > detox_config.main.deletion_per_iteration:
                         continue
     
                     if logger.getEffectiveLevel() == logging.DEBUG:
