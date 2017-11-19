@@ -302,7 +302,7 @@ class MySQLInventoryStore(InventoryStore):
             id_block_map[block_id] = block
 
     def _load_replicas(self, inventory, id_group_map, id_site_map, id_dataset_map, id_block_maps):
-        sql = 'SELECT dr.`dataset_id`, dr.`site_id`, dr.`completion`, dr.`is_custodial`, UNIX_TIMESTAMP(dr.`last_block_created`),'
+        sql = 'SELECT dr.`dataset_id`, dr.`site_id`, dr.`is_custodial`,'
         sql += ' br.`block_id`, br.`group_id`, br.`is_complete`, br.`is_custodial`, brs.`size`, UNIX_TIMESTAMP(br.`last_update`)'
         sql += ' FROM `dataset_replicas` AS dr'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`'
@@ -324,7 +324,7 @@ class MySQLInventoryStore(InventoryStore):
         _dataset_id = 0
         _site_id = 0
         dataset_replica = None
-        for dataset_id, site_id, completion, is_custodial, last_block_created, block_id, group_id, is_complete, b_is_custodial, b_size, b_last_update in self._mysql.xquery(sql):
+        for dataset_id, site_id, is_custodial, block_id, group_id, is_complete, b_is_custodial, b_size, b_last_update in self._mysql.xquery(sql):
             if dataset_id != _dataset_id:
                 _dataset_id = dataset_id
 
@@ -348,9 +348,7 @@ class MySQLInventoryStore(InventoryStore):
                 dataset_replica = DatasetReplica(
                     dataset,
                     site,
-                    is_complete = (completion != 'incomplete'),
-                    is_custodial = is_custodial,
-                    last_block_created = last_block_created
+                    is_custodial = is_custodial
                 )
 
             block = id_block_map[block_id]
@@ -557,8 +555,8 @@ class MySQLInventoryStore(InventoryStore):
         # insert/update dataset replicas
         LOG.info('Updating replicas.')
 
-        fields = ('dataset_id', 'site_id', 'completion', 'is_custodial', 'last_block_created')
-        mapping = lambda r: (dataset_id_map[r.dataset], site_id_map[r.site], 'partial' if r.is_partial() else ('full' if r.is_complete else 'incomplete'), r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.last_block_created)))
+        fields = ('dataset_id', 'site_id', 'is_custodial')
+        mapping = lambda r: (dataset_id_map[r.dataset], site_id_map[r.site], r.is_custodial)
 
         all_replicas = []
         for dataset in datasets:
@@ -637,8 +635,8 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql.query('DELETE FROM `dataset_replicas` WHERE `site_id` IN ' + site_id_list)
 
-        fields = ('dataset_id', 'site_id', 'completion', 'is_custodial', 'last_block_created')
-        mapping = lambda r: (dataset_id_map[r.dataset], site_id_map[r.site], 'partial' if r.is_partial() else ('full' if r.is_complete else 'incomplete'), r.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.last_block_created)))
+        fields = ('dataset_id', 'site_id', 'is_custodial')
+        mapping = lambda r: (dataset_id_map[r.dataset], site_id_map[r.site], r.is_custodial)
 
         all_replicas = []
         for dataset in datasets:

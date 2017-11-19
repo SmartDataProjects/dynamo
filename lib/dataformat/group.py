@@ -28,14 +28,20 @@ class Group(object):
     def unlinked_clone(self):
         return Group(self._name, self.olevel)
 
-    def embed_into(self, inventory):
+    def embed_into(self, inventory, check = False):
         try:
             group = inventory.groups[self._name]
         except KeyError:
             group = self.unlinked_clone()
             inventory.groups.add(group)
+
+            return True
         else:
-            group.copy(self)
+            if check and obj == self:
+                return False
+            else:
+                group.copy(self)
+                return True
 
     def delete_from(self, inventory):
         # Pop the group from the main list. All block replicas owned by the group

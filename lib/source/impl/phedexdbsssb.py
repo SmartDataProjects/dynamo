@@ -3,7 +3,6 @@ import time
 import re
 import collections
 import fnmatch
-import threading
 
 from source.groupinfo import GroupInfoSourceInterface
 from source.siteinfo import SiteInfoSourceInterface
@@ -12,7 +11,7 @@ from source.replicainfo import ReplicaInfoSourceInterface
 from common.interface.webservice import RESTService, GET, POST
 from dataformat import Dataset, Block, File, Site, Group, DatasetReplica, BlockReplica
 from common.thread import parallel_exec
-import common.configuration as config
+from common.configuration import common_config
 
 LOG = logging.getLogger(__name__)
 
@@ -34,78 +33,7 @@ class PhEDExDBSSSB(GroupInfoSourceInterface, SiteInfoSourceInterface, DatasetInf
 
         self._phedex_interface = RESTService(config.phedex_url, use_cache = True)
         self._dbs_interface = RESTService(config.dbs_url) # needed for detailed dataset info
-        self._ssb_interface = RESTService(config.ssb_url) # needed for site status
 
-    def get_site_list(self): #override (SiteInfoSourceInterface)
-        options = []
-
-        if include is not None:
-            options.extend('node=%s' % s for s in include)
-
-        LOG.info('get_site_list  Fetching the list of nodes from PhEDEx')
-
-        site_list = []
-
-        for entry in self._make_phedex_request('nodes', options):
-            site_list.append(Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology']))
-
-        return site_list
-        
-    def set_site_status(self, sites): #override (SiteInfoSourceInterface)
-        for site in sites.itervalues():
-            site.status = Site.STAT_READY
-
-        # get list of sites in waiting room (153) and morgue (199)
-        for colid, stat in [(153, Site.STAT_WAITROOM), (199, Site.STAT_MORGUE)]:
-            result = self._ssb_interface.make_request('getplotdata', 'columnid=%d&time=2184&dateFrom=&dateTo=&sites=all&clouds=undefined&batch=1' % colid)
-            try:
-                source = result['csvdata']
-            except KeyError:
-                logger.error('SSB parse error')
-                return
-
-            latest_timestamp = {}
-    
-            for entry in source:
-                try:
-                    site = sites[entry['VOName']]
-                except KeyError:
-                    continue
-                
-                # entry['Time'] is UTC but we are only interested in relative times here
-                timestamp = time.mktime(time.strptime(entry['Time'], '%Y-%m-%dT%H:%M:%S'))
-                if site in latest_timestamp and latest_timestamp[site] > timestamp:
-                    continue
-
-                latest_timestamp[site] = timestamp
-
-                if entry['Status'] == 'in':
-                    site.status = stat
-                else:
-                    site.status = Site.STAT_READY
-
-    def get_group_list(self, groups, filt = '*'): #override (GroupInfoSourceInterface)
-        logger.info('get_group_list  Fetching the list of groups from PhEDEx')
-        source = self._make_phedex_request('groups')
-
-        if type(filt) is str:
-            filt = [filt]
-        
-        for entry in source:
-            name = entry['name']
-
-            if name in groups:
-                continue
-
-            for f in filt:
-                if fnmatch.fnmatch(name, f):
-                    break
-            else:
-                continue
-
-            group = Group(name)
-            groups[name] = group
-    
     def make_replica_links(self, inventory, site_filt = '*', group_filt = '*', dataset_filt = '*', last_update = 0): #override (ReplicaInfoSourceInterface)
         """
         Use blockreplicas to fetch a full list of all block replicas on the site (or a list corresponding to new replicas created 
@@ -733,28 +661,6 @@ class PhEDExDBSSSB(GroupInfoSourceInterface, SiteInfoSourceInterface, DatasetInf
         
         parallel_exec(inquire_phedex, dataset_chunks, print_progress = (ntotal > 1000))
 
-    def replica_exists_at_site(self, site, item): #override (ReplicaInfoSourceInterface)
-        """
-        Argument item can be a Dataset, Block, or File. Returns true if a replica exists at the site.
-        """
-
-        options = ['node=' + site.name]
-
-        if type(item) == Dataset:
-            options += ['dataset=' + item.name, 'show_dataset=y']
-        elif type(item) == DatasetReplica:
-            options += ['dataset=' + item.dataset.name, 'show_dataset=y']
-        elif type(item) == Block:
-            options += ['block=' + item.dataset.name + '%23' + item.real_name()]
-        elif type(item) == BlockReplica:
-            options += ['block=' + item.block.dataset.name + '%23' + item.block.real_name()]
-        else:
-            raise RuntimeError('Invalid input passed: ' + repr(item))
-        
-        source = self._make_phedex_request('blockreplicas', options)
-
-        return len(source) != 0
-
     def set_dataset_details(self, datasets): #override (DatasetInfoSourceInterface)
         """
         Argument datasets is a {name: dataset} dict.
@@ -1038,33 +944,6 @@ class PhEDExDBSSSB(GroupInfoSourceInterface, SiteInfoSourceInterface, DatasetInf
 
         parallel_exec(inquire_dbs, datasets, print_progress = (len(datasets) > 1000))
 
-    def _make_phedex_request(self, resource, options = [], method = GET, format = 'url', raw_output = False):
-        """
-        Make a single PhEDEx request call. Returns a list of dictionaries from the body of the query result.
-        """
-
-        resp = self._phedex_interface.make_request(resource, options = options, method = method, format = format, cache_lifetime = config.phedex.cache_lifetime)
-
-        try:
-            result = resp['phedex']
-        except KeyError:
-            logger.error(resp)
-            return
-
-        if logger.getEffectiveLevel() == logging.DEBUG:
-            logger.debug(pprint.pformat(result))
-
-        if raw_output:
-            return result
-
-        for metadata in ['request_timestamp', 'instance', 'request_url', 'request_version', 'request_call', 'call_time', 'request_date']:
-            result.pop(metadata)
-
-        # the only one item left in the results should be the result body. Clone the keys to use less memory..
-        key = result.keys()[0]
-        body = result[key]
-        
-        return body
 
     def _make_dbs_request(self, resource, options = [], method = GET, format = 'url'):
         """
@@ -1078,47 +957,3 @@ class PhEDExDBSSSB(GroupInfoSourceInterface, SiteInfoSourceInterface, DatasetInf
 
         return resp
 
-    def _form_catalog_xml(self, file_catalogs, human_readable = False):
-        """
-        Take a catalog dict of form {dataset: [block]} and form an input xml for delete and subscribe calls.
-        """
-
-        # we should consider using an actual xml tool
-        if human_readable:
-            xml = '<data version="2.0">\n <dbs name="%s">\n' % config.dbs.url_base
-        else:
-            xml = '<data version="2.0"><dbs name="%s">' % config.dbs.url_base
-
-        for dataset, blocks in file_catalogs.iteritems():
-            if human_readable:
-                xml += '  '
-
-            xml += '<dataset name="{name}" is-open="{is_open}">'.format(name = dataset.name, is_open = ('y' if dataset.is_open else 'n'))
-
-            if human_readable:
-                xml += '\n'
-
-            for block in blocks:
-                block_name = dataset.name + '#' + block.real_name()
-
-                if human_readable:
-                    xml += '   '
-                
-                xml += '<block name="{name}" is-open="{is_open}"/>'.format(name = block_name, is_open = ('y' if block.is_open else 'n'))
-                if human_readable:
-                    xml += '\n'
-
-            if human_readable:
-                xml += '  '
-
-            xml += '</dataset>'
-
-            if human_readable:
-                xml += '\n'
-
-        if human_readable:
-            xml += ' </dbs>\n</data>\n'
-        else:
-            xml += '</dbs></data>'
-
-        return xml

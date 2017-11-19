@@ -36,9 +36,14 @@ class Block(object):
     def __repr__(self):
         return 'Block(translate_name(\'%s\'), %s)' % (self.real_name(), repr(self._dataset))
 
-    def copy(self, other):
-        """Only copy simple member variables."""
+    def __eq__(self, other):
+        return self._name == other._name and self._dataset == other._dataset and \
+            self.size == other.size and self.num_files == other.num_files and self.is_open == other.is_open
 
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def copy(self, other):
         self._dataset = other.dataset
         self.size = other.size
         self.num_files = other.num_files
@@ -48,7 +53,7 @@ class Block(object):
         dataset = self._dataset.unlinked_clone()
         return Block(self._name, dataset, self.size, self.num_files, self.is_open)
 
-    def embed_into(self, inventory):
+    def embed_into(self, inventory, check = False):
         try:
             dataset = inventory.datasets[self._dataset.name]
         except KeyError:
@@ -59,8 +64,14 @@ class Block(object):
             dataset = inventory.datasets[self._dataset.name]
             block = Block(self._name, dataset, self.size, self.num_files, self.is_open)
             dataset.blocks.add(block)
+
+            return True
         else:
-            block.copy(self)
+            if check and block == self:
+                return False
+            else:
+                block.copy(self)
+                return True
 
     def delete_from(self, inventory):
         # Remove the block from the dataset, and remove all replicas.

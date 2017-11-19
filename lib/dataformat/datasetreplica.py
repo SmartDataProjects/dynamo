@@ -3,7 +3,7 @@ from dataformat.exceptions import ObjectError
 class DatasetReplica(object):
     """Represents a dataset replica. Combines dataset and site information."""
 
-    __slots__ = ['_dataset', '_site', 'is_complete', 'is_custodial', 'last_block_created', 'block_replicas']
+    __slots__ = ['_dataset', '_site', 'is_custodial', 'block_replicas']
 
     @property
     def dataset(self):
@@ -13,18 +13,16 @@ class DatasetReplica(object):
     def site(self):
         return self._site
 
-    def __init__(self, dataset, site, is_complete = False, is_custodial = False, last_block_created = 0):
+    def __init__(self, dataset, site, is_custodial = False):
         self._dataset = dataset
         self._site = site
-        self.is_complete = is_complete # = complete subscription. Can still be partial
         self.is_custodial = is_custodial
-        self.last_block_created = last_block_created
         self.block_replicas = set()
 
     def __str__(self):
-        return 'DatasetReplica {site}:{dataset} (is_complete={is_complete}, is_custodial={is_custodial},' \
+        return 'DatasetReplica {site}:{dataset} (is_custodial={is_custodial},' \
             ' {block_replicas_size} block_replicas)'.format(
-                site = self._site.name, dataset = self._dataset.name, is_complete = self.is_complete,
+                site = self._site.name, dataset = self._dataset.name,
                 is_custodial = self.is_custodial,
                 block_replicas_size = len(self.block_replicas))
 
@@ -32,16 +30,14 @@ class DatasetReplica(object):
         return 'DatasetReplica(%s, %s)' % (repr(self._dataset), repr(self._site))
 
     def copy(self, other):
-        self.is_complete = other.is_complete
         self.is_custodial = other.is_custodial
-        self.last_block_created = other.last_block_created
 
     def unlinked_clone(self):
         dataset = self._dataset.unlinked_clone()
         site = self._site.unlinked_clone()
-        return DatasetReplica(dataset, site, self.is_complete, self.is_custodial, self.last_block_created)
+        return DatasetReplica(dataset, site, self.is_custodial)
 
-    def embed_into(self, inventory):
+    def embed_into(self, inventory, check = False):
         try:
             dataset = inventory.datasets[self._dataset.name]
         except KeyError:
@@ -54,12 +50,18 @@ class DatasetReplica(object):
 
         replica = dataset.find_replica(site)
         if replica is None:
-            replica = DatasetReplica(dataset, site, self.is_complete, self.is_custodial, self.last_block_created)
+            replica = DatasetReplica(dataset, site, self.is_custodial)
     
             dataset.replicas.add(replica)
             site.add_dataset_replica(replica)
+
+            return True
         else:
-            replica.copy(self)
+            if check and obj == self:
+                return False
+            else:
+                replica.copy(self)
+                return True
 
     def delete_from(self, inventory):
         dataset = inventory.datasets[self._dataset.name]
@@ -75,13 +77,36 @@ class DatasetReplica(object):
     def is_last_copy(self):
         return len(self._dataset.replicas) == 1 and self._dataset.replicas[0] == self
 
+    def is_complete(self):
+        for block_replica in self.block_replicas:
+            if not block_replica.is_complete:
+                return False
+
+        return True
+
     def is_partial(self):
         # dataset.blocks must be loaded if a replica is created for the dataset
-        return self.is_complete and len(self.block_replicas) != len(self._dataset.blocks)
+
+        # has all block replicas -> not partial
+        if len(self.block_replicas) == len(self._dataset.blocks):
+            return False
+
+        # all block replicas must be complete
+        return self.is_complete()
 
     def is_full(self):
         # dataset.blocks must be loaded if a replica is created for the dataset
-        return self.is_complete and len(self.block_replicas) == len(self._dataset.blocks)
+
+        # does not have all block replicas -> not full
+        if len(self.block_replicas) != len(self._dataset.blocks):
+            return False
+
+        # all block replicas must be complete
+        return self.is_complete()
+
+    def last_block_created(self):
+        # this is actually last *update* not create..
+        return max(br.last_update for br in self.block_replicas)
 
     def size(self, groups = [], physical = True):
         if type(groups) is not list:

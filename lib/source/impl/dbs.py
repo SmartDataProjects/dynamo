@@ -5,7 +5,7 @@ from common.interface.webservice import RESTService, GET, POST
 from common.dataformat import Dataset, Block
 import common.configuration as config
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class DBS(DatasetInfoSourceInterface):
     """

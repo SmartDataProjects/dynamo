@@ -66,7 +66,7 @@ class AccessHistory(object):
                 num_access = sum(accesses.values())
 
                 if num_access == 0:
-                    local_rank = (now - replica.last_block_created) / (24. * 3600.)
+                    local_rank = (now - replica.last_block_created()) / (24. * 3600.)
                 elif size > 0.:
                     local_rank = (today - last_access).days - num_access / size
                 else:

@@ -175,7 +175,6 @@ class QueueManager(object):
                 new_dataset_replicas.append(dsetRep)
                 replica_timestamps[dsetRep] = uRequest._created
                 done_requests.append(uRequest._reqid)
-                dsetRep.is_complete = True
 
         #save complete requests into history
         self._history.save_dataset_transfers(new_dataset_replicas,replica_timestamps)

@@ -112,7 +112,7 @@ class Site(object):
     def unlinked_clone(self):
         return Site(self._name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
 
-    def embed_into(self, inventory):
+    def embed_into(self, inventory, check = False):
         try:
             site = inventory.sites[self._name]
         except KeyError:
@@ -123,8 +123,14 @@ class Site(object):
             # because there may be unknown datasets / blocks
             for site_partition in self.partitions.itervalues():
                 site_partition.embed_into(inventory)
+
+            return True
         else:
-            site.copy(self)
+            if check and obj == self:
+                return False
+            else:
+                site.copy(self)
+                return True
 
     def delete_from(self, inventory):
         # Pop the site from the main list, and remove all replicas on the site.

@@ -55,7 +55,7 @@ class File(object):
         block = self._block.unlinked_clone()
         return File(self.lfn, block, self.size)
 
-    def embed_into(self, inventory):
+    def embed_into(self, inventory, check = False):
         try:
             dataset = inventory.datasets[self._block.dataset.name]
         except KeyError:
@@ -69,8 +69,14 @@ class File(object):
         if lfile is None:
             lfile = File(fid, block, self.size)
             block.add_file(lfile)
+
+            return True
         else:
-            lfile.copy(self)
+            if check and obj == self:
+                return False
+            else:
+                lfile.copy(self)
+                return True
 
     def delete_from(self, inventory):
         dataset = inventory.datasets[self._block.dataset.name]

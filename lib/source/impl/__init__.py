@@ -1,11 +1,15 @@
 from dbs import DBS
 from sitedb import SiteDB
-from phedexdbsssb import PhEDExDBSSSB
+from phedexgroupinfo import PhEDExGroupInfoSourceInterface
+from phedexsiteinfo import PhEDExSiteInfoSourceInterface
+from phedexreplicainfo import PhEDExReplicaInfoSourceInterface
 from localdbsssb import LocalDBSSSB
 
 __all__ = [
     'DBS',
     'SiteDB',
-    'PhEDExDBSSSB',
+    'PhEDExGroupInfoSourceInterface',
+    'PhEDExSiteInfoSourceInterface',
+    'PhEDExReplicaInfoSourceInterface',
     'LocalDBSSSB'
 ]

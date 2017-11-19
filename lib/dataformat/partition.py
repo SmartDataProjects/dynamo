@@ -28,7 +28,7 @@ class Partition(object):
     def unlinked_clone(self):
         return Partition(self.name, copy.deepcopy(self._condition))
 
-    def embed_into(self, inventory):
+    def embed_into(self, inventory, check = False):
         try:
             partition = inventory.partitions[self.name]
         except KeyError:
@@ -47,8 +47,14 @@ class Partition(object):
             # update the site partition list at sites
             for site in inventory.sites.itervalues():
                 site.partitions[partition] = SitePartition(site, partition)
+
+            return True
         else:
-            partition.copy(self)
+            if check and obj == self:
+                return False
+            else:
+                partition.copy(self)
+                return True
 
     def delete_from(self, inventory):
         # Pop the partition from the main list, and remove site_partitions.

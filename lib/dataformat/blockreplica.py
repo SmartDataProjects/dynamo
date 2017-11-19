@@ -54,7 +54,7 @@ class BlockReplica(object):
 
         return BlockReplica(block, site, group, self.is_complete, self.is_custodial, self.size, self.last_update)
 
-    def embed_into(self, inventory):
+    def embed_into(self, inventory, check = False):
         try:
             dataset = inventory.datasets[self._block.dataset.name]
         except KeyError:
@@ -83,8 +83,14 @@ class BlockReplica(object):
             dataset_replica.block_replicas.add(replica)
             block.replicas.add(replica)
             site.add_block_replica(replica)
+
+            return True
         else:
-            replica.copy(obj)
+            if check and block == self:
+                return False
+            else:
+                replica.copy(obj)
+                return True
 
     def delete_from(self, inventory):
         dataset = inventory.datasets[self._block.dataset.name]

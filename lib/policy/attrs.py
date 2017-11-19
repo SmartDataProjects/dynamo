@@ -15,15 +15,21 @@ class Attr(object):
 
     BOOL_TYPE, NUMERIC_TYPE, TEXT_TYPE, TIME_TYPE = range(4)
 
-    def __init__(self, vtype, attr = ''):
+    def __init__(self, vtype, attr = '', args = None):
         self.vtype = vtype
         self.attr = attr
+        self.args = args
         
     def get(self, obj):
         return self._get(obj)
 
     def _get(self, obj):
-        return getattr(obj, self.attr)
+        if self.args is None:
+            # simple attribute
+            return getattr(obj, self.attr)
+        else:
+            # callable
+            return getattr(obj, self.attr)(*self.args)
 
     def rhs_map(self, expr):
         """Map the rhs string in binary expressions. Raise if invalid."""

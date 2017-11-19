@@ -37,7 +37,7 @@ class SitePartition(object):
         partition = self._partition.unlinked_clone()
         return SitePartition(site, partition, self.quota)
 
-    def embed_into(self, inventory):
+    def embed_into(self, inventory, check = False):
         try:
             site = inventory.sites[self._site.name]
         except KeyError:
@@ -49,7 +49,12 @@ class SitePartition(object):
             raise ObjectError('Unknown partition %s', self._partition.name)
 
         site_partition = site.partitions[partition]
-        site_partition.copy(self)
+
+        if check and site_partition == self:
+            return False
+        else:
+            site_partition.copy(self)
+            return True
 
     def delete_from(self, inventory):
         raise ObjectError('Deleting a single SitePartition is not allowed.')

@@ -100,7 +100,7 @@ class Dataset(object):
 
         dataset.demand = copy.deepcopy(self.demand)
 
-    def embed_into(self, inventory):
+    def embed_into(self, inventory, check = False):
         try:
             dataset = inventory.datasets[self._name]
         except KeyError:
@@ -109,8 +109,14 @@ class Dataset(object):
     
             for block in self.blocks:
                 block.embed_into(inventory) # gets added to dataset.blocks
+
+            return True
         else:
-            dataset.copy(self)
+            if check and obj == self:
+                return False
+            else:
+                dataset.copy(self)
+                return True
 
     def delete_from(self, inventory):
         # Pop the dataset from the main list, and remove all replicas.

@@ -14,12 +14,8 @@ class DatasetHasIncompleteReplica(DatasetAttr):
 
     def _get(self, dataset):
         for rep in dataset.replicas:
-            if not rep.is_complete:
+            if not rep.is_complete():
                 return True
-
-            for block_replica in rep.block_replicas:
-                if not block_replica.is_complete:
-                    return True
 
         return False
 
@@ -117,12 +113,8 @@ class ReplicaIncomplete(DatasetReplicaAttr):
         DatasetReplicaAttr.__init__(self, Attr.BOOL_TYPE)
 
     def _get(self, replica):
-        if not replica.is_complete:
+        if not replica.is_complete():
             return True
-    
-        for block_replica in replica.block_replicas:
-            if not block_replica.is_complete:
-                return True
     
         return False
 
@@ -136,7 +128,7 @@ class ReplicaLastUsed(DatasetReplicaAttr):
         except KeyError:
             last_used = 0
     
-        return max(replica.last_block_created, last_used)
+        return max(replica.last_block_created(), last_used)
 
 class ReplicaNumAccess(DatasetReplicaAttr):
     def __init__(self):
@@ -182,13 +174,8 @@ class ReplicaIsLastSource(DatasetReplicaAttr):
             if rep.is_full():
                 nfull += 1
 
-            if not rep.is_complete:
+            if not rep.is_complete():
                 nincomplete += 1
-            else:
-                for block_replica in rep.block_replicas:
-                    if not block_replica.is_complete:
-                        nincomplete += 1
-                        break
 
         return nfull == 1 and nincomplete != 0
 
@@ -290,7 +277,7 @@ replica_variables = {
     'replica.is_last_transfer_source': ReplicaIsLastSource(),
     'replica.size': ReplicaSize(),
     'replica.incomplete': ReplicaIncomplete(),
-    'replica.last_block_created': DatasetReplicaAttr(Attr.TIME_TYPE, 'last_block_created'),
+    'replica.last_block_created': DatasetReplicaAttr(Attr.TIME_TYPE, 'last_block_created', tuple()),
     'replica.first_block_created': ReplicaFirstBlockCreated(),
     'replica.last_used': ReplicaLastUsed(),
     'replica.num_access': ReplicaNumAccess(),

@@ -50,15 +50,9 @@ class DynamoInventory(object):
 
         LOG.info('Loading data from local persistent storage.')
 
-        if common_config.debug.included_groups != '*':
-            group_names = self.store.get_group_names(include = [common_config.debug.included_groups])
-            LOG.debug('Group names %s', group_names)
-        else:
-            group_names = None
-       
-        site_names = self.store.get_site_names(include = common_config.inventory.included_sites, exclude = common_config.inventory.excluded_sites)
-
-        LOG.debug('Site names %s', site_names)
+        group_names = self._get_group_names()
+        site_names = self._get_site_names()
+        dataset_names = self._get_dataset_names()
 
         if common_config.debug.included_datasets != '*':
             dataset_names = self.store.get_dataset_names(include = [common_config.debug.included_datasets])
@@ -112,25 +106,136 @@ class DynamoInventory(object):
             for subp in subparts:
                 subp.parent = partition
 
-    def update(self, obj, write = False):
+    def _get_group_names(self):
+        """Return the list of group names or None according to the debug configuration."""
+
+        has_spec = False
+
+        if hasattr(common_config.debug, 'included_groups'):
+            has_spec = True
+
+            included_groups = common_config.debug.included_groups
+            if type(included_groups) is list:
+                include = included_groups
+            else:
+                include = [included_groups]
+        else:
+            include = ['*']
+
+        if hasattr(common_config.debug, 'excluded_groups'):
+            has_spec = True
+
+            excluded_groups = common_config.debug.excluded_groups
+            if type(excluded_groups) is list:
+                exclude = excluded_groups
+            else:
+                exclude = [excluded_groups]
+        else:
+            exclude = []
+
+        if has_spec:
+            group_names = self.store.get_group_names(include = include, exclude = exclude)
+            LOG.debug('Group names %s', group_names)
+        else:
+            group_names = None
+
+        return group_names
+
+    def _get_site_names(self):
+        """Return the list of site names or None according to the debug configuration."""
+
+        has_spec = False
+
+        if hasattr(common_config.debug, 'included_sites'):
+            has_spec = True
+
+            included_sites = common_config.debug.included_sites
+            if type(included_sites) is list:
+                include = included_sites
+            else:
+                include = [included_sites]
+        else:
+            include = ['*']
+
+        if hasattr(common_config.debug, 'excluded_sites'):
+            has_spec = True
+
+            excluded_sites = common_config.debug.excluded_sites
+            if type(excluded_sites) is list:
+                exclude = excluded_sites
+            else:
+                exclude = [excluded_sites]
+        else:
+            exclude = []
+
+        if has_spec:
+            site_names = self.store.get_site_names(include = include, exclude = exclude)
+            LOG.debug('Site names %s', site_names)
+        else:
+            site_names = None
+
+        return site_names
+
+    def _get_dataset_names(self):
+        """Return the list of dataset names or None according to the debug configuration."""
+
+        has_spec = False
+
+        if hasattr(common_config.debug, 'included_datasets'):
+            has_spec = True
+
+            included_datasets = common_config.debug.included_datasets
+            if type(included_datasets) is list:
+                include = included_datasets
+            else:
+                include = [included_datasets]
+        else:
+            include = ['*']
+
+        if hasattr(common_config.debug, 'excluded_datasets'):
+            has_spec = True
+
+            excluded_datasets = common_config.debug.excluded_datasets
+            if type(excluded_datasets) is list:
+                exclude = excluded_datasets
+            else:
+                exclude = [excluded_datasets]
+        else:
+            exclude = []
+
+        if has_spec:
+            dataset_names = self.store.get_dataset_names(include = include, exclude = exclude)
+            LOG.debug('Dataset names %s', dataset_names)
+        else:
+            dataset_names = None
+
+        return dataset_names
+
+    def update(self, obj, check = False, write = False):
         """
         Update an object. Only update the member values of the immediate object.
         When calling from a subprocess, pass an unlinked copy to _updated_objects.
+        @param obj    Object to embed into this inventory.
+        @param check  Passed to obj.embed_into(). Check equivalency of obj to existing object first.
+        @param write  Write updated object to persistent store.
         """
 
-        obj.embed_into(self)
-        
-        if hasattr(self, '_updated_objects'):
-            self._updated_objects.append(obj.unlinked_clone())
+        updated = obj.embed_into(self, check = check)
 
-        if write:
-            # do something with self.store
-            pass
+        if updated:
+            if hasattr(self, '_updated_objects'):
+                self._updated_objects.append(obj.unlinked_clone())
+    
+            if write:
+                # do something with self.store
+                pass
 
     def delete(self, obj, write = False):
         """
         Delete an object. Behavior over other objects linked to the one deleted
         depends on the type.
+        @param obj    Object to delete from this inventory.
+        @param write  Record deletion to persistent store.
         """
 
         obj.delete_from(self)
