@@ -29,6 +29,13 @@ class DatasetReplica(object):
     def __repr__(self):
         return 'DatasetReplica(%s, %s)' % (repr(self._dataset), repr(self._site))
 
+    def __eq__(self, other):
+        return self._dataset is other._dataset and self._site is other._site and \
+            self.is_custodial == other.is_custodial
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
     def copy(self, other):
         self.is_custodial = other.is_custodial
 
@@ -57,7 +64,7 @@ class DatasetReplica(object):
 
             return True
         else:
-            if check and obj == self:
+            if check and replica == self:
                 return False
             else:
                 replica.copy(self)

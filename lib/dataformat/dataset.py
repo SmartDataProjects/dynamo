@@ -82,6 +82,14 @@ class Dataset(object):
     def __repr__(self):
         return 'Dataset(\'%s\')' % self._name
 
+    def __eq__(self, other):
+        return self._name == other._name and self.size == other.size and self.num_files == other.num_files and \
+            self.status == other.status and self.on_tape == other.on_tape and self.data_type == other.data_type and \
+            self.software_version == other.software_version and self.last_update == other.last_update and self.is_open == other.is_open
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
     def copy(self, other):
         self.size = other.size
         self.num_files = other.num_files
@@ -112,7 +120,7 @@ class Dataset(object):
 
             return True
         else:
-            if check and obj == self:
+            if check and dataset == self:
                 return False
             else:
                 dataset.copy(self)

@@ -8,39 +8,58 @@ class Partition(object):
     that returns True when the passed block replica belongs to the partition.
     """
 
-    __slots__ = ['name', 'subpartitions', 'parent', '_condition']
+    __slots__ = ['_name', '_subpartitions', '_parent', '_condition']
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def subpartitions(self):
+        return self._subpartitions
+
+    @property
+    def parent(self):
+        return self._parent
 
     def __init__(self, name, condition = None):
-        self.name = name
-        self.subpartitions = None
-        self.parent = None
+        self._name = name
+        self._subpartitions = None
+        self._parent = None
         self._condition = condition
 
     def __str__(self):
-        return 'Partition %s' % self.name
+        return 'Partition %s' % self._name
 
     def __repr__(self):
-        return 'Partition(name=\'%s\')' % self.name
+        return 'Partition(name=\'%s\')' % self._name
+
+    def __eq__(self, other):
+        # only comparing names since the rest are set by configuration and are basically constants
+        return self._name == other._name
+
+    def __ne__(self, other):
+        return self._name != other._name
 
     def copy(self, other):
-        self._condition = copy.deepcopy(other._condition)
+        pass
 
     def unlinked_clone(self):
-        return Partition(self.name, copy.deepcopy(self._condition))
+        return Partition(self._name, copy.deepcopy(self._condition))
 
     def embed_into(self, inventory, check = False):
         try:
-            partition = inventory.partitions[self.name]
+            partition = inventory.partitions[self._name]
         except KeyError:
             partition = self.unlinked_clone()
     
-            if self.subpartitions is not None:
-                partition.subpartitions = []
-                for subp in self.subpartitions:
-                    partition.subpartions.append(inventory.partitions[subp.name])
+            if self._subpartitions is not None:
+                partition._subpartitions = []
+                for subp in self._subpartitions:
+                    partition._subpartions.append(inventory.partitions[subp._name])
     
-            if self.parent is not None:
-                partition.parent = inventory.partitions[self.parent.name]
+            if self._parent is not None:
+                partition._parent = inventory.partitions[self._parent._name]
     
             inventory.partitions.add(partition)
 
@@ -50,7 +69,7 @@ class Partition(object):
 
             return True
         else:
-            if check and obj == self:
+            if check and partition == self:
                 return False
             else:
                 partition.copy(self)
@@ -58,16 +77,16 @@ class Partition(object):
 
     def delete_from(self, inventory):
         # Pop the partition from the main list, and remove site_partitions.
-        partition = inventory.partitions.pop(self.name)
+        partition = inventory.partitions.pop(self._name)
 
         for site in inventory.sites.itervalues():
             site.partitions.pop(partition)
 
     def contains(self, replica):
-        if self.subpartitions is None:
+        if self._subpartitions is None:
             return self._condition.match(replica)
         else:
-            for subp in self.subpartitions:
+            for subp in self._subpartitions:
                 if subp.contains(replica):
                     return True
 

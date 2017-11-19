@@ -99,6 +99,14 @@ class Site(object):
     def __repr__(self):
         return 'Site(\'%s\')' % self._name
 
+    def __eq__(self, other):
+        return self._name == other._name and self.host == other.host and self.storage_type == other.storage_type and \
+            self.backend == other.backend and self.storage == other.storage and self.cpu == other.cpu and \
+            self.status == other.status
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
     def copy(self, other):
         """Only copy simple member variables."""
 
@@ -126,7 +134,7 @@ class Site(object):
 
             return True
         else:
-            if check and obj == self:
+            if check and site == self:
                 return False
             else:
                 site.copy(self)

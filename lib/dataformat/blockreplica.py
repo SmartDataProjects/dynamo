@@ -37,6 +37,14 @@ class BlockReplica(object):
     def __repr__(self):
         return 'BlockReplica(block=%s, site=%s, group=%s)' % (repr(self._block), repr(self._site), repr(self.group))
 
+    def __eq__(self, other):
+        return self._block is other._block and self._site is other._site and self.group is other.group and \
+            self.is_complete == other.is_complete and self.is_custodial == other.is_custodial and \
+            self.size == other.size and self.last_update == other.last_update
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
     def copy(self, other):
         self.group = other.group
         self.is_complete = other.is_complete
@@ -86,10 +94,10 @@ class BlockReplica(object):
 
             return True
         else:
-            if check and block == self:
+            if check and replica == self:
                 return False
             else:
-                replica.copy(obj)
+                replica.copy(self)
                 return True
 
     def delete_from(self, inventory):

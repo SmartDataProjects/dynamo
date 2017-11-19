@@ -37,7 +37,7 @@ class Block(object):
         return 'Block(translate_name(\'%s\'), %s)' % (self.real_name(), repr(self._dataset))
 
     def __eq__(self, other):
-        return self._name == other._name and self._dataset == other._dataset and \
+        return self._name == other._name and self._dataset is other._dataset and \
             self.size == other.size and self.num_files == other.num_files and self.is_open == other.is_open
 
     def __ne__(self, other):

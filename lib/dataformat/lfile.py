@@ -48,6 +48,13 @@ class File(object):
     def __repr__(self):
         return 'File(lfn=\'%s\', block=%s, size=%d)' % (self.lfn, repr(self._block), self.size)
 
+    def __eq__(self, other):
+        return self._directory_id == other._directory_id and self._basename == other._basename and \
+            self._block is other._block and self.size == other.size
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
     def copy(self, other):
         self.size = other.size
 
@@ -72,7 +79,7 @@ class File(object):
 
             return True
         else:
-            if check and obj == self:
+            if check and lfile == self:
                 return False
             else:
                 lfile.copy(self)

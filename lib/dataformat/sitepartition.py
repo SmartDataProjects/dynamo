@@ -28,6 +28,12 @@ class SitePartition(object):
     def __repr__(self):
         return 'SitePartition(%s, %s)' % (repr(self._site), repr(self._partition))
 
+    def __eq__(self, other):
+        return self._site is other._site and self._partition is other._partition and self.quota == other.quota
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
     def copy(self, other):
         # does not copy replicas
         self.quota = other.quota

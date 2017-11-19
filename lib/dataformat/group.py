@@ -6,27 +6,38 @@ class Group(object):
     olevel: ownership level: Dataset or Block
     """
 
-    __slots__ = ['_name', 'olevel']
+    __slots__ = ['_name', '_olevel']
 
     @property
     def name(self):
         return self._name
 
+    @property
+    def olevel(self):
+        return self._olevel
+
     def __init__(self, name, olevel = Block):
         self._name = name
-        self.olevel = olevel
+        self._olevel = olevel
 
     def __str__(self):
-        return 'Group %s (olevel=%s)' % (self._name, self.olevel.__name__)
+        return 'Group %s (olevel=%s)' % (self._name, self._olevel.__name__)
 
     def __repr__(self):
         return 'Group(\'%s\')' % (self._name)
+
+    def __eq__(self, other):
+        # will only compare names (olevel is set by configuration and is basically constant)
+        return self._name == other._name
+
+    def __ne__(self, other):
+        return self._name != other._name
     
     def copy(self, other):
-        self.olevel = other.olevel
+        pass
 
     def unlinked_clone(self):
-        return Group(self._name, self.olevel)
+        return Group(self._name, self._olevel)
 
     def embed_into(self, inventory, check = False):
         try:
@@ -37,7 +48,7 @@ class Group(object):
 
             return True
         else:
-            if check and obj == self:
+            if check and group == self:
                 return False
             else:
                 group.copy(self)
