@@ -335,7 +335,7 @@ class PhEDEx(CopyInterface, DeletionInterface):
 
         block_names = []
         for ds_entry in request[0]['data']['dbs']['block']:
-            block_names.append(ds_entry['name'].replace('#', '%23'))
+            block_names.append(ds_entry['name'])
 
         subscriptions = []
 

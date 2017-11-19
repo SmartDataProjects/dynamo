@@ -1,9 +1,8 @@
 """
-ReplicaInfoSource for PhEDEx.
+ReplicaInfoSource using PhEDEx.
 """
 
 import logging
-import fnmatch
 
 from source.replicainfo import ReplicaInfoSource
 from common.interface.phedex import PhEDEx
@@ -25,20 +24,20 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         elif type(item) == DatasetReplica:
             options += ['dataset=' + item.dataset.name, 'show_dataset=y']
         elif type(item) == Block:
-            options += ['block=' + item.dataset.name + '%23' + item.real_name()]
+            options += ['block=' + item.full_name()]
         elif type(item) == BlockReplica:
-            options += ['block=' + item.block.dataset.name + '%23' + item.block.real_name()]
+            options += ['block=' + item.block.full_name()]
         else:
             raise RuntimeError('Invalid input passed: ' + repr(item))
         
-        source = self._phedex.call('blockreplicas', options)
+        source = self._phedex.make_request('blockreplicas', options)
 
         return len(source) != 0
 
     def get_updated_replicas(self, updated_since): #override
         updated_replicas = []
 
-        result = self._phedex.call('blockreplicas', ['show_dataset=y', 'update_since=%d' % updated_since])
+        result = self._phedex.make_request('blockreplicas', ['show_dataset=y', 'update_since=%d' % updated_since])
 
         for dataset_entry in result:
             dataset = Dataset(
@@ -80,5 +79,23 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
 
         return updated_replicas
 
-    def get_deleted_replicas(self, updated_since): #override
-        pass
+    def get_deleted_replicas(self, deleted_since): #override
+        deleted_replicas = []
+
+        result = self._phedex.make_request('deletions', ['complete_since=%d' % deleted_since])
+
+        for dataset_entry in result:
+            dataset = Dataset(dataset_entry['name'])
+            
+            for block_entry in dataset_entry['block']:
+                name = block_entry['name']
+                block_name = Block.translate_name(name[name.find('#') + 1:])
+
+                block = Block(block_name, dataset)
+
+                for deletion_entry in block_entry['deletion']:
+                    block_replica = BlockReplica(block, Site(replica_entry['node']))
+
+                    deleted_replicas.append(block_replica)
+
+        return deleted_replicas

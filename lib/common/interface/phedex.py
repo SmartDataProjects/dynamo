@@ -10,13 +10,13 @@ from common.configuration import common_config
 
 LOG = logging.getLogger(__name__)
 
-class PhEDEx(object):
+class PhEDEx(RESTService):
     def __init__(self, cache_lifetime = 0):
-        self._rest = RESTService(common_config.phedex.url, use_cache = (cache_lifetime > 0))
+        RESTService.__init__(self, common_config.phedex.url, use_cache = (cache_lifetime > 0))
         self.cache_lifetime = cache_lifetime
 
-    def call(self, command, options = [], method = GET, format = 'url', raw_output = False):
-        response = self._rest.make_request(command, options = options, method = method, format = format, cache_lifetime = self.cache_lifetime)
+    def make_request(self, resource = '', options = [], method = GET, format = 'url', cache_lifetime = 0, retry_on_error = True): #override
+        response = RETService.make_request(self, resource, options = options, method = method, format = format, cache_lifetime = self.cache_lifetime)
 
         try:
             result = response['phedex']
@@ -26,9 +26,6 @@ class PhEDEx(object):
 
         if LOG.getEffectiveLevel() == logging.DEBUG:
             LOG.debug(pprint.pformat(result))
-
-        if raw_output:
-            return result
 
         for metadata in ['request_timestamp', 'instance', 'request_url', 'request_version', 'request_call', 'call_time', 'request_date']:
             result.pop(metadata)

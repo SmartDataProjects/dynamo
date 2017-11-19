@@ -18,7 +18,7 @@ if config.webservice.isset('cache_db_params'):
     from common.interface.mysql import MySQL
     use_cache_global = True
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 GET, POST = range(2) # enumerators
 
@@ -125,12 +125,21 @@ class RESTService(object):
 
         if method == GET and len(options) != 0:
             if type(options) is list:
-                url += '?' + '&'.join(options)
+                url += '?'
+                option_tuples = []
+                for option in options:
+                    if type(option) is tuple:
+                        option_tuples.append(option)
+                    else:
+                        key, _, value = option.partition('=')
+                        option_tuples.append((key, value))
+
+                url += '?' + urllib.urlencode(option_tuples)
             elif type(options) is str:
                 url += '?' + options
 
-        if logger.getEffectiveLevel() == logging.DEBUG:
-            logger.debug(url)
+        if LOG.getEffectiveLevel() == logging.DEBUG:
+            LOG.debug(url)
 
         # first check the cache
         if method == GET and self._cache_lock is not None and cache_lifetime > 0:
@@ -140,13 +149,13 @@ class RESTService(object):
                     cache = db.query('SELECT UNIX_TIMESTAMP(`timestamp`), `content` FROM `webservice` WHERE `url` = %s', url)
                     db.close()
                 except:
-                    logger.error('Connection to cache DB failed when fetching the timestamp for %s.', url)
+                    LOG.error('Connection to cache DB failed when fetching the timestamp for %s.', url)
                     cache = []
 
             if len(cache) != 0:
                 timestamp, content = cache[0]
                 if time.time() - timestamp < cache_lifetime:
-                    logger.debug('Using cache for %s', url)
+                    LOG.debug('Using cache for %s', url)
                     if self.accept == 'application/json':
                         result = json.loads(content)
                         unicode2str(result)
@@ -229,7 +238,7 @@ class RESTService(object):
                             db.query(r"LOAD DATA LOCAL INFILE '%s' INTO TABLE `dynamocache`.`webservice` FIELDS TERMINATED BY ',' ENCLOSED BY '\''" % filename)
                             db.close()
                         except:
-                            logger.error('Connection to cache DB failed when writing the response of %s.', url)
+                            LOG.error('Connection to cache DB failed when writing the response of %s.', url)
                             pass
 
                     os.remove(filename)
@@ -258,15 +267,15 @@ class RESTService(object):
             if not retry_on_error or self.last_errorcode == 400:
                 break
 
-            logger.info('Exception "%s" occurred in %s. Trying again in %.1f seconds.', str(self.last_exception), url, wait)
+            LOG.info('Exception "%s" occurred in %s. Trying again in %.1f seconds.', str(self.last_exception), url, wait)
 
             time.sleep(wait)
             wait *= 1.5
 
         # exhausted allowed attempts
-        logger.error('Too many failed attempts in webservice')
-        logger.error('Last error code %d', self.last_errorcode)
-        logger.error('%s' % ' '.join(map(str, exceptions)))
+        LOG.error('Too many failed attempts in webservice')
+        LOG.error('Last error code %d', self.last_errorcode)
+        LOG.error('%s' % ' '.join(map(str, exceptions)))
 
         raise RuntimeError('webservice too many attempts')
 

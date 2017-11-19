@@ -27,7 +27,7 @@ class PhEDExSiteInfoSource(SiteInfoSource):
 
         LOG.info('get_site(%s)  Fetching information of %s from PhEDEx', name, name)
 
-        result = self._phedex.call('nodes', ['node=' + name])
+        result = self._phedex.make_request('nodes', ['node=' + name])
         if len(result) == 0:
             return None
 
@@ -45,7 +45,7 @@ class PhEDExSiteInfoSource(SiteInfoSource):
 
         site_list = []
 
-        for entry in self._phedex.call('nodes', options):
+        for entry in self._phedex.make_request('nodes', options):
             if self.exclude is not None:
                 for pattern in self.exclude:
                     if fnmatch.fnmatch(entry['name'], pattern):

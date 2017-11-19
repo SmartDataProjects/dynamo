@@ -6,7 +6,6 @@ from argparse import ArgumentParser
 parser = ArgumentParser(description = 'Dynamo')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', default = '', help = 'Configuration JSON.')
 parser.add_argument('--updated-since', '-t', metavar = 'TIMESTAMP', dest = 'updated_since', default = 0, help = 'Unix timestamp of the last update.')
-parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to local databases.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -19,10 +18,10 @@ import source.impl
 with open(args.config) as source:
     config = Configuration(source)
 
-group_source = getattr(source.impl, config.groups.module)(config.groups.config)
-site_source = getattr(source.impl, config.sites.module)(config.sites.config)
-dataset_source = getattr(source.impl, config.datasets.module)(config.datasets.config)
-replica_source = getattr(source.impl, config.replicas.module)(config.replicas.config)
+group_source = source.impl.PhEDExGroupInfoSource(config.groups.config)
+site_source = source.impl.PhEDExSiteInfoSource(config.sites.config)
+dataset_source = source.impl.PhEDExDatasetInfoSource(config.datasets.config)
+replica_source = source.impl.PhEDExReplicaInfoSource(config.replicas.config)
 
 for group in group_source.get_group_list():
     dynamo.update(group, check = True)

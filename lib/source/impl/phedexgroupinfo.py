@@ -26,7 +26,7 @@ class PhEDExGroupInfoSource(GroupInfoSource):
 
         LOG.info('get_group(%s)  Fetching info on group %s', name, name)
 
-        result = self._phedex.call('groups', ['group=' + name])
+        result = self._phedex.make_request('groups', ['group=' + name])
         if len(result) == 0:
             return None
 
@@ -44,7 +44,7 @@ class PhEDExGroupInfoSource(GroupInfoSource):
 
         group_list = []
 
-        for entry in self._phedex.call('groups'):
+        for entry in self._phedex.make_request('groups'):
             if entry['name'] in self.dataset_level_groups:
                 olevel = Dataset
             else:
