@@ -20,7 +20,7 @@ class Configuration(dict):
                 for match in matches:
                     value = value.replace('$(%s)' % match, os.environ[match])
         
-            if type(value) is dict:
+            if type(value) is dict or type(value) is Configuration:
                 self[key] = Configuration(value)
             else:
                 self[key] = value

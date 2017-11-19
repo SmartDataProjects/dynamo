@@ -9,7 +9,6 @@ import logging.handlers
 
 from core.dynamo import Dynamo
 from dataformat import Configuration
-from common.misc import unicode2str
 
 try:
     debug = (os.environ['DYNAMO_SERVER_DEBUG'] == '1')
@@ -32,9 +31,7 @@ else:
     config_path = '/etc/dynamo/server_config.json'
 
 with open(config_path) as source:
-    config_dict = json.loads(source.read())
-    unicode2str(config_dict)
-    server_config = Configuration(config_dict)
+    server_config = Configuration(source)
 
 ## Set up logging (write to stderr unless path is given)
 log_level = getattr(logging, server_config.logging.level.upper())
@@ -53,6 +50,7 @@ if not debug:
     ## Now set effective user id to server_config.user
     os.seteuid(pwd.getpwnam(server_config.user).pw_uid)
 
+## Start the server
 daemon = Dynamo(server_config)
 daemon.run()
 

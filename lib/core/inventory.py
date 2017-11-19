@@ -38,7 +38,14 @@ class DynamoInventory(object):
             # unprivileged read-only store instance
             self.store = persistency_cls(common_config.inventory.persistency.config)
 
-    def load(self):
+    def load(self, groups = (None, None), sites = (None, None), datasets = (None, None)):
+        """
+        Load inventory content from persistency store.
+        @param groups   2-tuple (included, excluded)
+        @param sites    2-tuple (included, excluded)
+        @param datasets 2-tuple (included, excluded)
+        """
+        
         self.groups.clear()
         self.sites.clear()
         self.datasets.clear()
@@ -50,15 +57,9 @@ class DynamoInventory(object):
 
         LOG.info('Loading data from local persistent storage.')
 
-        group_names = self._get_group_names()
-        site_names = self._get_site_names()
-        dataset_names = self._get_dataset_names()
-
-        if common_config.debug.included_datasets != '*':
-            dataset_names = self.store.get_dataset_names(include = [common_config.debug.included_datasets])
-            LOG.debug('Dataset names %s', dataset_names)
-        else:
-            dataset_names = None
+        group_names = self._get_group_names(*groups)
+        site_names = self._get_site_names(*sites)
+        dataset_names = self._get_dataset_names(*datasets)
 
         self.store.load_data(
             self,
@@ -106,110 +107,79 @@ class DynamoInventory(object):
             for subp in subparts:
                 subp.parent = partition
 
-    def _get_group_names(self):
-        """Return the list of group names or None according to the debug configuration."""
+    def _get_group_names(self, included, excluded):
+        """Return the list of group names or None according to the arguments."""
 
-        has_spec = False
+        lists = self._parse_include_lists(included, excluded)
 
-        if hasattr(common_config.debug, 'included_groups'):
-            has_spec = True
-
-            included_groups = common_config.debug.included_groups
-            if type(included_groups) is list:
-                include = included_groups
-            else:
-                include = [included_groups]
-        else:
-            include = ['*']
-
-        if hasattr(common_config.debug, 'excluded_groups'):
-            has_spec = True
-
-            excluded_groups = common_config.debug.excluded_groups
-            if type(excluded_groups) is list:
-                exclude = excluded_groups
-            else:
-                exclude = [excluded_groups]
-        else:
-            exclude = []
-
-        if has_spec:
-            group_names = self.store.get_group_names(include = include, exclude = exclude)
+        if lists is not None:
+            group_names = self.store.get_group_names(include = lists[0], exclude = lists[1])
             LOG.debug('Group names %s', group_names)
         else:
             group_names = None
 
         return group_names
 
-    def _get_site_names(self):
-        """Return the list of site names or None according to the debug configuration."""
+    def _get_site_names(self, included, excluded):
+        """Return the list of site names or None according to the arguments."""
 
-        has_spec = False
+        lists = self._parse_include_lists(included, excluded)
 
-        if hasattr(common_config.debug, 'included_sites'):
-            has_spec = True
-
-            included_sites = common_config.debug.included_sites
-            if type(included_sites) is list:
-                include = included_sites
-            else:
-                include = [included_sites]
-        else:
-            include = ['*']
-
-        if hasattr(common_config.debug, 'excluded_sites'):
-            has_spec = True
-
-            excluded_sites = common_config.debug.excluded_sites
-            if type(excluded_sites) is list:
-                exclude = excluded_sites
-            else:
-                exclude = [excluded_sites]
-        else:
-            exclude = []
-
-        if has_spec:
-            site_names = self.store.get_site_names(include = include, exclude = exclude)
+        if lists is not None:
+            site_names = self.store.get_site_names(include = lists[0], exclude = lists[1])
             LOG.debug('Site names %s', site_names)
         else:
             site_names = None
 
         return site_names
 
-    def _get_dataset_names(self):
-        """Return the list of dataset names or None according to the debug configuration."""
+    def _get_dataset_names(self, included, excluded):
+        """Return the list of dataset names or None according to the arguments."""
 
-        has_spec = False
+        lists = self._parse_include_lists(included, excluded)
 
-        if hasattr(common_config.debug, 'included_datasets'):
-            has_spec = True
-
-            included_datasets = common_config.debug.included_datasets
-            if type(included_datasets) is list:
-                include = included_datasets
-            else:
-                include = [included_datasets]
-        else:
-            include = ['*']
-
-        if hasattr(common_config.debug, 'excluded_datasets'):
-            has_spec = True
-
-            excluded_datasets = common_config.debug.excluded_datasets
-            if type(excluded_datasets) is list:
-                exclude = excluded_datasets
-            else:
-                exclude = [excluded_datasets]
-        else:
-            exclude = []
-
-        if has_spec:
-            dataset_names = self.store.get_dataset_names(include = include, exclude = exclude)
+        if lists is not None:
+            dataset_names = self.store.get_dataset_names(include = lists[0], exclude = lists[1])
             LOG.debug('Dataset names %s', dataset_names)
         else:
             dataset_names = None
 
         return dataset_names
+
+    def _parse_include_lists(self, included, excluded):
+        """
+        Simple subroutine to convert include and exclude lists into a standard format.
+        @param included  A str or list of name patterns of included objects
+        @param excluded  A str or list of name patterns of excluded objects
+        @return  (include_list, exclude_list) or None
+        """
+
+        has_spec = False
+
+        if included is not None:
+            has_spec = True
+
+            if type(included) is list:
+                include_list = included
+            else:
+                include_list = [included]
+        else:
+            include_list = ['*']
+
+        if excluded is not None:
+            has_spec = True
+
+            if type(excluded) is list:
+                exclude_list = excluded
+            else:
+                exclude_list = [excluded]
+        else:
+            exclude_list = []
+
+        if has_spec:
+            return include_list, exclude_list
+        else:
+            return None
 
     def update(self, obj, check = False, write = False):
         """

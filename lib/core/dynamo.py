@@ -17,22 +17,36 @@ class Dynamo(object):
 
     CMD_UPDATE, CMD_DELETE = range(2)
 
-    def __init__(self, config):
-        """
-        @param config  Content of root-privileged config file.
-        """
+    def __init__(self, server_config):
+        LOG.info('Initializing Dynamo server.')
 
-        common_db_config = dict(common_config.mysql)
-        common_db_config.update(config.mysql)
+        ## Create the registry
+        registry_db_config = Configuration(common_config.mysql)
+        registry_db_config.update(server_config.registry.db_params)
+        registry_db_config['reuse_connection'] = False
+        registry = MySQL(**registry_db_config)
+        
+        ## Create the inventory
+        persistency_config = Configuration(common_config.inventory.persistency.config)
+        persistency_config.update(server_config.inventory.persistency)
+        self.inventory = DynamoInventory(persistency_config = persistency_config, load = False)
+        
+        ## Load the inventory content (filter according to debug config)
+        load_opts = {}
+        for objs in ['groups', 'sites', 'datasets']:
+            try:
+                included = server_config.debug['included_' + objs]
+            else:
+                included = None
+            try:
+                excluded = server_config.debug['excluded_' + objs]
+            else:
+                excluded = None
 
-        registry_config = dict(common_db_config)
-        registry_config.update(config.registry.db_params)
-        registry_config['reuse_connection'] = False
-        self.registry = MySQL(**registry_config)
-
-        store_config = dict(common_db_config)
-        store_config.update(config.inventory.persistency)
-        self.inventory = DynamoInventory(persistency_config = store_config, load = False)
+            load_opts[objs] = (included, excluded)
+        
+        LOG.info('Loading the inventory.')
+        self.inventory.load(**load_opts)
 
     def run(self):
         """
@@ -45,8 +59,6 @@ class Dynamo(object):
         """
 
         LOG.info('Started dynamo daemon.')
-
-        self.inventory.load()
 
         child_processes = []
 
