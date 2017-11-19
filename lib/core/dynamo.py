@@ -6,6 +6,7 @@ import multiprocessing
 import Queue
 
 from core.inventory import DynamoInventory
+from dataformat import Configuration
 from common.interface.mysql import MySQL
 from common.configuration import common_config
 from common.control import sigint
@@ -24,7 +25,7 @@ class Dynamo(object):
         registry_db_config = Configuration(common_config.mysql)
         registry_db_config.update(server_config.registry.db_params)
         registry_db_config['reuse_connection'] = False
-        registry = MySQL(**registry_db_config)
+        self.registry = MySQL(**registry_db_config)
         
         ## Create the inventory
         persistency_config = Configuration(common_config.inventory.persistency.config)
@@ -36,11 +37,11 @@ class Dynamo(object):
         for objs in ['groups', 'sites', 'datasets']:
             try:
                 included = server_config.debug['included_' + objs]
-            else:
+            except KeyError:
                 included = None
             try:
                 excluded = server_config.debug['excluded_' + objs]
-            else:
+            except KeyError:
                 excluded = None
 
             load_opts[objs] = (included, excluded)

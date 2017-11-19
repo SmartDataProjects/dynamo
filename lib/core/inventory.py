@@ -103,9 +103,9 @@ class DynamoInventory(object):
             except KeyError:
                 raise IntegrityError('Unknown partition ' + name + ' specified in subpartition list for ' + partition.name)
 
-            partition.subpartitions = subparts
+            partition._subpartitions = subparts
             for subp in subparts:
-                subp.parent = partition
+                subp._parent = partition
 
     def _get_group_names(self, included, excluded):
         """Return the list of group names or None according to the arguments."""

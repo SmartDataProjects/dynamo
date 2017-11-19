@@ -58,8 +58,8 @@ class Attr(object):
 class DatasetAttr(Attr):
     """Extract an attribute from the dataset regardless of the type of replica passed __call__"""
 
-    def __init__(self, vtype, attr = None):
-        Attr.__init__(self, vtype, attr = attr)
+    def __init__(self, vtype, attr = None, args = None):
+        Attr.__init__(self, vtype, attr = attr, args = args)
 
     def get(self, replica):
         if type(replica) is DatasetReplica:
@@ -73,8 +73,8 @@ class DatasetAttr(Attr):
 class DatasetReplicaAttr(Attr):
     """Extract an attribute from a dataset replica. If a block replica is passed, return the attribute of the owning dataset replica."""
 
-    def __init__(self, vtype, attr = None):
-        Attr.__init__(self, vtype, attr = attr)
+    def __init__(self, vtype, attr = None, args = None):
+        Attr.__init__(self, vtype, attr = attr, args = args)
 
     def get(self, replica):
         if type(replica) is BlockReplica:
@@ -87,8 +87,8 @@ class DatasetReplicaAttr(Attr):
 class BlockReplicaAttr(Attr):
     """Extract an attribute from a block replica. If a dataset replica is passed, return a list of values."""
 
-    def __init__(self, vtype, attr = None):
-        Attr.__init__(self, vtype, attr = attr)
+    def __init__(self, vtype, attr = None, args = None):
+        Attr.__init__(self, vtype, attr = attr, args = args)
 
     def get(self, replica):
         if type(replica) is BlockReplica:
@@ -100,8 +100,8 @@ class BlockReplicaAttr(Attr):
 class ReplicaSiteAttr(Attr):
     """Extract an attribute from the site of a replica."""
 
-    def __init__(self, vtype, attr = None):
-        Attr.__init__(self, vtype, attr = attr)
+    def __init__(self, vtype, attr = None, args = None):
+        Attr.__init__(self, vtype, attr = attr, args = args)
 
     def get(self, replica):
         return self._get(replica.site)
@@ -110,6 +110,6 @@ class ReplicaSiteAttr(Attr):
 class SiteAttr(Attr):
     """Extract an attribute from a site."""
 
-    def __init__(self, vtype, attr = None):
-        Attr.__init__(self, vtype, attr = attr)
+    def __init__(self, vtype, attr = None, args = None):
+        Attr.__init__(self, vtype, attr = attr, args = args)
         self.partition = None
