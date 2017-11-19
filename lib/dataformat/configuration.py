@@ -1,6 +1,8 @@
 import os
 import re
 
+from common.misc import unicode2str
+
 class Configuration(dict):
     """
     Configuration object. Basically a dict, but allows access to elements with getattr.
@@ -8,6 +10,10 @@ class Configuration(dict):
     """
 
     def __init__(self, config):
+        if type(config) is file:
+            config = json.loads(config.read())
+            unicode2str(config)
+
         for key, value in config.iteritems():
             if type(value) is str:
                 matches = re.findall('\$\(([^\)]+)\)', value)
