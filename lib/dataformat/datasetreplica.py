@@ -64,6 +64,10 @@ class DatasetReplica(object):
 
             return True
         else:
+            if replica is self:
+                # identical object -> return False if check is requested
+                return not check
+
             if check and replica == self:
                 return False
             else:

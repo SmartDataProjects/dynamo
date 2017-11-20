@@ -20,18 +20,27 @@ class DatasetInfoSource(object):
         else:
             self.exclude = None
 
+    def get_updated_datasets(self, updated_since):
+        """
+        Get a list of updated Datasets-Blocks-Files with full information.
+        @param updated_since  Unix timestamp
+        @return  List of datasets
+        """
+        raise NotImplementedError('get_updated_datasets')
+
     def get_dataset(self, name):
         """
-        Get a linked set of Dataset-Blocks-Files with full information.
+        Get a linked structure of Dataset-Blocks-Files with full information.
         @param name  Name of dataset
         @return  Dataset with full list of Blocks and Files
         """
         raise NotImplementedError('get_dataset')
 
-    def get_block(self, name):
+    def get_block(self, name, dataset = None):
         """
         Get a linked set of Blocks-Files with full information.
-        @param name  Name of block
+        @param name     Name of block
+        @param dataset  If not None, link the block against this dataset.
         @return  Block with full list of Files
         """
         raise NotImplementedError('get_block')

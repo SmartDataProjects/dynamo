@@ -122,6 +122,10 @@ class Dataset(object):
 
             return True
         else:
+            if dataset is self:
+                # identical object -> return False if check is requested
+                return not check
+
             if check and dataset == self:
                 return False
             else:

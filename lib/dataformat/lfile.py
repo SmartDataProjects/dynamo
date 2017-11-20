@@ -79,6 +79,10 @@ class File(object):
 
             return True
         else:
+            if lfile is self:
+                # identical object -> return False if check is requested
+                return not check
+
             if check and lfile == self:
                 return False
             else:

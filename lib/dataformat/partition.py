@@ -69,6 +69,10 @@ class Partition(object):
 
             return True
         else:
+            if partition is self:
+                # identical object -> return False if check is requested
+                return not check
+
             if check and partition == self:
                 return False
             else:

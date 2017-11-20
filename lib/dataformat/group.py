@@ -48,6 +48,10 @@ class Group(object):
 
             return True
         else:
+            if group is self:
+                # identical object -> return False if check is requested
+                return not check
+
             if check and group == self:
                 return False
             else:

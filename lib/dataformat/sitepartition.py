@@ -56,6 +56,10 @@ class SitePartition(object):
 
         site_partition = site.partitions[partition]
 
+        if site_partition is self:
+            # identical object -> return False if check is requested
+            return not check
+
         if check and site_partition == self:
             return False
         else:

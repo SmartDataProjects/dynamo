@@ -9,7 +9,7 @@ import re
 from source.datasetinfo import DatasetInfoSource
 from common.interface.phedex import PhEDEx
 from common.interface.webservice import RESTService
-from dataformat import Dataset, Block, File
+from dataformat import Dataset, Block, File, IntegrityError
 
 LOG = logging.getLogger(__name__)
 
@@ -20,7 +20,23 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         self._phedex = PhEDEx()
         self._dbs = RESTService(config.dbs_url)
 
-    def get_dataset(self, name):
+    def get_updated_datasets(self, updated_since): #override
+        LOG.warning('PhEDExDatasetInfoSource can only return a list of datasets and blocks that are created since the given timestamp.')
+
+        result = self._phedex.make_request('data', ['dataset=' + name, 'level=block', 'create_since=%d' % updated_since])
+
+        if len(result) == 0 or 'dataset' not in result[0]:
+            return []
+
+        updated_datasets = []
+        
+        for dataset_entry in result[0]['dataset']:
+            dataset = self._create_dataset(dataset_entry)
+            updated_datasets.append(dataset)
+
+        return updated_datasets
+
+    def get_dataset(self, name): #override
         ## Get the full dataset-block-file data from PhEDEx
 
 #        result = self._phedex.make_request('data', ['dataset=' + name, 'level=file'])
@@ -32,8 +48,42 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         dataset_entry = result[0]['dataset'][0]
 
         ## Create the dataset object
+        dataset = self._create_dataset(dataset_entry)
 
-        dataset = Dataset(dataset_entry['name'])
+        return dataset
+
+    def get_block(self, name, dataset = None): #override
+        ## Get the full block-file data from PhEDEx
+
+#        result = self._phedex.make_request('data', ['dataset=' + name, 'level=file'])
+        result = self._phedex.make_request('data', ['block=' + name, 'level=block'])
+
+        if len(result) == 0 or 'dataset' not in result[0] or len(result[0]['dataset']) == 0:
+            return None
+        
+        dataset_entry = result[0]['dataset'][0]
+
+        if dataset is None:
+            dataset = Dataset(dataset_entry['name'])
+        elif dataset.name != dataset_entry['name']:
+            raise IntegrityError('Inconsistent dataset %s passed to get_block(%s)', dataset.name, name)
+
+        block_entry = dataset_entry['block'][0]
+
+        block = self._create_block(block_entry, dataset)
+        
+        return block
+
+    def _create_dataset(self, dataset_entry):
+        """
+        Create a dataset object with blocks and files from a PhEDEx dataset entry
+        """
+
+        dataset = Dataset(
+            dataset_entry['name'],
+            is_open = (dataset_entry['is_open'] == 'y')
+        )
+
         if 'time_update' in dataset_entry and dataset_entry['time_update'] is not None:
             dataset.last_update = int(dataset_entry['time_update'])
         else:
@@ -42,32 +92,47 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         ## Fill block and file data
 
         for block_entry in dataset_entry['block']:
-            bname = block_entry['name']
-            block_name = Block.translate_name(bname[bname.find('#') + 1:])
-            
-            block = Block(
-                block_name,
-                dataset,
-                size = block_entry['bytes'],
-                num_files = block_entry['files'],
-                is_open = (block_entry['is_open'] == 'y')
-            )
-
+            block = self._create_block(block_entry, dataset)
             dataset.blocks.add(block)
-
-#            for file_entry in block_entry['file']:
-#                lfile = File(
-#                    file_entry['lfn'],
-#                    block = block,
-#                    size = file_entry['bytes']
-#                )
-#
-#                block.files.add(lfile)
+            dataset.size += block.size
+            dataset.num_files += block.num_files
 
         ## Get other details of the dataset from DBS
+        self._fill_dataset_details(dataset)
+
+        return dataset
+
+    def _create_block(self, block_entry, dataset):
+        """
+        Create a block object with files from a PhEDEx block entry
+        """
+
+        bname = block_entry['name']
+        block_name = Block.translate_name(bname[bname.find('#') + 1:])
+        
+        block = Block(
+            block_name,
+            dataset,
+            size = block_entry['bytes'],
+            num_files = block_entry['files'],
+            is_open = (block_entry['is_open'] == 'y')
+        )
+
+#        for file_entry in block_entry['file']:
+#            lfile = File(
+#                file_entry['lfn'],
+#                block = block,
+#                size = file_entry['bytes']
+#            )
+#
+#            block.files.add(lfile)
+
+        return block
+
+    def _fill_dataset_details(self, dataset):
         # 1. status and PD type
 
-        result = self._dbs.make_request('datasets', ['dataset=' + name, 'dataset_access_type=*', 'detail=True'])
+        result = self._dbs.make_request('datasets', ['dataset=' + dataset.name, 'dataset_access_type=*', 'detail=True'])
         
         if len(result) != 0:
             dbs_entry = result[0]
@@ -79,7 +144,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
         # 2. software version
 
-        result = self._dbs.make_request('releaseversions', ['dataset=' + name])
+        result = self._dbs.make_request('releaseversions', ['dataset=' + dataset.name])
         if len(result) != 0:
             try:
                 version = result[0]['release_version'][0]
@@ -96,32 +161,3 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
                         suffix = ''
         
                     dataset.software_version = (cycle, major, minor, suffix)
-
-        return dataset
-
-    def get_block(self, name):
-        ## Get the full block-file data from PhEDEx
-
-#        result = self._phedex.make_request('data', ['dataset=' + name, 'level=file'])
-        result = self._phedex.make_request('data', ['block=' + name, 'level=block'])
-
-        if len(result) == 0 or 'dataset' not in result[0] or len(result[0]['dataset']) == 0:
-            return None
-        
-        dataset_entry = result[0]['dataset'][0]
-        block_entry = dataset_entry['block'][0]
-
-        bname = block_entry['name']
-        block_name = Block.translate_name(bname[bname.find('#') + 1:])
-
-        ## Create the block object
-
-        block = Block(
-            block_name,
-            dataset = Dataset(dataset_entry['name']),
-            size = block_entry['bytes'],
-            num_files = block_entry['files'],
-            is_open = (block_entry['is_open'] == 'y')
-        )
-        
-        return block

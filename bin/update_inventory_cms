@@ -89,10 +89,16 @@ for replica in replica_source.get_updated_replicas(args.updated_since):
 
         LOG.debug('Unknown block %s. Collecting information.', block_full_name)
 
-        block = dataset_source.get_block(block_full_name)
+        block = dataset_source.get_block(block_full_name, dataset)
         if block is None:
             LOG.error('Unknown block %s.', block_full_name)
             continue
+
+        dataset.blocks.add(block)
+        dataset.size += block.size
+        dataset.num_files += block.num_files
+
+        dynamo.update(dataset)
 
     LOG.debug('Updating information for block %s', block.full_name())
 
@@ -107,27 +113,6 @@ for replica in replica_source.get_updated_replicas(args.updated_since):
     LOG.debug('Updating information for dataset replica %s', str(dataset_replica))
 
     dynamo.update(dataset_replica, check = True)
-
-    try:
-        dataset = dynamo.datasets[dataset.name]
-        LOG.debug('dataset exists.')
-
-        site = dynamo.sites['T1_US_FNAL_Disk']
-        replica = site.find_dataset_replica(dataset)
-        if replica is None:
-            LOG.debug('replica is not on site.')
-        else:
-            LOG.debug('replica is on site.')
-
-        replica = dataset.find_replica(site)
-        if replica is None:
-            LOG.debug('dataset does not have the replica.')
-        else:
-            LOG.debug('dataset has the replica.')
-
-    except KeyError:
-        LOG.debug('dataset does not exist.')
-
 
     if replica.is_custodial and not dataset_replica.is_custodial:
         LOG.debug('Setting dataset replica custodial.')
@@ -156,5 +141,15 @@ for replica in replica_source.get_deleted_replicas(args.updated_since):
     except ObjectError:
         LOG.debug('Replica not found.')
         pass
+
+## Check if any of the UNKNOWN-status datasets became available in DBS.
+
+for dataset in dynamo.datasets.itervalues():
+    if dataset.status != Dataset.STAT_UNKNOWN:
+        continue
+
+    dataset_source._fill_dataset_details(dataset)
+    if dataset.status != Dataset.STAT_UNKNOWN:
+        dynamo.update(dataset)
 
 LOG.info('Inventory update completed.')

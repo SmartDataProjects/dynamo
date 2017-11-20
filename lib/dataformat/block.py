@@ -67,6 +67,10 @@ class Block(object):
 
             return True
         else:
+            if block is self:
+                # identical object -> return False if check is requested
+                return not check
+
             if check and block == self:
                 return False
             else:
