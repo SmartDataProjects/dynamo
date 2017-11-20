@@ -70,7 +70,7 @@ class Dynamo(object):
             while True:
                 LOG.debug('Polling for executables.')
     
-                sql = 'SELECT s.`id`, s.`title`, s.`file`, s.`user_id`, u.`name`, s.`content`, s.`type`, s.`write_request`'
+                sql = 'SELECT s.`id`, s.`write_request`, s.`title`, s.`path`, s.`args`, s.`user_id`, u.`name`, s.`type`'
                 sql += ' FROM `action` AS s INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
                 sql += ' WHERE s.`status` = \'new\''
                 sql += ' ORDER BY s.`timestamp` LIMIT 1'
@@ -86,7 +86,7 @@ class Dynamo(object):
                     LOG.debug('No executable found, sleeping for %d seconds.', sleep_time)
 
                 else:
-                    exec_id, title, path, user_id, user_name, content, content_type, write_request = result[0]
+                    exec_id, write_request, title, path, args, user_id, user_name, content_type = result[0]
                     self.registry.query('UPDATE `action` SET `status` = \'run\' WHERE `id` = %s', exec_id)
 
                     if content_type == 'deletion_policy':
@@ -96,7 +96,7 @@ class Dynamo(object):
                         LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
 
                         if write_request:
-                            if not self.check_write_auth(title, user_id, content):
+                            if not self.check_write_auth(title, user_id, path):
                                 LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
                                 # send a message
                                 continue
@@ -105,7 +105,7 @@ class Dynamo(object):
                         else:
                             queue = None
         
-                        proc = multiprocessing.Process(target = self._run_one, name = title, args = (content, queue))
+                        proc = multiprocessing.Process(target = self._run_one, name = title, args = (path, args, queue))
                         child_processes.append((exec_id, proc, user_name, path, queue))
         
                         proc.daemon = True
@@ -129,21 +129,22 @@ class Dynamo(object):
             raise
 
         finally:
-            for exec_id, proc, user_name, path, pipe in child_processes:
+            for exec_id, proc, user_name, path, queue in child_processes:
                 LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)
                 proc.terminate()
                 proc.join(5)
                 if proc.is_alive():
                     LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
 
+                if queue is not None:
+                    queue.close()
+
                 self.registry.query('UPDATE `action` SET `status` = \'killed\' where `id` = %s', exec_id)
 
-    def check_write_auth(self, title, user, content):
+    def check_write_auth(self, title, user, path):
         # check authorization
-        if content is None:
-            checksum = None
-        else:
-            checksum = hashlib.md5(content).hexdigest()
+        with open(path + '/exec.py') as source:
+            checksum = hashlib.md5(source.read()).hexdigest()
         
         sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = %s'
         for auth_user_id in self.registry.query(sql, title, checksum):
@@ -196,7 +197,7 @@ class Dynamo(object):
                 self.registry.query('UPDATE `action` SET `status` = %s where `id` = %s', 'done' if proc.exitcode == 0 else 'failed', exec_id)
 
         
-    def _run_one(self, executable, queue):
+    def _run_one(self, path, args, queue):
         if queue is not None:
             # create a list of updated objects the executable can fill
             self.inventory._updated_objects = []
@@ -205,9 +206,12 @@ class Dynamo(object):
         # Redirect STDOUT and STDERR to file, close STDIN
         stdout = sys.stdout
         stderr = sys.stderr
-        sys.stdout = open('/tmp/test.out', 'w')
-        sys.stderr = open('/tmp/test.err', 'w')
+        sys.stdout = open(path + '/_stdout', 'w')
+        sys.stderr = open(path + '/_stderr', 'w')
         sys.stdin.close()
+
+        # Set argv
+        sys.argv = [path + '/exec.py'] + args.split()
 
         # Restart logging
         logging.shutdown()
@@ -218,7 +222,7 @@ class Dynamo(object):
         # should not share the same DB connection
         self.inventory.init_store()
 
-        exec(executable, {'dynamo': self.inventory})
+        exec(path + '/exec.py', {'dynamo': self.inventory})
 
         if queue is not None:
             for obj in self.inventory._updated_objects:

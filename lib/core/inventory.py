@@ -200,6 +200,8 @@ class DynamoInventory(object):
                 # do something with self.store
                 pass
 
+        return updated
+
     def delete(self, obj, write = False):
         """
         Delete an object. Behavior over other objects linked to the one deleted

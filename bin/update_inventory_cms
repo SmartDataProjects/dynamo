@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import sys
+import logging
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Dynamo')
@@ -9,6 +10,10 @@ parser.add_argument('--updated-since', '-t', metavar = 'TIMESTAMP', dest = 'upda
 
 args = parser.parse_args()
 sys.argv = []
+
+LOG = logging.getLogger(__name__)
+
+LOG.info('Starting inventory update.')
 
 from dataformat import Configuration, DatasetReplica
 import source.impl
@@ -23,29 +28,44 @@ site_source = source.impl.PhEDExSiteInfoSource(config.sites.config)
 dataset_source = source.impl.PhEDExDatasetInfoSource(config.datasets.config)
 replica_source = source.impl.PhEDExReplicaInfoSource(config.replicas.config)
 
+LOG.info('Updating list of groups.')
 for group in group_source.get_group_list():
     dynamo.update(group, check = True)
 
+LOG.info('Updating list of sites.')
 for site in site_source.get_site_list():
     dynamo.update(site, check = True)
 
 ## Fetch the full list of block replicas that were updated since updated_since.
 ## New datasets and blocks will be caught in the process.
 
+LOG.info('Updating list of datasets, blocks, and replicas.')
 for replica in replica_source.get_updated_replicas(args.updated_since):
+    replica_str = str(replica)
+
+    LOG.debug('Updating %s', replica_str)
+
     # pick up replicas only at known groups and sites
     if replica.group is not None and replica.group.name not in dynamo.groups:
+        LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
+
         continue
 
     try:
         site = dynamo.sites[replica.site.name]
     except KeyError:
+        LOG.debug('%s is at %s, which is not a tracked site.', replica_str, replica.site.name)
+
         continue
 
     try:
         dataset = dynamo.datasets[replica.block.dataset.name]
     except KeyError:
+        LOG.info('Unknown dataset %s. Collecting information.', replica.block.dataset.name)
+
         dataset = dataset_source.get_dataset(replica.block.dataset.name)
+
+    LOG.debug('Updating information for dataset %s', dataset.name)
 
     dynamo.update(dataset, check = True)
     for block in dataset.blocks:
@@ -53,7 +73,13 @@ for replica in replica_source.get_updated_replicas(args.updated_since):
 
     block = dataset.find_block(replica.block.name)
     if block is None:
-        block = dataset_source.get_block(replica.block.full_name())
+        block_full_name = replica.block.full_name()
+
+        LOG.debug('Unknown block %s. Collecting information.', block_full_name)
+
+        block = dataset_source.get_block(block_full_name)
+
+    LOG.debug('Updating information for block %s', block.full_name())
 
     dynamo.update(block, check = True)
 
@@ -61,22 +87,36 @@ for replica in replica_source.get_updated_replicas(args.updated_since):
     if dataset_replica is None:
         dataset_replica = DatasetReplica(dataset, site)
 
+        LOG.debug('Creating new dataset replica %s.', str(dataset_replica))
+
+    LOG.debug('Updating information for dataset replica %s', str(dataset_replica))
+
     dynamo.update(dataset_replica, check = True)
 
     if replica.is_custodial and not dataset_replica.is_custodial:
+        LOG.debug('Setting dataset replica custodial.')
+
         dataset_replica.is_custodial = True
         dynamo.update(dataset_replica)
+
+    LOG.debug('Updating block replica.')
     
     dynamo.update(replica)
 
 ## Repeat for deleted block replicas.
 
 for replica in replica_source.get_deleted_replicas(args.updated_since):
+    replica_str = str(replica)
+
+    LOG.debug('Deleting %s', replica_str)
+
     # blockreplica.delete_from() raises a KeyError or ObjectError if
     # any of the group, site, dataset, ... is not found
     try:
         dynamo.delete(replica)
     except KeyError:
+        LOG.debug('Replica not found.')
         pass
     except ObjectError:
+        LOG.debug('Replica not found.')
         pass
