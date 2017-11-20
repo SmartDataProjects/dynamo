@@ -108,6 +108,8 @@ class Dataset(object):
 
         dataset.demand = copy.deepcopy(self.demand)
 
+        return dataset
+
     def embed_into(self, inventory, check = False):
         try:
             dataset = inventory.datasets[self._name]

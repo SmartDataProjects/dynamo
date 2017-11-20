@@ -7,7 +7,7 @@ import fnmatch
 
 from source.groupinfo import GroupInfoSource
 from common.interface.phedex import PhEDEx
-from dataformat import Dataset, Block
+from dataformat import Group, Dataset, Block
 
 LOG = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class PhEDExGroupInfoSource(GroupInfoSource):
         if name in self.dataset_level_groups:
             group.olevel = Dataset
         else:
-            group.olevel = Group
+            group.olevel = Block
 
         return group
 

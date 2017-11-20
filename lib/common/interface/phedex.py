@@ -5,7 +5,7 @@ Interface to CMS data management service PhEDEx.
 import logging
 import pprint
 
-from webservice import RESTService
+from webservice import RESTService, GET, POST
 from common.configuration import common_config
 
 LOG = logging.getLogger(__name__)
@@ -16,7 +16,8 @@ class PhEDEx(RESTService):
         self.cache_lifetime = cache_lifetime
 
     def make_request(self, resource = '', options = [], method = GET, format = 'url', cache_lifetime = 0, retry_on_error = True): #override
-        response = RETService.make_request(self, resource, options = options, method = method, format = format, cache_lifetime = self.cache_lifetime)
+        LOG.info('%s %s', resource, options)
+        response = RESTService.make_request(self, resource, options = options, method = method, format = format, cache_lifetime = self.cache_lifetime, retry_on_error = retry_on_error)
 
         try:
             result = response['phedex']

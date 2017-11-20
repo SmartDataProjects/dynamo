@@ -10,11 +10,11 @@ import logging
 import tempfile
 import threading
 
-import common.configuration as config
+from common.configuration import common_config
 from common.misc import unicode2str
 
 use_cache_global = False
-if config.webservice.isset('cache_db_params'):
+if 'cache_db_params' in common_config.webservice:
     from common.interface.mysql import MySQL
     use_cache_global = True
 
@@ -29,7 +29,7 @@ class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
 
     def __init__(self):
         urllib2.HTTPSHandler.__init__(self)
-        self.key = config.webservice.x509_key
+        self.key = common_config.webservice.x509_key
         self.cert = self.key
 
     def https_open(self, req):
@@ -50,7 +50,7 @@ class CERNSSOCookieAuthHandler(urllib2.HTTPSHandler):
 
         self.cookies = {}
 
-        with open(config.webservice.cookie_file) as cookie_file:
+        with open(common_config.webservice.cookie_file) as cookie_file:
             # skip the header
             while cookie_file.readline().strip():
                 pass
@@ -125,7 +125,6 @@ class RESTService(object):
 
         if method == GET and len(options) != 0:
             if type(options) is list:
-                url += '?'
                 option_tuples = []
                 for option in options:
                     if type(option) is tuple:
@@ -145,7 +144,7 @@ class RESTService(object):
         if method == GET and self._cache_lock is not None and cache_lifetime > 0:
             with self._cache_lock:
                 try:
-                    db = MySQL(**config.webservice.cache_db_params)
+                    db = MySQL(**common_config.webservice.cache_db_params)
                     cache = db.query('SELECT UNIX_TIMESTAMP(`timestamp`), `content` FROM `webservice` WHERE `url` = %s', url)
                     db.close()
                 except:
@@ -202,7 +201,7 @@ class RESTService(object):
         exceptions = []
         last_errorcode = 0
         last_except = None
-        while len(exceptions) != config.webservice.num_attempts:
+        while len(exceptions) != common_config.webservice.num_attempts:
             try:
                 if self.auth_handler:
                     opener = urllib2.build_opener(self.auth_handler())
@@ -233,7 +232,7 @@ class RESTService(object):
 
                     with self._cache_lock:
                         try:
-                            db = MySQL(**config.webservice.cache_db_params)
+                            db = MySQL(**common_config.webservice.cache_db_params)
                             db.query('DELETE FROM `webservice` WHERE `url` = %s', url)
                             db.query(r"LOAD DATA LOCAL INFILE '%s' INTO TABLE `dynamocache`.`webservice` FIELDS TERMINATED BY ',' ENCLOSED BY '\''" % filename)
                             db.close()
@@ -315,7 +314,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     if args.certificate:
-        config.webservice.x509_key = args.certificate
+        common_config.webservice.x509_key = args.certificate
 
     interface = RESTService(args.url_base, accept = accept)
 

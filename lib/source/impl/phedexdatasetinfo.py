@@ -26,24 +26,24 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 #        result = self._phedex.make_request('data', ['dataset=' + name, 'level=file'])
         result = self._phedex.make_request('data', ['dataset=' + name, 'level=block'])
 
-        if len(result) == 0:
+        if len(result) == 0 or 'dataset' not in result[0] or len(result[0]['dataset']) == 0:
             return None
         
-        dataset_entry = result[0]
+        dataset_entry = result[0]['dataset'][0]
 
         ## Create the dataset object
 
         dataset = Dataset(dataset_entry['name'])
-        if dataset_entry['time_update'] is None:
-            dataset.last_update = int(dataset_entry['time_create'])
-        else:
+        if 'time_update' in dataset_entry and dataset_entry['time_update'] is not None:
             dataset.last_update = int(dataset_entry['time_update'])
+        else:
+            dataset.last_update = int(dataset_entry['time_create'])
 
         ## Fill block and file data
 
         for block_entry in dataset_entry['block']:
-            name = block_entry['name']
-            block_name = Block.translate_name(name[name.find('#') + 1:])
+            bname = block_entry['name']
+            block_name = Block.translate_name(bname[bname.find('#') + 1:])
             
             block = Block(
                 block_name,
@@ -105,14 +105,14 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 #        result = self._phedex.make_request('data', ['dataset=' + name, 'level=file'])
         result = self._phedex.make_request('data', ['block=' + name, 'level=block'])
 
-        if len(result) == 0:
+        if len(result) == 0 or 'dataset' not in result[0] or len(result[0]['dataset']) == 0:
             return None
         
-        dataset_entry = result[0]
+        dataset_entry = result[0]['dataset'][0]
         block_entry = dataset_entry['block'][0]
 
-        name = block_entry['name']
-        block_name = Block.translate_name(name[name.find('#') + 1:])
+        bname = block_entry['name']
+        block_name = Block.translate_name(bname[bname.find('#') + 1:])
 
         ## Create the block object
 

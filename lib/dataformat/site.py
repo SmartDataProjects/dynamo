@@ -211,7 +211,7 @@ class Site(object):
         try:
             dataset_replica = self._dataset_replicas[replica.block.dataset]
         except KeyError:
-            raise ObjectError('Dataset %s is not at %s' % (dataset.name, self._name))
+            raise ObjectError('Dataset %s is not at %s' % (replica.block.dataset.name, self._name))
 
         if replica not in dataset_replica.block_replicas:
             raise IntegrityError('%s is not a block replica of %s' % (str(replica), str(dataset_replica)))

@@ -30,7 +30,7 @@ class BlockReplica(object):
         self.files = None
 
     def __str__(self):
-        return 'BlockReplica %s/%s#%s (group=%s, is_complete=%s, size=%d, last_update=%d)' % \
+        return 'BlockReplica %s:%s#%s (group=%s, is_complete=%s, size=%d, last_update=%d)' % \
             (self._site.name, self._block.dataset.name, self._block.real_name(),
                 'None' if self.group is None else self.group.name, self.is_complete, self.size, self.last_update)
 

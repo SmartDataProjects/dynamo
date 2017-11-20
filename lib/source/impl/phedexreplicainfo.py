@@ -6,7 +6,7 @@ import logging
 
 from source.replicainfo import ReplicaInfoSource
 from common.interface.phedex import PhEDEx
-from dataformat import Dataset, Block, DatasetReplica, BlockReplica
+from dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
                 block = Block(block_name, dataset)
 
                 for deletion_entry in block_entry['deletion']:
-                    block_replica = BlockReplica(block, Site(replica_entry['node']))
+                    block_replica = BlockReplica(block, Site(deletion_entry['node']))
 
                     deleted_replicas.append(block_replica)
 

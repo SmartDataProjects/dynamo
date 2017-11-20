@@ -222,7 +222,7 @@ class Dynamo(object):
         # should not share the same DB connection
         self.inventory.init_store()
 
-        exec(path + '/exec.py', {'dynamo': self.inventory})
+        execfile(path + '/exec.py', {'dynamo': self.inventory})
 
         if queue is not None:
             for obj in self.inventory._updated_objects:
