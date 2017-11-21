@@ -68,3 +68,9 @@ class Group(object):
                 for block_replica in replica.block_replicas:
                     if block_replica.group == group:
                         block_replica.group = None
+
+    def write_into(self, store, delete = False):
+        if delete:
+            store.delete_group(self)
+        else:
+            store.save_group(self)

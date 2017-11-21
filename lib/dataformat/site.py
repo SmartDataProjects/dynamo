@@ -157,6 +157,12 @@ class Site(object):
             for block_replica in replica.block_replicas:
                 block_replica.block.replicas.remove(block_replica)
 
+    def write_into(self, store, delete = False):
+        if delete:
+            store.delete_site(self)
+        else:
+            store.save_site(self)
+
     def find_dataset_replica(self, dataset, must_find = False):
         try:
             return self._dataset_replicas[dataset]

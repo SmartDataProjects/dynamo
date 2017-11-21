@@ -95,5 +95,11 @@ class File(object):
         lfile = block.find_file(self.fid())
         block.remove_file(lfile)
 
+    def write_into(self, store, delete = False):
+        if delete:
+            store.delete_lfile(self)
+        else:
+            store.save_lfile(self)
+
     def fid(self):
         return (self._directory_id, self._basename)

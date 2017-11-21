@@ -114,3 +114,9 @@ class BlockReplica(object):
         dataset_replica.block_replicas.remove(replica)
         block.replicas.remove(replica)
         site.remove_block_replica(replica)
+
+    def write_into(self, store, delete = False):
+        if delete:
+            store.delete_blockreplica(self)
+        else:
+            store.save_blockreplica(self)

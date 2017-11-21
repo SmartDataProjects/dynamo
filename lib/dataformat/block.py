@@ -86,6 +86,12 @@ class Block(object):
         for replica in block.replicas:
             replica.site.remove_block_replica(replica)
 
+    def write_into(self, store, delete = False):
+        if delete:
+            store.delete_block(self)
+        else:
+            store.save_block(self)
+
     def real_name(self):
         full_string = hex(self._name).replace('0x', '')[:-1] # last character is 'L'
         if len(full_string) < 32:

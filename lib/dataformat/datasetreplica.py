@@ -85,6 +85,12 @@ class DatasetReplica(object):
 
         site.remove_dataset_replica(replica)
 
+    def write_into(self, store, delete = False):
+        if delete:
+            store.delete_datasetreplica(self)
+        else:
+            store.save_datasetreplica(self)
+
     def is_last_copy(self):
         return len(self._dataset.replicas) == 1 and self._dataset.replicas[0] == self
 

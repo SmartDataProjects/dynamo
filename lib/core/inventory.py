@@ -197,8 +197,7 @@ class DynamoInventory(object):
                 self._updated_objects.append(obj.unlinked_clone())
     
             if write:
-                # do something with self.store
-                pass
+                obj.write_into(self.store)
 
         return updated
 
@@ -216,5 +215,4 @@ class DynamoInventory(object):
             self._deleted_objects.append(obj.unlinked_clone())
 
         if write:
-            # do something with self.store
-            pass
+            obj.write_into(self.store, delete = True)

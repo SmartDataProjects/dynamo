@@ -26,15 +26,6 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql = MySQL(**db_params)
 
-    def get_last_update(self): #override
-        return self._mysql.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`')[0]
-
-    def set_last_update(self, tm = -1): #override
-        if tm < 0:
-            tm = time.time()
-
-        self._mysql.query('UPDATE `system` SET `last_update` = FROM_UNIXTIME(%d)' % int(tm))
-
     def get_group_names(self, include = ['*'], exclude = []): #override
         # Load groups
         group_names = []
@@ -371,329 +362,254 @@ class MySQLInventoryStore(InventoryStore):
             dataset.replicas.add(dataset_replica)
             site.add_dataset_replica(dataset_replica)
 
-    def save_sites(self, sites): #override
-        # insert/update sites
-        LOG.info('Inserting/updating %d sites.', len(sites))
-
-        fields = ('name', 'host', 'storage_type', 'backend', 'storage', 'cpu', 'status')
-        mapping = lambda s: (s.name, s.host, Site.storage_type_name(s.storage_type), s.backend, s.storage, s.cpu, s.status)
-
-        self._mysql.insert_many('sites', fields, mapping, sites)
-
-    def save_groups(self, groups): #override
-        # insert/update groups
-        LOG.info('Inserting/updating %d groups.', len(groups))
-
-        self._mysql.insert_many('groups', ('name', 'olevel'), lambda g: (g.name, g.olevel.__name__), groups)
-
-    def save_datasets(self, datasets): #override
-        # insert/update software versions
-
-        version_map = {None: 0} # tuple -> id
-        for vtuple in self._mysql.xquery('SELECT * FROM `software_versions`'):
-            version_map[vtuple[1:]] = vtuple[0]
-
-        all_versions = set([d.software_version for d in datasets])
-        for v in all_versions:
-            if v not in version_map:
-                # id = 0 automatically generates the next id
-                new_id = self._mysql.query('INSERT INTO `software_versions` VALUES %s' % str((0,) + v))
-                version_map[v] = new_id
-
-        # insert/update datasets
-        LOG.info('Inserting/updating %d datasets.', len(datasets))
-
-        name_entry_map = {}
-        query = 'SELECT `name`, `id`, `size`, `num_files`, `status`+0, `on_tape`, `data_type`+0, `software_version_id`, UNIX_TIMESTAMP(`last_update`), `is_open` FROM `datasets`'
-        for entry in self._mysql.xquery(query):
-            name_entry_map[entry[0]] = entry[1:]
-
-        datasets_to_update = []
-        datasets_to_insert = []
-
-        for dataset in datasets:
-            try:
-                dataset_id, size, num_files, status, on_tape, data_type, software_version_id, last_update, is_open = name_entry_map.pop(dataset.name)
-            except KeyError:
-                datasets_to_insert.append(dataset)
-                continue
-
-            if dataset.size != size or dataset.num_files != num_files or dataset.status != status or dataset.on_tape != on_tape or \
-                    version_map[dataset.software_version] != software_version_id or dataset.last_update != last_update or dataset.is_open != is_open:
-                datasets_to_update.append((dataset_id, dataset))
-
-        LOG.info("%d datasets to update", len(datasets_to_update))
-        LOG.info("%d datasets to insert", len(datasets_to_insert))
-
-        fields = ('id', 'name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        # MySQL expects the local time for last_update
-        mapping = lambda (i, d): (
-            i,
-            d.name,
-            d.size,
-            d.num_files,
-            d.status,
-            d.on_tape,
-            d.data_type,
-            version_map[d.software_version],
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update)),
-            1 if d.is_open else 0
-        )
-
-        # use INSERT ON DUPLICATE KEY UPDATE
-        self._mysql.insert_many('datasets', fields, mapping, datasets_to_update, do_update = True)
-
-        fields = ('name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        # MySQL expects the local time for last_update
-        mapping = lambda d: (
-            d.name,
-            d.size,
-            d.num_files,
-            d.status,
-            d.on_tape,
-            d.data_type,
-            version_map[d.software_version],
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(d.last_update)),
-            1 if d.is_open else 0
-        )
-
-        self._mysql.insert_many('datasets', fields, mapping, datasets_to_insert, do_update = False)
-
-        # load the ids of the inserted datasets and append to the update list
-        dataset_id_map = {}
-        self._make_dataset_map(datasets_to_insert, dataset_id_map = dataset_id_map)
-        for dataset in datasets_to_insert:
-            datasets_to_update.append((dataset_id_map[dataset], dataset))
-
-        # insert/update blocks and files
-        LOG.info('Inserting/updating blocks and files.')
-
-        block_ids_to_delete = []
-        blocks_to_update = []
-        file_ids_to_delete = []
-        files_to_update = []
-        files_to_insert = []
-
-        # loop over all datasets that were updated or inserted
-        for dataset_id, dataset in datasets_to_update:
-            blocks_in_mem = dict((b.real_name(), b) for b in dataset.blocks)
-            blocks_in_db = self._mysql.xquery('SELECT `id`, `name`, `size`, `num_files`, `is_open` FROM `blocks` WHERE `dataset_id` = %s', dataset_id)
-            for block_id, name, size, num_files, is_open in blocks_in_db:
-                try:
-                    block = blocks_in_mem.pop(name)
-                except KeyError:
-                    # in DB but not in memory - TODO need to have "invalidated" flag and not delete
-                    block_ids_to_delete.append(block_id)
-                    continue
-
-                if size != block.size or num_files != block.num_files or is_open != block.is_open:
-                    blocks_to_update.append((block_id, block.size, block.num_files, block.is_open))
-
-            # remaining items in blocks_in_mem are all new
-            # need to insert here to create block ids
-            fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open')
-            mapping = lambda b: (dataset_id, b.real_name(), b.size, b.num_files, b.is_open)
-            self._mysql.insert_many('blocks', fields, mapping, blocks_in_mem.itervalues(), do_update = False)
-
-            block_id_map = {}
-            self._mysql.make_map('blocks', dataset.blocks, object_id_map = block_id_map, key = lambda b: b.real_name())
-
-            for block in dataset.blocks:
-                if block.files is None:
-                    continue
-
-                block_id = block_id_map[block]
-
-                files_in_mem = dict((f.lfn, f) for f in block.files)
-                files_in_db = self._mysql.xquery('SELECT `id`, `name`, `size` FROM `files` WHERE `block_id` = %s', block_id)
-                for file_id, name, size in files_in_db:
-                    try:
-                        lfile = files_in_mem.pop(name)
-                    except KeyError:
-                        file_ids_to_delete.append(file_id)
-                        continue
-
-                    if size != lfile.size:
-                        files_to_update.append((file_id, size))
-
-                # remaining items in files_in_mem are all new
-                for name, lfile in files_in_mem.iteritems():
-                    files_to_insert.append((block_id, dataset_id, lfile.size, name))
-
-        # delete blocks, files, block_replicas, and block_replica_sizes
-        sqlbase = 'DELETE b, f, br, brs FROM `blocks` AS b'
-        sqlbase += ' LEFT JOIN `files` AS f ON f.`block_id` = b.`id`'
-        sqlbase += ' LEFT JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
-        sqlbase += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id`'
-
-        self._mysql.execute_many(sqlbase, 'b.`id`', block_ids_to_delete)
-
-        # delete files
-        self._mysql.delete_many('files', 'id', file_ids_to_delete)
-
-        # update blocks
-        fields = ('id', 'size', 'num_files', 'is_open')
-        # use INSERT ON DUPLICATE KEY UPDATE query
-        self._mysql.insert_many('blocks', fields, None, blocks_to_update, do_update = True)
-
-        # update files
-        fields = ('id', 'size')
-        self._mysql.insert_many('files', fields, None, files_to_update, do_update = True)
-
-        # insert files
-        fields = ('block_id', 'dataset_id', 'size', 'name')
-        self._mysql.insert_many('files', fields, None, files_to_insert, do_update = False)
-
-    def update_replicas(self, sites, groups, datasets): #override
-        site_id_map = {}
-        self._make_site_map(sites, site_id_map = site_id_map)
-        group_id_map = {}
-        self._make_group_map(groups, group_id_map = group_id_map)
-        dataset_id_map = {}
-        self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
-
-        # insert/update dataset replicas
-        LOG.info('Updating replicas.')
-
-        fields = ('dataset_id', 'site_id', 'is_custodial')
-        mapping = lambda r: (dataset_id_map[r.dataset], site_id_map[r.site], r.is_custodial)
-
-        all_replicas = []
-        for dataset in datasets:
-            if dataset.replicas is not None:
-                all_replicas.extend(dataset.replicas)
-
-        self._mysql.insert_many('dataset_replicas', fields, mapping, all_replicas, do_update = True)
-
-        # delete dataset replicas + insert/update/delete block replicas
-
-        all_replicas = []
-        replica_sizes = []
-        for dataset in datasets:
-            # delta deletions: load here information of all dataset replicas/block replicas from inventory (inventory.store.load_dataset).
-            inventory_dataset = self.load_dataset(dataset.name, load_blocks = True, load_files = False, load_replicas = True, sites = sites, groups = groups)
-
-            for replica in dataset.replicas:
-                site_id = site_id_map[replica.site]
-                blocks_in_memory = set(r.block for r in replica.block_replicas)
-
-                inventory_dataset_replica = inventory_dataset.find_replica(replica.site)
-
-                block_replicas_to_delete = []
-                for inventory_block_replica in inventory_dataset_replica.block_replicas:
-                    if inventory_block_replica.block not in blocks_in_memory:
-                        block_replicas_to_delete.append(inventory_block_replica)
-
-                self.delete_blockreplicas(block_replicas_to_delete)
-
-            # delete dataset replicas that are in DB but not in memory
-            for inventory_replica in inventory_dataset.replicas:
-                site = inventory_replica.site
-                if site in sites and dataset.find_replica(site) is None:
-                    self.delete_datasetreplica(inventory_replica, delete_blockreplicas = True)
-
-            # end of delta deletions part
-            # remaining block replicas are to be inserted
-
-            block_name_to_id = {}
-            for block_id, block_name in self._mysql.xquery('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
-                block_name_to_id[Block.translate_name(block_name)] = block_id
-
-            for replica in dataset.replicas:
-                site_id = site_id_map[replica.site]
-
-                for block_replica in replica.block_replicas:
-                    block_id = block_name_to_id[block_replica.block.name]
-                    last_update_timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update))
-
-                    all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial, last_update_timestamp))
-                    if not block_replica.is_complete:
-                        replica_sizes.append((block_id, site_id, block_replica.size))
-
-        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
-        self._mysql.insert_many('block_replicas', fields, None, all_replicas, do_update = True)
-
-        fields = ('block_id', 'site_id', 'size')
-        self._mysql.insert_many('block_replica_sizes', fields, None, replica_sizes, do_update = True)
-
-    def save_replicas(self, sites, groups, datasets): #override
-        if len(sites) == 0:
-            # we have no sites loaded in memory -> cannot have replicas -> nothing to do
+    def save_block(self, block): #override
+        dataset_id = self._get_dataset_id(block.dataset)
+        if dataset_id == 0:
             return
 
-        site_id_map = {}
-        self._make_site_map(sites, site_id_map = site_id_map)
-        group_id_map = {}
-        self._make_group_map(groups, group_id_map = group_id_map)
-        dataset_id_map = {}
-        self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
+        fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open')
 
-        site_id_list = '(' + ','.join('%d' % sid for sid in site_id_map.values()) + ')'
+        sql = 'INSERT INTO `blocks` ('
+        sql += ', '.join('`%s`' % f for f in fields)
+        sql += ') VALUES (%s, %s, %s, %s, %s)'
+        sql += ' ON DUPLICATE KEY UPDATE '
+        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
-        # insert/update dataset replicas
-        LOG.info('Inserting/updating dataset replicas.')
+        self._mysql.query(sql, dataset_id, block.real_name(), block.size, block.num_files, block.is_open)
 
-        self._mysql.query('DELETE FROM `dataset_replicas` WHERE `site_id` IN ' + site_id_list)
+    def delete_block(self, block): #override
+        dataset_id = self._get_dataset_id(block.dataset)
+        if dataset_id == 0:
+            return
 
-        fields = ('dataset_id', 'site_id', 'is_custodial')
-        mapping = lambda r: (dataset_id_map[r.dataset], site_id_map[r.site], r.is_custodial)
+        sql = 'DELETE FROM `blocks` WHERE `dataset_id` = %s AND `name` = %s'
 
-        all_replicas = []
-        for dataset in datasets:
-            if dataset.replicas is not None:
-                all_replicas.extend(dataset.replicas)
+        self._mysql.query(sql, dataset_id, block.real_name())
 
-        self._mysql.insert_many('dataset_replicas', fields, mapping, all_replicas, do_update = False)
+    def save_blockreplica(self, block_replica): #override
+        block_id = self._get_block_id(block_replica.block)
+        if block_id == 0:
+            return
 
-        # insert/update block replicas
-        LOG.info('Inserting/updating block replicas.')
+        site_id = self._get_site_id(block_replica.site)
+        if site_id == 0:
+            return
 
-        all_replicas = []
-        replica_sizes = []
-        for dataset in datasets:
-            block_name_to_id = {}
-            for block_id, block_name in self._mysql.xquery('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
-                block_name_to_id[Block.translate_name(block_name)] = block_id
-
-            for replica in dataset.replicas:
-                site_id = site_id_map[replica.site]
-                for block_replica in replica.block_replicas:
-                    block_id = block_name_to_id[block_replica.block.name]
-
-                    last_update_timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update))
-                    all_replicas.append((block_id, site_id, group_id_map[block_replica.group], block_replica.is_complete, block_replica.is_custodial, last_update_timestamp))
-                    if not block_replica.is_complete:
-                        replica_sizes.append((block_id, site_id, block_replica.size))
-
-        self._mysql.query('DELETE FROM `block_replicas` WHERE `site_id` IN ' + site_id_list)
+        if block_replica.group is None:
+            group_id = 0
+        else:
+            group_id = self._get_group_id(block_replica.group)
+            if group_id == 0:
+                return
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
-        self._mysql.insert_many('block_replicas', fields, None, all_replicas, do_update = False)
 
-        self._mysql.query('DELETE FROM `block_replica_sizes` WHERE `site_id` IN ' + site_id_list)
+        sql = 'INSERT INTO `block_replicas` ('
+        sql += ', '.join('`%s`' % f for f in fields)
+        sql += ') VALUES (%s, %s, %s, %s, %s, FROM_UNIXTIME(%s))'
+        sql += ' ON DUPLICATE KEY UPDATE '
+        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
-        fields = ('block_id', 'site_id', 'size')
-        self._mysql.insert_many('block_replica_sizes', fields, None, replica_sizes, do_update = False)
+        self._mysql.query(sql, block_id, site_id, group_id, block_replica.is_complete, block_replica.is_custodial, block_replica.last_update)
 
-    def _make_site_map(self, sites, site_id_map = None, id_site_map = None):
-        self._mysql.make_map('sites', sites, site_id_map, id_site_map)
+    def delete_blockreplica(self, block_replica): #override
+        block_id = self._get_block_id(block_replica.block)
+        if block_id == 0:
+            return
 
-    def _make_group_map(self, groups, group_id_map = None, id_group_map = None):
-        # Sometimes when calling do_update_blockreplicas it can be we're handing over group 'None'
-        cleansed_groups = [g for g in groups if g is not None]
+        site_id = self._get_site_id(block_replica.site)
+        if site_id == 0:
+            return
 
-        if len(cleansed_groups) > 0:
-            self._mysql.make_map('groups', cleansed_groups, group_id_map, id_group_map)
-        if group_id_map is not None:
-            group_id_map[None] = 0
-        if id_group_map is not None:
-            id_group_map[0] = None
+        sql = 'DELETE FROM `block_replicas` WHERE `block_id` = %s AND `site_id` = %s'
+        
+        self._mysql.query(sql, block_id, site_id)
 
-    def _make_dataset_map(self, datasets, dataset_id_map = None, id_dataset_map = None):
-        try:
-            tmp_join = (len(datasets) < 1000)
-        except TypeError:
-            tmp_join = False
+    def save_dataset(self, dataset): #override
+        if dataset.software_version is None:
+            software_version_id = 0
+        else:
+            sql = 'SELECT `id` FROM `software_versions` WHERE (`cycle`, `major`, `minor`, `suffix`) = (%s, %s, %s, %s)'
+            
+            result = self._mysql.query(sql, *dataset.software_version)
+            if len(result) == 0:
+                return
 
-        self._mysql.make_map('datasets', datasets, dataset_id_map, id_dataset_map, tmp_join = tmp_join)
+            software_version_id = result[0]
+            
+        fields = ('name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
 
+        sql = 'INSERT INTO `datasets` ('
+        sql += ', '.join('`%s`' % f for f in fields)
+        sql += ') VALUES (%s, %s, %s, %s, %s, %s, %s, FROM_UNIXTIME(%s), %s)'
+        sql += ' ON DUPLICATE KEY UPDATE '
+        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
+
+        self._mysql.query(sql, dataset.name, dataset.size, dataset.num_files, \
+            dataset.status, dataset.on_tape, dataset.data_type, \
+            software_version_id, dataset.last_update, dataset.is_open)
+
+    def delete_dataset(self, dataset): #override
+        sql = 'DELETE FROM `datasets` WHERE `name` = %s'
+
+        self._mysql.query(sql, dataset.name)
+
+    def save_datasetreplica(self, dataset_replica): #override
+        dataset_id = self._get_dataset_id(dataset_replica.dataset)
+        if dataset_id == 0:
+            return
+
+        site_id = self._get_site_id(dataset_replica.site)
+        if site_id == 0:
+            return
+
+        fields = ('dataset_id', 'site_id', 'is_custodial')
+
+        sql = 'INSERT INTO `dataset_replicas` ('
+        sql += ', '.join('`%s`' % f for f in fields)
+        sql += ') VALUES (%s, %s, %s)'
+        sql += ' ON DUPLICATE KEY UPDATE '
+        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
+
+        self._mysql.query(sql, dataset_id, site_id, dataset_replica.is_custodial)
+
+    def delete_datasetreplica(self, dataset_replica): #override
+        dataset_id = self._get_dataset_id(dataset_replica.dataset)
+        if dataset_id == 0:
+            return
+
+        site_id = self._get_site_id(dataset_replica.site)
+        if site_id == 0:
+            return
+
+        sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
+
+        self._mysql.query(sql, dataset_id, site_id)
+
+    def save_group(self, group): #override
+        fields = ('name', 'olevel')
+
+        sql = 'INSERT INTO `groups` ('
+        sql += ', '.join('`%s`' % f for f in fields)
+        sql += ') VALUES (%s, %s)'
+        sql += ' ON DUPLICATE KEY UPDATE '
+        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
+
+        self._mysql.query(sql, group.name, group.olevel.__name__)
+
+    def delete_group(self, group): #override
+        sql = 'DELETE FROM `groups` WHERE `name` = %s'
+
+        self._mysql.query(sql, group.name)
+
+    def save_partition(self, partition): #override
+        fields = ('name',)
+
+        sql = 'INSERT INTO `partitions` ('
+        sql += ', '.join('`%s`' % f for f in fields)
+        sql += ') VALUES (%s)'
+        sql += ' ON DUPLICATE KEY UPDATE '
+        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
+
+        self._mysql.query(sql, partition.name)
+
+    def delete_partition(self, partition): #override
+        sql = 'DELETE FROM `partitions` WHERE `name` = %s'
+
+        self._mysql.query(sql, partition.name)
+
+    def save_site(self, site): #override
+        fields = ('name', 'host', 'storage_type', 'backend', 'storage', 'cpu', 'status')
+
+        sql = 'INSERT INTO `sites` ('
+        sql += ', '.join('`%s`' % f for f in fields)
+        sql += ') VALUES (%s, %s, %s, %s, %s, %s, %s)'
+        sql += ' ON DUPLICATE KEY UPDATE '
+        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
+
+        self._mysql.query(sql, site.name, site.host, site.storage_type, site.backend, site.storage, site.cpu, site.status)
+
+    def delete_site(self, site): #override
+        sql = 'DELETE FROM `sites` WHERE `name` = %s'
+
+        self._mysql.query(sql, site.name)
+
+    def save_sitepartition(self, site_partition): #override
+        site_id = self._get_site_id(site_partition.site)
+        if site_id == 0:
+            return
+
+        partition_id = self._get_partition_id(site_partition.partition)
+        if partition_id == 0:
+            return
+
+        fields = ('site_id', 'partition_id', 'quota')
+
+        sql = 'INSERT INTO `quotas` ('
+        sql += ', '.join('`%s`' % f for f in fields)
+        sql += ') VALUES (%s, %s, %s)'
+        sql += ' ON DUPLICATE KEY UPDATE '
+        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
+
+        self._mysql.query(sql, site_id, partition_id, site_partition.quota)
+
+    def delete_sitepartition(self, site_partition): #override
+        site_id = self._get_site_id(site_partition.site)
+        if site_id == 0:
+            return
+
+        partition_id = self._get_partition_id(site_partition.partition)
+        if partition_id == 0:
+            return
+
+        sql = 'DELETE FROM `quotas` WHERE `site_id` = %s AND `partition_id` = %s'
+
+        self._mysql.query(sql, site_id, partition_id)
+
+    def _get_dataset_id(self, dataset):
+        sql = 'SELECT `id` FROM `datasets` WHERE `name` = %s'
+
+        result = self._mysql.query(sql, dataset.name)
+        if len(result) == 0:
+            # should I raise?
+            return 0
+
+        return result[0]
+
+    def _get_block_id(self, block):
+        sql = 'SELECT b.`id` FROM `blocks` AS b'
+        sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
+        sql += ' WHERE d.`name` = %s AND b.`name` = %s'
+
+        result = self._mysql.query(sql, block.dataset.name, block.real_name())
+        if len(result) == 0:
+            return 0
+
+        return result[0]
+
+    def _get_site_id(self, site):
+        sql = 'SELECT `id` FROM `sites` WHERE `name` = %s'
+        
+        result = self._mysql.query(sql, site.name)
+        if len(result) == 0:
+            return 0
+
+        return result[0]
+
+    def _get_group_id(self, group):
+        sql = 'SELECT `id` FROM `groups` WHERE `name` = %s'
+        
+        result = self._mysql.query(sql, group.name)
+        if len(result) == 0:
+            return 0
+
+        return result[0]
+
+    def _get_partition_id(self, partition):
+        sql = 'SELECT `id` FROM `partitions` WHERE `name` = %s'
+        
+        result = self._mysql.query(sql, partition.name)
+        if len(result) == 0:
+            return 0
+
+        return result[0]

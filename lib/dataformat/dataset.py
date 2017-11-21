@@ -139,6 +139,12 @@ class Dataset(object):
         for replica in dataset.replicas:
             replica.site.remove_dataset_replica(replica)
 
+    def write_into(self, store, delete = False):
+        if delete:
+            store.delete_dataset(self)
+        else:
+            store.save_dataset(self)
+
     def find_block(self, block_name, must_find = False):
         try:
             return next(b for b in self.blocks if b.name == block_name)

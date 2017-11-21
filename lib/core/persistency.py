@@ -6,20 +6,6 @@ class InventoryStore(object):
     def __init__(self, config):
         pass
 
-    def get_last_update(self):
-        """Get the last update UNIX timestamp of the inventory store."""
-
-        raise NotImplementedError('get_last_update')
-
-    def set_last_update(self, tm = -1):
-        """
-        Set the last update UNIX timestamp of the inventory store.
-
-        @param tm  UNIX timestamp of last update. If negative, use time.time().
-        """
-
-        raise NotImplementedError('set_last_update')
-
     def get_group_names(self, include = ['*'], exclude = []):
         """
         Return a list of group full names from the include and exclude patterns.
@@ -54,10 +40,64 @@ class InventoryStore(object):
         """
         Load data into inventory.
         
-        @param inventory     DynamoInventory object to load data into.
+        @param inventory      DynamoInventory object to load data into.
         @param group_names    List of group names to be considered.
         @param site_names     List of site names to be considered.
         @param dataset_names  List of dataset names to be considered.
         """
 
         raise NotImplementedError('load_data')
+
+    def save_block(self, block):
+        raise NotImplementedError('save_block')
+
+    def save_blockreplica(self, block_replica
+        raise NotImplementedError('save_blockreplica')
+
+    def save_dataset(self, dataset):
+        raise NotImplementedError('save_dataset')
+
+    def save_datasetreplica(self, dataset_replica):
+        raise NotImplementedError('save_datasetreplica')
+
+    def save_group(self, group):
+        raise NotImplementedError('save_group')
+
+    def save_file(self, lfile):
+        raise NotImplementedError('save_file')
+    
+    def save_partition(self, partition):
+        raise NotImplementedError('save_file')
+
+    def save_site(self, site):
+        raise NotImplementedError('save_site')
+
+    def save_sitepartition(self, site_partition):
+        raise NotImplementedError('save_sitepartition')
+
+    def delete_block(self, block):
+        raise NotImplementedError('delete_block')
+
+    def delete_blockreplica(self, block_replica
+        raise NotImplementedError('delete_blockreplica')
+
+    def delete_dataset(self, dataset):
+        raise NotImplementedError('delete_dataset')
+
+    def delete_datasetreplica(self, dataset_replica):
+        raise NotImplementedError('delete_datasetreplica')
+
+    def delete_group(self, group):
+        raise NotImplementedError('delete_group')
+
+    def delete_file(self, lfile):
+        raise NotImplementedError('delete_file')
+    
+    def delete_partition(self, partition):
+        raise NotImplementedError('delete_file')
+
+    def delete_site(self, site):
+        raise NotImplementedError('delete_site')
+
+    def delete_sitepartition(self, site_partition):
+        raise NotImplementedError('delete_sitepartition')

@@ -86,6 +86,12 @@ class Partition(object):
         for site in inventory.sites.itervalues():
             site.partitions.pop(partition)
 
+    def write_into(self, store, delete = False):
+        if delete:
+            store.delete_partition(self)
+        else:
+            store.save_partition(self)
+
     def contains(self, replica):
         if self._subpartitions is None:
             return self._condition.match(replica)

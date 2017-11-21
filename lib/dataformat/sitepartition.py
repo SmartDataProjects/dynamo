@@ -69,6 +69,12 @@ class SitePartition(object):
     def delete_from(self, inventory):
         raise ObjectError('Deleting a single SitePartition is not allowed.')
 
+    def write_into(self, store, delete = False):
+        if delete:
+            store.delete_sitepartition(self)
+        else:
+            store.save_sitepartition(self)
+
     def set_quota(self, quota):
         if self._partition.parent is not None:
             # this is a subpartition. Update the parent partition quota
