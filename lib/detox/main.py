@@ -99,6 +99,19 @@ class Detox(object):
         # will also select out replicas on sites with quotas
         all_replicas = policy.partition_replicas(self.inventory_manager, target_sites)
 
+        # check if replica is present on other site(s) that trigger exclusion from the possible deletion
+        # possible use case: a tape site has had a water indicident, for example
+        # Communication is needed because we do not 
+        if len(detox_config.main.exclude_if_on) > 0:
+            excluded_replicas = []
+            for replica in all_replicas:
+                ds_name = replica.dataset.name
+                for sitename in detox_config.main.exclude_if_on:
+                    if self.inventory_manager.store.check_if_on(ds_name,sitename):
+                        excluded_replicas.append(replica)
+            for excluded_replica in excluded_replicas:
+                all_replicas.remove(excluded_replica)
+                        
         logger.info('Saving site and dataset states.')
 
         # update site and dataset lists

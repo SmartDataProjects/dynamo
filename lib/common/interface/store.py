@@ -268,6 +268,15 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
+    def check_if_on(self, datasetname, sitename):
+        """
+        Return true/false if replica is on specific site.
+        """
+
+        logger.debug('_do_check_if_on()')
+
+        return self._do_check_if_on(datasetname, sitename)
+
     def find_block_of(self, fullpath, datasets):
         """
         Return the Block object for the given file.
