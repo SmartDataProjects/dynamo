@@ -51,7 +51,7 @@ class InventoryStore(object):
     def save_block(self, block):
         raise NotImplementedError('save_block')
 
-    def save_blockreplica(self, block_replica
+    def save_blockreplica(self, block_replica):
         raise NotImplementedError('save_blockreplica')
 
     def save_dataset(self, dataset):
@@ -78,7 +78,7 @@ class InventoryStore(object):
     def delete_block(self, block):
         raise NotImplementedError('delete_block')
 
-    def delete_blockreplica(self, block_replica
+    def delete_blockreplica(self, block_replica):
         raise NotImplementedError('delete_blockreplica')
 
     def delete_dataset(self, dataset):
