@@ -101,7 +101,7 @@ class Detox(object):
 
         # check if replica is present on other site(s) that trigger exclusion from the possible deletion
         # possible use case: a tape site has had a water indicident, for example
-        # Communication is needed because we do not 
+        # Communication with database is needed because we do not have all (tape) replicas in memory 
         if len(detox_config.main.exclude_if_on) > 0:
             excluded_replicas = []
             for replica in all_replicas:
