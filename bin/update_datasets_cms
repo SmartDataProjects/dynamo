@@ -1,0 +1,85 @@
+#!/usr/bin/env python
+
+import sys
+import logging
+import time
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Dynamo')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', default = '', help = 'Configuration JSON.')
+parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
+
+args = parser.parse_args()
+sys.argv = []
+
+## Set up logging (write to stderr unless path is given)
+log_level = getattr(logging, args.log_level.upper())
+log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
+
+LOG = logging.getLogger()
+LOG.setLevel(log_level)
+log_handler = logging.StreamHandler()
+log_handler.setFormatter(logging.Formatter(fmt = log_format))
+LOG.addHandler(log_handler)
+
+from dataformat import Configuration, DatasetReplica
+from common.interface.mysql import MySQL
+import source.impl as sources
+from common.configuration import common_config
+
+#dynamo: inventory
+
+with open(args.config) as source:
+    config = Configuration(source)
+
+LOG.info('Updating status of %d datasets', config.num_datasets)
+
+dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
+
+state_db_params = Configuration(common_config.mysql)
+state_db_params.update(config.state.db_params)
+app_table = MySQL(**state_db_params)
+
+## Get the datasets to check
+
+dataset_names = app_table.query('SELECT `dataset_name` FROM `update_datasets_cms` ORDER BY `row` LIMIT %d' % config.num_datasets)
+
+for dataset_name in dataset_names:
+    try:
+        inventory_dataset = dynamo.datasets[dataset_name]
+    except KeyError:
+        continue
+
+    LOG.debug('Updating %s', dataset_name)
+
+    source_dataset = dataset_source.get_dataset(dataset_name)
+
+    # if some dataset attribute changed
+    if source_dataset != inventory_dataset:
+        dynamo.update(source_dataset)
+
+    inventory_block_names = set(b.name for b in inventory_dataset.blocks)
+    source_block_names = set(b.name for b in source_dataset.blocks)
+
+    for block_name in (source_block_names - inventory_block_names):
+        source_block = source_dataset.find_block(block_name)
+        dynamo.update(source_block)
+
+    for block_name in (inventory_block_names - source_block_names):
+        inventory_block = inventory_dataset.find_block(block_name)
+        dynamo.delete(inventory_block)
+
+    for block_name in (inventory_block_names & source_block_names):
+        inventory_block = inventory_dataset.find_block(block_name)
+        source_block = source_dataset.find_block(block_name)
+        if source_block != inventory_block:
+            dynamo.update(source_block)
+
+rownum = app_table.query('SELECT `row` FROM `update_datasets_cms` WHERE `dataset_name` = %s', dataset_names[-1])
+app_table.query('DELETE FROM `update_datasets_cms` WHERE `row` <= %s', rownum)
+
+if app_table.query('SELECT COUNT(*) FROM `update_datasets_cms`')[0] == 0:
+    app_table.query('ALTER TABLE `update_datasets_cms` AUTO_INCREMENT = 1')
+    app_table.insert_many('update_datasets_cms', ('dataset_name'), None, dynamo.datasets.iterkeys())
+
+LOG.info('Dataset update completed.')

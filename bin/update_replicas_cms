@@ -2,11 +2,11 @@
 
 import sys
 import logging
+import time
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Dynamo')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', default = '', help = 'Configuration JSON.')
-parser.add_argument('--updated-since', '-t', metavar = 'TIMESTAMP', dest = 'updated_since', type = int, default = 0, help = 'Unix timestamp of the last update.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
 
 args = parser.parse_args()
@@ -22,20 +22,26 @@ log_handler = logging.StreamHandler()
 log_handler.setFormatter(logging.Formatter(fmt = log_format))
 LOG.addHandler(log_handler)
 
-LOG.info('Starting inventory update.')
-
 from dataformat import Configuration, DatasetReplica
+from common.interface.mysql import MySQL
 import source.impl as sources
-
-#dynamo: inventory
+from common.configuration import common_config
 
 with open(args.config) as source:
     config = Configuration(source)
+
+LOG.info('Starting inventory update.')
 
 group_source = sources.PhEDExGroupInfoSource(config.groups.config)
 site_source = sources.PhEDExSiteInfoSource(config.sites.config)
 dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 replica_source = sources.PhEDExReplicaInfoSource(config.replicas.config)
+
+state_db_params = Configuration(common_config.mysql)
+state_db_params.update(config.state.db_params)
+app_table = MySQL(**state_db_params)
+
+## Refresh groups and sites
 
 LOG.info('Updating list of groups.')
 for group in group_source.get_group_list():
@@ -45,11 +51,16 @@ LOG.info('Updating list of sites.')
 for site in site_source.get_site_list():
     dynamo.update(site, check = True)
 
+## Get the last update timestamp
+
+last_update = app_table.query('SELECT `last_update` FROM `update_replicas_cms`')[0]
+update_start = time.time()
+
 ## Fetch the full list of block replicas that were updated since updated_since.
 ## New datasets and blocks will be caught in the process.
 
 LOG.info('Updating list of datasets, blocks, and replicas.')
-for replica in replica_source.get_updated_replicas(args.updated_since):
+for replica in replica_source.get_updated_replicas(last_update):
     replica_str = str(replica)
 
     LOG.debug('Updating %s', replica_str)
@@ -124,9 +135,9 @@ for replica in replica_source.get_updated_replicas(args.updated_since):
     
     dynamo.update(replica)
 
-## Repeat for deleted block replicas.
+## Repeat for deleted block replicas
 
-for replica in replica_source.get_deleted_replicas(args.updated_since):
+for replica in replica_source.get_deleted_replicas(last_update):
     replica_str = str(replica)
 
     LOG.debug('Deleting %s', replica_str)
@@ -142,14 +153,7 @@ for replica in replica_source.get_deleted_replicas(args.updated_since):
         LOG.debug('Replica not found.')
         pass
 
-## Check if any of the UNKNOWN-status datasets became available in DBS.
-
-for dataset in dynamo.datasets.itervalues():
-    if dataset.status != Dataset.STAT_UNKNOWN:
-        continue
-
-    dataset_source._fill_dataset_details(dataset)
-    if dataset.status != Dataset.STAT_UNKNOWN:
-        dynamo.update(dataset)
+## Store the timestamp of when we started (allow 1 minute safety margin)
+app_table.query('UPDATE `update_replicas_cms` SET `last_update` = %s', update_start - 60)
 
 LOG.info('Inventory update completed.')
