@@ -99,6 +99,9 @@ class Dynamo(object):
                             if not self.check_write_auth(title, user_id, path):
                                 LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
                                 # send a message
+
+                                self.registry.query('UPDATE `action` SET `status` = %s where `id` = %s', 'failed', exec_id)
+
                                 continue
         
                             queue = multiprocessing.Queue(64)
@@ -141,12 +144,12 @@ class Dynamo(object):
 
                 self.registry.query('UPDATE `action` SET `status` = \'killed\' where `id` = %s', exec_id)
 
-    def check_write_auth(self, title, user, path):
+    def check_write_auth(self, title, user_id, path):
         # check authorization
         with open(path + '/exec.py') as source:
             checksum = hashlib.md5(source.read()).hexdigest()
         
-        sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = %s'
+        sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = UNHEX(%s)'
         for auth_user_id in self.registry.query(sql, title, checksum):
             if auth_user_id == 0 or auth_user_id == user_id:
                 return True

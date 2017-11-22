@@ -22,7 +22,7 @@ log_handler = logging.StreamHandler()
 log_handler.setFormatter(logging.Formatter(fmt = log_format))
 LOG.addHandler(log_handler)
 
-from dataformat import Configuration, DatasetReplica
+from dataformat import Configuration, DatasetReplica, ObjectError
 from common.interface.mysql import MySQL
 import source.impl as sources
 from common.configuration import common_config
