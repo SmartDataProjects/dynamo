@@ -1,32 +1,30 @@
 import time
 import logging
-import math
-import pprint
 import collections
-import random
 import sys
-import os
 
-import common.configuration as config
-from common.dataformat import Dataset, Block, Site
-from policy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
-import detox.configuration as detox_config
-from common.misc import timer, parallel_exec, sigint
+from dataformat import Dataset
+from detox.policy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
+from common.control import sigint
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class Detox(object):
 
-    def __init__(self, inventory, transaction, demand, history):
+    def __init__(self, config, inventory, copy_op, deletion_op, demand, history):
         """
+        @param config      Configuration
         @param inventory   An InventoryManager instance
-        @param transaction A TransactionManager instance
+        @param copy_op     An operation.copy instance
+        @param deletion_op An operation.deletion instance
         @param demand      A DemandManager instance
         @param history     A TransactionHistoryInterface instance
         """
 
-        self.inventory_manager = inventory
-        self.transaction_manager = transaction
+        self.config = config
+        self.inventory = inventory
+        self.copy_op = copy_op
+        self.deletion_op = deletion_op
         self.demand_manager = demand
         self.history = history
 
@@ -37,43 +35,46 @@ class Detox(object):
         @param policy     A Detox Policy object
         @param is_test    Set to True when e.g. the main binary is invoked with --test-run option.
         @param comment    Passed to dynamo history as well as the deletion interface
+        @return List of deleted (=disowned) replicas
         """
 
-        logger.info('Detox cycle for %s starting at %s', policy.partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
+        LOG.info('Detox cycle for %s starting at %s', policy.partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
 
         # Execute the policy within a try block to avoid dead locks
         try:
             # insert new policy lines to the history database
-            logger.info('Saving policy conditions.')
+            LOG.info('Saving policy conditions.')
             self.history.save_conditions(policy.policy_lines)
     
-            logger.info('Updating dataset demands.')
+            LOG.info('Updating dataset demands.')
             # update requests, popularity, and locks
-            self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
+            self.demand_manager.update(self.inventory, policy.used_demand_plugins)
     
-            logger.info('Updating site status.')
+            LOG.info('Updating site status.')
             # update site status
-            self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
+            self.inventory.site_source.set_site_status(self.inventory.sites) # update site status regardless of inventory updates
     
-            self._execute_policy(policy, is_test, comment)
+            disowned_replicas = self._execute_policy(policy, is_test, comment)
 
         finally:
             pass
 
-        logger.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
+        LOG.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
+
+        return disowned_replicas
 
     def _execute_policy(self, policy, is_test, comment):
         # fetch the copy/deletion run number
         run_number = self.history.new_deletion_run(policy.partition.name, policy.version, is_test = is_test, comment = comment)
 
-        logger.info('Preparing deletion run %d', run_number)
+        LOG.info('Preparing deletion run %d', run_number)
 
-        logger.info('Identifying target sites.')
+        LOG.info('Identifying target sites.')
 
         # Ask each site if deletion should be triggered.
         target_sites = set() # target sites of this detox cycle
         triggered_sites = set() # sites that are e.g. getting full and need dismiss calls
-        for site in self.inventory_manager.sites.itervalues():
+        for site in self.inventory.sites.itervalues():
             for targdef in policy.target_site_def:
                 if targdef.match(site):
                     target_sites.add(site)
@@ -88,24 +89,24 @@ class Detox(object):
                     break
 
         if len(target_sites) == 0:
-            logger.info('No site matches the target definition.')
-            return
+            LOG.info('No site matches the target definition.')
+            return []
 
         quotas = dict((s, s.partition_quota(policy.partition)) for s in target_sites)
 
-        logger.info('Identifying dataset replicas in the partition.')
+        LOG.info('Identifying dataset replicas in the partition.')
 
         # "partition" as a verb - selecting only the blockreps in the partition
         # will also select out replicas on sites with quotas
-        all_replicas = policy.partition_replicas(self.inventory_manager, target_sites)
+        all_replicas = policy.partition_replicas(self.inventory, target_sites)
 
-        logger.info('Saving site and dataset states.')
+        LOG.info('Saving site and dataset states.')
 
         # update site and dataset lists
         self.history.save_sites(target_sites)
         self.history.save_datasets(set(r.dataset for r in all_replicas))
 
-        logger.info('Start deletion. Evaluating %d lines against %d replicas.', len(policy.policy_lines), len(all_replicas))
+        LOG.info('Start deletion. Evaluating %d lines against %d replicas.', len(policy.policy_lines), len(all_replicas))
 
         protected_fraction = dict((s, 1. if q == 0 else 0.) for s, q in quotas.iteritems())
 
@@ -118,7 +119,7 @@ class Detox(object):
         # now iterate through deletions, updating site usage as we go
         while True:
             iteration += 1
-            logger.info('Iteration %d, evaluating %d replicas', iteration, len(all_replicas))
+            LOG.info('Iteration %d, evaluating %d replicas', iteration, len(all_replicas))
 
             delete_candidates = collections.defaultdict(list) # {replica: [([block_replica], condition_id)]}
             keep_candidates = collections.defaultdict(list) # {replica: [([block_replica], condition_id)]}
@@ -190,9 +191,9 @@ class Detox(object):
             for replica in empty_replicas:
                 all_replicas.remove(replica)
 
-            logger.info('Took %f seconds to evaluate', time.time() - start)
+            LOG.info('Took %f seconds to evaluate', time.time() - start)
 
-            logger.info(' %d dataset replicas in deletion candidates', len(delete_candidates))
+            LOG.info(' %d dataset replicas in deletion candidates', len(delete_candidates))
 
             if len(delete_candidates) != 0:
                 # now figure out which of deletion candidates to actually delete
@@ -233,11 +234,11 @@ class Detox(object):
                     quota = quotas[site] * 1.e+12
 
                     # have we deleted more than allowed in a single iteration?
-                    if quota > 0. and deleted_volume[site] / quota > detox_config.main.deletion_per_iteration:
+                    if quota > 0. and deleted_volume[site] / quota > self.config.main.deletion_per_iteration:
                         continue
     
-                    if logger.getEffectiveLevel() == logging.DEBUG:
-                        logger.debug('Deleting replica: %s', str(replica))
+                    if LOG.getEffectiveLevel() == logging.DEBUG:
+                        LOG.debug('Deleting replica: %s', str(replica))
     
                     matches = delete_candidates.pop(replica)
     
@@ -289,20 +290,20 @@ class Detox(object):
 
         # done iterating
 
-        logger.info(' %d dataset replicas in delete list', len(deleted))
-        logger.info(' %d dataset replicas in keep list', len(kept))
-        logger.info(' %d dataset replicas in protect list', len(protected))
+        LOG.info(' %d dataset replicas in delete list', len(deleted))
+        LOG.info(' %d dataset replicas in keep list', len(kept))
+        LOG.info(' %d dataset replicas in protect list', len(protected))
 
         for line in policy.policy_lines:
             if hasattr(line, 'has_match') and not line.has_match:
-                logger.warning('Policy %s had no matching replica.' % str(line))
+                LOG.warning('Policy %s had no matching replica.' % str(line))
 
         # save replica snapshots and all deletion decisions
-        logger.info('Saving deletion decisions.')
+        LOG.info('Saving deletion decisions.')
 
         self.history.save_deletion_decisions(run_number, quotas, deleted, kept, protected)
         
-        logger.info('Committing deletion.')
+        LOG.info('Committing deletion.')
 
         # we have recorded deletion reasons; we can now consolidate deleted block replicas
 
@@ -318,9 +319,9 @@ class Detox(object):
 
             deletion_list.append(replica)
 
-        self.commit_deletions(run_number, policy, deletion_list, is_test, comment)
+        disowned_replicas = self.commit_deletions(run_number, policy, deletion_list, is_test, comment)
 
-        logger.info('Restoring inventory state.')
+        LOG.info('Restoring inventory state.')
 
         # recover fragmented dataset replicas
         for replica, block_replicas in keep_parts.iteritems():
@@ -330,6 +331,8 @@ class Detox(object):
         policy.restore_replicas()
 
         self.history.close_deletion_run(run_number)
+
+        return disowned_replicas
 
     def unlink_block_replicas(self, replica, block_replicas, policy, is_test):
         """
@@ -373,12 +376,12 @@ class Detox(object):
                         blocks_to_hand_over.append(block_replica)
 
             if len(blocks_to_hand_over) != 0:
-                logger.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
+                LOG.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
                 # not ideal to make reassignments here, but this operation affects later iterations
                 self.reassign_owner(replica, blocks_to_hand_over, dr_owner, policy.partition, is_test)
 
             if len(blocks_to_unlink) != 0:
-                logger.debug('%d blocks to unlink', len(blocks_to_unlink))
+                LOG.debug('%d blocks to unlink', len(blocks_to_unlink))
 
                 for block_replica in blocks_to_unlink:
                     replica.block_replicas.remove(block_replica)
@@ -409,6 +412,7 @@ class Detox(object):
         @param deletion_list List of dataset replicas (can be partial) to be deleted.
         @param is_test       Do not actually delete if True
         @param comment       Comment to be recorded in the history DB
+        @return List of deleted (=disowned) block replicas
         """
 
         if not comment:
@@ -421,28 +425,30 @@ class Detox(object):
         for replica in deletion_list:
             deletions_by_site[replica.site].append(replica)
 
+        disowned_replicas = []
+
         # now schedule deletion for each site
         for site in sorted(deletions_by_site.iterkeys()):
             if site.storage_type == Site.TYPE_MSS:
                 if config.daemon_mode:
-                    logger.warning('Deletion from MSS cannot be done in daemon mode.')
+                    LOG.warning('Deletion from MSS cannot be done in daemon mode.')
                     continue
             
                 print 'Deletion from', site.name, 'is requested. Are you sure? [Y/n]'
                 response = sys.stdin.readline().strip()
                 if response != 'Y':
-                    logger.warning('Aborting.')
+                    LOG.warning('Aborting.')
                     continue
 
             site_deletion_list = deletions_by_site[site]
 
-            logger.info('Deleting %d replicas from %s.', len(site_deletion_list), site.name)
+            LOG.info('Deleting %d replicas from %s.', len(site_deletion_list), site.name)
 
             sigint.block()
 
             deletion_mapping = {} #{deletion_id: (approved, [replicas])}
 
-            chunk_size = detox_config.main.deletion_volume_per_request * 1.e+12
+            chunk_size = self.config.main.deletion_volume_per_request * 1.e+12
 
             while len(site_deletion_list) != 0:
                 # stack up replicas up to 110% of volume_per_request
@@ -498,8 +504,7 @@ class Detox(object):
                         block_replica.group = None
                     
                     if not is_test:
-                        # report back to main thread
-                        pass
+                        disowned_replicas.append(block_replica)
 
                 if approved and not is_test:
                     total_size += size
@@ -516,4 +521,6 @@ class Detox(object):
 
             sigint.unblock()
 
-            logger.info('Done deleting %d replicas (%.1f TB) from %s.', num_deleted, total_size * 1.e-12, site.name)
+            LOG.info('Done deleting %d replicas (%.1f TB) from %s.', num_deleted, total_size * 1.e-12, site.name)
+
+        return disowned_replicas

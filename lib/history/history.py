@@ -1,10 +1,9 @@
 import logging
 import time
 
-from common.dataformat import HistoryRecord
-import common.configuration as config
+from dataformat import HistoryRecord
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class TransactionHistoryInterface(object):
     """
@@ -14,8 +13,9 @@ class TransactionHistoryInterface(object):
     class LockError(Exception):
         pass
 
-    def __init__(self):
+    def __init__(self, config):
         self._lock_depth = 0
+        self.config = config
 
     def acquire_lock(self, blocking = True):
         if self._lock_depth == 0:
@@ -41,8 +41,8 @@ class TransactionHistoryInterface(object):
         if not tag:
             tag = time.strftime('%y%m%d%H%M%S')
 
-        if config.read_only:
-            logger.debug('_do_make_snapshot(%s, %d)', tag)
+        if self.config.read_only:
+            LOG.debug('_do_make_snapshot(%s, %d)', tag)
             return
 
         self.acquire_lock()
@@ -59,15 +59,15 @@ class TransactionHistoryInterface(object):
             tags = self.list_snapshots(timestamp_only = True)
 
             if len(tags) == 0:
-                logger.warning('No snapshots taken.')
+                LOG.warning('No snapshots taken.')
                 return
 
             tag = tags[0]
             newer_than = 0
             older_than = 0
 
-        if config.read_only:
-            logger.debug('_do_remove_snapshot(%s, %f, %f)', tag, newer_than, older_than)
+        if self.config.read_only:
+            LOG.debug('_do_remove_snapshot(%s, %f, %f)', tag, newer_than, older_than)
             return
 
         self.acquire_lock()
@@ -95,15 +95,15 @@ class TransactionHistoryInterface(object):
             tags = self.list_snapshots()
 
         if len(tags) == 0:
-            logger.warning('No snapshots taken.')
+            LOG.warning('No snapshots taken.')
             return
 
         if tag == 'last':
             tag = tags[0]
-            logger.info('Recovering history records from snapshot %s', tag)
+            LOG.info('Recovering history records from snapshot %s', tag)
             
         elif tag not in tags:
-            logger.error('Cannot copy from snapshot %s', tag)
+            LOG.error('Cannot copy from snapshot %s', tag)
             return
 
         while self._lock_depth > 0:
@@ -116,8 +116,8 @@ class TransactionHistoryInterface(object):
         Set up a new copy/deletion run for the partition.
         """
 
-        if config.read_only:
-            logger.info('new_run')
+        if self.config.read_only:
+            LOG.info('new_run')
             return 0
 
         self.acquire_lock()
@@ -133,8 +133,8 @@ class TransactionHistoryInterface(object):
         Set up a new copy/deletion run for the partition.
         """
 
-        if config.read_only:
-            logger.info('new_run')
+        if self.config.read_only:
+            LOG.info('new_run')
             return 0
 
         self.acquire_lock()
@@ -146,8 +146,8 @@ class TransactionHistoryInterface(object):
         return run_number
 
     def close_copy_run(self, run_number):
-        if config.read_only:
-            logger.info('close_copy_run')
+        if self.config.read_only:
+            LOG.info('close_copy_run')
             return
 
         self.acquire_lock()
@@ -157,8 +157,8 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
     def close_deletion_run(self, run_number):
-        if config.read_only:
-            logger.info('close_deletion_run')
+        if self.config.read_only:
+            LOG.info('close_deletion_run')
             return
 
         self.acquire_lock()
@@ -168,8 +168,8 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
     def make_copy_entry(self, run_number, site, operation_id, approved, dataset_list, size):
-        if config.read_only:
-            logger.info('make_copy_entry')
+        if self.config.read_only:
+            LOG.info('make_copy_entry')
             return
 
         self.acquire_lock()
@@ -182,8 +182,8 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
     def make_deletion_entry(self, run_number, site, operation_id, approved, datasets, size):
-        if config.read_only:
-            logger.info('make_deletion_entry')
+        if self.config.read_only:
+            LOG.info('make_deletion_entry')
             return
 
         self.acquire_lock()
@@ -200,8 +200,8 @@ class TransactionHistoryInterface(object):
         Update copy entry from the argument. Only certain fields (approved, last_update) are updatable.
         """
 
-        if config.read_only:
-            logger.info('update_copy_entry')
+        if self.config.read_only:
+            LOG.info('update_copy_entry')
             return
 
         self.acquire_lock()
@@ -215,8 +215,8 @@ class TransactionHistoryInterface(object):
         Update deletion entry from the argument. Only certain fields (approved, last_update) are updatable.
         """
 
-        if config.read_only:
-            logger.info('update_deletion_entry')
+        if self.config.read_only:
+            LOG.info('update_deletion_entry')
             return
 
         self.acquire_lock()
@@ -231,8 +231,8 @@ class TransactionHistoryInterface(object):
         @param sites       List of sites
         """
 
-        if config.read_only:
-            logger.info('save_sites')
+        if self.config.read_only:
+            LOG.info('save_sites')
             return
 
         self.acquire_lock()
@@ -272,8 +272,8 @@ class TransactionHistoryInterface(object):
         Save datasets that are in the inventory but not in the history records.
         """
 
-        if config.read_only:
-            logger.info('save_datasets')
+        if self.config.read_only:
+            LOG.info('save_datasets')
             return
 
         self.acquire_lock()
@@ -287,8 +287,8 @@ class TransactionHistoryInterface(object):
         Save policy conditions.
         """
 
-        if config.read_only:
-            logger.info('save_conditions')
+        if self.config.read_only:
+            LOG.info('save_conditions')
             return
 
         self.acquire_lock()
@@ -302,8 +302,8 @@ class TransactionHistoryInterface(object):
         Save reasons for copy decisions? Still deciding what to do..
         """
 
-        if config.read_only:
-            logger.info('save_copy_decisions')
+        if self.config.read_only:
+            LOG.info('save_copy_decisions')
             return
 
         self.acquire_lock()
@@ -325,8 +325,8 @@ class TransactionHistoryInterface(object):
         in multiple of deleted, kept, and protected.
         """
 
-        if config.read_only:
-            logger.info('save_deletion_decisions')
+        if self.config.read_only:
+            LOG.info('save_deletion_decisions')
             return
 
         self.acquire_lock()
@@ -354,8 +354,8 @@ class TransactionHistoryInterface(object):
         Second argument popularities is a list [(dataset, popularity_score)].
         """
 
-        if config.read_only:
-            logger.info('save_dataset_popularity')
+        if self.config.read_only:
+            LOG.info('save_dataset_popularity')
             return
 
         self.acquire_lock()
@@ -479,7 +479,7 @@ if __name__ == '__main__':
     if args.log_level:
         try:
             level = getattr(logging, args.log_level.upper())
-            logging.getLogger().setLevel(level)
+            logging.getLOG().setLevel(level)
         except AttributeError:
             logging.warning('Log level ' + args.log_level + ' not defined')
 
@@ -513,7 +513,7 @@ if __name__ == '__main__':
                 copied += c
 
             if copied == total:
-                logger.info('Updating record for copy %d to %s.', record.operation_id, record.site_name)
+                LOG.info('Updating record for copy %d to %s.', record.operation_id, record.site_name)
         
                 record.completed = True
                 record.size = total

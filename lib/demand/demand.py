@@ -1,7 +1,3 @@
-import logging
-
-logger = logging.getLogger(__name__)
-
 class DemandManager(object):
     """
     This class is just a holder for "demand calculator" plugins. The plugins must have functions
