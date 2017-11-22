@@ -148,7 +148,7 @@ class Dynamo(object):
         # check authorization
         with open(path + '/exec.py') as source:
             checksum = hashlib.md5(source.read()).hexdigest()
-        
+
         sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = UNHEX(%s)'
         for auth_user_id in self.registry.query(sql, title, checksum):
             if auth_user_id == 0 or auth_user_id == user_id:
