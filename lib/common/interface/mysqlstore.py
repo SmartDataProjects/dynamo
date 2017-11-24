@@ -523,6 +523,14 @@ class MySQLStore(LocalStoreInterface):
 
             dataset.files.add(lfile)
 
+    def _do_check_if_on(self, datasetname, sitename): #override
+        query = 'SELECT COUNT(*) FROM `datasets` AS d'
+        query += ' INNER JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
+        query += ' INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`'
+        query += ' WHERE  d.`name` = %s and s.`name` = %s'
+
+        return (self._mysql.query(query, datasetname, sitename)[0] != 0)
+
     def _do_find_block_of(self, fullpath, datasets): #override
         query = 'SELECT d.`name`, b.`name` FROM `files` AS f'
         query += ' INNER JOIN `datasets` AS d ON d.`id` = f.`dataset_id`'
