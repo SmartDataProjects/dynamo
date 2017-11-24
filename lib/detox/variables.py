@@ -104,6 +104,16 @@ class DatasetUsageRank(DatasetAttr):
         except KeyError:
             return 0.
 
+class DatasetOnProtectedSite(DatasetAttr):
+    def __init__(self):
+        DatasetAttr.__init__(self, Attr.BOOL_TYPE)
+
+    def _get(self, dataset):
+        try:
+            return dataset.demand['on_protected_site']
+        except KeyError:
+            return False
+
 class ReplicaSize(DatasetReplicaAttr):
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
@@ -272,6 +282,7 @@ replica_variables = {
     'dataset.usage_rank': DatasetUsageRank(),
     'dataset.demand_rank': DatasetDemandRank(),
     'dataset.release': DatasetRelease(),
+    'dataset.on_protected_site': DatasetOnProtectedSite(),
     'replica.is_last_transfer_source': ReplicaIsLastSource(),
     'replica.size': ReplicaSize(),
     'replica.incomplete': ReplicaIncomplete(),

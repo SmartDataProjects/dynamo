@@ -103,14 +103,11 @@ class Detox(object):
         # possible use case: a tape site has had a water indicident, for example
         # Communication with database is needed because we do not have all (tape) replicas in memory 
         if len(detox_config.main.exclude_if_on) > 0:
-            excluded_replicas = []
             for replica in all_replicas:
                 ds_name = replica.dataset.name
                 for sitename in detox_config.main.exclude_if_on:
                     if self.inventory_manager.store.check_if_on(ds_name,sitename):
-                        excluded_replicas.append(replica)
-            for excluded_replica in excluded_replicas:
-                all_replicas.remove(excluded_replica)
+                        replica.dataset.demand['on_protected_site'] = True
                         
         logger.info('Saving site and dataset states.')
 
