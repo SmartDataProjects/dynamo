@@ -37,14 +37,16 @@ class Block(object):
         return 'Block(translate_name(\'%s\'), %s)' % (self.real_name(), repr(self._dataset))
 
     def __eq__(self, other):
-        return self._name == other._name and self._dataset is other._dataset and \
+        return self._name == other._name and self._dataset.name == other._dataset.name and \
             self.size == other.size and self.num_files == other.num_files and self.is_open == other.is_open
 
     def __ne__(self, other):
         return not self.__eq__(other)
 
     def copy(self, other):
-        self._dataset = other.dataset
+        if self._dataset.name != other.dataset.name:
+            raise ObjectError('Cannot copy a block of %s into a block of %s', other.dataset.name, self._dataset.name)
+
         self.size = other.size
         self.num_files = other.num_files
         self.is_open = other.is_open
@@ -61,7 +63,6 @@ class Block(object):
 
         block = dataset.find_block(self._name)
         if block is None:
-            dataset = inventory.datasets[self._dataset.name]
             block = Block(self._name, dataset, self.size, self.num_files, self.is_open)
             dataset.blocks.add(block)
 
@@ -93,6 +94,10 @@ class Block(object):
             store.save_block(self)
 
     def real_name(self):
+        """
+        Block._name can be in a converted internal format to save memory. This function returns the proper name.
+        """
+
         full_string = hex(self._name).replace('0x', '')[:-1] # last character is 'L'
         if len(full_string) < 32:
             full_string = '0' * (32 - len(full_string)) + full_string
@@ -100,6 +105,10 @@ class Block(object):
         return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]
 
     def full_name(self):
+        """
+        Full specification of a block, including the dataset name.
+        """
+
         return self._dataset.name + '#' + self.real_name()
 
     def find_file(self, lfn, must_find = False):

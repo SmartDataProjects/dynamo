@@ -50,12 +50,15 @@ class File(object):
 
     def __eq__(self, other):
         return self._directory_id == other._directory_id and self._basename == other._basename and \
-            self._block is other._block and self.size == other.size
+            self._block.full_name() == other._block.full_name() and self.size == other.size
 
     def __ne__(self, other):
         return not self.__eq__(other)
 
     def copy(self, other):
+        if self._block.full_name() != other._block.full_name():
+            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._block.full_name(), self._block.full_name())
+
         self.size = other.size
 
     def unlinked_clone(self):

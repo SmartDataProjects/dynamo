@@ -30,15 +30,16 @@ class BlockReplica(object):
         self.files = None
 
     def __str__(self):
-        return 'BlockReplica %s:%s#%s (group=%s, is_complete=%s, size=%d, last_update=%d)' % \
-            (self._site.name, self._block.dataset.name, self._block.real_name(),
+        return 'BlockReplica %s:%s (group=%s, is_complete=%s, size=%d, last_update=%d)' % \
+            (self._site.name, self._block.full_name(),
                 'None' if self.group is None else self.group.name, self.is_complete, self.size, self.last_update)
 
     def __repr__(self):
         return 'BlockReplica(block=%s, site=%s, group=%s)' % (repr(self._block), repr(self._site), repr(self.group))
 
     def __eq__(self, other):
-        return self._block is other._block and self._site is other._site and self.group is other.group and \
+        return self._block.full_name() == other._block.full_name() and self._site.name == other._site.name and \
+            ((self.group is None and other.group is None) or (self.group.name == other.group.name)) and \
             self.is_complete == other.is_complete and self.is_custodial == other.is_custodial and \
             self.size == other.size and self.last_update == other.last_update
 
@@ -46,6 +47,11 @@ class BlockReplica(object):
         return not self.__eq__(other)
 
     def copy(self, other):
+        if self._block.full_name() != other._block.full_name():
+            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._block.full_name(), self._block.full_name())
+        if self._site.name != other._site.name:
+            raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site.name, self._site.name)
+
         self.group = other.group
         self.is_complete = other.is_complete
         self.is_custodial = other.is_custodial

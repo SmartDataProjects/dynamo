@@ -29,13 +29,17 @@ class SitePartition(object):
         return 'SitePartition(%s, %s)' % (repr(self._site), repr(self._partition))
 
     def __eq__(self, other):
-        return self._site is other._site and self._partition is other._partition and self.quota == other.quota
+        return self._site.name == other._site.name and self._partition.name == other._partition.name and self.quota == other.quota
 
     def __ne__(self, other):
         return not self.__eq__(other)
 
     def copy(self, other):
-        # does not copy replicas
+        if self._site.name != other._site.name:
+            raise ObjectError('Cannot copy a partition at %s into a partition at %s', other._site.name, self._site.name)
+        if self._partition.name != other._partition.name:
+            raise ObjectError('Cannot copy a site partition of %s into a site partition of %s', other._partition.name, self._partition.name)
+
         self.quota = other.quota
 
     def unlinked_clone(self):

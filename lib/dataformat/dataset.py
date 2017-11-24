@@ -117,9 +117,6 @@ class Dataset(object):
             dataset = self.unlinked_clone()
             inventory.datasets.add(dataset)
     
-            for block in self.blocks:
-                block.embed_into(inventory) # gets added to dataset.blocks
-
             return True
         else:
             if dataset is self:

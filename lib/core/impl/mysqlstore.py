@@ -293,7 +293,7 @@ class MySQLInventoryStore(InventoryStore):
             id_block_map[block_id] = block
 
     def _load_replicas(self, inventory, id_group_map, id_site_map, id_dataset_map, id_block_maps):
-        sql = 'SELECT dr.`dataset_id`, dr.`site_id`, dr.`is_custodial`,'
+        sql = 'SELECT dr.`dataset_id`, dr.`site_id`,'
         sql += ' br.`block_id`, br.`group_id`, br.`is_complete`, br.`is_custodial`, brs.`size`, UNIX_TIMESTAMP(br.`last_update`)'
         sql += ' FROM `dataset_replicas` AS dr'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`'
@@ -315,7 +315,7 @@ class MySQLInventoryStore(InventoryStore):
         _dataset_id = 0
         _site_id = 0
         dataset_replica = None
-        for dataset_id, site_id, is_custodial, block_id, group_id, is_complete, b_is_custodial, b_size, b_last_update in self._mysql.xquery(sql):
+        for dataset_id, site_id, block_id, group_id, is_complete, b_is_custodial, b_size, b_last_update in self._mysql.xquery(sql):
             if dataset_id != _dataset_id:
                 _dataset_id = dataset_id
 
@@ -328,18 +328,17 @@ class MySQLInventoryStore(InventoryStore):
                 _site_id = site_id
                 site = id_site_map[site_id]
 
-            if dataset_replica is None or dataset != dataset_replica.dataset or site != dataset_replica.site:
+            if dataset_replica is None or dataset is not dataset_replica.dataset or site is not dataset_replica.site:
                 if dataset_replica is not None:
                     # add to dataset and site after filling all block replicas
                     # this does not matter for the dataset, but for the site there is some heavy
                     # computation needed when a replica is added
-                    dataset.replicas.add(dataset_replica)
-                    site.add_dataset_replica(dataset_replica)
+                    dataset_replica.dataset.replicas.add(dataset_replica)
+                    dataset_replica.site.add_dataset_replica(dataset_replica)
 
                 dataset_replica = DatasetReplica(
                     dataset,
-                    site,
-                    is_custodial = is_custodial
+                    site
                 )
 
             block = id_block_map[block_id]
@@ -359,8 +358,8 @@ class MySQLInventoryStore(InventoryStore):
 
         if dataset_replica is not None:
             # one last bit
-            dataset.replicas.add(dataset_replica)
-            site.add_dataset_replica(dataset_replica)
+            dataset_replica.dataset.replicas.add(dataset_replica)
+            dataset_replica.site.add_dataset_replica(dataset_replica)
 
     def save_block(self, block): #override
         dataset_id = self._get_dataset_id(block.dataset)
@@ -463,15 +462,15 @@ class MySQLInventoryStore(InventoryStore):
         if site_id == 0:
             return
 
-        fields = ('dataset_id', 'site_id', 'is_custodial')
+        fields = ('dataset_id', 'site_id')
 
         sql = 'INSERT INTO `dataset_replicas` ('
         sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (%s, %s, %s)'
+        sql += ') VALUES (%s, %s)'
         sql += ' ON DUPLICATE KEY UPDATE '
         sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
-        self._mysql.query(sql, dataset_id, site_id, dataset_replica.is_custodial)
+        self._mysql.query(sql, dataset_id, site_id)
 
     def delete_datasetreplica(self, dataset_replica): #override
         dataset_id = self._get_dataset_id(dataset_replica.dataset)

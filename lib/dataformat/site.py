@@ -217,7 +217,6 @@ class Site(object):
 
     def add_block_replica(self, replica):
         # this function should be called automatically to avoid integrity errors
-
         try:
             dataset_replica = self._dataset_replicas[replica.block.dataset]
         except KeyError:
@@ -237,7 +236,7 @@ class Site(object):
                     # this is the sole block replica
                     site_partition.replicas[dataset_replica] = None
                 else:
-                    site_partition.replicas[dataset_replica] = set(replica)
+                    site_partition.replicas[dataset_replica] = set([replica])
             else:
                 if block_replica_list is None:
                     # assume this function was called for all new block replicas

@@ -1,9 +1,9 @@
 from dataformat.exceptions import ObjectError
 
 class DatasetReplica(object):
-    """Represents a dataset replica. Combines dataset and site information."""
+    """Represents a dataset replica. Just a container for block replicas."""
 
-    __slots__ = ['_dataset', '_site', 'is_custodial', 'block_replicas']
+    __slots__ = ['_dataset', '_site', 'block_replicas']
 
     @property
     def dataset(self):
@@ -13,36 +13,36 @@ class DatasetReplica(object):
     def site(self):
         return self._site
 
-    def __init__(self, dataset, site, is_custodial = False):
+    def __init__(self, dataset, site):
         self._dataset = dataset
         self._site = site
-        self.is_custodial = is_custodial
         self.block_replicas = set()
 
     def __str__(self):
-        return 'DatasetReplica {site}:{dataset} (is_custodial={is_custodial},' \
-            ' {block_replicas_size} block_replicas)'.format(
+        return 'DatasetReplica {site}:{dataset} (' \
+            '{block_replicas_size} block_replicas)'.format(
                 site = self._site.name, dataset = self._dataset.name,
-                is_custodial = self.is_custodial,
                 block_replicas_size = len(self.block_replicas))
 
     def __repr__(self):
         return 'DatasetReplica(%s, %s)' % (repr(self._dataset), repr(self._site))
 
     def __eq__(self, other):
-        return self._dataset is other._dataset and self._site is other._site and \
-            self.is_custodial == other.is_custodial
+        return self._dataset.name == other._dataset.name and self._site.name == other._site.name
 
     def __ne__(self, other):
         return not self.__eq__(other)
 
     def copy(self, other):
-        self.is_custodial = other.is_custodial
+        if self._dataset.name() != other._dataset.name():
+            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._dataset.name, self._dataset.name)
+        if self._site.name != other._site.name:
+            raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site.name, self._site.name)
 
     def unlinked_clone(self):
         dataset = self._dataset.unlinked_clone()
         site = self._site.unlinked_clone()
-        return DatasetReplica(dataset, site, self.is_custodial)
+        return DatasetReplica(dataset, site)
 
     def embed_into(self, inventory, check = False):
         try:
@@ -57,7 +57,7 @@ class DatasetReplica(object):
 
         replica = dataset.find_replica(site)
         if replica is None:
-            replica = DatasetReplica(dataset, site, self.is_custodial)
+            replica = DatasetReplica(dataset, site)
     
             dataset.replicas.add(replica)
             site.add_dataset_replica(replica)

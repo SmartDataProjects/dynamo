@@ -328,10 +328,6 @@ class PhEDExDBSSSB(GroupInfoSourceInterface, SiteInfoSourceInterface, DatasetInf
                         if not is_complete:
                             dataset_replica.is_complete = False
 
-                        # if any of the block replica is custodial, dataset replica also is
-                        if is_custodial:
-                            dataset_replica.is_custodial = True
-
                         block_replica = dataset_replica.find_block_replica(block)
                         
                         if block_replica is None:
@@ -429,8 +425,6 @@ class PhEDExDBSSSB(GroupInfoSourceInterface, SiteInfoSourceInterface, DatasetInf
                             dataset.replicas.add(dataset_replica)
                             site.add_dataset_replica(dataset_replica)
 
-                        dataset_replica.is_custodial = (subscription['custodial'] == 'y')
-
                         if site.storage_type == Site.TYPE_MSS:
                             if dataset_replica.is_complete:
                                 dataset.on_tape = Dataset.TAPE_FULL
@@ -476,7 +470,6 @@ class PhEDExDBSSSB(GroupInfoSourceInterface, SiteInfoSourceInterface, DatasetInf
                                 site.add_dataset_replica(dataset_replica)
 
                             is_custodial = (subscription['custodial'] == 'y')
-                            dataset_replica.is_custodial = is_custodial
 
                             block_replica = dataset_replica.find_block_replica(block)
 
