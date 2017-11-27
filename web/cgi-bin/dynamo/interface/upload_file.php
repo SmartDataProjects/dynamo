@@ -19,8 +19,6 @@ elseif ( end(explode('.', $filename)) != "txt" )
 else
   {
     $username=$_REQUEST['user'];
-    //$db_name = 'dynamoregister';
-    //$db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $db_name);
 
     $userid = check_authentication($username,$db);
     $hash = hash_file('md5',$filedata);
@@ -31,7 +29,8 @@ else
     }
 
     if (!filecopy($filedata,$uploadpath.$hash.$rand."/policystack.txt")){
-      $filecontent = file_get_contents($uploadpath.$hash.$rand);//currently not used
+      if (filecopy("/var/www/html/dynamo/dynamo/dummy_exec.py",$uploadpath.$hash.$rand."/exec.py"))
+	echo "Something went wrong with copying the detox executable";
 
       if(!$email){
 	$qstring ="SELECT u.`email` FROM users AS u INNER JOIN authorized_users as au WHERE lower(u.`name`) = lower('$username') AND u.`id` = au.`user_id`";
@@ -44,7 +43,7 @@ else
 	}
       }
 
-      communicate(0,"DeletionCampaign",$hash.$rand,$db,$userid,"deletion_policy",$email);
+      communicate(0,"DeletionCampaign",$hash.$rand,$db,$userid,$email,"--policy policstack.txt");
       echo "Results will be sent to you shortly."; echo "\n";
     }
     else{

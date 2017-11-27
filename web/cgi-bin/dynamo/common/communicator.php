@@ -61,13 +61,13 @@ function check_authentication($user,$db){
   }
 }
 
-function communicate($write,$title,$filename,$db,$username,$type,$email){
+function communicate($write,$title,$filename,$db,$username,$email,$args){
   $status = 'new';
   date_default_timezone_set("EST");
   $timestamp = date("Y-m-d H:i:s", time());
 
-  $qstring = 'insert into action(write_request,title,path,status,user_id,type,timestamp,email) values'.
-    '(\''.$write.'\',\''.$title.'\',\''.$filename.'\',\''.$status.'\',\''.$username.'\',\''.$type.'\',\''.$timestamp.'\',\''.$email.'\')';
+  $qstring = 'insert into action(write_request,title,path,status,user_id,timestamp,email,args) values'.
+    '(\''.$write.'\',\''.$title.'\',\''.$filename.'\',\''.$status.'\',\''.$username.'\',\''.$timestamp.'\',\''.$email.'\',\''.$args.'\')';
   echo "File successfully uploaded."; echo "\n";
 
   return execQuery($qstring,$db);

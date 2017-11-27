@@ -1,18 +1,13 @@
 <?php
 
-  //include('/var/www/cgi-bin/dynamo/common/db_conf.php');
 include('/var/www/cgi-bin/dynamo/common/communicator.php');
 
 $username=$_SERVER['SSL_CLIENT_S_DN_CN'];
-$type = $_REQUEST['service'];
 $title = $_REQUEST['title'];
-$write = $_REQUEST['write'];
-$write = min(1,intval($write));
+$write = min(1,intval($_REQUEST['write']));
 $email = $_REQUEST['email'];
+$args = $_REQUEST['args'];
 
-if(!$type){
-  $type = 'executable';//generic interaction
-}
 if(!$title){
   $title = 'DynamoInteraction';//generic interaction
 }
@@ -29,8 +24,8 @@ if ($filedata != ''){
     $rand = rand(1,10000000);
   }
 
-  if (!filecopy($filedata,$uploadpath.$hash.$rand."/executable.py")){
-    communicate($write,$title,$hash.$rand,$db,$userid,$type,$email);
+  if (!filecopy($filedata,$uploadpath.$hash.$rand."/exec.py")){
+    communicate($write,$title,$hash.$rand,$db,$userid,$email,$args);
   }
   else{
     echo "Something went wrong."; echo "\n";
