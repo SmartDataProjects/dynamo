@@ -1,0 +1,49 @@
+{
+  "general": {
+    "threads": 32,
+    "paths": {
+      "base": "$(DYNAMO_BASE)",
+      "archive": "$(DYNAMO_ARCHIVE)",
+      "spool": "$(DYNAMO_SPOOL)",
+      "datadir": "$(DYNAMO_DATADIR)"
+    }
+  },
+  "inventory": {
+    "persistency": {
+      "module": "MySQLInventoryStore",
+      "config": {
+        "db_params": {"db": "dynamo"}
+      }
+    }
+  },
+  "history": {
+    "persistency": {
+      "module": "MySQLHistory",
+      "config": {
+        "db_params": {"db": "dynamohistory"}
+      }
+    },
+    "cache": {
+      "db_params": {"db": "dynamohistory_cache"}
+    }
+  },
+  "registry": {
+    "db_params": {
+      "db": "dynamoregister"
+    }
+  },
+  "webservice": {
+    "x509_key": "$(X509_USER_PROXY)",
+    "cookie_file": "$(DYNAMO_SPOOL)/cookies.txt",
+    "num_attempts": 20,
+    "cache_db_params": {}
+  },
+  "mysql": {
+    "config_file": "/etc/my.cnf",
+    "config_group": "mysql-dynamo",
+    "max_query_len": 100000
+  },
+  "phedex": {
+    "url": "https://cmsweb.cern.ch/phedex/datasvc/json/prod"
+  }
+}
