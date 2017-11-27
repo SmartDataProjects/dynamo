@@ -16,6 +16,28 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
+-- Table structure for table `action`
+--
+
+DROP TABLE IF EXISTS `action`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `action` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `write_request` tinyint(1) NOT NULL,
+  `title` text CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
+  `path` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
+  `args` text CHARACTER SET latin1 COLLATE latin1_general_cs,
+  `status` enum('new','run','done','failed','killed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
+  `user_id` int(10) unsigned NOT NULL,
+  `type` enum('executable','deletion_policy') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
+  `timestamp` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `email` text NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `activity_lock`
 --
 
@@ -30,6 +52,36 @@ CREATE TABLE `activity_lock` (
   `note` text COLLATE latin1_general_cs,
   UNIQUE KEY `application` (`application`),
   KEY `user` (`user_id`,`service_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `authorized_action`
+--
+
+DROP TABLE IF EXISTS `authorized_action`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `authorized_action` (
+  `user_id` int(10) unsigned NOT NULL DEFAULT '0',
+  `title` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `checksum` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  KEY `executable` (`title`,`checksum`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `authorized_executables`
+--
+
+DROP TABLE IF EXISTS `authorized_executables`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `authorized_executables` (
+  `user_id` int(10) unsigned NOT NULL,
+  `title` varchar(128) COLLATE latin1_general_cs NOT NULL,
+  `checksum` binary(16) NOT NULL,
+  PRIMARY KEY (`user_id`,`title`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -102,6 +154,24 @@ CREATE TABLE `domains` (
   `name` varchar(32) COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `executables`
+--
+
+DROP TABLE IF EXISTS `executables`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `executables` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `title` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `path` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
+  `user_id` int(10) unsigned NOT NULL,
+  `body` mediumtext CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `write_request` tinyint(1) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -214,4 +284,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-10-07 11:12:50
+-- Dump completed on 2017-11-27  6:31:21
