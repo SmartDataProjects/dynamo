@@ -5,7 +5,7 @@ import logging
 import time
 from argparse import ArgumentParser
 
-parser = ArgumentParser(description = 'Dynamo')
+parser = ArgumentParser(description = 'Update replica information.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', default = '', help = 'Configuration JSON.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
 
@@ -24,6 +24,7 @@ LOG.addHandler(log_handler)
 
 ## Load and initialize sources
 
+from core.executable import inventory
 from dataformat import Configuration, DatasetReplica, ObjectError
 from common.interface.mysql import MySQL
 import source.impl as sources
@@ -47,11 +48,11 @@ app_table = MySQL(**state_db_params)
 
 LOG.info('Updating list of groups.')
 for group in group_source.get_group_list():
-    dynamo.update(group, check = True)
+    inventory.update(group, check = True)
 
 LOG.info('Updating list of sites.')
 for site in site_source.get_site_list():
-    dynamo.update(site, check = True)
+    inventory.update(site, check = True)
 
 ## Get the last update timestamp
 
@@ -68,13 +69,13 @@ for replica in replica_source.get_updated_replicas(last_update):
     LOG.debug('Updating %s', replica_str)
 
     # 0.1: pick up replicas of known groups only
-    if replica.group is not None and replica.group.name not in dynamo.groups:
+    if replica.group is not None and replica.group.name not in inventory.groups:
         LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
         continue
 
     # 0.2: Pick up replicas at known sites only
     try:
-        site = dynamo.sites[replica.site.name]
+        site = inventory.sites[replica.site.name]
     except KeyError:
         LOG.debug('%s is at %s, which is not a tracked site.', replica_str, replica.site.name)
         continue
@@ -82,7 +83,7 @@ for replica in replica_source.get_updated_replicas(last_update):
     # 1: Find the dataset in the inventory
 
     try:
-        dataset = dynamo.datasets[replica.block.dataset.name]
+        dataset = inventory.datasets[replica.block.dataset.name]
     except KeyError:
         # If not found, create a new dataset and inject
         LOG.info('Unknown dataset %s. Collecting information.', replica.block.dataset.name)
@@ -92,18 +93,18 @@ for replica in replica_source.get_updated_replicas(last_update):
             LOG.error('Unknown dataset %s.', replica.block.dataset.name)
             continue
 
-        dynamo.update(dataset_tmp, check = True)
+        inventory.update(dataset_tmp, check = True)
 
         # This is the dataset that is embedded in the inventory
-        dataset = dynamo.datasets[replica.block.dataset.name]
+        dataset = inventory.datasets[replica.block.dataset.name]
 
         # Inject blocks as well
         for block in dataset_tmp.blocks:
-            dynamo.update(block)
+            inventory.update(block)
     else:
         # If found, update the information (size, last_update, etc.) if necessary
         LOG.debug('Updating information for dataset %s', dataset.name)
-        dynamo.update(replica.block.dataset, check = True)
+        inventory.update(replica.block.dataset, check = True)
 
     # 2: Find the block of the dataset
 
@@ -119,7 +120,7 @@ for replica in replica_source.get_updated_replicas(last_update):
             LOG.error('Unknown block %s.', block_full_name)
             continue
 
-        dynamo.update(block_tmp)
+        inventory.update(block_tmp)
 
         # This is the block that is embedded in the inventory (`block.dataset` points to `dataset`)
         block = dataset.find_block(replica.block.name)
@@ -128,23 +129,23 @@ for replica in replica_source.get_updated_replicas(last_update):
         dataset.num_files += block.num_files
 
         # Update dataset information
-        dynamo.update(dataset, check = True)
+        inventory.update(dataset, check = True)
     else:
         # If found, update the information if necessary
         LOG.debug('Updating information for block %s', block_full_name)
-        dynamo.update(replica.block, check = True)
+        inventory.update(replica.block, check = True)
 
     # 3. Find the dataset replica
 
     if site.find_dataset_replica(dataset) is None:
         # If not found, create a new replica and inject
         LOG.debug('Creating new replica of %s at %s', dataset.name, site.name)
-        dynamo.update(DatasetReplica(dataset, site))
+        inventory.update(DatasetReplica(dataset, site))
 
     # 4. Update the block replica
 
     LOG.debug('Updating block replica.')
-    dynamo.update(replica)
+    inventory.update(replica)
 
 ## Repeat for deleted block replicas
 
@@ -154,13 +155,13 @@ for replica in replica_source.get_deleted_replicas(last_update):
     LOG.debug('Deleting %s', replica_str)
 
     # 0.1: pick up replicas of known groups only
-    if replica.group is not None and replica.group.name not in dynamo.groups:
+    if replica.group is not None and replica.group.name not in inventory.groups:
         LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
         continue
 
     # 0.2: Pick up replicas at known sites only
     try:
-        site = dynamo.sites[replica.site.name]
+        site = inventory.sites[replica.site.name]
     except KeyError:
         LOG.debug('%s is at %s, which is not a tracked site.', replica_str, replica.site.name)
         continue
@@ -168,7 +169,7 @@ for replica in replica_source.get_deleted_replicas(last_update):
     # 1: Find the dataset in the inventory
 
     try:
-        dataset = dynamo.datasets[replica.block.dataset.name]
+        dataset = inventory.datasets[replica.block.dataset.name]
     except KeyError:
         # If not found, create a new dataset and inject
         LOG.debug('Unknown dataset %s.', dataset.name)
@@ -195,7 +196,7 @@ for replica in replica_source.get_deleted_replicas(last_update):
     # blockreplica.delete_from() raises a KeyError or ObjectError if
     # any of the group, site, dataset, ... is not found
     try:
-        dynamo.delete(replica)
+        inventory.delete(replica)
     except KeyError:
         LOG.debug('Replica not found.')
         pass
@@ -206,7 +207,7 @@ for replica in replica_source.get_deleted_replicas(last_update):
     # 5. Delete the dataset replica if it is empty
 
     if len(dataset_replica.block_replicas) == 0:
-        dynamo.delete(dataset_replica)
+        inventory.delete(dataset_replica)
 
 ## Store the timestamp of when we started (allow 1 minute safety margin)
 #app_table.query('UPDATE `update_replicas_cms` SET `last_update` = FROM_UNIXTIME(%s)', update_start - 60)

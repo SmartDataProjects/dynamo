@@ -6,6 +6,7 @@ import multiprocessing
 import Queue
 
 from core.inventory import DynamoInventory
+import core.executable
 from dataformat import Configuration
 from common.interface.mysql import MySQL
 from common.configuration import common_config
@@ -225,7 +226,10 @@ class Dynamo(object):
         # should not share the same DB connection
         self.inventory.init_store()
 
-        execfile(path + '/exec.py', {'dynamo': self.inventory})
+        # Pass my inventory to the executable through core.executable
+        core.executable.inventory = self.inventory
+
+        execfile(path + '/exec.py')
 
         if queue is not None:
             for obj in self.inventory._updated_objects:
