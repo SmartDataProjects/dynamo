@@ -29,9 +29,9 @@ CREATE TABLE `action` (
   `path` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `status` enum('new','run','done','failed','killed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `user_id` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  `type` enum('executable','deletion_policy') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `timestamp` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
   `email` text NOT NULL,
+  `args` varchar(256) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
