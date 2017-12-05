@@ -132,7 +132,6 @@ inventory = Configuration(
     included_sites = disk_sites,
     excluded_sites = [
         'T1_US_FNAL_New_Disk', # not a valid site
-        'T1_UK_RAL_ECHO_Disk', # not an actual site
         'T2_CH_CERNBOX', # not a valid site
         'T2_MY_UPM_BIRUNI', # site not in popDB
     ],
