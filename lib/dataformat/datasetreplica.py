@@ -56,23 +56,26 @@ class DatasetReplica(object):
             raise ObjectError('Unknown site %s', self._site.name)
 
         replica = dataset.find_replica(site)
+        updated = False
+
         if replica is None:
             replica = DatasetReplica(dataset, site)
     
             dataset.replicas.add(replica)
             site.add_dataset_replica(replica)
 
-            return True
+            updated = True
+        elif check and (replica is self or replica == self):
+            # identical object -> return False if check is requested
+            pass
         else:
-            if replica is self:
-                # identical object -> return False if check is requested
-                return not check
+            replica.copy(self)
+            updated = True
 
-            if check and replica == self:
-                return False
-            else:
-                replica.copy(self)
-                return True
+        if check:
+            return replica, updated
+        else:
+            return replica
 
     def delete_from(self, inventory):
         dataset = inventory.datasets[self._dataset.name]

@@ -76,21 +76,23 @@ class File(object):
         fid = self.fid()
 
         lfile = block.find_file(fid)
+        updated = False
         if lfile is None:
             lfile = File(fid, block, self.size)
             block.add_file(lfile)
 
-            return True
+            updated = True
+        elif check and (lfile is self or lfile == self):
+            # identical object -> return False if check is requested
+            pass
         else:
-            if lfile is self:
-                # identical object -> return False if check is requested
-                return not check
+            lfile.copy(self)
+            updated = True
 
-            if check and lfile == self:
-                return False
-            else:
-                lfile.copy(self)
-                return True
+        if check:
+            return lfile, updated
+        else:
+            return lfile
 
     def delete_from(self, inventory):
         dataset = inventory.datasets[self._block.dataset.name]

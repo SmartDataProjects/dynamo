@@ -6,37 +6,35 @@ class DeletionInterface(object):
     def __init__(self):
         pass
 
-    def schedule_deletion(self, replica, comments = '', is_test = False):
+    def schedule_deletion(self, replica, comments = ''):
         """
         Schedule a deletion of the dataset or block replica.
-        Returns (operation id, approved, [replicas])
+        @param replica   A DatasetReplica or BlockReplica
+        @param comments  Comments to be passed to the operation interface
+        @return {operation id, approved, site, [dataset/block]}
         """
 
-        return None
+        raise NotImplementedError('schedule_deletion')
 
-    def schedule_deletions(self, replica_list, comments = '', is_test = False):
+    def schedule_deletions(self, replica_list, comments = ''):
         """
         Schedule a deletion of multiple replicas. Subclasses should implement the most efficient way
         according to available features.
-        Returns {operation id: (approved, [replicas])}
+        @param replica_list  A flat list of DatasetReplicas or BlockReplicas
+        @param comments      Comments to be pased to the operation interface
+        @return {operation id: (approved, site, [dataset/block])}
         """
 
-        deletion_mapping = {}
+        request_mapping = {}
         for replica in replica_list:
-            result = self.schedule_deletion(replica, comments = comments, is_test = is_test)
-            if result is None:
-                continue
+            request_mapping.update(self.schedule_deletion(replica, comments = comments))
 
-            deletion_id, approved, replicas = result
-            if deletion_id != 0:
-                deletion_mapping[deletion_id] = (approved, replicas)
-
-        return deletion_mapping
+        return request_mapping
 
     def deletion_status(self, operation_id):
         """
-        Returns the completion status specified by the operation id as a
-        {dataset: (last_update, total, deleted)} dictionary.
+        @param operation_id  Operation id returned by schedule_deletion.
+        @return Completion status {dataset: (last_update, total, deleted)}
         """
 
-        return {}
+        raise NotImplementedError('deletion_status')

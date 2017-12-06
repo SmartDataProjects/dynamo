@@ -121,6 +121,8 @@ class Site(object):
         return Site(self._name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
 
     def embed_into(self, inventory, check = False):
+        updated = False
+
         try:
             site = inventory.sites[self._name]
         except KeyError:
@@ -132,17 +134,19 @@ class Site(object):
             for site_partition in self.partitions.itervalues():
                 site_partition.embed_into(inventory)
 
-            return True
+            updated = True
         else:
-            if site is self:
+            if check and (site is self or site == self):
                 # identical object -> return False if check is requested
-                return not check
-
-            if check and site == self:
-                return False
+                pass
             else:
                 site.copy(self)
-                return True
+                updated = True
+
+        if check:
+            return site, updated
+        else:
+            return site
 
     def delete_from(self, inventory):
         # Pop the site from the main list, and remove all replicas on the site.
@@ -195,7 +199,7 @@ class Site(object):
             else:
                 return None
 
-    def replica_iter(self):
+    def dataset_replicas(self):
         return self._dataset_replicas.itervalues()
 
     def add_dataset_replica(self, replica):
@@ -250,18 +254,35 @@ class Site(object):
 
     def update_partitioning(self, replica):
         for partition, site_partition in self.partitions.iteritems():
-            try:
-                block_replicas = site_partition.replicas[replica]
-            except KeyError:
-                block_replicas = set()
+            if type(replica).__name__ == 'DatasetReplica':
+                if replica not in self._dataset_replicas:
+                    return
 
-            if block_replicas is None:
-                # previously, was all contained - need to check again
-                self.add_dataset_replica(replica)
-            else:
+                try:
+                    block_replicas = site_partition.replicas[replica]
+                except KeyError:
+                    block_replicas = set()
+    
+                if block_replicas is None:
+                    # previously, was all contained - need to check again
+                    block_replicas = set()
+                    for block_replica in replica.block_replicas:
+                        if partition.contains(block_replica):
+                            block_replicas.add(block_replica)
+
+                    if block_replicas != replica.block_replicas:
+                        site_partition.replicas[replica] = block_replicas
+
+                    continue
+
                 # remove block replicas that were deleted
                 deleted_replicas = block_replicas - replica.block_replicas
                 block_replicas -= deleted_replicas
+
+                # reevaluate existing block replicas
+                for block_replica in list(block_replicas):
+                    if not partition.contains(block_replica):
+                        block_replicas.remove(block_replica)
 
                 # add new block replicas
                 new_replicas = replica.block_replicas - block_replicas
@@ -274,8 +295,46 @@ class Site(object):
                         site_partition.replicas.pop(replica)
                     except KeyError:
                         pass
+                elif block_replicas == replica.block_replicas:
+                    site_partition.replicas[replica] = None
                 else:
                     site_partition.replicas[replica] = block_replicas
+
+            else:
+                # BlockReplica
+                dataset_replica = replica.block.dataset.find_replica(replica.site)
+                if dataset_replica not in self._dataset_replicas:
+                    # has to exist if you can find the replica from dataset
+                    return
+
+                try:
+                    block_replicas = site_partition.replicas[dataset_replica]
+                except KeyError:
+                    block_replicas = set()
+
+                if partition.contains(replica):
+                    if block_replicas is None or replica in block_replicas:
+                        # already included
+                        pass
+                    else:
+                        block_replicas.add(replica)
+                else:
+                    if block_replicas is None:
+                        # this dataset replica used to be fully included but now it's not
+                        block_replicas = set(dataset_replica.block_replicas)
+                        block_replicas.remove(replica)
+                    elif replica in block_replicas:
+                        block_replicas.remove(replica)
+
+                if len(block_replicas) == 0:
+                    try:
+                        site_partition.replicas.pop(dataset_replica)
+                    except KeyError:
+                        pass
+                elif block_replicas == dataset_replica.block_replicas:
+                    site_partition.replicas[dataset_replica] = None
+                else:
+                    site_partition.replicas[dataset_replica] = block_replicas
 
     def remove_dataset_replica(self, replica):
         self._dataset_replicas.pop(replica.dataset)

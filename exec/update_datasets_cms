@@ -12,15 +12,15 @@ parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', 
 args = parser.parse_args()
 sys.argv = []
 
-## Set up logging (write to stderr unless path is given)
+## Set up logging (write to stderr)
+
 log_level = getattr(logging, args.log_level.upper())
 log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 
+logging.basicConfig(level = log_level, format = log_format)
 LOG = logging.getLogger()
-LOG.setLevel(log_level)
-log_handler = logging.StreamHandler()
-log_handler.setFormatter(logging.Formatter(fmt = log_format))
-LOG.addHandler(log_handler)
+
+## Load and initialize sources
 
 from core.executable import inventory
 from dataformat import Configuration, DatasetReplica

@@ -62,21 +62,22 @@ class Block(object):
             raise ObjectError('Unknown dataset %s', self._dataset.name)
 
         block = dataset.find_block(self._name)
+        updated = False
         if block is None:
             block = Block(self._name, dataset, self.size, self.num_files, self.is_open)
             dataset.blocks.add(block)
-
-            return True
+            updated = True
+        elif check and (block is self or block == self):
+            # identical object -> return False if check is requested
+            pass
         else:
-            if block is self:
-                # identical object -> return False if check is requested
-                return not check
+            block.copy(self)
+            updated = True
 
-            if check and block == self:
-                return False
-            else:
-                block.copy(self)
-                return True
+        if check:
+            return block, updated
+        else:
+            return block
 
     def delete_from(self, inventory):
         # Remove the block from the dataset, and remove all replicas.

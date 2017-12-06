@@ -40,23 +40,27 @@ class Group(object):
         return Group(self._name, self._olevel)
 
     def embed_into(self, inventory, check = False):
+        updated = False
+        
         try:
             group = inventory.groups[self._name]
         except KeyError:
             group = self.unlinked_clone()
             inventory.groups.add(group)
 
-            return True
+            updated = True
         else:
-            if group is self:
+            if check and (group is self or group == self):
                 # identical object -> return False if check is requested
-                return not check
-
-            if check and group == self:
-                return False
+                pass
             else:
                 group.copy(self)
-                return True
+                updated = True
+
+        if check:
+            return group, updated
+        else:
+            return group
 
     def delete_from(self, inventory):
         # Pop the group from the main list. All block replicas owned by the group

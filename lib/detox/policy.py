@@ -8,9 +8,9 @@ import detox.configuration as detox_config
 import policy.variables as variables
 import policy.attrs as attrs
 import policy.predicates as predicates
-from policy.condition import ReplicaCondition, SiteCondition
+from detox.conditions import ReplicaCondition, SiteCondition
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class ConfigurationError(Exception):
     def __init__(self, *args):
@@ -70,6 +70,7 @@ class DismissBlock(BlockAction):
     def dataset_level(matched_line, *args):
         return Dismiss(matched_line)
 
+
 class SortKey(object):
     """
     Used for sorting replicas.
@@ -89,6 +90,7 @@ class SortKey(object):
                 key += (var.get(replica),)
 
         return key
+
 
 class PolicyLine(object):
     """
@@ -113,38 +115,33 @@ class PolicyLine(object):
         return self.condition.text
 
     def evaluate(self, replica):
+        action = None
+
         if self.condition.match(replica):
             self.has_match = True
 
             if issubclass(self.decision.action_cls, BlockAction):
                 # block-level
-                block_replicas = self.condition.get_matching_blocks(replica)
-                if len(block_replicas) == len(replica.block_replicas):
+                matching_block_replicas = self.condition.get_matching_blocks(replica)
+                if len(matching_block_replicas) == len(block_replicas):
                     # but all blocks matched - return dataset level
                     action = self.decision.action_cls.dataset_level(self)
                 else:
-                    action = self.decision.action(self, block_replicas)
+                    action = self.decision.action(self, matching_block_replicas)
             else:
                 action = self.decision.action(self)
 
-            return action
+        return action
 
-        else:
-            return None
 
 class Policy(object):
-    """
-    Responsible for partitioning the replicas and activating deletion on sites, and making deletion decisions on replicas.
-    The core of the object is a stack of policy lines (specific policies first) with a fall-back default decision.
-    A policy line is a callable object that takes a dataset replica as an argument and returns None or (replica, decision, reason)
-    """
-
-    def __init__(self, partition, lines, version, inventory):
-        self.partition = partition
-        self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
-
+    def __init__(self, lines, version, inventory):
         self.used_demand_plugins = set()
         self.parse_lines(lines, inventory)
+
+        # Iterative deletion can be turned off in specific policy files. When this is False,
+        # Detox will finalize the delete and protect list in the first iteration.
+        self.iterative_deletion = True
 
         self.version = version
 
@@ -154,7 +151,7 @@ class Policy(object):
         self.predelete_check = None
 
     def parse_lines(self, lines, inventory):
-        logger.info('Parsing policy stack for partition %s.', self.partition.name)
+        LOG.info('Parsing policy stack.')
 
         if type(lines) is file:
             conf = lines
@@ -173,13 +170,15 @@ class Policy(object):
         self.default_decision = None
         self.candidate_sort_key = None
 
-        LINE_SITE_TARGET, LINE_DELETION_TRIGGER, LINE_STOP_CONDITION, LINE_POLICY, LINE_ORDER = range(5)
+        LINE_PARTITION, LINE_SITE_TARGET, LINE_DELETION_TRIGGER, LINE_STOP_CONDITION, LINE_POLICY, LINE_ORDER = range(6)
 
         for line in lines:
             line_type = -1
 
             words = line.split()
-            if words[0] == 'On':
+            if words[0] == 'Partition':
+                line_type = LINE_PARTITION
+            elif words[0] == 'On':
                 line_type = LINE_SITE_TARGET
             elif words[0] == 'When':
                 line_type = LINE_DELETION_TRIGGER
@@ -188,19 +187,15 @@ class Policy(object):
             elif words[0] == 'Order':
                 line_type = LINE_ORDER
             elif words[0] in ('Protect', 'Delete', 'Dismiss', 'ProtectBlock', 'DeleteBlock', 'DismissBlock'):
-                decision = Decision(eval(words[0]))
                 line_type = LINE_POLICY
+                decision = Decision(eval(words[0]))
             else:
                 raise ConfigurationError(line)
 
-            if len(words) == 1:
-                if line_type == LINE_POLICY:
-                    self.default_decision = decision
-                    continue
-                else:
-                    raise ConfigurationError(line)
+            if line_type == LINE_PARTITION:
+                self.partition = inventory.partitions[words[1]]
 
-            if line_type == LINE_ORDER:
+            elif line_type == LINE_ORDER:
                 # will update this lambda
                 iw = 1
                 while iw < len(words):
@@ -244,7 +239,10 @@ class Policy(object):
                     self.stop_condition.append(SiteCondition(cond_text, self.partition))
 
                 elif line_type == LINE_POLICY:
-                    self.policy_lines.append(PolicyLine(decision, cond_text))
+                    if len(words) == 1:
+                        self.default_decision = decision
+                    else:
+                        self.policy_lines.append(PolicyLine(decision, cond_text))
             
 
         if len(self.target_site_def) == 0:
@@ -261,90 +259,13 @@ class Policy(object):
         for line in self.policy_lines:
             self.used_demand_plugins.update(line.condition.used_demand_plugins)
 
-        logger.info('Policy stack for %s: %d lines using demand plugins %s', self.partition.name, len(self.policy_lines), str(sorted(self.used_demand_plugins)))
+        LOG.info('Policy stack for %s: %d lines using demand plugins %s', self.partition.name, len(self.policy_lines), str(sorted(self.used_demand_plugins)))
 
-    def partition_replicas(self, inventory, target_sites):
-        """
-        Take the full list of datasets and pick out block replicas that are not in the partition.
-        If a dataset replica loses all block replicas, take the dataset replica itself out of inventory.
-        Return the list of all dataset replicas in the partition.
-        """
-
-        all_replicas = set()
-
-        # stacking up replicas (rather than removing them one by one) for efficiency
-        site_all_dataset_replicas = dict((site, set()) for site in target_sites)
-        site_all_block_replicas = dict((site, set()) for site in target_sites)
-
-        for dataset in inventory.datasets.itervalues():
-            if dataset.replicas is None:
-                continue
-
-            for replica in list(dataset.replicas):
-                site = replica.site
-                # site occupancy is computed at the end by set_block_replicas
-
-                block_replicas = set()
-                not_in_partition = set()
-
-                if site in target_sites:
-                    for block_replica in replica.block_replicas:
-                        if self.partition(block_replica):
-                            # this block replica is in partition
-                            if len(block_replicas) == 0:
-                                # first block replica
-                                site_all_dataset_replicas[site].add(replica)
-                                site_block_replicas = site_all_block_replicas[site]
-    
-                            site_block_replicas.add(block_replica)
-                            block_replicas.add(block_replica)
-                        else:
-                            not_in_partition.add(block_replica)
-
-                if len(block_replicas) == 0:
-                    # no block was in the partition
-                    self.untracked_replicas[replica] = replica.block_replicas
-                    replica.block_replicas = set()
-                    dataset.replicas.remove(replica)
-
-                else:
-                    replica.block_replicas = block_replicas
-    
-                    if len(not_in_partition) != 0:
-                        # remember blocks not in partition
-                        self.untracked_replicas[replica] = not_in_partition
-
-                    all_replicas.add(replica)
-
-        for site, dataset_replicas in site_all_dataset_replicas.iteritems():
-            site.dataset_replicas = set(dataset_replicas)
-
-        for site, block_replicas in site_all_block_replicas.iteritems():
-            site.set_block_replicas(block_replicas)
-
-        return all_replicas
-
-    def restore_replicas(self):
-        while len(self.untracked_replicas) != 0:
-            replica, block_replicas = self.untracked_replicas.popitem()
-
-            dataset = replica.dataset
-            site = replica.site
-
-            if replica not in dataset.replicas:
-                dataset.replicas.add(replica)
-
-            if replica not in site.dataset_replicas:
-                site.dataset_replicas.add(replica)
-
-            for block_replica in block_replicas:
-                replica.block_replicas.add(block_replica)
-                site.add_block_replica(block_replica)
-
-    def evaluate(self, replica):
+    def evaluate(self, replica, block_replicas):
+        block_replicas_copy = set(block_replicas)
         actions = []
         for line in self.policy_lines:
-            action = line.evaluate(replica)
+            action = line.evaluate(replica, block_replicas_copy)
             if action is None:
                 continue
 
@@ -356,15 +277,10 @@ class Policy(object):
                 # strip the block replicas from dataset replica so the successive
                 # policy lines don't see them any more
                 for block_replica in action.block_replicas:
-                    replica.block_replicas.remove(block_replica)
+                    block_replicas_copy.remove(block_replica)
 
         else:
             actions.append(self.default_decision.action(None))
         
-        # return block replicas taken away by BlockActions
-        for action in actions:
-            if isinstance(action, BlockAction):
-                replica.block_replicas.update(action.block_replicas)
-
         return actions
-        
+

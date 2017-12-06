@@ -48,6 +48,8 @@ class Partition(object):
         return Partition(self._name, copy.deepcopy(self._condition))
 
     def embed_into(self, inventory, check = False):
+        updated = False
+
         try:
             partition = inventory.partitions[self._name]
         except KeyError:
@@ -67,17 +69,19 @@ class Partition(object):
             for site in inventory.sites.itervalues():
                 site.partitions[partition] = SitePartition(site, partition)
 
-            return True
+            updated = True
         else:
-            if partition is self:
+            if check and (partition is self or partition == self):
                 # identical object -> return False if check is requested
-                return not check
-
-            if check and partition == self:
-                return False
+                pass
             else:
                 partition.copy(self)
-                return True
+                updated = True
+
+        if check:
+            return partition, updated
+        else:
+            return partition
 
     def delete_from(self, inventory):
         # Pop the partition from the main list, and remove site_partitions.
@@ -101,3 +105,10 @@ class Partition(object):
                     return True
 
             return False
+
+    def embed_tree(self, inventory):
+        if self._subpartitions is not None:
+            for subp in self._subpartitions:
+                subp.embed_tree(inventory)
+
+        self.embed_into(inventory)

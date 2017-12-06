@@ -90,6 +90,7 @@ class BlockReplica(object):
                 raise ObjectError('Unknown group %s', self.group.name)
 
         replica = block.find_replica(site)
+        updated = False
         if replica is None:
             replica = BlockReplica(block, site, group, self.is_complete, self.is_custodial, self.size, self.last_update)
     
@@ -98,17 +99,19 @@ class BlockReplica(object):
             block.replicas.add(replica)
             site.add_block_replica(replica)
 
-            return True
+            updated = True
+        elif check and (replica is self or replica == self):
+            # identical object -> return False if check is requested
+            pass
         else:
-            if replica is self:
-                # identical object -> return False if check is requested
-                return not check
+            replica.copy(self)
+            site.update_block_replica(replica)
+            updated = True
 
-            if check and replica == self:
-                return False
-            else:
-                replica.copy(self)
-                return True
+        if check:
+            return replica, updated
+        else:
+            return replica
 
     def delete_from(self, inventory):
         dataset = inventory.datasets[self._block.dataset.name]

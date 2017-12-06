@@ -12,15 +12,13 @@ parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', 
 args = parser.parse_args()
 sys.argv = []
 
-## Set up logging (write to stderr unless path is given)
+## Set up logging (write to stderr)
+
 log_level = getattr(logging, args.log_level.upper())
 log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 
+logging.basicConfig(level = log_level, format = log_format)
 LOG = logging.getLogger()
-LOG.setLevel(log_level)
-log_handler = logging.StreamHandler()
-log_handler.setFormatter(logging.Formatter(fmt = log_format))
-LOG.addHandler(log_handler)
 
 ## Load and initialize sources
 
@@ -48,11 +46,11 @@ app_table = MySQL(**state_db_params)
 
 LOG.info('Updating list of groups.')
 for group in group_source.get_group_list():
-    inventory.update(group, check = True)
+    inventory.update(group)
 
 LOG.info('Updating list of sites.')
 for site in site_source.get_site_list():
-    inventory.update(site, check = True)
+    inventory.update(site)
 
 ## Get the last update timestamp
 
@@ -93,7 +91,7 @@ for replica in replica_source.get_updated_replicas(last_update):
             LOG.error('Unknown dataset %s.', replica.block.dataset.name)
             continue
 
-        inventory.update(dataset_tmp, check = True)
+        inventory.update(dataset_tmp)
 
         # This is the dataset that is embedded in the inventory
         dataset = inventory.datasets[replica.block.dataset.name]
@@ -104,7 +102,7 @@ for replica in replica_source.get_updated_replicas(last_update):
     else:
         # If found, update the information (size, last_update, etc.) if necessary
         LOG.debug('Updating information for dataset %s', dataset.name)
-        inventory.update(replica.block.dataset, check = True)
+        inventory.update(replica.block.dataset)
 
     # 2: Find the block of the dataset
 
@@ -129,11 +127,11 @@ for replica in replica_source.get_updated_replicas(last_update):
         dataset.num_files += block.num_files
 
         # Update dataset information
-        inventory.update(dataset, check = True)
+        inventory.update(dataset)
     else:
         # If found, update the information if necessary
         LOG.debug('Updating information for block %s', block_full_name)
-        inventory.update(replica.block, check = True)
+        inventory.update(replica.block)
 
     # 3. Find the dataset replica
 

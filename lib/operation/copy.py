@@ -3,37 +3,32 @@ class CopyInterface(object):
     Interface to data copy application.
     """
 
-    def __init__(self):
+    def __init__(self, config):
         pass
 
-    def schedule_copy(self, dataset_replica, group, comments = '', is_test = False):
+    def schedule_copy(self, replica, comments = ''):
         """
-        Schedule and execute a copy operation. Argument origin can be None for copy interfaces
-        that do not require the origin to be specified.
-        Returns the operation id.
+        Schedule and execute a copy operation.
+        @param replica  DatasetReplica or BlockReplica
+        @param comments Comments to be passed to the external interface.
+        @return {operation_id: (approved, site, [dataset/block])}
         """
 
-        return 0
+        raise NotImplementedError('schedule_copy')
 
-    def schedule_copies(self, replica_list, group, comments = '', is_test = False):
+    def schedule_copies(self, replica_list, comments = ''):
         """
         Schedule mass copies. Subclasses can implement efficient algorithms.
-        Returns {operation id: (approved, [replica])}
+        @param replica_list  List of DatasetReplicas and BlockReplicas
+        @param comments      Comments to be passed to the external interface.
+        @return {operation_id: (approved, site, [dataset/block])}
         """
 
         request_mapping = {}
         for replica in replica_list:
-            operation_id = self.schedule_copy(replica, group, comments, is_test)
-            request_mapping[operation_id] = (True, [replica])
+            request_mapping.update(self.schedule_copy(replica, comments))
 
         return request_mapping
-
-    def schedule_reassignments(self, replica_list, group, comments = '', is_test = False):
-        """
-        Reassign replica_list to group.
-        """
-
-        return {}
 
     def copy_status(self, operation_id):
         """
@@ -41,4 +36,4 @@ class CopyInterface(object):
         {(site, dataset): (last_update, total, copied)} dictionary.
         """
 
-        return {}
+        raise NotImplementedError('copy_status')

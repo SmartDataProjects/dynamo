@@ -59,16 +59,19 @@ class SitePartition(object):
             raise ObjectError('Unknown partition %s', self._partition.name)
 
         site_partition = site.partitions[partition]
+        updated = False
 
-        if site_partition is self:
+        if check and (site_partition is self or site_partition == self):
             # identical object -> return False if check is requested
-            return not check
-
-        if check and site_partition == self:
-            return False
+            pass
         else:
             site_partition.copy(self)
-            return True
+            updated = True
+
+        if check:
+            return site_partition, updated
+        else:
+            return site_partition
 
     def delete_from(self, inventory):
         raise ObjectError('Deleting a single SitePartition is not allowed.')

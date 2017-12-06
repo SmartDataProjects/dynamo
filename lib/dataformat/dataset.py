@@ -111,23 +111,27 @@ class Dataset(object):
         return dataset
 
     def embed_into(self, inventory, check = False):
+        updated = False
+
         try:
             dataset = inventory.datasets[self._name]
         except KeyError:
             dataset = self.unlinked_clone()
             inventory.datasets.add(dataset)
     
-            return True
+            updated = True
         else:
-            if dataset is self:
+            if check and (dataset is self or dataset == self):
                 # identical object -> return False if check is requested
-                return not check
-
-            if check and dataset == self:
-                return False
+                pass
             else:
                 dataset.copy(self)
-                return True
+                updated = True
+
+        if check:
+            return dataset, updated
+        else:
+            return dataset
 
     def delete_from(self, inventory):
         # Pop the dataset from the main list, and remove all replicas.

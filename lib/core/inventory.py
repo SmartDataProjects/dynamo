@@ -16,12 +16,22 @@ class NameKeyDict(dict):
         self[obj.name] = obj
 
 
-class DynamoInventory(object):
-    def __init__(self, persistency_config = None, load = True):
+class ObjectRepository(object):
+    """Base class of the inventory which is just a bundle of dicts"""
+    def __init__(self):
         self.groups = NameKeyDict()
         self.sites = NameKeyDict()
         self.datasets = NameKeyDict()
         self.partitions = NameKeyDict()
+
+
+class DynamoInventory(ObjectRepository):
+    """
+    Inventory class. ObjectRepository with a persistent store backend.
+    """
+
+    def __init__(self, persistency_config = None, load = True):
+        ObjectRepository.__init__(self)
 
         self.init_store(persistency_config)
 
@@ -181,25 +191,24 @@ class DynamoInventory(object):
         else:
             return None
 
-    def update(self, obj, check = False, write = False):
+    def update(self, obj, write = False):
         """
         Update an object. Only update the member values of the immediate object.
-        When calling from a subprocess, pass an unlinked copy to _updated_objects.
+        When calling from a subprocess, pass the updated clone to _updated_objects.
         @param obj    Object to embed into this inventory.
-        @param check  Passed to obj.embed_into(). Check equivalency of obj to existing object first.
         @param write  Write updated object to persistent store.
         """
 
-        updated = obj.embed_into(self, check = check)
+        embedded_clone, updated = obj.embed_into(self, check = True)
 
         if updated:
             if hasattr(self, '_updated_objects'):
-                self._updated_objects.append(obj.unlinked_clone())
+                self._updated_objects.append(embedded_clone)
     
             if write:
                 obj.write_into(self.store)
 
-        return updated
+        return embedded_clone
 
     def delete(self, obj, write = False):
         """
