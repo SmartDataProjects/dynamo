@@ -35,6 +35,6 @@ class GroupInfoSource(object):
 
     def get_group_list(self):
         """
-        @return  List of unlinked Group objects
+        @return  List of unlinked Group objects. Will always contain a null group.
         """
         raise NotImplementedError('get_group_list')

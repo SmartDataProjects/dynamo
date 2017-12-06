@@ -14,7 +14,7 @@ class BlockReplica(object):
     def site(self):
         return self._site
 
-    def __init__(self, block, site, group = None, is_complete = False, is_custodial = False, size = -1, last_update = 0):
+    def __init__(self, block, site, group, is_complete = False, is_custodial = False, size = -1, last_update = 0):
         self._block = block
         self._site = site
         self.group = group
@@ -32,14 +32,14 @@ class BlockReplica(object):
     def __str__(self):
         return 'BlockReplica %s:%s (group=%s, is_complete=%s, size=%d, last_update=%d)' % \
             (self._site.name, self._block.full_name(),
-                'None' if self.group is None else self.group.name, self.is_complete, self.size, self.last_update)
+                self.group.name, self.is_complete, self.size, self.last_update)
 
     def __repr__(self):
         return 'BlockReplica(block=%s, site=%s, group=%s)' % (repr(self._block), repr(self._site), repr(self.group))
 
     def __eq__(self, other):
         return self._block.full_name() == other._block.full_name() and self._site.name == other._site.name and \
-            ((self.group is None and other.group is None) or (self.group.name == other.group.name)) and \
+            self.group.name == other.group.name and \
             self.is_complete == other.is_complete and self.is_custodial == other.is_custodial and \
             self.size == other.size and self.last_update == other.last_update
 
@@ -61,10 +61,7 @@ class BlockReplica(object):
     def unlinked_clone(self):
         block = self._block.unlinked_clone()
         site = self._site.unlinked_clone()
-        if self.group is None:
-            group = None
-        else:
-            group = self.group.unlinked_clone()
+        group = self.group.unlinked_clone()
 
         return BlockReplica(block, site, group, self.is_complete, self.is_custodial, self.size, self.last_update)
 
@@ -81,13 +78,10 @@ class BlockReplica(object):
         except KeyError:
             raise ObjectError('Unknown site %s', self._site.name)
 
-        if self.group is None:
-            group = None
-        else:
-            try:
-                group = inventory.groups[self.group.name]
-            except KeyError:
-                raise ObjectError('Unknown group %s', self.group.name)
+        try:
+            group = inventory.groups[self.group.name]
+        except KeyError:
+            raise ObjectError('Unknown group %s', self.group.name)
 
         replica = block.find_replica(site)
         updated = False

@@ -42,7 +42,7 @@ class PhEDExGroupInfoSource(GroupInfoSource):
     def get_group_list(self): #override
         LOG.info('get_group_list  Fetching the list of groups from PhEDEx')
 
-        group_list = []
+        group_list = [Group(None)]
 
         for entry in self._phedex.make_request('groups'):
             if entry['name'] in self.dataset_level_groups:

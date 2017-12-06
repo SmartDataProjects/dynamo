@@ -94,12 +94,7 @@ class PhEDExCopyInterface(CopyInterface):
             for block in subscription_list:
                 full_catalog[dataset].append(block)
 
-        if group is None:
-            group_name = None
-        else:
-            group_name = group.name
-
-        LOG.info('Subscribing %d datasets for %s at %s', len(full_catalog), group_name, site.name)
+        LOG.info('Subscribing %d datasets for %s at %s', len(full_catalog), group.name, site.name)
 
         # make requests in chunks
         request_catalog = {}
@@ -127,7 +122,7 @@ class PhEDExCopyInterface(CopyInterface):
                 'move': 'n',
                 'static': 'n',
                 'custodial': 'n',
-                'group': group_name,
+                'group': group.name,
                 'request_only': 'n',
                 'no_mail': 'n',
                 'comments': comments

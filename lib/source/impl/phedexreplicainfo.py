@@ -60,10 +60,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
                 )
 
                 for replica_entry in block_entry['replica']:
-                    if replica_entry['group'] is None:
-                        group = None
-                    else:
-                        group = Group(replica_entry['group'])
+                    group = Group(replica_entry['group'])
 
                     block_replica = BlockReplica(
                         block,
@@ -94,7 +91,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
                 block = Block(block_name, dataset)
 
                 for deletion_entry in block_entry['deletion']:
-                    block_replica = BlockReplica(block, Site(deletion_entry['node']))
+                    block_replica = BlockReplica(block, Site(deletion_entry['node']), Group(None))
 
                     deleted_replicas.append(block_replica)
 

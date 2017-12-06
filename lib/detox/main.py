@@ -472,7 +472,7 @@ class Detox(object):
                         dataset = inventory.datasets[item.name]
                         replica = dataset.find_replica(site.name)
                         for block_replica in replica.block_replicas:
-                            block_replica.group = None
+                            block_replica.group = inventory.groups[None]
                             inventory.update(block_replica)
                             size += block_replica.size
 
@@ -481,7 +481,7 @@ class Detox(object):
                         dataset = inventory.datasets[item.dataset.name]
                         block = dataset.find_block(item.name)
                         replica = block.find_replica(site.name)
-                        replica.group = None
+                        replica.group = inventory.groups[None]
                         inventory.update(replica)
                         size += replica.size
 
@@ -528,29 +528,16 @@ class Detox(object):
                         # replica in the partition_repository
                         clone_replica = item.find_replica(site)
                         for clone_block_replica in clone_replica.block_replicas:
-                            group = clone_block_replica.group
-                            if group is None:
-                                group_name = None
-                            else:
-                                group_name = group.name
-
                             block_replica = replica.find_block_replica(clone_block_replica.block.name)
 
-                            block_replica.group = inventory.groups[group_name]
+                            block_replica.group = inventory.groups[clone_block_replica.group.name]
                             inventory.update(block_replica)
                     else:
-                        group = item.group
-                        if group is None:
-                            group_name = None
-                        else:
-                            group_name = group.name
-
                         dataset = inventory.datasets[item.dataset.name]
                         block = dataset.find_block(item.name)
                         replica = block.find_replica(site.name)
 
-                        replica.group = inventory.groups[group_name]
+                        replica.group = inventory.groups[item.group.name]
                         inventory.update(replica)
 
             sigint.unblock()
-

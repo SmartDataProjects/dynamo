@@ -145,7 +145,7 @@ class ReplicaNumFullDiskCopyCommonOwner(DatasetReplicaAttr):
         DatasetReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
 
     def _get(self, replica):
-        owners = set(br.group for br in replica.block_replicas if br.group is not None)
+        owners = set(br.group for br in replica.block_replicas)
         dataset = replica.dataset
         num = 0
         for rep in dataset.replicas:
@@ -154,7 +154,7 @@ class ReplicaNumFullDiskCopyCommonOwner(DatasetReplicaAttr):
                 continue
     
             if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.is_full():
-                rep_owners = set(br.group for br in rep.block_replicas if br.group is not None)
+                rep_owners = set(br.group for br in rep.block_replicas)
                 if len(owners & rep_owners) != 0:
                     num += 1
     
@@ -196,7 +196,7 @@ class ReplicaOwner(BlockReplicaAttr):
         BlockReplicaAttr.__init__(self, Attr.TEXT_TYPE)
 
     def _get(self, replica):
-        if replica.group is None:
+        if replica.group.name is None:
             return 'None'
         else:
             return replica.group.name

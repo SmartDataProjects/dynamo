@@ -98,7 +98,7 @@ class MySQLInventoryStore(InventoryStore):
         if self._mysql.table_exists('groups_load_tmp'):
             self._mysql.query('DROP TABLE `groups_load_tmp`')
 
-        id_group_map = {0: None}
+        id_group_map = {0: Group(None)}
         self._load_groups(inventory, group_names, id_group_map)
 
         LOG.info('Loaded %d groups.', len(inventory.groups))
@@ -394,12 +394,9 @@ class MySQLInventoryStore(InventoryStore):
         if site_id == 0:
             return
 
-        if block_replica.group is None:
-            group_id = 0
-        else:
-            group_id = self._get_group_id(block_replica.group)
-            if group_id == 0:
-                return
+        group_id = self._get_group_id(block_replica.group)
+        if group_id == 0:
+            return
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
 
@@ -596,6 +593,9 @@ class MySQLInventoryStore(InventoryStore):
         return result[0]
 
     def _get_group_id(self, group):
+        if group.name is None:
+            return 0
+
         sql = 'SELECT `id` FROM `groups` WHERE `name` = %s'
         
         result = self._mysql.query(sql, group.name)

@@ -1,4 +1,4 @@
-from dataformat.block import Block
+from dataformat.block import Block, ObjectError
 
 class Group(object):
     """
@@ -63,15 +63,18 @@ class Group(object):
             return group
 
     def delete_from(self, inventory):
+        if self._name is None:
+            raise ObjectError('Deletion of null group not allowed')
+
         # Pop the group from the main list. All block replicas owned by the group
         # will be disowned.
-        group = inventory.groups.pop(self.name)
+        group = inventory.groups.pop(self._name)
 
         for dataset in inventory.datasets.itervalues():
             for replica in dataset.replicas:
                 for block_replica in replica.block_replicas:
                     if block_replica.group == group:
-                        block_replica.group = None
+                        block_replica.group = inventory.groups[None]
 
     def write_into(self, store, delete = False):
         if delete:
