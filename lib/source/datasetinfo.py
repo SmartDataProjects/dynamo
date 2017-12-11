@@ -20,6 +20,15 @@ class DatasetInfoSource(object):
         else:
             self.exclude = None
 
+    def get_dataset_names(self, include = ['*'], exclude = []):
+        """
+        Return a list of dataset names from the include and exclude patterns.
+        
+        @param include  List of fnmatch patterns of the dataset names to be included.
+        @param exclude  List of fnmatch patterns to exclude from the included list.
+        """
+        raise NotImplementedError('get_dataset_names')
+
     def get_updated_datasets(self, updated_since):
         """
         Get a list of updated Datasets-Blocks-Files with full information.

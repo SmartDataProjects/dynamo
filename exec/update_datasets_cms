@@ -3,14 +3,21 @@
 import sys
 import logging
 import time
+import tempfile
+import shutil
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update datasets, blocks, and files information.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', default = '', help = 'Configuration JSON.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
+parser.add_argument('--num-datasets', '-n', metavar = 'N', dest = 'num_datasets', type = int, default = 10, help = 'Number of datasets to update in one cycle, if doing a rolling update.')
+parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'dataset', help = 'Do a full update of the dataset (wildcard allowed).')
 
 args = parser.parse_args()
 sys.argv = []
+
+## Type of update
+rolling_update = (not args.dataset)
 
 ## Set up logging (write to stderr)
 
@@ -23,44 +30,57 @@ LOG = logging.getLogger()
 ## Load and initialize sources
 
 from core.executable import inventory
-from dataformat import Configuration, DatasetReplica
-from common.interface.mysql import MySQL
+from dataformat import Configuration
 import source.impl as sources
-from common.configuration import common_config
 
-with open(args.config) as source:
-    config = Configuration(source)
+config = Configuration(args.config)
 
-LOG.info('Updating status of %d datasets', config.num_datasets)
+config.datasets.config.phedex = config.phedex
 
 dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 
-state_db_params = Configuration(common_config.mysql)
-state_db_params.update(config.state.db_params)
-app_table = MySQL(**state_db_params)
+## Pick up datasets to inquire
 
-## Get the datasets to check
+if rolling_update:
+    LOG.info('Updating status of %d datasets', args.num_datasets)
 
-dataset_names = app_table.query('SELECT `dataset_name` FROM `update_datasets_cms` ORDER BY `row` LIMIT %d' % config.num_datasets)
+    datasets_to_update = []
+    list_exhausted = False
 
-for dataset_name in dataset_names:
+    try:
+        with open(config.dataset_state_file) as source:
+            for line in source:
+                datasets_to_update.append(line.strip())
+                
+                if len(datasets_to_update) == args.num_datasets:
+                    break
+            else:
+                list_exhausted = True
+                
+    except:
+        LOG.error('Failed to collect dataset names to update.')
+        sys.exit(1)
+
+else:
+    datasets_to_update = dataset_source.get_dataset_names(include = [args.dataset])
+
+for dataset_name in datasets_to_update:
     try:
         inventory_dataset = inventory.datasets[dataset_name]
     except KeyError:
-        continue
+        inventory_dataset = Dataset(dataset_name)
 
     LOG.debug('Updating %s', dataset_name)
 
     source_dataset = dataset_source.get_dataset(dataset_name)
 
     # if some dataset attribute changed
-    if source_dataset != inventory_dataset:
-        inventory.update(source_dataset)
+    inventory.update(source_dataset)
 
     inventory_block_names = set(b.name for b in inventory_dataset.blocks)
     source_block_names = set(b.name for b in source_dataset.blocks)
 
-    for block_name in (source_block_names - inventory_block_names):
+    for block_name in source_block_names:
         source_block = source_dataset.find_block(block_name)
         inventory.update(source_block)
 
@@ -68,17 +88,25 @@ for dataset_name in dataset_names:
         inventory_block = inventory_dataset.find_block(block_name)
         inventory.delete(inventory_block)
 
-    for block_name in (inventory_block_names & source_block_names):
-        inventory_block = inventory_dataset.find_block(block_name)
-        source_block = source_dataset.find_block(block_name)
-        if source_block != inventory_block:
-            inventory.update(source_block)
+if rolling_update:
+    if list_exhausted:
+        all_datasets = dataset_source.get_dataset_names(include = ['/*/*/*'])
+        with open(config.dataset_state_file, 'w') as dataset_list:
+            for entry in all_datasets:
+                dataset_list.write(entry['dataset'] + '\n')
 
-rownum = app_table.query('SELECT `row` FROM `update_datasets_cms` WHERE `dataset_name` = %s', dataset_names[-1])
-app_table.query('DELETE FROM `update_datasets_cms` WHERE `row` <= %s', rownum)
+    else:
+        with open(config.dataset_state_file) as source:
+            with tempfile.NamedTemporaryFile(mode = 'w') as dataset_list:
+                for line in source:
+                    if line in datasets_to_update:
+                        continue
 
-if app_table.query('SELECT COUNT(*) FROM `update_datasets_cms`')[0] == 0:
-    app_table.query('ALTER TABLE `update_datasets_cms` AUTO_INCREMENT = 1')
-    app_table.insert_many('update_datasets_cms', ('dataset_name'), None, inventory.datasets.iterkeys())
+                    dataset_list.write(line)
+
+                tmp_name = dataset_list.name
+        
+        os.unlink(config.dataset_state_file)
+        shutil.move(tmp_name, config.dataset_state_file)
 
 LOG.info('Dataset update completed.')

@@ -20,6 +20,26 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         self._phedex = PhEDEx(config.phedex)
         self._dbs = RESTService(config.dbs)
 
+    def get_dataset_names(self, include = ['*'], exclude = []):
+        dataset_names = []
+
+        exclude_exps = []
+        for pattern in exclude:
+            exclude_exps.append(re.compile(fnmatch.translate(pattern)))
+
+        for in_pattern in include:
+            result = self._dbs.make_request('datasets', ['dataset=' + in_pattern])
+            for entry in result:
+                name = entry['dataset']
+                for ex_exp in exclude_exps:
+                    if ex_exp.match(name):
+                        break
+                else:
+                    # not excluded
+                    dataset_names.append(name)
+
+        return dataset_names
+
     def get_updated_datasets(self, updated_since): #override
         LOG.warning('PhEDExDatasetInfoSource can only return a list of datasets and blocks that are created since the given timestamp.')
 

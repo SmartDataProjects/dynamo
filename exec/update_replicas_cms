@@ -27,6 +27,8 @@ log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 logging.basicConfig(level = log_level, format = log_format)
 LOG = logging.getLogger()
 
+LOG.info('Starting inventory update.')
+
 ## Load and initialize sources
 
 from core.executable import inventory
@@ -34,8 +36,6 @@ from dataformat import Configuration, DatasetReplica, ObjectError
 import source.impl as sources
 
 config = Configuration(args.config)
-
-LOG.info('Starting inventory update.')
 
 config.groups.config.phedex = config.phedex
 config.sites.config.phedex = config.phedex
@@ -64,7 +64,7 @@ if delta_update:
     ## Get the last update timestamp
 
     try:
-        with open(config.state_file) as source:
+        with open(config.replica_state_file) as source:
             last_update = int(source.read().strip())
     except:
         LOG.error('Failed to retrieve last update timestamp.')
@@ -269,7 +269,7 @@ for replica in deleted_replicas:
 
 if delta_update:
     ## Store the timestamp of when we started (allow 1 minute safety margin)
-    with open(config.state_file, 'w') as source:
+    with open(config.replica_state_file, 'w') as source:
         source.write('%d\n' % (update_start - 60))
 
 LOG.info('Inventory update completed.')
