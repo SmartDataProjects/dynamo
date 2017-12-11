@@ -34,12 +34,39 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
 
         return len(source) != 0
 
+    def get_replicas(self, site = None, dataset = None, block = None): #override
+        options = []
+        if site is not None:
+            options.append('node=' + site)
+        if dataset is not None:
+            options.append('dataset=' + dataset)
+        if block is not None:
+            options.append('block=' + block)
+
+        if len(options) == 0:
+            return []
+        
+        result = self._phedex.make_request('blockreplicas', ['show_dataset=y'] + options)
+
+        return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
+
     def get_updated_replicas(self, updated_since): #override
-        updated_replicas = []
-
         result = self._phedex.make_request('blockreplicas', ['show_dataset=y', 'update_since=%d' % updated_since])
+        
+        return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
 
-        for dataset_entry in result:
+    def get_deleted_replicas(self, deleted_since): #override
+        result = self._phedex.make_request('deletions', ['complete_since=%d' % deleted_since])
+
+        return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_deletions)
+
+    @staticmethod
+    def make_block_replicas(dataset_entries, replica_maker):
+        """Return a list of block replicas linked to Dataset, Block, Site, and Group"""
+
+        block_replicas = []
+
+        for dataset_entry in dataset_entries:
             dataset = Dataset(
                 dataset_entry['name'],
                 size = dataset_entry['bytes'],
@@ -59,40 +86,38 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
                     is_open = (block_entry['is_open'] == 'y')
                 )
 
-                for replica_entry in block_entry['replica']:
-                    group = Group(replica_entry['group'])
+                block_replicas.extend(replica_maker(block, block_entry))
 
-                    block_replica = BlockReplica(
-                        block,
-                        Site(replica_entry['node']),
-                        group,
-                        is_complete = (replica_entry['bytes'] == block.size),
-                        is_custodial = (replica_entry['custodial'] == 'y'),
-                        size = replica_entry['bytes'],
-                        last_update = int(replica_entry['time_update'])
-                    )
+        return block_replicas
 
-                    updated_replicas.append(block_replica)
+    @staticmethod
+    def maker_blockreplicas(block, block_entry):
+        replicas = []
 
-        return updated_replicas
+        for replica_entry in block_entry['replica']:
+            group = Group(replica_entry['group'])
 
-    def get_deleted_replicas(self, deleted_since): #override
-        deleted_replicas = []
+            block_replica = BlockReplica(
+                block,
+                Site(replica_entry['node']),
+                group,
+                is_complete = (replica_entry['bytes'] == block.size),
+                is_custodial = (replica_entry['custodial'] == 'y'),
+                size = replica_entry['bytes'],
+                last_update = int(replica_entry['time_update'])
+            )
 
-        result = self._phedex.make_request('deletions', ['complete_since=%d' % deleted_since])
+            replicas.append(block_replica)
 
-        for dataset_entry in result:
-            dataset = Dataset(dataset_entry['name'])
-            
-            for block_entry in dataset_entry['block']:
-                name = block_entry['name']
-                block_name = Block.translate_name(name[name.find('#') + 1:])
+        return replicas
 
-                block = Block(block_name, dataset)
+    @staticmethod
+    def maker_deletions(block, block_entry):
+        replicas = []
 
-                for deletion_entry in block_entry['deletion']:
-                    block_replica = BlockReplica(block, Site(deletion_entry['node']), Group(None))
+        for deletion_entry in block_entry['deletion']:
+            block_replica = BlockReplica(block, Site(deletion_entry['node']), Group(None))
 
-                    deleted_replicas.append(block_replica)
+            replicas.append(block_replica)
 
-        return deleted_replicas
+        return replicas

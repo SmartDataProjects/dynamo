@@ -15,6 +15,15 @@ class ReplicaInfoSource(object):
         """
         raise NotImplementedError('replica_exists_at_site')
 
+    def get_replicas(self, site = None, dataset = None, block = None):
+        """
+        Return a list of unlinked BlockReplicas matching the given name patterns.
+        @param site    Site name (wildcard allowed) or None
+        @param dataset Dataset name (wildcard allowed) or None
+        @param block   Block name (wildcard allowed) or None
+        """
+        raise NotImplementedError('get_replicas')
+
     def get_updated_replicas(self, updated_since):
         """
         Return a list of unlinked BlockReplicas updated since the given timestamp.

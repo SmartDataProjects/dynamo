@@ -3,14 +3,21 @@
 import sys
 import logging
 import time
+import fnmatch
+import re
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update replica information.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', default = '', help = 'Configuration JSON.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
+parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', help = 'Do a full update of the site (wildcard allowed).')
+parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'dataset', help = 'Do a full update of the dataset (wildcard allowed).')
 
 args = parser.parse_args()
 sys.argv = []
+
+## Type of update
+delta_update = (not args.site and not args.dataset)
 
 ## Set up logging (write to stderr)
 
@@ -24,12 +31,9 @@ LOG = logging.getLogger()
 
 from core.executable import inventory
 from dataformat import Configuration, DatasetReplica, ObjectError
-from common.interface.mysql import MySQL
 import source.impl as sources
-from common.configuration import common_config
 
-with open(args.config) as source:
-    config = Configuration(source)
+config = Configuration(args.config)
 
 LOG.info('Starting inventory update.')
 
@@ -37,10 +41,6 @@ group_source = sources.PhEDExGroupInfoSource(config.groups.config)
 site_source = sources.PhEDExSiteInfoSource(config.sites.config)
 dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 replica_source = sources.PhEDExReplicaInfoSource(config.replicas.config)
-
-state_db_params = Configuration(common_config.mysql)
-state_db_params.update(config.state.db_params)
-app_table = MySQL(**state_db_params)
 
 ## Refresh groups and sites
 
@@ -52,16 +52,36 @@ LOG.info('Updating list of sites.')
 for site in site_source.get_site_list():
     inventory.update(site)
 
-## Get the last update timestamp
+## Pick up new and changed block replicas
 
-last_update = app_table.query('SELECT UNIX_TIMESTAMP(`last_update`) FROM `update_replicas_cms`')[0]
-update_start = time.time()
+if delta_update:
+    ## Normal global delta-update
+    ## Get the last update timestamp
 
-## Fetch the full list of block replicas that were updated since updated_since.
-## New datasets and blocks will be caught in the process.
+    try:
+        with open(config.state_file) as source:
+            last_update = int(source.read().strip())
+    except:
+        LOG.error('Failed to retrieve last update timestamp.')
+        sys.exit(1)
 
-LOG.info('Updating list of datasets, blocks, and replicas.')
-for replica in replica_source.get_updated_replicas(last_update):
+    update_start = time.time()
+    
+    ## Fetch the full list of block replicas that were updated since updated_since.
+    ## New datasets and blocks will be caught in the process.
+    
+    LOG.info('Updating list of datasets, blocks, and replicas.')
+
+    new_and_updated_replicas = replica_source.get_updated_replicas(last_update)
+
+else:
+    new_and_updated_replicas = replica_source.get_replicas(site = args.site, dataset = args.dataset)
+    # Save the embedded versions
+    embedded_updated_replicas = set()
+
+## Loop over new and changed block replicas, add them to inventory
+
+for replica in new_and_updated_replicas:
     replica_str = str(replica)
 
     LOG.debug('Updating %s', replica_str)
@@ -143,11 +163,46 @@ for replica in replica_source.get_updated_replicas(last_update):
     # 4. Update the block replica
 
     LOG.debug('Updating block replica.')
-    inventory.update(replica)
+    embedded_replica = inventory.update(replica)
 
-## Repeat for deleted block replicas
+    if not delta_update:
+        embedded_updated_replicas.append(embedded_replica)
 
-for replica in replica_source.get_deleted_replicas(last_update):
+## Pick up deleted block replicas
+
+if delta_update:
+    # last_update should be available
+    deleted_replicas = replica_source.get_deleted_replicas(last_update)
+
+else:
+    # Replicas in inventory but not in new_and_updated_replicas are deleted
+    deleted_replicas = []
+
+    if args.site:
+        site_pat = re.compile(fnmatch.translate(args.site))
+    else:
+        site_pat = None
+
+    if args.dataset:
+        dataset_pat = re.compile(fnmatch.translate(args.dataset))
+    else:
+        dataset_pat = None
+
+    for site in inventory.sites.itervalues():
+        if site_pat and not site_pat.match(site.name):
+            continue
+
+        for dataset_replica in site.dataset_replicas():
+            if dataset_pat and not dataset_pat.match(dataset_replica.dataset.name):
+                continue
+
+            for block_replica in dataset_replica.block_replicas:
+                if block_replica not in embedded_updated_replicas:
+                    deleted_replicas.append(block_replica)
+
+## Loop over deleted replicas
+
+for replica in deleted_replicas:
     replica_str = str(replica)
 
     LOG.debug('Deleting %s', replica_str)
@@ -207,7 +262,9 @@ for replica in replica_source.get_deleted_replicas(last_update):
     if len(dataset_replica.block_replicas) == 0:
         inventory.delete(dataset_replica)
 
-## Store the timestamp of when we started (allow 1 minute safety margin)
-#app_table.query('UPDATE `update_replicas_cms` SET `last_update` = FROM_UNIXTIME(%s)', update_start - 60)
+if delta_update:
+    ## Store the timestamp of when we started (allow 1 minute safety margin)
+    with open(config.state_file, 'w') as source:
+        source.write('%d\n' % (update_start - 60))
 
 LOG.info('Inventory update completed.')
