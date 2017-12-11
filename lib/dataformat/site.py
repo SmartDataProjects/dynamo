@@ -350,6 +350,11 @@ class Site(object):
 
         for site_partition in self.partitions.itervalues():
             try:
-                block_replicas = site_partition.replicas[dataset_replica].remove(replica)
+                block_replicas = site_partition.replicas[dataset_replica]
             except KeyError:
-                pass
+                continue
+
+            if block_replicas is None:
+                block_replicas = site_partition.replicas[dataset_replica] = set(dataset_replica.block_replicas)
+
+            block_replicas.remove(replica)

@@ -17,8 +17,8 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
     def __init__(self, config):
         DatasetInfoSource.__init__(self, config)
 
-        self._phedex = PhEDEx()
-        self._dbs = RESTService(config.dbs_url)
+        self._phedex = PhEDEx(config.phedex)
+        self._dbs = RESTService(config.dbs)
 
     def get_updated_datasets(self, updated_since): #override
         LOG.warning('PhEDExDatasetInfoSource can only return a list of datasets and blocks that are created since the given timestamp.')

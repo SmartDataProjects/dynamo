@@ -18,7 +18,7 @@ from types import TupleType, ListType
 MySQLdb.converters.conversions[TupleType] = MySQLdb.converters.escape_sequence
 MySQLdb.converters.conversions[ListType] = MySQLdb.converters.escape_sequence
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class MySQL(object):
 
@@ -74,11 +74,11 @@ class MySQL(object):
         cursor = self._connection.cursor()
 
         try:
-            if logger.getEffectiveLevel() == logging.DEBUG:
+            if LOG.getEffectiveLevel() == logging.DEBUG:
                 if len(args) == 0:
-                    logger.debug(sql)
+                    LOG.debug(sql)
                 else:
-                    logger.debug(sql + ' % ' + str(args))
+                    LOG.debug(sql + ' % ' + str(args))
     
             try:
                 for attempt in range(10):
@@ -86,7 +86,7 @@ class MySQL(object):
                         cursor.execute(sql, args)
                         break
                     except MySQLdb.OperationalError:
-                        logger.error(str(sys.exc_info()[1]))
+                        LOG.error(str(sys.exc_info()[1]))
                         last_except = sys.exc_info()[1]
                         # reconnect to server
                         cursor.close()
@@ -94,13 +94,13 @@ class MySQL(object):
                         cursor = self._connection.cursor()
         
                 else: # 10 failures
-                    logger.error('Too many OperationalErrors. Last exception:')
+                    LOG.error('Too many OperationalErrors. Last exception:')
                     raise last_except
     
             except:
-                logger.error('There was an error executing the following statement:')
-                logger.error(sql[:10000])
-                logger.error(sys.exc_info()[1])
+                LOG.error('There was an error executing the following statement:')
+                LOG.error(sql[:10000])
+                LOG.error(sys.exc_info()[1])
                 raise
     
             result = cursor.fetchall()
@@ -140,11 +140,11 @@ class MySQL(object):
         cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
 
         try:
-            if logger.getEffectiveLevel() == logging.DEBUG:
+            if LOG.getEffectiveLevel() == logging.DEBUG:
                 if len(args) == 0:
-                    logger.debug(sql)
+                    LOG.debug(sql)
                 else:
-                    logger.debug(sql + ' % ' + str(args))
+                    LOG.debug(sql + ' % ' + str(args))
     
             try:
                 for attempt in range(10):
@@ -152,7 +152,7 @@ class MySQL(object):
                         cursor.execute(sql, args)
                         break
                     except MySQLdb.OperationalError:
-                        logger.error(str(sys.exc_info()[1]))
+                        LOG.error(str(sys.exc_info()[1]))
                         last_except = sys.exc_info()[1]
                         # reconnect to server
                         cursor.close()
@@ -160,13 +160,13 @@ class MySQL(object):
                         cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
         
                 else: # 10 failures
-                    logger.error('Too many OperationalErrors. Last exception:')
+                    LOG.error('Too many OperationalErrors. Last exception:')
                     raise last_except
     
             except:
-                logger.error('There was an error executing the following statement:')
-                logger.error(sql[:10000])
-                logger.error(sys.exc_info()[1])
+                LOG.error('There was an error executing the following statement:')
+                LOG.error(sql[:10000])
+                LOG.error(sys.exc_info()[1])
                 raise
     
             if cursor.description is None:
@@ -332,7 +332,7 @@ class MySQL(object):
                 if (newer_than == older_than and tm == newer_than) or \
                         (tm > newer_than and tm < older_than):
                     database = self.db_name() + '_' + snapshot
-                    logger.info('Dropping database ' + database)
+                    LOG.info('Dropping database ' + database)
                     self.query('DROP DATABASE ' + database)
 
     def list_snapshots(self, timestamp_only):
@@ -481,4 +481,4 @@ class MySQL(object):
             if id_object_map is not None:
                 id_object_map[obj_id] = obj
 
-        logger.debug('make_map %s (%d) obejcts', table, num_obj)
+        LOG.debug('make_map %s (%d) obejcts', table, num_obj)

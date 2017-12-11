@@ -10,7 +10,7 @@ class Configuration(dict):
     Also translates string with pattern $(VARIABLE) to environment variable VARIABLE.
     """
 
-    def __init__(self, config):
+    def __init__(self, config = dict()):
         if type(config) is file:
             config = json.loads(config.read())
             unicode2str(config)

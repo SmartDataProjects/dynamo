@@ -37,6 +37,11 @@ config = Configuration(args.config)
 
 LOG.info('Starting inventory update.')
 
+config.groups.config.phedex = config.phedex
+config.sites.config.phedex = config.phedex
+config.datasets.config.phedex = config.phedex
+config.replicas.config.phedex = config.phedex
+
 group_source = sources.PhEDExGroupInfoSource(config.groups.config)
 site_source = sources.PhEDExSiteInfoSource(config.sites.config)
 dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
@@ -166,7 +171,7 @@ for replica in new_and_updated_replicas:
     embedded_replica = inventory.update(replica)
 
     if not delta_update:
-        embedded_updated_replicas.append(embedded_replica)
+        embedded_updated_replicas.add(embedded_replica)
 
 ## Pick up deleted block replicas
 

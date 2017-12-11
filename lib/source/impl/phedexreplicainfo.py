@@ -14,7 +14,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
     def __init__(self, config):
         ReplicaInfoSource.__init__(self, config)
 
-        self._phedex = PhEDEx()
+        self._phedex = PhEDEx(config.phedex)
 
     def replica_exists_at_site(self, site, item): #override
         options = ['node=' + site.name]
@@ -82,9 +82,12 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
                     block_name,
                     dataset,
                     size = block_entry['bytes'],
-                    num_files = block_entry['files'],
-                    is_open = (block_entry['is_open'] == 'y')
+                    num_files = block_entry['files']
                 )
+                try:
+                    block.is_open = (block_entry['is_open'] == 'y')
+                except KeyError:
+                    pass
 
                 block_replicas.extend(replica_maker(block, block_entry))
 

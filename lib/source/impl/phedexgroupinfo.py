@@ -15,7 +15,7 @@ class PhEDExGroupInfoSource(GroupInfoSource):
     def __init__(self, config):
         GroupInfoSource.__init__(self, config)
 
-        self._phedex = PhEDEx()
+        self._phedex = PhEDEx(config.phedex)
 
     def get_group(self, name): #override
         if self.exclude is not None:

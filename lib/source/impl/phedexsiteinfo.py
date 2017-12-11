@@ -15,8 +15,8 @@ class PhEDExSiteInfoSource(SiteInfoSource):
     def __init__(self, config):
         SiteInfoSource.__init__(self, config)
 
-        self._phedex = PhEDEx()
-        self._ssb = RESTService(config.ssb_url)
+        self._phedex = PhEDEx(config.phedex)
+        self._ssb = RESTService(config.ssb)
 
     def get_site(self, name): #override
         if self.exclude is not None:

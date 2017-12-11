@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 import logging
@@ -66,62 +67,64 @@ class Dynamo(object):
 
         try:
             first_wait = True
+            sleep_time = 0
             while True:
+                time.sleep(sleep_time)
+
                 LOG.debug('Polling for executables.')
     
                 sql = 'SELECT s.`id`, s.`write_request`, s.`title`, s.`path`, s.`args`, s.`user_id`, u.`name`, s.`type`'
                 sql += ' FROM `action` AS s INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
                 sql += ' WHERE s.`status` = \'new\''
                 sql += ' ORDER BY s.`timestamp` LIMIT 1'
-                result = self.registry.query(sql)
+                result = self.registry.backend.query(sql)
 
                 if len(result) == 0:
                     if len(child_processes) == 0 and first_wait:
                         LOG.info('Waiting for executables.')
                         first_wait = False
 
-                    sleep_time = 5
+                    sleep_time = 0.5
 
                     LOG.debug('No executable found, sleeping for %d seconds.', sleep_time)
 
                 else:
                     exec_id, write_request, title, path, args, user_id, user_name, content_type = result[0]
-                    self.registry.query('UPDATE `action` SET `status` = \'run\' WHERE `id` = %s', exec_id)
-
-                    if content_type == 'deletion_policy':
-                        # this is a detox test run
-                        pass
-                    elif content_type == 'executable':
-                        LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
-
-                        if write_request:
-                            if not self.check_write_auth(title, user_id, path):
-                                LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
-                                # send a message
-
-                                self.registry.query('UPDATE `action` SET `status` = %s where `id` = %s', 'failed', exec_id)
-
-                                continue
-        
-                            queue = multiprocessing.Queue(64)
-                        else:
-                            queue = None
-        
-                        proc = multiprocessing.Process(target = self._run_one, name = title, args = (path, args, queue))
-                        child_processes.append((exec_id, proc, user_name, path, queue))
-        
-                        proc.daemon = True
-                        proc.start()
-        
-                        LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
 
                     first_wait = True
                     sleep_time = 0
 
-                self.collect_processes(child_processes)
-   
-                time.sleep(sleep_time)
+                    if not os.path.exists(path + '/exec.py'):
+                        LOG.info('Executable %s from user %s (write request: %s) not found.', title, user_name, write_request)
+                        self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'failed', exec_id)
+                        continue
 
+                    self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'run', exec_id)
+
+                    LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
+
+                    if write_request:
+                        if not self.check_write_auth(title, user_id, path):
+                            LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
+                            # send a message
+
+                            self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', 'failed', exec_id)
+                            continue
+    
+                        queue = multiprocessing.Queue(64)
+                    else:
+                        queue = None
+    
+                    proc = multiprocessing.Process(target = self._run_one, name = title, args = (path, args, queue))
+                    child_processes.append((exec_id, proc, user_name, path, queue))
+    
+                    proc.daemon = True
+                    proc.start()
+    
+                    LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
+
+                self.collect_processes(child_processes)
+ 
         except KeyboardInterrupt:
             LOG.info('Main process interrupted with SIGINT.')
 
@@ -141,7 +144,7 @@ class Dynamo(object):
                 if queue is not None:
                     queue.close()
 
-                self.registry.query('UPDATE `action` SET `status` = \'killed\' where `id` = %s', exec_id)
+                self.registry.backend.query('UPDATE `action` SET `status` = \'killed\' where `id` = %s', exec_id)
 
     def check_write_auth(self, title, user_id, path):
         # check authorization
@@ -149,7 +152,7 @@ class Dynamo(object):
             checksum = hashlib.md5(source.read()).hexdigest()
 
         sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = UNHEX(%s)'
-        for auth_user_id in self.registry.query(sql, title, checksum):
+        for auth_user_id in self.registry.backend.query(sql, title, checksum):
             if auth_user_id == 0 or auth_user_id == user_id:
                 return True
 
@@ -196,12 +199,10 @@ class Dynamo(object):
                 LOG.info('Executable %s (%s) from user %s completed (Exit code %d).', proc.name, path, user_name, proc.exitcode)
                 child_processes.pop(ichild)
 
-                self.registry.query('UPDATE `action` SET `status` = %s where `id` = %s', 'done' if proc.exitcode == 0 else 'failed', exec_id)
+                self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', 'done' if proc.exitcode == 0 else 'failed', exec_id)
 
         
     def _run_one(self, path, args, queue):
-        if queue is not None:
-
         # Redirect STDOUT and STDERR to file, close STDIN
         stdout = sys.stdout
         stderr = sys.stderr
@@ -216,12 +217,19 @@ class Dynamo(object):
         logging.shutdown()
         reload(logging)
 
+        # common.interface is loaded by registry - logging still points to the main process
+        import common.interface
+        for name in dir(common.interface):
+            mod = getattr(common.interface, name)
+            if type(mod).__name__ == 'module':
+                reload(mod)
+
         # Re-initialize
         #  - inventory store with read-only connection
         #  - registry backend with read-only connection
         # This is for security and simply for concurrency - multiple processes
         # should not share the same DB connection
-        backend_config = self.registry.backend
+        backend_config = self.registry_config.backend
         self.registry.set_backend(backend_config.module, backend_config.readonly_config)
 
         persistency_config = self.inventory_config.persistency
