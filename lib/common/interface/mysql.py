@@ -26,24 +26,32 @@ class MySQL(object):
     def escape_string(string):
         return MySQLdb.escape_string(string)
     
-    def __init__(self, host = '', user = '', passwd = '', config_file = '', config_group = '', db = '', max_query_len = 0, reuse_connection = True):
+    def __init__(self, config):
         self._connection_parameters = {}
-        if config_file:
-            self._connection_parameters['read_default_file'] = config_file
-            self._connection_parameters['read_default_group'] = config_group
-        if host:
-            self._connection_parameters['host'] = host
-        if user:
-            self._connection_parameters['user'] = user
-        if passwd:
-            self._connection_parameters['passwd'] = passwd
-        if db:
-            self._connection_parameters['db'] = db
+        if 'config_file' in config and 'config_group' in config:
+            self._connection_parameters['read_default_file'] = config['config_file']
+            self._connection_parameters['read_default_group'] = config['config_group']
+        if 'host' in config:
+            self._connection_parameters['host'] = config['host']
+        if 'user' in config:
+            self._connection_parameters['user'] = config['user']
+        if 'passwd' in config:
+            self._connection_parameters['passwd'] = config['passwd']
+        if 'db' in config:
+            self._connection_parameters['db'] = config['db']
 
-        self.reuse_connection = reuse_connection
         self._connection = None
 
-        self.max_query_len = max_query_len
+        if 'reuse_connection' in config:
+            self.reuse_connection = config['reuse_connection']
+        else:
+            self.reuse_connection = False
+
+        if 'max_query_len' in config:
+            self.max_query_len = config['max_query_len']
+        else:
+            # default 1M characters
+            self.max_query_len = 1000000
 
     def db_name(self):
         return self._connection_parameters['db']

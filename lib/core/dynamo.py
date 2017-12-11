@@ -6,10 +6,8 @@ import multiprocessing
 import Queue
 
 from core.inventory import DynamoInventory
+from core.registry import DynamoRegistry
 import core.executable
-from dataformat import Configuration
-from common.interface.mysql import MySQL
-from common.configuration import common_config
 from common.control import sigint
 
 LOG = logging.getLogger(__name__)
@@ -19,29 +17,26 @@ class Dynamo(object):
 
     CMD_UPDATE, CMD_DELETE = range(2)
 
-    def __init__(self, server_config):
+    def __init__(self, config):
         LOG.info('Initializing Dynamo server.')
 
         ## Create the registry
-        registry_db_config = Configuration(common_config.mysql)
-        registry_db_config.update(server_config.registry.db_params)
-        registry_db_config['reuse_connection'] = False
-        self.registry = MySQL(**registry_db_config)
-        
+        self.registry = DynamoRegistry(config.registry)
+        self.registry_config = config.registry.clone()
+
         ## Create the inventory
-        persistency_config = Configuration(common_config.inventory.persistency.config)
-        persistency_config.update(server_config.inventory.persistency)
-        self.inventory = DynamoInventory(persistency_config = persistency_config, load = False)
-        
+        self.inventory = DynamoInventory(config.inventory, load = False)
+        self.inventory_config = config.inventory.clone()
+
         ## Load the inventory content (filter according to debug config)
         load_opts = {}
         for objs in ['groups', 'sites', 'datasets']:
             try:
-                included = server_config.debug['included_' + objs]
+                included = config.debug['included_' + objs]
             except KeyError:
                 included = None
             try:
-                excluded = server_config.debug['excluded_' + objs]
+                excluded = config.debug['excluded_' + objs]
             except KeyError:
                 excluded = None
 
@@ -49,6 +44,9 @@ class Dynamo(object):
         
         LOG.info('Loading the inventory.')
         self.inventory.load(**load_opts)
+
+        # configuration containing privileged-access passwords
+        self.restricted_config = config.restricted_config.clone()
 
     def run(self):
         """
@@ -203,9 +201,6 @@ class Dynamo(object):
         
     def _run_one(self, path, args, queue):
         if queue is not None:
-            # create a list of updated objects the executable can fill
-            self.inventory._updated_objects = []
-            self.inventory._deleted_objects = []
 
         # Redirect STDOUT and STDERR to file, close STDIN
         stdout = sys.stdout
@@ -221,13 +216,27 @@ class Dynamo(object):
         logging.shutdown()
         reload(logging)
 
-        # Re-initialize the inventory store with read-only connection
+        # Re-initialize
+        #  - inventory store with read-only connection
+        #  - registry backend with read-only connection
         # This is for security and simply for concurrency - multiple processes
         # should not share the same DB connection
-        self.inventory.init_store()
+        backend_config = self.registry.backend
+        self.registry.set_backend(backend_config.module, backend_config.readonly_config)
 
-        # Pass my inventory to the executable through core.executable
+        persistency_config = self.inventory_config.persistency
+        self.inventory.init_store(persistency_config.module, persistency_config.readonly_config)
+
+        # Pass my registry and inventory to the executable through core.executable
+        core.executable.registry = self.registry
         core.executable.inventory = self.inventory
+
+        if queue is not None:
+            # create a list of updated objects the executable can fill
+            core.executable.inventory._updated_objects = []
+            core.executable.inventory._deleted_objects = []
+
+            core.executable.interface_configs = self.restricted_config
 
         execfile(path + '/exec.py')
 

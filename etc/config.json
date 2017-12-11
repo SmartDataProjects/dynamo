@@ -1,6 +1,5 @@
 {
   "general": {
-    "threads": 32,
     "paths": {
       "base": "$(DYNAMO_BASE)",
       "archive": "$(DYNAMO_ARCHIVE)",
@@ -8,27 +7,29 @@
       "datadir": "$(DYNAMO_DATADIR)"
     }
   },
-  "inventory": {
-    "persistency": {
-      "module": "MySQLInventoryStore",
-      "config": {
-        "db_params": {"db": "dynamo"}
-      }
-    }
-  },
   "history": {
     "persistency": {
       "module": "MySQLHistory",
       "config": {
-        "db_params": {"db": "dynamohistory"}
+        "db_params": {
+          "config_file": "/etc/my.cnf",
+          "config_group": "mysql-dynamo",
+          "db": "dynamohistory"
+        }
       }
     },
     "cache": {
-      "db_params": {"db": "dynamohistory_cache"}
+      "db_params": {
+        "config_file": "/etc/my.cnf",
+        "config_group": "mysql-dynamo",
+        "db": "dynamohistory_cache"
+      }
     }
   },
   "registry": {
     "db_params": {
+      "config_file": "/etc/my.cnf",
+      "config_group": "mysql-dynamo",
       "db": "dynamoregister"
     }
   },
@@ -37,11 +38,6 @@
     "cookie_file": "$(DYNAMO_SPOOL)/cookies.txt",
     "num_attempts": 20,
     "cache_db_params": {}
-  },
-  "mysql": {
-    "config_file": "/etc/my.cnf",
-    "config_group": "mysql-dynamo",
-    "max_query_len": 100000
   },
   "phedex": {
     "url": "https://cmsweb.cern.ch/phedex/datasvc/json/prod"

@@ -1,7 +1,6 @@
 import logging
 import re
 
-from common.configuration import common_config
 from policy.condition import Condition
 from policy.variables import replica_variables
 from dataformat import Partition
@@ -30,23 +29,19 @@ class DynamoInventory(ObjectRepository):
     Inventory class. ObjectRepository with a persistent store backend.
     """
 
-    def __init__(self, persistency_config = None, load = True):
+    def __init__(self, config, load = True):
         ObjectRepository.__init__(self)
 
-        self.init_store(persistency_config)
+        self.init_store(config.persistency.module, config.persistency.config)
 
+        self.partition_def_path = config.partition_def_path
+        
         if load:
             self.load()
 
-    def init_store(self, config = None):
-        persistency_cls = getattr(core.impl, common_config.inventory.persistency.module)
-
-        if config is not None:
-            # can be privileged store instance
-            self.store = persistency_cls(config)
-        else:
-            # unprivileged read-only store instance
-            self.store = persistency_cls(common_config.inventory.persistency.config)
+    def init_store(self, module, config):
+        persistency_cls = getattr(core.impl, module)
+        self.store = persistency_cls(config)
 
     def load(self, groups = (None, None), sites = (None, None), datasets = (None, None)):
         """
@@ -88,7 +83,7 @@ class DynamoInventory(ObjectRepository):
         LOG.info('Data is loaded to memory. %d groups, %d sites, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.groups), len(self.sites), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
     def _load_partitions(self):
-        with open(common_config.general.paths.base + '/policies/partitions.txt') as defsource:
+        with open(self.partition_def_path) as defsource:
             subpartitions = {}
             for line in defsource:
                 matches = re.match('([^:]+): *(.+)', line.strip())

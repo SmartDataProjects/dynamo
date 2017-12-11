@@ -14,6 +14,10 @@ class Configuration(dict):
         if type(config) is file:
             config = json.loads(config.read())
             unicode2str(config)
+        elif type(config) is str:
+            with open(config) as source:
+                config = json.loads(source.read())
+                unicode2str(config)
 
         for key, value in config.iteritems():
             if type(value) is str:
@@ -28,3 +32,13 @@ class Configuration(dict):
 
     def __getattr__(self, attr):
         return self[attr]
+
+    def get(self, attr, default):
+        """Return the default value if attr is not found."""
+        try:
+            return self[attr]
+        except KeyError:
+            return default
+
+    def clone(self):
+        return Configuration(self)

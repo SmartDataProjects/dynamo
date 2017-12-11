@@ -7,7 +7,6 @@ import logging
 import fnmatch
 import pprint
 
-from common.configuration import common_config
 from core.persistency import InventoryStore
 from common.interface.mysql import MySQL
 from dataformat import Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
@@ -20,11 +19,7 @@ class MySQLInventoryStore(InventoryStore):
     def __init__(self, config):
         super(self.__class__, self).__init__(config)
 
-        db_params = common_config.mysql
-        if 'db_params' in config:
-            db_params.update(config['db_params'])
-
-        self._mysql = MySQL(**db_params)
+        self._mysql = MySQL(config.db_params)
 
     def get_group_names(self, include = ['*'], exclude = []): #override
         # Load groups

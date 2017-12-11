@@ -1,23 +1,19 @@
-"""
-Interface to CMS data management service PhEDEx.
-"""
-
 import logging
 import pprint
 
 from webservice import RESTService, GET, POST
-from common.configuration import common_config
 
 LOG = logging.getLogger(__name__)
 
 class PhEDEx(RESTService):
-    def __init__(self, cache_lifetime = 0):
-        RESTService.__init__(self, common_config.phedex.url, use_cache = (cache_lifetime > 0))
-        self.cache_lifetime = cache_lifetime
+    """A RESTService interface speicific to CMS data management service PhEDEx."""
 
-    def make_request(self, resource = '', options = [], method = GET, format = 'url', cache_lifetime = 0, retry_on_error = True): #override
+    def __init__(self, config):
+        RESTService.__init__(self, config)
+
+    def make_request(self, resource = '', options = [], method = GET, format = 'url', retry_on_error = True): #override
         LOG.info('%s %s', resource, options)
-        response = RESTService.make_request(self, resource, options = options, method = method, format = format, cache_lifetime = self.cache_lifetime, retry_on_error = retry_on_error)
+        response = RESTService.make_request(self, resource, options = options, method = method, format = format, retry_on_error = retry_on_error)
 
         try:
             result = response['phedex']

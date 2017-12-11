@@ -1,7 +1,7 @@
 import logging
 import time
 
-from dataformat import HistoryRecord
+from dataformat import Configuration, HistoryRecord
 
 LOG = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ class TransactionHistoryInterface(object):
 
     def __init__(self, config):
         self._lock_depth = 0
-        self.config = config
+        self.config = Configuration(config)
 
     def acquire_lock(self, blocking = True):
         if self._lock_depth == 0:
@@ -32,84 +32,6 @@ class TransactionHistoryInterface(object):
 
         if self._lock_depth > 0: # should always be the case if properly programmed
             self._lock_depth -= 1
-
-    def make_snapshot(self, tag = ''):
-        """
-        Make a snapshot of the current state of the persistent records.
-        """
-
-        if not tag:
-            tag = time.strftime('%y%m%d%H%M%S')
-
-        if self.config.read_only:
-            LOG.debug('_do_make_snapshot(%s, %d)', tag)
-            return
-
-        self.acquire_lock()
-        try:
-            self._do_make_snapshot(tag)
-        finally:
-            self.release_lock()
-
-    def remove_snapshot(self, tag = '', newer_than = 0, older_than = 0):
-        if not tag and older_than == 0:
-            older_than = time.time()
-
-        if tag == 'last':
-            tags = self.list_snapshots(timestamp_only = True)
-
-            if len(tags) == 0:
-                LOG.warning('No snapshots taken.')
-                return
-
-            tag = tags[0]
-            newer_than = 0
-            older_than = 0
-
-        if self.config.read_only:
-            LOG.debug('_do_remove_snapshot(%s, %f, %f)', tag, newer_than, older_than)
-            return
-
-        self.acquire_lock()
-        try:
-            self._do_remove_snapshot(tag, newer_than, older_than)
-        finally:
-            self.release_lock()
-
-    def list_snapshots(self, timestamp_only = False):
-        """
-        List the tags of the snapshots that is not the current.
-        """
-
-        return self._do_list_snapshots(timestamp_only)
-
-    def recover_from(self, tag):
-        """
-        Recover records from a snapshot (current content will be lost!)
-        tag can be 'last'.
-        """
-
-        if tag == 'last':
-            tags = self.list_snapshots(timestamp_only = True)
-        else:
-            tags = self.list_snapshots()
-
-        if len(tags) == 0:
-            LOG.warning('No snapshots taken.')
-            return
-
-        if tag == 'last':
-            tag = tags[0]
-            LOG.info('Recovering history records from snapshot %s', tag)
-            
-        elif tag not in tags:
-            LOG.error('Cannot copy from snapshot %s', tag)
-            return
-
-        while self._lock_depth > 0:
-            self.release_lock()
-
-        self._do_recover_from(tag)
 
     def new_copy_run(self, partition, policy_version, is_test = False, comment = ''):
         """
@@ -312,11 +234,10 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
       
-    def save_deletion_decisions(self, run_number, quotas, deleted_list, kept_list, protected_list):
+    def save_deletion_decisions(self, run_number, deleted_list, kept_list, protected_list):
         """
         Save decisions and their reasons for all replicas.
         @param run_number      Cycle number.
-        @param quotas          {site: quota in TB}
         @param deleted_list    {replica: [([block_replica], condition)]}
         @param kept_list       {replica: [([block_replica], condition)]}
         @param protected_list  {replica: [([block_replica], condition)]}
@@ -331,7 +252,24 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_deletion_decisions(run_number, quotas, deleted_list, kept_list, protected_list)
+            self._do_save_deletion_decisions(run_number, deleted_list, kept_list, protected_list)
+        finally:
+            self.release_lock()
+
+    def save_quotas(self, run_number, quotas):
+        """
+        Save the site partition quotas for the cycle.
+        @param run_number     Cycle number.
+        @param quotas         {site: quota}
+        """
+
+        if self.config.read_only:
+            LOG.info('save_quotas')
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_save_quotas(run_number, quotas)
         finally:
             self.release_lock()
 

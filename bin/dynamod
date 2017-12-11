@@ -25,13 +25,15 @@ if not debug:
         pidfile.write('%d' % os.getpid())
 
 ## Read server config (should be readable only to root)
-if 'DYNAMO_SERVER_CONFIG' in os.environ:
+try:
     config_path = os.environ['DYNAMO_SERVER_CONFIG']
-else:
+except KeyError:
     config_path = '/etc/dynamo/server_config.json'
 
-with open(config_path) as source:
-    server_config = Configuration(source)
+server_config = Configuration(config_path)
+
+## Configuration with privileged password etc.
+server_config['restricted_config'] = Configuration(server_config.restricted_config_path)
 
 ## Set up logging (write to stderr unless path is given)
 log_level = getattr(logging, server_config.logging.level.upper())

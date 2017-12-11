@@ -10,20 +10,19 @@ import lzma
 from common.interface.history import TransactionHistoryInterface
 from common.interface.mysql import MySQL
 from common.dataformat import HistoryRecord
-import common.configuration as config
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class MySQLHistory(TransactionHistoryInterface):
     """
     Transaction history interface implementation using MySQL as the backend.
     """
 
-    def __init__(self):
-        super(self.__class__, self).__init__()
+    def __init__(self, config):
+        TransactionHistoryInterface.__init__(self, config)
 
-        self._mysql = MySQL(**config.mysqlhistory.db_params)
-        self._cache_db = MySQL(**config.mysqlhistory.cache_db_params)
+        self._mysql = MySQL(config.db_params)
+        self._cache_db = MySQL(config.cache_db_params)
 
         self._site_id_map = {}
         self._dataset_id_map = {}
@@ -43,10 +42,10 @@ class MySQLHistory(TransactionHistoryInterface):
                 break
             
             if blocking:
-                logger.warning('Failed to lock database. Waiting 30 seconds..')
+                LOG.warning('Failed to lock database. Waiting 30 seconds..')
                 time.sleep(30)
             else:
-                logger.warning('Failed to lock database.')
+                LOG.warning('Failed to lock database.')
                 return False
 
         return True
@@ -64,50 +63,6 @@ class MySQLHistory(TransactionHistoryInterface):
 
         if host != '' or pid != 0:
             raise TransactionHistoryInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
-
-    def _do_make_snapshot(self, tag): #override
-        # If binary logging is turned on, insert a timestamp in the snapshots table
-        binlog_on = (self._mysql.query('SHOW VARIABLES LIKE \'log_bin\'')[0][1] == 'ON')
-
-        if binlog_on:
-            self._mysql.query('INERT INTO `snapshots` (`tag`, `timestamp`) VALUES (%s, NOW())', tag)
-        else:
-            new_db = self._mysql.make_snapshot(tag)
-            self._mysql.query('UPDATE `%s`.`lock` SET `lock_host` = \'\', `lock_process` = 0' % new_db)
-
-    def _do_remove_snapshot(self, tag, newer_than, older_than): #override
-        # If binary logging is turned on, insert a timestamp in the snapshots table
-        binlog_on = (self._mysql.query('SHOW VARIABLES LIKE \'log_bin\'')[0][1] == 'ON')
-
-        if binlog_on:
-            if tag:
-                self._mysql.query('DELETE FROM `snapshots` WHERE `tag` = %s', tag)
-            else:
-                self._mysql.query('DELETE FROM `snapshots` WHERE `timestamp` >= FROM_UNIXTIME(%s) AND `timestamp` < FROM_UNIXTIME(%s)', newer_than, older_than)
-        else:
-            self._mysql.remove_snapshot(tag = tag, newer_than = newer_than, older_than = older_than)
-
-    def _do_list_snapshots(self, timestamp_only): #override
-        # If binary logging is turned on, insert a timestamp in the snapshots table
-        binlog_on = (self._mysql.query('SHOW VARIABLES LIKE \'log_bin\'')[0][1] == 'ON')
-
-        if binlog_on:
-            return self._mysql.query('SELECT `tag` FROM `snapshots` ORDER BY `tag`')
-        else:
-            return self._mysql.list_snapshots(timestamp_only)
-
-    def _do_recover_from(self, tag): #override
-        binlog_on = (self._mysql.query('SHOW VARIABLES LIKE \'log_bin\'')[0][1] == 'ON')
-
-        if binlog_on:
-            result = self._mysql.query('SELECT `timestamp` FROM `snapshots` WHERE `tag` = %s', tag)
-            if len(result) == 0:
-                logger.error('Binary logging is ON, and tag %s is not found.', tag)
-            else:
-                logger.error('Binary logging is ON. To recover the state at snapshot %s, revert the database to the latest backup, and execute `mysqlbinlog --stop-datetime=%s`.', tag, result[0].strftime('%Y-%m-%d %H:%M:%S'))
-
-        else:
-            self._mysql.recover_from(tag)
 
     def _do_new_run(self, operation, partition, policy_version, is_test, comment): #override
         part_ids = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
@@ -218,7 +173,7 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
 
-    def _do_save_deletion_decisions(self, run_number, quotas, deleted_list, kept_list, protected_list): #override
+    def _do_save_deletion_decisions(self, run_number, deleted_list, kept_list, protected_list): #override
         if len(self._site_id_map) == 0:
             self._make_site_id_map()
         if len(self._dataset_id_map) == 0:
@@ -237,17 +192,12 @@ class MySQLHistory(TransactionHistoryInterface):
         if os.path.exists(db_file_name):
             os.unlink(db_file_name)
 
-        logger.info('Creating snapshot SQLite3 DB %s', db_file_name)
+        LOG.info('Creating snapshot SQLite3 DB %s', db_file_name)
 
         # hardcoded!!
         replica_delete = 1
         replica_keep = 2
         replica_protect = 3
-
-        site_ready = 1
-        site_waitroom = 2
-        site_morgue = 3
-        site_unknown = 4
 
         snapshot_db = sqlite3.connect(db_file_name)
         snapshot_cursor = snapshot_db.cursor()
@@ -261,23 +211,6 @@ class MySQLHistory(TransactionHistoryInterface):
         snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'keep\')' % replica_keep)
         snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'protect\')' % replica_protect)
 
-        sql = 'CREATE TABLE `statuses` ('
-        sql += '`id` TINYINT PRIMARY KEY NOT NULL,'
-        sql += '`value` TEXT NOT NULL'
-        sql += ')'
-        snapshot_db.execute(sql)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'ready\')' % site_ready)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'waitroom\')' % site_waitroom)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'morgue\')' % site_morgue)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'unknown\')' % site_unknown)
-
-        sql = 'CREATE TABLE `sites` ('
-        sql += '`site_id` SMALLINT PRIMARY KEY NOT NULL,'
-        sql += '`status_id` TINYINT NOT NULL REFERENCES `statuses`(`id`),'
-        sql += '`quota` INT NOT NULL'
-        sql += ')'
-        snapshot_db.execute(sql)
-
         sql = 'CREATE TABLE `replicas` ('
         sql += '`site_id` SMALLINT NOT NULL,'
         sql += '`dataset_id` INT NOT NULL,'
@@ -288,13 +221,6 @@ class MySQLHistory(TransactionHistoryInterface):
         snapshot_db.execute(sql)
         snapshot_db.execute('CREATE INDEX `site_dataset` ON `replicas` (`site_id`, `dataset_id`)')
 
-        sql = 'INSERT INTO `sites` VALUES (?, ?, ?)'
-
-        for site, quota in quotas.iteritems():
-            snapshot_cursor.execute(sql, (self._site_id_map[site.name], site.status, quota))
-
-        snapshot_db.commit()
-        
         sql = 'INSERT INTO `replicas` VALUES (?, ?, ?, ?, ?)'
 
         def do_insert(entries, decision):
@@ -319,6 +245,61 @@ class MySQLHistory(TransactionHistoryInterface):
 
         os.chmod(db_file_name, 0666)
 
+        self._fill_replica_snapshot_cache(run_number)
+
+    def _do_save_quotas(self, run_number, quotas): #override
+        # Will save quotas and statuses
+
+        if len(self._site_id_map) == 0:
+            self._make_site_id_map()
+            
+        srun = '%09d' % run_number
+        spool_dir_name = '%s/detox_snapshots' % (config.paths.spool)
+        db_file_name = '%s/snapshot_%09d.db' % (spool_dir_name, run_number)
+
+        # hardcoded!!
+        site_ready = 1
+        site_waitroom = 2
+        site_morgue = 3
+        site_unknown = 4
+
+        # DB file should exist already - this function is called after save_deletion_decisions
+
+        snapshot_db = sqlite3.connect(db_file_name)
+        snapshot_cursor = snapshot_db.cursor()
+
+        sql = 'CREATE TABLE `statuses` ('
+        sql += '`id` TINYINT PRIMARY KEY NOT NULL,'
+        sql += '`value` TEXT NOT NULL'
+        sql += ')'
+        snapshot_db.execute(sql)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'ready\')' % site_ready)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'waitroom\')' % site_waitroom)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'morgue\')' % site_morgue)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'unknown\')' % site_unknown)
+
+        sql = 'CREATE TABLE `sites` ('
+        sql += '`site_id` SMALLINT PRIMARY KEY NOT NULL,'
+        sql += '`status_id` TINYINT NOT NULL REFERENCES `statuses`(`id`),'
+        sql += '`quota` INT NOT NULL'
+        sql += ')'
+        snapshot_db.execute(sql)
+
+        sql = 'INSERT INTO `sites` VALUES (?, ?, ?)'
+
+        for site, quota in quotas.iteritems():
+            snapshot_cursor.execute(sql, (self._site_id_map[site.name], site.status, quota))
+
+        snapshot_db.commit()
+
+        snapshot_cursor.close()
+        snapshot_db.close()
+
+        self._fill_site_snapshot_cache(run_number)
+
+        # Archive the sqlite3 file
+        # Relying on the fact save_quotas is called after save_deletion_decisions
+
         archive_dir_name = '%s/detox_snapshots/%s/%s' % (config.paths.archive, srun[:3], srun[3:6])
         xz_file_name = '%s/snapshot_%09d.db.xz' % (archive_dir_name, run_number)
 
@@ -330,9 +311,6 @@ class MySQLHistory(TransactionHistoryInterface):
         with open(db_file_name, 'rb') as db_file:
             with open(xz_file_name, 'wb') as xz_file:
                 xz_file.write(lzma.compress(db_file.read()))
-
-        self._fill_replica_snapshot_cache(run_number)
-        self._fill_site_snapshot_cache(run_number) 
 
     def _do_get_deletion_decisions(self, run_number, size_only): #override
         self._fill_replica_snapshot_cache(run_number)
@@ -629,7 +607,7 @@ class MySQLHistory(TransactionHistoryInterface):
                 try:
                     os.unlink(db_file_name)
                 except:
-                    logger.error('Failed to delete %s' % db_file_name)
+                    LOG.error('Failed to delete %s' % db_file_name)
                     pass
 
         self._cache_db.query('DELETE FROM `replica_snapshot_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')

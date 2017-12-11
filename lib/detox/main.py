@@ -60,7 +60,6 @@ class Detox(object):
             self.history.save_conditions(policy.policy_lines)
    
             LOG.info('Saving deletion decisions.')
-            # TODO remove quotas from save_deletion_decisions in history.py
             self.history.save_deletion_decisions(cycle_number, deleted, kept, protected)
 
             LOG.info('Saving quotas.')
