@@ -5,10 +5,6 @@ import sys
 import hashlib
 from argparse import ArgumentParser
 
-from dataformat import Configuration
-from common.interface.mysql import MySQL
-from common.configuration import common_config
-
 parser = ArgumentParser(description = 'Dynamo')
 parser.add_argument('title', metavar = 'TITLE', help = 'Title of the executable.')
 parser.add_argument('--executable', '-x', metavar = 'PATH', dest = 'executable', help = 'Executable file.')
@@ -30,24 +26,26 @@ if not debug:
         sys.exit(1)
 
 ## Read server config (should be readable only to root)
-if 'DYNAMO_SERVER_CONFIG' in os.environ:
+
+from dataformat import Configuration
+
+try:
     config_path = os.environ['DYNAMO_SERVER_CONFIG']
-else:
+except KeyError:
     config_path = '/etc/dynamo/server_config.json'
 
-with open(config_path) as source:
-    server_config = Configuration(source)
+server_config = Configuration(config_path)
 
 ## Create the registry
-registry_db_config = Configuration(common_config.mysql)
-registry_db_config.update(server_config.registry.db_params)
-registry_db_config['reuse_connection'] = False
-registry = MySQL(**registry_db_config)
+
+from core.registry import DynamoRegistry
+
+registry = DynamoRegistry(server_config.registry)
 
 ## Find the user id
 
 if args.user:
-    result = registry.query('SELECT `id` FROM `users` WHERE `name` = %s', args.user)
+    result = registry.backend.query('SELECT `id` FROM `users` WHERE `name` = %s', args.user)
     if len(result) == 0:
         sys.stderr.write('Invalid user %s\n' % args.user)
         sys.exit(1)
@@ -58,13 +56,13 @@ else:
 
 ## Check for existing entry
 
-existing = registry.query('SELECT COUNT(*) FROM `authorized_executables` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)[0]
+existing = registry.backend.query('SELECT COUNT(*) FROM `authorized_executables` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)[0]
 
 ## Entry deletion
 
 if args.delete:
     if existing:
-        registry.query('DELETE FROM `authorized_executables` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)
+        registry.backend.query('DELETE FROM `authorized_executables` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)
         sys.stdout.write('Deleted executable %s' % args.title)
         if user_id != 0:
             sys.stdout.write(' (user %s).\n' % args.user)
@@ -101,7 +99,7 @@ with open(args.executable) as source:
 
 sql = 'INSERT INTO `authorized_executables` (`user_id`, `title`, `checksum`) VALUES (%s, %s, UNHEX(%s))'
 sql += ' ON DUPLICATE KEY UPDATE `checksum` = VALUES(`checksum`)'
-registry.query(sql, user_id, args.title, checksum)
+registry.backend.query(sql, user_id, args.title, checksum)
 
 if existing:
     sys.stdout.write('Updated')

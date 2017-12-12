@@ -25,14 +25,14 @@ DROP TABLE IF EXISTS `action`;
 CREATE TABLE `action` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `write_request` tinyint(1) NOT NULL,
-  `title` text CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
+  `title` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
   `path` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  `args` text CHARACTER SET latin1 COLLATE latin1_general_cs,
+  `args` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
   `status` enum('new','run','done','failed','killed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `user_id` int(10) unsigned NOT NULL,
   `type` enum('executable','deletion_policy') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `timestamp` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
-  `email` text NOT NULL,
+  `email` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -284,4 +284,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-11-27  6:31:21
+-- Dump completed on 2017-12-12 17:14:18
