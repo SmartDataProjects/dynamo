@@ -11,8 +11,6 @@ import time
 import re
 import traceback
 
-import common.configuration as config
-
 # Fix for some (newer) versions of MySQLdb
 from types import TupleType, ListType
 MySQLdb.converters.conversions[TupleType] = MySQLdb.converters.escape_sequence

@@ -27,8 +27,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         for pattern in exclude:
             exclude_exps.append(re.compile(fnmatch.translate(pattern)))
 
-        for in_pattern in include:
-            result = self._dbs.make_request('datasets', ['dataset=' + in_pattern])
+        def add_datasets(result):
             for entry in result:
                 name = entry['dataset']
                 for ex_exp in exclude_exps:
@@ -37,6 +36,18 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
                 else:
                     # not excluded
                     dataset_names.append(name)
+
+        if len(include) == 1 and include[0] == '/*/*/*':
+            # all datasets requested - will do this efficiently
+            result = self._dbs.make_request('acquisitioneras')
+            sds = [entry['acquisition_era_name'] for entry in result]
+            for sd in sds:
+                result = self._dbs.make_request('datasets', ['acquisition_era_name=' + sd])
+                add_datasets(result)
+
+        for in_pattern in include:
+            result = self._dbs.make_request('datasets', ['dataset=' + in_pattern])
+            add_datasets(result)
 
         return dataset_names
 

@@ -62,6 +62,7 @@ class Dynamo(object):
         LOG.info('Started dynamo daemon.')
 
         child_processes = []
+        writing = False
 
         LOG.info('Start polling for executables.')
 
@@ -73,9 +74,12 @@ class Dynamo(object):
 
                 LOG.debug('Polling for executables.')
     
-                sql = 'SELECT s.`id`, s.`write_request`, s.`title`, s.`path`, s.`args`, s.`user_id`, u.`name`, s.`type`'
+                sql = 'SELECT s.`id`, s.`write_request`, s.`title`, s.`path`, s.`args`, s.`user_id`, u.`name`'
                 sql += ' FROM `action` AS s INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
                 sql += ' WHERE s.`status` = \'new\''
+                if writing:
+                    # we don't allow write_requesting executables while there is one running
+                    sql += ' AND s.`write_request` = 0'
                 sql += ' ORDER BY s.`timestamp` LIMIT 1'
                 result = self.registry.backend.query(sql)
 
@@ -89,7 +93,7 @@ class Dynamo(object):
                     LOG.debug('No executable found, sleeping for %d seconds.', sleep_time)
 
                 else:
-                    exec_id, write_request, title, path, args, user_id, user_name, content_type = result[0]
+                    exec_id, write_request, title, path, args, user_id, user_name = result[0]
 
                     first_wait = True
                     sleep_time = 0
@@ -98,8 +102,6 @@ class Dynamo(object):
                         LOG.info('Executable %s from user %s (write request: %s) not found.', title, user_name, write_request)
                         self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'failed', exec_id)
                         continue
-
-                    self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'run', exec_id)
 
                     LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
 
@@ -112,8 +114,12 @@ class Dynamo(object):
                             continue
     
                         queue = multiprocessing.Queue(64)
+
+                        writing = True
                     else:
                         queue = None
+
+                    self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'run', exec_id)
     
                     proc = multiprocessing.Process(target = self._run_one, name = title, args = (path, args, queue))
                     child_processes.append((exec_id, proc, user_name, path, queue))
@@ -123,7 +129,13 @@ class Dynamo(object):
     
                     LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
 
-                self.collect_processes(child_processes)
+
+                completed_processes = self.collect_processes(child_processes)
+                for _, _, _, _, queue in completed_processes:
+                    if queue is not None:
+                        # write-enabled process completed
+                        writing = False
+
  
         except KeyboardInterrupt:
             LOG.info('Main process interrupted with SIGINT.')
@@ -159,9 +171,20 @@ class Dynamo(object):
         return False
 
     def collect_processes(self, child_processes):
+        completed_processes = []
+
         ichild = 0
         while ichild != len(child_processes):
             exec_id, proc, user_name, path, queue = child_processes[ichild]
+
+            status = 'done'
+
+            result = self.registry.backend.query('SELECT `status` FROM `action` WHERE `id` = %s', exec_id)
+            if len(result) == 0 or result[0] != 'run':
+                # Job was aborted in the registry
+                proc.terminate()
+                proc.join(5)
+                status = 'killed'
     
             if queue is not None and not queue.empty():
                 # the child process is wrapping up and wants to send us the list of updated objects
@@ -192,22 +215,27 @@ class Dynamo(object):
                     for obj in deleted_objects:
                         self.inventory.delete(obj, write = True)
                     sigint.unblock()
-    
+                
             if proc.is_alive():
                 ichild += 1
             else:
-                LOG.info('Executable %s (%s) from user %s completed (Exit code %d).', proc.name, path, user_name, proc.exitcode)
-                child_processes.pop(ichild)
+                if status == 'done' and proc.exitcode != 0:
+                    status = 'failed'
 
-                self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', 'done' if proc.exitcode == 0 else 'failed', exec_id)
+                LOG.info('Executable %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, status)
 
+                completed_processes.append(child_processes.pop(ichild))
+
+                self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', status, exec_id)
+
+        return completed_processes
         
     def _run_one(self, path, args, queue):
         # Redirect STDOUT and STDERR to file, close STDIN
         stdout = sys.stdout
         stderr = sys.stderr
-        sys.stdout = open(path + '/_stdout', 'w')
-        sys.stderr = open(path + '/_stderr', 'w')
+        sys.stdout = open(path + '/_stdout', 'a')
+        sys.stderr = open(path + '/_stderr', 'a')
         sys.stdin.close()
 
         # Set argv

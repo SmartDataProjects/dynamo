@@ -12,7 +12,7 @@ class PhEDEx(RESTService):
         RESTService.__init__(self, config)
 
     def make_request(self, resource = '', options = [], method = GET, format = 'url', retry_on_error = True): #override
-        LOG.info('%s %s', resource, options)
+        LOG.debug('%s %s', resource, options)
         response = RESTService.make_request(self, resource, options = options, method = method, format = format, retry_on_error = retry_on_error)
 
         try:

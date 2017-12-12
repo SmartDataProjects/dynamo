@@ -1,0 +1,303 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import logging
+import logging.handlers
+import time
+import re
+import shutil
+import hashlib
+import multiprocessing
+import signal
+
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Schedule routine sequences of Dynamo executables.')
+parser.add_argument('sequence', metavar = 'PATH', help = 'Sequence file.')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+
+args = parser.parse_args()
+sys.argv = []
+
+## Load the configuration
+from dataformat.configuration import Configuration
+
+config = Configuration(args.config)
+
+## Set up logging (write to stderr unless path is given)
+log_level = getattr(logging, config.logging.level.upper())
+log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
+
+LOG = logging.getLogger()
+LOG.setLevel(log_level)
+if config.logging.get('path', ''):
+    log_handler = logging.handlers.RotatingFileHandler(config.logging.path, maxBytes = 1000000, backupCount = 100)
+else:
+    log_handler = logging.StreamHandler()
+log_handler.setFormatter(logging.Formatter(fmt = log_format))
+LOG.addHandler(log_handler)
+
+## Create the registry
+from core.registry import DynamoRegistry
+
+registry = DynamoRegistry(config.registry)
+
+result = registry.backend.query('SELECT `id` FROM `users` WHERE `name` = %s', config.user)
+if len(result) == 0:
+    raise RuntimeError('User %s not found' % config.user)
+
+user_id = result[0]
+
+## Load the sequences
+EXECUTE, WAIT, TERMINATE = range(3)
+
+sequences = {}
+sequence = []
+
+with open(args.sequence) as source:
+    for line in source:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+
+        LOG.debug(line)
+
+        matches = re.match('\[SEQUENCE\s(\S+)\]', line)
+        if matches:
+            # Sequence header
+            LOG.debug('New sequence %s', matches.group(1))
+            sequence = sequences[matches.group(1)] = []
+            continue
+
+        matches = re.match('{(\S+)}\s+(\S+)\s*(.*)', line)
+        if matches:
+            title = matches.group(1)
+            executable = matches.group(2)
+            arguments = matches.group(3)
+
+            # Replace environment variables
+            matches = re.findall('\$\(([^\)]+)\)', executable)
+            for match in matches:
+                executable = executable.replace('$(%s)' % match, os.environ[match])
+
+            # Replace environment variables
+            matches = re.findall('\$\(([^\)]+)\)', arguments)
+            for match in matches:
+                arguments = arguments.replace('$(%s)' % match, os.environ[match])
+
+            # If the executable is write-enabled, we automatically request write access
+            try:
+                with open(executable) as source:
+                    checksum = hashlib.md5(source.read()).hexdigest()
+            except:
+                sys.stderr.write('Could not open executable %s.\n', executable)
+                sys.exit(1)
+
+            write_enabled = False
+            sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = UNHEX(%s)'
+            for auth_user_id in registry.backend.query(sql, title, checksum):
+                if auth_user_id == 0 or auth_user_id == user_id:
+                    write_enabled = True
+
+            LOG.debug('Execute %s %s', executable, arguments)
+
+            if write_enabled:
+                LOG.info('Requesting write access to inventory for executable %s (%s).', title, executable)
+
+            sequence.append((EXECUTE, title, executable, arguments, write_enabled))
+            continue
+
+        matches = re.match('WAIT\s+(.*)', line)
+        if matches:
+            try:
+                sleep_time = eval(matches.group(1))
+                if type(sleep_time) not in [int, float]:
+                    raise RuntimeError()
+            except:
+                sys.stderr.write('Wait time %s is not a numerical expression.\n')
+                sys.exit(1)
+
+            LOG.debug('Wait for %d seconds', sleep_time)
+            sequence.append((WAIT, sleep_time))
+            continue
+
+        if line == 'TERMINATE':
+            sequence.append([TERMINATE])
+
+if len(sequences) == 0:
+    sys.stderr.write('No sequence was loaded.\n')
+    sys.exit(1)
+
+## Create the executable directory and copy the scripts over
+for name, sequence in sequences.iteritems():
+    work_dir = config.executable_path + '/' + name
+    try:
+        shutil.rmtree(work_dir)
+    except OSError:
+        pass
+    os.makedirs(work_dir)
+
+    with open(work_dir + '/log.out', 'w'):
+        pass
+
+    with open(work_dir + '/log.err', 'w'):
+        pass
+
+    iline = 0
+    for action in sequence:
+        if action[0] == EXECUTE:
+            executable = action[2]
+
+            path = '%s/%d' % (work_dir, iline)
+            os.makedirs(path)
+            shutil.copy(executable, path + '/exec.py')
+
+            # Make symlinks from subdir/_std(out|err) to log.(out|err)
+            os.symlink(work_dir + '/log.out', path + '/_stdout')
+            os.symlink(work_dir + '/log.err', path + '/_stderr')
+
+            iline += 1
+
+LOG.info('Created working directories under %s.', config.executable_path)
+
+def raise_kbi(signalnum, trace):
+    raise KeyboardInterrupt()
+
+def loop_sequence(name, sequence, user_id, config):
+    ## Catch SIGTERM (from process.terminate()) and raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, raise_kbi)
+
+    work_dir = config.executable_path + '/' + name
+
+    ## Restart logging and start writing to work_dir/sequence.log
+    logging.shutdown()
+    reload(logging)
+    reload(logging.handlers)
+
+    # common.interface is loaded by registry - logging still points to the main process
+    import common.interface
+    for name in dir(common.interface):
+        mod = getattr(common.interface, name)
+        if type(mod).__name__ == 'module':
+            reload(mod)
+
+    log_level = getattr(logging, config.logging.level.upper())
+    log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
+    
+    LOG = logging.getLogger()
+    LOG.setLevel(log_level)
+    log_handler = logging.handlers.RotatingFileHandler(work_dir + '/sequence.log', maxBytes = 1000000, backupCount = 100)
+    log_handler.setFormatter(logging.Formatter(fmt = log_format))
+    LOG.addHandler(log_handler)
+
+    ## Create a registry handle - we'll be submitting execution requests from the backend
+    registry = DynamoRegistry(config.registry)
+
+    ## SQL templates
+    insert_sql = 'INSERT INTO `action` (`user_id`, `write_request`, `title`, `path`, `args`)'
+    insert_sql += ' VALUES ({user_id}, %s, %s, %s, %s)'.format(user_id = user_id)
+
+    poll_sql = 'SELECT `status` FROM `action` WHERE `id` = %s'
+
+    title = ''
+    task_id = 0
+
+    try:
+        ## Start an infinite loop
+        while True:
+            iline = 0
+            for action in sequence:
+                if action[0] == EXECUTE:
+                    title, executable, arguments, write_enabled = action[1:]
+    
+                    LOG.info('Starting %s', title)
+                    LOG.info('Command: %s %s', executable, arguments)
+    
+                    with open(work_dir + '/log.out', 'a') as out:
+                        out.write('------------------------ ' + title + ' ------------------------\n')
+                        out.write('%s %s\n\n' % (executable, arguments))
+    
+                    with open(work_dir + '/log.err', 'a') as out:
+                        out.write('------------------------ ' + title + ' ------------------------\n\n')
+    
+                    # Submit the task
+                    path = '%s/%d' % (work_dir, iline)
+                    task_id = registry.backend.query(insert_sql, write_enabled, title, path, arguments)
+                    iline += 1
+    
+                    # Poll for task completion
+                    while True:
+                        time.sleep(10)
+                        result = registry.backend.query(poll_sql, task_id)
+                        if len(result) == 0:
+                            # len(result) == 0 -> entry disappeared!?
+                            status = 'unknown'
+                            break
+                        else:
+                            status = result[0]
+                            if status not in ['new', 'run']:
+                                break
+
+                    task_id = 0
+    
+                    try:
+                        with open(work_dir + '/log.out', 'a') as out:
+                            out.write('\n')
+                    except:
+                        pass
+    
+                    try:
+                        with open(work_dir + '/log.err', 'a') as out:
+                            out.write('\n')
+                    except:
+                        pass
+    
+                    LOG.info('Finished %s with (status: %s)\n', title, status)
+    
+                elif action[0] == WAIT:
+                    LOG.info('Sleeping for %d seconds.\n', action[1])
+                    time.sleep(action[1])
+    
+                elif action[0] == TERMINATE:
+                    LOG.info('Terminating sequence.')
+                    break
+    
+            else:
+                # Passed through the sequence without breaking
+                continue
+    
+            # There was a break -> sequence terminated
+            break
+
+    except KeyboardInterrupt:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        if task_id != 0:
+            # Task aborted - update the status from the backend so Dynamo picks it up
+            registry.backend.query('UPDATE `action` SET `status` = \'killed\' WHERE `id` = %s', task_id)
+            LOG.info('Process interrupted - aborting task %s', title)
+        else:
+            LOG.info('Process interrupted')
+
+
+## Create a process for each sequence and start as daemons
+processes = []
+for name, sequence in sequences.iteritems():
+    proc = multiprocessing.Process(target = loop_sequence, name = name, args = (name, sequence, user_id, config))
+    proc.daemon = True
+    proc.start()
+    LOG.info('Started sequence %s.', name)
+    
+    processes.append(proc)
+
+try:
+    ## Sleep indefinitely
+    for proc in processes:
+        proc.join()
+
+except KeyboardInterrupt:
+    for proc in processes:
+        proc.terminate()
+        proc.join(2)
+
+LOG.info('All sequences completed.')

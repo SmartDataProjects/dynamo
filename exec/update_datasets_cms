@@ -39,6 +39,13 @@ config.datasets.config.phedex = config.phedex
 
 dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 
+## Get the list of every dataset ever existed
+def generate_dataset_list(dataset_source, state_file):
+    all_datasets = dataset_source.get_dataset_names(include = ['/*/*/*'])
+    with open(state_file, 'w') as dataset_list:
+        for dataset in all_datasets:
+            dataset_list.write(dataset + '\n')
+
 ## Pick up datasets to inquire
 
 if rolling_update:
@@ -47,19 +54,18 @@ if rolling_update:
     datasets_to_update = []
     list_exhausted = False
 
-    try:
-        with open(config.dataset_state_file) as source:
-            for line in source:
-                datasets_to_update.append(line.strip())
-                
-                if len(datasets_to_update) == args.num_datasets:
-                    break
-            else:
-                list_exhausted = True
-                
-    except:
-        LOG.error('Failed to collect dataset names to update.')
-        sys.exit(1)
+    if not os.path.exists(config.dataset_state_file):
+        LOG.info('List of dataset names not found. Generating a new list.')
+        generate_dataset_list(dataset_source, config.dataset_state_file)
+
+    with open(config.dataset_state_file) as source:
+        for line in source:
+            datasets_to_update.append(line.strip())
+            
+            if len(datasets_to_update) == args.num_datasets:
+                break
+        else:
+            list_exhausted = True
 
 else:
     datasets_to_update = dataset_source.get_dataset_names(include = [args.dataset])
@@ -90,11 +96,7 @@ for dataset_name in datasets_to_update:
 
 if rolling_update:
     if list_exhausted:
-        all_datasets = dataset_source.get_dataset_names(include = ['/*/*/*'])
-        with open(config.dataset_state_file, 'w') as dataset_list:
-            for entry in all_datasets:
-                dataset_list.write(entry['dataset'] + '\n')
-
+        generate_dataset_list(dataset_source, config.dataset_state_file)
     else:
         with open(config.dataset_state_file) as source:
             with tempfile.NamedTemporaryFile(mode = 'w') as dataset_list:

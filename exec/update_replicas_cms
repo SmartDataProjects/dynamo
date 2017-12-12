@@ -8,8 +8,7 @@ import re
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update replica information.')
-parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', default = '', help = 'Configuration JSON.')
-parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
 parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', help = 'Do a full update of the site (wildcard allowed).')
 parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'dataset', help = 'Do a full update of the dataset (wildcard allowed).')
 
@@ -19,9 +18,13 @@ sys.argv = []
 ## Type of update
 delta_update = (not args.site and not args.dataset)
 
-## Set up logging (write to stderr)
+## Load the configuration
+from dataformat.configuration import Configuration
 
-log_level = getattr(logging, args.log_level.upper())
+config = Configuration(args.config)
+
+## Set up logging (write to stderr)
+log_level = getattr(logging, config.log_level.upper())
 log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 
 logging.basicConfig(level = log_level, format = log_format)
@@ -30,12 +33,9 @@ LOG = logging.getLogger()
 LOG.info('Starting inventory update.')
 
 ## Load and initialize sources
-
 from core.executable import inventory
-from dataformat import Configuration, DatasetReplica, ObjectError
+from dataformat import DatasetReplica, ObjectError
 import source.impl as sources
-
-config = Configuration(args.config)
 
 config.groups.config.phedex = config.phedex
 config.sites.config.phedex = config.phedex

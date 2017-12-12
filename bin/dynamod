@@ -30,30 +30,30 @@ try:
 except KeyError:
     config_path = '/etc/dynamo/server_config.json'
 
-server_config = Configuration(config_path)
+config = Configuration(config_path)
 
 ## Configuration with privileged password etc.
-server_config['restricted_config'] = Configuration(server_config.restricted_config_path)
+config['restricted_config'] = Configuration(config.restricted_config_path)
 
 ## Set up logging (write to stderr unless path is given)
-log_level = getattr(logging, server_config.logging.level.upper())
+log_level = getattr(logging, config.logging.level.upper())
 log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 
 LOG = logging.getLogger()
 LOG.setLevel(log_level)
-if server_config.logging.path:
-    log_handler = logging.handlers.RotatingFileHandler(server_config.logging.path, maxBytes = 1000000, backupCount = 100)
+if config.logging.path:
+    log_handler = logging.handlers.RotatingFileHandler(config.logging.path, maxBytes = 1000000, backupCount = 100)
 else:
     log_handler = logging.StreamHandler()
 log_handler.setFormatter(logging.Formatter(fmt = log_format))
 LOG.addHandler(log_handler)
 
 if not debug:
-    ## Now set effective user id to server_config.user
-    os.seteuid(pwd.getpwnam(server_config.user).pw_uid)
+    ## Now set effective user id to config.user
+    os.seteuid(pwd.getpwnam(config.user).pw_uid)
 
 ## Start the server
-daemon = Dynamo(server_config)
+daemon = Dynamo(config)
 daemon.run()
 
 if not debug:
