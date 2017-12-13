@@ -139,28 +139,29 @@ class Dynamo(object):
                 completed_processes = self.collect_processes(child_processes)
 
                 for (_, _, _, _, queue), status in completed_processes:
-                    if status == 'done' and queue is not None:
+                    if queue is not None:
                         # This was a write-enabled process and it completed
 
-                        # The child process may send us the list of updated/deleted objects
-                        # Block system signals and get update done
-                        signal_blocker.block(signal.SIGINT)
-                        signal_blocker.block(signal.SIGTERM)
-                        while True:
-                            try:
-                                cmd, obj = queue.get()
-                            except Queue.Empty:
-                                break
-                            else:
-                                if cmd == Dynamo.CMD_UPDATE:
-                                    self.inventory.update(obj, write = True)
-                                elif cmd == Dynamo.CMD_DELETE:
-                                    self.inventory.delete(obj, write = True)
-
-                        signal_blocker.unblock(signal.SIGINT)
-                        signal_blocker.unblock(signal.SIGTERM)
-
                         writing = False
+
+                        if status == 'done':
+                            # The child process may send us the list of updated/deleted objects
+                            # Block system signals and get update done
+                            signal_blocker.block(signal.SIGINT)
+                            signal_blocker.block(signal.SIGTERM)
+                            while True:
+                                try:
+                                    cmd, obj = queue.get()
+                                except Queue.Empty:
+                                    break
+                                else:
+                                    if cmd == Dynamo.CMD_UPDATE:
+                                        self.inventory.update(obj, write = True)
+                                    elif cmd == Dynamo.CMD_DELETE:
+                                        self.inventory.delete(obj, write = True)
+    
+                            signal_blocker.unblock(signal.SIGINT)
+                            signal_blocker.unblock(signal.SIGTERM)
 
         except KeyboardInterrupt:
             LOG.info('Main process was interrupted.')
