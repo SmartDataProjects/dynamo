@@ -14,13 +14,13 @@ class PhEDEx(DeletionInterface):
     def __init__(self, config):
         DeletionInterface.__init__(self, config)
 
-        self._phedex = PhEDEx()
+        self._phedex = PhEDEx(config.phedex)
 
         self.auto_approval = config.auto_approval
         self.allow_tape_deletion = config.allow_tape_deletion
         self.tape_auto_approval = config.tape_auto_approval
 
-        self.deletion_chunk_size = config.deletion_chunk_size * 1.e+12
+        self.deletion_chunk_size = config.chunk_size * 1.e+12
 
     def schedule_deletion(self, replica, comments = ''): #override
         request_mapping = {}

@@ -3,7 +3,7 @@ class DeletionInterface(object):
     Interface to data deletion application.
     """
 
-    def __init__(self):
+    def __init__(self, config):
         pass
 
     def schedule_deletion(self, replica, comments = ''):

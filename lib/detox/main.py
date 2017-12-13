@@ -8,12 +8,14 @@ from core.inventory import ObjectRepository
 from dataformat import Dataset, DatasetReplica
 from detox.policy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
 from common.control import SignalBlocker
+import operation.impl
+import history.impl
 
 LOG = logging.getLogger(__name__)
 
 class Detox(object):
 
-    def __init__(self, config, deletion_op, copy_op, history):
+    def __init__(self, config):
         """
         @param config      Configuration
         @param deletion_op An operation.deletion instance
@@ -22,9 +24,9 @@ class Detox(object):
         """
 
         self.config = config
-        self.deletion_op = deletion_op
-        self.copy_op = copy_op
-        self.history = history
+        self.deletion_op = getattr(operation.impl, config.deletion.module)(config.deletion.config)
+        self.copy_op = getattr(operation.impl, config.copy.module)(config.copy.config)
+        self.history = getattr(history.impl, config.history.module)(config.hisotory.config)
 
     def run(self, policy, inventory, demand, comment = ''):
         """
@@ -67,7 +69,8 @@ class Detox(object):
             self.history.save_quotas(cycle_number, quotas)
            
             LOG.info('Committing deletion.')
-            self._commit_deletions(cycle_number, policy, inventory, deleted, reowned, comment)
+            self._commit_deletions(cycle_number, policy, inventory, deleted, comment)
+            self._commit_reassignments(cycle_number, policy, inventory, reowned)
     
             self.history.close_deletion_run(cycle_number)
         finally:
@@ -76,6 +79,8 @@ class Detox(object):
         LOG.info('Detox cycle finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
 
     def _build_partition(self, policy, inventory):
+        """Create a mini-inventory consisting only of replicas in the partition."""
+
         partition_repository = ObjectRepository()
         # Simple map of quotas
         quotas = {}
@@ -127,6 +132,8 @@ class Detox(object):
 
     def _execute_policy(self, policy, repository, quotas):
         """
+        Sort replicas into deleted, kept, protected, and reowned according to the policy.
+        The lists deleted/kept/protected are disjoint. Reowned list overlaps with others.
         """
 
         # Sites that are e.g. getting full and need dismiss calls
@@ -414,20 +421,17 @@ class Detox(object):
 
         return blocks_to_unlink, blocks_to_hand_over
 
-    def _commit_deletions(self, cycle_number, policy, inventory, deleted, reowned, comment):
+    def _commit_deletions(self, cycle_number, policy, inventory, deleted, comment):
         """
         @param cycle_number  Cycle number.
         @param policy        Policy object.
         @param inventory     Global (original) inventory
         @param deleted       {dataset_replica: {condition_id: set(block_replicas)}}
-        @param reowned       {dataset_replica: [block_replicas]}
         @param comment       Comment to be recorded in the history DB
         """
 
         if not comment:
-            comment = 'Dynamo -- Automatic cache release request'
-            if policy.partition.name != 'Global':
-                comment += ' for %s partition.' % policy.partition.name
+            comment = 'Dynamo -- Automatic cache release request for %s partition.' % policy.partition.name
 
         signal_blocker = SignalBlocker()
 
@@ -498,6 +502,20 @@ class Detox(object):
 
             LOG.info('Done deleting %.1f TB from %s.', total_size * 1.e-12, site.name)
 
+    def _commit_reassignments(self, cycle_number, policy, inventory, reowned, comment):
+        """
+        @param cycle_number  Cycle number.
+        @param policy        Policy object.
+        @param inventory     Global (original) inventory
+        @param reowned       {dataset_replica: {condition_id: set(block_replicas)}}
+        @param comment       Comment to be recorded in the history DB
+        """
+
+        if not comment:
+            comment = 'Dynamo -- Automatic group reassignment for %s partition.' % policy.partition.name
+
+        signal_blocker = SignalBlocker()
+
         # organize the replicas into sites and set up ownership change
         reown_by_site = collections.defaultdict(list) # {site: [(dataset_replica, block_replicas)]}
         for replica, block_replicas in reowned.iteritems():
@@ -519,7 +537,7 @@ class Detox(object):
                 else:
                     flat_list.extend(block_replicas)
 
-            reassigment_mapping = self.copy_op.schedule_copies(flat_list, comments = 'Dynamo -- Group reassignment')
+            reassigment_mapping = self.copy_op.schedule_copies(flat_list, comments = comment)
 
             for copy_id, (approved, site, items) in reassignment_mapping.iteritems():
                 if not approved:

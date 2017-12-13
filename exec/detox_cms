@@ -1,145 +1,61 @@
 #!/usr/bin/env python
 
 import sys
+import os
+import re
 import logging
+import fnmatch
 
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Dynamo')
-parser.add_argument('policies', metavar = 'FILE', nargs = '+', help = 'Policy files.')
-parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', default = '', help = 'Configuration JSON.')
+parser.add_argument('--policy', '-p', metavar = 'FILE', dest = 'policy', required = True, help = 'Policy files.')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
 parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
-parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
-parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to local databases.')
-parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Make a test run (results recorded in local database).')
-### TEMPORARY
-parser.add_argument('--load-locks', '-L', action = 'store_true', dest = 'load_replica_locks', help = 'Load replica locks from web to mysql.')
+parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to inventory.')
 
 args = parser.parse_args()
 sys.argv = []
 
-if args.dry_run and args.test_run:
-    sys.stderr.write('Cannot use --dry-run and --test-run at the same time.\n')
-    sys.exit(1)
+## Load the configuration
+from dataformat.configuration import Configuration
 
-## Set up logging (write to stderr unless path is given)
+config = Configuration(args.config)
 
-log_level = getattr(logging, args.log_level.upper())
+## Set up logging (write to stdout)
+log_level = getattr(logging, config.log_level.upper())
 log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 
-logging.basicConfig(level = log_level, format = log_format)
+logging.basicConfig(level = log_level, format = log_format, stream = sys.stdout)
 LOG = logging.getLogger()
 
-## Load and initialize modules
+LOG.info('Starting Detox.')
 
-from core.executable import inventory
-from dataformat import Configuration
-from demand.demand import DemandManager
-from common.activitylock import ActivityLock
-from operation.impl.phedexcopy import PhEDExCopyInterface
-from operation.impl.phedexdeletion import PhEDExDeletionInterface
-from detox.main import Detox
+## Set up the detox policy
 from detox.policy import Policy
-
-with open(args.config) as source:
-    config = Configuration(source)
-
-config.detox['read_only'] = args.dry_run
-config.detox['local_test'] = args.test_run
-config.deletion['auto_approval'] = not args.no_auto_approval
-
-deletion_op = PhEDExDeletionInterface(config.deletion.config)
-copy_op = PhEDExCopyInterface(config.copy.config)
-
-demand_manager = DemandManager()
-
-history = classes.default_interface['history']()
 
 with open(os.environ['DYNAMO_BASE'] + '/etc/policies.tag') as tag:
     policy_version = tag.read().strip()
 
-### TEMPORARY
-if args.load_replica_locks:
-    from demand.impl.weblock import WebReplicaLock
-    from common.interface.webservice import RESTService, POST
+with open(args.policy) as policy_def:    
+    policy = Policy(policy_def, policy_version, inventory)
 
-    mysqllock_users = config.mysqllock.users
-    config.mysqllock.users = []
+## Set up demand calculators
+from demand.demand import DemandManager
 
-    # careful - order matters!
-    weblock_users = [
-        ('vlimant', 'unified'),
-        ('vlimant', 'unified-testbed'),
-        ('vlimant', 'wmcore'),
-        ('dmytro', 't0-prod'),
-        ('dmytro', 't0-replayone'),
-        ('dmytro', 't0-replaytwo')
-    ]
-    
-    for iu, (url, auth_type, content_type, site_pattern) in enumerate(config.weblock.sources):
-        weblock = WebReplicaLock(sources = [(url, auth_type, content_type, site_pattern)])
-    
-        weblock.update(inventory)
-    
-        data = []
-        
-        for dataset in inventory.datasets.itervalues():
-            try:
-                locked_blocks = dataset.demand['locked_blocks']
-            except KeyError:
-                continue
-        
-            entries = []
-        
-            collapse_dataset = True
-    
-            locked_sites = set()
-            for site, blocks in locked_blocks.items():
-                replica = dataset.find_replica(site)
-        
-                blocks_in_replica = set()
-                for block_replica in replica.block_replicas:
-                    blocks_in_replica.add(block_replica.block)
-    
-                if blocks_in_replica == blocks:
-                    # all blocks are locked
-                    entries.append({'item': dataset.name, 'sites': site.name, 'expires': '2017-12-31', 'comment': 'Auto-produced by dynamo'})
-                else:
-                    for block in blocks:
-                        entries.append({'item': dataset.name + '#' + block.real_name(), 'sites': site.name, 'expires': '2017-12-31', 'comment': 'Auto-produced by dynamo'})
-        
-                    collapse_dataset = False
-    
-                locked_sites.add(site)
-    
-            if locked_sites != set(r.site for r in dataset.replicas):
-                collapse_dataset = False
-        
-            if collapse_dataset:
-                # all datasets are locked
-                entries = [{'item': dataset.name, 'expires': '2017-12-31', 'comment': 'Auto-produced by dynamo'}]
-        
-            data.extend(entries)
-        
-            dataset.demand.pop('locked_blocks')
-    
-        service = RESTService('https://' + config.hostname + '/registry/detoxlock')
-        service.make_request('set?asuser=%s&service=%s' % weblock_users[iu], method = POST, options = data, format = 'json')
+demand_manager = DemandManager()
 
-    config.mysqllock.users = mysqllock_users
+#for plugin in policy.used_demand_plugins:
+#    if plugin not in demand_manager.calculators:
+#        demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
 
-# Main detox object
+## Run the main detox object
+from core.executable import inventory
+from detox.main import Detox
 
-detox = Detox(config.detox, deletion_op, copy_op, history)
+config.detox.deletion.phedex = config.phedex
+config.detox.copy.phedex = config.phedex
 
-# Set up detox policies and run
-for policy_path in args.policies:
-    with open(policy_path) as policy_def:    
-        policy = Policy(policy_def, policy_version, inventory)
+detox = Detox(config)
 
-    for plugin in policy.used_demand_plugins:
-        if plugin not in demand_manager.calculators:
-            demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
-
-    with ActivityLock('detox'):
-        detox.run(policy, inventory, demand_manager, comment = args.comment)
+detox.run(policy, inventory, demand_manager, comment = args.comment)

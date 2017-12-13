@@ -13,9 +13,10 @@ LOG = logging.getLogger(__name__)
 class PhEDExCopyInterface(CopyInterface):
     def __init__(self, config):
         CopyInterface.__init__(self, config)
-        self._phedex = PhEDEx()
 
-        self.subscription_chunk_size = config.subscription_chunk_size * 1.e+12
+        self._phedex = PhEDEx(config.phedex)
+
+        self.subscription_chunk_size = config.chunk_size * 1.e+12
 
     def schedule_copy(self, replica,  comments = ''): #override
         request_mapping = {}

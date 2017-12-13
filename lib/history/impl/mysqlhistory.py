@@ -161,7 +161,7 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('datasets', ('name',), None, datasets_to_insert)
         self._make_dataset_id_map()
 
-    def _do_save_conditions(self, policy_lines):
+    def _do_save_conditions(self, policy_lines): #ovrride
         for line in policy_lines:
             text = re.sub('\s+', ' ', line.condition.text)
             ids = self._mysql.query('SELECT `id` FROM `policy_conditions` WHERE `text` LIKE %s', text)
