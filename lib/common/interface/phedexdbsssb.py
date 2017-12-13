@@ -334,8 +334,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                 if len(deletion_list) == 1:
                     logger.error('schedule_deletions  Could not delete %s from %s', replica.dataset.name, site.name)
                 else:
-                    call_deletion(site, level, deletion_list[:len(deletion_list) / 2])
-                    call_deletion(site, level, deletion_list[len(deletion_list) / 2:])
+                    self._run_deletion_request(request_mapping, site, level, deletion_list[:len(deletion_list) / 2], comments, is_test)
+                    self._run_deletion_request(request_mapping, site, level, deletion_list[len(deletion_list) / 2:], comments, is_test)
             else:
                 logger.error('schedule_deletions  Could not delete %d datasets from %s', len(deletion_list), site.name)
                 
