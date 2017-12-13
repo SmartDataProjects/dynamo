@@ -62,7 +62,14 @@ class Dynamo(object):
         LOG.info('Started dynamo daemon.')
 
         child_processes = []
+
+        # There can only be one child process with write access at a time.
         writing = False
+        # The child may decide to communicate back through the queue at any point in execution, but we do
+        # not want to commit the updates until the child exits successfully. We therefore collect the
+        # updates / deletes in these two lists.
+        updated_objects = []
+        deleted_objects = []
 
         LOG.info('Start polling for executables.')
 
@@ -116,6 +123,7 @@ class Dynamo(object):
                         queue = multiprocessing.Queue(64)
 
                         writing = True
+
                     else:
                         queue = None
 
@@ -130,13 +138,24 @@ class Dynamo(object):
                     LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
 
 
-                completed_processes = self.collect_processes(child_processes)
-                for _, _, _, _, queue in completed_processes:
-                    if queue is not None:
-                        # write-enabled process completed
-                        writing = False
+                completed_processes = self.collect_processes(child_processes, updated_objects, deleted_objects)
 
- 
+                for (_, _, _, _, queue), status in completed_processes:
+                    if status == 'done' and queue is not None:
+                        # This was a write-enabled process and it completed
+                        if len(updated_objects) != 0 or len(deleted_objects) != 0:
+                            # process data
+                            sigint.block()
+                            for obj in updated_objects:
+                                self.inventory.update(obj, write = True)
+                            for obj in deleted_objects:
+                                self.inventory.delete(obj, write = True)
+                            sigint.unblock()
+
+                        writing = False
+                        updated_objects = []
+                        deleted_objects = []
+
         except KeyboardInterrupt:
             LOG.info('Main process interrupted with SIGINT.')
 
@@ -170,7 +189,7 @@ class Dynamo(object):
 
         return False
 
-    def collect_processes(self, child_processes):
+    def collect_processes(self, child_processes, updated_objects, deleted_objects):
         completed_processes = []
 
         ichild = 0
@@ -187,11 +206,8 @@ class Dynamo(object):
                 status = 'killed'
     
             if queue is not None and not queue.empty():
-                # the child process is wrapping up and wants to send us the list of updated objects
-                # pool all updated objects into a list first
-                updated_objects = []
-                deleted_objects = []
-    
+                # The child process wants to send us the list of updated objects
+                # pool all updated objects into a list
                 while True:
                     try:
                         cmd, obj = queue.get(block = True, timeout = 1)
@@ -206,16 +222,7 @@ class Dynamo(object):
                             updated_objects.append(obj)
                         elif cmd == Dynamo.CMD_DELETE:
                             deleted_objects.append(obj)
-    
-                if len(updated_objects) != 0 or len(deleted_objects) != 0:
-                    # process data
-                    sigint.block()
-                    for obj in updated_objects:
-                        self.inventory.update(obj, write = True)
-                    for obj in deleted_objects:
-                        self.inventory.delete(obj, write = True)
-                    sigint.unblock()
-                
+               
             if proc.is_alive():
                 ichild += 1
             else:
@@ -224,7 +231,7 @@ class Dynamo(object):
 
                 LOG.info('Executable %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, status)
 
-                completed_processes.append(child_processes.pop(ichild))
+                completed_processes.append((child_processes.pop(ichild), status))
 
                 self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', status, exec_id)
 

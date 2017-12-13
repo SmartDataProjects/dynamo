@@ -34,7 +34,6 @@ LOG.info('Starting inventory update.')
 
 ## Load and initialize sources
 from core.executable import inventory
-from dataformat import DatasetReplica, ObjectError
 import source.impl as sources
 
 config.groups.config.phedex = config.phedex
@@ -47,7 +46,17 @@ site_source = sources.PhEDExSiteInfoSource(config.sites.config)
 dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 replica_source = sources.PhEDExReplicaInfoSource(config.replicas.config)
 
-## Refresh groups and sites
+## Start the update
+# 1. Refresh groups and sites
+# 2. Pick up new and changed block replicas
+# 3. Loop over new and changed block replicas, add them to inventory
+# 4. Pick up deleted block replicas
+# 5. Loop over deleted replicas
+# 6. (If delta update) save the timestamp
+
+from dataformat import DatasetReplica, ObjectError
+
+## 1. Refresh groups and sites
 
 LOG.info('Updating list of groups.')
 for group in group_source.get_group_list():
@@ -57,7 +66,7 @@ LOG.info('Updating list of sites.')
 for site in site_source.get_site_list():
     inventory.update(site)
 
-## Pick up new and changed block replicas
+## 2. Pick up new and changed block replicas
 
 if delta_update:
     ## Normal global delta-update
@@ -84,26 +93,26 @@ else:
     # Save the embedded versions
     embedded_updated_replicas = set()
 
-## Loop over new and changed block replicas, add them to inventory
+## 3. Loop over new and changed block replicas, add them to inventory
 
 for replica in new_and_updated_replicas:
     replica_str = str(replica)
 
     LOG.debug('Updating %s', replica_str)
 
-    # 0.1: pick up replicas of known groups only
+    # 3.1. pick up replicas of known groups only
     if replica.group is not None and replica.group.name not in inventory.groups:
         LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
         continue
 
-    # 0.2: Pick up replicas at known sites only
+    # 3.2. Pick up replicas at known sites only
     try:
         site = inventory.sites[replica.site.name]
     except KeyError:
         LOG.debug('%s is at %s, which is not a tracked site.', replica_str, replica.site.name)
         continue
 
-    # 1: Find the dataset in the inventory
+    # 3.3. Find the dataset in the inventory
 
     try:
         dataset = inventory.datasets[replica.block.dataset.name]
@@ -129,7 +138,7 @@ for replica in new_and_updated_replicas:
         LOG.debug('Updating information for dataset %s', dataset.name)
         inventory.update(replica.block.dataset)
 
-    # 2: Find the block of the dataset
+    # 3.4. Find the block of the dataset
 
     block_full_name = replica.block.full_name()
     block = dataset.find_block(replica.block.name)
@@ -158,14 +167,14 @@ for replica in new_and_updated_replicas:
         LOG.debug('Updating information for block %s', block_full_name)
         inventory.update(replica.block)
 
-    # 3. Find the dataset replica
+    # 3.5. Find the dataset replica
 
     if site.find_dataset_replica(dataset) is None:
         # If not found, create a new replica and inject
         LOG.debug('Creating new replica of %s at %s', dataset.name, site.name)
         inventory.update(DatasetReplica(dataset, site))
 
-    # 4. Update the block replica
+    # 3.6. Update the block replica
 
     LOG.debug('Updating block replica.')
     embedded_replica = inventory.update(replica)
@@ -173,7 +182,7 @@ for replica in new_and_updated_replicas:
     if not delta_update:
         embedded_updated_replicas.add(embedded_replica)
 
-## Pick up deleted block replicas
+## 4. Pick up deleted block replicas
 
 if delta_update:
     # last_update should be available
@@ -205,26 +214,26 @@ else:
                 if block_replica not in embedded_updated_replicas:
                     deleted_replicas.append(block_replica)
 
-## Loop over deleted replicas
+## 5. Loop over deleted replicas
 
 for replica in deleted_replicas:
     replica_str = str(replica)
 
     LOG.debug('Deleting %s', replica_str)
 
-    # 0.1: pick up replicas of known groups only
+    # 5.1. pick up replicas of known groups only
     if replica.group is not None and replica.group.name not in inventory.groups:
         LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
         continue
 
-    # 0.2: Pick up replicas at known sites only
+    # 5.2. Pick up replicas at known sites only
     try:
         site = inventory.sites[replica.site.name]
     except KeyError:
         LOG.debug('%s is at %s, which is not a tracked site.', replica_str, replica.site.name)
         continue
 
-    # 1: Find the dataset in the inventory
+    # 5.3. Find the dataset in the inventory
 
     try:
         dataset = inventory.datasets[replica.block.dataset.name]
@@ -233,7 +242,7 @@ for replica in deleted_replicas:
         LOG.debug('Unknown dataset %s.', dataset.name)
         continue
 
-    # 2: Find the block of the dataset
+    # 5.4. Find the block of the dataset
 
     block_full_name = replica.block.full_name()
     block = dataset.find_block(replica.block.name)
@@ -243,13 +252,14 @@ for replica in deleted_replicas:
         LOG.debug('Unknown block %s.', block_full_name)
         continue
 
-    # 3. Find the dataset replica
+    # 5.5. Find the dataset replica
 
-    if site.find_dataset_replica(dataset) is None:
+    dataset_replica = site.find_dataset_replica(dataset)
+    if dataset_replica is None:
         LOG.debug('No replica of %s at %s.', dataset.name, site.name)
         continue
 
-    # 4. Delete the block replica
+    # 5.6. Delete the block replica
 
     # blockreplica.delete_from() raises a KeyError or ObjectError if
     # any of the group, site, dataset, ... is not found
@@ -262,10 +272,12 @@ for replica in deleted_replicas:
         LOG.debug('Replica not found.')
         pass
 
-    # 5. Delete the dataset replica if it is empty
+    # 5.7. Delete the dataset replica if it is empty
 
     if len(dataset_replica.block_replicas) == 0:
         inventory.delete(dataset_replica)
+
+## 6. (If delta update) save the timestamp
 
 if delta_update:
     ## Store the timestamp of when we started (allow 1 minute safety margin)
