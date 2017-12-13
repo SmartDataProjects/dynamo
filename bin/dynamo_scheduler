@@ -161,12 +161,9 @@ for name, sequence in sequences.iteritems():
 
 LOG.info('Created working directories under %s.', config.executable_path)
 
-def raise_kbi(signalnum, trace):
-    raise KeyboardInterrupt()
-
 def loop_sequence(name, sequence, user_id, config):
-    ## Catch SIGTERM (from process.terminate()) and raise KeyboardInterrupt
-    signal.signal(signal.SIGTERM, raise_kbi)
+    ## Ignore SIGINT - see note above proc.terminate() at the end of the file
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     work_dir = config.executable_path + '/' + name
 
@@ -190,6 +187,13 @@ def loop_sequence(name, sequence, user_id, config):
     log_handler = logging.handlers.RotatingFileHandler(work_dir + '/sequence.log', maxBytes = 1000000, backupCount = 100)
     log_handler.setFormatter(logging.Formatter(fmt = log_format))
     LOG.addHandler(log_handler)
+
+    LOG.info('Sequence %s (PID: %d)', name, os.getpid())
+
+    ## We will react to SIGTERM by raising KeyboardInterrupt
+    from common.control import SignalConverter
+    signal_converter = SignalConverter(logger = LOG)
+    signal_converter.set(signal.SIGTERM)
 
     ## Create a registry handle - we'll be submitting execution requests from the backend
     registry = DynamoRegistry(config.registry)
@@ -271,31 +275,47 @@ def loop_sequence(name, sequence, user_id, config):
             break
 
     except KeyboardInterrupt:
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         if task_id != 0:
             # Task aborted - update the status from the backend so Dynamo picks it up
             registry.backend.query('UPDATE `action` SET `status` = \'killed\' WHERE `id` = %s', task_id)
-            LOG.info('Process interrupted - aborting task %s', title)
+            LOG.info('Process interrupted. aborting task %s.', title)
         else:
-            LOG.info('Process interrupted')
+            LOG.info('Process interrupted.')
 
 
-## Create a process for each sequence and start as daemons
-processes = []
-for name, sequence in sequences.iteritems():
-    proc = multiprocessing.Process(target = loop_sequence, name = name, args = (name, sequence, user_id, config))
-    proc.daemon = True
-    proc.start()
-    LOG.info('Started sequence %s.', name)
-    
-    processes.append(proc)
+## Prepare to catch a kill
+from common.control import SignalConverter
+signal_converter = SignalConverter(logger = LOG)
+signal_converter.set(signal.SIGTERM)
 
 try:
+    ## Create a process for each sequence and start as daemons
+    processes = []
+    for name, sequence in sequences.iteritems():
+        proc = multiprocessing.Process(target = loop_sequence, name = name, args = (name, sequence, user_id, config))
+        proc.daemon = True
+        proc.start()
+        LOG.info('Started sequence %s.', name)
+        
+        processes.append(proc)
+
     ## Sleep indefinitely
     for proc in processes:
         proc.join()
 
 except KeyboardInterrupt:
+    LOG.info('Scheduler terminated.')
+
+except:
+    LOG.error('Exception in scheduler. Terminating all sequences.')
+    raise
+
+finally:
+    # This can be a Ctrl+C or a kill.
+    # Ctrl+C will pass SIGINT to all child processes (if this process is the head of the
+    # foreground process group). In this case calling terminate() will duplicate signals
+    # in the child. Child processes have to always ignore SIGINT and be killed only from
+    # SIGTERM sent by the line below.
     for proc in processes:
         proc.terminate()
         proc.join(2)

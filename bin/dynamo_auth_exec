@@ -6,11 +6,12 @@ import hashlib
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Dynamo')
-parser.add_argument('title', metavar = 'TITLE', help = 'Title of the executable.')
+parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', help = 'Title of the executable.')
 parser.add_argument('--executable', '-x', metavar = 'PATH', dest = 'executable', help = 'Executable file.')
 parser.add_argument('--user', '-u', metavar = 'USER', dest = 'user', default = '', help = 'User name.')
 parser.add_argument('--delete', '-D', action = 'store_true', help = 'Delete entry.')
 parser.add_argument('--update', '-U', action = 'store_true', help = 'Overwrite existing entry if there is any.')
+parser.add_argument('--list', '-L', action = 'store_true', help = 'List existing entries.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -53,6 +54,35 @@ if args.user:
     user_id = result[0]
 else:
     user_id = 0
+
+if args.list:
+    sql = 'SELECT u.`name`, a.`title` FROM `authorized_executables` AS a LEFT JOIN `users` AS u ON u.`id` = a.`user_id`'
+    constraints = []
+    params = []
+    if user_id != 0:
+        constraints.append('u.`id` = %s')
+        params.append(user_id)
+    if args.title:
+        constraints.append('a.`title` = %s')
+        params.append(args.title)
+    if args.executable:
+        with open(args.executable) as source:
+            checksum = hashlib.md5(source.read()).hexdigest()
+        constraints.append('a.`checksum` = %s')
+        params.append(checksum)
+
+    if len(constraints):
+        sql += ' WHERE ' + ' AND '.join(constraints)
+
+    print '%10s  %10s' % ('USER', 'TITLE')
+    for user, title in registry.backend.query(sql, *tuple(params)):
+        print '%10s  %10s' % (user, title)
+
+    sys.exit(0)
+
+if not args.title:
+    sys.stderr.write('--title (-t) is required.\n')
+    sys.exit(1)
 
 ## Check for existing entry
 

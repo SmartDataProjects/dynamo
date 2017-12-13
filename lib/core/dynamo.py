@@ -1,5 +1,6 @@
 import os
 import sys
+import signal
 import time
 import logging
 import hashlib
@@ -8,8 +9,8 @@ import Queue
 
 from core.inventory import DynamoInventory
 from core.registry import DynamoRegistry
+from common.control import SignalBlocker
 import core.executable
-from common.control import sigint
 
 LOG = logging.getLogger(__name__)
 
@@ -65,11 +66,8 @@ class Dynamo(object):
 
         # There can only be one child process with write access at a time.
         writing = False
-        # The child may decide to communicate back through the queue at any point in execution, but we do
-        # not want to commit the updates until the child exits successfully. We therefore collect the
-        # updates / deletes in these two lists.
-        updated_objects = []
-        deleted_objects = []
+
+        signal_blocker = SignalBlocker(logger = LOG)
 
         LOG.info('Start polling for executables.')
 
@@ -120,7 +118,7 @@ class Dynamo(object):
                             self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', 'failed', exec_id)
                             continue
     
-                        queue = multiprocessing.Queue(64)
+                        queue = multiprocessing.Queue()
 
                         writing = True
 
@@ -138,26 +136,34 @@ class Dynamo(object):
                     LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
 
 
-                completed_processes = self.collect_processes(child_processes, updated_objects, deleted_objects)
+                completed_processes = self.collect_processes(child_processes)
 
                 for (_, _, _, _, queue), status in completed_processes:
                     if status == 'done' and queue is not None:
                         # This was a write-enabled process and it completed
-                        if len(updated_objects) != 0 or len(deleted_objects) != 0:
-                            # process data
-                            sigint.block()
-                            for obj in updated_objects:
-                                self.inventory.update(obj, write = True)
-                            for obj in deleted_objects:
-                                self.inventory.delete(obj, write = True)
-                            sigint.unblock()
+
+                        # The child process may send us the list of updated/deleted objects
+                        # Block system signals and get update done
+                        signal_blocker.block(signal.SIGINT)
+                        signal_blocker.block(signal.SIGTERM)
+                        while True:
+                            try:
+                                cmd, obj = queue.get()
+                            except Queue.Empty:
+                                break
+                            else:
+                                if cmd == Dynamo.CMD_UPDATE:
+                                    self.inventory.update(obj, write = True)
+                                elif cmd == Dynamo.CMD_DELETE:
+                                    self.inventory.delete(obj, write = True)
+
+                        signal_blocker.unblock(signal.SIGINT)
+                        signal_blocker.unblock(signal.SIGTERM)
 
                         writing = False
-                        updated_objects = []
-                        deleted_objects = []
 
         except KeyboardInterrupt:
-            LOG.info('Main process interrupted with SIGINT.')
+            LOG.info('Main process was interrupted.')
 
         except:
             # log the exception
@@ -165,6 +171,12 @@ class Dynamo(object):
             raise
 
         finally:
+            # If the main process was interrupted by Ctrl+C:
+            # Ctrl+C will pass SIGINT to all child processes (if this process is the head of the
+            # foreground process group). In this case calling terminate() will duplicate signals
+            # in the child. Child processes have to always ignore SIGINT and be killed only from
+            # SIGTERM sent by the line below.
+
             for exec_id, proc, user_name, path, queue in child_processes:
                 LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)
                 proc.terminate()
@@ -189,12 +201,12 @@ class Dynamo(object):
 
         return False
 
-    def collect_processes(self, child_processes, updated_objects, deleted_objects):
+    def collect_processes(self, child_processes):
         completed_processes = []
 
         ichild = 0
         while ichild != len(child_processes):
-            exec_id, proc, user_name, path, queue = child_processes[ichild]
+            exec_id, proc, user_name, path, _ = child_processes[ichild]
 
             status = 'done'
 
@@ -205,24 +217,6 @@ class Dynamo(object):
                 proc.join(5)
                 status = 'killed'
     
-            if queue is not None and not queue.empty():
-                # The child process wants to send us the list of updated objects
-                # pool all updated objects into a list
-                while True:
-                    try:
-                        cmd, obj = queue.get(block = True, timeout = 1)
-                    except Queue.Empty:
-                        if proc.is_alive():
-                            # still trying to say something
-                            continue
-                        else:
-                            break
-                    else:
-                        if cmd == Dynamo.CMD_UPDATE:
-                            updated_objects.append(obj)
-                        elif cmd == Dynamo.CMD_DELETE:
-                            deleted_objects.append(obj)
-               
             if proc.is_alive():
                 ichild += 1
             else:
@@ -231,13 +225,22 @@ class Dynamo(object):
 
                 LOG.info('Executable %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, status)
 
-                completed_processes.append((child_processes.pop(ichild), status))
+                child_proc = child_processes.pop(ichild)
+                completed_processes.append((child_proc, status))
 
                 self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', status, exec_id)
 
         return completed_processes
         
     def _run_one(self, path, args, queue):
+        ## Ignore SIGINT - see note above proc.terminate()
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+        ## We will react to SIGTERM by raising KeyboardInterrupt
+        from common.control import SignalConverter
+        signal_converter = SignalConverter()
+        signal_converter.set(signal.SIGTERM)
+
         # Redirect STDOUT and STDERR to file, close STDIN
         stdout = sys.stdout
         stderr = sys.stderr

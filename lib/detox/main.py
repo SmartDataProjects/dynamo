@@ -1,12 +1,13 @@
+import sys
+import signal
 import time
 import logging
 import collections
-import sys
 
 from core.inventory import ObjectRepository
 from dataformat import Dataset, DatasetReplica
 from detox.policy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
-from common.control import sigint
+from common.control import SignalBlocker
 
 LOG = logging.getLogger(__name__)
 
@@ -428,6 +429,8 @@ class Detox(object):
             if policy.partition.name != 'Global':
                 comment += ' for %s partition.' % policy.partition.name
 
+        signal_blocker = SignalBlocker()
+
         # organize the replicas into sites
         deletions_by_site = collections.defaultdict(list) # {site: [(dataset_replica, block_replicas)]}
         for replica, matches in deleted.iteritems():
@@ -443,7 +446,8 @@ class Detox(object):
 
             LOG.info('Deleting %d replicas from %s.', len(site_deletion_list), site.name)
 
-            sigint.block()
+            signal_blocker.block(signal.SIGINT)
+            signal_blocker.block(signal.SIGTERM)
 
             flat_list = []
             for replica, block_replicas in site_deletion_list:
@@ -489,7 +493,8 @@ class Detox(object):
                 self.history.make_deletion_entry(cycle_number, site, deletion_id, approved, datasets, size)
                 total_size += size
 
-            sigint.unblock()
+            signal_blocker.unblock(signal.SIGINT)
+            signal_blocker.unblock(signal.SIGTERM)
 
             LOG.info('Done deleting %.1f TB from %s.', total_size * 1.e-12, site.name)
 
@@ -504,7 +509,8 @@ class Detox(object):
 
             LOG.info('Changing ownership of %d replicas at %s.', len(site_reown_list), site.name)
 
-            sigint.block()
+            signal_blocker.block(signal.SIGINT)
+            signal_blocker.block(signal.SIGTERM)
 
             flat_list = []
             for replica, block_replicas in site_reown_list:
@@ -539,4 +545,5 @@ class Detox(object):
                         replica.group = inventory.groups[item.group.name]
                         inventory.update(replica)
 
-            sigint.unblock()
+            signal_blocker.unblock(signal.SIGINT)
+            signal_blocker.unblock(signal.SIGTERM)

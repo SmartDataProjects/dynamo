@@ -24,11 +24,11 @@ from dataformat import Configuration
 
 config = Configuration(args.config)
 
-## Set up logging (write to stderr)
+## Set up logging (write to stdout)
 log_level = getattr(logging, args.log_level.upper())
 log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 
-logging.basicConfig(level = log_level, format = log_format)
+logging.basicConfig(level = log_level, format = log_format, stream = sys.stdout)
 LOG = logging.getLogger()
 
 ## Load and initialize sources
