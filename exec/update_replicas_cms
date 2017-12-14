@@ -74,7 +74,10 @@ if delta_update:
 
     try:
         with open(config.replica_state_file) as source:
-            last_update = int(source.read().strip())
+            timestamp = time.strptime(source.read().strip(), '%Y-%m-%d %H:%M:%S %Z')
+            # %Z only serves to distinguish daylight saving time. The timestamp in the file has
+            # to be the local time of the system. time.mktime will then convert it to UNIX time.
+            last_update = time.mktime(timestamp)
     except:
         LOG.error('Failed to retrieve last update timestamp.')
         sys.exit(1)
@@ -282,6 +285,7 @@ for replica in deleted_replicas:
 if delta_update:
     ## Store the timestamp of when we started (allow 1 minute safety margin)
     with open(config.replica_state_file, 'w') as source:
-        source.write('%d\n' % (update_start - 60))
+        local_time = time.localtime(update_start - 60)
+        source.write(time.strftime('%Y-%m-%d %H:%M:%S %Z\n', local_time))
 
 LOG.info('Inventory update completed.')
