@@ -74,7 +74,7 @@ with open(args.sequence) as source:
         LOG.debug(line)
 
         # Executable definitions
-        matches = re.match('{(\S+)}\s*(\S+)', line)
+        matches = re.match('{(\S+)}\s*=\s*(\S+)', line)
         if matches:
             title = matches.group(1)
             executable = matches.group(2)
@@ -165,7 +165,7 @@ for name, sequence in sequences.iteritems():
         if action[0] == EXECUTE:
             title = action[1]
 
-            path = '%s/%d' % (work_dir, title)
+            path = '%s/%s' % (work_dir, title)
             if os.path.exists(path):
                 # This executable is used multiple times in the sequence
                 continue
