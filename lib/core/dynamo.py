@@ -283,8 +283,6 @@ class Dynamo(object):
             core.executable.inventory._updated_objects = []
             core.executable.inventory._deleted_objects = []
 
-            core.executable.interface_configs = self.restricted_config
-
         execfile(path + '/exec.py')
 
         if queue is not None:
@@ -293,9 +291,7 @@ class Dynamo(object):
             for obj in self.inventory._deleted_objects:
                 queue.put((Dynamo.CMD_DELETE, obj))
 
-            # can we close and quit here?
-            while not queue.empty():
-                time.sleep(1)
+        # Queue stays available on the other end even if we terminate the process
 
         sys.stdout.close()
         sys.stderr.close()

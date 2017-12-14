@@ -35,8 +35,17 @@ if config.logging.get('path', ''):
     log_handler = logging.handlers.RotatingFileHandler(config.logging.path, maxBytes = 1000000, backupCount = 100)
 else:
     log_handler = logging.StreamHandler()
-log_handler.setFormatter(logging.Formatter(fmt = log_format))
 LOG.addHandler(log_handler)
+
+# Print some nice logo before we start logging with the timestamp format
+LOG.critical('''
++++++++++++++++++++++++++++++++++++++++++++++++
+++++++++++++++ DYNAMO SCHEDULER +++++++++++++++
+++++++++++++++  v2.0  +++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++
+''')
+
+log_handler.setFormatter(logging.Formatter(fmt = log_format))
 
 ## Create the registry
 from core.registry import DynamoRegistry

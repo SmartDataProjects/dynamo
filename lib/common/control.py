@@ -1,4 +1,5 @@
 import signal
+import traceback
 
 class SignalConverter(object):
     """
@@ -40,7 +41,7 @@ class SignalBlocker(object):
 
     def __init__(self, logger = None):
         self._blocking = set() # set of signums
-        self._interrupted = {} # {signum: bool}
+        self._stacktrace = {} # {signum: str}
         self._default = {} # {signum: handler}
 
         self._logger = logger
@@ -51,7 +52,8 @@ class SignalBlocker(object):
         if self._logger:
             self._logger.warning('The system is in the middle of a critical operation and cannot be interrupted just now.')
 
-        self._interrupted[signum] = True
+        # format_stack returns a list of strings corresponding to the stack trace (one entry per call)
+        self._stacktrace[signum] = ''.join(traceback.format_stack(frame))
 
     def block(self, signum):
         if signum in self._blocking:
@@ -63,12 +65,16 @@ class SignalBlocker(object):
         # set self as the signal handler and save the original handler in _default
         self._default[signum] = signal.signal(signum, self)
         self._blocking.add(signum)
-        self._interrupted[signum]= False
+        self._stacktrace[signum] = None
 
     def unblock(self, signum):
         signal.signal(signum, self._default.pop(signum))
 
-        if self._interrupted.pop(signum):
+        stacktrace = self._stacktrace.pop(signum)
+        if stacktrace:
+            if self._logger:
+                self._logger.error('Process was interrupted by signal %d.\nStack trace at the time of interruption was:' + stacktrace)
+
             raise KeyboardInterrupt('Interrupted by signal %d' % signum)
 
         self._blocking.remove(signum)
