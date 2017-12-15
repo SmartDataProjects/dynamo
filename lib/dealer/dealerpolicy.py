@@ -4,11 +4,7 @@ import random
 import fnmatch
 import time
 
-import dealer.configuration as dealer_config
-
-logger = logging.getLogger(__name__)
-
-random.seed(time.time())
+LOG = logging.getLogger(__name__)
 
 def target_site_def(site):
     matches = False
@@ -71,7 +67,7 @@ class DealerPolicy(object):
 
         if priority == 0:
             if len(self._request_plugins) != 0:
-                logger.warning('Throwing away existing plugins to make away for zero-priority plugin %s.', plugin.name)
+                LOG.warning('Throwing away existing plugins to make away for zero-priority plugin %s.', plugin.name)
 
             self._request_plugins = zero_prio + [(plugin, 0)]
         else:
@@ -98,7 +94,7 @@ class DealerPolicy(object):
 
             plugin_requests = plugin.get_requests(inventory, self)
 
-            logger.debug('%s requesting %d items', plugin.name, len(plugin_requests))
+            LOG.debug('%s requesting %d items', plugin.name, len(plugin_requests))
 
             if len(plugin_requests) != 0:
                 reqlists.append((plugin_requests, plugin, priority))
@@ -119,7 +115,7 @@ class DealerPolicy(object):
             request = reqlist.pop(0)
             requests.append(request)
 
-            if logger.getEffectiveLevel() == logging.DEBUG:
+            if LOG.getEffectiveLevel() == logging.DEBUG:
                 if type(request) is tuple:
                     item, destination = request
                     destname = destination.name
@@ -135,10 +131,10 @@ class DealerPolicy(object):
                     name = item[0].dataset.name + '#'
                     name += ':'.join(block.real_name() for block in item)
     
-                logger.debug('Selecting request from %s: %s to %s', reqlists[ip][1].name, name, destname)
+                LOG.debug('Selecting request from %s: %s to %s', reqlists[ip][1].name, name, destname)
 
             if len(reqlist) == 0:
-                logger.debug('No more requests from %s', reqlists[ip][1].name)
+                LOG.debug('No more requests from %s', reqlists[ip][1].name)
                 reqlists.pop(ip)
 
         return requests

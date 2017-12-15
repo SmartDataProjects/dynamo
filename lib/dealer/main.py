@@ -5,19 +5,19 @@ import fnmatch
 import logging
 import random
 
-from common.dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site
-import common.configuration as config
-import dealer.configuration as dealer_config
+from dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class Dealer(object):
 
-    def __init__(self, inventory, transaction, demand, history):
-        self.inventory_manager = inventory
-        self.transaction_manager = transaction
-        self.demand_manager = demand
-        self.history = history
+    def __init__(self, config):
+        """
+        @param config      Configuration
+        """
+        
+        self.copy_op = getattr(operation.impl, config.copy_op.module)(config.copy_op.config)
+        self.history = getattr(history.impl, config.history.module)(config.history.config)
 
     def run(self, policy, is_test = False, comment = ''):
         """
@@ -28,7 +28,7 @@ class Dealer(object):
         5. Make transfer requests.
         """
 
-        logger.info('Dealer run for %s starting at %s', policy.partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
+        LOG.info('Dealer run for %s starting at %s', policy.partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
 
         if not comment:
             comment = 'Dynamo -- Automatic replication request'
@@ -53,7 +53,7 @@ class Dealer(object):
                 target_sites.add(site)
 
         if len(target_sites) == 0:
-            logger.info('No sites can accept transfers at the moment. Exiting Dealer.')
+            LOG.info('No sites can accept transfers at the moment. Exiting Dealer.')
             return
 
         run_number = self.history.new_copy_run(policy.partition.name, policy.version, is_test = is_test, comment = comment)
@@ -67,25 +67,25 @@ class Dealer(object):
         pending_volumes = collections.defaultdict(float)
         # TODO get input from transfer monitor and update the pending volumes
 
-        logger.info('Collecting copy proposals.')
+        LOG.info('Collecting copy proposals.')
 
         # Prioritized lists of datasets, blocks, and files
         # Plugins can specify the destination sites too - but is not passed the list of target sites to keep things simpler
         requests = policy.collect_requests(self.inventory_manager)
 
-        logger.info('Determining the list of transfers to make.')
+        LOG.info('Determining the list of transfers to make.')
 
         copy_list = self.determine_copies(target_sites, requests, policy, pending_volumes)
 
         policy.record(run_number, self.history, copy_list)
 
-        logger.info('Committing copy.')
+        LOG.info('Committing copy.')
 
         self.commit_copies(run_number, copy_list, policy.group, is_test, comment)
 
         self.history.close_copy_run(run_number)
 
-        logger.info('Finished dealer run at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
+        LOG.info('Finished dealer run at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
 
     def determine_copies(self, target_sites, requests, policy, pending_volumes):
         """
@@ -141,7 +141,7 @@ class Dealer(object):
                 make_new_replica = self._add_blocks_to_site
 
             else:
-                logger.warning('Invalid request found. Skipping.')
+                LOG.warning('Invalid request found. Skipping.')
                 continue
 
             if destination is None:
@@ -161,7 +161,7 @@ class Dealer(object):
                     site_array.append((site, p))
 
                 if len(site_array) == 0:
-                    logger.warning('%s has no copy destination.', item_name)
+                    LOG.warning('%s has no copy destination.', item_name)
                     continue
 
                 x = random.uniform(0., site_array[-1][1])
@@ -175,14 +175,14 @@ class Dealer(object):
                         site_occupancy[destination] + item_size / quotas[destination] > 1. or \
                         not policy.is_allowed_destination(item, destination):
                     # a plugin specified the destination, but it's not in the list of potential target sites
-                    logger.warning('Cannot copy %s to %s.', item_name, destination.name)
+                    LOG.warning('Cannot copy %s to %s.', item_name, destination.name)
                     continue
 
                 if dealer_config.main.skip_existing and find_replica_at(destination) is not None:
-                    logger.info('%s is already at %s', item_name, destination.name)
+                    LOG.info('%s is already at %s', item_name, destination.name)
                     continue
 
-            logger.info('Copying %s to %s', item_name, destination.name)
+            LOG.info('Copying %s to %s', item_name, destination.name)
 
             new_replica = make_new_replica(item, destination, policy.group)
 
@@ -194,17 +194,17 @@ class Dealer(object):
 
             if site_occupancy[destination] > dealer_config.main.target_site_occupancy or \
                     pending_volumes[destination] > dealer_config.main.max_copy_per_site:
-                logger.info('Site %s projected occupancy exceeded the limit.', destination.name)
+                LOG.info('Site %s projected occupancy exceeded the limit.', destination.name)
                 # this site should get no more copies
                 site_occupancy.pop(destination)
 
             # check if we should stop copying
             if min(pending_volumes.itervalues()) > dealer_config.main.max_copy_per_site:
-                logger.warning('All sites have exceeded copy volume target. No more copies will be made.')
+                LOG.warning('All sites have exceeded copy volume target. No more copies will be made.')
                 break
 
             if sum(pending_volumes.itervalues()) > dealer_config.main.max_copy_total:
-                logger.warning('Total copy volume has exceeded the limit. No more copies will be made.')
+                LOG.warning('Total copy volume has exceeded the limit. No more copies will be made.')
                 break
 
         return copy_list
@@ -257,70 +257,3 @@ class Dealer(object):
             self.inventory_manager.update(block_replica)
         
         return replica
-
-if __name__ == '__main__':
-
-    import sys
-    import fnmatch
-    import re
-    from argparse import ArgumentParser
-
-    from common.inventory import InventoryManager
-    from common.transaction import TransactionManager
-    from common.demand import DemandManager
-    import common.interface.classes as classes
-    from dealer.policy import DealerPolicy
-
-    parser = ArgumentParser(description = 'Use dealer to copy a specific dataset from a specific site.')
-
-    parser.add_argument('replica', metavar = 'SITE:DATASET', help = 'Replica to delete.')
-    parser.add_argument('--partition', '-g', metavar = 'PARTITION', dest = 'partition', default = 'AnalysisOps', help = 'Partition name.')
-    parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run',  help = 'Dry run (no write / delete at all)')
-    parser.add_argument('--production-run', '-P', action = 'store_true', dest = 'production_run', help = 'This is not a test.')
-    parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = '', help = 'Logging level.')
-
-    args = parser.parse_args()
-    sys.argv = []
-
-    site_pattern, sep, dataset_pattern = args.replica.partition(':')
-    
-    if args.log_level:
-        try:
-            level = getattr(logging, args.log_level.upper())
-            logging.getLogger().setLevel(level)
-        except AttributeError:
-            logging.warning('Log level ' + args.log_level + ' not defined')
-    
-    kwd = {}
-    for cls in ['store', 'site_source', 'dataset_source', 'replica_source']:
-        kwd[cls + '_cls'] = classes.default_interface[cls]
-    
-    inventory_manager = InventoryManager(**kwd)
-    
-    transaction_manager = TransactionManager()
-    
-    demand_manager = DemandManager()
-
-    history = classes.default_interface['history']()
-
-    dealer = Dealer(inventory_manager, transaction_manager, demand_manager, history)
-
-    # create a Partition object that allows direct manipulation of specific replicas.
-
-    partition = inventory_manager.partitions[args.partition]
-
-    site_re = re.compile(fnmatch.translate(site_pattern))
-    dataset_re = re.compile(fnmatch.translate(dataset_pattern))
-
-    partition_name = args.partition + ':' + args.replica
-
-    Site.add_partition(partition_name, lambda replica: site_re.match(replica.site.name) and dataset_re.match(replica.dataset.name))
-
-    policy = DealerPolicy(Site.partitions[partition_name])
-
-    dealer.set_policy(policy)
-
-    if args.dry_run:
-        config.read_only = True
-
-    dealer.run(policy.partition, is_test = not args.production_run)

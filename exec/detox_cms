@@ -22,6 +22,8 @@ if args.snapshot_run and args.test_run:
     sys.stderr.write('--snapshot-run and --test-run cannot be set at the same time.')
     sys.exit(1)
 
+## TODO snapshot_run is currently not implemented
+
 ## Load the configuration
 from dataformat.configuration import Configuration
 

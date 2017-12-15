@@ -41,6 +41,11 @@ class Detox(object):
         @param comment    Passed to dynamo history
         """
 
+        # fetch the deletion cycle number
+        cycle_number = self.history.new_deletion_run(self.policy.partition_name, self.policy.version, comment = comment)
+
+        LOG.info('Detox cycle %d for %s starting', cycle_number, self.policy.partition_name)
+
         LOG.info('Building the object repository for the partition.')
         # Create a full clone of the inventory limited to the partition of the policy
         partition_repository = self._build_partition(inventory)
@@ -49,48 +54,36 @@ class Detox(object):
 #            if plugin not in self.demand_manager.calculators:
 #                self.demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
 
-        # fetch the deletion cycle number
-        cycle_number = self.history.new_deletion_run(self.policy.partition_name, self.policy.version, comment = comment)
+        LOG.info('Updating dataset demands.')
+        self.demand_manager.update(partition_repository, self.policy.used_demand_plugins)
 
-        LOG.info('Detox cycle %d for %s starting at %s', cycle_number, self.policy.partition_name, time.strftime('%Y-%m-%d %H:%M:%S'))
+        LOG.info('Saving site and dataset names.')
+        self.history.save_sites(partition_repository.sites.values())
+        self.history.save_datasets(partition_repository.datasets.values())
 
-        # Execute the policy within a try block to avoid dead locks
-        # What dead locks?
-        try:
-            LOG.info('Updating dataset demands.')
-            self.demand_manager.update(partition_repository, self.policy.used_demand_plugins)
+        LOG.info('Applying policy to replicas.')
+        deleted, kept, protected, reowned = self._execute_policy(partition_repository)
 
-            # Save the list of sites and datasets for history DB
-            LOG.info('Saving site and dataset names.')
-            self.history.save_sites(partition_repository.sites.values())
-            self.history.save_datasets(partition_repository.datasets.values())
+        LOG.info('Saving policy conditions.')
+        self.history.save_conditions(self.policy.policy_lines)
 
-            deleted, kept, protected, reowned = self._execute_policy(partition_repository)
+        LOG.info('Saving deletion decisions.')
+        self.history.save_deletion_decisions(cycle_number, deleted, kept, protected)
 
-            # insert new policy lines to the history database
-            LOG.info('Saving policy conditions.')
-            self.history.save_conditions(self.policy.policy_lines)
-   
-            LOG.info('Saving deletion decisions.')
-            self.history.save_deletion_decisions(cycle_number, deleted, kept, protected)
+        LOG.info('Saving quotas.')
+        partition = partition_repository.partitions[self.policy.partition_name]
+        quotas = dict((s, s.partitions[partition].quota) for s in partition_repository.sites.itervalues())
+        self.history.save_quotas(cycle_number, quotas)
+       
+        LOG.info('Committing deletion.')
+        comment = 'Dynamo -- Automatic cache release request for %s partition.' % self.policy.partition_name
+        self._commit_deletions(cycle_number, inventory, deleted, comment)
+        comment = 'Dynamo -- Automatic group reassignment for %s partition.' % self.policy.partition_name
+        self._commit_reassignments(cycle_number, inventory, reowned, comment)
 
-            LOG.info('Saving quotas.')
-            partition = partition_repository.partitions[self.policy.partition_name]
-            quotas = dict((s, s.partitions[partition].quota) for s in partition_repository.sites.itervalues())
-            self.history.save_quotas(cycle_number, quotas)
-           
-            LOG.info('Committing deletion.')
-            comment = 'Dynamo -- Automatic cache release request for %s partition.' % self.policy.partition_name
-            self._commit_deletions(cycle_number, inventory, deleted, comment)
-            comment = 'Dynamo -- Automatic group reassignment for %s partition.' % self.policy.partition_name
-            self._commit_reassignments(cycle_number, inventory, reowned, comment)
-    
-            self.history.close_deletion_run(cycle_number)
+        self.history.close_deletion_run(cycle_number)
 
-        finally:
-            pass
-
-        LOG.info('Detox cycle finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
+        LOG.info('Detox cycle completed')
 
     def _setup_policy(self, config):
         LOG.info('Reading the policy file.')
