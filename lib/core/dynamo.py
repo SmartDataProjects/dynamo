@@ -247,7 +247,9 @@ class Dynamo(object):
         sys.stdin.close()
 
         # Set argv
-        sys.argv = [path + '/exec.py'] + args.split()
+        sys.argv = [path + '/exec.py']
+        if args:
+            sys.argv += args.split()
 
         # Restart logging
         logging.shutdown()

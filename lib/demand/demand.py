@@ -4,7 +4,7 @@ class DemandManager(object):
     load() and update(), which take an InventoryManager as the sole argument.
     """
 
-    def __init__(self):
+    def __init__(self, config):
         self.calculators = {} # name -> demand calculator
 
     def load(self, inventory, enabled_calculators):

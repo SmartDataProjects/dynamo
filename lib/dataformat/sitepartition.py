@@ -102,7 +102,7 @@ class SitePartition(object):
             total_size = 0.
             for replica, block_replicas in self.replicas.iteritems():
                 if block_replicas is None:
-                    total_size += replica.size(physica = physical)
+                    total_size += replica.size(physical = physical)
                 elif physical:
                     total_size += sum(br.size for br in block_replicas)
                 else:

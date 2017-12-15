@@ -7,9 +7,9 @@ import collections
 import sqlite3
 import lzma
 
-from common.interface.history import TransactionHistoryInterface
+from history.history import TransactionHistoryInterface
 from common.interface.mysql import MySQL
-from common.dataformat import HistoryRecord
+from dataformat import HistoryRecord
 
 LOG = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class MySQLHistory(TransactionHistoryInterface):
         if host != '' or pid != 0:
             raise TransactionHistoryInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
-    def _do_new_run(self, operation, partition, policy_version, is_test, comment): #override
+    def _do_new_run(self, operation, partition, policy_version, comment): #override
         part_ids = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
         if len(part_ids) == 0:
             part_id = self._mysql.query('INSERT INTO `partitions` (`name`) VALUES (%s)', partition)
@@ -72,12 +72,12 @@ class MySQLHistory(TransactionHistoryInterface):
             part_id = part_ids[0]
 
         if operation == HistoryRecord.OP_COPY:
-            if is_test:
+            if self.config.get('test', False):
                 operation_str = 'copy_test'
             else:
                 operation_str = 'copy'
         else:
-            if is_test:
+            if self.config.get('test', False):
                 operation_str = 'deletion_test'
             else:
                 operation_str = 'deletion'

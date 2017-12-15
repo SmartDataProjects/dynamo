@@ -128,11 +128,9 @@ class Site(object):
         except KeyError:
             site = self.unlinked_clone()
             inventory.sites.add(site)
-   
-            # this operation does not copy the list of replicas in the site partition
-            # because there may be unknown datasets / blocks
-            for site_partition in self.partitions.itervalues():
-                site_partition.embed_into(inventory)
+
+            for partition in inventory.partitions.itervalues():
+                site.partitions[partition] = SitePartition(site, partition)
 
             updated = True
         else:

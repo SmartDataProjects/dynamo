@@ -58,7 +58,7 @@ class Partition(object):
             if self._subpartitions is not None:
                 partition._subpartitions = []
                 for subp in self._subpartitions:
-                    partition._subpartions.append(inventory.partitions[subp._name])
+                    partition._subpartitions.append(inventory.partitions[subp._name])
     
             if self._parent is not None:
                 partition._parent = inventory.partitions[self._parent._name]
@@ -107,8 +107,19 @@ class Partition(object):
             return False
 
     def embed_tree(self, inventory):
-        if self._subpartitions is not None:
-            for subp in self._subpartitions:
-                subp.embed_tree(inventory)
+        partition = self.unlinked_clone()
+        inventory.partitions.add(partition)
 
-        self.embed_into(inventory)
+        # update the site partition list at sites
+        for site in inventory.sites.itervalues():
+            site.partitions[partition] = SitePartition(site, partition)
+
+        if self._subpartitions is not None:
+            partition._subpartitions = []
+
+            for subp in self._subpartitions:
+                new_subp = subp.embed_tree(inventory)
+                partition._subpartitions.append(new_subp)
+                new_subp._parent = partition
+
+        return partition

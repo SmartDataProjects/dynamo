@@ -4,7 +4,6 @@ import logging
 import collections
 import subprocess
 
-import detox.configuration as detox_config
 import policy.variables as variables
 import policy.attrs as attrs
 import policy.predicates as predicates
@@ -100,11 +99,6 @@ class PolicyLine(object):
 
     def __init__(self, decision, text):
         self.condition = ReplicaCondition(text)
-        # apply time shift depending on the configuration
-        for pred in self.condition.predicates:
-            if type(pred) is predicates.BinaryExpr and pred.variable.vtype == attrs.Attr.TIME_TYPE:
-                pred.rhs += detox_config.main.time_shift * 24. * 3600.
-
         self.decision = decision
         self.has_match = False
 
@@ -123,7 +117,7 @@ class PolicyLine(object):
             if issubclass(self.decision.action_cls, BlockAction):
                 # block-level
                 matching_block_replicas = self.condition.get_matching_blocks(replica)
-                if len(matching_block_replicas) == len(block_replicas):
+                if len(matching_block_replicas) == len(replica.block_replicas):
                     # but all blocks matched - return dataset level
                     action = self.decision.action_cls.dataset_level(self)
                 else:
@@ -134,10 +128,10 @@ class PolicyLine(object):
         return action
 
 
-class Policy(object):
-    def __init__(self, lines, version, inventory):
+class DetoxPolicy(object):
+    def __init__(self, lines, version):
         self.used_demand_plugins = set()
-        self.parse_lines(lines, inventory)
+        self.parse_lines(lines)
 
         # Iterative deletion can be turned off in specific policy files. When this is False,
         # Detox will finalize the delete and protect list in the first iteration.
@@ -150,7 +144,7 @@ class Policy(object):
         # the replicas that should not be deleted.
         self.predelete_check = None
 
-    def parse_lines(self, lines, inventory):
+    def parse_lines(self, lines):
         LOG.info('Parsing policy stack.')
 
         if type(lines) is file:
@@ -163,6 +157,7 @@ class Policy(object):
                 else:
                     il += 1
 
+        self.partition_name = ''
         self.target_site_def = []
         self.deletion_trigger = []
         self.stop_condition = []
@@ -193,7 +188,7 @@ class Policy(object):
                 raise ConfigurationError(line)
 
             if line_type == LINE_PARTITION:
-                self.partition = inventory.partitions[words[1]]
+                self.partition_name = words[1]
 
             elif line_type == LINE_ORDER:
                 # will update this lambda
@@ -230,13 +225,13 @@ class Policy(object):
                 cond_text = ' '.join(words[1:])
 
                 if line_type == LINE_SITE_TARGET:
-                    self.target_site_def.append(SiteCondition(cond_text, self.partition))
+                    self.target_site_def.append(SiteCondition(cond_text))
 
                 elif line_type == LINE_DELETION_TRIGGER:
-                    self.deletion_trigger.append(SiteCondition(cond_text, self.partition))
+                    self.deletion_trigger.append(SiteCondition(cond_text))
 
                 elif line_type == LINE_STOP_CONDITION:
-                    self.stop_condition.append(SiteCondition(cond_text, self.partition))
+                    self.stop_condition.append(SiteCondition(cond_text))
 
                 elif line_type == LINE_POLICY:
                     if len(words) == 1:
@@ -244,7 +239,8 @@ class Policy(object):
                     else:
                         self.policy_lines.append(PolicyLine(decision, cond_text))
             
-
+        if self.partition_name == '':
+            raise ConfigurationError('Partition name missing.')
         if len(self.target_site_def) == 0:
             raise ConfigurationError('Target site definition missing.')
         if len(self.deletion_trigger) == 0 or len(self.stop_condition) == 0:
@@ -259,13 +255,14 @@ class Policy(object):
         for line in self.policy_lines:
             self.used_demand_plugins.update(line.condition.used_demand_plugins)
 
-        LOG.info('Policy stack for %s: %d lines using demand plugins %s', self.partition.name, len(self.policy_lines), str(sorted(self.used_demand_plugins)))
+        LOG.info('Policy stack for %s: %d lines using demand plugins %s', self.partition_name, len(self.policy_lines), str(sorted(self.used_demand_plugins)))
 
-    def evaluate(self, replica, block_replicas):
-        block_replicas_copy = set(block_replicas)
+    def evaluate(self, replica):
         actions = []
+        block_replicas_tmp = set()
+
         for line in self.policy_lines:
-            action = line.evaluate(replica, block_replicas_copy)
+            action = line.evaluate(replica)
             if action is None:
                 continue
 
@@ -277,10 +274,13 @@ class Policy(object):
                 # strip the block replicas from dataset replica so the successive
                 # policy lines don't see them any more
                 for block_replica in action.block_replicas:
-                    block_replicas_copy.remove(block_replica)
+                    replica.block_replicas.remove(block_replica)
+                    block_replicas_tmp.add(block_replica)
 
         else:
             actions.append(self.default_decision.action(None))
+
+        # return the block replicas
+        replica.block_replicas.update(block_replicas_tmp)
         
         return actions
-

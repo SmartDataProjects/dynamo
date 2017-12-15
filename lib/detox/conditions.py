@@ -1,10 +1,9 @@
 from policy.condition import Condition
+from policy.variables import site_variables, replica_variables
 
 class ReplicaCondition(Condition):
-    def get_variable(self, expr): # override
-        """Return a tuple containing (callable variable definition, variable type, ...)"""
-
-        return variables.replica_variables[expr]
+    def __init__(self, text):
+        Condition.__init__(self, text, replica_variables)
 
     def get_matching_blocks(self, replica):
         """If this is a block-level condition, return the list of matching block replicas."""
@@ -17,15 +16,5 @@ class ReplicaCondition(Condition):
         return matching_blocks
 
 class SiteCondition(Condition):
-    def __init__(self, text, partition):
-        self.partition = partition
-
-        Condition.__init__(self, text)
-
-    def get_variable(self, expr): # override
-        """Return a tuple containing (callable variable definition, variable type, ...)"""
-
-        variable = variables.site_variables[expr]
-        variable.partition = self.partition
-
-        return variable
+    def __init__(self, text):
+        Condition.__init__(self, text, site_variables)

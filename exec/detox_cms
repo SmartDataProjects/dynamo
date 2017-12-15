@@ -29,33 +29,22 @@ log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 logging.basicConfig(level = log_level, format = log_format, stream = sys.stdout)
 LOG = logging.getLogger()
 
+## Run the main detox object
+from detox.main import Detox
+from core.executable import inventory
+
 LOG.info('Starting Detox.')
 
-## Set up the detox policy
-from detox.policy import Policy
+config.detox.deletion_op.config.phedex = config.phedex
+config.detox.copy_op.config.phedex = config.phedex
+if args.dry_run:
+    config.detox.history.test = True
 
 with open(os.environ['DYNAMO_BASE'] + '/etc/policies.tag') as tag:
     policy_version = tag.read().strip()
 
-with open(args.policy) as policy_def:    
-    policy = Policy(policy_def, policy_version, inventory)
+config.detox.policy_file = args.policy
+config.detox.policy_version = policy_version
 
-## Set up demand calculators
-from demand.demand import DemandManager
-
-demand_manager = DemandManager()
-
-#for plugin in policy.used_demand_plugins:
-#    if plugin not in demand_manager.calculators:
-#        demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
-
-## Run the main detox object
-from core.executable import inventory
-from detox.main import Detox
-
-config.detox.deletion.phedex = config.phedex
-config.detox.copy.phedex = config.phedex
-
-detox = Detox(config)
-
-detox.run(policy, inventory, demand_manager, comment = args.comment)
+detox = Detox(config.detox)
+detox.run(inventory, comment = args.comment)

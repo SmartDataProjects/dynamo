@@ -20,7 +20,7 @@ class DummyHistory(TransactionHistoryInterface):
     def _do_release_lock(self, force): #override
         pass
 
-    def _do_new_run(self, operation, partition, policy_version, is_test, comment): #override
+    def _do_new_run(self, operation, partition, policy_version, comment): #override
         return 1
 
     def _do_close_run(self, operation, run_number): #override

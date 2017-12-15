@@ -10,7 +10,7 @@ from dataformat import DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)
 
-class PhEDEx(DeletionInterface):
+class PhEDExDeletionInterface(DeletionInterface):
     def __init__(self, config):
         DeletionInterface.__init__(self, config)
 

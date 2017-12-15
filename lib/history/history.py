@@ -33,45 +33,33 @@ class TransactionHistoryInterface(object):
         if self._lock_depth > 0: # should always be the case if properly programmed
             self._lock_depth -= 1
 
-    def new_copy_run(self, partition, policy_version, is_test = False, comment = ''):
+    def new_copy_run(self, partition, policy_version, comment = ''):
         """
         Set up a new copy/deletion run for the partition.
         """
 
-        if self.config.read_only:
-            LOG.info('new_run')
-            return 0
-
         self.acquire_lock()
         try:
-            run_number = self._do_new_run(HistoryRecord.OP_COPY, partition, policy_version, is_test, comment)
+            run_number = self._do_new_run(HistoryRecord.OP_COPY, partition, policy_version, comment)
         finally:
             self.release_lock()
 
         return run_number
 
-    def new_deletion_run(self, partition, policy_version, is_test = False, comment = ''):
+    def new_deletion_run(self, partition, policy_version, comment = ''):
         """
         Set up a new copy/deletion run for the partition.
         """
 
-        if self.config.read_only:
-            LOG.info('new_run')
-            return 0
-
         self.acquire_lock()
         try:
-            run_number = self._do_new_run(HistoryRecord.OP_DELETE, partition, policy_version, is_test, comment)
+            run_number = self._do_new_run(HistoryRecord.OP_DELETE, partition, policy_version, comment)
         finally:
             self.release_lock()
 
         return run_number
 
     def close_copy_run(self, run_number):
-        if self.config.read_only:
-            LOG.info('close_copy_run')
-            return
-
         self.acquire_lock()
         try:
             self._do_close_run(HistoryRecord.OP_COPY, run_number)
@@ -79,10 +67,6 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
     def close_deletion_run(self, run_number):
-        if self.config.read_only:
-            LOG.info('close_deletion_run')
-            return
-
         self.acquire_lock()
         try:
             self._do_close_run(HistoryRecord.OP_DELETE, run_number)
@@ -90,10 +74,6 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
     def make_copy_entry(self, run_number, site, operation_id, approved, dataset_list, size):
-        if self.config.read_only:
-            LOG.info('make_copy_entry')
-            return
-
         self.acquire_lock()
         try:
             if operation_id < 0:
@@ -104,10 +84,6 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
     def make_deletion_entry(self, run_number, site, operation_id, approved, datasets, size):
-        if self.config.read_only:
-            LOG.info('make_deletion_entry')
-            return
-
         self.acquire_lock()
         try:
             if operation_id < 0:
@@ -122,10 +98,6 @@ class TransactionHistoryInterface(object):
         Update copy entry from the argument. Only certain fields (approved, last_update) are updatable.
         """
 
-        if self.config.read_only:
-            LOG.info('update_copy_entry')
-            return
-
         self.acquire_lock()
         try:
             self._do_update_copy_entry(copy_record)
@@ -136,10 +108,6 @@ class TransactionHistoryInterface(object):
         """
         Update deletion entry from the argument. Only certain fields (approved, last_update) are updatable.
         """
-
-        if self.config.read_only:
-            LOG.info('update_deletion_entry')
-            return
 
         self.acquire_lock()
         try:
@@ -152,10 +120,6 @@ class TransactionHistoryInterface(object):
         Save status of sites.
         @param sites       List of sites
         """
-
-        if self.config.read_only:
-            LOG.info('save_sites')
-            return
 
         self.acquire_lock()
         try:
@@ -194,10 +158,6 @@ class TransactionHistoryInterface(object):
         Save datasets that are in the inventory but not in the history records.
         """
 
-        if self.config.read_only:
-            LOG.info('save_datasets')
-            return
-
         self.acquire_lock()
         try:
             self._do_save_datasets(datasets)
@@ -209,10 +169,6 @@ class TransactionHistoryInterface(object):
         Save policy conditions.
         """
 
-        if self.config.read_only:
-            LOG.info('save_conditions')
-            return
-
         self.acquire_lock()
         try:
             self._do_save_conditions(policy_lines)
@@ -223,10 +179,6 @@ class TransactionHistoryInterface(object):
         """
         Save reasons for copy decisions? Still deciding what to do..
         """
-
-        if self.config.read_only:
-            LOG.info('save_copy_decisions')
-            return
 
         self.acquire_lock()
         try:
@@ -246,10 +198,6 @@ class TransactionHistoryInterface(object):
         in multiple of deleted, kept, and protected.
         """
 
-        if self.config.read_only:
-            LOG.info('save_deletion_decisions')
-            return
-
         self.acquire_lock()
         try:
             self._do_save_deletion_decisions(run_number, deleted_list, kept_list, protected_list)
@@ -262,10 +210,6 @@ class TransactionHistoryInterface(object):
         @param run_number     Cycle number.
         @param quotas         {site: quota}
         """
-
-        if self.config.read_only:
-            LOG.info('save_quotas')
-            return
 
         self.acquire_lock()
         try:
@@ -291,10 +235,6 @@ class TransactionHistoryInterface(object):
         """
         Second argument popularities is a list [(dataset, popularity_score)].
         """
-
-        if self.config.read_only:
-            LOG.info('save_dataset_popularity')
-            return
 
         self.acquire_lock()
         try:

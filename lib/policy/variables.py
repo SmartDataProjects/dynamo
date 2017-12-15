@@ -227,9 +227,15 @@ class ReplicaSiteStorageType(ReplicaSiteAttr):
     def rhs_map(self, expr):
         return getattr(Site, 'TYPE_' + expr)
 
+class SiteName(SiteAttr):
+    def __init__(self):
+        SiteAttr.__init__(self, Attr.TEXT_TYPE, attr = 'name')
+        self.get_from_site = True
+
 class SiteStatus(SiteAttr):
     def __init__(self):
         SiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
+        self.get_from_site = True
 
     def rhs_map(self, expr):
         return getattr(Site, 'STAT_' + expr)
@@ -237,6 +243,7 @@ class SiteStatus(SiteAttr):
 class SiteStorageType(SiteAttr):
     def __init__(self):
         SiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'storage_type')
+        self.get_from_site = True
 
     def rhs_map(self, expr):
         return getattr(Site, 'TYPE_' + expr)
@@ -245,22 +252,22 @@ class SiteOccupancy(SiteAttr):
     def __init__(self):
         SiteAttr.__init__(self, Attr.NUMERIC_TYPE)
 
-    def _get(self, site):
-        return site.storage_occupancy([self.partition])
+    def _get(self, sitepartition):
+        return sitepartition.occupancy_fraction()
 
 class SiteQuota(SiteAttr):
     def __init__(self):
         SiteAttr.__init__(self, Attr.NUMERIC_TYPE)
 
     def _get(self, site):
-        return site.partition_quota([self.partition])
+        return sitepartition.quota
 
 class SiteBool(SiteAttr):
     def __init__(self, value):
         SiteAttr.__init__(self, Attr.BOOL_TYPE)
         self.value = value
 
-    def _get(self, site):
+    def _get(self, sitepartition):
         return self.value
 
 
@@ -289,9 +296,8 @@ replica_variables = {
     'site.storage_type': ReplicaSiteStorageType()
 }
 
-# site variable definition: partition -> (site -> value)
 site_variables = {
-    'site.name': SiteAttr(Attr.TEXT_TYPE, 'name'),
+    'site.name': SiteName(),
     'site.status': SiteStatus(),
     'site.storage_type': SiteStorageType(),
     'site.occupancy': SiteOccupancy(),

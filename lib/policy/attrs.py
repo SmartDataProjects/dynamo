@@ -108,8 +108,16 @@ class ReplicaSiteAttr(Attr):
 
 
 class SiteAttr(Attr):
-    """Extract an attribute from a site."""
+    """Extract an attribute from a SitePartition object (*not* Site object)."""
 
     def __init__(self, vtype, attr = None, args = None):
         Attr.__init__(self, vtype, attr = attr, args = args)
-        self.partition = None
+
+        # When this is true, attribute is extracted from sitepartition.site
+        self.get_from_site = False
+
+    def get(self, sitepartition):
+        if self.get_from_site:
+            return self._get(sitepartition.site)
+        else:
+            return self._get(sitepartition)

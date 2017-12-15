@@ -6,17 +6,27 @@ import httplib
 import urllib
 import urllib2
 import mimetools
+import time
+import json
 
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Submit one dynamo executable task.')
-parser.add_argument('executable', metavar = 'PATH', nargs = '+', help = 'Executable script')
-parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', help = 'Executable title')
+parser.add_argument('cmd', metavar = 'CMD', help = 'Executable command')
+parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', help = 'Executable title.')
+parser.add_argument('--synchronous', '-S', action = 'store_true', dest = 'synch', help = 'Wait for the executable to complete.')
 parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request write access.')
 parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
 
 args = parser.parse_args()
 sys.argv = []
+
+## If synchronous execution + work directory provided, wipe out the logs
+if args.synch and args.workdir:
+    with open(args.workdir + '/_stdout', 'w'):
+        pass
+    with open(args.workdir + '/_stderr', 'w'):
+        pass
 
 ## Submit an executable through the registry front end.
 
@@ -36,7 +46,9 @@ class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
     def create_connection(self, host, timeout = 300):
         return httplib.HTTPSConnection(host, key_file = self.key, cert_file = self.cert)
 
-with open(args.executable[0]) as source:
+cmds = args.cmd.split()
+executable = cmds[0]
+with open(executable) as source:
     file_content = source.read()
 
 boundary = mimetools.choose_boundary()
@@ -52,29 +64,27 @@ data = [
     file_content
 ]
 
-if len(args.executable) > 1:
+def add_field(name, field_data):
+    global data
+
     data += [
         '--' + boundary,
-        'Content-Disposition: form-data; name="args"',
+        'Content-Disposition: form-data; name="%s"' % name,
         '',
-        ' '.join(args.executable[1:])
+        field_data
     ]
 
 if args.title:
-    data += [
-        '--' + boundary,
-        'Content-Disposition: form-data; name="title"',
-        '',
-        args.title
-    ]
+    add_field('title', args.title)
+
+if len(cmds) > 1:
+    add_field('args', ' '.join(cmds[1:]))
 
 if args.write_request:
-    data += [
-        '--' + boundary,
-        'Content-Disposition: form-data; name="write"',
-        '',
-        '1'
-    ]
+    add_field('write', '1')
+
+if args.workdir:
+    add_field('workdir', args.workdir)
 
 data += [
     '--' + boundary + '--'
@@ -85,7 +95,78 @@ body = '\r\n'.join(data)
 request.add_header('Content-length', len(body))
 request.add_data(body)
 
-opener = urllib2.build_opener(HTTPSCertKeyHandler())
-response = opener.open(request)
+try:
+    opener = urllib2.build_opener(HTTPSCertKeyHandler())
+    response = opener.open(request)
+    content = response.read()
+    result = json.loads(content)
 
-print response.read()
+except urllib2.HTTPError as err:
+    sys.stderr.write('Server responded: Error %d\n' % err.code)
+    sys.stderr.write(str(err) + '\n')
+    sys.stderr.write(err.read())
+    sys.exit(1)
+
+task_info = result['data'][0]
+task_id = task_info['taskid']
+path = task_info['path']
+
+print 'task id:', task_id
+print 'path:', path
+
+if args.synch:
+    # start a thread to read _stdout and _stderr
+
+    try:
+        return_code = 0
+
+        while True:
+            opener = urllib2.build_opener(HTTPSCertKeyHandler())
+            request = urllib2.Request('https://t3desk007.mit.edu/registry/application?taskid=%d' % task_info['taskid'])
+            request.add_header('Accept', 'application/json')
+            response = opener.open(request)
+            content = response.read()
+            
+            result = json.loads(content)
+
+            status = result['data'][0]['status']
+            if status not in ('new', 'run'):
+                if status != 'done':
+                    return_code = 1
+
+                with open(path + '/_stdout') as source:
+                    sys.stdout.write(source.read())
+
+                with open(path + '/_stderr') as source:
+                    sys.stderr.write(source.read())
+
+                break
+
+            time.sleep(3)
+
+    except KeyboardInterrupt:
+        while True:
+            sys.stdout.write('Kill task? [y/n]: ')
+            sys.stdout.flush()
+            response = sys.stdin.readline().strip()
+            if response == 'y':
+                opener = urllib2.build_opener(HTTPSCertKeyHandler())
+                request = urllib2.Request('https://t3desk007.mit.edu/registry/application?action=kill&taskid=%d' % task_info['taskid'])
+                request.add_header('Accept', 'application/json')
+                response = opener.open(request)
+                content = response.read()
+
+                result = json.loads(content)
+                sys.stdout.write('\n' + result['data'][0]['message'] + '\n')
+
+            elif respose == 'n':
+                break
+
+            else:
+                sys.stdout.write('Please answer in y/n.\n')
+
+    except:
+        sys.stderr.write('Caught exception while waiting for task to complete.\n')
+        return_code = 2
+
+    sys.exit(return_code)
