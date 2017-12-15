@@ -4,6 +4,7 @@ import os
 import sys
 import pwd
 import signal
+import traceback
 import logging
 import logging.handlers
 
@@ -67,9 +68,22 @@ signal_converter.set(signal.SIGTERM)
 ## Start the server
 from core.dynamo import Dynamo
 
-daemon = Dynamo(config)
-daemon.run()
+try:
+    daemon = Dynamo(config)
+    daemon.run()
 
-if not debug:
-    os.seteuid(0)
-    os.unlink(pidfile_path)
+except:
+    exc_type, exc, tb = sys.exc_info()
+    LOG.critical('Server caught an exception of type %s\n', exc_type.__name__)
+    log_handler.setFormatter(logging.Formatter(fmt = '%(message)s'))
+
+    LOG.critical('Traceback (most recent call last):')
+    LOG.critical(''.join(traceback.format_tb(tb)))
+    LOG.critical('%s: %s', exc_type.__name__, str(exc))
+
+    sys.exit(1)
+
+finally:
+    if not debug:
+        os.seteuid(0)
+        os.unlink(pidfile_path)

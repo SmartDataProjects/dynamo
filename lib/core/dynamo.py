@@ -47,9 +47,6 @@ class Dynamo(object):
         LOG.info('Loading the inventory.')
         self.inventory.load(**load_opts)
 
-        # configuration containing privileged-access passwords
-        self.restricted_config = config.restricted_config.clone()
-
     def run(self):
         """
         Infinite-loop main body of the daemon.
