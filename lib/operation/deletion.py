@@ -4,7 +4,7 @@ class DeletionInterface(object):
     """
 
     def __init__(self, config):
-        pass
+        self.dry_run = config.get('dry_run', False)
 
     def schedule_deletion(self, replica, comments = ''):
         """

@@ -10,9 +10,6 @@ class TransactionHistoryInterface(object):
     Interface for transaction history. Has a locking mechanism similar to store.
     """
 
-    class LockError(Exception):
-        pass
-
     def __init__(self, config):
         self._lock_depth = 0
         self.config = Configuration(config)

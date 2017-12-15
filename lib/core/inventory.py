@@ -39,9 +39,14 @@ class DynamoInventory(ObjectRepository):
         if load:
             self.load()
 
+        # When the user application is authorized to change the inventory state, all updated
+        # and deleted objects are kept in the two lists until the end of execution.
+        self._updated_objects = None
+        self._deleted_objects = None
+
     def init_store(self, module, config):
         persistency_cls = getattr(core.impl, module)
-        self.store = persistency_cls(config)
+        self._store = persistency_cls(config)
 
     def load(self, groups = (None, None), sites = (None, None), datasets = (None, None)):
         """
@@ -66,7 +71,7 @@ class DynamoInventory(ObjectRepository):
         site_names = self._get_site_names(*sites)
         dataset_names = self._get_dataset_names(*datasets)
 
-        self.store.load_data(
+        self._store.load_data(
             self,
             group_names = group_names,
             site_names = site_names,
@@ -118,7 +123,7 @@ class DynamoInventory(ObjectRepository):
         lists = self._parse_include_lists(included, excluded)
 
         if lists is not None:
-            group_names = self.store.get_group_names(include = lists[0], exclude = lists[1])
+            group_names = self._store.get_group_names(include = lists[0], exclude = lists[1])
             LOG.debug('Group names %s', group_names)
         else:
             group_names = None
@@ -131,7 +136,7 @@ class DynamoInventory(ObjectRepository):
         lists = self._parse_include_lists(included, excluded)
 
         if lists is not None:
-            site_names = self.store.get_site_names(include = lists[0], exclude = lists[1])
+            site_names = self._store.get_site_names(include = lists[0], exclude = lists[1])
             LOG.debug('Site names %s', site_names)
         else:
             site_names = None
@@ -144,7 +149,7 @@ class DynamoInventory(ObjectRepository):
         lists = self._parse_include_lists(included, excluded)
 
         if lists is not None:
-            dataset_names = self.store.get_dataset_names(include = lists[0], exclude = lists[1])
+            dataset_names = self._store.get_dataset_names(include = lists[0], exclude = lists[1])
             LOG.debug('Dataset names %s', dataset_names)
         else:
             dataset_names = None
@@ -197,11 +202,11 @@ class DynamoInventory(ObjectRepository):
         embedded_clone, updated = obj.embed_into(self, check = True)
 
         if updated:
-            if hasattr(self, '_updated_objects'):
+            if self._updated_objects is not None:
                 self._updated_objects.append(embedded_clone)
     
             if write:
-                obj.write_into(self.store)
+                obj.write_into(self._store)
 
         return embedded_clone
 
@@ -215,8 +220,17 @@ class DynamoInventory(ObjectRepository):
 
         obj.delete_from(self)
         
-        if hasattr(self, '_deleted_objects'):
+        if self._deleted_objects is not None:
             self._deleted_objects.append(obj.unlinked_clone())
 
         if write:
-            obj.write_into(self.store, delete = True)
+            obj.write_into(self._store, delete = True)
+
+    def clear_update(self):
+        """
+        Empty the _updated_objects and _deleted_objects lists. This operation
+        *does not* revert the updates.
+        """
+
+        self._updated_objects = []
+        self._deleted_objects = []

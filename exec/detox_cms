@@ -12,10 +12,15 @@ parser = ArgumentParser(description = 'Dynamo')
 parser.add_argument('--policy', '-p', metavar = 'FILE', dest = 'policy', required = True, help = 'Policy files.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
 parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
-parser.add_argument('--dry-run', '-D', action = 'store_true', dest = 'dry_run', help = 'Do not make any actual deletion requests or changes to inventory.')
+parser.add_argument('--snapshot-run', '-N', action = 'store_true', dest = 'snapshot_run', help = 'Do not make any actual deletion requests or changes to inventory. Create no cycle, but save the results in the snapshot cache.')
+parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Do not make any actual deletion requests or changes to inventory. Create a new cycle.')
 
 args = parser.parse_args()
 sys.argv = []
+
+if args.snapshot_run and args.test_run:
+    sys.stderr.write('--snapshot-run and --test-run cannot be set at the same time.')
+    sys.exit(1)
 
 ## Load the configuration
 from dataformat.configuration import Configuration
@@ -37,8 +42,10 @@ LOG.info('Starting Detox.')
 
 config.detox.deletion_op.config.phedex = config.phedex
 config.detox.copy_op.config.phedex = config.phedex
-if args.dry_run:
+if args.snapshot_run or args.test_run:
     config.detox.history.test = True
+    config.deletion_op.config.dry_run = True
+    config.copy_op.config.dry_run = True
 
 with open(os.environ['DYNAMO_BASE'] + '/etc/policies.tag') as tag:
     policy_version = tag.read().strip()
@@ -48,3 +55,7 @@ config.detox.policy_version = policy_version
 
 detox = Detox(config.detox)
 detox.run(inventory, comment = args.comment)
+
+## If test run, don't send back the inventory updates
+if args.test_run:
+    inventory.clear_update()

@@ -130,10 +130,13 @@ class PhEDExCopyInterface(CopyInterface):
             }
     
             # result = [{'id': <id>}] (item 'request_created' of PhEDEx response)
-            try:
-                result = self._phedex.make_request('subscribe', options, method = POST)
-            except:
-                result = []
+            if self.dry_run:
+                result = [{'id': '0'}]
+            else:
+                try:
+                    result = self._phedex.make_request('subscribe', options, method = POST)
+                except:
+                    result = []
 
             if len(result) != 0:
                 request_id = int(result[0]['id']) # return value is a string

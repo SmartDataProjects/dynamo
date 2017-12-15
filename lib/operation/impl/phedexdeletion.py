@@ -116,34 +116,43 @@ class PhEDExDeletionInterface(DeletionInterface):
             }
     
             # result = [{'id': <id>}] (item 'request_created' of PhEDEx response) if successful
-            try:
-                result = self._phedex.make_request('delete', options, method = POST)
-            except:
-                if self._phedex.last_errorcode == 400:
-                    # Sometimes we have invalid data in the list of objects to delete.
-                    # PhEDEx throws a 400 error in such a case. We have to then try to identify the
-                    # problematic item through trial and error.
-                    if len(items) == 1:
-                        LOG.error('Could not delete %s from %s', str(items[0]), site.name)
-                        result = []
+            if self.dry_run:
+                result = [{'id': '0'}]
+            else:
+                try:
+                    result = self._phedex.make_request('delete', options, method = POST)
+                except:
+                    if self._phedex.last_errorcode == 400:
+                        # Sometimes we have invalid data in the list of objects to delete.
+                        # PhEDEx throws a 400 error in such a case. We have to then try to identify the
+                        # problematic item through trial and error.
+                        if len(items) == 1:
+                            LOG.error('Could not delete %s from %s', str(items[0]), site.name)
+                            result = []
+                        else:
+                            self._run_deletion_request(request_mapping, site, level, item[:len(item) / 2], comments)
+                            self._run_deletion_request(request_mapping, site, level, item[len(item) / 2:], comments)
                     else:
-                        self._run_deletion_request(request_mapping, site, level, item[:len(item) / 2], comments)
-                        self._run_deletion_request(request_mapping, site, level, item[len(item) / 2:], comments)
-                else:
-                    result = []
+                        result = []
 
             if len(result) != 0:
                 request_id = int(result[0]['id']) # return value is a string
                 LOG.warning('PhEDEx deletion request id: %d', request_id)
-                request_mapping[request_id] = (False, site, items)
-    
-                if self.auto_approval:
+
+                approved = False
+
+                if self.dry_run:
+                    approved = True
+
+                elif self.auto_approval:
                     try:
                         result = self._phedex.make_request('updaterequest', {'decision': 'approve', 'request': request_id, 'node': site.name}, method = POST)
                     except:
                         LOG.error('deletion approval of request %d failed.', request_id)
                     else:
-                        request_mapping[request_id] = (True, site, items)
+                        approved = True
+
+                request_mapping[request_id] = (approved, site, items)
 
             else:
                 LOG.error('Deletion %s failed.', str(options))

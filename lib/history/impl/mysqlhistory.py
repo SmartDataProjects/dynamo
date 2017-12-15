@@ -62,7 +62,7 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.query('UNLOCK TABLES')
 
         if host != '' or pid != 0:
-            raise TransactionHistoryInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
+            raise RuntimeError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
     def _do_new_run(self, operation, partition, policy_version, comment): #override
         part_ids = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
