@@ -40,7 +40,7 @@ class MySQL(object):
 
         self._connection = None
 
-        self.reuse_connection = config.get('reuse_connection', True):
+        self.reuse_connection = config.get('reuse_connection', True)
 
         # default 1M characters
         self.max_query_len = config.get('max_query_len', 1000000)

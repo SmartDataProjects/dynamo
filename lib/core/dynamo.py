@@ -99,8 +99,10 @@ class Dynamo(object):
                             break
                         else:
                             if cmd == Dynamo.CMD_UPDATE:
+                                LOG.info('Updating %s', str(obj))
                                 self.inventory.update(obj, write = True)
                             elif cmd == Dynamo.CMD_DELETE:
+                                LOG.info('Deleting %s', str(obj))
                                 self.inventory.delete(obj, write = True)
 
                     signal_blocker.unblock(signal.SIGINT)
@@ -113,7 +115,7 @@ class Dynamo(object):
                 LOG.debug('Polling for executables.')
 
                 # UNLOCK statement at the top of the while loop
-                self.registry.backend.query('LOCK TABLES `action`')
+                self.registry.backend.query('LOCK TABLES `action` WRITE')
 
                 sql = 'SELECT s.`id`, s.`write_request`, s.`title`, s.`path`, s.`args`, s.`user_id`, u.`name`'
                 sql += ' FROM `action` AS s INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
