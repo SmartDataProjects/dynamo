@@ -52,7 +52,7 @@ class Dynamo(object):
         Infinite-loop main body of the daemon.
         Step 1: Poll the registry for one uploaded script.
         Step 2: If a script is found, check the authorization of the script.
-        Step 3: Spawn a child process for the script with either a partition or the inventory as an argument.
+        Step 3: Spawn a child process for the script
         Step 4: Collect completed child processes.
         Step 5: Sleep for N seconds.
         """
@@ -66,16 +66,55 @@ class Dynamo(object):
 
         signal_blocker = SignalBlocker(logger = LOG)
 
-        LOG.info('Start polling for executables.')
-
         try:
+            LOG.info('Start polling for executables.')
+
             first_wait = True
             sleep_time = 0
+
             while True:
+                self.registry.backend.query('UNLOCK TABLES')
+
+                ## Step 4 (easier to do here because we use "continue"s)
+                completed_processes = self.collect_processes(child_processes)
+                
+                for (_, _, _, _, queue), status in completed_processes:
+                    if queue is None:
+                        continue
+
+                    # This was a write-enabled process and it completed
+                    writing = False
+
+                    if status != 'done':
+                        continue
+
+                    # The child process may send us the list of updated/deleted objects
+                    # Block system signals and get update done
+                    signal_blocker.block(signal.SIGINT)
+                    signal_blocker.block(signal.SIGTERM)
+                    while True:
+                        try:
+                            cmd, obj = queue.get()
+                        except Queue.Empty:
+                            break
+                        else:
+                            if cmd == Dynamo.CMD_UPDATE:
+                                self.inventory.update(obj, write = True)
+                            elif cmd == Dynamo.CMD_DELETE:
+                                self.inventory.delete(obj, write = True)
+
+                    signal_blocker.unblock(signal.SIGINT)
+                    signal_blocker.unblock(signal.SIGTERM)
+
+                ## Step 5 (easier to do here because we use "continue"s)
                 time.sleep(sleep_time)
 
+                ## Step 1: Poll
                 LOG.debug('Polling for executables.')
-    
+
+                # UNLOCK statement at the top of the while loop
+                self.registry.backend.query('LOCK TABLES `action`')
+
                 sql = 'SELECT s.`id`, s.`write_request`, s.`title`, s.`path`, s.`args`, s.`user_id`, u.`name`'
                 sql += ' FROM `action` AS s INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
                 sql += ' WHERE s.`status` = \'new\''
@@ -94,71 +133,46 @@ class Dynamo(object):
 
                     LOG.debug('No executable found, sleeping for %d seconds.', sleep_time)
 
-                else:
-                    exec_id, write_request, title, path, args, user_id, user_name = result[0]
+                    continue
 
-                    first_wait = True
-                    sleep_time = 0
+                ## Step 2: If a script is found, check the authorization of the script.
+                exec_id, write_request, title, path, args, user_id, user_name = result[0]
 
-                    if not os.path.exists(path + '/exec.py'):
-                        LOG.info('Executable %s from user %s (write request: %s) not found.', title, user_name, write_request)
-                        self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'failed', exec_id)
+                first_wait = True
+                sleep_time = 0
+
+                if not os.path.exists(path + '/exec.py'):
+                    LOG.info('Executable %s from user %s (write request: %s) not found.', title, user_name, write_request)
+                    self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'failed', exec_id)
+                    continue
+
+                LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
+
+                if write_request:
+                    if not self.check_write_auth(title, user_id, path):
+                        LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
+                        # send a message
+
+                        self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', 'failed', exec_id)
                         continue
 
-                    LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
+                    queue = multiprocessing.Queue()
 
-                    if write_request:
-                        if not self.check_write_auth(title, user_id, path):
-                            LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
-                            # send a message
+                    writing = True
 
-                            self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', 'failed', exec_id)
-                            continue
-    
-                        queue = multiprocessing.Queue()
+                else:
+                    queue = None
 
-                        writing = True
+                ## Step 3: Spawn a child process for the script
+                self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'run', exec_id)
 
-                    else:
-                        queue = None
+                proc = multiprocessing.Process(target = self._run_one, name = title, args = (path, args, queue))
+                child_processes.append((exec_id, proc, user_name, path, queue))
 
-                    self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'run', exec_id)
-    
-                    proc = multiprocessing.Process(target = self._run_one, name = title, args = (path, args, queue))
-                    child_processes.append((exec_id, proc, user_name, path, queue))
-    
-                    proc.daemon = True
-                    proc.start()
-    
-                    LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
+                proc.daemon = True
+                proc.start()
 
-
-                completed_processes = self.collect_processes(child_processes)
-
-                for (_, _, _, _, queue), status in completed_processes:
-                    if queue is not None:
-                        # This was a write-enabled process and it completed
-
-                        writing = False
-
-                        if status == 'done':
-                            # The child process may send us the list of updated/deleted objects
-                            # Block system signals and get update done
-                            signal_blocker.block(signal.SIGINT)
-                            signal_blocker.block(signal.SIGTERM)
-                            while True:
-                                try:
-                                    cmd, obj = queue.get()
-                                except Queue.Empty:
-                                    break
-                                else:
-                                    if cmd == Dynamo.CMD_UPDATE:
-                                        self.inventory.update(obj, write = True)
-                                    elif cmd == Dynamo.CMD_DELETE:
-                                        self.inventory.delete(obj, write = True)
-    
-                            signal_blocker.unblock(signal.SIGINT)
-                            signal_blocker.unblock(signal.SIGTERM)
+                LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
 
         except KeyboardInterrupt:
             LOG.info('Main process was interrupted.')
@@ -174,6 +188,8 @@ class Dynamo(object):
             # foreground process group). In this case calling terminate() will duplicate signals
             # in the child. Child processes have to always ignore SIGINT and be killed only from
             # SIGTERM sent by the line below.
+
+            self.registry.backend.query('UNLOCK TABLES')
 
             for exec_id, proc, user_name, path, queue in child_processes:
                 LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)

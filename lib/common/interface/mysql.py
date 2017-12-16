@@ -40,16 +40,10 @@ class MySQL(object):
 
         self._connection = None
 
-        if 'reuse_connection' in config:
-            self.reuse_connection = config['reuse_connection']
-        else:
-            self.reuse_connection = False
+        self.reuse_connection = config.get('reuse_connection', True):
 
-        if 'max_query_len' in config:
-            self.max_query_len = config['max_query_len']
-        else:
-            # default 1M characters
-            self.max_query_len = 1000000
+        # default 1M characters
+        self.max_query_len = config.get('max_query_len', 1000000)
 
     def db_name(self):
         return self._connection_parameters['db']
@@ -60,7 +54,9 @@ class MySQL(object):
 
     def query(self, sql, *args):
         """
-        Execute an SQL query. If the query is an INSERT, return the inserted row id (0 if no insertion happened).
+        Execute an SQL query.
+        If the query is an INSERT, return the inserted row id (0 if no insertion happened).
+        If the query is an UPDATE, return the number of affected rows.
         If the query is a SELECT, return an array of:
          - tuples if multiple columns are called
          - values if one column is called
@@ -108,6 +104,7 @@ class MySQL(object):
                     # insert query
                     return cursor.lastrowid
                 else:
+                    # update query
                     return cursor.rowcount
     
             elif len(result) != 0 and len(result[0]) == 1:

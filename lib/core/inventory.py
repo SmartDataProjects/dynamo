@@ -3,7 +3,7 @@ import re
 
 from policy.condition import Condition
 from policy.variables import replica_variables
-from dataformat import Partition
+from dataformat import Group, Partition
 import core.impl
 
 LOG = logging.getLogger(__name__)
@@ -22,6 +22,9 @@ class ObjectRepository(object):
         self.sites = NameKeyDict()
         self.datasets = NameKeyDict()
         self.partitions = NameKeyDict()
+
+        # null group always exist
+        self.groups[None] = Group(None)
 
 
 class DynamoInventory(ObjectRepository):
@@ -57,6 +60,7 @@ class DynamoInventory(ObjectRepository):
         """
         
         self.groups.clear()
+        self.groups[None] = Group(None)
         self.sites.clear()
         self.datasets.clear()
         self.partitions.clear()
@@ -199,14 +203,18 @@ class DynamoInventory(ObjectRepository):
         @param write  Write updated object to persistent store.
         """
 
-        embedded_clone, updated = obj.embed_into(self, check = True)
-
-        if updated:
-            if self._updated_objects is not None:
-                self._updated_objects.append(embedded_clone)
+        try:
+            embedded_clone, updated = obj.embed_into(self, check = True)
     
-            if write:
-                obj.write_into(self._store)
+            if updated:
+                if self._updated_objects is not None:
+                    self._updated_objects.append(embedded_clone)
+        
+                if write:
+                    obj.write_into(self._store)
+        except:
+            LOG.error('Exception in inventory.update(%s)' % str(obj))
+            raise
 
         return embedded_clone
 
@@ -217,14 +225,18 @@ class DynamoInventory(ObjectRepository):
         @param obj    Object to delete from this inventory.
         @param write  Record deletion to persistent store.
         """
-
-        obj.delete_from(self)
         
-        if self._deleted_objects is not None:
-            self._deleted_objects.append(obj.unlinked_clone())
-
-        if write:
-            obj.write_into(self._store, delete = True)
+        try:
+            obj.delete_from(self)
+            
+            if self._deleted_objects is not None:
+                self._deleted_objects.append(obj.unlinked_clone())
+    
+            if write:
+                obj.write_into(self._store, delete = True)
+        except:
+            LOG.error('Exception in inventory.delete(%s)' % str(obj))
+            raise
 
     def clear_update(self):
         """

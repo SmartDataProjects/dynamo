@@ -4,27 +4,26 @@ class GroupInfoSource(object):
     """
 
     def __init__(self, config):
-        if hasattr(config, 'include'):
-            if type(config.include) is list:
-                self.include = list(config.include)
-            else:
-                self.include = [config.include]
+        include = config.get('include', None)
+
+        if type(include) is list:
+            self.include = list(include)
+        elif include is not None:
+            self.include = [include]
         else:
             self.include = None
 
-        if hasattr(config, 'exclude'):
-            if type(config.exclude) is list:
-                self.exclude = list(config.exclude)
-            else:
-                self.exclude = [config.exclude]
+        exclude = config.get('exclude', None)
+
+        if type(exclude) is list:
+            self.exclude = list(exclude)
+        elif exclude is not None:
+            self.exclude = [exclude]
         else:
             self.exclude = None
 
-        if hasattr(config, 'dataset_level_groups'):
-            # List of group names where olevel should be Dataset
-            self.dataset_level_groups = list(config.dataset_level_groups)
-        else:
-            self.dataset_level_groups = []
+        # List of group names where olevel should be Dataset
+        self.dataset_level_groups = list(config.get('dataset_level_groups', []))
 
     def get_group(self, name):
         """

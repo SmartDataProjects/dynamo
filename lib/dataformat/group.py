@@ -77,6 +77,9 @@ class Group(object):
                         block_replica.group = inventory.groups[None]
 
     def write_into(self, store, delete = False):
+        if self._name is None:
+            return
+
         if delete:
             store.delete_group(self)
         else:

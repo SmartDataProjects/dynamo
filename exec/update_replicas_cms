@@ -104,7 +104,7 @@ for replica in new_and_updated_replicas:
     LOG.debug('Updating %s', replica_str)
 
     # 3.1. pick up replicas of known groups only
-    if replica.group is not None and replica.group.name not in inventory.groups:
+    if replica.group.name not in inventory.groups:
         LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
         continue
 
@@ -225,7 +225,7 @@ for replica in deleted_replicas:
     LOG.debug('Deleting %s', replica_str)
 
     # 5.1. pick up replicas of known groups only
-    if replica.group is not None and replica.group.name not in inventory.groups:
+    if replica.group.name not in inventory.groups:
         LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
         continue
 
