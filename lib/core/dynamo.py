@@ -17,7 +17,7 @@ LOG = logging.getLogger(__name__)
 class Dynamo(object):
     """Main daemon class."""
 
-    CMD_UPDATE, CMD_DELETE = range(2)
+    CMD_UPDATE, CMD_DELETE, CMD_EOM = range(3)
 
     def __init__(self, config):
         LOG.info('Initializing Dynamo server.')
@@ -64,7 +64,7 @@ class Dynamo(object):
         # There can only be one child process with write access at a time.
         writing = False
 
-        signal_blocker = SignalBlocker(logger = LOG)
+        signal_blocker = SignalBlocker([signal.SIGINT, signal.SIGTERM], logger = LOG)
 
         try:
             LOG.info('Start polling for executables.')
@@ -90,23 +90,22 @@ class Dynamo(object):
 
                     # The child process may send us the list of updated/deleted objects
                     # Block system signals and get update done
-                    signal_blocker.block(signal.SIGINT)
-                    signal_blocker.block(signal.SIGTERM)
-                    while True:
-                        try:
-                            cmd, obj = queue.get()
-                        except Queue.Empty:
-                            break
-                        else:
-                            if cmd == Dynamo.CMD_UPDATE:
-                                LOG.info('Updating %s', str(obj))
-                                self.inventory.update(obj, write = True)
-                            elif cmd == Dynamo.CMD_DELETE:
-                                LOG.info('Deleting %s', str(obj))
-                                self.inventory.delete(obj, write = True)
-
-                    signal_blocker.unblock(signal.SIGINT)
-                    signal_blocker.unblock(signal.SIGTERM)
+                    with signal_blocker:
+                        while True:
+                            try:
+                                # In case the child process fails to put EOM at the end, we time out in 30 seconds.
+                                cmd, obj = queue.get(block = False, timeout = 30)
+                            except Queue.Empty:
+                                break
+                            else:
+                                if cmd == Dynamo.CMD_UPDATE:
+                                    LOG.info('Updating %s', str(obj))
+                                    self.inventory.update(obj, write = True)
+                                elif cmd == Dynamo.CMD_DELETE:
+                                    LOG.info('Deleting %s', str(obj))
+                                    self.inventory.delete(obj, write = True)
+                                elif cmd == Dynamo.CMD_EOM:
+                                    break
 
                 ## Step 5 (easier to do here because we use "continue"s)
                 time.sleep(sleep_time)
@@ -307,6 +306,9 @@ class Dynamo(object):
                 queue.put((Dynamo.CMD_UPDATE, obj))
             for obj in self.inventory._deleted_objects:
                 queue.put((Dynamo.CMD_DELETE, obj))
+            
+            # Put end-of-message
+            queue.put((Dynamo.CMD_EOM, None))
 
         # Queue stays available on the other end even if we terminate the process
 
@@ -314,4 +316,3 @@ class Dynamo(object):
         sys.stderr.close()
         sys.stdout = stdout
         sys.stderr = stderr
-        

@@ -19,24 +19,35 @@ class Dealer(object):
         self.copy_op = getattr(operation.impl, config.copy_op.module)(config.copy_op.config)
         self.history = getattr(history.impl, config.history.module)(config.history.config)
 
-    def run(self, policy, is_test = False, comment = ''):
+        self._setup_policy(config)
+
+        # Do not copy data to sites beyond target occupancy fraction (0-1)
+        self.target_site_occupancy = config.target_site_occupancy
+        # At each site: schedule dataset copies until the volume exceeds max_copy_per_site.
+        # The value is given in TB in the configuration file
+        self.max_copy_per_site = config.max_copy_per_site * 1.e+12
+        # Overall: schedule dataset copies until the volume exceeds max_copy_per_site.
+        # The value is given in TB in the configuration file
+        self.max_copy_total = config.max_copy_total * 1.e+12
+
+    def run(self, inventory, comment = ''):
         """
+        Main executable.
         1. Update site status.
         2. Take snapshots of the current status (datasets and sites).
         3. Collect copy requests from various plugins, sorted by priority.
         4. Go through the list of requests and fulfill up to the allowed volume.
         5. Make transfer requests.
+        @param inventory  Dynamo inventory
+        @param comment    Passed to dynamo history
         """
 
         LOG.info('Dealer run for %s starting at %s', policy.partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
 
-        if not comment:
-            comment = 'Dynamo -- Automatic replication request'
-            if policy.partition.name != 'Global':
-                comment += ' for %s partition.' % policy.partition.name
+        LOG.info('Updating dataset demands.')
+        self.demand_manager.update(inventory, policy.used_demand_plugins)
 
-        self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
-        self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
+
 
         all_sites = self.inventory_manager.sites.values()
 
@@ -48,7 +59,7 @@ class Dealer(object):
             if quotas[site] > 0. and \
                     site.status == Site.STAT_READY and \
                     policy.target_site_def(site) and \
-                    site.storage_occupancy(policy.partition, physical = False) < dealer_config.main.target_site_occupancy:
+                    site.storage_occupancy(policy.partition, physical = False) < self.target_site_occupancy:
 
                 target_sites.add(site)
 
@@ -81,6 +92,7 @@ class Dealer(object):
 
         LOG.info('Committing copy.')
 
+        comment = 'Dynamo -- Automatic replication request for %s partition.' % policy.partition.name
         self.commit_copies(run_number, copy_list, policy.group, is_test, comment)
 
         self.history.close_copy_run(run_number)
@@ -178,7 +190,7 @@ class Dealer(object):
                     LOG.warning('Cannot copy %s to %s.', item_name, destination.name)
                     continue
 
-                if dealer_config.main.skip_existing and find_replica_at(destination) is not None:
+                if find_replica_at(destination) is not None:
                     LOG.info('%s is already at %s', item_name, destination.name)
                     continue
 
@@ -192,24 +204,26 @@ class Dealer(object):
             pending_volumes[destination] += item_size
             site_occupancy[destination] += item_size / quotas[destination]
 
-            if site_occupancy[destination] > dealer_config.main.target_site_occupancy or \
-                    pending_volumes[destination] > dealer_config.main.max_copy_per_site:
+            if site_occupancy[destination] > self.target_site_occupancy or \
+                    pending_volumes[destination] > self.max_copy_per_site:
                 LOG.info('Site %s projected occupancy exceeded the limit.', destination.name)
                 # this site should get no more copies
                 site_occupancy.pop(destination)
 
             # check if we should stop copying
-            if min(pending_volumes.itervalues()) > dealer_config.main.max_copy_per_site:
+            if min(pending_volumes.itervalues()) > self.max_copy_per_site:
                 LOG.warning('All sites have exceeded copy volume target. No more copies will be made.')
                 break
 
-            if sum(pending_volumes.itervalues()) > dealer_config.main.max_copy_total:
+            if sum(pending_volumes.itervalues()) > self.max_copy_total:
                 LOG.warning('Total copy volume has exceeded the limit. No more copies will be made.')
                 break
 
         return copy_list
 
     def commit_copies(self, run_number, copy_list, group, is_test, comment):
+
+
         for site, replicas in copy_list.iteritems():
             if len(replicas) == 0:
                 continue
