@@ -6,6 +6,7 @@ import logging
 import hashlib
 import multiprocessing
 import Queue
+import pickle
 
 from core.inventory import DynamoInventory
 from core.registry import DynamoRegistry
@@ -313,11 +314,13 @@ class Dynamo(object):
         if queue is not None:
             for obj in self.inventory._updated_objects:
                 sys.stderr.write('Updated object: %s\n' % str(obj))
+                pickle.dumps(obj, -1)
                 try:
                     queue.put((Dynamo.CMD_UPDATE, obj))
                 except:
                     sys.stderr.write('Exception while sending updated %s\n' % str(obj))
                     raise
+                time.sleep(0.5)
 
             for obj in self.inventory._deleted_objects:
                 sys.stderr.write('Deleted object: %s\n' % str(obj))

@@ -85,7 +85,8 @@ if delta_update:
 
     try:
         with open(config.replica_state_file) as source:
-            timestamp = time.strptime(source.read().strip(), '%Y-%m-%d %H:%M:%S %Z')
+            timestamp_str = source.read().strip()
+            timestamp = time.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S %Z')
             # %Z only serves to distinguish daylight saving time. The timestamp in the file has
             # to be the local time of the system. time.mktime will then convert it to UNIX time.
             last_update = time.mktime(timestamp)
@@ -98,7 +99,7 @@ if delta_update:
     ## Fetch the full list of block replicas that were updated since updated_since.
     ## New datasets and blocks will be caught in the process.
     
-    LOG.info('Updating list of datasets, blocks, and replicas.')
+    LOG.info('Fetching the list of block replicas updated since %s.', timestamp_str)
 
     new_and_updated_replicas = replica_source.get_updated_replicas(last_update)
 

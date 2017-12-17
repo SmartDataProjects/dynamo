@@ -26,6 +26,9 @@ class Partition(object):
         self._name = name
         self._subpartitions = None
         self._parent = None
+
+        # Members that cannot be exported in a pickle (and thus cannot be communicated
+        # through multiprocessing queues) - excluded in __getstate__
         self._condition = condition
 
     def __str__(self):
@@ -40,6 +43,9 @@ class Partition(object):
 
     def __ne__(self, other):
         return self._name != other._name
+
+    def __getstate__(self):
+        return {'_name': self._name, '_subpartitions': self._subpartitions, '_parent': self._parent}
 
     def copy(self, other):
         pass

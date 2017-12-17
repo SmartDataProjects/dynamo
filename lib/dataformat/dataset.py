@@ -8,7 +8,7 @@ class Dataset(object):
 
     __slots__ = ['_name', 'size', 'num_files', 'status', 'on_tape',
         'data_type', 'software_version', 'last_update', 'is_open',
-        'blocks', 'replicas', 'requests', 'demand']
+        'blocks', 'replicas', 'demand']
 
     # Enumerator for dataset type.
     # Starting from 1 to play better with MySQL
@@ -68,13 +68,13 @@ class Dataset(object):
         self.blocks = set()
         self.replicas = set()
 
-        # "transient" members
+        # "transient" members - excluded in __getstate__
         self.demand = {} # freeform key-value pairs
 
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset(\'%s\', size=%d, num_files=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
+        return 'Dataset(%s, size=%d, num_files=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
             (self._name, self.size, self.num_files, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
             str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), \
             len(self.blocks), replica_sites)
@@ -89,6 +89,9 @@ class Dataset(object):
 
     def __ne__(self, other):
         return not self.__eq__(other)
+
+    def __getstate__(self):
+        return dict((s, getattr(self, s)) for s in Dataset.__slots__ if s != 'demand')
 
     def copy(self, other):
         self.size = other.size

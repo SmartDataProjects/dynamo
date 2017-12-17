@@ -46,8 +46,8 @@ config.detox.deletion_op.config.phedex = config.phedex
 config.detox.copy_op.config.phedex = config.phedex
 if args.snapshot_run or args.test_run:
     config.detox.history.test = True
-    config.deletion_op.config.dry_run = True
-    config.copy_op.config.dry_run = True
+    config.detox.deletion_op.config.dry_run = True
+    config.detox.copy_op.config.dry_run = True
 
 with open(os.environ['DYNAMO_BASE'] + '/etc/policies.tag') as tag:
     policy_version = tag.read().strip()

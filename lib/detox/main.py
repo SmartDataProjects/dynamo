@@ -256,7 +256,7 @@ class Detox(object):
                         if len(unlinked_replicas) != 0:
                             get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
                             for block_replica in unlinked_replicas:
-                                block_replica.delete_from(partition_repository)
+                                block_replica.delete_from(repository)
 
                         if len(reowned_replicas) != 0:
                             if replica in reowned:
@@ -279,7 +279,7 @@ class Detox(object):
                         if len(unlinked_replicas) != 0:
                             get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
                             for block_replica in unlinked_replicas:
-                                block_replica.delete_from(partition_repository)
+                                block_replica.delete_from(repository)
 
                         if len(replica.block_replicas) == 0:
                             # if all blocks were deleted, take the replica off all_replicas for later iterations
@@ -299,7 +299,7 @@ class Detox(object):
                             get_list(keep_candidates, replica, condition_id).update(replica.block_replicas)
 
             for replica in empty_replicas:
-                replica.delete_from(partition_repository)
+                replica.delete_from(repository)
                 all_replicas.remove(replica)
 
             LOG.info('Took %f seconds to evaluate', time.time() - start)
@@ -378,7 +378,7 @@ class Detox(object):
 
                             get_list(deleted, replica, condition_id).update(to_delete)
                             for block_replica in unlinked_replicas:
-                                block_replica.delete_from(partition_repository)
+                                block_replica.delete_from(repository)
 
                         if len(reowned_replicas) != 0:
                             if replica in reowned:
@@ -387,7 +387,7 @@ class Detox(object):
                                 reowned[replica] = list(reowned_replicas)
 
                     if len(replica.block_replicas) == 0:
-                        replica.delete_from(partition_repository)
+                        replica.delete_from(repository)
                         all_replicas.remove(replica)
 
                     site_partition = site.partitions[partition]
@@ -416,7 +416,7 @@ class Detox(object):
 
     def _unlink_block_replicas(self, replica, partition, block_replicas = None):
         if block_replicas is None or len(block_replicas) == len(replica.block_replicas):
-            blocks_to_unlink = list(block_replicas)
+            blocks_to_unlink = list(replica.block_replicas)
             blocks_to_hand_over = []
 
         else:

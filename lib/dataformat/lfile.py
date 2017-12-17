@@ -55,6 +55,13 @@ class File(object):
     def __ne__(self, other):
         return not self.__eq__(other)
 
+    def __getstate__(self):
+        # don't export _directory_id to pickle (use getnewargs)
+        return {'_basename': self._basename, '_block': self._block, 'size': self.size}
+
+    def __getnewargs__(self):
+        return (self.lfn, self._block, self.size)
+
     def copy(self, other):
         if self._block.full_name() != other._block.full_name():
             raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._block.full_name(), self._block.full_name())

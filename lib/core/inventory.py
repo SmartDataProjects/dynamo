@@ -3,7 +3,7 @@ import re
 
 from policy.condition import Condition
 from policy.variables import replica_variables
-from dataformat import Group, Partition
+from dataformat import Group, Partition, ObjectError
 import core.impl
 
 LOG = logging.getLogger(__name__)
@@ -237,7 +237,7 @@ class DynamoInventory(ObjectRepository):
         except (KeyError, ObjectError) as e:
             # When delete is attempted on a nonexistent object or something linked to a nonexistent object
             # As this is less alarming, error message is suppressed to debug level.
-            LOG.debug('%s in inventory.delete(%s)' % str(obj), type(e).__name__)
+            LOG.debug('%s in inventory.delete(%s)', type(e).__name__, str(obj))
             # But we'll still raise - it's up to the users to trap this exception.
             raise
         except:
