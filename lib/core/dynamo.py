@@ -6,7 +6,6 @@ import logging
 import hashlib
 import multiprocessing
 import Queue
-import pickle
 
 from core.inventory import DynamoInventory
 from core.registry import DynamoRegistry
@@ -64,8 +63,8 @@ class Dynamo(object):
         child_processes = []
 
         # There can only be one child process with write access at a time. We pass it a Queue to communicate back.
-        queue = multiprocessing.Queue()
-        writing_process = None
+        # writing_process is a tuple (proc, queue) when some process is writing
+        writing_process = (None, None)
         # We need to buffer updated and deleted objects from the child process to avoid filling up the pipe
         updated_objects = []
         deleted_objects = []
@@ -82,34 +81,39 @@ class Dynamo(object):
                 self.registry.backend.query('UNLOCK TABLES')
 
                 ## Step 4 (easier to do here because we use "continue"s)
-                if writing_process is not None:
-                    self.collect_updates(queue, updated_objects, deleted_objects)
+                if writing_process[1] is not None:
+                    terminated = self.collect_updates(writing_process[1], updated_objects, deleted_objects)
+                    if terminated:
+                        writing_process[1].close()
+                        writing_process = (writing_process[0], None)
 
                 ## Step 5 (easier to do here because we use "continue"s)
                 completed_processes = self.collect_processes(child_processes)
                 
                 for proc, status in completed_processes:
-                    if proc is not writing_process:
+                    if proc is not writing_process[0]:
                         continue
 
-                    writing_process = None
-
                     # drain the queue
-                    self.collect_updates(queue, updated_objects, deleted_objects, drain = True)
+                    if writing_process[1] is not None:
+                        self.collect_updates(writing_process[1], updated_objects, deleted_objects, drain = True)
+                        writing_process[1].close()
+
+                    writing_process = (None, None)
 
                     if status != 'done':
                         continue
 
                     # The child process may send us the list of updated/deleted objects
                     # Block system signals and get update done
+                    ## TODO We want these log lines to be at INFO level but logged to a separate file
                     with signal_blocker:
-                        while True:
-                            for obj in updated_objects:
-                                LOG.info('Updating %s', str(obj))
-                                self.inventory.update(obj, write = True)
-                            for obj in deleted_objects:
-                                LOG.info('Deleting %s', str(obj))
-                                self.inventory.delete(obj, write = True)
+                        for obj in updated_objects:
+                            LOG.debug('Updating %s', str(obj))
+                            self.inventory.update(obj, write = True)
+                        for obj in deleted_objects:
+                            LOG.debug('Deleting %s', str(obj))
+                            self.inventory.delete(obj, write = True)
 
                     updated_objects = []
                     deleted_objects = []
@@ -126,7 +130,7 @@ class Dynamo(object):
                 sql = 'SELECT s.`id`, s.`write_request`, s.`title`, s.`path`, s.`args`, s.`user_id`, u.`name`'
                 sql += ' FROM `action` AS s INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
                 sql += ' WHERE s.`status` = \'new\''
-                if writing:
+                if writing_process[0] is not None:
                     # we don't allow write_requesting executables while there is one running
                     sql += ' AND s.`write_request` = 0'
                 sql += ' ORDER BY s.`timestamp` LIMIT 1'
@@ -166,6 +170,7 @@ class Dynamo(object):
                         self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', 'failed', exec_id)
                         continue
 
+                    queue = multiprocessing.Queue()
                     proc_args += (queue,)
 
                 ## Step 3: Spawn a child process for the script
@@ -178,7 +183,7 @@ class Dynamo(object):
                 proc.start()
 
                 if write_request:
-                    writing_process = proc
+                    writing_process = (proc, proc_args[-1])
 
                 LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
 
@@ -206,11 +211,10 @@ class Dynamo(object):
                 if proc.is_alive():
                     LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
 
-                if proc is writing_process:
-                    queue.close()
-                    writing_process = None
-
                 self.registry.backend.query('UPDATE `action` SET `status` = \'killed\' where `id` = %s', exec_id)
+
+            if writing_process[1] is not None:
+                writing_process[1].close()
 
     def check_write_auth(self, title, user_id, path):
         # check authorization
@@ -261,6 +265,7 @@ class Dynamo(object):
                 # If drain is True, we are calling this function to wait to empty out the queue.
                 # In case the child process fails to put EOM at the end, we time out in 30 seconds.
                 cmd, obj = queue.get(block = drain, timeout = 30)
+                LOG.info('Got %d %s from queue', cmd, str(obj))
             except Queue.Empty:
                 return False
             else:
@@ -332,21 +337,15 @@ class Dynamo(object):
 
         execfile(path + '/exec.py')
 
-        sys.stderr.write('Start sending objects\n')
-
         if queue is not None:
             for obj in self.inventory._updated_objects:
-                sys.stderr.write('Updated object: %s\n' % str(obj))
-                pickle.dumps(obj, -1)
                 try:
                     queue.put((Dynamo.CMD_UPDATE, obj))
                 except:
                     sys.stderr.write('Exception while sending updated %s\n' % str(obj))
                     raise
-                time.sleep(0.5)
 
             for obj in self.inventory._deleted_objects:
-                sys.stderr.write('Deleted object: %s\n' % str(obj))
                 try:
                     queue.put((Dynamo.CMD_DELETE, obj))
                 except:
@@ -355,8 +354,6 @@ class Dynamo(object):
             
             # Put end-of-message
             queue.put((Dynamo.CMD_EOM, None))
-
-        sys.stderr.write('Done sending objects\n')
 
         # Queue stays available on the other end even if we terminate the process
 

@@ -235,14 +235,13 @@ class Detox(object):
                 # there is only one element in the returned list.
                 # Block-level actions are triggered only if the condition does not apply to all blocks.
                 # Sort the evaluation results into the three candidate containers above.
-
                 actions = self.policy.evaluate(replica)
 
                 # Block-level actions come first - take out all blocks that matched some condition.
                 # Remaining block replicas are the ones the dataset-level action applies to.
-
                 for action in actions:
                     matched_line = action.matched_line
+
                     if matched_line is None:
                         condition_id = 0
                     else:
@@ -278,6 +277,8 @@ class Detox(object):
                         unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition)
                         if len(unlinked_replicas) != 0:
                             get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
+
+                                
                             for block_replica in unlinked_replicas:
                                 block_replica.delete_from(repository)
 

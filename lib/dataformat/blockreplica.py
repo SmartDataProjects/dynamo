@@ -99,7 +99,7 @@ class BlockReplica(object):
             pass
         else:
             replica.copy(self)
-            site.update_block_replica(replica)
+            site.update_partitioning(replica)
             updated = True
 
         if check:
@@ -114,9 +114,9 @@ class BlockReplica(object):
         dataset_replica = site.find_dataset_replica(dataset)
         replica = block.find_replica(site, must_find = True)
 
+        site.remove_block_replica(replica)
         dataset_replica.block_replicas.remove(replica)
         block.replicas.remove(replica)
-        site.remove_block_replica(replica)
 
     def write_into(self, store, delete = False):
         if delete:

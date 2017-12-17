@@ -124,7 +124,7 @@ if rolling_update:
         generate_dataset_list(dataset_source, config.dataset_state_file)
     else:
         with open(config.dataset_state_file) as source:
-            with tempfile.NamedTemporaryFile(mode = 'w') as dataset_list:
+            with tempfile.NamedTemporaryFile(mode = 'w', delete = False) as dataset_list:
                 for line in source:
                     if line in datasets_to_update:
                         continue

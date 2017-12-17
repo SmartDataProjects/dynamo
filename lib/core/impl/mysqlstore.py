@@ -325,11 +325,12 @@ class MySQLInventoryStore(InventoryStore):
 
             if dataset_replica is None or dataset is not dataset_replica.dataset or site is not dataset_replica.site:
                 if dataset_replica is not None:
+                    # this is the last dataset_replica
                     # add to dataset and site after filling all block replicas
                     # this does not matter for the dataset, but for the site there is some heavy
                     # computation needed when a replica is added
                     dataset_replica.dataset.replicas.add(dataset_replica)
-                    dataset_replica.site.add_dataset_replica(dataset_replica)
+                    dataset_replica.site.add_dataset_replica(dataset_replica, add_block_replicas = True)
 
                 dataset_replica = DatasetReplica(
                     dataset,
@@ -354,7 +355,7 @@ class MySQLInventoryStore(InventoryStore):
         if dataset_replica is not None:
             # one last bit
             dataset_replica.dataset.replicas.add(dataset_replica)
-            dataset_replica.site.add_dataset_replica(dataset_replica)
+            dataset_replica.site.add_dataset_replica(dataset_replica, add_block_replicas = True)
 
     def save_block(self, block): #override
         dataset_id = self._get_dataset_id(block.dataset)
