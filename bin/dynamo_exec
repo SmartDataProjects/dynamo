@@ -15,7 +15,7 @@ from argparse import ArgumentParser
 parser = ArgumentParser(description = 'Submit one dynamo executable task.')
 parser.add_argument('cmd', metavar = 'CMD', help = 'Executable command')
 parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', help = 'Executable title.')
-parser.add_argument('--synchronous', '-S', action = 'store_true', dest = 'synch', help = 'Wait for the executable to complete.')
+parser.add_argument('--asynchronous', '-A', action = 'store_true', dest = 'asynch', help = 'Do not wait for the executable to complete.')
 parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request write access.')
 parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
 
@@ -23,11 +23,14 @@ args = parser.parse_args()
 sys.argv = []
 
 ## If synchronous execution + work directory provided, wipe out the logs
-if args.synch and args.workdir:
-    with open(args.workdir + '/_stdout', 'w'):
-        pass
-    with open(args.workdir + '/_stderr', 'w'):
-        pass
+if not args.asynch:
+    # check server running?
+
+    if args.workdir:
+        with open(args.workdir + '/_stdout', 'w'):
+            pass
+        with open(args.workdir + '/_stderr', 'w'):
+            pass
 
 ## Submit an executable through the registry front end.
 
@@ -118,7 +121,7 @@ path = task_info['path']
 print 'task id:', task_id
 print 'path:', path
 
-if args.synch:
+if not args.asynch:
     ## Synchronous execution: dynamo_exec will wait until process completion
 
     def tail_follow(source_path, stream, event):

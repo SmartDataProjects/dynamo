@@ -274,7 +274,7 @@ class MySQLInventoryStore(InventoryStore):
                 id_block_map = id_block_maps[dataset_id] = {}
 
             block = Block(
-                Block.translate_name(name),
+                Block.to_internal_name(name),
                 dataset,
                 size,
                 num_files,

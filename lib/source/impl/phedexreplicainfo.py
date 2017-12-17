@@ -76,7 +76,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
             
             for block_entry in dataset_entry['block']:
                 name = block_entry['name']
-                block_name = Block.translate_name(name[name.find('#') + 1:])
+                block_name = Block.to_internal_name(name[name.find('#') + 1:])
 
                 block = Block(
                     block_name,

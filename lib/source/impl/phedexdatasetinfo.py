@@ -139,7 +139,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         """
 
         bname = block_entry['name']
-        block_name = Block.translate_name(bname[bname.find('#') + 1:])
+        block_name = Block.to_internal_name(bname[bname.find('#') + 1:])
         
         block = Block(
             block_name,

@@ -234,6 +234,12 @@ class DynamoInventory(ObjectRepository):
     
             if write:
                 obj.write_into(self._store, delete = True)
+        except (KeyError, ObjectError) as e:
+            # When delete is attempted on a nonexistent object or something linked to a nonexistent object
+            # As this is less alarming, error message is suppressed to debug level.
+            LOG.debug('%s in inventory.delete(%s)' % str(obj), type(e).__name__)
+            # But we'll still raise - it's up to the users to trap this exception.
+            raise
         except:
             LOG.error('Exception in inventory.delete(%s)' % str(obj))
             raise

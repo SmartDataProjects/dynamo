@@ -268,16 +268,23 @@ class Dynamo(object):
         if args:
             sys.argv += args.split()
 
-        # Restart logging
-        logging.shutdown()
-        reload(logging)
+        # Reset logging
+        # This is a rather hacky solution relying perhaps on the implementation internals of
+        # the logging module. It might stop working with changes to the logging.
+        # The assumptions are:
+        #  1. Only the root logger has handlers
+        #  2. All logging.shutdown() does is call flush() and close() over all handlers
+        #     (i.e. calling the two is enough to ensure clean cutoff from all resources)
+        #  3. root_logger.handlers is the only link the root logger has to its handlers
+        root_logger = logging.getLogger()
+        while True:
+            try:
+                handler = root_logger.handlers.pop()
+            except IndexError:
+                break
 
-        # common.interface is loaded by registry - logging still points to the main process
-        import common.interface
-        for name in dir(common.interface):
-            mod = getattr(common.interface, name)
-            if type(mod).__name__ == 'module':
-                reload(mod)
+            handler.flush()
+            handler.close()
 
         # Re-initialize
         #  - inventory store with read-only connection
@@ -301,14 +308,29 @@ class Dynamo(object):
 
         execfile(path + '/exec.py')
 
+        sys.stderr.write('Start sending objects\n')
+
         if queue is not None:
             for obj in self.inventory._updated_objects:
-                queue.put((Dynamo.CMD_UPDATE, obj))
+                sys.stderr.write('Updated object: %s\n' % str(obj))
+                try:
+                    queue.put((Dynamo.CMD_UPDATE, obj))
+                except:
+                    sys.stderr.write('Exception while sending updated %s\n' % str(obj))
+                    raise
+
             for obj in self.inventory._deleted_objects:
-                queue.put((Dynamo.CMD_DELETE, obj))
+                sys.stderr.write('Deleted object: %s\n' % str(obj))
+                try:
+                    queue.put((Dynamo.CMD_DELETE, obj))
+                except:
+                    sys.stderr.write('Exception while sending updated %s\n' % str(obj))
+                    raise
             
             # Put end-of-message
             queue.put((Dynamo.CMD_EOM, None))
+
+        sys.stderr.write('Done sending objects\n')
 
         # Queue stays available on the other end even if we terminate the process
 

@@ -14,9 +14,17 @@ class Block(object):
         return self._dataset
 
     @staticmethod
-    def translate_name(name_str):
+    def to_internal_name(name_str):
         # block name format: [8]-[4]-[4]-[4]-[12] where [n] is an n-digit hex.
         return int(name_str.replace('-', ''), 16)
+
+    @staticmethod
+    def to_real_name(name):
+        full_string = hex(name).replace('0x', '')[:-1] # last character is 'L'
+        if len(full_string) < 32:
+            full_string = '0' * (32 - len(full_string)) + full_string
+
+        return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]        
 
     def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False):
         self._name = name
@@ -31,10 +39,10 @@ class Block(object):
         self.files = None
 
     def __str__(self):
-        return 'Block %s#%s (size=%d, num_files=%d, is_open=%s)' % (self._dataset.name, self.real_name(), self.size, self.num_files, self.is_open)
+        return 'Block %s (size=%d, num_files=%d, is_open=%s)' % (self.full_name(), self.size, self.num_files, self.is_open)
 
     def __repr__(self):
-        return 'Block(translate_name(\'%s\'), %s)' % (self.real_name(), repr(self._dataset))
+        return 'Block(Block.to_internal_name(\'%s\', %s)' % (self.real_name(), repr(self._dataset))
 
     def __eq__(self, other):
         return self._name == other._name and self._dataset.name == other._dataset.name and \
@@ -99,11 +107,7 @@ class Block(object):
         Block._name can be in a converted internal format to save memory. This function returns the proper name.
         """
 
-        full_string = hex(self._name).replace('0x', '')[:-1] # last character is 'L'
-        if len(full_string) < 32:
-            full_string = '0' * (32 - len(full_string)) + full_string
-
-        return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]
+        return Block.to_real_name(self._name)
 
     def full_name(self):
         """

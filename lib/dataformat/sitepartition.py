@@ -18,6 +18,7 @@ class SitePartition(object):
     def __init__(self, site, partition, quota = 0.):
         self._site = site
         self._partition = partition
+        # partition quota in TB
         self.quota = quota
         # {dataset_replica: set(block_replicas) or None (if all blocks are in)}
         self.replicas = {}

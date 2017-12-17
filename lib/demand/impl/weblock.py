@@ -156,7 +156,7 @@ class WebReplicaLock(object):
                         if block_real_name is None:
                             blocks = list(dataset.blocks)
                         else:
-                            block = dataset.find_block(Block.translate_name(block_real_name))
+                            block = dataset.find_block(Block.to_internal_name(block_real_name))
                             if block is None:
                                 logger.debug('Unknown block %s of %s in %s', block_real_name, dataset_name, source.url_base)
                                 continue

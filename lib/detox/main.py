@@ -461,7 +461,7 @@ class Detox(object):
         @param cycle_number  Cycle number.
         @param inventory     Global (original) inventory
         @param deleted       {dataset_replica: {condition_id: set(block_replicas)}}
-        @param comment       Comment to be recorded in the history DB
+        @param comment       Comment to be passed to the deletion interface.
         """
 
         signal_blocker = SignalBlocker(logger = LOG)
@@ -495,9 +495,6 @@ class Detox(object):
                 total_size = 0
     
                 for deletion_id, (approved, site, items) in deletion_mapping.iteritems():
-                    if not approved:
-                        continue
-    
                     # Delete ownership of block replicas in the approved deletions.
                     # Because replicas in partition_repository are modified already during the iterative
                     # deletion, we find the original replicas from the global inventory.
@@ -509,20 +506,20 @@ class Detox(object):
                             dataset = inventory.datasets[item.name]
                             replica = dataset.find_replica(site.name)
                             for block_replica in replica.block_replicas:
-                                block_replica.group = inventory.groups[None]
-                                inventory.update(block_replica)
                                 size += block_replica.size
-    
-                            datasets.add(dataset)
+                                if approved:
+                                    block_replica.group = inventory.groups[None]
+                                    inventory.update(block_replica)
                         else:
                             dataset = inventory.datasets[item.dataset.name]
                             block = dataset.find_block(item.name)
                             replica = block.find_replica(site.name)
-                            replica.group = inventory.groups[None]
-                            inventory.update(replica)
                             size += replica.size
-    
-                            datasets.add(dataset)
+                            if approved:
+                                replica.group = inventory.groups[None]
+                                inventory.update(replica)
+
+                        datasets.add(dataset)
     
                     self.history.make_deletion_entry(cycle_number, site, deletion_id, approved, datasets, size)
                     total_size += size
@@ -534,7 +531,7 @@ class Detox(object):
         @param cycle_number  Cycle number.
         @param inventory     Global (original) inventory
         @param reowned       {dataset_replica: {condition_id: set(block_replicas)}}
-        @param comment       Comment to be recorded in the history DB
+        @param comment       Comment to be passed to the copy interface.
         """
 
         # organize the replicas into sites and set up ownership change
@@ -571,13 +568,13 @@ class Detox(object):
                         clone_replica = item.find_replica(site)
                         for clone_block_replica in clone_replica.block_replicas:
                             block_replica = replica.find_block_replica(clone_block_replica.block.name)
-
                             block_replica.group = inventory.groups[clone_block_replica.group.name]
+
                             inventory.update(block_replica)
                     else:
                         dataset = inventory.datasets[item.dataset.name]
                         block = dataset.find_block(item.name)
                         replica = block.find_replica(site.name)
-
                         replica.group = inventory.groups[item.group.name]
+
                         inventory.update(replica)

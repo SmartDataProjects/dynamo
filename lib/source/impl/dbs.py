@@ -36,7 +36,7 @@ class DBS(DatasetInfoSourceInterface):
 
                 block_records = self._make_request('blocksummaries', ['dataset=' + ds_record['dataset'], 'detail=True'])
                 for block_record in block_records:
-                    block_name = Block.translate_name(block_record['block_name'].replace(dataset.name + '#', ''))
+                    block_name = Block.to_internal_name(block_record['block_name'].replace(dataset.name + '#', ''))
 
                     if block_record['open_for_writing'] == 1:
                         is_open = True

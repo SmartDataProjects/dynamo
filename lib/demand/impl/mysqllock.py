@@ -64,7 +64,7 @@ class MySQLReplicaLock(object):
                             blocks.add(block)
 
                 else:
-                    block = dataset.find_block(Block.translate_name(block_pattern))
+                    block = dataset.find_block(Block.to_internal_name(block_pattern))
                     if block is None:
                         logger.debug('Cannot lock unknown block %s#%s', dataset_pattern, block_pattern)
                         continue
