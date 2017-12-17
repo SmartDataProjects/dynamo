@@ -198,23 +198,28 @@ class DynamoInventory(ObjectRepository):
     def update(self, obj, write = False):
         """
         Update an object. Only update the member values of the immediate object.
-        When calling from a subprocess, pass the updated clone to _updated_objects.
+        When calling from a subprocess, pass down the unlinked clone of the argument
+        to _updated_objects.
         @param obj    Object to embed into this inventory.
         @param write  Write updated object to persistent store.
         """
 
         try:
             embedded_clone, updated = obj.embed_into(self, check = True)
-    
-            if updated:
-                if self._updated_objects is not None:
-                    self._updated_objects.append(embedded_clone)
-        
-                if write:
-                    obj.write_into(self._store)
         except:
-            LOG.error('Exception in inventory.update(%s)' % str(obj))
+            LOG.error('Exception in inventory.update(%s)', str(obj))
             raise
+
+        if updated:
+            if self._updated_objects is not None:
+                self._updated_objects.append(obj.unlinked_clone())
+    
+            if write:
+                try:
+                    obj.write_into(self._store)
+                except:
+                    LOG.error('Exception writing %s to inventory store', str(obj))
+                    raise
 
         return embedded_clone
 
@@ -228,12 +233,6 @@ class DynamoInventory(ObjectRepository):
         
         try:
             obj.delete_from(self)
-            
-            if self._deleted_objects is not None:
-                self._deleted_objects.append(obj.unlinked_clone())
-    
-            if write:
-                obj.write_into(self._store, delete = True)
         except (KeyError, ObjectError) as e:
             # When delete is attempted on a nonexistent object or something linked to a nonexistent object
             # As this is less alarming, error message is suppressed to debug level.
@@ -243,6 +242,16 @@ class DynamoInventory(ObjectRepository):
         except:
             LOG.error('Exception in inventory.delete(%s)' % str(obj))
             raise
+
+        if self._deleted_objects is not None:
+            self._deleted_objects.append(obj.unlinked_clone())
+
+        if write:
+            try:
+                obj.write_into(self._store, delete = True)
+            except:
+                LOG.error('Exception writing deletion of %s to inventory store', str(obj))
+                raise
 
     def clear_update(self):
         """

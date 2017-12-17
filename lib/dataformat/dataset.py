@@ -91,7 +91,14 @@ class Dataset(object):
         return not self.__eq__(other)
 
     def __getstate__(self):
-        return dict((s, getattr(self, s)) for s in Dataset.__slots__ if s != 'demand')
+        state = dict((s, getattr(self, s)) for s in Dataset.__slots__ if s != 'demand')
+        state['demand'] = {}
+        return state
+
+    def __setstate__(self, state):
+        # Need this function because Dataset does not have __dict__
+        for key, value in state.iteritems():
+            setattr(self, key, value)
 
     def copy(self, other):
         self.size = other.size

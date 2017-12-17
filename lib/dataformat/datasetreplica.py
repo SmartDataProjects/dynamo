@@ -62,7 +62,7 @@ class DatasetReplica(object):
             replica = DatasetReplica(dataset, site)
     
             dataset.replicas.add(replica)
-            site.add_dataset_replica(replica)
+            site.add_dataset_replica(replica, add_block_replicas = False)
 
             updated = True
         elif check and (replica is self or replica == self):

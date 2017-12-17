@@ -385,12 +385,11 @@ class Dealer(object):
                             dataset_list.add(item.dataset)
                             if approved:
                                 if site.find_dataset_replica(item.dataset) is None:
-                                    replica = new_replica_from_blocks([item], site, self.policy.group)
-                                    # block replica also gets embedded here
+                                    replica = new_replica_from_dataset(item.dataset, site, self.policy.group)
                                     inventory.update(replica)
-                                else:
-                                    replica = new_replica_from_block(item, site, self.policy.group)
-                                    inventory.update(replica)
+
+                                replica = new_replica_from_block(item, site, self.policy.group)
+                                inventory.update(replica)
     
                     self.history.make_copy_entry(cycle_number, site, copy_id, approved, dataset_list, size)
 

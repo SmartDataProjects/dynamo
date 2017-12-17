@@ -53,17 +53,22 @@ class Dynamo(object):
         Infinite-loop main body of the daemon.
         Step 1: Poll the registry for one uploaded script.
         Step 2: If a script is found, check the authorization of the script.
-        Step 3: Spawn a child process for the script
-        Step 4: Collect completed child processes.
-        Step 5: Sleep for N seconds.
+        Step 3: Spawn a child process for the script.
+        Step 4: Collect updates from the write-enabled child process.
+        Step 5: Collect completed child processes.
+        Step 6: Sleep for N seconds.
         """
 
         LOG.info('Started dynamo daemon.')
 
         child_processes = []
 
-        # There can only be one child process with write access at a time.
-        writing = False
+        # There can only be one child process with write access at a time. We pass it a Queue to communicate back.
+        queue = multiprocessing.Queue()
+        writing_process = None
+        # We need to buffer updated and deleted objects from the child process to avoid filling up the pipe
+        updated_objects = []
+        deleted_objects = []
 
         signal_blocker = SignalBlocker([signal.SIGINT, signal.SIGTERM], logger = LOG)
 
@@ -77,14 +82,20 @@ class Dynamo(object):
                 self.registry.backend.query('UNLOCK TABLES')
 
                 ## Step 4 (easier to do here because we use "continue"s)
+                if writing_process is not None:
+                    self.collect_updates(queue, updated_objects, deleted_objects)
+
+                ## Step 5 (easier to do here because we use "continue"s)
                 completed_processes = self.collect_processes(child_processes)
                 
-                for (_, _, _, _, queue), status in completed_processes:
-                    if queue is None:
+                for proc, status in completed_processes:
+                    if proc is not writing_process:
                         continue
 
-                    # This was a write-enabled process and it completed
-                    writing = False
+                    writing_process = None
+
+                    # drain the queue
+                    self.collect_updates(queue, updated_objects, deleted_objects, drain = True)
 
                     if status != 'done':
                         continue
@@ -93,22 +104,17 @@ class Dynamo(object):
                     # Block system signals and get update done
                     with signal_blocker:
                         while True:
-                            try:
-                                # In case the child process fails to put EOM at the end, we time out in 30 seconds.
-                                cmd, obj = queue.get(block = False, timeout = 30)
-                            except Queue.Empty:
-                                break
-                            else:
-                                if cmd == Dynamo.CMD_UPDATE:
-                                    LOG.info('Updating %s', str(obj))
-                                    self.inventory.update(obj, write = True)
-                                elif cmd == Dynamo.CMD_DELETE:
-                                    LOG.info('Deleting %s', str(obj))
-                                    self.inventory.delete(obj, write = True)
-                                elif cmd == Dynamo.CMD_EOM:
-                                    break
+                            for obj in updated_objects:
+                                LOG.info('Updating %s', str(obj))
+                                self.inventory.update(obj, write = True)
+                            for obj in deleted_objects:
+                                LOG.info('Deleting %s', str(obj))
+                                self.inventory.delete(obj, write = True)
 
-                ## Step 5 (easier to do here because we use "continue"s)
+                    updated_objects = []
+                    deleted_objects = []
+
+                ## Step 6 (easier to do here because we use "continue"s)
                 time.sleep(sleep_time)
 
                 ## Step 1: Poll
@@ -150,6 +156,8 @@ class Dynamo(object):
 
                 LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
 
+                proc_args = (path, args)
+
                 if write_request:
                     if not self.check_write_auth(title, user_id, path):
                         LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
@@ -158,30 +166,28 @@ class Dynamo(object):
                         self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', 'failed', exec_id)
                         continue
 
-                    queue = multiprocessing.Queue()
-
-                    writing = True
-
-                else:
-                    queue = None
+                    proc_args += (queue,)
 
                 ## Step 3: Spawn a child process for the script
                 self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'run', exec_id)
 
-                proc = multiprocessing.Process(target = self._run_one, name = title, args = (path, args, queue))
-                child_processes.append((exec_id, proc, user_name, path, queue))
+                proc = multiprocessing.Process(target = self._run_one, name = title, args = proc_args)
+                child_processes.append((exec_id, proc, user_name, path))
 
                 proc.daemon = True
                 proc.start()
 
+                if write_request:
+                    writing_process = proc
+
                 LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
 
         except KeyboardInterrupt:
-            LOG.info('Main process was interrupted.')
+            LOG.info('Server process was interrupted.')
 
         except:
             # log the exception
-            LOG.warning('Exception in main process. Terminating all child processes.')
+            LOG.warning('Exception in server process. Terminating all child processes.')
             raise
 
         finally:
@@ -193,15 +199,16 @@ class Dynamo(object):
 
             self.registry.backend.query('UNLOCK TABLES')
 
-            for exec_id, proc, user_name, path, queue in child_processes:
+            for exec_id, proc, user_name, path in child_processes:
                 LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)
                 proc.terminate()
                 proc.join(5)
                 if proc.is_alive():
                     LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
 
-                if queue is not None:
+                if proc is writing_process:
                     queue.close()
+                    writing_process = None
 
                 self.registry.backend.query('UPDATE `action` SET `status` = \'killed\' where `id` = %s', exec_id)
 
@@ -222,7 +229,7 @@ class Dynamo(object):
 
         ichild = 0
         while ichild != len(child_processes):
-            exec_id, proc, user_name, path, _ = child_processes[ichild]
+            exec_id, proc, user_name, path = child_processes[ichild]
 
             status = 'done'
 
@@ -242,13 +249,29 @@ class Dynamo(object):
                 LOG.info('Executable %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, status)
 
                 child_proc = child_processes.pop(ichild)
-                completed_processes.append((child_proc, status))
+                completed_processes.append((child_proc[1], status))
 
                 self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', status, exec_id)
 
         return completed_processes
+
+    def collect_updates(self, queue, updated_objects, deleted_objects, drain = False):
+        while True:
+            try:
+                # If drain is True, we are calling this function to wait to empty out the queue.
+                # In case the child process fails to put EOM at the end, we time out in 30 seconds.
+                cmd, obj = queue.get(block = drain, timeout = 30)
+            except Queue.Empty:
+                return False
+            else:
+                if cmd == Dynamo.CMD_UPDATE:
+                    updated_objects.append(obj)
+                elif cmd == Dynamo.CMD_DELETE:
+                    deleted_objects.append(obj)
+                elif cmd == Dynamo.CMD_EOM:
+                    return True
         
-    def _run_one(self, path, args, queue):
+    def _run_one(self, path, args, queue = None):
         ## Ignore SIGINT - see note above proc.terminate()
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 

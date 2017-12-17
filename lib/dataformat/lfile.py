@@ -56,11 +56,14 @@ class File(object):
         return not self.__eq__(other)
 
     def __getstate__(self):
-        # don't export _directory_id to pickle (use getnewargs)
-        return {'_basename': self._basename, '_block': self._block, 'size': self.size}
-
-    def __getnewargs__(self):
+        # if __setstate__ is given, __getstate__ can choose to export data in any format
         return (self.lfn, self._block, self.size)
+
+    def __setstate__(self, state):
+        self._directory_id = File.get_directory_id(state[0])
+        self._basename = File.get_basename(state[0])
+        self._block = state[1]
+        self.size = state[2]
 
     def copy(self, other):
         if self._block.full_name() != other._block.full_name():

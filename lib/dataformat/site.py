@@ -200,22 +200,23 @@ class Site(object):
     def dataset_replicas(self):
         return self._dataset_replicas.itervalues()
 
-    def add_dataset_replica(self, replica):
+    def add_dataset_replica(self, replica, add_block_replicas = True):
         self._dataset_replicas[replica.dataset] = replica
 
-        for partition, site_partition in self.partitions.iteritems():
-            block_replicas = set()
-            for block_replica in replica.block_replicas:
-                if partition.contains(block_replica):
-                    block_replicas.add(block_replica)
-
-            if len(block_replicas) == 0:
-                continue
-
-            if block_replicas == replica.block_replicas:
-                site_partition.replicas[replica] = None
-            else:
-                site_partition.replicas[replica] = block_replicas
+        if add_block_replicas:
+            for partition, site_partition in self.partitions.iteritems():
+                block_replicas = set()
+                for block_replica in replica.block_replicas:
+                    if partition.contains(block_replica):
+                        block_replicas.add(block_replica)
+    
+                if len(block_replicas) == 0:
+                    continue
+    
+                if block_replicas == replica.block_replicas:
+                    site_partition.replicas[replica] = None
+                else:
+                    site_partition.replicas[replica] = block_replicas
 
     def add_block_replica(self, replica):
         # this function should be called automatically to avoid integrity errors

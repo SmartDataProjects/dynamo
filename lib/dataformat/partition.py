@@ -45,7 +45,12 @@ class Partition(object):
         return self._name != other._name
 
     def __getstate__(self):
-        return {'_name': self._name, '_subpartitions': self._subpartitions, '_parent': self._parent}
+        return {'_name': self._name, '_subpartitions': self._subpartitions, '_parent': self._parent, '_condition': None}
+
+    def __setstate__(self, state):
+        # Need this function because Partition does not have __dict__
+        for key, value in state.iteritems():
+            setattr(self, key, value)
 
     def copy(self, other):
         pass
