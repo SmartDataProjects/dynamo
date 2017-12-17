@@ -74,7 +74,7 @@ class Dataset(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset(%s, size=%d, num_files=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
+        return 'Dataset %s (size=%d, num_files=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
             (self._name, self.size, self.num_files, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
             str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), \
             len(self.blocks), replica_sites)

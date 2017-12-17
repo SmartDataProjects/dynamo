@@ -13,6 +13,7 @@ from common.control import SignalBlocker
 import core.executable
 
 LOG = logging.getLogger(__name__)
+CHANGELOG = logging.getLogger('changelog')
 
 class Dynamo(object):
     """Main daemon class."""
@@ -109,10 +110,10 @@ class Dynamo(object):
                     ## TODO We want these log lines to be at INFO level but logged to a separate file
                     with signal_blocker:
                         for obj in updated_objects:
-                            LOG.debug('Updating %s', str(obj))
+                            CHANGELOG.info('Updating %s', str(obj))
                             self.inventory.update(obj, write = True)
                         for obj in deleted_objects:
-                            LOG.debug('Deleting %s', str(obj))
+                            CHANGELOG.info('Deleting %s', str(obj))
                             self.inventory.delete(obj, write = True)
 
                     updated_objects = []
@@ -265,7 +266,6 @@ class Dynamo(object):
                 # If drain is True, we are calling this function to wait to empty out the queue.
                 # In case the child process fails to put EOM at the end, we time out in 30 seconds.
                 cmd, obj = queue.get(block = drain, timeout = 30)
-                LOG.info('Got %d %s from queue', cmd, str(obj))
             except Queue.Empty:
                 return False
             else:

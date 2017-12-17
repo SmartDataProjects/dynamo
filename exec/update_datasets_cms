@@ -5,6 +5,7 @@ import logging
 import time
 import tempfile
 import shutil
+import sqlite3
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update datasets, blocks, and files information.')
@@ -58,11 +59,26 @@ dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 from dataformat import Dataset
 
 ## Routine to get the list of every dataset that ever existed
-def generate_dataset_list(dataset_source, state_file):
-    all_datasets = dataset_source.get_dataset_names(include = ['/*/*/*'])
-    with open(state_file, 'w') as dataset_list:
-        for dataset in all_datasets:
-            dataset_list.write(dataset + '\n')
+def generate_dataset_list(dataset_source, file_path):
+    global sqlite3
+
+    all_datasets = dataset_source.get_dataset_names(include = ['/*/RunIIFall17*/*'])
+
+    try:
+        os.unlink(file_path)
+    except OSError:
+        pass
+
+    state_db = sqlite3.connect(file_path)
+    state_db.execute('CREATE TABLE `datasets` (`id` INTEGER NOT NULL PRIMARY KEY, `name` TEXT NOT NULL)')
+
+    sql = 'INSERT INTO `datasets` (`name`) VALUES (?)'
+    cursor = state_db.cursor()
+    for dataset in all_datasets:
+        cursor.execute(sql, (dataset,))
+
+    cursor.close()
+    state_db.close()
 
 ## 1. Pick up datasets to inquire
 
@@ -76,14 +92,13 @@ if rolling_update:
         LOG.info('List of dataset names not found. Generating a new list.')
         generate_dataset_list(dataset_source, config.dataset_state_file)
 
-    with open(config.dataset_state_file) as source:
-        for line in source:
-            datasets_to_update.append(line.strip())
-            
-            if len(datasets_to_update) == args.num_datasets:
-                break
-        else:
-            list_exhausted = True
+    state_db = sqlite3.connect(config.dataset_state_file)
+    cursor = state_db.cursor()
+    for row in cursor.execute('SELECT `name` FROM `datasets` ORDER BY `id` LIMIT ?', (args.num_datasets,)):
+        datasets_to_update.append(str(row[0]))
+
+    cursor.close()
+    state_db.close()
 
 else:
     datasets_to_update = dataset_source.get_dataset_names(include = [args.dataset])
@@ -96,7 +111,10 @@ for dataset_name in datasets_to_update:
     except KeyError:
         inventory_dataset = Dataset(dataset_name)
 
-    LOG.debug('Updating %s', dataset_name)
+    if rolling_update:
+        LOG.info('Updating %s', dataset_name)
+    else:
+        LOG.debug('Updating %s', dataset_name)
 
     source_dataset = dataset_source.get_dataset(dataset_name)
     if source_dataset is None:
@@ -120,20 +138,18 @@ for dataset_name in datasets_to_update:
 ## 3. (If rolling update) remove updated datasets from the list
 
 if rolling_update:
-    if list_exhausted:
+    LOG.info('Updating the dataset list.')
+
+    state_db = sqlite3.connect(config.dataset_state_file)
+    cursor = state_db.cursor()
+    cursor.execute('DELETE FROM `datasets` WHERE `id` IN (SELECT `id` FROM `datasets` ORDER BY `id` LIMIT ?)', (args.num_datasets,))
+    result = cursor.execute('SELECT COUNT(*) FROM `datasets`')
+    count = next(result)[0]
+    cursor.close()
+    state_db.close()
+
+    if count == 0:
+        LOG.info('Reached the end of dataset list. Generating new.')
         generate_dataset_list(dataset_source, config.dataset_state_file)
-    else:
-        with open(config.dataset_state_file) as source:
-            with tempfile.NamedTemporaryFile(mode = 'w', delete = False) as dataset_list:
-                for line in source:
-                    if line in datasets_to_update:
-                        continue
-
-                    dataset_list.write(line)
-
-                tmp_name = dataset_list.name
-        
-        os.unlink(config.dataset_state_file)
-        shutil.move(tmp_name, config.dataset_state_file)
 
 LOG.info('Dataset update completed.')

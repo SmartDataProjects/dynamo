@@ -39,7 +39,7 @@ log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 LOG = logging.getLogger()
 LOG.setLevel(log_level)
 if config.logging.get('path', ''):
-    log_handler = logging.handlers.RotatingFileHandler(config.logging.path, maxBytes = 1000000, backupCount = 100)
+    log_handler = logging.handlers.RotatingFileHandler(config.logging.path + '/server.log', maxBytes = 1000000, backupCount = 100)
 else:
     log_handler = logging.StreamHandler()
 LOG.addHandler(log_handler)
@@ -53,6 +53,17 @@ LOG.critical('''
 ''')
 
 log_handler.setFormatter(logging.Formatter(fmt = log_format))
+
+# Logger specific for object update reports from the server
+changelog = logging.getLogger('changelog')
+changelog.setLevel(logging.INFO)
+if config.logging.get('path', ''):
+    log_handler = logging.handlers.RotatingFileHandler(config.logging.path + '/updates.log', maxBytes = 1000000, backupCount = 100)
+else:
+    log_handler = logging.StreamHandler()
+log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
+changelog.addHandler(log_handler)
+changelog.propagate = False
 
 ## If in production mode, set effective user id to config.user
 if not debug:

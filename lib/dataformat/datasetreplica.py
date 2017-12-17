@@ -19,10 +19,8 @@ class DatasetReplica(object):
         self.block_replicas = set()
 
     def __str__(self):
-        return 'DatasetReplica {site}:{dataset} (' \
-            '{block_replicas_size} block_replicas)'.format(
-                site = self._site.name, dataset = self._dataset.name,
-                block_replicas_size = len(self.block_replicas))
+        return 'DatasetReplica %s:%s (%d block_replicas)' % \
+            (self._site.name, self._dataset.name, len(self.block_replicas))
 
     def __repr__(self):
         return 'DatasetReplica(%s, %s)' % (repr(self._dataset), repr(self._site))
