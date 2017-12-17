@@ -109,4 +109,4 @@ class SitePartition(object):
                 else:
                     total_size += sum(br.block.size for br in block_replicas)
 
-            return total_size / self.quota
+            return total_size / (self.quota * 1.e+12)

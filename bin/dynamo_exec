@@ -27,6 +27,11 @@ if not args.asynch:
     # check server running?
 
     if args.workdir:
+        try:
+            os.makedirs(args.workdir)
+        except OSError:
+            pass
+        os.chmod(args.workdir, 0777)
         with open(args.workdir + '/_stdout', 'w'):
             pass
         with open(args.workdir + '/_stderr', 'w'):
@@ -124,32 +129,38 @@ print 'path:', path
 if not args.asynch:
     ## Synchronous execution: dynamo_exec will wait until process completion
 
-    def tail_follow(source_path, stream, event):
+    def tail_follow(source_path, stream, lock, stop_reading):
         ## tail -f emulation
         while True:
-            if not os.path.exists(source_path):
-                time.sleep(0.5)
-                if event.is_set():
+            if os.path.exists(source_path):
+                break
+
+            if stop_reading.is_set():
+                return
+
+            time.sleep(0.5)
+
+        with open(source_path) as source:
+            lock.acquire()
+            while True:
+                if stop_reading.is_set():
+                    lock.release()
                     return
 
-                continue
-
-            with open(source_path) as source:
-                while True:
-                    if event.is_set():
-                        return
-
-                    pos = source.tell()
-                    line = source.readline()
-                    if not line:
-                        source.seek(pos)
-                        time.sleep(0.5)
-                    else:
-                        stream.write(line)
+                pos = source.tell()
+                line = source.readline()
+                if not line:
+                    source.seek(pos)
+                    lock.release()
+                    time.sleep(0.5)
+                    lock.acquire()
+                else:
+                    stream.write(line)
 
     stop_reading = threading.Event()
-    stdout_thread = threading.Thread(target = tail_follow, name = 'stdout', args = (path + '/_stdout', sys.stdout, stop_reading))
-    stderr_thread = threading.Thread(target = tail_follow, name = 'stderr', args = (path + '/_stderr', sys.stderr, stop_reading))
+    lock = threading.Lock()
+    stdout_thread = threading.Thread(target = tail_follow, name = 'stdout', args = (path + '/_stdout', sys.stdout, lock, stop_reading))
+    stderr_thread = threading.Thread(target = tail_follow, name = 'stderr', args = (path + '/_stderr', sys.stderr, lock, stop_reading))
     stdout_thread.daemon = True
     stderr_thread.daemon = True
     stdout_thread.start()

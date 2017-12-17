@@ -351,6 +351,7 @@ class MySQLInventoryStore(InventoryStore):
             )
 
             dataset_replica.block_replicas.add(block_replica)
+            block.replicas.add(block_replica)
 
         if dataset_replica is not None:
             # one last bit

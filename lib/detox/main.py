@@ -515,6 +515,10 @@ class Detox(object):
                             dataset = inventory.datasets[item.dataset.name]
                             block = dataset.find_block(item.name)
                             replica = block.find_replica(site.name)
+                            if replica is None:
+                                LOG.info('Could not find %s:%s in inventory', site.name, block.full_name())
+                                raise RuntimeError()
+
                             size += replica.size
                             if approved:
                                 replica.group = inventory.groups[None]

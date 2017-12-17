@@ -1,8 +1,4 @@
-import re
-import fnmatch
 import logging
-import collections
-import subprocess
 
 import policy.variables as variables
 import policy.attrs as attrs

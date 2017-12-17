@@ -8,7 +8,7 @@ import fnmatch
 
 from argparse import ArgumentParser
 
-parser = ArgumentParser(description = 'Dynamo')
+parser = ArgumentParser(description = 'Detox')
 parser.add_argument('--policy', '-p', metavar = 'FILE', dest = 'policy', required = True, help = 'Policy files.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
 parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')

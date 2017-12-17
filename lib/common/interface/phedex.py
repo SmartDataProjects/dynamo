@@ -11,6 +11,8 @@ class PhEDEx(RESTService):
     def __init__(self, config):
         RESTService.__init__(self, config)
 
+        self.dbs_url = config.dbs_url
+
     def make_request(self, resource = '', options = [], method = GET, format = 'url', retry_on_error = True): #override
         LOG.debug('%s %s', resource, options)
         response = RESTService.make_request(self, resource, options = options, method = method, format = format, retry_on_error = retry_on_error)
@@ -43,7 +45,7 @@ class PhEDEx(RESTService):
 
         # we should consider using an actual xml tool
         xml = '<data version="2.0">{nl}'
-        xml += '{i1}<dbs name="%s">{nl}' % config.dbs.url_base
+        xml += '{i1}<dbs name="%s">{nl}' % self.dbs_url
 
         for dataset, blocks in file_catalogs.iteritems():
             xml += '{i2}<dataset name="%s" is-open="%s">{nl}' % (dataset.name, ('y' if dataset.is_open else 'n'))

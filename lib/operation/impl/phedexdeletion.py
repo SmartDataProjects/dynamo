@@ -6,7 +6,7 @@ import collections
 from operation.deletion import DeletionInterface
 from common.interface.webservice import POST
 from common.interface.phedex import PhEDEx
-from dataformat import DatasetReplica, BlockReplica
+from dataformat import DatasetReplica, BlockReplica, Site
 
 LOG = logging.getLogger(__name__)
 
