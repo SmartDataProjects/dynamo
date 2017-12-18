@@ -71,7 +71,7 @@ if not debug:
 
 ## Catch SIGTERM and raise a KeyboardInterrupt (so kill to the server process
 ## raises the exception)
-from common.signal import SignalConverter
+from utils.signal import SignalConverter
 
 signal_converter = SignalConverter(logger = LOG)
 signal_converter.set(signal.SIGTERM)

@@ -301,19 +301,19 @@ class Dynamo(object):
         # This is a rather hacky solution relying perhaps on the implementation internals of
         # the logging module. It might stop working with changes to the logging.
         # The assumptions are:
-        #  1. Only the root logger has handlers
+        #  1. All loggers can be reached through Logger.manager.loggerDict
         #  2. All logging.shutdown() does is call flush() and close() over all handlers
         #     (i.e. calling the two is enough to ensure clean cutoff from all resources)
         #  3. root_logger.handlers is the only link the root logger has to its handlers
-        root_logger = logging.getLogger()
-        while True:
-            try:
-                handler = root_logger.handlers.pop()
-            except IndexError:
-                break
-
-            handler.flush()
-            handler.close()
+        for logger in logging.Logger.manager.loggerDict.values():
+            while True:
+                try:
+                    handler = logger.handlers.pop()
+                except IndexError:
+                    break
+    
+                handler.flush()
+                handler.close()
 
         # Re-initialize
         #  - inventory store with read-only connection
