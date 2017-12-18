@@ -7,9 +7,9 @@ from core.inventory import ObjectRepository
 from dataformat import Dataset
 from detox.detoxpolicy import DetoxPolicy
 from detox.detoxpolicy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
-from demand.demand import DemandManager
 import operation.impl
 import history.impl
+import demand.plugins
 from utils.signal import SignalBlocker
 
 LOG = logging.getLogger(__name__)
@@ -24,8 +24,6 @@ class Detox(object):
         self.deletion_op = getattr(operation.impl, config.deletion_op.module)(config.deletion_op.config)
         self.copy_op = getattr(operation.impl, config.copy_op.module)(config.copy_op.config)
         self.history = getattr(history.impl, config.history.module)(config.history.config)
-
-        self.demand_manager = DemandManager(config.demand)
 
         self.policy = DetoxPolicy(config)
 
