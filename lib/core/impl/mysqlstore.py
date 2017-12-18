@@ -217,7 +217,7 @@ class MySQLInventoryStore(InventoryStore):
                 continue
 
             partition = inventory.partitions[partition_name]
-            site.partitions[partition].set_quota(storage)
+            site.partitions[partition].set_quota(storage * 1.e+12)
 
     def _load_datasets(self, inventory, dataset_names, id_dataset_map):
         sql = 'SELECT d.`id`, d.`name`, d.`size`, d.`num_files`, d.`status`+0, d.`on_tape`, d.`data_type`+0, s.`cycle`, s.`major`, s.`minor`, s.`suffix`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
@@ -544,7 +544,7 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' ON DUPLICATE KEY UPDATE '
         sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
-        self._mysql.query(sql, site_id, partition_id, site_partition.quota)
+        self._mysql.query(sql, site_id, partition_id, site_partition.quota * 1.e-12)
 
     def delete_sitepartition(self, site_partition): #override
         site_id = self._get_site_id(site_partition.site)

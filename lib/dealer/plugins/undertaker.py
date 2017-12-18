@@ -10,7 +10,7 @@ class Undertaker(BaseHandler):
         BaseHandler.__init__(self, 'Undertaker')
 
     def get_requests(self, inventory, history, policy): # override
-        latest_runs = history.get_deletion_runs(policy.partition.name)
+        latest_runs = history.get_deletion_runs(policy.partition_name)
         if len(latest_runs) == 0:
             return []
 

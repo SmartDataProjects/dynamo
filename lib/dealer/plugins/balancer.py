@@ -13,7 +13,7 @@ class BalancingHandler(BaseHandler):
         self.target_reasons = dict(config.target_reasons)
 
     def get_requests(self, inventory, history, policy):
-        latest_runs = history.get_deletion_runs(policy.partition.name)
+        latest_runs = history.get_deletion_runs(policy.partition_name)
         if len(latest_runs) == 0:
             return []
 
@@ -31,7 +31,7 @@ class BalancingHandler(BaseHandler):
         for site in inventory.sites.values():
             quota = site.partitions[partition].quota
 
-            LOG.debug('Site %s quota %f', site.name, quota)
+            LOG.debug('Site %s quota %f TB', site.name, quota * 1.e-12)
 
             if quota <= 0:
                 # if the site has 0 or infinite quota, don't consider in balancer
@@ -45,7 +45,7 @@ class BalancingHandler(BaseHandler):
                 continue
 
             protections = [(ds_name, size, reason) for ds_name, size, decision, reason in decisions if decision == 'protect']
-            protected_fraction = sum(size for ds_name, size, reason in protections) * 1.e-12 / quota
+            protected_fraction = sum(size for ds_name, size, reason in protections) / quota
 
             LOG.debug('Site %s protected fraction %f', site.name, protected_fraction)
 
@@ -112,7 +112,7 @@ class BalancingHandler(BaseHandler):
             request.append(dataset)
 
             size = dataset.size
-            protected_fractions[maxsite] -= (size * 1.e-12) / maxsite.partitions[partition].quota
+            protected_fractions[maxsite] -= size / maxsite.partitions[partition].quota
             total_size += size
 
         return request

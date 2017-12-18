@@ -426,44 +426,46 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_get_deletion_runs(self, partition, first, last): #override
         result = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
         if len(result) == 0:
-            return 0
+            return []
 
         partition_id = result[0]
 
-        if first < 0:
-            sql = 'SELECT MAX(`id`)'
-        else:
-            sql = 'SELECT `id`'
-
-        sql += ' FROM `runs` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\')' % partition_id
+        sql = 'SELECT `id` FROM `runs` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\')' % partition_id
 
         if first >= 0:
             sql += ' AND `id` >= %d' % first
         if last >= 0:
             sql += ' AND `id` <= %d' % last
 
-        return self._mysql.query(sql)
+        sql += ' ORDER BY `id` ASC'
+
+        result = self._mysql.query(sql)
+
+        if first < 0 and len(result) > 1:
+            result = result[-1:]
+
+        return result
 
     def _do_get_copy_runs(self, partition, first, last): #override
         result = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
         if len(result) == 0:
-            return 0
+            return []
 
         partition_id = result[0]
 
-        if first < 0:
-            sql = 'SELECT MAX(`id`)'
-        else:
-            sql = 'SELECT `id`'
-
-        sql += ' FROM `runs` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'copy\', \'copy_test\')' % partition_id
+        sql = 'SELECT `id` FROM `runs` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'copy\', \'copy_test\')' % partition_id
 
         if first >= 0:
             sql += ' AND `id` >= %d' % first
         if last >= 0:
             sql += ' AND `id` <= %d' % last
 
-        return self._mysql.query(sql)
+        sql += ' ORDER BY `id` ASC'
+
+        if first < 0 and len(result) > 1:
+            result = result[-1:]
+
+        return result
 
     def _do_get_run_timestamp(self, run_number): #override
         result = self._mysql.query('SELECT UNIX_TIMESTAMP(`time_start`) FROM `runs` WHERE `id` = %s', run_number)

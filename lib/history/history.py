@@ -205,7 +205,7 @@ class TransactionHistoryInterface(object):
         """
         Save the site partition quotas for the cycle.
         @param run_number     Cycle number.
-        @param quotas         {site: quota}
+        @param quotas         {site: quota in TB}
         """
 
         self.acquire_lock()

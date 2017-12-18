@@ -71,7 +71,7 @@ class Detox(object):
 
         LOG.info('Saving quotas.')
         partition = partition_repository.partitions[self.policy.partition_name]
-        quotas = dict((s, s.partitions[partition].quota) for s in partition_repository.sites.itervalues())
+        quotas = dict((s, s.partitions[partition].quota * 1.e-12) for s in partition_repository.sites.itervalues())
         self.history.save_quotas(cycle_number, quotas)
        
         LOG.info('Committing deletion.')
@@ -329,7 +329,7 @@ class Detox(object):
                         if replica.site not in protected_fraction:
                             continue
 
-                        quota = quotas[replica.site] * 1.e+12
+                        quota = quotas[replica.site]
                         if quota <= 0.:
                             continue
 
@@ -361,7 +361,7 @@ class Detox(object):
                         continue
 
                     if self.policy.iterative_deletion:
-                        quota = quotas[site] * 1.e+12
+                        quota = quotas[site]
     
                         # have we deleted more than allowed in a single iteration?
                         if quota > 0. and deleted_volume / quota > self.deletion_per_iteration:

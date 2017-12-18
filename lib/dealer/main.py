@@ -76,7 +76,7 @@ class Dealer(object):
 
         # Ask each site if it should be considered as a copy destination.
         target_sites = set()
-        for site, quota in quotas.items():
+        for site in quotas.keys():
             if self._is_target_site(site.partitions[partition]):
                 target_sites.add(site)
 
@@ -85,7 +85,7 @@ class Dealer(object):
             return
 
         LOG.info('Updating dataset demands.')
-        self.demand_manager.update(inventory, self._used_demand_plugins)
+#        self.demand_manager.update(inventory, self._used_demand_plugins)
 
         LOG.info('Saving site and dataset names.')
         self.history.save_sites(quotas.keys())
@@ -113,7 +113,7 @@ class Dealer(object):
 
         LOG.info('Committing copy.')
         comment = 'Dynamo -- Automatic replication request for %s partition.' % partition.name
-        self.commit_copies(cycle_number, inventory, all_copies, comment)
+        self._commit_copies(cycle_number, inventory, all_copies, comment)
 
         self.history.close_copy_run(cycle_number)
 
@@ -151,7 +151,7 @@ class Dealer(object):
 
         reqlists = {} # {plugin: reqlist} reqlist is [(item, destination)]
 
-        for plugin, priority in self._request_plugins.items():
+        for plugin, priority in self._plugin_priorities.items():
             if priority == 0:
                 # all plugins must have priority 0 (see _setup_plugins)
                 # -> treat all as equal.
@@ -391,7 +391,7 @@ class Dealer(object):
 
     def _is_target_site(self, site_partition, additional_volume = 0.):
         if site_partition.quota <= 0.:
-            LOG.debug('%s has quota %f <= 0', site_partition.site.name, site_partition.quota)
+            LOG.debug('%s has quota %f TB <= 0', site_partition.site.name, site_partition.quota * 1.e-12)
             return False
 
         site = site_partition.site

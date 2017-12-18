@@ -77,10 +77,10 @@ class DummyHistory(TransactionHistoryInterface):
         return ''
 
     def _do_get_deletion_runs(self, partition, first, last): #override
-        return 0
+        return []
 
     def _do_get_copy_runs(self, partition, first, last): #override
-        return 0
+        return []
 
     def _do_get_run_timestamp(self, run_number): #override
         return 0

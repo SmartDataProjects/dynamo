@@ -18,13 +18,13 @@ class SitePartition(object):
     def __init__(self, site, partition, quota = 0.):
         self._site = site
         self._partition = partition
-        # partition quota in TB
+        # partition quota in bytes
         self.quota = quota
         # {dataset_replica: set(block_replicas) or None (if all blocks are in)}
         self.replicas = {}
 
     def __str__(self):
-        return 'SitePartition %s/%s (quota=%f, occupancy %f)' % (self._site.name, self._partition.name, self.quota, self.occupancy_fraction())
+        return 'SitePartition %s/%s (quota=%f TB, occupancy %f)' % (self._site.name, self._partition.name, self.quota * 1.e-12, self.occupancy_fraction())
 
     def __repr__(self):
         return 'SitePartition(%s, %s)' % (repr(self._site), repr(self._partition))
@@ -109,4 +109,4 @@ class SitePartition(object):
                 else:
                     total_size += sum(br.block.size for br in block_replicas)
 
-            return total_size / (self.quota * 1.e+12)
+            return total_size / self.quota
