@@ -9,7 +9,7 @@ import re
 import logging
 
 from dataformat import Configuration
-from common.misc import unicode2str
+from common.transform import unicode2str
 
 LOG = logging.getLogger(__name__)
 

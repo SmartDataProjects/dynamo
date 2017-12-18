@@ -2,7 +2,7 @@ import os
 import re
 import json
 
-from common.misc import unicode2str
+from common.transform import unicode2str
 
 class Configuration(dict):
     """
