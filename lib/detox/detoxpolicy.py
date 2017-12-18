@@ -125,15 +125,25 @@ class PolicyLine(object):
 
 
 class DetoxPolicy(object):
-    def __init__(self, lines, version):
+    def __init__(self, config):
         self.used_demand_plugins = set()
-        self.parse_lines(lines)
+        
+        LOG.info('Reading the policy file.')
+        with open(config.policy_file) as policy_def:
+            self.parse_lines(policy_def)
+        
+        # Special config - shift time-based policies by config.time_shift days for simulation
+        if config.get('time_shift', 0.) > 0.:
+            for line in self.policy_lines:
+                for pred in line.condition.predicates:
+                    if type(pred) is predicates.BinaryExpr and pred.variable.vtype == attrs.Attr.TIME_TYPE:
+                        pred.rhs += config.time_shift * 24. * 3600.
 
         # Iterative deletion can be turned off in specific policy files. When this is False,
         # Detox will finalize the delete and protect list in the first iteration.
         self.iterative_deletion = True
 
-        self.version = version
+        self.version = config.policy_version
 
         # Check if the replicas can be deleted just before making the deletion requests.
         # Set to a function that takes a list of dataset replicas and removes from it

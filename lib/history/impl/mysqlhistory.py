@@ -8,7 +8,7 @@ import sqlite3
 import lzma
 
 from history.history import TransactionHistoryInterface
-from common.interface.mysql import MySQL
+from utils.interface.mysql import MySQL
 from dataformat import HistoryRecord
 
 LOG = logging.getLogger(__name__)

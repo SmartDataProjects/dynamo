@@ -6,7 +6,7 @@ import logging
 import fnmatch
 
 from source.groupinfo import GroupInfoSource
-from common.interface.phedex import PhEDEx
+from utils.interface.phedex import PhEDEx
 from dataformat import Group, Dataset, Block
 
 LOG = logging.getLogger(__name__)

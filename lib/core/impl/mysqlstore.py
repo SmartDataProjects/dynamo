@@ -8,7 +8,7 @@ import fnmatch
 import pprint
 
 from core.persistency import InventoryStore
-from common.interface.mysql import MySQL
+from utils.interface.mysql import MySQL
 from dataformat import Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)

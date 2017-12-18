@@ -8,7 +8,7 @@ import Queue
 
 from core.inventory import DynamoInventory
 from core.registry import DynamoRegistry
-from common.signal import SignalBlocker
+from utils.signal import SignalBlocker
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
@@ -278,7 +278,7 @@ class Dynamo(object):
         ## Ignore SIGINT - see note above proc.terminate()
         ## We will react to SIGTERM by raising KeyboardInterrupt
         import signal
-        from common.signal import SignalConverter
+        from utils.signal import SignalConverter
         
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 

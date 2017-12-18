@@ -1,8 +1,8 @@
 import logging
 import time
 
-from common.interface.jobqueue import JobQueue
-from common.interface.htc import HTCondor
+from utils.interface.jobqueue import JobQueue
+from utils.interface.htc import HTCondor
 import common.configuration as config
 
 logger = logging.getLogger(__name__)

@@ -4,8 +4,8 @@ import logging
 import collections
 
 from operation.deletion import DeletionInterface
-from common.interface.webservice import POST
-from common.interface.phedex import PhEDEx
+from utils.interface.webservice import POST
+from utils.interface.phedex import PhEDEx
 from dataformat import DatasetReplica, BlockReplica, Site
 
 LOG = logging.getLogger(__name__)

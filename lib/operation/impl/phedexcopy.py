@@ -4,8 +4,8 @@ import logging
 import collections
 
 from operation.copy import CopyInterface
-from common.interface.webservice import POST
-from common.interface.phedex import PhEDEx
+from utils.interface.webservice import POST
+from utils.interface.phedex import PhEDEx
 from dataformat import DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)

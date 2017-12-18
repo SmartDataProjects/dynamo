@@ -11,7 +11,7 @@ import dealer.plugins
 from demand.demand import DemandManager
 import operation.impl
 import history.impl
-from common.signal import SignalBlocker
+from utils.signal import SignalBlocker
 
 LOG = logging.getLogger(__name__)
 
