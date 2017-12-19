@@ -75,13 +75,17 @@ class MySQL(object):
                     LOG.debug(sql + ' % ' + str(args))
     
             try:
-                for attempt in range(10):
+                for _ in range(10):
                     try:
                         cursor.execute(sql, args)
                         break
-                    except MySQLdb.OperationalError:
-                        LOG.error(str(sys.exc_info()[1]))
-                        last_except = sys.exc_info()[1]
+                    except MySQLdb.OperationalError as err:
+                        if not (self.reuse_connection and err.args[0] == 2006):
+                            #2006 = MySQL server has gone away
+                            #If we are reusing connections, this type of error is to be ignored
+                            LOG.error(str(sys.exc_info()[1]))
+                            last_except = sys.exc_info()[1]
+
                         # reconnect to server
                         cursor.close()
                         self._connection = MySQLdb.connect(**self._connection_parameters)
@@ -142,7 +146,7 @@ class MySQL(object):
                     LOG.debug(sql + ' % ' + str(args))
     
             try:
-                for attempt in range(10):
+                for _ in range(10):
                     try:
                         cursor.execute(sql, args)
                         break

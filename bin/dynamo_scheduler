@@ -181,34 +181,15 @@ for name, sequence in sequences.iteritems():
 
 LOG.info('Created working directories under %s.', config.executable_path)
 
-def loop_sequence(name, sequence, user_id, config):
+def loop_sequence(sequence_name, sequence, user_id, config):
     ## Ignore SIGINT - see note above proc.terminate() at the end of the file
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-    work_dir = config.executable_path + '/' + name
+    ## Use the same logger as the main process, but with a different format
+    LOG.info('Sequence %s (PID: %d)', sequence_name, os.getpid())
 
-    ## Restart logging and start writing to work_dir/sequence.log
-    logging.shutdown()
-    reload(logging)
-    reload(logging.handlers)
-
-    # common.interface is loaded by registry - logging still points to the main process
-    import common.interface
-    for name in dir(common.interface):
-        mod = getattr(common.interface, name)
-        if type(mod).__name__ == 'module':
-            reload(mod)
-
-    log_level = getattr(logging, config.logging.level.upper())
-    log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
-    
-    LOG = logging.getLogger()
-    LOG.setLevel(log_level)
-    log_handler = logging.handlers.RotatingFileHandler(work_dir + '/sequence.log', maxBytes = 1000000, backupCount = 100)
-    log_handler.setFormatter(logging.Formatter(fmt = log_format))
-    LOG.addHandler(log_handler)
-
-    LOG.info('Sequence %s (PID: %d)', name, os.getpid())
+    log_format = '%(asctime)s:%(levelname)s:{sequence} ({pid}): %(message)s'.format(sequence = sequence_name, pid = os.getpid())
+    LOG.handlers[0].setFormatter(logging.Formatter(fmt = log_format))
 
     ## We will react to SIGTERM by raising KeyboardInterrupt
     from common.control import SignalConverter
@@ -224,6 +205,7 @@ def loop_sequence(name, sequence, user_id, config):
 
     poll_sql = 'SELECT `status` FROM `action` WHERE `id` = %s'
 
+    work_dir = config.executable_path + '/' + sequence_name
     title = ''
     task_id = 0
 
@@ -235,7 +217,7 @@ def loop_sequence(name, sequence, user_id, config):
                     title, arguments = action[1:]
                     executable, write_enabled = executables[title]
     
-                    LOG.info('Starting %s', title)
+                    LOG.info('Starting %s', sequence_name, os.getpid(), title)
                     LOG.info('Command: %s %s', executable, arguments)
     
                     with open(work_dir + '/log.out', 'a') as out:
