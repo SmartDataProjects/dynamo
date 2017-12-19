@@ -4,7 +4,7 @@ from webservice import RESTService, GET
 
 LOG = logging.getLogger(__name__)
 
-class SiteDB(RESTService):
+class PopDB(RESTService):
     def __init__(self, config):
         RESTService.__init__(self, config)
 
@@ -15,10 +15,4 @@ class SiteDB(RESTService):
 
         response = RESTService.make_request(self, resource, options = options, method = method, format = format, retry_on_error = retry_on_error)
 
-        try:
-            result = response['result']
-        except KeyError:
-            LOG.error(response)
-            return
-
-        return result
+        return response['DATA']
