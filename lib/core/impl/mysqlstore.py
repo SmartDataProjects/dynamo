@@ -1,23 +1,18 @@
-import os
 import time
-import datetime
-import re
-import socket
 import logging
 import fnmatch
-import pprint
 
 from core.persistency import InventoryStore
-from common.interface.mysql import MySQL
+from utils.interface.mysql import MySQL
 from dataformat import Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)
 
 class MySQLInventoryStore(InventoryStore):
-    """InventoryPersistency based on MySQL."""
+    """InventoryStore with a MySQL backend."""
 
     def __init__(self, config):
-        super(self.__class__, self).__init__(config)
+        InventoryStore.__init__(self, config)
 
         self._mysql = MySQL(config.db_params)
 

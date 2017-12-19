@@ -7,12 +7,10 @@ from core.inventory import ObjectRepository
 from dataformat import Dataset
 from detox.detoxpolicy import DetoxPolicy
 from detox.detoxpolicy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
-import policy.predicates as predicates
-import policy.attrs as attrs
-from demand.demand import DemandManager
 import operation.impl
 import history.impl
-from common.control import SignalBlocker
+import demand.plugins
+from utils.signal import SignalBlocker
 
 LOG = logging.getLogger(__name__)
 
@@ -27,9 +25,7 @@ class Detox(object):
         self.copy_op = getattr(operation.impl, config.copy_op.module)(config.copy_op.config)
         self.history = getattr(history.impl, config.history.module)(config.history.config)
 
-        self.demand_manager = DemandManager(config.demand)
-
-        self._setup_policy(config)
+        self.policy = DetoxPolicy(config)
 
         self.deletion_per_iteration = config.deletion_per_iteration
 
@@ -83,18 +79,6 @@ class Detox(object):
         self.history.close_deletion_run(cycle_number)
 
         LOG.info('Detox cycle completed')
-
-    def _setup_policy(self, config):
-        LOG.info('Reading the policy file.')
-        with open(config.policy_file) as policy_def:    
-            self.policy = DetoxPolicy(policy_def, config.policy_version)
-        
-        # Special config - shift time-based policies by config.time_shift days for simulation
-        if config.get('time_shift', 0.) > 0.:
-            for line in self.policy.policy_lines:
-                for pred in line.condition.predicates:
-                    if type(pred) is predicates.BinaryExpr and pred.variable.vtype == attrs.Attr.TIME_TYPE:
-                        pred.rhs += config.time_shift * 24. * 3600.
 
     def _build_partition(self, inventory):
         """Create a mini-inventory consisting only of replicas in the partition."""

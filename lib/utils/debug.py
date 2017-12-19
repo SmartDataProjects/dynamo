@@ -1,8 +1,9 @@
+import logging
 import sys
 import objgraph
 from functools import wraps
 
-from common.configuration import common_config
+LOG = logging.getLogger(__name__)
 
 def memory_content(interactive = False):
     typestats = dict(objgraph.typestats())
@@ -85,8 +86,7 @@ def timer(function):
         t0 = time.time()
         result = function(*args, **kwargs)
         t1 = time.time()
-        if common_config.debug.time_profile:
-            logging.info('Wall-clock time for executing %s: %.1fs', function.func_name, t1 - t0)
+        LOG.info('Wall-clock time for executing %s: %.1fs', function.func_name, t1 - t0)
 
         return result
 

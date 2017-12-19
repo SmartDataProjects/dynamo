@@ -183,6 +183,9 @@ LOG.info('Created working directories under %s.', config.executable_path)
 
 def loop_sequence(sequence_name, sequence, user_id, config):
     ## Ignore SIGINT - see note above proc.terminate() at the end of the file
+    ## We will react to SIGTERM by raising KeyboardInterrupt
+    from utils.signal import SignalConverter
+
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     ## Use the same logger as the main process, but with a different format
@@ -190,11 +193,6 @@ def loop_sequence(sequence_name, sequence, user_id, config):
 
     log_format = '%(asctime)s:%(levelname)s:{sequence} ({pid}): %(message)s'.format(sequence = sequence_name, pid = os.getpid())
     LOG.handlers[0].setFormatter(logging.Formatter(fmt = log_format))
-
-    ## We will react to SIGTERM by raising KeyboardInterrupt
-    from common.control import SignalConverter
-    signal_converter = SignalConverter(logger = LOG)
-    signal_converter.set(signal.SIGTERM)
 
     ## Create a registry handle - we'll be submitting execution requests from the backend
     registry = DynamoRegistry(config.registry)
@@ -233,7 +231,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
     
                     # Poll for task completion
                     while True:
-                        time.sleep(10)
+                        time.sleep(1)
                         result = registry.backend.query(poll_sql, task_id)
                         if len(result) == 0:
                             # len(result) == 0 -> entry disappeared!?
@@ -285,7 +283,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
 
 
 ## Prepare to catch a kill
-from common.control import SignalConverter
+from utils.signal import SignalConverter
 signal_converter = SignalConverter(logger = LOG)
 signal_converter.set(signal.SIGTERM)
 

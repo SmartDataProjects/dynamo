@@ -1,6 +1,6 @@
 import logging
 from dealer.plugins.base import BaseHandler
-from common.interface.mysql import MySQL
+from utils.interface.mysql import MySQL
 
 logger = logging.getLogger(__name__)
 

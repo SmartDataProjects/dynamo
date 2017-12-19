@@ -7,8 +7,8 @@ import fnmatch
 import re
 
 from source.datasetinfo import DatasetInfoSource
-from common.interface.phedex import PhEDEx
-from common.interface.webservice import RESTService
+from utils.interface.phedex import PhEDEx
+from utils.interface.webservice import RESTService
 from dataformat import Dataset, Block, File, IntegrityError
 
 LOG = logging.getLogger(__name__)

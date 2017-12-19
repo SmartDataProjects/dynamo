@@ -1,6 +1,5 @@
 import os
 import sys
-import signal
 import time
 import logging
 import hashlib
@@ -9,8 +8,7 @@ import Queue
 
 from core.inventory import DynamoInventory
 from core.registry import DynamoRegistry
-from common.control import SignalBlocker
-import core.executable
+from utils.signal import SignalBlocker
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
@@ -70,7 +68,7 @@ class Dynamo(object):
         updated_objects = []
         deleted_objects = []
 
-        signal_blocker = SignalBlocker([signal.SIGINT, signal.SIGTERM], logger = LOG)
+        signal_blocker = SignalBlocker(logger = LOG)
 
         try:
             LOG.info('Start polling for executables.')
@@ -278,10 +276,12 @@ class Dynamo(object):
         
     def _run_one(self, path, args, queue = None):
         ## Ignore SIGINT - see note above proc.terminate()
+        ## We will react to SIGTERM by raising KeyboardInterrupt
+        import signal
+        from utils.signal import SignalConverter
+        
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-        ## We will react to SIGTERM by raising KeyboardInterrupt
-        from common.control import SignalConverter
         signal_converter = SignalConverter()
         signal_converter.set(signal.SIGTERM)
 
@@ -301,19 +301,19 @@ class Dynamo(object):
         # This is a rather hacky solution relying perhaps on the implementation internals of
         # the logging module. It might stop working with changes to the logging.
         # The assumptions are:
-        #  1. Only the root logger has handlers
+        #  1. All loggers can be reached through Logger.manager.loggerDict
         #  2. All logging.shutdown() does is call flush() and close() over all handlers
         #     (i.e. calling the two is enough to ensure clean cutoff from all resources)
         #  3. root_logger.handlers is the only link the root logger has to its handlers
-        root_logger = logging.getLogger()
-        while True:
-            try:
-                handler = root_logger.handlers.pop()
-            except IndexError:
-                break
-
-            handler.flush()
-            handler.close()
+        for logger in logging.Logger.manager.loggerDict.values():
+            while True:
+                try:
+                    handler = logger.handlers.pop()
+                except IndexError:
+                    break
+    
+                handler.flush()
+                handler.close()
 
         # Re-initialize
         #  - inventory store with read-only connection
@@ -327,6 +327,7 @@ class Dynamo(object):
         self.inventory.init_store(persistency_config.module, persistency_config.readonly_config)
 
         # Pass my registry and inventory to the executable through core.executable
+        import core.executable
         core.executable.registry = self.registry
         core.executable.inventory = self.inventory
 

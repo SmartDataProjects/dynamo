@@ -5,7 +5,7 @@ ReplicaInfoSource using PhEDEx.
 import logging
 
 from source.replicainfo import ReplicaInfoSource
-from common.interface.phedex import PhEDEx
+from utils.interface.phedex import PhEDEx
 from dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)

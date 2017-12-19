@@ -6,8 +6,8 @@ import logging
 import fnmatch
 
 from source.siteinfo import SiteInfoSource
-from common.interface.phedex import PhEDEx
-from common.interface.webservice import RESTService
+from utils.interface.phedex import PhEDEx
+from utils.interface.webservice import RESTService
 
 LOG = logging.getLogger(__name__)
 
