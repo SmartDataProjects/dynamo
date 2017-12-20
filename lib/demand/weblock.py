@@ -4,15 +4,14 @@ import urllib2
 import fnmatch
 import time
 
-import common.interface.webservice as webservice
-from common.dataformat import Block
-import common.configuration as config
+import utils.interface.webservice as webservice
+from dataformat import Block
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class WebReplicaLock(object):
     """
-    A plugin for DemandManager that appends lists of blocks that are locked.
+    Dataset lock read from www sources.
     Sets one demand value:
       locked_blocks:   {site: set of blocks}
     """
@@ -20,15 +19,14 @@ class WebReplicaLock(object):
     # content types
     LIST_OF_DATASETS, CMSWEB_LIST_OF_DATASETS, SITE_TO_DATASETS = range(3)
 
-    def __init__(self, sources = config.weblock.sources):
-        self._sources = [] # [(RESTService, content type)]
+    def __init__(self, config):
+        self._sources = {} # {name: (RESTService, content type, site pattern, lock of locks)}
 
-        for source in sources:
-            self.add_source(*source)
+        for name, source_config in config.sources:
+            self.add_source(name, source_config)
 
-    def add_source(self, url, auth_type, content_type, site_pattern, data_type = 'application/json'):
-        if type(content_type) is str:
-            content_type = eval('WebReplicaLock.' + content_type)
+    def add_source(self, name, config):
+        content_type = getattr(WebReplicaLock, config.content_type)
 
         if auth_type == 'cert':
             auth_handler = webservice.HTTPSCertKeyHandler
@@ -37,28 +35,36 @@ class WebReplicaLock(object):
         elif auth_type == 'noauth':
             auth_handler = None
 
-        self._sources.append((webservice.RESTService(url, accept = data_type, auth_handler = auth_handler), content_type, site_pattern))
+        accept = config.get('data_type', 'application/json')
+        site_pattern = config.get('sites', None)
+        lock_url = config.get('lock_url', None)
 
-    def load(self, inventory):
-        self.update(inventory)
+        self._sources[name] = (webservice.RESTService(config.url, accept = accept, auth_handler = auth_handler), content_type, site_pattern, lock_url)
 
     def update(self, inventory):
-        # check that the lock files themselves are not locked
-        while True:
+        for dataset in inventory.datasets.itervalues():
             try:
-                urllib2.urlopen(config.weblock.lock)
-            except urllib2.HTTPError as err:
-                if err.code == 404:
-                    # file not found -> no lock
-                    break
-                else:
-                    raise
+                dataset.demand.pop('locked_blocks')
+            except KeyError:
+                pass
 
-            logger.info('Lock files are being produced. Waiting 60 seconds.')
-            time.sleep(60)
+        for source, content_type, site_pattern, lock_url in self._sources.itervalues():        
+            if lock_url is not None:
+                # check that the lock files themselves are not locked
+                while True:
+                    try:
+                        urllib2.urlopen(lock_url)
+                    except urllib2.HTTPError as err:
+                        if err.code == 404:
+                            # file not found -> no lock
+                            break
+                        else:
+                            raise
+        
+                    LOG.info('Lock files are being produced. Waiting 60 seconds.')
+                    time.sleep(60)
 
-        for source, content_type, site_pattern in self._sources:
-            logger.info('Retrieving lock information from %s', source.url_base)
+            LOG.info('Retrieving lock information from %s', source.url_base)
 
             data = source.make_request()
 
@@ -66,13 +72,13 @@ class WebReplicaLock(object):
                 # simple list of datasets
                 for dataset_name in data:
                     if dataset_name is None:
-                        logger.debug('Dataset name None found in %s', source.url_base)
+                        LOG.debug('Dataset name None found in %s', source.url_base)
                         continue
 
                     try:
                         dataset = inventory.datasets[dataset_name]
                     except KeyError:
-                        logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
+                        LOG.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                         continue
 
                     if dataset.replicas is None:
@@ -96,13 +102,13 @@ class WebReplicaLock(object):
                 # data['result'] -> simple list of datasets
                 for dataset_name in data['result']:
                     if dataset_name is None:
-                        logger.debug('Dataset name None found in %s', source.url_base)
+                        LOG.debug('Dataset name None found in %s', source.url_base)
                         continue
 
                     try:
                         dataset = inventory.datasets[dataset_name]
                     except KeyError:
-                        logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
+                        LOG.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                         continue
 
                     if dataset.replicas is None:
@@ -128,12 +134,12 @@ class WebReplicaLock(object):
                     try:
                         site = inventory.sites[site_name]
                     except KeyError:
-                        logger.debug('Unknown site %s in %s', site_name, source.url_base)
+                        LOG.debug('Unknown site %s in %s', site_name, source.url_base)
                         continue
 
                     for object_name, info in objects.items():
                         if not info['lock']:
-                            logger.debug('Object %s is not locked at %s', object_name, site_name)
+                            LOG.debug('Object %s is not locked at %s', object_name, site_name)
                             continue
 
                         if '#' in object_name:
@@ -145,12 +151,12 @@ class WebReplicaLock(object):
                         try:
                             dataset = inventory.datasets[dataset_name]
                         except KeyError:
-                            logger.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
+                            LOG.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                             continue
 
-                        replica = dataset.find_replica(site)
+                        replica = site.find_dataset_replica(dataset)
                         if replica is None:
-                            logger.debug('Replica of %s is not at %s in %s', dataset_name, site_name, source.url_base)
+                            LOG.debug('Replica of %s is not at %s in %s', dataset_name, site_name, source.url_base)
                             continue
 
                         if block_real_name is None:
@@ -158,7 +164,7 @@ class WebReplicaLock(object):
                         else:
                             block = dataset.find_block(Block.to_internal_name(block_real_name))
                             if block is None:
-                                logger.debug('Unknown block %s of %s in %s', block_real_name, dataset_name, source.url_base)
+                                LOG.debug('Unknown block %s of %s in %s', block_real_name, dataset_name, source.url_base)
                                 continue
 
                             blocks = [block]
@@ -172,33 +178,3 @@ class WebReplicaLock(object):
                             locked_blocks[site].update(blocks)
                         else:
                             locked_blocks[site] = set(blocks)
-
-
-if __name__ == '__main__':
-    # Unit test
-
-    import pprint
-    from common.inventory import InventoryManager
-
-    logger.setLevel(logging.DEBUG)
-
-    inventory = InventoryManager()
-    locks = WebReplicaLock()
-
-    locks.update(inventory)
-
-    all_locks = []
-
-    for dataset in inventory.datasets.values():
-        try:
-            locked_blocks = dataset.demand['locked_blocks']
-        except KeyError:
-            continue
-
-        for site, blocks in locked_blocks.items():
-            if blocks == set(dataset.blocks):
-                all_locks.append((site.name, dataset.name))
-            else:
-                all_locks.append((site.name, dataset.name, [b.real_name() for b in blocks]))
-
-    pprint.pprint(all_locks)

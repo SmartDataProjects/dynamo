@@ -1,31 +1,32 @@
 import logging
 import fnmatch
+import re
 
-import common.configuration as config
-from common.interface.mysql import MySQL
-from common.dataformat import Block
+from utils.interface.mysql import MySQL
+from dataformat import Block
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class MySQLReplicaLock(object):
     """
-    A plugin for DemandManager that appends lists of block replicas that are locked.
+    Dataset lock read from local DB.
     Sets one demand value:
       locked_blocks:   {site: set of blocks}
     """
 
-    def __init__(self, db_params = config.registry.db_params):
-        self._mysql = MySQL(**db_params)
+    def __init__(self, config):
+        self._mysql = MySQL(config.db_params)
 
-    def load(self, inventory):
-        self.update(inventory)
+        self.users = []
+        for user, service in config.users:
+            self.users.append((uesr, service))
 
     def update(self, inventory):
         query = 'SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `unlock_date` IS NULL'
-        if len(config.mysqllock.users) != 0:
+        if len(self.users) != 0:
             query += ' AND (`user_id`, `service_id`) IN ('
             query += 'SELECT u.`id`, s.`id` FROM `users` AS u, `services` AS s WHERE '
-            query += ' OR '.join('(u.`name` LIKE "%s" AND s.`name` LIKE "%s")' % us for us in config.mysqllock.users)
+            query += ' OR '.join('(u.`name` LIKE "%s" AND s.`name` LIKE "%s")' % us for us in self.users)
             query += ')'
 
         entries = self._mysql.query(query)
@@ -38,35 +39,39 @@ class MySQLReplicaLock(object):
                 block_pattern = None
 
             if '*' in dataset_pattern:
+                pat_exp = re.compile(fnmatch.translate(dataset_pattern))
+                
                 datasets = []
                 for dataset in inventory.datasets.values():
                     # this is highly inefficient but I can't think of a better way
-                    if fnmatch.fnmatch(dataset.name, dataset_pattern):
+                    if pat_exp.match(dataset.name):
                         datasets.append(dataset)
             else:
                 try:
                     dataset = inventory.datasets[dataset_pattern]
                 except KeyError:
-                    logger.debug('Cannot lock unknown dataset %s', dataset_pattern)
+                    LOG.debug('Cannot lock unknown dataset %s', dataset_pattern)
                     continue
 
                 datasets = [dataset]
 
             dataset_blocks = []
             for dataset in datasets:
-                if block_pattern is None:
+                if block_pattern is None or block_pattern == '*':
                     blocks = set(dataset.blocks)
 
                 elif '*' in block_pattern:
+                    pat_exp = re.compile(fnmatch.translate(block_pattern))
+
                     blocks = set()
                     for block in dataset.blocks:
-                        if fnmatch.fnmatch(block.real_name(), block_pattern):
+                        if pat_exp.match(block.real_name()):
                             blocks.add(block)
 
                 else:
                     block = dataset.find_block(Block.to_internal_name(block_pattern))
                     if block is None:
-                        logger.debug('Cannot lock unknown block %s#%s', dataset_pattern, block_pattern)
+                        LOG.debug('Cannot lock unknown block %s#%s', dataset_pattern, block_pattern)
                         continue
                     
                     blocks = set([block])
@@ -75,8 +80,11 @@ class MySQLReplicaLock(object):
 
             specified_sites = []
             if sites_pattern:
-                if '*' in sites_pattern:
-                    specified_sites.extend(s for n, s in inventory.sites.items() if fnmatch.fnmatch(n, sites_pattern))
+                if sites_pattern == '*':
+                    pass
+                elif '*' in sites_pattern:
+                    pat_exp = re.compile(fnmatch.translate(sites_pattern))
+                    specified_sites.extend(s for n, s in inventory.sites.iteritems() if pat_exp.match(n))
                 else:
                     try:
                         specified_sites.append(inventory.sites[sites_pattern])
@@ -85,8 +93,11 @@ class MySQLReplicaLock(object):
 
             specified_groups = []
             if groups_pattern:
-                if '*' in groups_pattern:
-                    specified_groups.extend(g for n, g in inventory.groups.items() if fnmatch.fnmatch(n, groups_pattern))
+                if groups_pattern == '*':
+                    pass
+                elif '*' in groups_pattern:
+                    pat_exp = re.compile(fnmatch.translate(groups_pattern))
+                    specified_groups.extend(g for n, g in inventory.groups.iteritems() if pat_exp.match(n))
                 else:
                     try:
                         specified_groups.append(inventory.groups[groups_pattern])
@@ -125,33 +136,3 @@ class MySQLReplicaLock(object):
     
                         if block_replica.block in blocks:
                             locked_blocks[replica.site].add(block_replica.block)
-
-
-if __name__ == '__main__':
-    # Unit test
-
-    import pprint
-    from common.inventory import InventoryManager
-
-    logger.setLevel(logging.DEBUG)
-
-    inventory = InventoryManager()
-    locks = MySQLReplicaLock()
-
-    locks.update(inventory)
-
-    all_locks = []
-
-    for dataset in inventory.datasets.values():
-        try:
-            locked_blocks = dataset.demand['locked_blocks']
-        except KeyError:
-            continue
-
-        for site, blocks in locked_blocks.items():
-            if blocks == set(dataset.blocks):
-                all_locks.append((site.name, dataset.name))
-            else:
-                all_locks.append((site.name, dataset.name, [b.real_name() for b in blocks]))
-
-    pprint.pprint(all_locks)
