@@ -8,7 +8,7 @@ import Queue
 
 from core.inventory import DynamoInventory
 from core.registry import DynamoRegistry
-from utils.signal import SignalBlocker
+from utils.signaling import SignalBlocker
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
@@ -278,19 +278,12 @@ class Dynamo(object):
         ## Ignore SIGINT - see note above proc.terminate()
         ## We will react to SIGTERM by raising KeyboardInterrupt
         import signal
-        from utils.signal import SignalConverter
+        from utils.signaling import SignalConverter
         
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
         signal_converter = SignalConverter()
         signal_converter.set(signal.SIGTERM)
-
-        # Redirect STDOUT and STDERR to file, close STDIN
-        stdout = sys.stdout
-        stderr = sys.stderr
-        sys.stdout = open(path + '/_stdout', 'a')
-        sys.stderr = open(path + '/_stderr', 'a')
-        sys.stdin.close()
 
         # Set argv
         sys.argv = [path + '/exec.py']
@@ -305,15 +298,25 @@ class Dynamo(object):
         #  2. All logging.shutdown() does is call flush() and close() over all handlers
         #     (i.e. calling the two is enough to ensure clean cutoff from all resources)
         #  3. root_logger.handlers is the only link the root logger has to its handlers
-        for logger in logging.Logger.manager.loggerDict.values():
+        for logger in [logging.getLogger()] + logging.Logger.manager.loggerDict.values():
             while True:
                 try:
                     handler = logger.handlers.pop()
+                except AttributeError:
+                    # logger is just a PlaceHolder and does not have .handlers
+                    break
                 except IndexError:
                     break
     
                 handler.flush()
                 handler.close()
+
+        # Redirect STDOUT and STDERR to file, close STDIN
+        stdout = sys.stdout
+        stderr = sys.stderr
+        sys.stdout = open(path + '/_stdout', 'a')
+        sys.stderr = open(path + '/_stderr', 'a')
+        sys.stdin.close()
 
         # Re-initialize
         #  - inventory store with read-only connection

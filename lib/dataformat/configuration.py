@@ -33,6 +33,9 @@ class Configuration(dict):
     def __getattr__(self, attr):
         return self[attr]
 
+    def __setattr__(self, attr, value):
+        self[attr] = value
+
     def get(self, attr, default):
         """Return the default value if attr is not found."""
         try:

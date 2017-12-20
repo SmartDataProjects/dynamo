@@ -5,6 +5,7 @@ import sys
 import httplib
 import urllib
 import urllib2
+import socket
 import mimetools
 import threading
 import time
@@ -100,7 +101,12 @@ data += [
 
 body = '\r\n'.join(data)
 
-request = urllib2.Request('https://t3desk007.mit.edu/registry/application')
+try:
+    server_host = os.environ['DYNAMO_SERVER_HOST']
+except KeyError:
+    server_host = socket.gethostname()
+
+request = urllib2.Request('https://%s/registry/application' % server_host)
 request.add_header('Content-type', 'multipart/form-data; boundary=%s' % boundary)
 request.add_header('Content-length', len(body))
 request.add_data(body)
@@ -161,8 +167,6 @@ if not args.asynch:
     lock = threading.Lock()
     stdout_thread = threading.Thread(target = tail_follow, name = 'stdout', args = (path + '/_stdout', sys.stdout, lock, stop_reading))
     stderr_thread = threading.Thread(target = tail_follow, name = 'stderr', args = (path + '/_stderr', sys.stderr, lock, stop_reading))
-    stdout_thread.daemon = True
-    stderr_thread.daemon = True
     stdout_thread.start()
     stderr_thread.start()
 

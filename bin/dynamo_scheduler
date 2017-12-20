@@ -184,7 +184,7 @@ LOG.info('Created working directories under %s.', config.executable_path)
 def loop_sequence(sequence_name, sequence, user_id, config):
     ## Ignore SIGINT - see note above proc.terminate() at the end of the file
     ## We will react to SIGTERM by raising KeyboardInterrupt
-    from utils.signal import SignalConverter
+    from utils.signaling import SignalConverter
 
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
@@ -283,7 +283,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
 
 
 ## Prepare to catch a kill
-from utils.signal import SignalConverter
+from utils.signaling import SignalConverter
 signal_converter = SignalConverter(logger = LOG)
 signal_converter.set(signal.SIGTERM)
 

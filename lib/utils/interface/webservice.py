@@ -8,7 +8,7 @@ import json
 import re
 import logging
 
-from dataformat import Configuration
+from dataformat import Configuration, ConfigurationError
 from utils.transform import unicode2str
 
 LOG = logging.getLogger(__name__)
@@ -22,7 +22,15 @@ class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
 
     def __init__(self, config):
         urllib2.HTTPSHandler.__init__(self)
-        self.key = config.x509_key
+        try:
+            self.key = config['x509_key']
+        except KeyError:
+            try:
+                self.key = os.environ['X509_USER_PROXY']
+            except KeyError:
+                LOG.error('HTTPSCertKeyHandler requires x509_key in the configuration or an environment variable X509_USER_PROXY.')
+                raise ConfigurationError('X509 proxy missing')
+
         self.cert = self.key
 
     def https_open(self, req):
@@ -91,13 +99,13 @@ class RESTService(object):
                        list headers      Additional request headers (All standard headers including
                                          Accept are automatically passed). Default empty.
                        str  accept       Accept header value. Default 'application/json'.
-                       type auth_handler Handler class for authentication. Use 'None' for no auth.
+                       str  auth_handler Handler class for authentication. Use 'None' for no auth.
                                          default HTTPSCertKeyHandler.
                        conf auth_handler_conf
                        int  num_attempts
         """
 
-        self.url_base = config['url_base']
+        self.url_base = config.url_base
         self.headers = list(config.get('headers', []))
         self.accept = config.get('accept', 'application/json')
         self.auth_handler = eval(config.get('auth_handler', 'HTTPSCertKeyHandler'))

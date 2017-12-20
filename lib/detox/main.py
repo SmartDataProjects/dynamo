@@ -9,7 +9,7 @@ from detox.detoxpolicy import DetoxPolicy
 from detox.detoxpolicy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
 import operation.impl
 import history.impl
-from utils.signal import SignalBlocker
+from utils.signaling import SignalBlocker
 
 LOG = logging.getLogger(__name__)
 

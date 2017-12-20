@@ -212,7 +212,7 @@ class DetoxPolicy(object):
         for cls_name in demand_class_names:
             self.demand_plugins.append(getattr(demand, cls_name)(demand_config[cls_name]))
 
-        LOG.info('Policy stack for %s: %d lines using demand plugins %s', self.partition_name, len(self.policy_lines), str(sorted(self.demand_plugins)))
+        LOG.info('Policy stack for %s: %d lines using demand plugins [%s]', self.partition_name, len(self.policy_lines), ' '.join(type(p).__name__ for p in self.demand_plugins))
 
     def evaluate(self, replica):
         actions = []

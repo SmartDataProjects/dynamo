@@ -5,7 +5,7 @@ import fnmatch
 import time
 
 import utils.interface.webservice as webservice
-from dataformat import Block
+from dataformat import Configuration, Block
 
 LOG = logging.getLogger(__name__)
 
@@ -22,24 +22,25 @@ class WebReplicaLock(object):
     def __init__(self, config):
         self._sources = {} # {name: (RESTService, content type, site pattern, lock of locks)}
 
-        for name, source_config in config.sources:
-            self.add_source(name, source_config)
+        for name, source_config in config.sources.items():
+            self.add_source(name, source_config, config.auth)
 
-    def add_source(self, name, config):
+    def add_source(self, name, config, auth_config):
+        rest_config = Configuration()
+        rest_config.url_base = config.url
+        rest_config.accept = config.get('data_type', 'application/json')
+        if config.auth == 'noauth':
+            rest_config.auth_handler = 'None'
+        else:
+            auth = auth_config[config.auth]
+            rest_config.auth_handler = auth.auth_handler
+            rest_config.auth_handler_conf = Configuration(auth.get('auth_handler_conf', {}))
+
         content_type = getattr(WebReplicaLock, config.content_type)
-
-        if auth_type == 'cert':
-            auth_handler = webservice.HTTPSCertKeyHandler
-        elif auth_type == 'cookie':
-            auth_handler = webservice.CERNSSOCookieAuthHandler
-        elif auth_type == 'noauth':
-            auth_handler = None
-
-        accept = config.get('data_type', 'application/json')
         site_pattern = config.get('sites', None)
         lock_url = config.get('lock_url', None)
 
-        self._sources[name] = (webservice.RESTService(config.url, accept = accept, auth_handler = auth_handler), content_type, site_pattern, lock_url)
+        self._sources[name] = (webservice.RESTService(rest_config), content_type, site_pattern, lock_url)
 
     def update(self, inventory):
         for dataset in inventory.datasets.itervalues():

@@ -1,5 +1,6 @@
 from dataformat import ConfigurationError
 import policy.variables as variables
+from policy.attrs import Attr
 
 class SortKey(object):
     """
@@ -26,7 +27,7 @@ class SortKey(object):
             iw += 2
 
             variable = variables.replica_variables[varname]
-            if variable.vtype != attrs.Attr.NUMERIC_TYPE and variable.vtype != attrs.Attr.TIME_TYPE:
+            if variable.vtype != Attr.NUMERIC_TYPE and variable.vtype != Attr.TIME_TYPE:
                 raise ConfigurationError('Cannot use non-numeric type to sort: ' + varname)
 
             self.demand_classes.update(variable.source)
@@ -42,4 +43,3 @@ class SortKey(object):
                 key += (var.get(replica),)
 
         return key
-

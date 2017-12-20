@@ -90,7 +90,7 @@ class GlobalQueueRequestHistory(object):
         """
 
         dataset_id_map = {}
-        self._store._make_map('datasets', records.iterkeys(), dataset_id_map, None)
+        self._store.make_map('datasets', records.iterkeys(), dataset_id_map, None)
 
         fields = ('id', 'dataset_id', 'queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued')
 

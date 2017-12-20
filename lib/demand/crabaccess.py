@@ -2,10 +2,10 @@ import time
 import datetime
 import collections
 import logging
-import multiprocessing
 
 from utils.interface.popdb import PopDB
 from utils.interface.mysql import MySQL
+from utils.parallel import Map
 
 # last_access is unix time
 ReplicaAccess = collections.namedtuple('ReplicaAccess', ['rank', 'num_access', 'tot_cpu', 'last_access'])
@@ -20,10 +20,11 @@ class CRABAccessHistory(object):
     """
 
     def __init__(self, config):
+        # maximum number of days to back track in case of missing records
         self.max_back_query = config.max_back_query
 
         self._popdb = PopDB(config.popdb.config)
-        self._store = MySQL(config.store.config)
+        self._store = MySQL(config.store.db_params)
 
     def update(self, inventory):
         records, last_update = self._get_stored_records(inventory)
@@ -119,14 +120,14 @@ class CRABAccessHistory(object):
         """
 
         site_id_map = {}
-        self._store._make_map('sites', set(r.site for r in records.iterkeys()), site_id_map, None)
+        self._store.make_map('sites', set(r.site for r in records.iterkeys()), site_id_map, None)
         dataset_id_map = {}
-        self._store._make_map('datasets', set(r.dataset for r in records.iterkeys()), dataset_id_map, None)
+        self._store.make_map('datasets', set(r.dataset for r in records.iterkeys()), dataset_id_map, None)
 
         fields = ('dataset_id', 'site_id', 'date', 'access_type', 'num_accesses', 'cputime')
 
         data = []
-        for replica, entries in access_list.iteritems():
+        for replica, entries in records.iteritems():
             dataset_id = dataset_id_map[replica.dataset]
             site_id = site_id_map[replica.site]
 
@@ -162,16 +163,30 @@ class CRABAccessHistory(object):
 
         all_accesses = {}
 
-        #TODO: parallelise
+        arg_pool = []
         for site in inventory.sites.itervalues():
             for date in days_to_query:
-                site_record = self._get_site_record(site, inventory.datasets, date)
+                arg_pool.append((site, inventory.datasets, date))
 
-                for replica, naccess, cputime in site_record:
-                    if replica not in all_accesses:
-                        all_accesses[replica] = []
+        mapper = Map()
+        mapper.logger = LOG
 
-                    all_accesses[replica][date] = (naccess, cputime)
+        records = mapper.execute(self._get_site_record, arg_pool)
+
+#                site_record = self._get_site_record(site, inventory.datasets, date)
+#
+#                for replica, naccess, cputime in site_record:
+#                    if replica not in all_accesses:
+#                        all_accesses[replica] = {}
+#
+#                    all_accesses[replica][date] = (naccess, cputime)
+
+        for site_record in records:
+            for replica, date, naccess, cputime in site_record:
+                if replica not in all_accesses:
+                    all_accesses[replica] = {}
+
+                all_accesses[replica][date] = (naccess, cputime)
 
         return all_accesses
 
@@ -212,7 +227,7 @@ class CRABAccessHistory(object):
             if replica is None:
                 continue
 
-            records.append((replica, int(ds_entry['NACC']), float(ds_entry['TOTCPU'])))
+            records.append((replica, date, int(ds_entry['NACC']), float(ds_entry['TOTCPU'])))
 
         return records
 
