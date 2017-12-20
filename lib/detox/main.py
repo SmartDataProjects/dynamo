@@ -9,7 +9,6 @@ from detox.detoxpolicy import DetoxPolicy
 from detox.detoxpolicy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
 import operation.impl
 import history.impl
-import demand.plugins
 from utils.signal import SignalBlocker
 
 LOG = logging.getLogger(__name__)
@@ -45,12 +44,9 @@ class Detox(object):
         # Create a full clone of the inventory limited to the partition of the policy
         partition_repository = self._build_partition(inventory)
 
-#        for plugin in self.policy.used_demand_plugins:
-#            if plugin not in self.demand_manager.calculators:
-#                self.demand_manager.calculators[plugin] = classes.demand_plugins[plugin]()
-
         LOG.info('Updating dataset demands.')
-        self.demand_manager.update(partition_repository, self.policy.used_demand_plugins)
+        for plugin in self.policy.demand_plugins:
+            plugin.update(partition_repository)
 
         LOG.info('Saving site and dataset names.')
         self.history.save_sites(partition_repository.sites.values())

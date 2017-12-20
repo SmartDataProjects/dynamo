@@ -85,6 +85,8 @@ class DatasetDemandRank(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.NUMERIC_TYPE)
 
+        self.source.add('LocalAccess')
+
     def _get(self, dataset):
         try:
             return dataset.demand['global_demand_rank']
@@ -94,6 +96,8 @@ class DatasetDemandRank(DatasetAttr):
 class DatasetUsageRank(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.NUMERIC_TYPE)
+
+        self.source.add('CRABAccessHistory')
 
     def _get(self, dataset):
         try:
@@ -122,6 +126,9 @@ class ReplicaLastUsed(DatasetReplicaAttr):
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.TIME_TYPE)
 
+        # This is CMS specific - probably this variables.py file should be under the policy package as an instance-specific code
+        self.source.add('CRABAccessHistory')
+
     def _get(self, replica):
         try:
             last_used = replica.dataset.demand['local_usage'][replica.site].last_access
@@ -133,6 +140,8 @@ class ReplicaLastUsed(DatasetReplicaAttr):
 class ReplicaNumAccess(DatasetReplicaAttr):
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
+
+        self.source.add('CRABAccessHistory')
 
     def _get(self, replica):
         try:
@@ -204,6 +213,8 @@ class ReplicaOwner(BlockReplicaAttr):
 class ReplicaIsLocked(BlockReplicaAttr):
     def __init__(self):
         BlockReplicaAttr.__init__(self, Attr.BOOL_TYPE)
+
+        self.source.add('MySQLReplicaLock')
 
     def _get(self, replica):
         try:
@@ -306,9 +317,3 @@ site_variables = {
     'always': SiteBool(True)
 }
 
-required_plugins = {
-    'replica_access': ['replica.last_used', 'dataset.usage_rank', 'replica.num_access'],
-    'replica_demands': ['dataset.demand_rank'],
-    'dataset_request': [],
-    'replica_locks': ['blockreplica.is_locked']
-}

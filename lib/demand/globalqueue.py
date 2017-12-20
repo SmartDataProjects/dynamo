@@ -1,56 +1,149 @@
-import logging
 import time
+import collections
+import logging
+import math
 
-from utils.interface.jobqueue import JobQueue
 from utils.interface.htc import HTCondor
-import common.configuration as config
+from utils.interface.mysql import MySQL
 
-logger = logging.getLogger(__name__)
+GlobalQueueJob = collections.namedtuple('GlobalQueueJob', ['queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued'])
 
-class GlobalQueue(JobQueue):
+LOG = logging.getLogger(__name__)
+
+class GlobalQueueRequestHistory(object):
     """
-    Interface to the CMS Global Queue.
+    Sets one demand value:
+      request_weight:  float value
     """
 
-    def __init__(self, collector = config.globalqueue.collector):
-        super(self.__class__, self).__init__()
+    def __init__(self, config):
+        self._htcondor = HTCondor(config.htcondor.config)
+        self._store = MySQL(config.store.config)
 
-        self.htcondor = HTCondor(collector, schedd_constraint = 'CMSGWMS_Type =?= "crabschedd"')
+        # Weight computation halflife constant (given in days in config)
+        self.weight_halflife = config.weight_halflife * 3600. * 24.
 
-    def update(self, inventory): #override
-        records = inventory.store.load_dataset_requests(inventory.datasets.values())
-        full_request_list = records[1]
+    def update(self, inventory):
+        records, last_update = self._get_stored_records(inventory)
+        source_records = self._get_source_records(inventory, last_update)
+        for dataset, jobs in source_records.iteritems():
+            try:
+                records[dataset].update(jobs)
+            except KeyError:
+                records[dataset] = dict(jobs)
+
+        self._save_records(source_records)
+
+        self._compute(inventory, records)
+
+    def _get_stored_records(self, inventory):
+        """
+        Get the dataset request data from DB.
+        @param inventory  DynamoInventory
+        @return  {dataset: {jobid: GlobalQueueJob}}
+        """
+
+        # pick up requests that are less than 1 year old
+        # old requests will be removed automatically next time the access information is saved from memory
+        sql = 'SELECT d.`name`, r.`id`, UNIX_TIMESTAMP(r.`queue_time`), UNIX_TIMESTAMP(r.`completion_time`),'
+        sql += ' r.`nodes_total`, r.`nodes_done`, r.`nodes_failed`, r.`nodes_queued` FROM `dataset_requests` AS r'
+        sql += ' INNER JOIN `datasets` AS d ON d.`id` = r.`dataset_id`'
+        sql += ' WHERE r.`queue_time` > DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY d.`id`, r.`queue_time`'
+
+        all_requests = {}
+        num_records = 0
+
+        # little speedup by not repeating lookups for the same dataset
+        current_dataset_name = ''
+        dataset_exists = True
+        for dataset_name, job_id, queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued in self._mysql.xquery(sql):
+            num_records += 1
+
+            if dataset_name == current_dataset_name:
+                if not dataset_exists:
+                    continue
+            else:
+                current_dataset_name = dataset_name
+
+                try:
+                    dataset = inventory.datasets[dataset_name]
+                except KeyError:
+                    dataset_exists = False
+                    continue
+                else:
+                    dataset_exists = True
+
+                requests = all_requests[dataset] = {}
+
+            requests[job_id] = GlobalQueueJob(queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued)
+
+        last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
+
+        LOG.info('Loaded %d dataset request data. Last update at %s UTC', num_records, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(last_update)))
+
+        return all_requests, last_update
+
+    def _save_records(self, records):
+        """
+        Save the newly fetched request records.
+        @param records  {dataset: {jobid: GlobalQueueJob}}
+        """
+
+        dataset_id_map = {}
+        self._store._make_map('datasets', records.iterkeys(), dataset_id_map, None)
+
+        fields = ('id', 'dataset_id', 'queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued')
+
+        data = []
+        for dataset, dataset_request_list in records.iteritems():
+            dataset_id = dataset_id_map[dataset]
+
+            for job_id, (queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued) in dataset_request_list.iteritems():
+                data.append((
+                    job_id,
+                    dataset_id,
+                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(queue_time)),
+                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(completion_time)) if completion_time > 0 else '0000-00-00 00:00:00',
+                    nodes_total,
+                    nodes_done,
+                    nodes_failed,
+                    nodes_queued
+                ))
+
+        self._store.insert_many('dataset_requests', fields, None, data, do_update = True)
+
+        # remove old entries
+        self._store.query('DELETE FROM `dataset_requests` WHERE `queue_time` < DATE_SUB(NOW(), INTERVAL 1 YEAR)')
+        self._store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()')
+
+    def _get_source_records(self, inventory, last_update):
+        """
+        Get the dataset request data from Global Queue schedd.
+        @param inventory    DynamoInventory
+        @param last_update  UNIX timestamp
+        @return {dataset: {jobid: GlobalQueueJob}}
+        """
 
         constraint = 'TaskType=?="ROOT" && !isUndefined(DESIRED_CMSDataset) && (QDate > {last_update} || CompletionDate > {last_update})'.format(last_update = self._last_update)
 
         attributes = ['DESIRED_CMSDataset', 'GlobalJobId', 'QDate', 'CompletionDate', 'DAG_NodesTotal', 'DAG_NodesDone', 'DAG_NodesFailed', 'DAG_NodesQueued']
         
-        job_ads = self.htcondor.find_jobs(constraint = constraint, attributes = attributes)
+        job_ads = self._htcondor.find_jobs(constraint = constraint, attributes = attributes)
 
         job_ads.sort(key = lambda a: a['DESIRED_CMSDataset'])
 
-        request_list = {}
-
-        _dataset_name = ''
-        dataset = None
+        all_requests = {}
 
         for ad in job_ads:
-            if ad['DESIRED_CMSDataset'] != _dataset_name:
-                _dataset_name = ad['DESIRED_CMSDataset']
+            dataset_name = ad['DESIRED_CMSDataset']
 
-                try:
-                    dataset = inventory.datasets[_dataset_name]
-
-                    if dataset not in full_request_list:
-                        full_request_list[dataset] = {}
-
-                    request_list[dataset] = {}
-
-                except KeyError:
-                    dataset = None
-
-            if dataset is None:
+            try:
+                dataset = inventory.datasets[dataset_name]
+            except KeyError:
                 continue
+
+            if dataset not in all_requests:
+                all_requests[dataset] = {}
 
             try:
                 nodes_total = ad['DAG_NodesTotal']
@@ -63,7 +156,7 @@ class GlobalQueue(JobQueue):
                 nodes_failed = 0
                 nodes_queued = 0
 
-            reqdata = (
+            all_requests[dataset][ad['GlobalJobId']] = GlobalQueueJob(
                 ad['QDate'],
                 ad['CompletionDate'],
                 nodes_total,
@@ -72,68 +165,30 @@ class GlobalQueue(JobQueue):
                 nodes_queued
             )
 
-            job_id = ad['GlobalJobId']
+        return all_requests
 
-            full_request_list[dataset][job_id] = reqdata
-            request_list[dataset][job_id] = reqdata
+    def _compute(self, inventory, all_requests):
+        """
+        Set the dataset request weight based on request list. Formula:
+          w = Sum(exp(-t_i/T))
+        where t_i is the time distance of the ith request from now. T is defined in the configuration.
+        @param inventory     DynamoInventory
+        @param all_requests  {dataset: {jobid: GlobalQueueJob}}
+        """
 
-        inventory.store.save_dataset_requests(request_list)
+        now = time.time()
+        decay_constant = self.weight_halflife / math.log(2.)
 
-        self._last_update = time.time()
+        for dataset in inventory.datasets.itervalues():
+            try:
+                requests = all_requests[dataset]
+            except KeyError:
+                dataset.demand['request_weight'] = 0.
+                continue
 
-        self._compute(full_request_list)
-
-
-def form_job_constraint(dataset, status, start_time, end_time):
-
-    constraint = '(TaskType=?="ROOT" && !isUndefined(DESIRED_CMSDataset))'
-
-    if dataset:
-        constraint += ' && DESIRED_CMSDataset == "%s"' % dataset
-
-    if status != 0:
-        constraint += ' && JobStatus =?= %d' % status
-
-    if start_time != 0:
-        constraint += ' && QDate >= %d' % start_time
-
-    if end_time != 0:
-        constraint += ' && QDate <= %d' % end_time
-
-    return constraint
-
-
-if __name__ == '__main__':
-    from argparse import ArgumentParser
-    import collections
-    import pprint
-
-    parser = ArgumentParser(description = 'GlobalQueue interface')
-
-    parser.add_argument('--collector', '-c', dest = 'collector', metavar = 'HOST:PORT', default = config.globalqueue.collector, help = 'Collector host.')
-    parser.add_argument('--start-time', '-s', dest = 'start_time', metavar = 'TIME', type = int, default = 0, help = 'UNIX timestamp of beginning of the query range.')
-    parser.add_argument('--end-time', '-e', dest = 'end_time', metavar = 'TIME', type = int, default = 0, help = 'UNIX timestamp of end of the query range.')
-    parser.add_argument('--dataset', '-d', dest = 'dataset', metavar = 'NAME', default = '', help = 'Dataset name.')
-    parser.add_argument('--status', '-t', dest = 'status', metavar = 'STATUS', type = int, default = 0, help = 'Job status.')
-    parser.add_argument('--attributes', '-a', dest = 'attributes', metavar = 'ATTR', nargs = '+', default = None, help = 'Triggers "raw" output with specified attributes.')
-
-    args = parser.parse_args()
-
-    logger.setLevel(logging.DEBUG)
-
-    from common.inventory import InventoryManager
-    
-    interface = GlobalQueue(args.collector)
-
-    ads = interface.htcondor.find_jobs(constraint = form_job_constraint(args.dataset, args.status, args.start_time, args.end_time), attributes = args.attributes)
-
-    print '['
-    for ad in ads:
-        print ' {'
-        for key in sorted(ad.keys()):
-            print '  "%s": %s,' % (key, str(ad[key]))
-        if ad == ads[-1]:
-            print ' }'
-        else:
-            print ' },'
-    print ']'
+            weight = 0.
+            for job in requests.itervalues():
+                # first element of reqdata tuple is the queue time
+                weight += math.exp((job.queue_time - now) / decay_constant)
+            
+            dataset.demand['request_weight'] = weight

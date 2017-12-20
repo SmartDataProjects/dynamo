@@ -1,21 +1,14 @@
 import logging
 
+from dataformat import ConfigurationError
 import policy.variables as variables
 import policy.attrs as attrs
 import policy.predicates as predicates
+import demand
 from detox.conditions import ReplicaCondition, SiteCondition
+from detox.sort import SortKey
 
 LOG = logging.getLogger(__name__)
-
-class ConfigurationError(Exception):
-    def __init__(self, *args):
-        if len(args) != 0:
-            self.str = args[0] % args[1:]
-        else:
-            self.str = ''
-
-    def __str__(self):
-        return repr(self.str)
 
 class Decision(object):
     """Generator of decisions. An instance of cls is created for each replica."""
@@ -65,28 +58,6 @@ class DismissBlock(BlockAction):
     def dataset_level(matched_line, *args):
         return Dismiss(matched_line)
 
-
-class SortKey(object):
-    """
-    Used for sorting replicas.
-    """
-    def __init__(self):
-        self.vars = []
-
-    def addvar(self, var, reverse):
-        self.vars.append((var, reverse))
-
-    def __call__(self, replica):
-        key = tuple()
-        for var, reverse in self.vars:
-            if reverse:
-                key += (-var.get(replica),)
-            else:
-                key += (var.get(replica),)
-
-        return key
-
-
 class PolicyLine(object):
     """
     Call this Policy when fixing the terminology.
@@ -126,11 +97,11 @@ class PolicyLine(object):
 
 class DetoxPolicy(object):
     def __init__(self, config):
-        self.used_demand_plugins = set()
+        self.demand_plugins = []
         
         LOG.info('Reading the policy file.')
         with open(config.policy_file) as policy_def:
-            self.parse_lines(policy_def)
+            self.parse_lines(policy_def, config.demand)
         
         # Special config - shift time-based policies by config.time_shift days for simulation
         if config.get('time_shift', 0.) > 0.:
@@ -150,7 +121,7 @@ class DetoxPolicy(object):
         # the replicas that should not be deleted.
         self.predelete_check = None
 
-    def parse_lines(self, lines):
+    def parse_lines(self, lines, demand_config):
         LOG.info('Parsing policy stack.')
 
         if type(lines) is file:
@@ -196,37 +167,6 @@ class DetoxPolicy(object):
             if line_type == LINE_PARTITION:
                 self.partition_name = words[1]
 
-            elif line_type == LINE_ORDER:
-                # will update this lambda
-                iw = 1
-                while iw < len(words):
-                    direction = words[iw]
-                    if direction == 'none':
-                        break
-                    elif direction == 'increasing':
-                        reverse = False
-                    elif direction == 'decreasing':
-                        reverse = True
-                    else:
-                        raise ConfigurationError('Invalid sorting order: ' + words[1])
-
-                    varname = words[iw + 1]
-                    iw += 2
-
-                    # check if this variable requires some plugin
-                    for plugin, exprs in variables.required_plugins.iteritems():
-                        if varname in exprs:
-                            self.used_demand_plugins.add(plugin)
-
-                    variable = variables.replica_variables[varname]
-                    if variable.vtype != attrs.Attr.NUMERIC_TYPE and variable.vtype != attrs.Attr.TIME_TYPE:
-                        raise ConfigurationError('Cannot use non-numeric type to sort: ' + line)
-
-                    if self.candidate_sort_key is None:
-                        self.candidate_sort_key = SortKey()
-
-                    self.candidate_sort_key.addvar(variable, reverse)
-
             else:
                 cond_text = ' '.join(words[1:])
 
@@ -244,7 +184,10 @@ class DetoxPolicy(object):
                         self.default_decision = decision
                     else:
                         self.policy_lines.append(PolicyLine(decision, cond_text))
-            
+
+                elif line_type == LINE_ORDER:
+                    self.candidate_sort_key = SortKey(cond_text)
+
         if self.partition_name == '':
             raise ConfigurationError('Partition name missing.')
         if len(self.target_site_def) == 0:
@@ -254,14 +197,22 @@ class DetoxPolicy(object):
         if self.default_decision == None:
             raise ConfigurationError('Default decision not given.')
 
+        # Collect demand plugin class names from all conditions and sortkey, instantiate the plugins
+        demand_class_names = set()
+
         for conds in [self.target_site_def, self.deletion_trigger, self.stop_condition]:
             for cond in conds:
-                self.used_demand_plugins.update(cond.used_demand_plugins)
+                demand_class_names.update(cond.demand_classes)
 
         for line in self.policy_lines:
-            self.used_demand_plugins.update(line.condition.used_demand_plugins)
+            demand_class_names.update(line.condition.demand_classes)
 
-        LOG.info('Policy stack for %s: %d lines using demand plugins %s', self.partition_name, len(self.policy_lines), str(sorted(self.used_demand_plugins)))
+        demand_class_names.update(self.candidate_sort_key.demand_classes)
+
+        for cls_name in demand_class_names:
+            self.demand_plugins.append(getattr(demand, cls_name)(demand_config[cls_name]))
+
+        LOG.info('Policy stack for %s: %d lines using demand plugins %s', self.partition_name, len(self.policy_lines), str(sorted(self.demand_plugins)))
 
     def evaluate(self, replica):
         actions = []

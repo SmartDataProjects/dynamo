@@ -4,7 +4,7 @@ class Condition(object):
     def __init__(self, text, variables):
         self.text = text
         self.predicates = []
-        self.used_demand_plugins = set()
+        self.demand_classes = set()
 
         pred_strs = map(str.strip, text.split(' and '))
 
@@ -16,15 +16,13 @@ class Condition(object):
                 expr = words[1]
                 words[1] = 'not'
 
-            # flags to determine which demand information should be updated
-#            for plugin, exprs in variables.required_plugins.items():
-#                if expr in exprs:
-#                    self.used_demand_plugins.add(plugin)
-
             try:
                 variable = self.get_variable(expr, variables)
             except KeyError:
                 raise RuntimeError('Unknown variable ' + expr)
+
+            # list of name of demand plugins
+            self.demand_classes.update(variable.source)
 
             if len(words) > 2:
                 operator = words[1]

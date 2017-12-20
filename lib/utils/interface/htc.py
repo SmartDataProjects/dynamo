@@ -17,6 +17,8 @@ class HTCondor(object):
         @param schedd_constraint classad expression to narrow down the schedd selection.
         """
 
+, schedd_constraint = 'CMSGWMS_Type =?= "crabschedd"')
+
         self._collector = htcondor.Collector(collector)
 
         logger.debug('Finding schedds reporting to collector %s', collector)
