@@ -12,9 +12,11 @@ LOG = logging.getLogger(__name__)
 
 class GlobalQueueRequestHistory(object):
     """
-    Sets one demand value:
+    Sets one attr:
       request_weight:  float value
     """
+
+    produces = ['request_weight']
 
     def __init__(self, config):
         self._htcondor = HTCondor(config.htcondor.config)
@@ -183,7 +185,7 @@ class GlobalQueueRequestHistory(object):
             try:
                 requests = all_requests[dataset]
             except KeyError:
-                dataset.demand['request_weight'] = 0.
+                dataset.attr['request_weight'] = 0.
                 continue
 
             weight = 0.
@@ -191,4 +193,4 @@ class GlobalQueueRequestHistory(object):
                 # first element of reqdata tuple is the queue time
                 weight += math.exp((job.queue_time - now) / decay_constant)
             
-            dataset.demand['request_weight'] = weight
+            dataset.attr['request_weight'] = weight

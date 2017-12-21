@@ -12,9 +12,11 @@ LOG = logging.getLogger(__name__)
 class WebReplicaLock(object):
     """
     Dataset lock read from www sources.
-    Sets one demand value:
+    Sets one attr:
       locked_blocks:   {site: set of blocks}
     """
+
+    produces = ['locked_blocks']
 
     # content types
     LIST_OF_DATASETS, CMSWEB_LIST_OF_DATASETS, SITE_TO_DATASETS = range(3)
@@ -45,7 +47,7 @@ class WebReplicaLock(object):
     def update(self, inventory):
         for dataset in inventory.datasets.itervalues():
             try:
-                dataset.demand.pop('locked_blocks')
+                dataset.attr.pop('locked_blocks')
             except KeyError:
                 pass
 
@@ -86,9 +88,9 @@ class WebReplicaLock(object):
                         continue
 
                     try:
-                        locked_blocks = dataset.demand['locked_blocks']
+                        locked_blocks = dataset.attr['locked_blocks']
                     except KeyError:
-                        locked_blocks = dataset.demand['locked_blocks'] = {}
+                        locked_blocks = dataset.attr['locked_blocks'] = {}
 
                     for replica in dataset.replicas:
                         if site_pattern is not None and not fnmatch.fnmatch(replica.site.name, site_pattern):
@@ -116,9 +118,9 @@ class WebReplicaLock(object):
                         continue
 
                     try:
-                        locked_blocks = dataset.demand['locked_blocks']
+                        locked_blocks = dataset.attr['locked_blocks']
                     except KeyError:
-                        locked_blocks = dataset.demand['locked_blocks'] = {}
+                        locked_blocks = dataset.attr['locked_blocks'] = {}
 
                     for replica in dataset.replicas:
                         if site_pattern is not None and not fnmatch.fnmatch(replica.site.name, site_pattern):
@@ -171,9 +173,9 @@ class WebReplicaLock(object):
                             blocks = [block]
 
                         try:
-                            locked_blocks = dataset.demand['locked_blocks']
+                            locked_blocks = dataset.attr['locked_blocks']
                         except KeyError:
-                            locked_blocks = dataset.demand['locked_blocks'] = {}
+                            locked_blocks = dataset.attr['locked_blocks'] = {}
     
                         if site in locked_blocks:
                             locked_blocks[site].update(blocks)

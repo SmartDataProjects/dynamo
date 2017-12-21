@@ -8,7 +8,8 @@ class SortKey(object):
     """
     def __init__(self, text):
         self.vars = []
-        self.demand_classes = set()
+        # Set of attr names used by variables used in sort
+        self.required_attrs = set()
 
         words = text.split()
         iw = 0
@@ -30,7 +31,7 @@ class SortKey(object):
             if variable.vtype != Attr.NUMERIC_TYPE and variable.vtype != Attr.TIME_TYPE:
                 raise ConfigurationError('Cannot use non-numeric type to sort: ' + varname)
 
-            self.demand_classes.update(variable.source)
+            self.required_attrs.update(variable.required_attrs)
 
             self.vars.append((variable, reverse))
 

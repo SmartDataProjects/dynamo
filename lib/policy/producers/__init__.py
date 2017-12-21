@@ -9,3 +9,13 @@ __all__ = [
     'MySQLReplicaLock',
     'WebReplicaLock'
 ]
+
+producers = {}
+for cls_name in __all__:
+    for attr_name in eval(cls_name).produces:
+        try:
+            producers[attr_name].append(cls_name)
+        except KeyError:
+            producers[attr_name] = [cls_name]
+
+__all__.append(producers)

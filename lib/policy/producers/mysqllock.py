@@ -10,9 +10,11 @@ LOG = logging.getLogger(__name__)
 class MySQLReplicaLock(object):
     """
     Dataset lock read from local DB.
-    Sets one demand value:
+    Sets one attr:
       locked_blocks:   {site: set of blocks}
     """
+
+    produces = ['locked_blocks']
 
     def __init__(self, config):
         self._mysql = MySQL(config.db_params)
@@ -119,9 +121,9 @@ class MySQLReplicaLock(object):
                         groups.update(brep.group for brep in replica.block_replicas)
     
                 try:
-                    locked_blocks = dataset.demand['locked_blocks']
+                    locked_blocks = dataset.attr['locked_blocks']
                 except KeyError:
-                    locked_blocks = dataset.demand['locked_blocks'] = {}
+                    locked_blocks = dataset.attr['locked_blocks'] = {}
     
                 for replica in dataset.replicas:
                     if replica.site not in sites:

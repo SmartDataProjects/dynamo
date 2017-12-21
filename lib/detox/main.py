@@ -44,8 +44,8 @@ class Detox(object):
         # Create a full clone of the inventory limited to the partition of the policy
         partition_repository = self._build_partition(inventory)
 
-        LOG.info('Updating dataset demands.')
-        for plugin in self.policy.demand_plugins:
+        LOG.info('Updating dataset attributes.')
+        for plugin in self.policy.attr_producers:
             plugin.update(partition_repository)
 
         LOG.info('Saving site and dataset names.')

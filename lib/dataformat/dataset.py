@@ -8,7 +8,7 @@ class Dataset(object):
 
     __slots__ = ['_name', 'size', 'num_files', 'status', 'on_tape',
         'data_type', 'software_version', 'last_update', 'is_open',
-        'blocks', 'replicas', 'demand']
+        'blocks', 'replicas', 'attr']
 
     # Enumerator for dataset type.
     # Starting from 1 to play better with MySQL
@@ -69,7 +69,7 @@ class Dataset(object):
         self.replicas = set()
 
         # "transient" members - excluded in __getstate__
-        self.demand = {} # freeform key-value pairs
+        self.attr = {} # freeform key-value pairs
 
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
@@ -91,8 +91,8 @@ class Dataset(object):
         return not self.__eq__(other)
 
     def __getstate__(self):
-        state = dict((s, getattr(self, s)) for s in Dataset.__slots__ if s != 'demand')
-        state['demand'] = {}
+        state = dict((s, getattr(self, s)) for s in Dataset.__slots__ if s != 'attr')
+        state['attr'] = {}
         return state
 
     def __setstate__(self, state):
@@ -110,13 +110,13 @@ class Dataset(object):
         self.last_update = other.last_update
         self.is_open = other.is_open
 
-        self.demand = copy.deepcopy(other.demand)
+        self.attr = copy.deepcopy(other.attr)
 
     def unlinked_clone(self):
         dataset = Dataset(self._name, self.size, self.num_files, self.status, self.on_tape, self.data_type,
             self.software_version, self.last_update, self.is_open)
 
-        dataset.demand = copy.deepcopy(self.demand)
+        dataset.attr = copy.deepcopy(self.attr)
 
         return dataset
 

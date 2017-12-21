@@ -14,10 +14,12 @@ LOG = logging.getLogger(__name__)
 
 class CRABAccessHistory(object):
     """
-    Sets two demand values:
+    Sets two attrs:
       global_usage_rank:  float value
       local_usage:        {site: ReplicaAccess}
     """
+
+    produces = ['global_usage_rank', 'local_usage']
 
     def __init__(self, config):
         # maximum number of days to back track in case of missing records
@@ -246,7 +248,7 @@ class CRABAccessHistory(object):
         today = datetime.datetime.utcfromtimestamp(now).date()
 
         for dataset in inventory.datasets.itervalues():
-            local_usage = dataset.demand['local_usage'] = {} # {site: ReplicaAccess}
+            local_usage = dataset.attr['local_usage'] = {} # {site: ReplicaAccess}
 
             for replica in dataset.replicas:
                 size = replica.size(physical = False) * 1.e-9
@@ -281,4 +283,4 @@ class CRABAccessHistory(object):
             if len(dataset.replicas) != 0:
                 global_rank /= len(dataset.replicas)
 
-            dataset.demand['global_usage_rank'] = global_rank
+            dataset.attr['global_usage_rank'] = global_rank

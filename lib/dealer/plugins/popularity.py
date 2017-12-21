@@ -10,7 +10,7 @@ class PopularityHandler(BaseHandler):
 
     def __init__(self, config):
         BaseHandler.__init__(self, 'Popularity')
-        self.used_demand_plugins.append('dataset_request')
+        self.used_demand_plugins.append('GlobalQueueRequestHistory')
 
         self.source_groups = set(config.source_groups)
         self.max_dataset_size = config.max_dataset_size * 1.e+12

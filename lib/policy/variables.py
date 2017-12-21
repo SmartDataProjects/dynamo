@@ -85,11 +85,11 @@ class DatasetDemandRank(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.NUMERIC_TYPE)
 
-        self.source.add('LocalAccess')
+        self.required_attrs = ['global_demand_rank']
 
     def _get(self, dataset):
         try:
-            return dataset.demand['global_demand_rank']
+            return dataset.attr['global_demand_rank']
         except KeyError:
             return 0.
 
@@ -97,11 +97,11 @@ class DatasetUsageRank(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.NUMERIC_TYPE)
 
-        self.source.add('CRABAccessHistory')
+        self.required_attrs = ['global_usage_rank']
 
     def _get(self, dataset):
         try:
-            return dataset.demand['global_usage_rank']
+            return dataset.attr['global_usage_rank']
         except KeyError:
             return 0.
 
@@ -126,12 +126,11 @@ class ReplicaLastUsed(DatasetReplicaAttr):
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.TIME_TYPE)
 
-        # This is CMS specific - probably this variables.py file should be under the policy package as an instance-specific code
-        self.source.add('CRABAccessHistory')
+        self.required_attrs = ['local_usage']
 
     def _get(self, replica):
         try:
-            last_used = replica.dataset.demand['local_usage'][replica.site].last_access
+            last_used = replica.dataset.attr['local_usage'][replica.site].last_access
         except KeyError:
             last_used = 0
     
@@ -141,11 +140,11 @@ class ReplicaNumAccess(DatasetReplicaAttr):
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
 
-        self.source.add('CRABAccessHistory')
+        self.required_attrs = ['local_usage']
 
     def _get(self, replica):
         try:
-            return replica.dataset.demand['local_usage'][replica.site].num_access
+            return replica.dataset.attr['local_usage'][replica.site].num_access
         except KeyError:
             return 0
 
@@ -214,11 +213,11 @@ class ReplicaIsLocked(BlockReplicaAttr):
     def __init__(self):
         BlockReplicaAttr.__init__(self, Attr.BOOL_TYPE)
 
-        self.source.add('MySQLReplicaLock')
+        self.required_attrs = ['locked_blocks']
 
     def _get(self, replica):
         try:
-            locked_blocks = replica.block.dataset.demand['locked_blocks'][replica.site]
+            locked_blocks = replica.block.dataset.attr['locked_blocks'][replica.site]
         except KeyError:
             return False
 

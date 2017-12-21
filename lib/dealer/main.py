@@ -8,7 +8,6 @@ import random
 from dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site
 from dealer.dealerpolicy import DealerPolicy
 import dealer.plugins
-from demand.demand import DemandManager
 import operation.impl
 import history.impl
 from utils.signaling import SignalBlocker
@@ -46,7 +45,6 @@ class Dealer(object):
         self.copy_op = getattr(operation.impl, config.copy_op.module)(config.copy_op.config)
         self.history = getattr(history.impl, config.history.module)(config.history.config)
 
-        self.demand_manager = DemandManager(config.demand)
         self._used_demand_plugins = set()
 
         self.policy = DealerPolicy(config)

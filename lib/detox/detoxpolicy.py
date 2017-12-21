@@ -4,7 +4,7 @@ from dataformat import ConfigurationError
 import policy.variables as variables
 import policy.attrs as attrs
 import policy.predicates as predicates
-import demand
+import policy.producers as producers
 from detox.conditions import ReplicaCondition, SiteCondition
 from detox.sort import SortKey
 
@@ -97,11 +97,11 @@ class PolicyLine(object):
 
 class DetoxPolicy(object):
     def __init__(self, config):
-        self.demand_plugins = []
+        self.attr_producers = []
         
         LOG.info('Reading the policy file.')
         with open(config.policy_file) as policy_def:
-            self.parse_lines(policy_def, config.demand)
+            self.parse_lines(policy_def, config.attrs)
         
         # Special config - shift time-based policies by config.time_shift days for simulation
         if config.get('time_shift', 0.) > 0.:
@@ -121,7 +121,7 @@ class DetoxPolicy(object):
         # the replicas that should not be deleted.
         self.predelete_check = None
 
-    def parse_lines(self, lines, demand_config):
+    def parse_lines(self, lines, attrs_config):
         LOG.info('Parsing policy stack.')
 
         if type(lines) is file:
@@ -189,30 +189,45 @@ class DetoxPolicy(object):
                     self.candidate_sort_key = SortKey(cond_text)
 
         if self.partition_name == '':
-            raise ConfigurationError('Partition name missing.')
+            raise ConfigurationError('Partition name missing')
         if len(self.target_site_def) == 0:
-            raise ConfigurationError('Target site definition missing.')
+            raise ConfigurationError('Target site definition missing')
         if len(self.deletion_trigger) == 0 or len(self.stop_condition) == 0:
-            raise ConfigurationError('Deletion trigger and release expressions are missing.')
+            raise ConfigurationError('Deletion trigger and release expressions are missing')
         if self.default_decision == None:
-            raise ConfigurationError('Default decision not given.')
+            raise ConfigurationError('Default decision not given')
 
-        # Collect demand plugin class names from all conditions and sortkey, instantiate the plugins
-        demand_class_names = set()
+        # Collect attr names from all conditions and sortkey, instantiate the plugins
+        attr_names = set()
 
         for conds in [self.target_site_def, self.deletion_trigger, self.stop_condition]:
             for cond in conds:
-                demand_class_names.update(cond.demand_classes)
+                attr_names.update(cond.required_attrs)
 
         for line in self.policy_lines:
-            demand_class_names.update(line.condition.demand_classes)
+            attr_names.update(line.condition.required_attrs)
 
-        demand_class_names.update(self.candidate_sort_key.demand_classes)
+        attr_names.update(self.candidate_sort_key.required_attrs)
 
-        for cls_name in demand_class_names:
-            self.demand_plugins.append(getattr(demand, cls_name)(demand_config[cls_name]))
+        producer_names = set()
+        for attr_name in attr_names:
+            # Find the provider of each dataset attribute
+            producer_cls = ''
+            for cls in producers.producers[attr_name]:
+                if cls in attrs_config:
+                    if producer_cls:
+                        LOG.error('Attribute %s is provided by two producers: [%s %s]', attr_name, producer_cls, cls)
+                        LOG.error('Please fix the configuration so that each dataset attribute is provided by a unique producer.')
+                        raise ConfigurationError('Duplicate attribute producer')
 
-        LOG.info('Policy stack for %s: %d lines using demand plugins [%s]', self.partition_name, len(self.policy_lines), ' '.join(type(p).__name__ for p in self.demand_plugins))
+                    producer_cls = cls
+
+            producer_names.add(producer_cls)
+
+        for producer_cls in producer_names:
+            self.attr_producers.append(getattr(producers, producer_cls)(attrs_config[producer_cls]))
+
+        LOG.info('Policy stack for %s: %d lines using dataset attr producers [%s]', self.partition_name, len(self.policy_lines), ' '.join(type(p).__name__ for p in self.attr_producers))
 
     def evaluate(self, replica):
         actions = []

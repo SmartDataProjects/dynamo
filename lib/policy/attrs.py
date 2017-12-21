@@ -20,9 +20,8 @@ class Attr(object):
         self.attr = attr
         self.args = args
 
-        # If the attribute values have to come from external sources, add the name of the source
-        # class here
-        self.source = set()
+        # Names of dataset.attr used by the instance
+        self.required_attrs = []
         
     def get(self, obj):
         return self._get(obj)

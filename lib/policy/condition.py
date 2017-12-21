@@ -4,7 +4,7 @@ class Condition(object):
     def __init__(self, text, variables):
         self.text = text
         self.predicates = []
-        self.demand_classes = set()
+        self.required_attrs = set()
 
         pred_strs = map(str.strip, text.split(' and '))
 
@@ -21,8 +21,8 @@ class Condition(object):
             except KeyError:
                 raise RuntimeError('Unknown variable ' + expr)
 
-            # list of name of demand plugins
-            self.demand_classes.update(variable.source)
+            # list of name of attrs
+            self.required_attrs.update(variable.required_attrs)
 
             if len(words) > 2:
                 operator = words[1]
