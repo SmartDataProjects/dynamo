@@ -6,8 +6,14 @@ from dealer.plugins.base import BaseHandler
 LOG = logging.getLogger(__name__)
 
 class BalancingHandler(BaseHandler):
+    """
+    Copy datasets from sites with higher protected fraction to sites with lower fraction.
+    """
+
     def __init__(self, config):
         BaseHandler.__init__(self, 'Balancer')
+
+        self.required_attrs = ['request_weight']
 
         self.max_dataset_size = config.max_dataset_size * 1.e+12
         self.target_reasons = dict(config.target_reasons)
@@ -58,7 +64,7 @@ class BalancingHandler(BaseHandler):
 
             for ds_name, size, reason in protections:
                 if size > self.max_dataset_size:
-                    # protections is ordered
+                    # protections is ordered -> there are no more
                     break
 
                 try:
