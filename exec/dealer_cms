@@ -1,0 +1,46 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import re
+import logging
+import fnmatch
+
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Dealer')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+parser.add_argument('--comment', '-m', metavar = 'COMMENT', dest = 'comment', help = 'Comment to be sent to deletion interface as well as the local deletion record.')
+parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Do not make any actual deletion requests or changes to inventory. Create a new cycle.')
+
+args = parser.parse_args()
+sys.argv = []
+
+## Load the configuration
+from dataformat.configuration import Configuration
+
+config = Configuration(args.config)
+
+## Set up logging (write to stdout)
+log_level = getattr(logging, config.log_level.upper())
+log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
+
+logging.basicConfig(level = log_level, format = log_format, stream = sys.stdout)
+LOG = logging.getLogger()
+
+## Run the main detox object
+from dealer.main import Dealer
+from core.executable import inventory
+
+LOG.info('Starting Dealer.')
+
+if args.test_run:
+    config.dealer.history.test = True
+    config.dealer.copy_op.config.dry_run = True
+
+dealer = Dealer(config.dealer)
+dealer.run(inventory, comment = args.comment)
+
+## If test run, don't send back the inventory updates
+if args.test_run:
+    inventory.clear_update()

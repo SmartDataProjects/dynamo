@@ -5,12 +5,12 @@ from dealer.plugins.base import BaseHandler
 
 class PopularityHandler(BaseHandler):
     """
-    Request replication of datasets using information from dataset_request demand plugin.
+    Request replication of datasets using information from dataset_request dataset attr.
     """
 
     def __init__(self, config):
         BaseHandler.__init__(self, 'Popularity')
-        self.used_demand_plugins.append('GlobalQueueRequestHistory')
+        self.required_attrs = ['request_weight']
 
         self.source_groups = set(config.source_groups)
         self.max_dataset_size = config.max_dataset_size * 1.e+12
@@ -29,7 +29,7 @@ class PopularityHandler(BaseHandler):
                 continue
 
             try:
-                request_weight = dataset.demand['request_weight']
+                request_weight = dataset.attr['request_weight']
             except KeyError:
                 continue
 
@@ -61,7 +61,7 @@ class PopularityHandler(BaseHandler):
 
             requests.append((dataset, num_requests))
             
-        requests.sort(key = lambda x: x[0].demand['request_weight'], reverse = True)
+        requests.sort(key = lambda x: x[0].attr['request_weight'], reverse = True)
 
         datasets_to_request = []
 

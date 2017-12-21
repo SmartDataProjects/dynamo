@@ -20,7 +20,7 @@ class GlobalQueueRequestHistory(object):
 
     def __init__(self, config):
         self._htcondor = HTCondor(config.htcondor.config)
-        self._store = MySQL(config.store.config)
+        self._store = MySQL(config.store.db_params)
 
         # Weight computation halflife constant (given in days in config)
         self.weight_halflife = config.weight_halflife * 3600. * 24.
@@ -58,7 +58,7 @@ class GlobalQueueRequestHistory(object):
         # little speedup by not repeating lookups for the same dataset
         current_dataset_name = ''
         dataset_exists = True
-        for dataset_name, job_id, queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued in self._mysql.xquery(sql):
+        for dataset_name, job_id, queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued in self._store.xquery(sql):
             num_records += 1
 
             if dataset_name == current_dataset_name:
@@ -79,7 +79,7 @@ class GlobalQueueRequestHistory(object):
 
             requests[job_id] = GlobalQueueJob(queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued)
 
-        last_update = self._mysql.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
+        last_update = self._store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
 
         LOG.info('Loaded %d dataset request data. Last update at %s UTC', num_records, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(last_update)))
 
@@ -126,7 +126,7 @@ class GlobalQueueRequestHistory(object):
         @return {dataset: {jobid: GlobalQueueJob}}
         """
 
-        constraint = 'TaskType=?="ROOT" && !isUndefined(DESIRED_CMSDataset) && (QDate > {last_update} || CompletionDate > {last_update})'.format(last_update = self._last_update)
+        constraint = 'TaskType=?="ROOT" && !isUndefined(DESIRED_CMSDataset) && (QDate > {last_update} || CompletionDate > {last_update})'.format(last_update = last_update)
 
         attributes = ['DESIRED_CMSDataset', 'GlobalJobId', 'QDate', 'CompletionDate', 'DAG_NodesTotal', 'DAG_NodesDone', 'DAG_NodesFailed', 'DAG_NodesQueued']
         

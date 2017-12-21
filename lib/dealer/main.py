@@ -5,11 +5,12 @@ import fnmatch
 import logging
 import random
 
-from dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site
+from dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site, ConfigurationError
 from dealer.dealerpolicy import DealerPolicy
 import dealer.plugins
 import operation.impl
 import history.impl
+import policy.producers as producers
 from utils.signaling import SignalBlocker
 
 LOG = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ class Dealer(object):
         self.copy_op = getattr(operation.impl, config.copy_op.module)(config.copy_op.config)
         self.history = getattr(history.impl, config.history.module)(config.history.config)
 
-        self._used_demand_plugins = set()
+        self._attr_producers = []
 
         self.policy = DealerPolicy(config)
         self._setup_plugins(config)
@@ -82,8 +83,9 @@ class Dealer(object):
             LOG.info('No sites can accept transfers at this moment. Exiting Dealer.')
             return
 
-        LOG.info('Updating dataset demands.')
-#        self.demand_manager.update(inventory, self._used_demand_plugins)
+        LOG.info('Updating dataset attrs.')
+        for plugin in self._attr_producers:
+            plugin.update(inventory)
 
         LOG.info('Saving site and dataset names.')
         self.history.save_sites(quotas.keys())
@@ -137,8 +139,30 @@ class Dealer(object):
                 if prio != 0:
                     self._plugin_priorities.pop(plugin)
 
+        # Set up dataset attribute providers
+        attrs_config = config.attrs
+
+        attr_names = set()
         for plugin in self._plugin_priorities.keys():
-            self._used_demand_plugins.update(plugin.used_demand_plugins)
+            attr_names.update(plugin.required_attrs)
+
+        producer_names = set()
+        for attr_name in attr_names:
+            # Find the provider of each dataset attribute
+            producer_cls = ''
+            for cls in producers.producers[attr_name]:
+                if cls in attrs_config:
+                    if producer_cls:
+                        LOG.error('Attribute %s is provided by two producers: [%s %s]', attr_name, producer_cls, cls)
+                        LOG.error('Please fix the configuration so that each dataset attribute is provided by a unique producer.')
+                        raise ConfigurationError('Duplicate attribute producer')
+
+                    producer_cls = cls
+
+            producer_names.add(producer_cls)
+
+        for producer_cls in producer_names:
+            self._attr_producers.append(getattr(producers, producer_cls)(attrs_config[producer_cls]))
 
     def _collect_requests(self, inventory):
         """
