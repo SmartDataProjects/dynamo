@@ -9,6 +9,7 @@ import re
 from source.datasetinfo import DatasetInfoSource
 from utils.interface.phedex import PhEDEx
 from utils.interface.webservice import RESTService
+from utils.parallel import Map
 from dataformat import Dataset, Block, File, IntegrityError
 
 LOG = logging.getLogger(__name__)
@@ -41,8 +42,11 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
             # all datasets requested - will do this efficiently
             result = self._dbs.make_request('acquisitioneras')
             sds = [entry['acquisition_era_name'] for entry in result]
-            for sd in sds:
-                result = self._dbs.make_request('datasets', ['acquisition_era_name=' + sd])
+
+            # query DBS in parallel
+            args = [('datasets', ['acquisition_era_name=' + sd]) for sd in sds]
+            results = Map().execute(self._dbs.make_request, args)
+            for result in results:
                 add_datasets(result)
 
         for in_pattern in include:

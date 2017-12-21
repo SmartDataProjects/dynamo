@@ -33,8 +33,8 @@ class SiteInfoSource(object):
         """
         raise NotImplementedError('get_site_list')
 
-    def set_site_properties(self, site):
+    def get_site_status(self, site_name):
         """
-        @param site  Site object
+        @param site_name  Site name
         """
         raise NotImplementedError('get_site_status')

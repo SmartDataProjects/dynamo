@@ -58,28 +58,6 @@ dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 
 from dataformat import Dataset
 
-## Routine to get the list of every dataset that ever existed
-def generate_dataset_list(dataset_source, file_path):
-    global sqlite3
-
-    all_datasets = dataset_source.get_dataset_names(include = ['/*/RunIIFall17*/*'])
-
-    try:
-        os.unlink(file_path)
-    except OSError:
-        pass
-
-    state_db = sqlite3.connect(file_path)
-    state_db.execute('CREATE TABLE `datasets` (`id` INTEGER NOT NULL PRIMARY KEY, `name` TEXT NOT NULL)')
-
-    sql = 'INSERT INTO `datasets` (`name`) VALUES (?)'
-    cursor = state_db.cursor()
-    for dataset in all_datasets:
-        cursor.execute(sql, (dataset,))
-
-    cursor.close()
-    state_db.close()
-
 ## 1. Pick up datasets to inquire
 
 if rolling_update:
@@ -89,8 +67,8 @@ if rolling_update:
     list_exhausted = False
 
     if not os.path.exists(config.dataset_state_file):
-        LOG.info('List of dataset names not found. Generating a new list.')
-        generate_dataset_list(dataset_source, config.dataset_state_file)
+        LOG.info('List of dataset names not found. Run generate_dataset_list_cms.')
+        sys.exit(0)
 
     state_db = sqlite3.connect(config.dataset_state_file)
     cursor = state_db.cursor()
@@ -149,7 +127,7 @@ if rolling_update:
     state_db.close()
 
     if count == 0:
-        LOG.info('Reached the end of dataset list. Generating new.')
-        generate_dataset_list(dataset_source, config.dataset_state_file)
+        LOG.info('Reached the end of dataset list. Deleting the state DB file.')
+        os.unlink(config.dataset_state_file)
 
 LOG.info('Dataset update completed.')

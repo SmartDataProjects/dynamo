@@ -2,12 +2,14 @@
 SiteInfoSource for PhEDEx. Also use CMS Site Status Board for additional information.
 """
 
+import time
 import logging
 import fnmatch
 
+from dataformat import Site
 from source.siteinfo import SiteInfoSource
 from utils.interface.phedex import PhEDEx
-from utils.interface.webservice import RESTService
+from utils.interface.ssb import SiteStatusBoard
 
 LOG = logging.getLogger(__name__)
 
@@ -16,7 +18,12 @@ class PhEDExSiteInfoSource(SiteInfoSource):
         SiteInfoSource.__init__(self, config)
 
         self._phedex = PhEDEx(config.phedex)
-        self._ssb = RESTService(config.ssb)
+        self._ssb = SiteStatusBoard(config.ssb)
+
+        self.ssb_cache_lifetime = config.ssb_cache_lifetime
+        self._ssb_cache_timestamp = 0
+        self._waitroom_sites = set()
+        self._morgue_sites = set()
 
     def get_site(self, name): #override
         if self.exclude is not None:
@@ -60,36 +67,40 @@ class PhEDExSiteInfoSource(SiteInfoSource):
 
         return site_list
 
-    def set_site_properties(self, site): #override
-        for site in sites.itervalues():
-            site.status = Site.STAT_READY
+    def get_site_status(self, site_name): #override
+        if time.time() > self._ssb_cache_timestamp + self.ssb_cache_lifetime:
+            self._waitroom_sites = set()
+            self._morgue_sites = set()
 
-        # get list of sites in waiting room (153) and morgue (199)
-        for colid, stat in [(153, Site.STAT_WAITROOM), (199, Site.STAT_MORGUE)]:
-            result = self._ssb.make_request('getplotdata', 'columnid=%d&time=2184&dateFrom=&dateTo=&sites=all&clouds=undefined&batch=1' % colid)
-            try:
-                source = result['csvdata']
-            except KeyError:
-                logger.error('SSB parse error')
-                return
+            latest_status = {}
 
-            latest_timestamp = {}
+            # get list of sites in waiting room (153) and morgue (199)
+            for colid, stat, sitelist in [(153, Site.STAT_WAITROOM, self._waitroom_sites), (199, Site.STAT_MORGUE, self._morgue_sites)]:
+                result = self._ssb.make_request('getplotdata', 'columnid=%d&time=2184&dateFrom=&dateTo=&sites=all&clouds=undefined&batch=1' % colid)
+                for entry in result:
+                    site = entry['VOName']
+                    
+                    # entry['Time'] is UTC but we are only interested in relative times here
+                    timestamp = time.mktime(time.strptime(entry['Time'], '%Y-%m-%dT%H:%M:%S'))
+                    if site in latest_status and latest_status[site][0] > timestamp:
+                        continue
     
-            for entry in source:
-                try:
-                    site = sites[entry['VOName']]
-                except KeyError:
-                    continue
-                
-                # entry['Time'] is UTC but we are only interested in relative times here
-                timestamp = time.mktime(time.strptime(entry['Time'], '%Y-%m-%dT%H:%M:%S'))
-                if site in latest_timestamp and latest_timestamp[site] > timestamp:
-                    continue
+                    if entry['Status'] == 'in':
+                        latest_status[site] = (timestamp, stat)
+                    else:
+                        latest_status[site] = (timestamp, Site.STAT_READY)
 
-                latest_timestamp[site] = timestamp
+            for site, (_, stat) in latest_status.items():
+                if stat == Site.STAT_WAITROOM:
+                    self._waitroom_sites.add(site)
+                elif stat == Site.STAT_MORGUE:
+                    self._morgue_sites.add(site)
 
-                if entry['Status'] == 'in':
-                    site.status = stat
-                else:
-                    site.status = Site.STAT_READY
+            self._ssb_cache_timestamp = time.time()
 
+        if site_name in self._waitroom_sites:
+            return Site.STAT_WAITROOM
+        elif site_name in self._morgue_sites:
+            return Site.STAT_MORGUE
+        else:
+            return Site.STAT_READY

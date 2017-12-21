@@ -9,14 +9,15 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update replica information.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
-parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', help = 'Do a full update of the site (wildcard allowed).')
+parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', nargs = '?', const = '', help = 'Do a full update of the site (wildcard allowed). If no site is specified, pick up the site name from the state file.')
 parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'dataset', help = 'Do a full update of the dataset (wildcard allowed).')
 
 args = parser.parse_args()
 sys.argv = []
 
 ## Type of update
-delta_update = (not args.site and not args.dataset)
+delta_update = (args.site is None and args.dataset is None)
+rolling_site_update = False
 
 ## Load the configuration
 from dataformat.configuration import Configuration
@@ -85,7 +86,8 @@ if delta_update:
 
     try:
         with open(config.replica_state_file) as source:
-            timestamp_str = source.read().strip()
+            # first line is the timestamp
+            timestamp_str = source.readline().strip()
             timestamp = time.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S %Z')
             # %Z only serves to distinguish daylight saving time. The timestamp in the file has
             # to be the local time of the system. time.mktime will then convert it to UNIX time.
@@ -104,6 +106,18 @@ if delta_update:
     new_and_updated_replicas = replica_source.get_updated_replicas(last_update)
 
 else:
+    if args.site == '':
+        rolling_site_update = True
+
+        try:
+            with open(config.replica_state_file) as source:
+                # second line is the site name
+                source.readline()
+                args.site = source.readline().strip()
+        except:
+            LOG.error('Failed to retrieve site name.')
+            sys.exit(1)
+
     new_and_updated_replicas = replica_source.get_replicas(site = args.site, dataset = args.dataset)
     # Save the embedded versions
     embedded_updated_replicas = set()
@@ -116,11 +130,13 @@ for replica in new_and_updated_replicas:
     LOG.debug('Updating %s', replica_str)
 
     # 3.1. pick up replicas of known groups only
+
     if replica.group.name not in inventory.groups:
         LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
         continue
 
     # 3.2. Pick up replicas at known sites only
+
     try:
         site = inventory.sites[replica.site.name]
     except KeyError:
@@ -237,11 +253,13 @@ for replica in deleted_replicas:
     LOG.debug('Deleting %s', replica_str)
 
     # 5.1. pick up replicas of known groups only
+
     if replica.group.name not in inventory.groups:
         LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
         continue
 
     # 5.2. Pick up replicas at known sites only
+
     try:
         site = inventory.sites[replica.site.name]
     except KeyError:
@@ -293,8 +311,24 @@ for replica in deleted_replicas:
 
 if delta_update:
     ## Store the timestamp of when we started (allow 1 minute safety margin)
+    with open(config.replica_state_file) as source:
+        lines = source.read().split('\n')
+
+    local_time = time.localtime(update_start - 60)
+    lines[0] = time.strftime('%Y-%m-%d %H:%M:%S %Z', local_time)
+
     with open(config.replica_state_file, 'w') as source:
-        local_time = time.localtime(update_start - 60)
-        source.write(time.strftime('%Y-%m-%d %H:%M:%S %Z\n', local_time))
+        source.write('\n'.join(lines))
+
+elif rolling_site_update:
+    with open(config.replica_state_file) as source:
+        lines = source.read().split('\n')
+
+    sites = sorted(inventory.sites.keys())
+    isite = (sites.index(args.site) + 1) % len(sites)
+    lines[1] = sites[isite]
+
+    with open(config.replica_state_file, 'w') as source:
+        source.write('\n'.join(lines))
 
 LOG.info('Inventory update completed.')
