@@ -14,9 +14,6 @@ parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', 
 args = parser.parse_args()
 sys.argv = []
 
-## Type of update
-rolling_update = (not args.dataset)
-
 ## Load the configuration
 from dataformat import Configuration
 

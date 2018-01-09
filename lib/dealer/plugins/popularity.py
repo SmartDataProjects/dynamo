@@ -1,7 +1,10 @@
+import logging
 import math
 
 from dataformat import Dataset
 from dealer.plugins.base import BaseHandler
+
+LOG = logging.getLogger(__name__)
 
 class PopularityHandler(BaseHandler):
     """
@@ -23,15 +26,13 @@ class PopularityHandler(BaseHandler):
         self._datasets = []
         requests = []
 
-        for dataset in inventory.datasets.values():
-            if dataset.replicas is None:
-                # this dataset has no replica in the pool to begin with
-                continue
-
+        for dataset in inventory.datasets.itervalues():
             try:
                 request_weight = dataset.attr['request_weight']
             except KeyError:
                 continue
+
+            LOG.debug('Dataset %s request weight %f', dataset.name, request_weight)
 
             dataset_in_source_groups = False
             for dr in dataset.replicas:
@@ -50,14 +51,13 @@ class PopularityHandler(BaseHandler):
             if dataset.size > self.max_dataset_size:
                 continue
 
-            if len(dataset.replicas) == 0:
-                continue # avoid stuck transfers if trying to subscribe sth that has no copies at all 
-
             self._datasets.append(dataset)
 
             num_requests = min(self.max_replication, int(math.ceil(request_weight / self.request_to_replica_threshold))) - len(dataset.replicas)
             if num_requests <= 0:
                 continue
+
+            LOG.debug('Requesting %d copies of %s', num_requests, dataset.name)
 
             requests.append((dataset, num_requests))
             

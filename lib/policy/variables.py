@@ -315,4 +315,3 @@ site_variables = {
     'never': SiteBool(False),
     'always': SiteBool(True)
 }
-

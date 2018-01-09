@@ -215,7 +215,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
                     title, arguments = action[1:]
                     executable, write_enabled = executables[title]
     
-                    LOG.info('Starting %s', sequence_name, os.getpid(), title)
+                    LOG.info('Starting %s', title)
                     LOG.info('Command: %s %s', executable, arguments)
     
                     with open(work_dir + '/log.out', 'a') as out:
