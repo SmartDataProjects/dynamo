@@ -10,11 +10,11 @@ class DynamoRegistry(object):
     """
 
     def __init__(self, config):
-        self.set_frontend(config.frontend.module, config.frontend.config)
-        self.set_backend(config.backend.module, config.backend.config)
+        self.set_frontend(config.frontend.interface, config.frontend.config)
+        self.set_backend(config.backend.interface, config.backend.config)
 
-    def set_frontend(self, module, config):
-        self.frontend = getattr(interface, module)(config)
+    def set_frontend(self, cls, config):
+        self.frontend = getattr(interface, cls)(config)
 
-    def set_backend(self, module, config):
-        self.backend = getattr(interface, module)(config)
+    def set_backend(self, cls, config):
+        self.backend = getattr(interface, cls)(config)

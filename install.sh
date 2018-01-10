@@ -1,81 +1,223 @@
 #!/bin/bash
 
-export USER=$1
+##### EDIT THIS BLOCK BEFORE INSTALLATION #####
 
-if ! [ $USER ]
-then
-  echo "Usage: install.sh <user> [production]"
+# User under which dynamo runs
+USER=dynamo
+
+# Install target directory
+INSTALLPATH=/usr/local/dynamo
+
+# Configuration directory
+CONFIGPATH=/etc/dynamo
+
+# Archival directory
+ARCHIVEPATH=/mnt/hadoop/dynamo/dynamo
+
+# Temporary working directory
+SPOOLPATH=/var/spool/dynamo
+
+# Server log directory
+LOGPATH=/var/log/dynamo
+
+# Scheduler work directory
+SCHEDULERPATH=/var/spool/dynamo/scheduler
+
+# 1 -> Install daemons
+DAEMONS=1
+
+# Httpd content directory
+WEBPATH=/var/www
+
+# Server database parameters
+SERVER_DB_WRITE_CNF=/etc/my.dynamowrite.cnf
+SERVER_DB_WRITE_CNFGROUP=mysql-dynamo-write
+#SERVER_DB_WRITE_USER=
+#SERVER_DB_WRITE_PASSWD=
+
+SERVER_DB_WRITE_CNF=/etc/my.cnf
+SERVER_DB_WRITE_CNFGROUP=mysql-dynamo
+
+SERVER_DB_HOST=localhost
+SERVER_DB=dynamo
+
+# Registry host
+REGISTRY_HOST=t3serv017.mit.edu
+
+############## DO NOT EDIT BELOW ##############
+
+confirmed () {
+  while true
+  do
+    read RESPONSE
+    case $RESPONSE in
+      y)
+        return 0
+        ;;
+      n)
+        return 1
+        ;;
+      *)
+        echo "Please answer in y/n."
+        ;;
+    esac
+  done
+}
+
+require () {
+  $@ && return 0
+  echo "Failed: $@"
   exit 1
-fi
+}
 
-if [ "$2" = "production" ]
+### Where we are installing from (i.e. this directory) ###
+
+SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
+
+### (Clear &) Make the directories ###
+
+if [ -d $INSTALLPATH ]
 then
-  PRODUCTION=1
+  echo "Target directory $INSTALLPATH exists. Overwrite [y/n]?"
+  if confirmed
+  then
+    rm -rf $INSTALLPATH
+  else
+    echo "Exiting."
+    exit 1
+  fi
 fi
 
-export DYNAMO_BASE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
-source $DYNAMO_BASE/etc/profile.d/init.sh
+require mkdir -p $INSTALLPATH
+require mkdir -p $INSTALLPATH/python/site-packages/dynamo
+require mkdir -p $INSTALLPATH/bin
+require mkdir -p $INSTALLPATH/exec
+require mkdir -p $INSTALLPATH/sbin
+require mkdir -p $INSTALLPATH/etc/profile.d
+chown -R $USER:$(id -gn $USER) $INSTALLPATH
 
-# DIRECTORIES
-mkdir -p $DYNAMO_LOGDIR
-chmod 775 $DYNAMO_LOGDIR
-chown root:$(id -gn $USER) $DYNAMO_LOGDIR
+require mkdir -p $CONFIGPATH
 
-mkdir -p $DYNAMO_ARCHIVE
-chmod 775 $DYNAMO_ARCHIVE
-chown $USER:$(id -gn $USER) $DYNAMO_ARCHIVE
-mkdir -p $DYNAMO_ARCHIVE/db
-mkdir -p $DYNAMO_ARCHIVE/replica_snapshots
+require mkdir -p $LOGPATH
+chown $USER:$(id -gn $USER) $LOGPATH
 
-mkdir -p $DYNAMO_SPOOL
-chmod 777 $DYNAMO_SPOOL
+require mkdir -p $SCHEDULERPATH
+chown $USER:$(id -gn $USER) $SCHEDULERPATH
 
-# DATABASES
-for SQL in $(ls $DYNAMO_BASE/etc/db | grep '\.sql$')
-do
-  DB=$(echo $SQL | sed 's/.sql$//')
-#  if ! [ -d /var/lib/mysql/$DB ]
-#  then
-#    mysql --default-group-suffix=-dynamo < $DYNAMO_BASE/etc/db/$SQL
-#  fi
+require mkdir -p $ARCHIVEPATH
+chown $USER:$(id -gn $USER) $ARCHIVEPATH
 
-  if [ -d /var/lib/mysql/$DB ]
-  then
-    chmod 755 /var/lib/mysql/$DB
-    chmod 666 /var/lib/mysql/$DB/*
-  fi
-done
+mkdir -p $SPOOLPATH
+chown $USER:$(id -gn $USER) $SPOOLPATH
+chmod 777 $SPOOLPATH
 
-# WEB INTERFACE
-$DYNAMO_BASE/web/install.sh
+### Install python libraries ###
 
-# POLICIES
-[ -e $DYNAMO_BASE/policies ] || git clone https://github.com/SmartDataProjects/dynamo-policies.git $DYNAMO_BASE/policies
+cp -r $SOURCE/lib/* $INSTALLPATH/python/site-packages/dynamo/
+python -m compileall $INSTALLPATH/python/site-packages/dynamo
 
-cd $DYNAMO_BASE/policies
-TAG=$(cat $DYNAMO_BASE/etc/policies.tag)
-echo "Checking out policies tag $TAG"
-git checkout master
-git pull origin
-git checkout $TAG 2> /dev/null
+### Install the executables ###
+
+cp $SOURCE/bin/* $INSTALLPATH/bin/
+chown $USER:$(id -gn $USER) $INSTALLPATH/bin/*
+chmod 755 $INSTALLPATH/bin/*
+
+cp $SOURCE/exec/* $INSTALLPATH/exec/
+chown $USER:$(id -gn $USER) $INSTALLPATH/exec/*
+chmod 755 $INSTALLPATH/exec/*
+
+cp $SOURCE/sbin/* $INSTALLPATH/sbin/
+chown root:$(id -gn $USER) $INSTALLPATH/sbin/*
+chmod 754 $INSTALLPATH/sbin/*
+
+### Set up the databases ###
+
+if [ "$SERVER_DB_HOST" = "localhost" ]
+then
+  $SOURCE/db/install.sh
+fi  
+
+### Install the configs ###
+
+echo "export DYNAMO_BASE=$INSTALLPATH" > $INSTALLPATH/etc/profile.d/init.sh
+echo "export DYNAMO_ARCHIVE=$ARCHIVEPATH" >> $INSTALLPATH/etc/profile.d/init.sh
+echo "export DYNAMO_SPOOL=$SPOOLPATH" >> $INSTALLPATH/etc/profile.d/init.sh
+echo "export DYNAMO_SPOOL=$SPOOLPATH" >> $INSTALLPATH/etc/profile.d/init.sh
+echo "export PYTHONPATH="'$DYNAMO_BASE/python/site-packages:$(echo $PYTHONPATH | sed "s|$DYNAMO_BASE/python/site-packages:||")' >> $INSTALLPATH/etc/profile.d/init.sh
+
+if [ -e $CONFIGPATH/server_config.json ]
+then
+  echo "$CONFIGPATH/server_config.json exists. Not overwriting."
+else
+  cp $SOURCE/config/server_config.json.template $CONFIGPATH/server_config.json
+
+  sed -i "s/_USER_/$USER/" $CONFIGPATH/server_config.json
+  sed -i "s/_LOGPATH_/$LOGPATH/" $CONFIGPATH/server_config.json
+  sed -i "s/_SCHEDULER_PATH_/$SCHEDULERPATH/" $CONFIGPATH/server_config.json
+  sed -i "s/_REGISTRY_HOST_/$REGISTRY_HOST/" $CONFIGPATH/server_config.json
+  PARAMS=
+  [ $SERVER_DB_WRITE_CNF ] && PARAMS=$PARAMS'\n          "config_file": '$SERVER_DB_WRITE_CNF','
+  [ $SERVER_DB_WRITE_CNFGROUP ] && PARAMS=$PARAMS'\n          "config_group": '$SERVER_DB_WRITE_CNFGROUP','
+  [ $SERVER_DB_WRITE_USER ] && PARAMS=$PARAMS'\n          "user": '$SERVER_DB_WRITE_USER','
+  [ $SERVER_DB_WRITE_PASSWD ] && PARAMS=$PARAMS'\n          "passwd": '$SERVER_DB_WRITE_PASSWD','
+  PARAMS=$PARAMS'\n          "host": '$SERVER_DB_HOST','
+  PARAMS=$PARAMS'\n          "db": '$SERVER_DB
+  sed -i "s/_SERVER_DB_WRITE_PARAMS_/$PARAMS/" $CONFIGPATH/server_config.json
+  PARAMS=
+  [ $SERVER_DB_READ_CNF ] && PARAMS=$PARAMS'\n          "config_file": '$SERVER_DB_READ_CNF','
+  [ $SERVER_DB_READ_CNFGROUP ] && PARAMS=$PARAMS'\n          "config_group": '$SERVER_DB_READ_CNFGROUP','
+  [ $SERVER_DB_READ_USER ] && PARAMS=$PARAMS'\n          "user": '$SERVER_DB_READ_USER','
+  [ $SERVER_DB_READ_PASSWD ] && PARAMS=$PARAMS'\n          "passwd": '$SERVER_DB_READ_PASSWD','
+  PARAMS=$PARAMS'\n          "host": '$SERVER_DB_HOST','
+  PARAMS=$PARAMS'\n          "db": '$SERVER_DB
+  sed -i "s/_SERVER_DB_READ_PARAMS_/$PARAMS/" $CONFIGPATH/server_config.json
+fi
+
+chmod 600 $CONFIGPATH/server_config.json
+
+# The rest of the config files are copied directly - edit as necessary
+cp $SOURCE/config/*.json $CONFIGPATH/
+
+### Install the policies ###
+
+TAG=$(cat $SOURCE/etc/policies.tag)
+git clone https://github.com/SmartDataProjects/dynamo-policies.git $INSTALLPATH/policies
+cd $INSTALLPATH/policies
+git checkout $TAG
 cd - > /dev/null
 
-if [ $PRODUCTION ]
+### Install the web scripts ###
+
+if [ $WEBPATH ]
 then
-  # DAEMON
-  sed -e "s|_DYNAMO_BASE_|$DYNAMO_BASE|" -e "s|_USER_|$USER|" $DYNAMO_BASE/sysv/dynamod > /etc/init.d/dynamod
-  chmod +x /etc/init.d/dynamod
+  $SOURCE/web/install.sh
+fi
+
+### Install the daemons ###
+
+if [ $DAEMONS -eq 1 ]
+then
+  if [[ $(uname -r) =~ el7 ]]
+  then
+    # systemd daemon
+    cp $SOURCE/daemon/dynamod.systemd /usr/lib/systemd/system/dynamod.service
+    sed -i "s/_INSTALLPATH_/$INSTALLPATH/" /usr/lib/systemd/system/dynamod.service
+  else
+    cp $SOURCE/daemon/dynamod.sysv /etc/init.d/dynamod
+    sed -i "s|_INSTALLPATH_|$INSTALLPATH|" /etc/init.d/dynamod
+    chmod +x /etc/init.d/dynamod
+  fi
 
   # CRONTAB
   crontab -l -u $USER > /tmp/$USER.crontab
-  sed "s|_DYNAMO_BASE_|$DYNAMO_BASE|" $DYNAMO_BASE/etc/crontab >> /tmp/$USER.crontab
+  sed "s|_INSTALLPATH_|$INSTALLPATH|" $SOURCE/etc/crontab >> /tmp/$USER.crontab
   sort /tmp/$USER.crontab | uniq | crontab -u $USER -
   rm /tmp/$USER.crontab
 
   # NRPE PLUGINS
   if [ -d /usr/lib64/nagios/plugins ]
   then
-    sed "s|_DYNAMO_ARCHIVE_|$DYNAMO_ARCHIVE|" $DYNAMO_BASE/etc/nrpe/check_dynamo.sh > /usr/lib64/nagios/plugins/check_dynamo.sh
+    sed "s|_ARCHIVEPATH_|$ARCHIVEPATH|" $SOURCE/etc/nrpe/check_dynamo.sh > /usr/lib64/nagios/plugins/check_dynamo.sh
     chmod +x /usr/lib64/nagios/plugins/check_dynamo.sh
   fi
 fi

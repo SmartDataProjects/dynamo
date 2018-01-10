@@ -32,7 +32,7 @@ log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 LOG = logging.getLogger()
 LOG.setLevel(log_level)
 if config.logging.get('path', ''):
-    log_handler = logging.handlers.RotatingFileHandler(config.logging.path, maxBytes = 1000000, backupCount = 100)
+    log_handler = logging.handlers.RotatingFileHandler(config.logging.path + '/scheduler.log', maxBytes = 1000000, backupCount = 100)
 else:
     log_handler = logging.StreamHandler()
 LOG.addHandler(log_handler)
@@ -148,7 +148,7 @@ if len(sequences) == 0:
 
 ## Create the executable directory and copy the scripts over
 for name, sequence in sequences.iteritems():
-    work_dir = config.executable_path + '/' + name
+    work_dir = config.scheduler_path + '/' + name
     try:
         shutil.rmtree(work_dir)
     except OSError:
@@ -179,7 +179,7 @@ for name, sequence in sequences.iteritems():
             os.symlink(work_dir + '/log.out', path + '/_stdout')
             os.symlink(work_dir + '/log.err', path + '/_stderr')
 
-LOG.info('Created working directories under %s.', config.executable_path)
+LOG.info('Created working directories under %s.', config.scheduler_path)
 
 def loop_sequence(sequence_name, sequence, user_id, config):
     ## Ignore SIGINT - see note above proc.terminate() at the end of the file
@@ -203,7 +203,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
 
     poll_sql = 'SELECT `status` FROM `action` WHERE `id` = %s'
 
-    work_dir = config.executable_path + '/' + sequence_name
+    work_dir = config.scheduler_path + '/' + sequence_name
     title = ''
     task_id = 0
 

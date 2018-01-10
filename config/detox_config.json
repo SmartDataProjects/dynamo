@@ -1,0 +1,62 @@
+{
+  "detox": {
+    "deletion_per_iteration": 0.01,
+    "deletion_op": {
+      "module": "PhEDExDeletionInterface",
+      "config": {
+        "phedex": {},
+        "auto_approval": true,
+        "allow_tape_deletion": false,
+        "tape_auto_approval": false,
+        "chunk_size": 50,
+        "dry_run": true
+      }
+    },
+    "copy_op": {
+      "module": "PhEDExCopyInterface",
+      "config": {
+        "phedex": {},
+        "chunk_size": 50,
+        "dry_run": true
+      }
+    },
+    "history": {
+      "module": "DummyHistory",
+      "config": {}
+    },
+    "attrs": {
+      "MySQLReplicaLock": {
+        "users": [],
+        "db_params": {
+          "config_file": "/etc/my.cnf",
+          "config_group": "mysql-dynamo",
+          "db": "dynamoregister"
+        }
+      },
+      "CRABAccessHistory": {
+        "max_back_query": 7,
+        "popdb": {
+          "config": {
+            "url_base": "https://cmsweb.cern.ch/popdb",
+            "auth_handler": "HTTPSCertKeyHandler",
+            "auth_handler_conf": {}
+          }
+        },
+        "store": {
+          "db_params": {
+            "config_file": "/etc/my.cnf",
+            "config_group": "mysql-dynamo",
+            "db": "dynamo"
+          }
+        }
+      }
+    }
+  },
+  "phedex": {
+    "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
+    "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
+    "auth_handler": "HTTPSCertKeyHandler",
+    "auth_handler_conf": {}
+  },
+  "log_level": "info"
+}

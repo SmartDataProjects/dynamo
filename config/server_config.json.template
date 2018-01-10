@@ -1,0 +1,42 @@
+{
+  "user": "_USER_",
+  "inventory": {
+    "persistency": {
+      "module": "MySQLInventoryStore",
+      "config": {
+        "db_params": {_SERVER_DB_WRITE_PARAMS_
+        }
+      },
+      "readonly_config": {
+        "db_params": {_SERVER_DB_READ_PARAMS_
+        }
+      }
+    },
+    "partition_def_path": "$(DYNAMO_BASE)/policies/partitions.txt"
+  },
+  "registry": {
+    "backend": {
+      "interface": "MySQL",
+      "config": {
+        _SERVER_DB_WRITE_PARAMS_
+        "reuse_connection": false
+      },
+      "readonly_config": {
+        _SERVER_DB_READ_PARAMS_
+        "reuse_connection": false
+      }
+    },
+    "interface": {
+      "module": "RESTService",
+      "config": {
+        "url_base": "https://_REGISTRY_HOST_/registry"
+      }
+    }
+  },
+  "scheduler_path": _SCHEDULER_PATH_
+  "logging": {
+    "level": "info",
+    "path": "_LOGPATH_",
+    "changelog": true
+  }
+}

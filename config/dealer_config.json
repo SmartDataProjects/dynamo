@@ -1,0 +1,74 @@
+{
+  "dealer": {
+    "partition_name": "Physics",
+    "group_name": "AnalysisOps",
+    "copy_op": {
+      "module": "PhEDExCopyInterface",
+      "config": {
+        "phedex": {
+          "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
+          "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
+          "auth_handler": "HTTPSCertKeyHandler",
+          "auth_handler_conf": {}
+        },
+        "chunk_size": 50,
+        "dry_run": true
+      }
+    },
+    "history": {
+      "module": "DummyHistory",
+      "config": {}
+    },
+    "plugins": {
+      "popularity": {
+        "priority": 3,
+        "module": "PopularityHandler",
+        "config": {
+          "source_groups": ["AnalysisOps"],
+          "max_dataset_size": 50.0,
+          "max_replication": 10,
+          "request_to_replica_threshold": 1.75
+        }
+      },
+      "balancer": {
+        "priority": 2,
+        "module": "BalancingHandler",
+        "config": {
+          "max_dataset_size": 50.0,
+          "target_reasons": {
+            "dataset.name == /*/*/MINIAOD* and replica.num_full_disk_copy_common_owner < 3": 3,
+            "replica.num_full_disk_copy_common_owner < 2": 2
+          }
+        }
+      },
+      "undertaker": {
+        "priority": 1,
+        "module": "Undertaker",
+        "config": {}
+      }
+    },
+    "attrs": {
+      "GlobalQueueRequestHistory": {
+        "weight_halflife": 3.0,
+        "htcondor": {
+          "config": {
+            "collector": "cmsgwms-collector-global.cern.ch:9620",
+            "schedd_constraint": "CMSGWMS_Type =?= \"crabschedd\""
+          }
+        },
+        "store": {
+          "db_params": {
+            "config_file": "/etc/my.cnf",
+            "config_group": "mysql-dynamo",
+            "db": "dynamo"
+          }
+        }
+      }
+    },
+    "target_sites": ["T1_*_Disk", "T2_*"],
+    "target_site_occupancy": 0.91,
+    "max_site_pending_volume": 100,
+    "max_total_cycle_volume": 200
+  },
+  "log_level": "debug"
+}

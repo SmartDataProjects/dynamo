@@ -15,9 +15,8 @@
 # mod_ssl needs a pass-phrase from the user.
 INITLOG_ARGS=""
 
-PROG=_DYNAMO_BASE_/bin/dynamo # pgrep pattern of the main program
 EXECUTABLE=dynamod # executable this script spawns
-TARGET=_DYNAMO_BASE_/bin/dynamod # full path to the executable
+TARGET=_INSTALLPATH_/sbin/dynamod # full path to the executable
 
 # Path to the running script, server binary, and short-form for messages.
 PIDFILE=${PIDFILE-/var/run/dynamod.pid}
@@ -51,7 +50,7 @@ start() {
   touch $LOCKFILE
 
   echo -n $"Starting $EXECUTABLE:"
-  daemon --user=_USER_ --pidfile=$PIDFILE $TARGET \&
+  daemon --pidfile=$PIDFILE $TARGET \&
   EXITCODE=$?
   echo
 
@@ -71,11 +70,6 @@ stop() {
   killproc -p $PIDFILE -d $STOP_TIMEOUT $TARGET
   EXITCODE=$?
   echo
-  PROGPID=$(pgrep -nf $PROG)
-  if [ $PROGPID ]
-  then
-    echo "The main program ($PROGPID) will stay alive until normal termination."
-  fi
 
   rm -f $PIDFILE
 }

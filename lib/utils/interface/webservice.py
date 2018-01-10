@@ -28,8 +28,14 @@ class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
             try:
                 self.key = os.environ['X509_USER_PROXY']
             except KeyError:
-                LOG.error('HTTPSCertKeyHandler requires x509_key in the configuration or an environment variable X509_USER_PROXY.')
-                raise ConfigurationError('X509 proxy missing')
+                self.key = '/tmp/x509up_u%d' % os.geteuid()
+
+        if not os.path.exists(self.key):
+            LOG.error('HTTPSCertKeyHandler requires an X509 proxy in either')
+            LOG.error('1. Path specified by x509_key in the configuration')
+            LOG.error('2. Environment variable X509_USER_PROXY')
+            LOG.error('3. /tmp/x509up_u(uid)')
+            raise ConfigurationError('X509 proxy missing')
 
         self.cert = self.key
 
