@@ -1,16 +1,16 @@
-"""Copy using PhEDEx."""
-
 import logging
 import collections
 
-from operation.copy import CopyInterface
-from utils.interface.webservice import POST
-from utils.interface.phedex import PhEDEx
-from dataformat import DatasetReplica, BlockReplica
+from dynamo.operation.copy import CopyInterface
+from dynamo.utils.interface.webservice import POST
+from dynamo.utils.interface.phedex import PhEDEx
+from dynamo.dataformat import DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)
 
 class PhEDExCopyInterface(CopyInterface):
+    """Copy using PhEDEx."""
+
     def __init__(self, config):
         CopyInterface.__init__(self, config)
 

@@ -1,10 +1,10 @@
 import logging
 import re
 
-from policy.condition import Condition
-from policy.variables import replica_variables
-from dataformat import Group, Partition, ObjectError
-import core.impl
+from dynamo.policy.condition import Condition
+from dynamo.policy.variables import replica_variables
+from dynamo.dataformat import Group, Partition, ObjectError
+import dynamo.core.impl as persistency_impl
 
 LOG = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class DynamoInventory(ObjectRepository):
         self._deleted_objects = None
 
     def init_store(self, module, config):
-        persistency_cls = getattr(core.impl, module)
+        persistency_cls = getattr(persistency_impl, module)
         self._store = persistency_cls(config)
 
     def load(self, groups = (None, None), sites = (None, None), datasets = (None, None)):

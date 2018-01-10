@@ -1,8 +1,8 @@
 import logging
 import math
 
-from dataformat import Dataset
-from dealer.plugins.base import BaseHandler
+from dynamo.dataformat import Dataset
+from base import BaseHandler
 
 LOG = logging.getLogger(__name__)
 

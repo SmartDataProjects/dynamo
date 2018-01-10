@@ -1,6 +1,6 @@
 import copy
 
-from dataformat.sitepartition import SitePartition
+from sitepartition import SitePartition
 
 class Partition(object):
     """

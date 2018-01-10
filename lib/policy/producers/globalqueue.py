@@ -3,8 +3,8 @@ import collections
 import logging
 import math
 
-from utils.interface.htc import HTCondor
-from utils.interface.mysql import MySQL
+from dynamo.utils.interface.htc import HTCondor
+from dynamo.utils.interface.mysql import MySQL
 
 GlobalQueueJob = collections.namedtuple('GlobalQueueJob', ['queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued'])
 

@@ -1,7 +1,8 @@
 import re
 import fnmatch
 import subprocess
-from dataformat import DatasetReplica, BlockReplica
+
+from dynamo.dataformat import DatasetReplica, BlockReplica
 
 class InvalidExpression(Exception):
     pass
@@ -47,6 +48,7 @@ class Attr(object):
                 return expr
 
         elif self.vtype == Attr.TIME_TYPE:
+            # Use GNU date for "natural language" parsing
             proc = subprocess.Popen(['date', '-d', expr, '+%s'], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
             out, err = proc.communicate()
             if err != '':

@@ -5,8 +5,8 @@ Define translations from text-based policies to actual python expressions here
 import re
 import fnmatch
 
-from dataformat import Dataset, Site
-from policy.attrs import Attr, DatasetAttr, DatasetReplicaAttr, BlockReplicaAttr, ReplicaSiteAttr, SiteAttr, InvalidExpression
+from dynamo.dataformat import Dataset, Site
+from dynamo.policy.attrs import Attr, DatasetAttr, DatasetReplicaAttr, BlockReplicaAttr, ReplicaSiteAttr, SiteAttr, InvalidExpression
 
 class DatasetHasIncompleteReplica(DatasetAttr):
     def __init__(self):

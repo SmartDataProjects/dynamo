@@ -10,6 +10,8 @@ __all__ = [
     'WebReplicaLock'
 ]
 
+# Dictionary of registered producers
+# product attribute name -> list of producers
 producers = {}
 for cls_name in __all__:
     for attr_name in eval(cls_name).produces:
@@ -18,4 +20,5 @@ for cls_name in __all__:
         except KeyError:
             producers[attr_name] = [cls_name]
 
+# Export the producers dictionary
 __all__.append(producers)

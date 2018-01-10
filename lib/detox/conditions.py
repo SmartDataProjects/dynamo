@@ -1,5 +1,5 @@
-from policy.condition import Condition
-from policy.variables import site_variables, replica_variables
+from dynamo.policy.condition import Condition
+from dynamo.policy.variables import site_variables, replica_variables
 
 class ReplicaCondition(Condition):
     def __init__(self, text):

@@ -2,8 +2,8 @@ import logging
 import fnmatch
 import re
 
-from utils.interface.mysql import MySQL
-from dataformat import Block
+from dynamo.utils.interface.mysql import MySQL
+from dynamo.dataformat import Block
 
 LOG = logging.getLogger(__name__)
 

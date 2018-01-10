@@ -1,4 +1,4 @@
-from policy.predicates import Predicate
+from dynamo.policy.predicates import Predicate
 
 class Condition(object):
     def __init__(self, text, variables):

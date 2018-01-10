@@ -1,12 +1,12 @@
 import logging
 
-from dataformat import ConfigurationError
-import policy.variables as variables
-import policy.attrs as attrs
-import policy.predicates as predicates
-import policy.producers as producers
-from detox.conditions import ReplicaCondition, SiteCondition
-from detox.sort import SortKey
+from dynamo.dataformat import ConfigurationError
+import dynamo.policy.variables as variables
+import dynamo.policy.attrs as attrs
+import dynamo.policy.predicates as predicates
+import dynamo.policy.producers as producers
+from dynamo.detox.conditions import ReplicaCondition, SiteCondition
+from dynamo.detox.sort import SortKey
 
 LOG = logging.getLogger(__name__)
 

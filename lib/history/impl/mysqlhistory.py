@@ -7,9 +7,9 @@ import collections
 import sqlite3
 import lzma
 
-from history.history import TransactionHistoryInterface
-from utils.interface.mysql import MySQL
-from dataformat import HistoryRecord
+from dynamo.history.history import TransactionHistoryInterface
+from dynamo.utils.interface.mysql import MySQL
+from dynamo.dataformat import HistoryRecord
 
 LOG = logging.getLogger(__name__)
 

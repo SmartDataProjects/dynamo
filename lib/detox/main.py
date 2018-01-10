@@ -3,13 +3,13 @@ import time
 import logging
 import collections
 
-from core.inventory import ObjectRepository
-from dataformat import Dataset
-from detox.detoxpolicy import DetoxPolicy
-from detox.detoxpolicy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
-import operation.impl
-import history.impl
-from utils.signaling import SignalBlocker
+from dynamo.core.inventory import ObjectRepository
+from dynamo.dataformat import Dataset
+from dynamo.detox.detoxpolicy import DetoxPolicy
+from dynamo.detox.detoxpolicy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
+import dynamo.operation.impl as operation_impl
+import dynamo.history.impl as history_impl
+from dynamo.utils.signaling import SignalBlocker
 
 LOG = logging.getLogger(__name__)
 
@@ -20,9 +20,9 @@ class Detox(object):
         @param config      Configuration
         """
 
-        self.deletion_op = getattr(operation.impl, config.deletion_op.module)(config.deletion_op.config)
-        self.copy_op = getattr(operation.impl, config.copy_op.module)(config.copy_op.config)
-        self.history = getattr(history.impl, config.history.module)(config.history.config)
+        self.deletion_op = getattr(operation_impl, config.deletion_op.module)(config.deletion_op.config)
+        self.copy_op = getattr(operation_impl, config.copy_op.module)(config.copy_op.config)
+        self.history = getattr(history_impl, config.history.module)(config.history.config)
 
         self.policy = DetoxPolicy(config)
 

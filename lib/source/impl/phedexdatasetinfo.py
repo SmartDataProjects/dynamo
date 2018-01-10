@@ -1,20 +1,18 @@
-"""
-DatasetInfoSource using PhEDEx and DBS.
-"""
-
 import logging
 import fnmatch
 import re
 
-from source.datasetinfo import DatasetInfoSource
-from utils.interface.phedex import PhEDEx
-from utils.interface.webservice import RESTService
-from utils.parallel import Map
-from dataformat import Dataset, Block, File, IntegrityError
+from dynamo.source.datasetinfo import DatasetInfoSource
+from dynamo.utils.interface.phedex import PhEDEx
+from dynamo.utils.interface.webservice import RESTService
+from dynamo.utils.parallel import Map
+from dynamo.dataformat import Dataset, Block, File, IntegrityError
 
 LOG = logging.getLogger(__name__)
 
 class PhEDExDatasetInfoSource(DatasetInfoSource):
+    """DatasetInfoSource using PhEDEx and DBS."""
+
     def __init__(self, config):
         DatasetInfoSource.__init__(self, config)
 

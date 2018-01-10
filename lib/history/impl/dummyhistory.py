@@ -1,8 +1,8 @@
 import logging
 import time
 
-from history.history import TransactionHistoryInterface
-from dataformat import Configuration, HistoryRecord
+from dynamo.history.history import TransactionHistoryInterface
+from dynamo.dataformat import Configuration, HistoryRecord
 
 LOG = logging.getLogger(__name__)
 

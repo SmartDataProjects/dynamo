@@ -1,7 +1,7 @@
 import logging
 
-from dealer.plugins.base import BaseHandler
-from dataformat import Site
+from dynamo.dataformat import Site
+from base import BaseHandler
 
 LOG = logging.getLogger(__name__)
 

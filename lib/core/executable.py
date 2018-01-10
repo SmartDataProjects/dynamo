@@ -4,7 +4,7 @@ Also can be used to set up an environment for the executables to run
 as standalone python scripts.
 """
 
-from core.inventory import ObjectRepository
+from dynamo.core.inventory import ObjectRepository
 
 registry = None
 inventory = ObjectRepository()

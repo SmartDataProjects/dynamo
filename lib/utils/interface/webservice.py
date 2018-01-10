@@ -8,8 +8,8 @@ import json
 import re
 import logging
 
-from dataformat import Configuration, ConfigurationError
-from utils.transform import unicode2str
+from dynamo.dataformat import Configuration, ConfigurationError
+from dynamo.utils.transform import unicode2str
 
 LOG = logging.getLogger(__name__)
 

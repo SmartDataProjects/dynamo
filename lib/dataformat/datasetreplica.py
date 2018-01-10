@@ -1,4 +1,4 @@
-from dataformat.exceptions import ObjectError
+from exceptions import ObjectError
 
 class DatasetReplica(object):
     """Represents a dataset replica. Just a container for block replicas."""

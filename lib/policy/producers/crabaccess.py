@@ -3,9 +3,9 @@ import datetime
 import collections
 import logging
 
-from utils.interface.popdb import PopDB
-from utils.interface.mysql import MySQL
-from utils.parallel import Map
+from dynamo.utils.interface.popdb import PopDB
+from dynamo.utils.interface.mysql import MySQL
+from dynamo.utils.parallel import Map
 
 # last_access is unix time
 ReplicaAccess = collections.namedtuple('ReplicaAccess', ['rank', 'num_access', 'tot_cpu', 'last_access'])

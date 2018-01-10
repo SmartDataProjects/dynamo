@@ -1,17 +1,15 @@
-"""
-GroupInfoSource for PhEDEx.
-"""
-
 import logging
 import fnmatch
 
-from source.groupinfo import GroupInfoSource
-from utils.interface.phedex import PhEDEx
-from dataformat import Group, Dataset, Block
+from dynamo.source.groupinfo import GroupInfoSource
+from dynamo.utils.interface.phedex import PhEDEx
+from dynamo.dataformat import Group, Dataset, Block
 
 LOG = logging.getLogger(__name__)
 
 class PhEDExGroupInfoSource(GroupInfoSource):
+    """GroupInfoSource using PhEDEx."""
+
     def __init__(self, config):
         GroupInfoSource.__init__(self, config)
 

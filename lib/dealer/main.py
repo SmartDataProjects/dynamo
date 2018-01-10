@@ -5,13 +5,13 @@ import fnmatch
 import logging
 import random
 
-from dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site, ConfigurationError
-from dealer.dealerpolicy import DealerPolicy
-import dealer.plugins
-import operation.impl
-import history.impl
-import policy.producers as producers
-from utils.signaling import SignalBlocker
+from dynamo.dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site, ConfigurationError
+from dynamo.dealer.dealerpolicy import DealerPolicy
+import dynamo.dealer.plugins as dealer_plugins
+import dynamo.operation.impl as operation_impl
+import dynamo.history.impl as history_impl
+import dynamo.policy.producers as producers
+from dynamo.utils.signaling import SignalBlocker
 
 LOG = logging.getLogger(__name__)
 
@@ -43,8 +43,8 @@ class Dealer(object):
         @param config      Configuration
         """
         
-        self.copy_op = getattr(operation.impl, config.copy_op.module)(config.copy_op.config)
-        self.history = getattr(history.impl, config.history.module)(config.history.config)
+        self.copy_op = getattr(operation_impl, config.copy_op.module)(config.copy_op.config)
+        self.history = getattr(history_impl, config.history.module)(config.history.config)
 
         self._attr_producers = []
 
@@ -125,7 +125,7 @@ class Dealer(object):
         n_zero_prio = 0
         n_nonzero_prio = 0
         for name, spec in config.plugins.items():
-            plugin = getattr(dealer.plugins, spec.module)(spec.config)
+            plugin = getattr(dealer_plugins, spec.module)(spec.config)
             self._plugin_priorities[plugin] = spec.priority
 
             if spec.priority:

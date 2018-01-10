@@ -1,6 +1,6 @@
 import re
 
-import policy.attrs as attrs
+import dynamo.policy.attrs as attrs
 
 class InvalidOperator(Exception):
     pass

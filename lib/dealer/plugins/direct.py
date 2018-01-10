@@ -1,6 +1,7 @@
 import logging
-from dealer.plugins.base import BaseHandler
-from utils.interface.mysql import MySQL
+
+from dynamo.utils.interface.mysql import MySQL
+from base import BaseHandler
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +172,3 @@ class DirectRequestsHandler(BaseHandler):
             datasets_to_request.append((ds, inventory.sites[req.site]))
 
         return datasets_to_request
-
-
-from dealer.plugins._list import plugins
-plugins['DirectRequests'] = DirectRequestsHandler()

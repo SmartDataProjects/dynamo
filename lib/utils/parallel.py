@@ -2,7 +2,7 @@ import time
 import multiprocessing
 import threading
 
-from dataformat import Configuration
+from dynamo.dataformat import Configuration
 
 class FunctionWrapper(object):
     def __init__(self, function):

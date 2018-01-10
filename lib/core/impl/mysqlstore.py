@@ -2,9 +2,9 @@ import time
 import logging
 import fnmatch
 
-from core.persistency import InventoryStore
-from utils.interface.mysql import MySQL
-from dataformat import Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
+from dynamo.core.persistency import InventoryStore
+from dynamo.utils.interface.mysql import MySQL
+from dynamo.dataformat import Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)
 

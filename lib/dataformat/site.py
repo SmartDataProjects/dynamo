@@ -1,5 +1,5 @@
-from dataformat.exceptions import ObjectError, IntegrityError
-from dataformat.sitepartition import SitePartition
+from exceptions import ObjectError, IntegrityError
+from sitepartition import SitePartition
 
 class Site(object):
     """Represents a site. Owns lists of dataset and block replicas, which are organized into partitions."""

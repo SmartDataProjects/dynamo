@@ -4,8 +4,8 @@ import urllib2
 import fnmatch
 import time
 
-import utils.interface.webservice as webservice
-from dataformat import Configuration, Block
+import dynamo.utils.interface.webservice as webservice
+from dynamo.dataformat import Configuration, Block
 
 LOG = logging.getLogger(__name__)
 

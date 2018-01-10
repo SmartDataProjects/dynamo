@@ -1,6 +1,6 @@
-from dataformat import ConfigurationError
-import policy.variables as variables
-from policy.attrs import Attr
+from dynamo.dataformat import ConfigurationError
+import dynamo.policy.variables as variables
+from dynamo.policy.attrs import Attr
 
 class SortKey(object):
     """

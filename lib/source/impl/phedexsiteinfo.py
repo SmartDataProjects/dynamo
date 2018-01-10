@@ -1,19 +1,17 @@
-"""
-SiteInfoSource for PhEDEx. Also use CMS Site Status Board for additional information.
-"""
-
 import time
 import logging
 import fnmatch
 
-from dataformat import Site
-from source.siteinfo import SiteInfoSource
-from utils.interface.phedex import PhEDEx
-from utils.interface.ssb import SiteStatusBoard
+from dynamo.dataformat import Site
+from dynamo.source.siteinfo import SiteInfoSource
+from dynamo.utils.interface.phedex import PhEDEx
+from dynamo.utils.interface.ssb import SiteStatusBoard
 
 LOG = logging.getLogger(__name__)
 
 class PhEDExSiteInfoSource(SiteInfoSource):
+    """SiteInfoSource for PhEDEx. Also use CMS Site Status Board for additional information."""
+
     def __init__(self, config):
         SiteInfoSource.__init__(self, config)
 

@@ -1,4 +1,4 @@
-from dealer.policy import ReplicaPlacementRule
+from dynamo.dealer.policy import ReplicaPlacementRule
 
 class NoHIAtUSSites(ReplicaPlacementRule):
     def dataset_allowed(self, dataset, site):

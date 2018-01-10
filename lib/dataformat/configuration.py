@@ -2,7 +2,7 @@ import os
 import re
 import json
 
-from utils.transform import unicode2str
+from dynamo.utils.transform import unicode2str
 
 class Configuration(dict):
     """

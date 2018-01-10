@@ -6,9 +6,9 @@ import hashlib
 import multiprocessing
 import Queue
 
-from core.inventory import DynamoInventory
-from core.registry import DynamoRegistry
-from utils.signaling import SignalBlocker
+from dynamo.core.inventory import DynamoInventory
+from dynamo.core.registry import DynamoRegistry
+from dynamo.utils.signaling import SignalBlocker
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
@@ -278,7 +278,7 @@ class Dynamo(object):
         ## Ignore SIGINT - see note above proc.terminate()
         ## We will react to SIGTERM by raising KeyboardInterrupt
         import signal
-        from utils.signaling import SignalConverter
+        from dynamo.utils.signaling import SignalConverter
         
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
@@ -330,14 +330,14 @@ class Dynamo(object):
         self.inventory.init_store(persistency_config.module, persistency_config.readonly_config)
 
         # Pass my registry and inventory to the executable through core.executable
-        import core.executable
-        core.executable.registry = self.registry
-        core.executable.inventory = self.inventory
+        import dynamo.core.executable as executable
+        executable.registry = self.registry
+        executable.inventory = self.inventory
 
         if queue is not None:
             # create a list of updated objects the executable can fill
-            core.executable.inventory._updated_objects = []
-            core.executable.inventory._deleted_objects = []
+            executable.inventory._updated_objects = []
+            executable.inventory._deleted_objects = []
 
         execfile(path + '/exec.py')
 

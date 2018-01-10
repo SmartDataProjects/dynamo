@@ -1,7 +1,7 @@
 import time
 import copy
 
-from dataformat.exceptions import ObjectError
+from exceptions import ObjectError
 
 class Dataset(object):
     """Represents a dataset."""

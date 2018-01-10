@@ -1,6 +1,6 @@
 import logging
 
-from dataformat import Configuration, HistoryRecord
+from dynamo.dataformat import Configuration, HistoryRecord
 
 LOG = logging.getLogger(__name__)
 

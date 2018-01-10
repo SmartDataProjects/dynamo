@@ -1,16 +1,16 @@
-"""Deletion using PhEDEx."""
-
 import logging
 import collections
 
-from operation.deletion import DeletionInterface
-from utils.interface.webservice import POST
-from utils.interface.phedex import PhEDEx
-from dataformat import DatasetReplica, BlockReplica, Site
+from dynamo.operation.deletion import DeletionInterface
+from dynamo.utils.interface.webservice import POST
+from dynamo.utils.interface.phedex import PhEDEx
+from dynamo.dataformat import DatasetReplica, BlockReplica, Site
 
 LOG = logging.getLogger(__name__)
 
 class PhEDExDeletionInterface(DeletionInterface):
+    """Deletion using PhEDEx."""
+
     def __init__(self, config):
         DeletionInterface.__init__(self, config)
 

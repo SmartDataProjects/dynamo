@@ -1,4 +1,5 @@
-from dataformat.block import Block, ObjectError
+from block import Block
+from exceptions import ObjectError
 
 class Group(object):
     """

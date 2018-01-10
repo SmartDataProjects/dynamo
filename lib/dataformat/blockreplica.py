@@ -1,4 +1,4 @@
-from dataformat.exceptions import ObjectError
+from exceptions import ObjectError
 
 class BlockReplica(object):
     """Block placement at a site. Holds an attribute 'group' which can be None.

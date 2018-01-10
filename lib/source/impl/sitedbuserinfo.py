@@ -1,7 +1,7 @@
 import logging
 
-from source.userinfo import UserInfoSource
-from utils.interface.sitedb import SiteDB
+from dynamo.source.userinfo import UserInfoSource
+from dynamo.utils.interface.sitedb import SiteDB
 
 LOG = logging.getLogger(__name__)
 

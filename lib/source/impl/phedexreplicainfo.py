@@ -1,16 +1,14 @@
-"""
-ReplicaInfoSource using PhEDEx.
-"""
-
 import logging
 
-from source.replicainfo import ReplicaInfoSource
-from utils.interface.phedex import PhEDEx
-from dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
+from dynamo.source.replicainfo import ReplicaInfoSource
+from dynamo.utils.interface.phedex import PhEDEx
+from dynamo.dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)
 
 class PhEDExReplicaInfoSource(ReplicaInfoSource):
+    """ReplicaInfoSource using PhEDEx."""
+
     def __init__(self, config):
         ReplicaInfoSource.__init__(self, config)
 

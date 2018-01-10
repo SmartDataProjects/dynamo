@@ -1,4 +1,4 @@
-from dataformat.exceptions import ObjectError
+from exceptions import ObjectError
 
 class Block(object):
     """Smallest data unit for data management."""
