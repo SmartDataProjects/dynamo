@@ -22,7 +22,7 @@ MYSQLOPT=$MYSQLOPT" -h localhost"
 
 # Check user validity
 echo "SELECT 1;" | mysql $MYSQLOPT >/dev/null 2>&1
-if [ $? ]
+if [ $? -ne 0 ]
 then
   echo "MySQL user permission is not set."
   exit 1

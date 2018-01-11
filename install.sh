@@ -185,7 +185,10 @@ echo "Installing the policies."
 TAG=$(cat $SOURCE/etc/policies.tag)
 git clone https://github.com/SmartDataProjects/dynamo-policies.git $INSTALLPATH/policies
 cd $INSTALLPATH/policies
-git checkout $TAG >/dev/null
+git checkout $TAG >/dev/null 2>&1
+echo "Policy commit:"
+git log -1
+
 cd - > /dev/null
 
 ### Install the web scripts ###
