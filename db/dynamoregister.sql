@@ -1,27 +1,7 @@
--- MySQL dump 10.13  Distrib 5.1.73, for redhat-linux-gnu (x86_64)
---
--- Host: localhost    Database: dynamoregister
--- ------------------------------------------------------
--- Server version	5.1.73-log
 
-/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
-/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
-/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!40101 SET NAMES utf8 */;
-/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
-/*!40103 SET TIME_ZONE='+00:00' */;
-/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
-/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
-/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
-/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
---
--- Table structure for table `action`
---
 
 DROP TABLE IF EXISTS `action`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `action` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `write_request` tinyint(1) NOT NULL,
@@ -31,19 +11,13 @@ CREATE TABLE `action` (
   `status` enum('new','run','done','failed','killed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `user_id` int(10) unsigned NOT NULL,
   `type` enum('executable','deletion_policy') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  `timestamp` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `email` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `activity_lock`
---
 
 DROP TABLE IF EXISTS `activity_lock`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `activity_lock` (
   `user_id` int(10) unsigned NOT NULL,
   `service_id` int(10) unsigned NOT NULL,
@@ -53,59 +27,35 @@ CREATE TABLE `activity_lock` (
   UNIQUE KEY `application` (`application`),
   KEY `user` (`user_id`,`service_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `authorized_action`
---
 
 DROP TABLE IF EXISTS `authorized_action`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `authorized_action` (
   `user_id` int(10) unsigned NOT NULL DEFAULT '0',
   `title` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   `checksum` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   KEY `executable` (`title`,`checksum`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `authorized_executables`
---
 
 DROP TABLE IF EXISTS `authorized_executables`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `authorized_executables` (
   `user_id` int(10) unsigned NOT NULL,
   `title` varchar(128) COLLATE latin1_general_cs NOT NULL,
   `checksum` binary(16) NOT NULL,
   PRIMARY KEY (`user_id`,`title`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `authorized_users`
---
 
 DROP TABLE IF EXISTS `authorized_users`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `authorized_users` (
   `user_id` int(10) unsigned NOT NULL,
   `service_id` int(10) unsigned NOT NULL,
   UNIQUE KEY `user` (`user_id`,`service_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `deletion_queue`
---
 
 DROP TABLE IF EXISTS `deletion_queue`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `deletion_queue` (
   `reqid` int(10) unsigned NOT NULL DEFAULT '0',
   `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
@@ -113,15 +63,9 @@ CREATE TABLE `deletion_queue` (
   `status` enum('new','done','failed') COLLATE latin1_general_cs NOT NULL,
   UNIQUE KEY `file` (`file`,`site`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `detox_locks`
---
 
 DROP TABLE IF EXISTS `detox_locks`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `detox_locks` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `item` varchar(512) COLLATE latin1_general_cs NOT NULL,
@@ -140,29 +84,17 @@ CREATE TABLE `detox_locks` (
   KEY `lock_data` (`item`,`sites`,`groups`),
   KEY `user_id` (`user_id`,`service_id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `domains`
---
 
 DROP TABLE IF EXISTS `domains`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `domains` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(32) COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `executables`
---
 
 DROP TABLE IF EXISTS `executables`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `executables` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `title` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
@@ -172,29 +104,17 @@ CREATE TABLE `executables` (
   `write_request` tinyint(1) NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `invalidations`
---
 
 DROP TABLE IF EXISTS `invalidations`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `invalidations` (
   `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   `user_id` int(10) unsigned NOT NULL DEFAULT '0',
   `timestamp` datetime NOT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `requests`
---
 
 DROP TABLE IF EXISTS `requests`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `requests` (
   `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
   `datatype` enum('dataset','block') CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
@@ -202,15 +122,9 @@ CREATE TABLE `requests` (
   `reqtype` enum('copy','delete') NOT NULL,
   `created` datetime NOT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `requests_unified`
---
 
 DROP TABLE IF EXISTS `requests_unified`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `requests_unified` (
   `reqid` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
@@ -223,29 +137,17 @@ CREATE TABLE `requests_unified` (
   `updated` datetime DEFAULT NULL,
   PRIMARY KEY (`reqid`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `services`
---
 
 DROP TABLE IF EXISTS `services`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `services` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(32) COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `transfer_queue`
---
 
 DROP TABLE IF EXISTS `transfer_queue`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `transfer_queue` (
   `reqid` int(10) unsigned NOT NULL,
   `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
@@ -254,15 +156,9 @@ CREATE TABLE `transfer_queue` (
   `status` enum('new','done','failed') COLLATE latin1_general_cs NOT NULL,
   UNIQUE KEY `file` (`file`,`site_from`,`site_to`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
---
--- Table structure for table `users`
---
 
 DROP TABLE IF EXISTS `users`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `users` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(64) COLLATE latin1_general_cs NOT NULL,
@@ -273,15 +169,5 @@ CREATE TABLE `users` (
   UNIQUE KEY `name` (`name`,`domain_id`),
   UNIQUE KEY `dn` (`dn`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
-/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
-/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
-/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
-/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
-/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-12-12 17:14:18

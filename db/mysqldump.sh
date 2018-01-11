@@ -33,7 +33,7 @@ do
   esac
 done
 
-if [ $DEFAULTS_SUFFIX ]
+if [ $DEFAULTS_FILE ] || [ $DEFAULTS_SUFFIX ]
 then
   [ $DEFAULTS_FILE ] || DEFAULTS_FILE=/etc/my.cnf
 
