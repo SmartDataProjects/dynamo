@@ -20,12 +20,12 @@
     "backend": {
       "interface": "MySQL",
       "config": {
+        "reuse_connection": false,
         _SERVER_DB_WRITE_PARAMS_2_
-        "reuse_connection": false
       },
       "readonly_config": {
+        "reuse_connection": false,
         _SERVER_DB_READ_PARAMS_2_
-        "reuse_connection": false
       }
     },
     "interface": {

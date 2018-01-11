@@ -183,6 +183,8 @@ else
   [ $SERVER_DB_READ_PASSWD ] && echo '        "passwd": "'$SERVER_DB_READ_PASSWD'",' >> server_config.json.tmp
   echo '        "host": "'$SERVER_DB_HOST'",' >> server_config.json.tmp
   echo '        "db": "'$SERVER_DB'"' >> server_config.json.tmp
+
+  sed '/_SERVER_DB_READ_PARAMS_2_/,$ !d;//d' $CONFIGPATH/server_config.json >> server_config.json.tmp
   
   mv server_config.json.tmp $CONFIGPATH/server_config.json
 fi
