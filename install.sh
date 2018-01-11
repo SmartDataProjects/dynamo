@@ -19,13 +19,13 @@ confirmed () {
 }
 
 require () {
-  $@ >/dev/null 2>&1 && return 0
+  "$@" >/dev/null 2>&1 && return 0
   echo "[Fatal] Failed: $@"
   exit 1
 }
 
 warnifnot () {
-  $@ && return 0
+  "$@" >/dev/null 2>&1 && return 0
   echo "[Warning] Failed: $@"
   echo "Some components may not work."
 }
