@@ -29,22 +29,17 @@ SCHEDULERSEQ=cms.seq
 WEBPATH=/var/www
 
 # Server database parameters
-#SERVER_DB_WRITE_CNF=/etc/my.cnf.d/dynamo-write.cnf
-SERVER_DB_WRITE_CNF=/etc/my.cnf
-#SERVER_DB_WRITE_CNFGROUP=mysql
-SERVER_DB_WRITE_CNFGROUP=mysql-dynamo
+SERVER_DB_WRITE_CNF=/etc/my.cnf.d/dynamo-write.cnf
+SERVER_DB_WRITE_CNFGROUP=mysql
 #SERVER_DB_WRITE_USER=
 #SERVER_DB_WRITE_PASSWD=
 
-#SERVER_DB_READ_CNF=/etc/my.cnf.d/dynamo.cnf
-SERVER_DB_READ_CNF=/etc/my.cnf
-#SERVER_DB_READ_CNFGROUP=mysql
-SERVER_DB_READ_CNFGROUP=mysql-dynamo
+SERVER_DB_READ_CNF=/etc/my.cnf.d/dynamo.cnf
+SERVER_DB_READ_CNFGROUP=mysql
 
 SERVER_DB_HOST=localhost
 SERVER_DB=dynamo
 REGISTRY_DB=dynamoregister
 
 # Registry host
-#REGISTRY_HOST=t3serv017.mit.edu
-REGISTRY_HOST=t3desk007.mit.edu
+REGISTRY_HOST=t3serv017.mit.edu
