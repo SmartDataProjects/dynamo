@@ -35,7 +35,7 @@
       }
     }
   },
-  "scheduler_path": _SCHEDULER_PATH_
+  "scheduler_path": "_SCHEDULER_PATH_",
   "logging": {
     "level": "info",
     "path": "_LOGPATH_",
