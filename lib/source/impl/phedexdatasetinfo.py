@@ -151,6 +151,11 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
             is_open = (block_entry['is_open'] == 'y')
         )
 
+        if 'time_update' in block_entry and block_entry['time_update'] is not None:
+            block.last_update = int(block_entry['time_update'])
+        else:
+            block.last_update = int(block_entry['time_create'])
+
 #        for file_entry in block_entry['file']:
 #            lfile = File(
 #                file_entry['lfn'],

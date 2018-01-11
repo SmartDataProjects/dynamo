@@ -1,9 +1,11 @@
+import time
+
 from exceptions import ObjectError
 
 class Block(object):
     """Smallest data unit for data management."""
 
-    __slots__ = ['_name', '_dataset', 'size', 'num_files', 'is_open', 'replicas', 'files']
+    __slots__ = ['_name', '_dataset', 'size', 'num_files', 'is_open', 'replicas', 'files', 'last_update']
 
     @property
     def name(self):
@@ -26,12 +28,13 @@ class Block(object):
 
         return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]        
 
-    def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False):
+    def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False, last_update = 0):
         self._name = name
         self._dataset = dataset
         self.size = size
         self.num_files = num_files
         self.is_open = is_open
+        self.last_update = last_update
 
         self.replicas = set()
 
@@ -39,14 +42,20 @@ class Block(object):
         self.files = None
 
     def __str__(self):
-        return 'Block %s (size=%d, num_files=%d, is_open=%s)' % (self.full_name(), self.size, self.num_files, self.is_open)
+        replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
+
+        return 'Block %s (size=%d, num_files=%d, is_open=%s, last_update=%s, replicas=%s)' % \
+            (self.full_name(), self.size, self.num_files, self.is_open, \
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), \
+            replica_sites)
 
     def __repr__(self):
         return 'Block(Block.to_internal_name(\'%s\', %s)' % (self.real_name(), repr(self._dataset))
 
     def __eq__(self, other):
         return self._name == other._name and self._dataset.name == other._dataset.name and \
-            self.size == other.size and self.num_files == other.num_files and self.is_open == other.is_open
+            self.size == other.size and self.num_files == other.num_files and \
+            self.is_open == other.is_open and self.last_update == other.last_update
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -58,10 +67,11 @@ class Block(object):
         self.size = other.size
         self.num_files = other.num_files
         self.is_open = other.is_open
+        self.last_update = other.last_update
 
     def unlinked_clone(self):
         dataset = self._dataset.unlinked_clone()
-        return Block(self._name, dataset, self.size, self.num_files, self.is_open)
+        return Block(self._name, dataset, self.size, self.num_files, self.is_open, self.last_update)
 
     def embed_into(self, inventory, check = False):
         try:
@@ -72,7 +82,7 @@ class Block(object):
         block = dataset.find_block(self._name)
         updated = False
         if block is None:
-            block = Block(self._name, dataset, self.size, self.num_files, self.is_open)
+            block = Block(self._name, dataset, self.size, self.num_files, self.is_open, self.last_update)
             dataset.blocks.add(block)
             updated = True
         elif check and (block is self or block == self):

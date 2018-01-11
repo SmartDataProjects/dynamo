@@ -248,7 +248,7 @@ class MySQLInventoryStore(InventoryStore):
             id_dataset_map[dataset_id] = dataset
 
     def _load_blocks(self, inventory, id_dataset_map, id_block_maps):
-        sql = 'SELECT b.`id`, b.`dataset_id`, b.`name`, b.`size`, b.`num_files`, b.`is_open` FROM `blocks` AS b'
+        sql = 'SELECT b.`id`, b.`dataset_id`, b.`name`, b.`size`, b.`num_files`, b.`is_open`, UNIX_TIMESTAMP(b.`last_update`) FROM `blocks` AS b'
 
         if self._mysql.table_exists('datasets_load_tmp'):
             sql += ' INNER JOIN `datasets_load_tmp` AS t ON t.`id` = b.`dataset_id`'
@@ -257,7 +257,7 @@ class MySQLInventoryStore(InventoryStore):
 
         _dataset_id = 0
         dataset = None
-        for block_id, dataset_id, name, size, num_files, is_open in self._mysql.xquery(sql):
+        for block_id, dataset_id, name, size, num_files, is_open, last_update in self._mysql.xquery(sql):
             if dataset_id != _dataset_id:
                 _dataset_id = dataset_id
 
@@ -273,7 +273,8 @@ class MySQLInventoryStore(InventoryStore):
                 dataset,
                 size,
                 num_files,
-                is_open
+                is_open,
+                last_update
             )
 
             dataset.blocks.add(block)
@@ -358,15 +359,16 @@ class MySQLInventoryStore(InventoryStore):
         if dataset_id == 0:
             return
 
-        fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open')
+        fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open', 'last_update')
+        values = ', '.join(['%s'] * len(fields))
 
         sql = 'INSERT INTO `blocks` ('
         sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (%s, %s, %s, %s, %s)'
+        sql += ') VALUES (' + values + ')'
         sql += ' ON DUPLICATE KEY UPDATE '
         sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
-        self._mysql.query(sql, dataset_id, block.real_name(), block.size, block.num_files, block.is_open)
+        self._mysql.query(sql, dataset_id, block.real_name(), block.size, block.num_files, block.is_open, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
 
     def delete_block(self, block): #override
         dataset_id = self._get_dataset_id(block.dataset)
@@ -391,14 +393,15 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
+        values = ', '.join(['%s'] * len(fields))
 
         sql = 'INSERT INTO `block_replicas` ('
         sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (%s, %s, %s, %s, %s, FROM_UNIXTIME(%s))'
+        sql += ') VALUES (' + values + ')'
         sql += ' ON DUPLICATE KEY UPDATE '
         sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
-        self._mysql.query(sql, block_id, site_id, group_id, block_replica.is_complete, block_replica.is_custodial, block_replica.last_update)
+        self._mysql.query(sql, block_id, site_id, group_id, block_replica.is_complete, block_replica.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update)))
 
     def delete_blockreplica(self, block_replica): #override
         block_id = self._get_block_id(block_replica.block)
@@ -426,16 +429,17 @@ class MySQLInventoryStore(InventoryStore):
             software_version_id = result[0]
             
         fields = ('name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
+        values = ', '.join(['%s'] * len(fields))
 
         sql = 'INSERT INTO `datasets` ('
         sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (%s, %s, %s, %s, %s, %s, %s, FROM_UNIXTIME(%s), %s)'
+        sql += ') VALUES (' + values + ')'
         sql += ' ON DUPLICATE KEY UPDATE '
         sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
         self._mysql.query(sql, dataset.name, dataset.size, dataset.num_files, \
             dataset.status, dataset.on_tape, dataset.data_type, \
-            software_version_id, dataset.last_update, dataset.is_open)
+            software_version_id, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
     def delete_dataset(self, dataset): #override
         sql = 'DELETE FROM `datasets` WHERE `name` = %s'
@@ -452,10 +456,11 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('dataset_id', 'site_id')
+        values = ', '.join(['%s'] * len(fields))
 
         sql = 'INSERT INTO `dataset_replicas` ('
         sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (%s, %s)'
+        sql += ') VALUES (' + values + ')'
         sql += ' ON DUPLICATE KEY UPDATE '
         sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
@@ -476,10 +481,11 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_group(self, group): #override
         fields = ('name', 'olevel')
+        values = ', '.join(['%s'] * len(fields))
 
         sql = 'INSERT INTO `groups` ('
         sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (%s, %s)'
+        sql += ') VALUES (' + values + ')'
         sql += ' ON DUPLICATE KEY UPDATE '
         sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
@@ -508,10 +514,11 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_site(self, site): #override
         fields = ('name', 'host', 'storage_type', 'backend', 'storage', 'cpu', 'status')
+        values = ', '.join(['%s'] * len(fields))
 
         sql = 'INSERT INTO `sites` ('
         sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (%s, %s, %s, %s, %s, %s, %s)'
+        sql += ') VALUES (' + values + ')'
         sql += ' ON DUPLICATE KEY UPDATE '
         sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
@@ -532,10 +539,11 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('site_id', 'partition_id', 'quota')
+        values = ', '.join(['%s'] * len(fields))
 
         sql = 'INSERT INTO `quotas` ('
         sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (%s, %s, %s)'
+        sql += ') VALUES (' + values + ')'
         sql += ' ON DUPLICATE KEY UPDATE '
         sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
