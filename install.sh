@@ -68,14 +68,32 @@ confirmed () {
 }
 
 require () {
-  $@ && return 0
-  echo "Failed: $@"
+  $@ >/dev/null 2>&1 && return 0
+  echo "[Fatal] Failed: $@"
   exit 1
 }
+
+warnifnot () {
+  $@ && return 0
+  echo "[Warning] Failed: $@"
+  echo "Some components may not work."
+}
+
+### Verify required components
+
+echo "Checking dependencies.."
+require which python
+require python -c 'import MySQLdb'
+warnifnot python -c 'import htcondor'
+require which mysql
+[ $WEBPATH ] && require pgrep -f httpd
+[ $SERVER_DB_HOST = localhost ] && require pgrep -f mysqld
 
 ### Where we are installing from (i.e. this directory) ###
 
 export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
+
+echo "Installing from $SOURCE"
 
 ### (Clear &) Make the directories ###
 
@@ -147,6 +165,8 @@ fi
 
 ### Install the configs ###
 
+echo "Writing configuration files."
+
 echo "export DYNAMO_BASE=$INSTALLPATH" > $INSTALLPATH/etc/profile.d/init.sh
 echo "export DYNAMO_ARCHIVE=$ARCHIVEPATH" >> $INSTALLPATH/etc/profile.d/init.sh
 echo "export DYNAMO_SPOOL=$SPOOLPATH" >> $INSTALLPATH/etc/profile.d/init.sh
@@ -188,6 +208,8 @@ cp $SOURCE/config/*.json $CONFIGPATH/
 
 ### Install the policies ###
 
+echo "Installing the policies."
+
 TAG=$(cat $SOURCE/etc/policies.tag)
 git clone https://github.com/SmartDataProjects/dynamo-policies.git $INSTALLPATH/policies
 cd $INSTALLPATH/policies
@@ -198,6 +220,7 @@ cd - > /dev/null
 
 if [ $WEBPATH ]
 then
+  export WEBPATH
   $SOURCE/web/install.sh
 fi
 
@@ -205,6 +228,8 @@ fi
 
 if [ $DAEMONS -eq 1 ]
 then
+  echo "Installing the daemons."
+
   if [[ $(uname -r) =~ el7 ]]
   then
     # systemd daemon

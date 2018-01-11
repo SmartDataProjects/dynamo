@@ -1,16 +1,19 @@
 #!/bin/bash
 
-if ! [ $DYNAMO_BASE ]
+echo "Installing web scripts."
+
+if ! [ $SOURCE ]
 then
-  echo "DYNAMO_BASE is not set."
+  echo "Install source path is not set."
   exit 1
 fi
 
-TARGET=/var/www
+TARGET=$WEBPATH
+
 HTMLTARGET=$TARGET/html/dynamo
 BINTARGET=$TARGET/cgi-bin
-HTMLSOURCE=$DYNAMO_BASE/web/html/dynamo
-BINSOURCE=$DYNAMO_BASE/web/cgi-bin
+HTMLSOURCE=$SOURCE/web/html/dynamo
+BINSOURCE=$SOURCE/web/cgi-bin
 
 if [ -d $HTMLTARGET ] && [ -d $BINTARGET ]
 then
