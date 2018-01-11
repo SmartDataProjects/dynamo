@@ -154,7 +154,7 @@ else
   [ $SERVER_DB_WRITE_PASSWD ] && PARAMS=$PARAMS'\n          "passwd": '$SERVER_DB_WRITE_PASSWD','
   PARAMS=$PARAMS'\n          "host": '$SERVER_DB_HOST','
   PARAMS=$PARAMS'\n          "db": '$SERVER_DB
-  sed -i "s/_SERVER_DB_WRITE_PARAMS_/$PARAMS/" $CONFIGPATH/server_config.json
+  sed -i "s|_SERVER_DB_WRITE_PARAMS_|$PARAMS|" $CONFIGPATH/server_config.json
   PARAMS=
   [ $SERVER_DB_READ_CNF ] && PARAMS=$PARAMS'\n          "config_file": '$SERVER_DB_READ_CNF','
   [ $SERVER_DB_READ_CNFGROUP ] && PARAMS=$PARAMS'\n          "config_group": '$SERVER_DB_READ_CNFGROUP','
@@ -162,7 +162,7 @@ else
   [ $SERVER_DB_READ_PASSWD ] && PARAMS=$PARAMS'\n          "passwd": '$SERVER_DB_READ_PASSWD','
   PARAMS=$PARAMS'\n          "host": '$SERVER_DB_HOST','
   PARAMS=$PARAMS'\n          "db": '$SERVER_DB
-  sed -i "s/_SERVER_DB_READ_PARAMS_/$PARAMS/" $CONFIGPATH/server_config.json
+  sed -i "s|_SERVER_DB_READ_PARAMS_|$PARAMS|" $CONFIGPATH/server_config.json
 fi
 
 chmod 600 $CONFIGPATH/server_config.json

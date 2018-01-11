@@ -1,13 +1,6 @@
 
 
 
-DROP TABLE IF EXISTS `bid_tmp`;
-CREATE TABLE `bid_tmp` (
-  `id` int(10) unsigned DEFAULT NULL,
-  KEY `bid` (`id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
-
-
 DROP TABLE IF EXISTS `block_replica_sizes`;
 CREATE TABLE `block_replica_sizes` (
   `block_id` bigint(20) unsigned NOT NULL,
