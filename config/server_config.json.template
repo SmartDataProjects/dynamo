@@ -4,11 +4,13 @@
     "persistency": {
       "module": "MySQLInventoryStore",
       "config": {
-        "db_params": {_SERVER_DB_WRITE_PARAMS_
+        "db_params": {
+          _SERVER_DB_WRITE_PARAMS_1_
         }
       },
       "readonly_config": {
-        "db_params": {_SERVER_DB_READ_PARAMS_
+        "db_params": {
+          _SERVER_DB_READ_PARAMS_1_
         }
       }
     },
@@ -18,11 +20,11 @@
     "backend": {
       "interface": "MySQL",
       "config": {
-        _SERVER_DB_WRITE_PARAMS_
+        _SERVER_DB_WRITE_PARAMS_2_
         "reuse_connection": false
       },
       "readonly_config": {
-        _SERVER_DB_READ_PARAMS_
+        _SERVER_DB_READ_PARAMS_2_
         "reuse_connection": false
       }
     },
