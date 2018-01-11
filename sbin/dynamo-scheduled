@@ -2,6 +2,7 @@
 
 import os
 import sys
+import pwd
 import logging
 import logging.handlers
 import time
@@ -52,7 +53,10 @@ LOG.critical('''
 log_handler.setFormatter(logging.Formatter(fmt = log_format))
 
 ## Set the effective user id to config.user
-os.seteuid(pwd.getpwnam(config.user).pw_uid)
+try:
+    os.seteuid(pwd.getpwnam(config.user).pw_uid)
+except OSError:
+    LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 
 ## Create the registry
 from dynamo.core.registry import DynamoRegistry
