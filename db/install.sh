@@ -10,16 +10,23 @@ fi
 
 if [ $SERVER_DB_WRITE_CNF ] && [ $SERVER_DB_WRITE_CNFGROUP ]
 then
-  MYSQLOPT="-h localhost --defaults-file=$SERVER_DB_WRITE_CNF"
+  MYSQLOPT="--defaults-file=$SERVER_DB_WRITE_CNF"
   SUFFIX=$(echo $SERVER_DB_WRITE_CNFGROUP | sed 's/^mysql//')
   [ $SUFFIX ] && MYSQLOPT=$MYSQLOPT" --defaults-group-suffix=$SUFFIX"
 elif [ $SERVER_DB_WRITE_USER ] && [ $SERVER_DB_WRITE_PASSWD ]
 then
-  MYSQLOPT="-h localhost -u $SERVER_DB_WRITE_USER -p$SERVER_DB_WRITE_PASSWD"
+  MYSQLOPT="-u $SERVER_DB_WRITE_USER -p$SERVER_DB_WRITE_PASSWD"
 fi
 
+MYSQLOPT=$MYSQLOPT" -h localhost"
+
 # Check user validity
-echo "SELECT 1;" | mysql $OPTIONS >/dev/null 2>&1
+echo "SELECT 1;" | mysql $MYSQLOPT >/dev/null 2>&1
+if [ $? ]
+then
+  echo "MySQL user permission is not set."
+  exit 1
+fi
 
 mkdir .tmp
 cd .tmp
