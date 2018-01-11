@@ -15,7 +15,6 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Schedule routine sequences of Dynamo executables.')
 parser.add_argument('sequence', metavar = 'PATH', help = 'Sequence file.')
-parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -23,7 +22,12 @@ sys.argv = []
 ## Load the configuration
 from dataformat.configuration import Configuration
 
-config = Configuration(args.config)
+try:
+    config_path = os.environ['DYNAMO_SERVER_CONFIG']
+except KeyError:
+    config_path = '/etc/dynamo/server_config.json'
+
+config = Configuration(config_path)
 
 ## Set up logging (write to stderr unless path is given)
 log_level = getattr(logging, config.logging.level.upper())
@@ -46,6 +50,9 @@ LOG.critical('''
 ''')
 
 log_handler.setFormatter(logging.Formatter(fmt = log_format))
+
+## Set the effective user id to config.user
+os.seteuid(pwd.getpwnam(config.user).pw_uid)
 
 ## Create the registry
 from core.registry import DynamoRegistry

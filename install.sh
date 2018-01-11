@@ -26,17 +26,20 @@ SCHEDULERPATH=/var/spool/dynamo/scheduler
 # 1 -> Install daemons
 DAEMONS=1
 
+# Sequence file for scheduler daemon
+SCHEDULERSEQ=cms.seq
+
 # Httpd content directory
 WEBPATH=/var/www
 
 # Server database parameters
-SERVER_DB_WRITE_CNF=/etc/my.dynamowrite.cnf
-SERVER_DB_WRITE_CNFGROUP=mysql-dynamo-write
+SERVER_DB_WRITE_CNF=/etc/my.cnf.d/dynamo-write.cnf
+SERVER_DB_WRITE_CNFGROUP=mysql
 #SERVER_DB_WRITE_USER=
 #SERVER_DB_WRITE_PASSWD=
 
-SERVER_DB_WRITE_CNF=/etc/my.cnf
-SERVER_DB_WRITE_CNFGROUP=mysql-dynamo
+SERVER_DB_READ_CNF=/etc/my.cnf.d/dynamo.cnf
+SERVER_DB_READ_CNFGROUP=mysql
 
 SERVER_DB_HOST=localhost
 SERVER_DB=dynamo
@@ -72,7 +75,7 @@ require () {
 
 ### Where we are installing from (i.e. this directory) ###
 
-SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
+export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
 
 ### (Clear &) Make the directories ###
 
@@ -134,6 +137,11 @@ chmod 754 $INSTALLPATH/sbin/*
 
 if [ "$SERVER_DB_HOST" = "localhost" ]
 then
+  export SERVER_DB_WRITE_CNF
+  export SERVER_DB_WRITE_CNFGROUP
+  export SERVER_DB_WRITE_USER
+  export SERVER_DB_WRITE_PASSWD
+  
   $SOURCE/db/install.sh
 fi  
 
@@ -202,10 +210,17 @@ then
     # systemd daemon
     cp $SOURCE/daemon/dynamod.systemd /usr/lib/systemd/system/dynamod.service
     sed -i "s/_INSTALLPATH_/$INSTALLPATH/" /usr/lib/systemd/system/dynamod.service
+
+    cp $SOURCE/daemon/dynamo-scheduled.systemd /usr/lib/systemd/system/dynamo-scheduled.service
+    sed -i "s/_INSTALLPATH_/$INSTALLPATH/" /usr/lib/systemd/system/dynamo-scheduled.service
   else
     cp $SOURCE/daemon/dynamod.sysv /etc/init.d/dynamod
     sed -i "s|_INSTALLPATH_|$INSTALLPATH|" /etc/init.d/dynamod
     chmod +x /etc/init.d/dynamod
+
+    cp $SOURCE/daemon/dynamo-scheduled.sysv /etc/init.d/dynamo-scheduled
+    sed -i "s|_INSTALLPATH_|$INSTALLPATH|" /etc/init.d/dynamo-scheduled
+    chmod +x /etc/init.d/dynamo-scheduled
   fi
 
   # CRONTAB
