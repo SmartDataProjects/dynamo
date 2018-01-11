@@ -120,6 +120,11 @@ then
   export SERVER_DB_WRITE_PASSWD
   
   $SOURCE/db/install.sh
+  if [ $? -ne 0 ]
+  then
+    echo "DB configuration failed."
+    exit 1
+  fi
 fi  
 
 ### Install the configs ###
@@ -163,7 +168,15 @@ fi
 chmod 600 $CONFIGPATH/server_config.json
 
 # The rest of the config files are copied directly - edit as necessary
-cp $SOURCE/config/*.json $CONFIGPATH/
+for CONF in $(ls $SOURCE/config/*.json)
+do
+  if [ -e $CONFIGPATH/$(basename $CONF) ]
+  then
+    cp $CONF $CONFIGPATH/$(basename $CONF).new
+  else
+    cp $CONF $CONFIGPATH/$(basename $CONF)
+  fi
+done
 
 ### Install the policies ###
 
@@ -172,7 +185,7 @@ echo "Installing the policies."
 TAG=$(cat $SOURCE/etc/policies.tag)
 git clone https://github.com/SmartDataProjects/dynamo-policies.git $INSTALLPATH/policies
 cd $INSTALLPATH/policies
-git checkout $TAG
+git checkout $TAG >/dev/null
 cd - > /dev/null
 
 ### Install the web scripts ###
@@ -181,6 +194,11 @@ if [ $WEBPATH ]
 then
   export WEBPATH
   $SOURCE/web/install.sh
+  if [ $? -ne 0 ]
+  then
+    echo "Web configuration failed."
+    exit 1
+  fi
 fi
 
 ### Install the daemons ###
@@ -193,10 +211,10 @@ then
   then
     # systemd daemon
     cp $SOURCE/daemon/dynamod.systemd /usr/lib/systemd/system/dynamod.service
-    sed -i "s/_INSTALLPATH_/$INSTALLPATH/" /usr/lib/systemd/system/dynamod.service
+    sed -i "s|_INSTALLPATH_|$INSTALLPATH|" /usr/lib/systemd/system/dynamod.service
 
     cp $SOURCE/daemon/dynamo-scheduled.systemd /usr/lib/systemd/system/dynamo-scheduled.service
-    sed -i "s/_INSTALLPATH_/$INSTALLPATH/" /usr/lib/systemd/system/dynamo-scheduled.service
+    sed -i "s|_INSTALLPATH_|$INSTALLPATH|" /usr/lib/systemd/system/dynamo-scheduled.service
   else
     cp $SOURCE/daemon/dynamod.sysv /etc/init.d/dynamod
     sed -i "s|_INSTALLPATH_|$INSTALLPATH|" /etc/init.d/dynamod
