@@ -85,20 +85,6 @@ CREATE TABLE `policy_conditions` (
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
 
-DROP TABLE IF EXISTS `quota_snapshots`;
-CREATE TABLE `quota_snapshots` (
-  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `site_id` int(10) unsigned NOT NULL,
-  `partition_id` int(10) unsigned NOT NULL,
-  `run_id` int(10) unsigned NOT NULL,
-  `quota` int(10) NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `unique` (`site_id`,`partition_id`,`run_id`),
-  KEY `site_partition` (`site_id`,`partition_id`),
-  KEY `runs` (`run_id`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
-
-
 DROP TABLE IF EXISTS `runs`;
 CREATE TABLE `runs` (
   `id` int(10) NOT NULL AUTO_INCREMENT,
@@ -114,20 +100,6 @@ CREATE TABLE `runs` (
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
-DROP TABLE IF EXISTS `site_status_snapshots`;
-CREATE TABLE `site_status_snapshots` (
-  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `site_id` int(10) unsigned NOT NULL,
-  `run_id` int(10) unsigned NOT NULL,
-  `active` tinyint(4) NOT NULL DEFAULT '1',
-  `status` enum('ready','waitroom','morgue','unknown') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'ready',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `unique` (`site_id`,`run_id`),
-  KEY `sites` (`site_id`),
-  KEY `runs` (`run_id`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
-
-
 DROP TABLE IF EXISTS `sites`;
 CREATE TABLE `sites` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
@@ -135,12 +107,5 @@ CREATE TABLE `sites` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
-
-
-DROP TABLE IF EXISTS `snapshots`;
-CREATE TABLE `snapshots` (
-  `tag` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
-  `timestamp` datetime NOT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 
