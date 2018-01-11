@@ -28,7 +28,7 @@ if not debug:
 
 ## Read server config (should be readable only to root)
 
-from dataformat import Configuration
+from dynamo.dataformat import Configuration
 
 try:
     config_path = os.environ['DYNAMO_SERVER_CONFIG']
@@ -39,7 +39,7 @@ server_config = Configuration(config_path)
 
 ## Create the registry
 
-from core.registry import DynamoRegistry
+from dynamo.core.registry import DynamoRegistry
 
 registry = DynamoRegistry(server_config.registry)
 

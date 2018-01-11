@@ -20,7 +20,7 @@ args = parser.parse_args()
 sys.argv = []
 
 ## Load the configuration
-from dataformat.configuration import Configuration
+from dynamo.dataformat.configuration import Configuration
 
 try:
     config_path = os.environ['DYNAMO_SERVER_CONFIG']
@@ -55,7 +55,7 @@ log_handler.setFormatter(logging.Formatter(fmt = log_format))
 os.seteuid(pwd.getpwnam(config.user).pw_uid)
 
 ## Create the registry
-from core.registry import DynamoRegistry
+from dynamo.core.registry import DynamoRegistry
 
 registry = DynamoRegistry(config.registry)
 
@@ -191,7 +191,7 @@ LOG.info('Created working directories under %s.', config.scheduler_path)
 def loop_sequence(sequence_name, sequence, user_id, config):
     ## Ignore SIGINT - see note above proc.terminate() at the end of the file
     ## We will react to SIGTERM by raising KeyboardInterrupt
-    from utils.signaling import SignalConverter
+    from dynamo.utils.signaling import SignalConverter
 
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
@@ -290,7 +290,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
 
 
 ## Prepare to catch a kill
-from utils.signaling import SignalConverter
+from dynamo.utils.signaling import SignalConverter
 signal_converter = SignalConverter(logger = LOG)
 signal_converter.set(signal.SIGTERM)
 

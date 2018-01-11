@@ -9,7 +9,7 @@ import logging
 import logging.handlers
 
 ## Read server config (should be readable only to root)
-from dataformat import Configuration
+from dynamo.dataformat import Configuration
 
 try:
     config_path = os.environ['DYNAMO_SERVER_CONFIG']
@@ -56,13 +56,13 @@ os.seteuid(pwd.getpwnam(config.user).pw_uid)
 
 ## Catch SIGTERM and raise a KeyboardInterrupt (so kill to the server process
 ## raises the exception)
-from utils.signaling import SignalConverter
+from dynamo.utils.signaling import SignalConverter
 
 signal_converter = SignalConverter(logger = LOG)
 signal_converter.set(signal.SIGTERM)
 
 ## Start the server
-from core.dynamo import Dynamo
+from dynamo.core.dynamo import Dynamo
 
 try:
     daemon = Dynamo(config)
