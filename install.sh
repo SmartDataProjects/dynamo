@@ -1,54 +1,5 @@
 #!/bin/bash
 
-##### EDIT THIS BLOCK BEFORE INSTALLATION #####
-
-# User under which dynamo runs
-USER=dynamo
-
-# Install target directory
-INSTALLPATH=/usr/local/dynamo
-
-# Configuration directory
-CONFIGPATH=/etc/dynamo
-
-# Archival directory
-ARCHIVEPATH=/mnt/hadoop/dynamo/dynamo
-
-# Temporary working directory
-SPOOLPATH=/var/spool/dynamo
-
-# Server log directory
-LOGPATH=/var/log/dynamo
-
-# Scheduler work directory
-SCHEDULERPATH=/var/spool/dynamo/scheduler
-
-# 1 -> Install daemons
-DAEMONS=1
-
-# Sequence file for scheduler daemon
-SCHEDULERSEQ=cms.seq
-
-# Httpd content directory
-WEBPATH=/var/www
-
-# Server database parameters
-SERVER_DB_WRITE_CNF=/etc/my.cnf.d/dynamo-write.cnf
-SERVER_DB_WRITE_CNFGROUP=mysql
-#SERVER_DB_WRITE_USER=
-#SERVER_DB_WRITE_PASSWD=
-
-SERVER_DB_READ_CNF=/etc/my.cnf.d/dynamo.cnf
-SERVER_DB_READ_CNFGROUP=mysql
-
-SERVER_DB_HOST=localhost
-SERVER_DB=dynamo
-
-# Registry host
-REGISTRY_HOST=t3serv017.mit.edu
-
-############## DO NOT EDIT BELOW ##############
-
 confirmed () {
   while true
   do
@@ -79,6 +30,14 @@ warnifnot () {
   echo "Some components may not work."
 }
 
+### Where we are installing from (i.e. this directory) ###
+
+export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
+
+echo "Installing dynamo from $SOURCE."
+
+source $SOURCE/config.sh
+
 ### Verify required components
 
 echo "Checking dependencies.."
@@ -88,12 +47,6 @@ warnifnot python -c 'import htcondor'
 require which mysql
 [ $WEBPATH ] && require pgrep -f httpd
 [ $SERVER_DB_HOST = localhost ] && require pgrep -f mysqld
-
-### Where we are installing from (i.e. this directory) ###
-
-export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
-
-echo "Installing from $SOURCE"
 
 ### (Clear &) Make the directories ###
 

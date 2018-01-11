@@ -2,7 +2,7 @@
 
 echo "Installing web scripts."
 
-if ! [ $SOURCE ]
+if ! [ $SOURCE ] || ! [ $WEBPATH ]
 then
   echo "Install source path is not set."
   exit 1
