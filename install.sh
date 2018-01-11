@@ -207,13 +207,13 @@ done
 echo "Installing the policies."
 
 TAG=$(cat $SOURCE/etc/policies.tag)
-git clone https://github.com/SmartDataProjects/dynamo-policies.git $INSTALLPATH/policies
-cd $INSTALLPATH/policies
-git checkout $TAG >/dev/null 2>&1
-echo "Policy commit:"
-git log -1
-
-cd - > /dev/null
+git clone -b branch-v2.0 https://github.com/yiiyama/dynamo-policies.git $INSTALLPATH/policies
+#git clone https://github.com/SmartDataProjects/dynamo-policies.git $INSTALLPATH/policies
+#cd $INSTALLPATH/policies
+#git checkout $TAG >/dev/null 2>&1
+#echo "Policy commit:"
+#git log -1
+#cd - > /dev/null
 
 ### Install the web scripts ###
 
@@ -242,6 +242,13 @@ then
 
     cp $SOURCE/daemon/dynamo-scheduled.systemd /usr/lib/systemd/system/dynamo-scheduled.service
     sed -i "s|_INSTALLPATH_|$INSTALLPATH|" /usr/lib/systemd/system/dynamo-scheduled.service
+
+    # environment file for the daemon
+    echo "DYNAMO_BASE=$INSTALLPATH" > /etc/sysconfig/dynamod
+    echo "DYNAMO_ARCHIVE=$ARCHIVEPATH" >> /etc/sysconfig/dynamod
+    echo "DYNAMO_SPOOL=$SPOOLPATH" >> /etc/sysconfig/dynamod
+    echo "DYNAMO_SPOOL=$SPOOLPATH" >> /etc/sysconfig/dynamod
+    echo "PYTHONPATH=$INSTALLPATH/python/site-packages" >> /etc/sysconfig/dynamod
   else
     cp $SOURCE/daemon/dynamod.sysv /etc/init.d/dynamod
     sed -i "s|_INSTALLPATH_|$INSTALLPATH|" /etc/init.d/dynamod

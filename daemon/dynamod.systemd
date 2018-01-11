@@ -3,8 +3,9 @@ Description=Dynamo Server
 
 [Service]
 PIDFile=/var/run/dynamod.pid
-EnvironmentFile=_INSTALLPATH_/etc/profile.d/init.sh
+EnvironmentFile=/etc/sysconfig/dynamod
 ExecStart=_INSTALLPATH_/sbin/dynamod
-ExecReload=/bin/kill -HUP $MAINPID
+ExecReload=/bin/kill -TERM $MAINPID
+RestartSec=5
 KillMode=process
 Restart=on-failure

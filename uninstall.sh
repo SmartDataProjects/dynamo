@@ -37,6 +37,7 @@ then
 
     rm /usr/lib/systemd/system/dynamod.service
     rm /usr/lib/systemd/system/dynamo-scheduled.service
+    rm /etc/sysconfig/dynamod
   else
     service stop dynamod
     chkconfig dynamod off
