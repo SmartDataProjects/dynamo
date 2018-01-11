@@ -141,14 +141,6 @@ CREATE TABLE `quotas` (
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 
-DROP TABLE IF EXISTS `quotas_backup`;
-CREATE TABLE `quotas_backup` (
-  `site_id` int(10) unsigned NOT NULL,
-  `partition_id` int(10) unsigned NOT NULL,
-  `storage` float NOT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
-
-
 DROP TABLE IF EXISTS `sites`;
 CREATE TABLE `sites` (
   `id` int(11) unsigned NOT NULL AUTO_INCREMENT,

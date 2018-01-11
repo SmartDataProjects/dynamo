@@ -28,8 +28,8 @@
         _SERVER_DB_READ_PARAMS_2_
       }
     },
-    "interface": {
-      "module": "RESTService",
+    "frontend": {
+      "interface": "RESTService",
       "config": {
         "url_base": "https://_REGISTRY_HOST_/registry"
       }

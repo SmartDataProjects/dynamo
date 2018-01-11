@@ -173,7 +173,7 @@ else
   [ $SERVER_DB_WRITE_USER ] && echo '        "user": "'$SERVER_DB_WRITE_USER'",' >> server_config.json.tmp
   [ $SERVER_DB_WRITE_PASSWD ] && echo '        "passwd": "'$SERVER_DB_WRITE_PASSWD'",' >> server_config.json.tmp
   echo '        "host": "'$SERVER_DB_HOST'",' >> server_config.json.tmp
-  echo '        "db": "'$SERVER_DB'"' >> server_config.json.tmp
+  echo '        "db": "'$REGISTRY_DB'"' >> server_config.json.tmp
 
   sed '/_SERVER_DB_WRITE_PARAMS_2_/,/_SERVER_DB_READ_PARAMS_2_/ !d;//d' $CONFIGPATH/server_config.json >> server_config.json.tmp
 
@@ -182,7 +182,7 @@ else
   [ $SERVER_DB_READ_USER ] && echo '        "user": "'$SERVER_DB_READ_USER'",' >> server_config.json.tmp
   [ $SERVER_DB_READ_PASSWD ] && echo '        "passwd": "'$SERVER_DB_READ_PASSWD'",' >> server_config.json.tmp
   echo '        "host": "'$SERVER_DB_HOST'",' >> server_config.json.tmp
-  echo '        "db": "'$SERVER_DB'"' >> server_config.json.tmp
+  echo '        "db": "'$REGISTRY_DB'"' >> server_config.json.tmp
 
   sed '/_SERVER_DB_READ_PARAMS_2_/,$ !d;//d' $CONFIGPATH/server_config.json >> server_config.json.tmp
   

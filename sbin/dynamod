@@ -52,7 +52,10 @@ changelog.addHandler(log_handler)
 changelog.propagate = False
 
 ## Set the effective user id to config.user
-os.seteuid(pwd.getpwnam(config.user).pw_uid)
+try:
+    os.seteuid(pwd.getpwnam(config.user).pw_uid)
+except OSError:
+    LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 
 ## Catch SIGTERM and raise a KeyboardInterrupt (so kill to the server process
 ## raises the exception)
