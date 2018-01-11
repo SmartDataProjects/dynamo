@@ -45,7 +45,13 @@ require which python
 require python -c 'import MySQLdb'
 warnifnot python -c 'import htcondor'
 require which mysql
-[ $WEBPATH ] && require pgrep -f httpd
+require which sqlite3
+if [ $WEBPATH ]
+then
+  require pgrep -f httpd
+  require which php
+  require php -r 'mysqli_connect_errno();'
+fi
 [ $SERVER_DB_HOST = localhost ] && require pgrep -f mysqld
 
 ### (Clear &) Make the directories ###
