@@ -78,12 +78,15 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    current_quota = {}
-    partition_sum = 0
-
     if args.site not in sitenames:
         print "Not a valid sitename"
         exit(1)
+    if args.partition not in ["AnalysisOps","DataOps"]:
+        print "Currently, only AnalysisOps and DataOps are supported."
+
+    partition_sum = 0
+    current_quota = {}
+    projected_quota = {}
 
     # Giving an overview
     print "\nCurrent quota "
@@ -98,21 +101,7 @@ if __name__ == '__main__':
                 print "Site %s | Partition %s | Quota %i TB" % (site, partition, value)         
 
     # Calculating projected quotas
-    projected_quota = {}
-
     calculate_quotas(current_quota,projected_quota,args,partition_sum)
-
-    if args.volume:
-        projected_quota[args.partition] = int(args.volume) if not "." in args.volume else int(float(args.volume)*partition_sum)
-
-        if args.partition == "AnalysisOps":
-            projected_quota["DataOps"] = partition_sum - projected_quota["AnalysisOps"] if args.adjust_other or float(args.volume)<=1.0 and "." in args.volume else current_quota["DataOps"]
-        else:
-            projected_quota["AnalysisOps"] = partition_sum - projected_quota["DataOps"] if args.adjust_other or float(args.volume)<=1.0 and "." in args.volume else current_quota["AnalysisOps"]
-
-    if args.easy_scale:
-        projected_quota["DataOps"] = current_quota["DataOps"]*float(args.easy_scale)
-        projected_quota["AnalysisOps"] = current_quota["AnalysisOps"]*float(args.easy_scale)
 
     # Communicate
     print "\nProjected quota"
