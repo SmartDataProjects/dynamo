@@ -32,16 +32,19 @@ mkdir -p $DYNAMO_SPOOL
 chmod 777 $DYNAMO_SPOOL
 
 # DATABASES
-for SQL in $(ls $DYNAMO_BASE/etc/db)
+for SQL in $(ls $DYNAMO_BASE/etc/db | grep '\.sql$')
 do
   DB=$(echo $SQL | sed 's/.sql$//')
-  if ! [ -d /var/lib/mysql/$DB ]
-  then
-    mysql --default-group-suffix=-dynamo < $DYNAMO_BASE/etc/db/$SQL
-  fi
+#  if ! [ -d /var/lib/mysql/$DB ]
+#  then
+#    mysql --default-group-suffix=-dynamo < $DYNAMO_BASE/etc/db/$SQL
+#  fi
 
-  chmod 755 /var/lib/mysql/$DB
-  chmod 666 /var/lib/mysql/$DB/*
+  if [ -d /var/lib/mysql/$DB ]
+  then
+    chmod 755 /var/lib/mysql/$DB
+    chmod 666 /var/lib/mysql/$DB/*
+  fi
 done
 
 # WEB INTERFACE

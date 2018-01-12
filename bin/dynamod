@@ -86,7 +86,7 @@ do
       APPLICATIONS="$APPLICATIONS dealer"
     fi
 
-    if [ $(($IHOUR%$INVENTORY_FULL_UPDATE_INTERVAL)) -eq 0 ]
+    if [ $(($IHOUR%$INVENTORY_FULL_UPDATE_INTERVAL)) -eq 2 ] && ! [ "$TEST" ]
     then
       echo "Performing the full update of inventory"
       $DYNAMO_BASE/bin/execlib common/inventory.py updatefull --site @disk

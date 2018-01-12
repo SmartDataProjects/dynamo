@@ -5,6 +5,7 @@ import collections
 import subprocess
 
 import detox.variables as variables
+import detox.attrs as attrs
 from detox.condition import ReplicaCondition, SiteCondition
 
 logger = logging.getLogger(__name__)
@@ -26,41 +27,46 @@ class Decision(object):
         self.action_cls = cls
         self.common_args = common_args
 
-    def action(self, replica, condition, *args):
-        return self.action_cls(replica, condition, *(args + self.common_args))
+    def action(self, matched_line, *args):
+        return self.action_cls(matched_line, *(args + self.common_args))
 
 class Action(object):
-    def __init__(self, replica, condition):
-        self.replica = replica
-        self.condition = condition
+    def __init__(self, matched_line):
+        self.matched_line = matched_line
 
-class Dismiss(Action):
+class DatasetAction(Action):
+    def __init__(self, matched_line):
+        Action.__init__(self, matched_line)
+
+class Protect(DatasetAction):
     pass
 
-class Delete(Action):
+class Delete(DatasetAction):
     pass
 
-class Keep(Action):
-    pass
-
-class Protect(Action):
+class Dismiss(DatasetAction):
     pass
 
 class BlockAction(Action):
-    def __init__(self, replica, condition, block_replicas = []):
-        Action.__init__(self, replica, condition)
+    def __init__(self, matched_line, block_replicas = []):
+        Action.__init__(self, matched_line)
 
         self.block_replicas = list(block_replicas)
 
 class ProtectBlock(BlockAction):
     @staticmethod
-    def dataset_level(replica, condition, *args):
-        return Protect(replica, condition)
+    def dataset_level(matched_line, *args):
+        return Protect(matched_line)
 
 class DeleteBlock(BlockAction):
     @staticmethod
-    def dataset_level(replica, condition, *args):
-        return Delete(replica, condition)
+    def dataset_level(matched_line, *args):
+        return Delete(matched_line)
+
+class DismissBlock(BlockAction):
+    @staticmethod
+    def dataset_level(matched_line, *args):
+        return Dismiss(matched_line)
 
 class SortKey(object):
     """
@@ -70,13 +76,17 @@ class SortKey(object):
         self.vars = []
 
     def addvar(self, var, reverse):
-        if reverse:
-            self.vars.append(lambda r: -var(r))
-        else:
-            self.vars.append(var)
+        self.vars.append((var, reverse))
 
     def __call__(self, replica):
-        return tuple(v(replica) for v in self.vars)
+        key = tuple()
+        for var, reverse in self.vars:
+            if reverse:
+                key += (-var.get(replica),)
+            else:
+                key += (var.get(replica),)
+
+        return key
 
 class PolicyLine(object):
     """
@@ -88,8 +98,6 @@ class PolicyLine(object):
         self.condition = ReplicaCondition(text)
         self.decision = decision
         self.has_match = False
-        if self.condition.static:
-            self.cached_action = {}
 
         # filled by history interface
         self.condition_id = 0
@@ -98,12 +106,6 @@ class PolicyLine(object):
         return self.condition.text
 
     def evaluate(self, replica):
-        if self.condition.static:
-            try:
-                return self.cached_action[replica]
-            except KeyError:
-                pass
-
         if self.condition.match(replica):
             self.has_match = True
 
@@ -112,21 +114,15 @@ class PolicyLine(object):
                 block_replicas = self.condition.get_matching_blocks(replica)
                 if len(block_replicas) == len(replica.block_replicas):
                     # but all blocks matched - return dataset level
-                    action = self.decision.action_cls.dataset_level(replica, self.condition_id)
+                    action = self.decision.action_cls.dataset_level(self)
                 else:
-                    action = self.decision.action(replica, self.condition_id, block_replicas)
+                    action = self.decision.action(self, block_replicas)
             else:
-                action = self.decision.action(replica, self.condition_id)
-
-            if self.condition.static:
-                self.cached_action[replica] = action
+                action = self.decision.action(self)
 
             return action
 
         else:
-            if self.condition.static:
-                self.cached_action[replica] = None
-
             return None
 
 class Policy(object):
@@ -140,7 +136,6 @@ class Policy(object):
         self.partition = partition
         self.untracked_replicas = {} # temporary container of block replicas that are not in the partition
 
-        self.need_iteration = False
         self.used_demand_plugins = set()
         self.parse_lines(lines, inventory)
 
@@ -164,9 +159,9 @@ class Policy(object):
                 else:
                     il += 1
 
-        self.target_site_def = None
-        self.deletion_trigger = None
-        self.stop_condition = None
+        self.target_site_def = []
+        self.deletion_trigger = []
+        self.stop_condition = []
         self.policy_lines = []
         self.default_decision = None
         self.candidate_sort_key = None
@@ -185,7 +180,7 @@ class Policy(object):
                 line_type = LINE_STOP_CONDITION
             elif words[0] == 'Order':
                 line_type = LINE_ORDER
-            elif words[0] in ('Protect', 'Dismiss', 'Delete', 'ProtectBlock', 'DeleteBlock'):
+            elif words[0] in ('Protect', 'Delete', 'Dismiss', 'ProtectBlock', 'DeleteBlock', 'DismissBlock'):
                 decision = Decision(eval(words[0]))
                 line_type = LINE_POLICY
             else:
@@ -220,50 +215,44 @@ class Policy(object):
                         if varname in exprs:
                             self.used_demand_plugins.add(plugin)
 
-                    vardef = variables.replica_vardefs[varname]
-                    if vardef[1] != variables.NUMERIC_TYPE and vardef[1] != variables.TIME_TYPE:
+                    variable = variables.replica_variables[varname]
+                    if variable.vtype != attrs.Attr.NUMERIC_TYPE and variable.vtype != attrs.Attr.TIME_TYPE:
                         raise ConfigurationError('Cannot use non-numeric type to sort: ' + line)
 
                     if self.candidate_sort_key is None:
                         self.candidate_sort_key = SortKey()
 
-                    self.candidate_sort_key.addvar(vardef[0], reverse)
+                    self.candidate_sort_key.addvar(variable, reverse)
 
             else:
                 cond_text = ' '.join(words[1:])
 
                 if line_type == LINE_SITE_TARGET:
-                    self.target_site_def = SiteCondition(cond_text, self.partition)
+                    self.target_site_def.append(SiteCondition(cond_text, self.partition))
 
                 elif line_type == LINE_DELETION_TRIGGER:
-                    self.deletion_trigger = SiteCondition(cond_text, self.partition)
+                    self.deletion_trigger.append(SiteCondition(cond_text, self.partition))
 
                 elif line_type == LINE_STOP_CONDITION:
-                    self.stop_condition = SiteCondition(cond_text, self.partition)
+                    self.stop_condition.append(SiteCondition(cond_text, self.partition))
 
                 elif line_type == LINE_POLICY:
                     self.policy_lines.append(PolicyLine(decision, cond_text))
             
 
-        if self.target_site_def is None:
+        if len(self.target_site_def) == 0:
             raise ConfigurationError('Target site definition missing.')
-        if self.deletion_trigger is None or self.stop_condition is None:
+        if len(self.deletion_trigger) == 0 or len(self.stop_condition) == 0:
             raise ConfigurationError('Deletion trigger and release expressions are missing.')
         if self.default_decision == None:
             raise ConfigurationError('Default decision not given.')
 
-        for cond in [self.target_site_def, self.deletion_trigger, self.stop_condition]:
-            self.used_demand_plugins.update(cond.used_demand_plugins)
+        for conds in [self.target_site_def, self.deletion_trigger, self.stop_condition]:
+            for cond in conds:
+                self.used_demand_plugins.update(cond.used_demand_plugins)
 
         for line in self.policy_lines:
             self.used_demand_plugins.update(line.condition.used_demand_plugins)
-            if not self.need_iteration:
-                if not line.condition.static:
-                    logger.info('Condition %s is dynamic. Policy will be evaluated iteratively.', str(line.condition))
-                    self.need_iteration = True
-                elif issubclass(line.decision.action_cls, BlockAction):
-                    logger.info('Block-level action is required. Policy will be evaluated iteratively.', str(line.condition))
-                    self.need_iteration = True
 
         logger.info('Policy stack for %s: %d lines using demand plugins %s', self.partition.name, len(self.policy_lines), str(sorted(self.used_demand_plugins)))
 
@@ -349,13 +338,29 @@ class Policy(object):
                 site.add_block_replica(block_replica)
 
     def evaluate(self, replica):
+        actions = []
         for line in self.policy_lines:
             action = line.evaluate(replica)
-            if action is not None:
-                break
-        else:
-            # condition 0 -> no policy match
-            return self.default_decision.action(replica, 0)
+            if action is None:
+                continue
 
-        return action
+            actions.append(action)
+            if isinstance(action, DatasetAction):
+                break
+
+            else:
+                # strip the block replicas from dataset replica so the successive
+                # policy lines don't see them any more
+                for block_replica in action.block_replicas:
+                    replica.block_replicas.remove(block_replica)
+
+        else:
+            actions.append(self.default_decision.action(None))
+        
+        # return block replicas taken away by BlockActions
+        for action in actions:
+            if isinstance(action, BlockAction):
+                replica.block_replicas.extend(action.block_replicas)
+
+        return actions
         

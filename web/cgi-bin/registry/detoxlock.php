@@ -27,8 +27,10 @@ else
   $service = 'user';
 
 // admin users can specify to act as another user
-if (isset($_REQUEST['asuser']))
+if (isset($_REQUEST['asuser'])) {
   $as_user = $_REQUEST['asuser'];
+  unset($_REQUEST['asuser']);
+}
 else
   $as_user = NULL;
 
@@ -41,6 +43,8 @@ if (isset($_REQUEST['format'])) {
     $detoxlock->format = $_REQUEST['format'];
   else
     $detoxlock->send_response(400, 'BadRequest', 'Unknown format');
+
+  unset($_REQUEST['format']);
 }
 
 if (isset($_REQUEST['return'])) {
@@ -49,6 +53,8 @@ if (isset($_REQUEST['return'])) {
     $detoxlock->send_response(400, 'BadRequest', 'Unknown value for option return');
 
   $detoxlock->return_data = ($request == 'yes');
+
+  unset($_REQUEST['return']);
 }
 
 $detoxlock->execute($command, $_REQUEST);

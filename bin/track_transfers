@@ -37,9 +37,9 @@ partitions = ['AnalysisOps','Physics']
 
 rrd_dir = config.paths.data + '/track_transfers'
 sites = glob(rrd_dir+'/*')
-sites.remove(config.paths.data + '/track_transfers/monitoring')
 try:
     sites.remove(config.paths.data + '/track_transfers/total.rrd')
+    sites.remove(config.paths.data + '/track_transfers/monitoring')
 except:
     pass
 
@@ -296,10 +296,8 @@ for site in sites:
 
 # Copying rrds to the /var/www location
 subprocess.call("rm -rf /var/www/html/dynamo/dynamo/dealermon/monitoring/T*", shell=True)
-subprocess.call("cp -r /var/spool/dynamo/track_transfers/T* /var/www/html/dynamo/dynamo/dealermon/monitoring/", shell=True)
+subprocess.call("cp -r /local/dynamo/dynamo/track_transfers/T* /var/www/html/dynamo/dynamo/dealermon/monitoring/", shell=True)
 subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring/total.rrd", shell=True)
-subprocess.call("cp /var/spool/dynamo/track_transfers/total.rrd /var/www/html/dynamo/dynamo/dealermon/monitoring/", shell=True)
+subprocess.call("cp /local/dynamo/dynamo/track_transfers/total.rrd /var/www/html/dynamo/dynamo/dealermon/monitoring/", shell=True)
 subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring/overview.txt", shell=True)
-subprocess.call("cp /var/spool/dynamo/track_transfers/overview.txt /var/www/html/dynamo/dynamo/dealermon/monitoring/", shell=True)
-
-
+subprocess.call("cp /local/dynamo/dynamo/track_transfers/overview.txt /var/www/html/dynamo/dynamo/dealermon/monitoring/", shell=True)

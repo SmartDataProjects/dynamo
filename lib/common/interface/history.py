@@ -282,7 +282,7 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def save_conditions(self, policies):
+    def save_conditions(self, policy_lines):
         """
         Save policy conditions.
         """
@@ -293,7 +293,7 @@ class TransactionHistoryInterface(object):
 
         self.acquire_lock()
         try:
-            self._do_save_conditions(policies)
+            self._do_save_conditions(policy_lines)
         finally:
             self.release_lock()
 
@@ -317,9 +317,9 @@ class TransactionHistoryInterface(object):
         Save decisions and their reasons for all replicas.
         @param run_number      Cycle number.
         @param quotas          {site: quota in TB}
-        @param deleted_list    [(dataset_replica, condition) or ([block_replica], condition)]
-        @param kept_list       [(dataset_replica, condition) or ([block_replica], condition)]
-        @param protected_list  [(dataset_replica, condition) or ([block_replica], condition)]
+        @param deleted_list    {replica: [([block_replica], condition)]}
+        @param kept_list       {replica: [([block_replica], condition)]}
+        @param protected_list  {replica: [([block_replica], condition)]}
 
         Note that in case of block-level operations, one dataset replica can appear
         in multiple of deleted, kept, and protected.

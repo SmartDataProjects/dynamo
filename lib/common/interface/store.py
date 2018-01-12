@@ -268,6 +268,15 @@ class LocalStoreInterface(object):
         finally:
             self.release_lock()
 
+    def check_if_on(self, datasetname, sitename):
+        """
+        Return true/false if replica is on specific site.
+        """
+
+        logger.debug('_do_check_if_on()')
+
+        return self._do_check_if_on(datasetname, sitename)
+
     def find_block_of(self, fullpath, datasets):
         """
         Return the Block object for the given file.
@@ -555,6 +564,32 @@ class LocalStoreInterface(object):
         self.acquire_lock()
         try:
             self._do_delete_blockreplicas(replica_list)
+        finally:
+            self.release_lock()
+
+    def update_blockreplica(self, replica):
+        """
+        Update block replica in persistent storage.
+        """
+
+        if config.read_only:
+            logger.debug('_do_update_blockreplica(%s:%s)', replica.site.name, replica.block.real_name())
+            return
+
+        self.update_blockreplicas([replica])
+
+    def update_blockreplicas(self, replica_list):
+        """
+        Update a set of block replicas in persistent storage.
+        """
+
+        if config.read_only:
+            logger.debug('_do_update_blockreplicas(%d replicas)', len(replica_list))
+            return
+
+        self.acquire_lock()
+        try:
+            self._do_update_blockreplicas(replica_list)
         finally:
             self.release_lock()
 

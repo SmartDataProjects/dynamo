@@ -334,8 +334,8 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                 if len(deletion_list) == 1:
                     logger.error('schedule_deletions  Could not delete %s from %s', replica.dataset.name, site.name)
                 else:
-                    call_deletion(site, level, deletion_list[:len(deletion_list) / 2])
-                    call_deletion(site, level, deletion_list[len(deletion_list) / 2:])
+                    self._run_deletion_request(request_mapping, site, level, deletion_list[:len(deletion_list) / 2], comments, is_test)
+                    self._run_deletion_request(request_mapping, site, level, deletion_list[len(deletion_list) / 2:], comments, is_test)
             else:
                 logger.error('schedule_deletions  Could not delete %d datasets from %s', len(deletion_list), site.name)
                 
@@ -517,8 +517,6 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
         @param dataset_filt Limit to replicas of datasets matching the pattern.
         """
 
-        logger.info('make_replica_links  Fetching block replica information from PhEDEx')
-
         if last_update > 0:
             # query URL will be different every time - need to turn caching off
             cache_lifetime = config.phedex.cache_lifetime
@@ -539,7 +537,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
             # PhEDEx only accepts form /*/*/*
             dataset_filt = '/*/*/*'
 
-        if dataset_filt == '/*/*/*':
+        if dataset_filt == '/*/*/*' and last_update == 0:
             items = []
             for site in all_sites:
                 total_quota = site.quota()
@@ -559,15 +557,24 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                 else:
                     items.append((inventory, [site], all_groups, ['/*/*/*'], last_update, counters))
 
-            parallel_exec(self._check_blockreplicas, items, num_threads = min(32, len(items)), print_progress = True, timeout = 3600)
-            parallel_exec(self._check_subscriptions, items, num_threads = min(32, len(items)), print_progress = True, timeout = 3600)
+            logger.info('make_replica_links  Fetching block replica information from PhEDEx')
+            parallel_exec(self._check_blockreplicas, items, num_threads = min(32, len(items)), print_progress = True, timeout = 7200)
+            logger.info('make_replica_links  Fetching subscription information from PhEDEx')
+            parallel_exec(self._check_subscriptions, items, num_threads = min(32, len(items)), print_progress = True, timeout = 7200)
             del items
-        else:
+        elif dataset_filt != '/*/*/*' and last_update == 0:
+            logger.info('make_replica_links  Fetching block replica information from PhEDEx')
             self._check_blockreplicas(inventory, all_sites, all_groups, [dataset_filt], last_update, counters)
+            logger.info('make_replica_links  Fetching subscription information from PhEDEx')
             self._check_subscriptions(inventory, all_sites, all_groups, [dataset_filt], last_update, counters)
-            
+
         if last_update > 0:
-            # delta deletions part
+            # delta part - can go serial (in fact HAS TO!)
+            logger.info('make_replica_links  Fetching block replica information from PhEDEx')
+            self._check_blockreplicas(inventory, all_sites, all_groups, [dataset_filt], last_update, counters)
+            logger.info('make_replica_links  Fetching subscription information from PhEDEx')
+            self._check_subscriptions(inventory, all_sites, all_groups, [dataset_filt], last_update, counters)
+            logger.info('make_replica_links  Fetching deletion information from PhEDEx')
             self._check_deletions(inventory, all_sites, all_groups, dataset_filt, last_update)
 
         # Following dataset status check only works for full updates!! Need to come up with a way to do this in delta
@@ -757,16 +764,16 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
                             logger.debug('New site %s', site.name)
                             dataset_replica, new_replica = dataset.get_replica(site)
 
-                        if new_replica:
-                            # first time associating this dataset with this site
-                            logger.debug('Instantiating dataset replica at %s', site.name)
+                            if new_replica:
+                                # first time associating this dataset with this site
+                                logger.debug('Instantiating dataset replica at %s', site.name)
+    
+                                # start with is_complete = True, update if any block replica is incomplete
+                                dataset_replica.is_complete = True
 
-                            # start with is_complete = True, update if any block replica is incomplete
-                            dataset_replica.is_complete = True
-
-                        if site.storage_type == Site.TYPE_MSS:
-                            # start with partial - update to full if the dataset replica is indeed full
-                            dataset.on_tape = Dataset.TAPE_PARTIAL
+                                if site.storage_type == Site.TYPE_MSS:
+                                    # start with partial - update to full if the dataset replica is indeed full
+                                    dataset.on_tape = Dataset.TAPE_PARTIAL
 
                         if int(replica_entry['time_update']) > dataset_replica.last_block_created:
                             dataset_replica.last_block_created = int(replica_entry['time_update'])
@@ -831,7 +838,7 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
 
         gname_list = [g.name for g in group_list] + [None]
 
-        options = []
+        options = ['percent_max=0']
         
         if last_update > 0:
             options.append('create_since=%d' % last_update)
@@ -841,7 +848,9 @@ class PhEDExDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Gr
 
         for dname in dname_list:
             options.append('dataset=' + dname)
-            options.append('block=' + dname + '%23*')
+            # we will only query for dataset-level subscriptions
+            # missing empty block-level subscriptions are marginal accounting errors, and block= query is VERY slow.
+            # options.append('block=' + dname + '%23*')
 
         source = self._make_phedex_request('subscriptions', options)
 
@@ -1687,9 +1696,14 @@ if __name__ == '__main__':
     elif command == 'updaterequest' or command == 'updatesubscription' or command == 'data':
         method = POST
 
+    start = time.time()
     result = interface._make_phedex_request(command, options, method = method, raw_output = args.raw_output)
+    end = time.time()
 
     if command == 'requestlist':
         result.sort(key = lambda x: x['id'])
 
     pprint.pprint(result)
+    printed = time.time()
+
+    logger.info('Took %f seconds to retrieve data, %f seconds to print', end - start, printed - end)

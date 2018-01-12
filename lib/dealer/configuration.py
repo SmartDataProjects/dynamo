@@ -1,7 +1,7 @@
 from common.dataformat import Configuration
 
 main = Configuration(
-    target_sites = ['T2_*', 'T1_*_Disk', '!T2_GR_Ioannina', '!T2_TR_METU'],
+    target_sites = ['T2_*', '!T1_*_Disk', 'T1_UK_RAL_ECHO_Disk', '!T2_GR_Ioannina', '!T2_RU_INR', '!T2_IT_Pisa', '!T2_RU_ITEP'],
     max_dataset_size = 50., # Maximum dataset size to consider for copy in TB
     max_copy_per_site = 50., # Maximum volume to be copied per site in TB
     max_copy_total = 200.,
@@ -11,6 +11,7 @@ main = Configuration(
 
 popularity = Configuration(
     request_to_replica_threshold = 1.75, # (weighted number of requests) / (number of replicas) above which replication happens
+    source_groups = ['AnalysisOps'],
     max_replicas = 10
 )
 

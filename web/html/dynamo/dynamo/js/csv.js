@@ -21,9 +21,9 @@ function initPage(serviceId, site){
 
     var ajaxInput_sitecsvs = {
 	'url': 'http://dynamo.mit.edu/dynamo/dealermon/sites.php',
-	'data': {'getSiteCSVs': 1, 'serviceId': serviceId, 'site': site},
+	'data': {'getSiteCSVs': 1, 'serviceId': serviceId, 'site': site, 'norm': 1},
 	'success': function (data) {
-	    
+	    writeDownload(data, site, serviceId);
 	    makeTable(data, site, serviceId);
 
 	},
@@ -35,6 +35,46 @@ function initPage(serviceId, site){
    
 }
 
+function writeDownload(data, site, serviceId){
+    var list_stuck = [];
+    for(i = 0; i!= data.length; i++){
+	var replica = data[i];
+	if (replica[4] == 0){
+	    continue;
+	}
+	list_stuck.push([replica[1],"/" + replica[0].slice(1).replace('+','/').replace('+','/')]);
+	
+    }
+   
+    var csvContent = "";
+    list_stuck.forEach(function(infoArray, index){
+
+	    dataString = infoArray.join(",");
+	    csvContent += index < list_stuck.length ? dataString+ "\n" : dataString;
+
+	}); 
+    var blob = new Blob(["\ufeff", csvContent]);
+    var downloadLink = document.createElement("a");
+    var url = URL.createObjectURL(blob);
+    downloadLink.href = url;
+    var d = new Date();
+    var month = d.getMonth() + 1;
+    downloadLink.download = site + "_stucktransfers(" + month +"-"+d.getDate()+"-"+d.getFullYear()+ ").csv";
+
+    var encodedURI = encodeURI(csvContent);
+    var download_button =  document.getElementById("download");
+    download_button.onclick = function() {
+	downloadLink.click();
+	setTimeout(function(){
+		URL.revokeObjectURL(url);
+	    }, 100);	    
+     };
+    
+}
+
+
+
+
 
 //Creates HTML table with the information from Site CSV: links to PhEDEx API and progress graph
 function makeTable(data, site, serviceId){
@@ -45,7 +85,7 @@ function makeTable(data, site, serviceId){
     
     for(var i in data){
 	
-	var replicaname = data[i][0];
+	var replicaname =  data[i][0].replace("+","/");
 	var id = data[i][1];
 	var total = Math.round(10000*(data[i][2]/Math.pow(10,12)))/10000;
 	var copied = Math.round(10000*(data[i][3]/Math.pow(10,12)))/10000;
@@ -53,7 +93,8 @@ function makeTable(data, site, serviceId){
 	var DorP = replicaname.split("_")[0].charAt(0);
 	var DorPcolor = "#2C8CFF";
 	var color = "white";
-	replicaname = replicaname.slice(1);
+	replicaname =  replicaname.slice(1);
+	replicaname =  '/' + replicaname.replace("+","/");
 	if (DorP == "P"){
 	    DorPcolor = "#07EF00";
 	    DorP = "O";
@@ -65,7 +106,7 @@ function makeTable(data, site, serviceId){
 	}
 	nreplicas +=1;
 
-	replicaTable += "<tr><td>" + id.link('https://cmsweb.cern.ch/phedex/datasvc/perl/prod/blockarrive?to_node=' + site +'&block=/' + replicaname.replace("+","/").replace("+","/") +"%23*") + "</td><td bgcolor=" + DorPcolor+ ">" + DorP + "</td><td bgcolor=" + color + " id='textButton"+replicaname+"'  style='cursor: pointer'>"  + replicaname + "</td><td>" + copied + "</td><td>" + total + "</td></tr>";
+	replicaTable += "<tr><td>" + id.link('https://cmsweb.cern.ch/phedex/datasvc/perl/prod/blockarrive?to_node=' + site +'&block=' + replicaname.replace("+","/") +"%23*") + "</td><td bgcolor=" + DorPcolor+ ">" + DorP + "</td><td bgcolor=" + color + " id='textButton"+replicaname+"'  style='cursor: pointer'>"  + replicaname + "</td><td>" + copied + "</td><td>" + total + "</td></tr>";
 	replicanames.push(replicaname);
 	
     }
@@ -76,56 +117,61 @@ function makeTable(data, site, serviceId){
 }
 
 function makeGraphTrace(data, site, replicaname){
+
     
 
     var traces_sites = [];
-
+    
 
     for(var k in data){
-
-        for(var i in data[k]){
-	    var obj = data[k][i];
-            var sitename = obj.site;
-	    /*
-            if (site != sitename)
-		continue;
-	    */
-            for(var j in obj["data"]){
-		var replica = obj["data"][j];	
-		var replicatograph  = replica.replica.substring(replica.replica.indexOf("_") + 1);
-		/*
-		if (replicatograph != replicaname){
-		    continue;
-		}
-		*/
-
-		traces_sites.push(makeTrace(replica.replica,time_converted,replica.ratio,'dot',1.6,false, "#ff6666"));
-	    }
+	try{
+	    var obj = data[k];
+	    var sitename = obj.site;
+	    var replica = obj.data[0];	
+	    var time_converted = replica["time"].map(timeConverter);
+	    traces_sites.push(makeTrace(replica.replica,time_converted,replica.ratio,'dot',1.6,false, "#ff6666"));
 	}
-    }	      
+	catch (e){
+	}
+	    
+    }
+    
+    
     
     return traces_sites;
 }
 
 function makeGraph(replicaname, serviceId, site){
-
-    window.alert(site);
-
     var traces_sites = [];
-    var echoo = "";
+
     var ajaxInput_grapher = { 
-	'url': 'http://dynamo.mit.edu/dynamo/dealermon/sites.php',
-	'data': {'getSiteRRDs': 1, 'serviceId': serviceId, 'site': site, 'replicaname': replicaname},
+	'url': 'sites.php',
+	'data': {'getSiteRRDs': 1, 'serviceId': serviceId, 'site': site, 'replicaname': replicaname, 'norm': 1},
 	'success': function (data) {
-	    echoo = "Hi";
 	    traces_sites = makeGraphTrace(data,site,replicaname);
 	},
 	'dataType': 'json',
+	'error': function (jqXHR, exception) {
+	    if (jqXHR.status === 0) {
+		alert('Not connect.\n Verify Network.');
+	    } else if (jqXHR.status == 404) {
+		alert('Requested page not found. [404]');
+	    } else if (jqXHR.status == 500) {
+		alert('Internal Server Error [500].');
+	    } else if (exception === 'parsererror') {
+		alert('Requested JSON parse failed.');
+	    } else if (exception === 'timeout') {
+		alert('Time out error.');
+	    } else if (exception === 'abort') {
+		alert('Ajax request aborted.');
+	    } else {
+		alert('Uncaught Error.\n' + jqXHR.responseText);
+	    }
+	},	
 	'async': false
     };
     
     $.ajax(ajaxInput_grapher);
-    window.alert(echoo);
 
     var layout_sites = {
 	title: replicaname,
@@ -166,7 +212,7 @@ function makeGraph(replicaname, serviceId, site){
 	}
     };
 
-
+    //    window.alert("DID WE MAKE IT?");
     Plotly.newPlot("graphModal1", traces_sites, layout_sites);
     
 }
@@ -192,7 +238,7 @@ window.onload = function(){
     var modal = document.getElementById('graphModal');
     var span = document.getElementsByClassName("close")[0];
     
-    var site = url.substring(url.indexOf("=")+1,url.lastIndexOf("&"));
+    var site = url.substring(url.indexOf("=")+1,url.indexOf("&"));
     var serviceId = url.charAt(url.length-1);
     var btns =[];
 
@@ -205,15 +251,16 @@ window.onload = function(){
 	    modal.style.display = "none";
 	}
     };
+
     for(var i =0; i<replicanames.length; i++)(function(i){
 	    
 	    btns.push(document.getElementById("textButton" + replicanames[i]));
 	    var replicaname = replicanames[i];
+	    //	    window.alert(replicaname);
 	    
-	    btns[i].onclick = function() {		
-
-		makeGraph(replicaname,serviceId,site)
-		modal.style.display = "block";
+	    btns[i].onclick = function() {	
+	    	makeGraph(replicaname,serviceId,site)
+	    	modal.style.display = "block";
 	    };
 
 	})(i);

@@ -134,12 +134,6 @@ inventory = Configuration(
         'T1_US_FNAL_New_Disk', # not a valid site
         'T2_CH_CERNBOX', # not a valid site
         'T2_MY_UPM_BIRUNI', # site not in popDB
-        'T2_KR_KISTI' # site not in popDB
-#        'T2_PK_NCP', # inheriting from IntelROCCS status 0
-#        'T2_PL_Warsaw', # inheriting from IntelROCCS status 0
-#        'T2_RU_ITEP', # inheriting from IntelROCCS status 0
-#        'T2_RU_PNPI', # inheriting from IntelROCCS status 0
-#        'T2_TH_CUNSTDA' # inheriting from IntelROCCS status 0
     ],
     included_groups = [
         'AnalysisOps', 'DataOps', 'FacOps', 'IB RelVal', 'RelVal',
@@ -183,7 +177,7 @@ inventory = Configuration(
         ('IB RelVal', lambda r: r.group is not None and r.group.name == 'IB RelVal'),
         ('Tape', lambda r: r.site.storage_type == Site.TYPE_MSS),
         ('Unsubscribed', lambda r: r.group is None),
-        ('Express', lambda r: r.group is not None and r.group.name == 'express' and re.match('/.*Express.*/.+/.+', r.block.dataset.name)),
+        ('Express', lambda r: r.group is not None and r.group.name == 'express' and re.match('/(?:.*Express.*/.+|.+/.*Express.*)/.+$', r.block.dataset.name)),
         ('Physics', ['AnalysisOps', 'DataOps']),
     ],
     # list of conditions for a PRODUCTION state dataset to become IGNORED (will still be reset to PRODUCTION if a new block replica is found)

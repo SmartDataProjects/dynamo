@@ -258,7 +258,7 @@ class RESTService(object):
             if not retry_on_error or self.last_errorcode == 400:
                 break
 
-            logger.info('Exception "%s" occurred in webservice. Trying again in %.1f seconds.', str(self.last_exception), wait)
+            logger.info('Exception "%s" occurred in %s. Trying again in %.1f seconds.', str(self.last_exception), url, wait)
 
             time.sleep(wait)
             wait *= 1.5

@@ -31,12 +31,15 @@ if ((isset($_REQUEST['serviceId']) && $_REQUEST['serviceId'] == 2)){
   $serviceId = 2;
 }
 
-if ((isset($_REQUEST['serviceId']) && $_REQUEST['serviceId'] == 3)){
+if ((isset($_REQUEST['serviceId']) && ($_REQUEST['serviceId'] == 3 || $_REQUEST['serviceId'] == 4))){
   $csvpath[] = "/var/www/html/dynamo/dynamo/dealermon/monitoring/" . $site . "/filelist.txt";
   $csvpath[] = "/var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/" . $site . "/filelist.txt";
   $rrdpaths[] = "/var/www/html/dynamo/dynamo/dealermon/monitoring/";
   $rrdpaths[] = "/var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/"; 
   $serviceId = 3;
+  if ($_REQUEST['serviceId'] == 4){
+    $serviceId = 4;
+  }
 }
 
 
@@ -168,16 +171,19 @@ if ( (isset($_REQUEST['getSiteRRDs']) && $_REQUEST['getSiteRRDs']) ){
 	$replicaname1 = str_replace('.rrd', '', $replicaname);
 	$replicaname_explode = explode("_", $replicaname1, 2);
 	$replicaname2 = $replicaname_explode[1];
+	$replicatograph = str_replace('/', "+",$_REQUEST['replicaname']);
+	$replicatograph = ltrim($replicatograph, '+');
 
-	if ($replicaname2 !=  str_replace(' ', "+",$_REQUEST['replicaname']))
+
+	if ($replicaname2 !=  $replicatograph)
 
 	  continue;
-	$replicadata = single_rrd_to_array($replicaname, $sitename);
+	$replicadata = single_rrd_to_array($replicaname, $sitename);	
 	
 	$ratio = array();
 
 	for($j = 0; $j < count($replicadata[2]); $j++){
-	  $ratio[] = $replicadata[1][$j]/$replicadata[2][$j];
+	  $ratio[] = $replicadata[1][$j]/$replicadata[2][$j] * 100;
 	}
 	$replicainfo = array('replica' => $replicaname1, 'time' => $replicadata[0], 'copied' => $replicadata[1], 'total' => $replicadata[2], 'ratio' => $ratio);
 	$siteinfo['data'][] = $replicainfo;
@@ -190,7 +196,7 @@ if ( (isset($_REQUEST['getSiteRRDs']) && $_REQUEST['getSiteRRDs']) ){
 }
 
 
-if ( !(isset($_REQUEST['getSiteCSVs'])) ){
+if ( !(isset($_REQUEST['norm'])) ){
 
   
   $html = file_get_contents(__DIR__ . '/csvs.html');

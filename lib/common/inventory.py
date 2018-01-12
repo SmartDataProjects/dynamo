@@ -164,7 +164,7 @@ class InventoryManager(object):
             # First get information on all replicas in the system, possibly creating datasets / blocks along the way.
             self.replica_source.make_replica_links(self, dataset_filt = dataset_filter, last_update = last_update)
                 
-            open_datasets = filter(lambda d: d.status == Dataset.STAT_PRODUCTION, self.datasets.values())
+            open_datasets = filter(lambda d: d.status == Dataset.STAT_PRODUCTION or d.status == Dataset.STAT_UNKNOWN, self.datasets.values())
             # Typically we enter this function with no file data loaded from store, so each open_dataset will have new File objects created.
             # However this does not lead to any slowdown since we download the full file information for each dataset anyway.
             self.dataset_source.set_dataset_details(open_datasets)
