@@ -16,27 +16,6 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
--- Table structure for table `action`
---
-
-DROP TABLE IF EXISTS `action`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `action` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `write_request` tinyint(1) NOT NULL,
-  `title` text CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  `path` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  `status` enum('new','run','done','failed','killed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  `user_id` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  `timestamp` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
-  `email` text NOT NULL,
-  `args` varchar(256) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
 -- Table structure for table `activity_lock`
 --
 
