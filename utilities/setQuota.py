@@ -3,7 +3,7 @@ from common.interface.mysql import MySQL
 """
 Usage examples:
 Both:
-/usr/bin/python setQuota.py --easy_scale 0.4 --site "T2_US_MIT"
+/usr/bin/python setQuota.py --easy_scale 1.2 --site "T2_US_MIT"
 Absolute:
 /usr/bin/python setQuota.py --volume 999 --site "T2_US_MIT" --partition DataOps (--adjust_other)
 Relative:
