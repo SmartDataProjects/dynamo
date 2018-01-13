@@ -50,6 +50,7 @@ if [ $WEBPATH ]
 then
   require pgrep -f httpd
   require which php
+  require [ -e /etc/httpd/conf.d/ssl.conf ]
   require php -r 'mysqli_connect_errno();'
 fi
 [ $SERVER_DB_HOST = localhost ] && require pgrep -f mysqld

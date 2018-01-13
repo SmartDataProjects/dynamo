@@ -20,7 +20,7 @@ LOGPATH=/var/log/dynamo
 SCHEDULERPATH=/var/spool/dynamo/scheduler
 
 # 1 -> Install daemons
-DAEMONS=0
+DAEMONS=1
 
 # Sequence file for scheduler daemon
 SCHEDULERSEQ=cms.seq
