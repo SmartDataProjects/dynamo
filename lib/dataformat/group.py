@@ -28,14 +28,13 @@ class Group(object):
         return 'Group(\'%s\')' % (self._name)
 
     def __eq__(self, other):
-        # will only compare names (olevel is set by configuration and is basically constant)
-        return self._name == other._name
+        return self._name == other._name and self._olevel is other._olevel
 
     def __ne__(self, other):
-        return self._name != other._name
-    
+        return not self.__eq__(other)
+
     def copy(self, other):
-        pass
+        self._olevel = other._olevel
 
     def unlinked_clone(self):
         return Group(self._name, self._olevel)
