@@ -54,6 +54,8 @@ if ($filedata != '') {
     }
   }
 
+  $old_umask = umask(0);
+
   if (!file_exists($execdir))
     mkdir($execdir, 0777, true);
 
@@ -65,6 +67,8 @@ if ($filedata != '') {
     chmod($execdir, 0777);
     chmod($execpath, 0777);
   }
+
+  umask($old_umask);
 
   $title = isset($_REQUEST['title']) ? $_REQUEST['title'] : '';
   $write_request = isset($_REQUEST['write']) ? min(1, intval($_REQUEST['write'])) : 0;

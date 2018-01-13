@@ -58,6 +58,14 @@ For files with no .php extension to work as PHP scripts, we need
 
 so that /var/www/html/dynamo/registry/.htaccess can work.
 
+For registry task upload, interface.php must be able to write to the spool directory. This operation
+is typically blocked by SELinux. Repeat the upload attempt and
+
+| ausearch -c httpd | audit2allow -M myhttpd
+| semodule -i myhttpd.pp
+
+multiple times to have all necessary SELinux exceptions installed.
+
 Finally, httpd must accept X509 certificate proxies. In SysV (<= SL6), edit
 
 | . /etc/init.d/httpd
