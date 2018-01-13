@@ -82,6 +82,8 @@ class DynamoInventory(ObjectRepository):
             dataset_names = dataset_names
         )
 
+        self._save_partitions()
+
         num_dataset_replicas = 0
         num_block_replicas = 0
 
@@ -92,6 +94,8 @@ class DynamoInventory(ObjectRepository):
         LOG.info('Data is loaded to memory. %d groups, %d sites, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.groups), len(self.sites), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
     def _load_partitions(self):
+        """Load partition data from a text table."""
+
         with open(self.partition_def_path) as defsource:
             subpartitions = {}
             for line in defsource:
@@ -120,6 +124,15 @@ class DynamoInventory(ObjectRepository):
             partition._subpartitions = subparts
             for subp in subparts:
                 subp._parent = partition
+
+    def _save_partitions(self):
+        """Write partitions loaded from the text partition table into database."""
+
+        for partition in self.partitions.itervalues():
+            self._store.save_partition(partition)
+
+            for site in self.sites.itervalues():
+                self._store.save_sitepartition(site.partitions[partition])
 
     def _get_group_names(self, included, excluded):
         """Return the list of group names or None according to the arguments."""

@@ -105,7 +105,6 @@ class Dynamo(object):
 
                     # The child process may send us the list of updated/deleted objects
                     # Block system signals and get update done
-                    ## TODO We want these log lines to be at INFO level but logged to a separate file
                     with signal_blocker:
                         for obj in updated_objects:
                             CHANGELOG.info('Updating %s', str(obj))

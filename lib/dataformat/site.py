@@ -129,10 +129,29 @@ class Site(object):
             site = self.unlinked_clone()
             inventory.sites.add(site)
 
-            for partition in inventory.partitions.itervalues():
-                site.partitions[partition] = SitePartition(site, partition)
+            # Special case: automatically createing new site partitions.
+            # In write-enabled applications, inventory will add the newly created
+            # site clone into _updated_objects after this function returns.
+            # To have site partitions also added to _updated_objects *after* the
+            # site is added to the list, we need to call the update() back from within.
 
-            updated = True
+            # Just set some value off so updated is triggered
+            site.status = self.status + 1
+            inventory.update(self)
+
+            # Now site is saved in inventory._updated_objects
+
+            for partition in inventory.partitions.itervalues():
+                site_partition = SitePartition(site, partition)
+                # SitePartition.embed_into assumes the object is already in site.partitions
+                # Again first embed into inventory, set some parameter off, and trigger an update
+                site.partitions[partition] = site_partition
+                site_partition.quota = -1
+                inventory.update(SitePartition(site, partition))
+                # It's saved now
+                
+            # Will return updated = False
+
         else:
             if check and (site is self or site == self):
                 # identical object -> return False if check is requested
