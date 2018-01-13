@@ -3,6 +3,7 @@ import os
 import urllib
 import urllib2
 import httplib
+import ssl
 import time
 import json
 import re
@@ -38,6 +39,13 @@ class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
             raise ConfigurationError('X509 proxy missing')
 
         self.cert = self.key
+
+        # Switch off server cert verification if the switch is available
+        try:
+            ssl._https_verify_certificates(False)
+        except AttributeError:
+            # If the switch does not exist, hope urllib2 doesn't verify the server by default
+            pass
 
     def https_open(self, req):
         return self.do_open(self.create_connection, req)
