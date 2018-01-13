@@ -4,68 +4,79 @@ In addition to running the install.sh script to copy the component files, you ne
 httpd+mod_ssl+mod_php setup that runs a host under $WEBPATH/html/dynamo. With apache, this is achieved
 by the following configurations:
 
-. /etc/httpd/conf/httpd.conf
+| . /etc/httpd/conf/httpd.conf
+| 
+| <VirtualHost *:80>
+|   ServerName *your_host_name*
+|   DocumentRoot /var/www/html/dynamo
+|   ErrorLog logs/dynamo-error_log
+| 
+|   <Directory "/var/www/html/dynamo">
+|     Options -Indexes
+|   </Directory>
+| </VirtualHost>
+| 
+| . /etc/httpd/conf.d/ssl.conf (need mod_ssl to be installed)
+| 
+| <VirtualHost *:443>
+|   ServerName *your_host_name*
+|   DocumentRoot /var/www/html/dynamo
+|   ErrorLog logs/dynamo-ssl_error_log
+| 
+|   SSLCertificateFile /etc/grid-security/hostcert.pem
+|   SSLCertificateKeyFile /etc/grid-security/hostkey.pem
+|   SSLCACertificatePath /etc/grid-security/certificates
+|   SSLCARevocationPath /etc/grid-security/certificates
+|   SSLCARevocationCheck chain
+|   SSLVerifyClient require
+|   SSLVerifyDepth  10
+| 
+|   <Directory "/var/www/html/dynamo">
+|     Options -Indexes
+|     Order deny,allow
+|     Allow from all
+|   </Directory>
+|   
+|   <Directory "/var/www/cgi-bin/dynamo">
+|     SSLOptions +StdEnvVars 
+|   </Directory>
+|   
+|   <Directory "/var/www/cgi-bin/registry">
+|     SSLOptions +StdEnvVars 
+|   </Directory>
+| </VirtualHost>
 
-<VirtualHost *:80>
-  ServerName *your_host_name*
-  DocumentRoot /var/www/html/dynamo
-  ErrorLog logs/dynamo-error_log
+For files with no .php extension to work as PHP scripts, we need
 
-  <Directory "/var/www/html/dynamo">
-    Options -Indexes
-  </Directory>
-</VirtualHost>
+| . /etc/httpd/conf/httpd.conf
+| 
+| <Directory "/var/www/html">
+| ...
+|   AllowOverride FileInfo Options AuthConfig
+| ...
+| </Directory>
 
-. /etc/httpd/conf.d/ssl.conf (need mod_ssl to be installed)
-
-<VirtualHost *:443>
-  ServerName *your_host_name*
-  DocumentRoot /var/www/html/dynamo
-  ErrorLog logs/dynamo-ssl_error_log
-
-  SSLCertificateFile /etc/grid-security/hostcert.pem
-  SSLCertificateKeyFile /etc/grid-security/hostkey.pem
-  SSLCACertificatePath /etc/grid-security/certificates
-  SSLCARevocationPath /etc/grid-security/certificates
-  SSLCARevocationCheck chain
-  SSLVerifyClient require
-  SSLVerifyDepth  10
-
-  <Directory "/var/www/html/dynamo">
-    Options -Indexes
-    Order deny,allow
-    Allow from all
-  </Directory>
-  
-  <Directory "/var/www/cgi-bin/dynamo">
-    SSLOptions +StdEnvVars 
-  </Directory>
-  
-  <Directory "/var/www/cgi-bin/registry">
-    SSLOptions +StdEnvVars 
-  </Directory>
-</VirtualHost>
+so that /var/www/html/dynamo/registry/.htaccess can work.
 
 Finally, httpd must accept X509 certificate proxies. In SysV (<= SL6), edit
 
-. /etc/init.d/httpd
-
-if [ -f /etc/sysconfig/httpd ]; then
-        . /etc/sysconfig/httpd
-fi
-
-## ADD THIS BLOCK HERE
-# Allow authentication by proxy certificates
-export OPENSSL_ALLOW_PROXY_CERTS=1
-## ADD THIS BLOCK HERE
-
-# Start httpd in the C locale by default.
-HTTPD_LANG=${HTTPD_LANG-"C"}
+| . /etc/init.d/httpd
+| 
+| if [ -f /etc/sysconfig/httpd ]; then
+|         . /etc/sysconfig/httpd
+| fi
+| 
+| ## ADD THIS BLOCK HERE
+| # Allow authentication by proxy certificates
+| export OPENSSL_ALLOW_PROXY_CERTS=1
+| ## ADD THIS BLOCK HERE
+| 
+| # Start httpd in the C locale by default.
+| HTTPD_LANG=${HTTPD_LANG-"C"}
 
 In systemd (>= CentOS 7), edit
 
-. /etc/sysconfig/httpd
-
-## AT THE END OF THE FILE
-OPENSSL_ALLOW_PROXY_CERTS=1
-
+| . /etc/sysconfig/httpd
+| 
+| ## AT THE END OF THE FILE
+| OPENSSL_ALLOW_PROXY_CERTS=1
