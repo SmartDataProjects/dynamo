@@ -4,6 +4,22 @@ function get_user($db, $cert_dn, $issuer_dn, $service, $as_user, &$uid, &$uname,
 {
   // fill in uid and sid, return true => authorized, false => unauthorized (still may be allowed to do read-only operations)
 
+  // Apache mod_ssl version in CentOS returns a comma-delimited (and inverted) list of DN parts
+  if (strpos($cert_dn, '/') !== 0) {
+    // hopefully there aren't weird things like escaped commas..
+    $dn_arr = explode(',', $cert_dn);
+    $cert_dn = "";
+    foreach (array_reverse($dn_arr) as $part)
+      $cert_dn .= '/' . $part;
+  }
+  if (strpos($issuer_dn, '/') !== 0) {
+    // hopefully there aren't weird things like escaped commas..
+    $dn_arr = explode(',', $issuer_dn);
+    $issuer_dn = "";
+    foreach (array_reverse($dn_arr) as $part)
+      $issuer_dn .= '/' . $part;
+  }
+
   // get the user id
   $uid = 0;
   $sid = 0;
