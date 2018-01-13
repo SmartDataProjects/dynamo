@@ -5,7 +5,6 @@ import sys
 import logging
 import time
 import re
-import traceback
 
 # Fix for some (newer) versions of MySQLdb
 from types import TupleType, ListType

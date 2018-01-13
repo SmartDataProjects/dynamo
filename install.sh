@@ -49,6 +49,20 @@ echo
 
 source $SOURCE/config.sh
 
+if [ $DAEMONS -eq 1 ]
+then
+  ### Stop the daemons first
+
+  if [[ $(uname -r) =~ el7 ]]
+  then
+    systemctl stop dynamod 2>/dev/null
+    systemctl stop dynamo-scheduled 2>/dev/null
+  else
+    service dynamod stop 2>/dev/null
+    service dynamo-scheduled stop 2>/dev/null
+  fi
+fi
+
 ### Verify required components
 
 echo
@@ -266,6 +280,8 @@ then
     echo "DYNAMO_SPOOL=$SPOOLPATH" >> /etc/sysconfig/dynamod
     echo "DYNAMO_SPOOL=$SPOOLPATH" >> /etc/sysconfig/dynamod
     echo "PYTHONPATH=$INSTALLPATH/python/site-packages" >> /etc/sysconfig/dynamod
+
+    systemctl daemon-reload
   else
     cp $SOURCE/daemon/dynamod.sysv /etc/init.d/dynamod
     sed -i "s|_INSTALLPATH_|$INSTALLPATH|" /etc/init.d/dynamod

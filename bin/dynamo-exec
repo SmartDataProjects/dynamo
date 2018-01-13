@@ -9,6 +9,7 @@ import ssl
 import socket
 import mimetools
 import threading
+import traceback
 import time
 import json
 
@@ -237,12 +238,18 @@ if not args.asynch:
 
             break
 
-    except:
+    except ex:
         stop_reading.set()
         stdout_thread.join()
         stderr_thread.join()
 
-        sys.stderr.write('Caught exception while waiting for task to complete.\n')
+        exc_type, exc, tb = sys.exc_info()
+        sys.stderr.write('Caught exception %s while waiting for task to complete.\n' % exc_type.__name__)
+
+        sys.stderr.write('Traceback (most recent call last):\n')
+        sys.stderr.write(''.join(traceback.format_tb(tb)) + '\n')
+        sys.stderr.write('%s: %s\n', exc_type.__name__, str(exc))
+        
         return_code = 2
 
     sys.exit(return_code)

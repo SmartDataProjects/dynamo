@@ -9,7 +9,7 @@ import logging
 import logging.handlers
 
 ## Read server config (should be readable only to root)
-from dynamo.dataformat import Configuration
+from dynamo.dataformat import Configuration, log_exception
 
 try:
     config_path = os.environ['DYNAMO_SERVER_CONFIG']
@@ -72,12 +72,6 @@ try:
     daemon.run()
 
 except:
-    exc_type, exc, tb = sys.exc_info()
-    LOG.critical('Server caught an exception of type %s\n', exc_type.__name__)
-    log_handler.setFormatter(logging.Formatter(fmt = '%(message)s'))
-
-    LOG.critical('Traceback (most recent call last):')
-    LOG.critical(''.join(traceback.format_tb(tb)))
-    LOG.critical('%s: %s', exc_type.__name__, str(exc))
+    log_exception(LOG)
 
     sys.exit(1)
