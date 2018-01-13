@@ -34,6 +34,12 @@ warnifnot () {
 
 export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
 
+if ! [ -e $SOURCE/config.sh ]
+then
+  echo "$SOURCE/config.sh does not exist."
+  exit 1
+fi
+
 echo "Installing dynamo from $SOURCE."
 
 source $SOURCE/config.sh
@@ -115,8 +121,6 @@ chmod 754 $INSTALLPATH/sbin/*
 
 if [ "$SERVER_DB_HOST" = "localhost" ]
 then
-  export SERVER_DB_WRITE_CNF
-  export SERVER_DB_WRITE_CNFGROUP
   export SERVER_DB_WRITE_USER
   export SERVER_DB_WRITE_PASSWD
   
@@ -151,10 +155,8 @@ else
 
   sed -n '1,/_SERVER_DB_WRITE_PARAMS_1_/ p' $CONFIGPATH/server_config.json | sed '$ d' > server_config.json.tmp
 
-  [ $SERVER_DB_WRITE_CNF ] && echo '          "config_file": "'$SERVER_DB_WRITE_CNF'",' >> server_config.json.tmp
-  [ $SERVER_DB_WRITE_CNFGROUP ] && echo '          "config_group": "'$SERVER_DB_WRITE_CNFGROUP'",' >> server_config.json.tmp
-  [ $SERVER_DB_WRITE_USER ] && echo '          "user": "'$SERVER_DB_WRITE_USER'",' >> server_config.json.tmp
-  [ $SERVER_DB_WRITE_PASSWD ] && echo '          "passwd": "'$SERVER_DB_WRITE_PASSWD'",' >> server_config.json.tmp
+  echo '          "user": "'$SERVER_DB_WRITE_USER'",' >> server_config.json.tmp
+  echo '          "passwd": "'$SERVER_DB_WRITE_PASSWD'",' >> server_config.json.tmp
   echo '          "host": "'$SERVER_DB_HOST'",' >> server_config.json.tmp
   echo '          "db": "'$SERVER_DB'"' >> server_config.json.tmp
 
@@ -169,10 +171,8 @@ else
 
   sed '/_SERVER_DB_READ_PARAMS_1_/,/_SERVER_DB_WRITE_PARAMS_2_/ !d;//d' $CONFIGPATH/server_config.json >> server_config.json.tmp
 
-  [ $SERVER_DB_WRITE_CNF ] && echo '        "config_file": "'$SERVER_DB_WRITE_CNF'",' >> server_config.json.tmp
-  [ $SERVER_DB_WRITE_CNFGROUP ] && echo '        "config_group": "'$SERVER_DB_WRITE_CNFGROUP'",' >> server_config.json.tmp
-  [ $SERVER_DB_WRITE_USER ] && echo '        "user": "'$SERVER_DB_WRITE_USER'",' >> server_config.json.tmp
-  [ $SERVER_DB_WRITE_PASSWD ] && echo '        "passwd": "'$SERVER_DB_WRITE_PASSWD'",' >> server_config.json.tmp
+  echo '        "user": "'$SERVER_DB_WRITE_USER'",' >> server_config.json.tmp
+  echo '        "passwd": "'$SERVER_DB_WRITE_PASSWD'",' >> server_config.json.tmp
   echo '        "host": "'$SERVER_DB_HOST'",' >> server_config.json.tmp
   echo '        "db": "'$REGISTRY_DB'"' >> server_config.json.tmp
 
