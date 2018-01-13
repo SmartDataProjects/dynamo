@@ -162,11 +162,13 @@ echo
 echo "Writing configuration files."
 echo
 
-echo "export DYNAMO_BASE=$INSTALLPATH" > $INSTALLPATH/etc/profile.d/init.sh
-echo "export DYNAMO_ARCHIVE=$ARCHIVEPATH" >> $INSTALLPATH/etc/profile.d/init.sh
-echo "export DYNAMO_SPOOL=$SPOOLPATH" >> $INSTALLPATH/etc/profile.d/init.sh
-echo "export DYNAMO_SPOOL=$SPOOLPATH" >> $INSTALLPATH/etc/profile.d/init.sh
-echo "export PYTHONPATH="'$DYNAMO_BASE/python/site-packages:$(echo $PYTHONPATH | sed "s|$DYNAMO_BASE/python/site-packages:||")' >> $INSTALLPATH/etc/profile.d/init.sh
+INITSCRIPT=$INSTALLPATH/etc/profile.d/init.sh
+echo "export DYNAMO_BASE=$INSTALLPATH" > $INITSCRIPT
+echo "export DYNAMO_ARCHIVE=$ARCHIVEPATH" >> $INITSCRIPT
+echo "export DYNAMO_SPOOL=$SPOOLPATH" >> $INITSCRIPT
+echo "export DYNAMO_SPOOL=$SPOOLPATH" >> $INITSCRIPT
+echo "export PYTHONPATH="'$DYNAMO_BASE/python/site-packages:$(echo $PYTHONPATH | sed "s|$DYNAMO_BASE/python/site-packages:||")' >> $INITSCRIPT
+echo "export PATH="'$DYNAMO_BASE/bin:$DYNAMO_BASE/sbin:$(echo $PATH | sed "s|$DYNAMO_BASE/bin:$DYNAMO_BASE/sbin:||")' >> $INITSCRIPT
 
 if [ -e $CONFIGPATH/server_config.json ]
 then

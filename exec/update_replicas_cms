@@ -72,10 +72,12 @@ from dynamo.dataformat import DatasetReplica, ObjectError
 
 LOG.info('Updating list of groups.')
 for group in group_source.get_group_list():
+    LOG.debug('Updating %s', str(group))
     inventory.update(group)
 
 LOG.info('Updating list of sites.')
 for site in site_source.get_site_list():
+    LOG.debug('Updating %s', str(site))
     inventory.update(site)
 
 ## 2. Pick up new and changed block replicas

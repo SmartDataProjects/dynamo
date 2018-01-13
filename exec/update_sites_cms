@@ -9,7 +9,6 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update site status.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', default = '', help = 'Configuration JSON.')
-parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
 
 args = parser.parse_args()
 sys.argv = []
