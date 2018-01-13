@@ -6,8 +6,8 @@ import httplib
 import urllib
 import urllib2
 import ssl
-import socket
 import mimetools
+import socket
 import threading
 import traceback
 import time
@@ -17,30 +17,29 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Submit one dynamo executable task.')
 parser.add_argument('cmd', metavar = 'CMD', help = 'Executable command')
-parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', help = 'Executable title.')
 parser.add_argument('--asynchronous', '-A', action = 'store_true', dest = 'asynch', help = 'Do not wait for the executable to complete.')
+parser.add_argument('--server', '-s', metavar = 'HOST', dest = 'server', help = 'Server host.')
+parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', help = 'Executable title.')
 parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request write access.')
 parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
 
 args = parser.parse_args()
 sys.argv = []
 
-## If synchronous execution + work directory provided, wipe out the logs
-if not args.asynch:
-    # check server running?
+## Server host
+if args.server:
+    server_host = args.server
+else:
+    try:
+        server_host = os.environ['DYNAMO_SERVER_HOST']
+    except KeyError:
+        server_host = 'localhost'
 
-    if args.workdir:
-        try:
-            os.makedirs(args.workdir)
-        except OSError:
-            pass
-        os.chmod(args.workdir, 0777)
-        with open(args.workdir + '/_stdout', 'w'):
-            pass
-        with open(args.workdir + '/_stderr', 'w'):
-            pass
+if server_host != 'localhost' and server_host != socket.gethostname() and not args.asynch:
+    sys.stderr.write('Synchronous execution is not allowed when using a remote server.\n')
+    args.asynch = True
 
-## Submit an executable through the registry front end.
+## Tools to communicate with the registry frontend.
 
 class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
     """
@@ -75,6 +74,55 @@ class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
     def create_connection(self, host, timeout = 300):
         return httplib.HTTPSConnection(host, key_file = self.key, cert_file = self.cert)
 
+
+def submit_request(query = [], headers = [], data = None):
+    url = 'https://%s/registry/application' % server_host
+    
+    if len(query) != 0:
+        url += '?' + urllib.urlencode(query)
+    request = urllib2.Request(url)
+    request.add_header('Accept', 'application/json')
+    for key, value in headers:
+        request.add_header(key, value)
+    if data:
+        request.add_data(data)
+    
+    # Now submit
+    try:
+        opener = urllib2.build_opener(HTTPSCertKeyHandler())
+        response = opener.open(request)
+        content = response.read()
+        result = json.loads(content)
+    
+    except urllib2.HTTPError as err:
+        sys.stderr.write('Server responded: Error %d\n' % err.code)
+        sys.stderr.write(str(err) + '\n')
+        sys.stderr.write(err.read())
+        sys.exit(1)
+
+    except ValueError: # json error
+        sys.stderr.write('Invalid string received from server (bug!)')
+        sys.exit(1)
+
+    return result['data'][0]
+
+
+## If synchronous execution + work directory provided, wipe out the logs
+if not args.asynch:
+    # TODO: check server running?
+
+    if args.workdir:
+        try:
+            os.makedirs(args.workdir)
+        except OSError:
+            pass
+        os.chmod(args.workdir, 0777)
+        with open(args.workdir + '/_stdout', 'w'):
+            pass
+        with open(args.workdir + '/_stderr', 'w'):
+            pass
+
+## Find the executable and submit
 cmds = args.cmd.split()
 executable = cmds[0]
 with open(executable) as source:
@@ -120,31 +168,14 @@ data += [
 
 body = '\r\n'.join(data)
 
-try:
-    server_host = os.environ['DYNAMO_SERVER_HOST']
-except KeyError:
-    server_host = socket.gethostname()
+headers = [
+    ('Content-type', 'multipart/form-data; boundary=%s' % boundary),
+    ('Content-length', len(body))
+]
 
-request = urllib2.Request('https://%s/registry/application' % server_host)
-request.add_header('Content-type', 'multipart/form-data; boundary=%s' % boundary)
-request.add_header('Content-length', len(body))
-request.add_data(body)
-
-# Now submit
-try:
-    opener = urllib2.build_opener(HTTPSCertKeyHandler())
-    response = opener.open(request)
-    content = response.read()
-    result = json.loads(content)
-
-except urllib2.HTTPError as err:
-    sys.stderr.write('Server responded: Error %d\n' % err.code)
-    sys.stderr.write(str(err) + '\n')
-    sys.stderr.write(err.read())
-    sys.exit(1)
+task_info = submit_request(headers = headers, data = body)
 
 ## Print out the response
-task_info = result['data'][0]
 task_id = task_info['taskid']
 path = task_info['path']
 
@@ -193,15 +224,14 @@ if not args.asynch:
         return_code = 0
 
         while True:
-            opener = urllib2.build_opener(HTTPSCertKeyHandler())
-            request = urllib2.Request('https://t3desk007.mit.edu/registry/application?taskid=%d' % task_info['taskid'])
-            request.add_header('Accept', 'application/json')
-            response = opener.open(request)
-            content = response.read()
-            
-            result = json.loads(content)
+            task_info = submit_request(query = [('taskid', task_id)])
 
-            status = result['data'][0]['status']
+            try:
+                status = task_info['status']
+            except KeyError:
+                sys.stderr.write('Failed to fetch task status from server.')
+                break
+
             if status not in ('new', 'run'):
                 if status != 'done':
                     return_code = 1
@@ -223,14 +253,14 @@ if not args.asynch:
             sys.stdout.flush()
             response = sys.stdin.readline().strip()
             if response == 'y':
-                opener = urllib2.build_opener(HTTPSCertKeyHandler())
-                request = urllib2.Request('https://t3desk007.mit.edu/registry/application?action=kill&taskid=%d' % task_info['taskid'])
-                request.add_header('Accept', 'application/json')
-                response = opener.open(request)
-                content = response.read()
+                task_info = submit_request(query = [('action', 'kill'), ('taskid', task_id)])
 
-                result = json.loads(content)
-                sys.stdout.write('\n' + result['data'][0]['message'] + '\n')
+                try:
+                    message = task_info['message']
+                except KeyError:
+                    message = '-- Server message unavailable --'
+
+                sys.stdout.write('\n' + message + '\n')
 
             elif respose != 'n':
                 sys.stdout.write('Please answer in y/n.\n')
@@ -238,7 +268,7 @@ if not args.asynch:
 
             break
 
-    except ex:
+    except:
         stop_reading.set()
         stdout_thread.join()
         stderr_thread.join()
@@ -248,7 +278,7 @@ if not args.asynch:
 
         sys.stderr.write('Traceback (most recent call last):\n')
         sys.stderr.write(''.join(traceback.format_tb(tb)) + '\n')
-        sys.stderr.write('%s: %s\n', exc_type.__name__, str(exc))
+        sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
         
         return_code = 2
 

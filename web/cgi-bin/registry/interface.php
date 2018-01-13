@@ -117,9 +117,9 @@ else if (isset($_REQUEST['taskid'])) {
 
   if ($task_found) {
     // prepare the return data
-    $data = array(array('taskid' => $task_id, 'title' => $title, 'args' => $args, 'write_request' => $write_request, 'email' => $email, 'status' => $status));
+    $data = array('taskid' => $task_id, 'title' => $title, 'args' => $args, 'write_request' => $write_request, 'email' => $email, 'status' => $status);
     if ($local)
-      $data[0]['path'] = $path;
+      $data['path'] = $path;
 
     if (isset($_REQUEST['action']) && $_REQUEST['action'] == 'kill') {
       if ($status == 'new' || $status == 'run') {
@@ -148,7 +148,7 @@ else if (isset($_REQUEST['taskid'])) {
 
   $db->query('UNLOCK TABLES');
   
-  send_response(200, 'OK', $message, $data, 'json');
+  send_response(200, 'OK', $message, array($data), 'json');
 
 }
 
