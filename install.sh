@@ -20,12 +20,14 @@ confirmed () {
 
 require () {
   "$@" >/dev/null 2>&1 && return 0
+  echo
   echo "[Fatal] Failed: $@"
   exit 1
 }
 
 warnifnot () {
   "$@" >/dev/null 2>&1 && return 0
+  echo
   echo "[Warning] Failed: $@"
   echo "Some components may not work."
 }
@@ -36,17 +38,22 @@ export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
 
 if ! [ -e $SOURCE/config.sh ]
 then
+  echo
   echo "$SOURCE/config.sh does not exist."
   exit 1
 fi
 
+echo
 echo "Installing dynamo from $SOURCE."
+echo
 
 source $SOURCE/config.sh
 
 ### Verify required components
 
+echo
 echo "Checking dependencies.."
+echo
 require which python
 require python -c 'import MySQLdb'
 warnifnot python -c 'import htcondor'
@@ -65,6 +72,7 @@ fi
 
 if [ -d $INSTALLPATH ]
 then
+  echo
   echo "Target directory $INSTALLPATH exists. Overwrite [y/n]?"
   if confirmed
   then
@@ -74,6 +82,7 @@ then
     exit 1
   fi
 fi
+echo
 
 require mkdir -p $INSTALLPATH
 require mkdir -p $INSTALLPATH/python/site-packages/dynamo
@@ -101,7 +110,7 @@ chmod 777 $SPOOLPATH
 ### Install python libraries ###
 
 cp -r $SOURCE/lib/* $INSTALLPATH/python/site-packages/dynamo/
-python -m compileall $INSTALLPATH/python/site-packages/dynamo
+python -m compileall $INSTALLPATH/python/site-packages/dynamo > /dev/null
 
 ### Install the executables ###
 
@@ -123,10 +132,11 @@ if [ "$SERVER_DB_HOST" = "localhost" ]
 then
   export SERVER_DB_WRITE_USER
   export SERVER_DB_WRITE_PASSWD
-  
+
   $SOURCE/db/install.sh
   if [ $? -ne 0 ]
   then
+    echo
     echo "DB configuration failed."
     exit 1
   fi
@@ -134,7 +144,9 @@ fi
 
 ### Install the configs ###
 
+echo
 echo "Writing configuration files."
+echo
 
 echo "export DYNAMO_BASE=$INSTALLPATH" > $INSTALLPATH/etc/profile.d/init.sh
 echo "export DYNAMO_ARCHIVE=$ARCHIVEPATH" >> $INSTALLPATH/etc/profile.d/init.sh
@@ -205,7 +217,9 @@ done
 
 ### Install the policies ###
 
+echo
 echo "Installing the policies."
+echo
 
 TAG=$(cat $SOURCE/etc/policies.tag)
 git clone -b branch-v2.0 https://github.com/yiiyama/dynamo-policies.git $INSTALLPATH/policies
@@ -224,6 +238,7 @@ then
   $SOURCE/web/install.sh
   if [ $? -ne 0 ]
   then
+    echo
     echo "Web configuration failed."
     exit 1
   fi
@@ -233,6 +248,7 @@ fi
 
 if [ $DAEMONS -eq 1 ]
 then
+  echo
   echo "Installing the daemons."
 
   if [[ $(uname -r) =~ el7 ]]

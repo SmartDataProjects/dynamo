@@ -27,6 +27,17 @@ cp -r $BINSOURCE/dynamo/* $BINTARGET/dynamo/
 mkdir -p $BINTARGET/registry
 cp -r $BINSOURCE/registry/* $BINTARGET/registry/
 
+# remove the template and check if the configuration exists
+rm $BINTARGET/dynamo/common/db_conf.php.template
+if ! [ -e $BINTARGET/dynamo/common/db_conf.php ]
+then
+  echo
+  echo "$BINTARGET/dynamo/common/db_conf.php does not exist. "
+  echo "Without the configuration file, most of the web applications will not function."
+  echo "Template exists at $BINSOURCE/dynamo/common/db_conf.php.template."
+  echo
+fi
+
 [ -L $HTMLTARGET/dynamo/detox.php ] || ln -sf $BINTARGET/dynamo/detox/main.php $HTMLTARGET/dynamo/detox.php
 [ -L $HTMLTARGET/dynamo/inventory.php ] || ln -sf $BINTARGET/dynamo/inventory/main.php $HTMLTARGET/dynamo/inventory.php
 [ -L $HTMLTARGET/registry/detoxlock ] || ln -sf $BINTARGET/registry/detoxlock.php $HTMLTARGET/registry/detoxlock

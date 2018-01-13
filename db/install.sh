@@ -1,9 +1,12 @@
 #!/bin/bash
 
+echo
 echo "Setting up MySQL databases."
+echo
 
 if ! [ $SOURCE ]
 then
+  echo
   echo "Install source path is not set."
   exit 1
 fi
@@ -14,6 +17,7 @@ MYSQLOPT="-u $SERVER_DB_WRITE_USER -p$SERVER_DB_WRITE_PASSWD -h localhost"
 echo "SELECT 1;" | mysql $MYSQLOPT >/dev/null 2>&1
 if [ $? -ne 0 ]
 then
+  echo
   echo "MySQL user permission is not set."
   exit 1
 fi
@@ -32,8 +36,10 @@ do
     diff $DB.sql $SOURCE/db/$SCHEMA > /dev/null 2>&1
     if [ $? -ne 0 ]
     then
+      echo
       echo "Differences were found in schema for database $DB."
       echo "Please manually update the schema."
+      echo
     fi
   else
     echo "CREATE DATABASE $DB;" | mysql $MYSQLOPT
