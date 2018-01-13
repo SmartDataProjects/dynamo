@@ -16,9 +16,20 @@ class PhEDExGroupInfoSource(GroupInfoSource):
         self._phedex = PhEDEx(config.phedex)
 
     def get_group(self, name): #override
+        if self.include is not None:
+            matched = False
+            for pattern in self.include:
+                if fnmatch.fnmatch(name, pattern):
+                    matched = True
+                    break
+
+            if not matched:
+                LOG.info('get_group(%s)  %s is not included by configuration', name, name)
+                return None
+
         if self.exclude is not None:
             for pattern in self.exclude:
-                if fnmatch.fnmatch(entry['name'], pattern):
+                if fnmatch.fnmatch(name, pattern):
                     LOG.info('get_group(%s)  %s is excluded by configuration', name, name)
                     return None
 
@@ -44,6 +55,26 @@ class PhEDExGroupInfoSource(GroupInfoSource):
         group_list = []
 
         for entry in self._phedex.make_request('groups'):
+            if self.include is not None:
+                matched = False
+                for pattern in self.include:
+                    if fnmatch.fnmatch(entry['name'], pattern):
+                        matched = True
+                        break
+    
+                if not matched:
+                    continue
+    
+            if self.exclude is not None:
+                matched = False
+                for pattern in self.exclude:
+                    if fnmatch.fnmatch(entry['name'], pattern):
+                        matched = True
+                        break
+
+                if matched:
+                    continue
+
             if entry['name'] in self.dataset_level_groups:
                 olevel = Dataset
             else:

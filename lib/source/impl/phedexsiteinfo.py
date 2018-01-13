@@ -52,14 +52,14 @@ class PhEDExSiteInfoSource(SiteInfoSource):
 
         for entry in self._phedex.make_request('nodes', options):
             if self.exclude is not None:
+                matched = False
                 for pattern in self.exclude:
                     if fnmatch.fnmatch(entry['name'], pattern):
+                        matched = True
                         break
-                else:
-                    # no exclude pattern matched -> go ahead
-                    pass
 
-                continue
+                if matched:
+                    continue
 
             site_list.append(Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology']))
 
