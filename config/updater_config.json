@@ -5,7 +5,7 @@
     "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
     "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
     "auth_handler": "HTTPSCertKeyHandler",
-    "auth_handler_conf": {"x509_key": "$(X509_USER_PROXY)"}
+    "auth_handler_conf": {}
   },
   "groups": {
     "module": "PhEDExGroupInfoSource",
@@ -21,7 +21,7 @@
       "ssb": {
         "url_base": "http://dashb-ssb.cern.ch/dashboard/request.py",
         "auth_handler": "HTTPSCertKeyHandler",
-        "auth_handler_conf": {"x509_key": "$(X509_USER_PROXY)"}
+        "auth_handler_conf": {}
       },
       "phedex": {},
       "ssb_cache_lifetime": 1800
@@ -33,7 +33,7 @@
       "dbs": {
         "url_base": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
         "auth_handler": "HTTPSCertKeyHandler",
-        "auth_handler_conf": {"x509_key": "$(X509_USER_PROXY)"}
+        "auth_handler_conf": {}
       },
       "phedex": {}
     }

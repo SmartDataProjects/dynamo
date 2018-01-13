@@ -74,7 +74,10 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
             
             for block_entry in dataset_entry['block']:
                 name = block_entry['name']
-                block_name = Block.to_internal_name(name[name.find('#') + 1:])
+                try:
+                    block_name = Block.to_internal_name(name[name.find('#') + 1:])
+                except ValueError: # invalid name
+                    continue
 
                 block = Block(
                     block_name,
