@@ -67,8 +67,8 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         for dataset_entry in dataset_entries:
             dataset = Dataset(
                 dataset_entry['name'],
-                size = dataset_entry['bytes'],
-                num_files = dataset_entry['files'],
+#                size = dataset_entry['bytes'], # PhEDEx datasvc documentation says this exists, it doesn't
+#                num_files = dataset_entry['files'], # PhEDEx datasvc documentation says this exists, it doesn't
                 is_open = (dataset_entry['is_open'] == 'y')
             )
             
@@ -89,6 +89,9 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
                     block.is_open = (block_entry['is_open'] == 'y')
                 except KeyError:
                     pass
+
+                dataset.size += block.size
+                dataset.num_files += block.num_files
 
                 block_replicas.extend(replica_maker(block, block_entry))
 
