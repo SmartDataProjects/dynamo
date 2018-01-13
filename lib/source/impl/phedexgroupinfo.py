@@ -39,6 +39,7 @@ class PhEDExGroupInfoSource(GroupInfoSource):
 
     def get_group_list(self): #override
         LOG.info('get_group_list  Fetching the list of groups from PhEDEx')
+        LOG.debug('Groups with dataset-level ownership: %s', str(self.dataset_level_groups))
 
         group_list = []
 

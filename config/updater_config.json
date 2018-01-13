@@ -17,7 +17,7 @@
   "sites": {
     "module": "PhEDExSiteInfoSource",
     "config": {
-      "include": ["*"],
+      "include": ["T0_*", "T1_*", "T2_*"],
       "exclude": ["T1_UK_RAL_ECHO_Disk", "T2_CH_CERNBOX", "T2_MY_UPM_BIRUNI"],
       "ssb": {
         "url_base": "http://dashb-ssb.cern.ch/dashboard/request.py",
