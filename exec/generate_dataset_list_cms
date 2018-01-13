@@ -13,7 +13,7 @@ args = parser.parse_args()
 sys.argv = []
 
 ## Load the configuration
-from dataformat import Configuration
+from dynamo.dataformat import Configuration
 
 config = Configuration(args.config)
 
@@ -41,7 +41,7 @@ if os.path.exists(config.dataset_state_file):
     sys.exit(0)
 
 ## Load and initialize sources
-import source.impl as sources
+import dynamo.source.impl as sources
 
 config.datasets.config.phedex = config.phedex
 

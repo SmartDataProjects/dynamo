@@ -20,7 +20,7 @@ delta_update = (args.site is None and args.dataset is None)
 rolling_site_update = False
 
 ## Load the configuration
-from dataformat.configuration import Configuration
+from dynamo.dataformat.configuration import Configuration
 
 config = Configuration(args.config)
 
@@ -45,8 +45,8 @@ LOG.addHandler(err_handler)
 LOG.info('Starting inventory update.')
 
 ## Load and initialize sources
-from core.executable import inventory
-import source.impl as sources
+from dynamo.core.executable import inventory
+import dynamo.source.impl as sources
 
 config.groups.config.phedex = config.phedex
 config.sites.config.phedex = config.phedex
@@ -66,7 +66,7 @@ replica_source = sources.PhEDExReplicaInfoSource(config.replicas.config)
 # 5. Loop over deleted replicas
 # 6. (If delta update) save the timestamp
 
-from dataformat import DatasetReplica, ObjectError
+from dynamo.dataformat import DatasetReplica, ObjectError
 
 ## 1. Refresh groups and sites
 

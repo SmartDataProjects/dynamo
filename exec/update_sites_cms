@@ -15,7 +15,7 @@ args = parser.parse_args()
 sys.argv = []
 
 ## Load the configuration
-from dataformat import Configuration
+from dynamo.dataformat import Configuration
 
 config = Configuration(args.config)
 
@@ -38,8 +38,8 @@ LOG.addHandler(out_handler)
 LOG.addHandler(err_handler)
 
 ## Load and initialize sources
-from core.executable import inventory
-import source.impl as sources
+from dynamo.core.executable import inventory
+import dynamo.source.impl as sources
 
 config.sites.config.phedex = config.phedex
 

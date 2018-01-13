@@ -21,7 +21,7 @@ sys.argv = []
 rolling_update = (not args.dataset)
 
 ## Load the configuration
-from dataformat import Configuration
+from dynamo.dataformat import Configuration
 
 config = Configuration(args.config)
 
@@ -44,8 +44,8 @@ LOG.addHandler(out_handler)
 LOG.addHandler(err_handler)
 
 ## Load and initialize sources
-from core.executable import inventory
-import source.impl as sources
+from dynamo.core.executable import inventory
+import dynamo.source.impl as sources
 
 config.datasets.config.phedex = config.phedex
 
@@ -56,7 +56,7 @@ dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 # 2. Update dataset and block information
 # 3. (If rolling update) remove updated datasets from the list
 
-from dataformat import Dataset
+from dynamo.dataformat import Dataset
 
 ## 1. Pick up datasets to inquire
 

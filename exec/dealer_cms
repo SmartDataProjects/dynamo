@@ -17,7 +17,7 @@ args = parser.parse_args()
 sys.argv = []
 
 ## Load the configuration
-from dataformat.configuration import Configuration
+from dynamo.dataformat.configuration import Configuration
 
 config = Configuration(args.config)
 
@@ -29,8 +29,8 @@ logging.basicConfig(level = log_level, format = log_format, stream = sys.stdout)
 LOG = logging.getLogger()
 
 ## Run the main detox object
-from dealer.main import Dealer
-from core.executable import inventory
+from dynamo.dealer.main import Dealer
+from dynamo.core.executable import inventory
 
 LOG.info('Starting Dealer.')
 

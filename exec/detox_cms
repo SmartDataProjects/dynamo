@@ -25,7 +25,7 @@ if args.snapshot_run and args.test_run:
 ## TODO snapshot_run is currently not implemented
 
 ## Load the configuration
-from dataformat.configuration import Configuration
+from dynamo.dataformat.configuration import Configuration
 
 config = Configuration(args.config)
 
@@ -37,8 +37,8 @@ logging.basicConfig(level = log_level, format = log_format, stream = sys.stdout)
 LOG = logging.getLogger()
 
 ## Run the main detox object
-from detox.main import Detox
-from core.executable import inventory
+from dynamo.detox.main import Detox
+from dynamo.core.executable import inventory
 
 LOG.info('Starting Detox.')
 
@@ -56,9 +56,9 @@ config.detox.policy_file = args.policy
 config.detox.policy_version = policy_version
 
 ## Temporary - translate all web locks into mysql locks
-from policy.producers import WebReplicaLock
-from core.executable import registry
-from utils.interface.webservice import POST
+from dynamo.policy.producers import WebReplicaLock
+from dynamo.core.executable import registry
+from dynamo.utils.interface.webservice import POST
 
 LOG.info('Translating web-based replica locks into DB-based locks.')
 
