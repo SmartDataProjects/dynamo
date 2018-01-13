@@ -149,8 +149,11 @@ class Site(object):
                 site_partition.quota = -1
                 inventory.update(SitePartition(site, partition))
                 # It's saved now
-                
-            # Will return updated = False
+
+            # Reporting updated = True causes the site to be added to _updated_objects twice,
+            # but this is the only way to trigger writing update by the server
+            updated = True
+            # site_partitions will always be written in Site.write_into.
 
         else:
             if check and (site is self or site == self):
@@ -183,6 +186,9 @@ class Site(object):
             store.delete_site(self)
         else:
             store.save_site(self)
+
+        for site_partition in self.partitions.itervalues():
+            site_partition.write_into(store, delete = delete)
 
     def find_dataset_replica(self, dataset, must_find = False):
         try:

@@ -24,7 +24,8 @@ class SitePartition(object):
         self.replicas = {}
 
     def __str__(self):
-        return 'SitePartition %s/%s (quota=%f TB, occupancy %f)' % (self._site.name, self._partition.name, self.quota * 1.e-12, self.occupancy_fraction())
+        return 'SitePartition %s/%s (quota=%f TB, occupancy %s)' % (self._site.name, self._partition.name, \
+            self.quota * 1.e-12, ('%.2f' % self.occupancy_fraction()) if self.quota != 0. else 'inf')
 
     def __repr__(self):
         return 'SitePartition(%s, %s)' % (repr(self._site), repr(self._partition))
