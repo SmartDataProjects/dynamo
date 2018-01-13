@@ -47,8 +47,18 @@ class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
 
     def __init__(self):
         urllib2.HTTPSHandler.__init__(self)
-        self.key = os.environ['X509_USER_PROXY']
-        self.cert = os.environ['X509_USER_PROXY']
+        try:
+            self.key = os.environ['X509_USER_PROXY']
+        except KeyError:
+            self.key = '/tmp/x509up_u%d' % os.geteuid()
+
+        if not os.path.exists(self.key):
+            LOG.error('HTTPSCertKeyHandler requires an X509 proxy in either')
+            LOG.error('1. Environment variable X509_USER_PROXY')
+            LOG.error('2. /tmp/x509up_u(uid)')
+            raise ConfigurationError('X509 proxy missing')
+
+        self.cert = self.key
 
     def https_open(self, req):
         return self.do_open(self.create_connection, req)
