@@ -324,7 +324,7 @@ class Dynamo(object):
         # This is for security and simply for concurrency - multiple processes
         # should not share the same DB connection
         backend_config = self.registry_config.backend
-        self.registry.set_backend(backend_config.module, backend_config.readonly_config)
+        self.registry.set_backend(backend_config.interface, backend_config.readonly_config)
 
         persistency_config = self.inventory_config.persistency
         self.inventory.init_store(persistency_config.module, persistency_config.readonly_config)
