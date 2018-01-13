@@ -228,6 +228,7 @@ do
   then
     cp $CONF $CONFIGPATH/$FILE
   elif ! diff $SOURCE/config/$FILE $CONFIGPATH/$FILE > /dev/null 2>&1
+  then
     echo "Config $FILE has changed. Saving the new file to $CONFIGPATH/$FILE.new."
     echo
     cp $CONF $CONFIGPATH/$FILE.new
