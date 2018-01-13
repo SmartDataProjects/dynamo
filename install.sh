@@ -223,11 +223,14 @@ chmod 600 $CONFIGPATH/server_config.json
 # The rest of the config files are copied directly - edit as necessary
 for CONF in $(ls $SOURCE/config/*.json)
 do
-  if [ -e $CONFIGPATH/$(basename $CONF) ]
+  FILE=$(basename $CONF)
+  if ! [ -e $CONFIGPATH/$FILE ]
   then
-    cp $CONF $CONFIGPATH/$(basename $CONF).new
-  else
-    cp $CONF $CONFIGPATH/$(basename $CONF)
+    cp $CONF $CONFIGPATH/$FILE
+  elif ! diff $SOURCE/config/$FILE $CONFIGPATH/$FILE > /dev/null 2>&1
+    echo "Config $FILE has changed. Saving the new file to $CONFIGPATH/$FILE.new."
+    echo
+    cp $CONF $CONFIGPATH/$FILE.new
   fi
 done
 
