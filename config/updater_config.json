@@ -10,7 +10,8 @@
   "groups": {
     "module": "PhEDExGroupInfoSource",
     "config": {
-      "phedex": {}
+      "phedex": {},
+      "dataset_level_groups": ["AnalysisOps", "IB RelVal", "RelVal"]
     }
   },
   "sites": {
