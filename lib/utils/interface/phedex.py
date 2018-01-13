@@ -23,11 +23,14 @@ class PhEDEx(RESTService):
             LOG.error(response)
             return
 
-        if LOG.getEffectiveLevel() == logging.DEBUG:
-            LOG.debug(pprint.pformat(result))
-
         for metadata in ['request_timestamp', 'instance', 'request_url', 'request_version', 'request_call', 'call_time', 'request_date']:
             result.pop(metadata)
+
+        if LOG.getEffectiveLevel() == logging.DEBUG:
+            res_str = pprint.pformat(result)
+            if len(res_str) > 100:
+                res_str = res_str[:99] + '..\n' + res_str[-1]
+            LOG.debug(res_str)
 
         # the only one item left in the results should be the result body. Clone the keys to use less memory..
         key = result.keys()[0]

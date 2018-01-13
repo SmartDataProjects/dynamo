@@ -1,5 +1,3 @@
-import copy
-
 from sitepartition import SitePartition
 
 class Partition(object):
@@ -56,7 +54,7 @@ class Partition(object):
         pass
 
     def unlinked_clone(self):
-        return Partition(self._name, copy.deepcopy(self._condition))
+        return Partition(self._name)
 
     def embed_into(self, inventory, check = False):
         updated = False
