@@ -42,14 +42,22 @@ log_handler.setFormatter(logging.Formatter(fmt = log_format))
 
 # Logger specific for object update reports from the server
 changelog = logging.getLogger('changelog')
+changelog.propagate = False
 changelog.setLevel(logging.INFO)
 if config.logging.get('path', ''):
     log_handler = logging.handlers.RotatingFileHandler(config.logging.path + '/updates.log', maxBytes = 1000000, backupCount = 100)
 else:
     log_handler = logging.StreamHandler()
-log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
 changelog.addHandler(log_handler)
-changelog.propagate = False
+
+changelog.critical('''
++++++++++++++++++++++++++++++++++++++
+++++++++++++++ DYNAMO +++++++++++++++
+++++++++++++++  v2.0  +++++++++++++++
++++++++++++++++++++++++++++++++++++++
+''')
+
+log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
 
 ## Set the effective user id to config.user
 try:
