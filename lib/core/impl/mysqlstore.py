@@ -424,9 +424,10 @@ class MySQLInventoryStore(InventoryStore):
             
             result = self._mysql.query(sql, *dataset.software_version)
             if len(result) == 0:
-                return
-
-            software_version_id = result[0]
+                sql = 'INSERT INTO `software_versions` (`cycle`, `major`, `minor`, `suffix`) VALUES (%s, %s, %s, %s)'
+                software_version_id = self._mysql.query(sql, *dataset.software_version)
+            else:
+                software_version_id = result[0]
             
         fields = ('name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
         values = ', '.join(['%s'] * len(fields))
