@@ -225,11 +225,15 @@ class DynamoInventory(ObjectRepository):
 
         if updated:
             if self._updated_objects is not None:
-                self._updated_objects.append(obj.unlinked_clone())
+                LOG.debug('%s has changed. Adding a clone to updated objects list.', str(obj))
+                # The content of updated_objects gets pickled and shipped back to the server process.
+                # The objects need to be unlinked clones; otherwise we ship the entire inventory.
+                self._updated_objects.append(embedded_clone.unlinked_clone())
     
             if write:
+                LOG.debug('%s has changed. Saving changes to inventory store.', str(obj))
                 try:
-                    obj.write_into(self._store)
+                    embedded_clone.write_into(self._store)
                 except:
                     LOG.error('Exception writing %s to inventory store', str(obj))
                     raise

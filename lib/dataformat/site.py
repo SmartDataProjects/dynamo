@@ -142,13 +142,7 @@ class Site(object):
             # Now site is saved in inventory._updated_objects
 
             for partition in inventory.partitions.itervalues():
-                site_partition = SitePartition(site, partition)
-                # SitePartition.embed_into assumes the object is already in site.partitions
-                # Again first embed into inventory, set some parameter off, and trigger an update
-                site.partitions[partition] = site_partition
-                site_partition.quota = -1
                 inventory.update(SitePartition(site, partition))
-                # It's saved now
 
             # Reporting updated = True causes the site to be added to _updated_objects twice,
             # but this is the only way to trigger writing update by the server

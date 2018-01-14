@@ -60,15 +60,23 @@ class SitePartition(object):
         except KeyError:
             raise ObjectError('Unknown partition %s', self._partition.name)
 
-        site_partition = site.partitions[partition]
         updated = False
 
-        if check and (site_partition is self or site_partition == self):
-            # identical object -> return False if check is requested
-            pass
-        else:
+        try:
+            site_partition = site.partitions[partition]
+        except KeyError:
+            site_partition = SitePartition(site, partition)
             site_partition.copy(self)
+            site.partitions[partition] = site_partition
             updated = True
+
+        else:            
+            if check and (site_partition is self or site_partition == self):
+                # identical object -> return False if check is requested
+                pass
+            else:
+                site_partition.copy(self)
+                updated = True
 
         if check:
             return site_partition, updated
