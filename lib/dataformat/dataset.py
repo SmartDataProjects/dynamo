@@ -6,15 +6,14 @@ from exceptions import ObjectError
 class Dataset(object):
     """Represents a dataset."""
 
-    __slots__ = ['_name', 'size', 'num_files', 'status', 'on_tape',
-        'data_type', 'software_version', 'last_update', 'is_open',
+    __slots__ = ['_name', 'size', 'num_files', 'status', 'data_type',
+        'software_version', 'last_update', 'is_open',
         'blocks', 'replicas', 'attr']
 
     # Enumerator for dataset type.
     # Starting from 1 to play better with MySQL
     TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, 10)
     STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, 8)
-    TAPE_NONE, TAPE_FULL, TAPE_PARTIAL = range(3)
 
     @property
     def name(self):
@@ -54,12 +53,11 @@ class Dataset(object):
         else:
             return arg
 
-    def __init__(self, name, size = 0, num_files = 0, status = STAT_UNKNOWN, on_tape = TAPE_NONE, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True):
+    def __init__(self, name, size = 0, num_files = 0, status = STAT_UNKNOWN, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True):
         self._name = name
         self.size = size # redundant with sum of block sizes when blocks are loaded
         self.num_files = num_files # redundant with sum of block num_files and len(files)
         self.status = status
-        self.on_tape = on_tape
         self.data_type = data_type
         self.software_version = software_version
         self.last_update = last_update # in UNIX time
@@ -74,8 +72,8 @@ class Dataset(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset %s (size=%d, num_files=%d, status=%s, on_tape=%d, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
-            (self._name, self.size, self.num_files, Dataset.status_name(self.status), self.on_tape, Dataset.data_type_name(self.data_type), \
+        return 'Dataset %s (size=%d, num_files=%d, status=%s, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
+            (self._name, self.size, self.num_files, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
             str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), \
             len(self.blocks), replica_sites)
 
@@ -84,7 +82,7 @@ class Dataset(object):
 
     def __eq__(self, other):
         return self._name == other._name and self.size == other.size and self.num_files == other.num_files and \
-            self.status == other.status and self.on_tape == other.on_tape and self.data_type == other.data_type and \
+            self.status == other.status and self.data_type == other.data_type and \
             self.software_version == other.software_version and self.last_update == other.last_update and self.is_open == other.is_open
 
     def __ne__(self, other):
@@ -104,7 +102,6 @@ class Dataset(object):
         self.size = other.size
         self.num_files = other.num_files
         self.status = other.status
-        self.on_tape = other.on_tape
         self.data_type = other.data_type
         self.software_version = other.software_version
         self.last_update = other.last_update
@@ -113,7 +110,7 @@ class Dataset(object):
         self.attr = copy.deepcopy(other.attr)
 
     def unlinked_clone(self):
-        dataset = Dataset(self._name, self.size, self.num_files, self.status, self.on_tape, self.data_type,
+        dataset = Dataset(self._name, self.size, self.num_files, self.status, self.data_type,
             self.software_version, self.last_update, self.is_open)
 
         dataset.attr = copy.deepcopy(self.attr)

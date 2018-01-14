@@ -41,10 +41,27 @@ class DatasetStatus(DatasetAttr):
 
 class DatasetOnTape(DatasetAttr):
     def __init__(self):
-        DatasetAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'on_tape')
+        DatasetAttr.__init__(self, Attr.NUMERIC_TYPE)
 
     def rhs_map(self, expr):
-        return getattr(Dataset, 'TAPE_' + expr)
+        # historic mapping
+        if expr == 'NONE':
+            return 0
+        elif expr == 'PARTIAL':
+            return 2
+        else:
+            return 1
+
+    def _get(self, dataset):
+        on_tape = 0
+        for rep in dataset.replicas:
+            if rep.site.storage_type == Site.TYPE_MSS:
+                if rep.is_full():
+                    return 1
+
+                on_tape = 2
+
+        return on_tape
 
 class DatasetRelease(DatasetAttr):
     def __init__(self):

@@ -215,7 +215,7 @@ class MySQLInventoryStore(InventoryStore):
             site.partitions[partition].set_quota(storage * 1.e+12)
 
     def _load_datasets(self, inventory, dataset_names, id_dataset_map):
-        sql = 'SELECT d.`id`, d.`name`, d.`size`, d.`num_files`, d.`status`+0, d.`on_tape`, d.`data_type`+0, s.`cycle`, s.`major`, s.`minor`, s.`suffix`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
+        sql = 'SELECT d.`id`, d.`name`, d.`size`, d.`num_files`, d.`status`+0, d.`data_type`+0, s.`cycle`, s.`major`, s.`minor`, s.`suffix`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
         sql += ' FROM `datasets` AS d'
         sql += ' LEFT JOIN `software_versions` AS s ON s.`id` = d.`software_version_id`'
 
@@ -227,14 +227,13 @@ class MySQLInventoryStore(InventoryStore):
 
             sql += ' INNER JOIN `datasets_load_tmp` AS t ON t.`id` = d.`id`'
 
-        for dataset_id, name, size, num_files, status, on_tape, data_type, sw_cycle, sw_major, sw_minor, sw_suffix, last_update, is_open in self._mysql.xquery(sql):
+        for dataset_id, name, size, num_files, status, data_type, sw_cycle, sw_major, sw_minor, sw_suffix, last_update, is_open in self._mysql.xquery(sql):
             # size and num_files are reset when loading blocks
             dataset = Dataset(
                 name,
                 size = size,
                 num_files = num_files,
                 status = int(status),
-                on_tape = on_tape,
                 data_type = int(data_type),
                 last_update = last_update,
                 is_open = (is_open == 1)
@@ -421,10 +420,10 @@ class MySQLInventoryStore(InventoryStore):
             else:
                 software_version_id = result[0]
             
-        fields = ('name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
+        fields = ('name', 'size', 'num_files', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
         self._insert_update('datasets', fields, dataset.name, dataset.size, dataset.num_files, \
-            dataset.status, dataset.on_tape, dataset.data_type, \
-            software_version_id, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
+            dataset.status, dataset.data_type, software_version_id,
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
     def delete_dataset(self, dataset): #override
         sql = 'DELETE FROM `datasets` WHERE `name` = %s'
