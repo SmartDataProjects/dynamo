@@ -538,7 +538,7 @@ class MySQLInventoryStore(InventoryStore):
         if partition_id == 0:
             return
 
-        fields = ('site_id', 'partition_id', 'quota')
+        fields = ('site_id', 'partition_id', 'storage')
         values = ', '.join(['%s'] * len(fields))
 
         sql = 'INSERT INTO `quotas` ('
