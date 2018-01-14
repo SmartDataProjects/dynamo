@@ -273,7 +273,7 @@ class MySQLInventoryStore(InventoryStore):
                 dataset,
                 size,
                 num_files,
-                is_open,
+                (is_open == 1),
                 last_update
             )
 
@@ -340,8 +340,8 @@ class MySQLInventoryStore(InventoryStore):
                 block,
                 site,
                 group = group,
-                is_complete = is_complete,
-                is_custodial = b_is_custodial,
+                is_complete = (is_complete == 1),
+                is_custodial = (b_is_custodial == 1),
                 size = block.size if b_size is None else b_size,
                 last_update = b_last_update
             )
@@ -360,15 +360,7 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open', 'last_update')
-        values = ', '.join(['%s'] * len(fields))
-
-        sql = 'INSERT INTO `blocks` ('
-        sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (' + values + ')'
-        sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
-
-        self._mysql.query(sql, dataset_id, block.real_name(), block.size, block.num_files, block.is_open, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
+        self._insert_update('blocks', fields, dataset_id, block.real_name(), block.size, block.num_files, block.is_open, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
 
     def delete_block(self, block): #override
         dataset_id = self._get_dataset_id(block.dataset)
@@ -376,7 +368,6 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         sql = 'DELETE FROM `blocks` WHERE `dataset_id` = %s AND `name` = %s'
-
         self._mysql.query(sql, dataset_id, block.real_name())
 
     def save_blockreplica(self, block_replica): #override
@@ -393,15 +384,14 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
-        values = ', '.join(['%s'] * len(fields))
+        self._insert_update('block_replicas', fields, block_id, site_id, group_id, block_replica.is_complete, block_replica.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update)))
 
-        sql = 'INSERT INTO `block_replicas` ('
-        sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (' + values + ')'
-        sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
-
-        self._mysql.query(sql, block_id, site_id, group_id, block_replica.is_complete, block_replica.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update)))
+        if block_replica.size != block_replica.block.size:
+            fields = ('block_id', 'site_id', 'size')
+            self._insert_update('block_replica_sizes', fields, block_id, site_id, block_replica.size)
+        else:
+            sql = 'DELETE FROM `block_replica_sizes` WHERE `block_id` = %s AND `site_id` = %s'
+            self._mysql.query(sql, block_id, site_id)
 
     def delete_blockreplica(self, block_replica): #override
         block_id = self._get_block_id(block_replica.block)
@@ -413,7 +403,9 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         sql = 'DELETE FROM `block_replicas` WHERE `block_id` = %s AND `site_id` = %s'
-        
+        self._mysql.query(sql, block_id, site_id)
+
+        sql = 'DELETE FROM `block_replica_sizes` WHERE `block_id` = %s AND `site_id` = %s'
         self._mysql.query(sql, block_id, site_id)
 
     def save_dataset(self, dataset): #override
@@ -430,21 +422,12 @@ class MySQLInventoryStore(InventoryStore):
                 software_version_id = result[0]
             
         fields = ('name', 'size', 'num_files', 'status', 'on_tape', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        values = ', '.join(['%s'] * len(fields))
-
-        sql = 'INSERT INTO `datasets` ('
-        sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (' + values + ')'
-        sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
-
-        self._mysql.query(sql, dataset.name, dataset.size, dataset.num_files, \
+        self._insert_update('datasets', fields, dataset.name, dataset.size, dataset.num_files, \
             dataset.status, dataset.on_tape, dataset.data_type, \
             software_version_id, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
     def delete_dataset(self, dataset): #override
         sql = 'DELETE FROM `datasets` WHERE `name` = %s'
-
         self._mysql.query(sql, dataset.name)
 
     def save_datasetreplica(self, dataset_replica): #override
@@ -457,15 +440,7 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('dataset_id', 'site_id')
-        values = ', '.join(['%s'] * len(fields))
-
-        sql = 'INSERT INTO `dataset_replicas` ('
-        sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (' + values + ')'
-        sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
-
-        self._mysql.query(sql, dataset_id, site_id)
+        self._insert_update('dataset_replicas', fields, dataset_id, site_id)
 
     def delete_datasetreplica(self, dataset_replica): #override
         dataset_id = self._get_dataset_id(dataset_replica.dataset)
@@ -477,57 +452,30 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
-
         self._mysql.query(sql, dataset_id, site_id)
 
     def save_group(self, group): #override
         fields = ('name', 'olevel')
-        values = ', '.join(['%s'] * len(fields))
-
-        sql = 'INSERT INTO `groups` ('
-        sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (' + values + ')'
-        sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
-
-        self._mysql.query(sql, group.name, group.olevel.__name__)
+        self._insert_update('groups', fields, group.name, group.olevel.__name__)
 
     def delete_group(self, group): #override
         sql = 'DELETE FROM `groups` WHERE `name` = %s'
-
         self._mysql.query(sql, group.name)
 
     def save_partition(self, partition): #override
         fields = ('name',)
-
-        sql = 'INSERT INTO `partitions` ('
-        sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (%s)'
-        sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
-
-        self._mysql.query(sql, partition.name)
+        self._insert_update('partitions', fields, partition.name)
 
     def delete_partition(self, partition): #override
         sql = 'DELETE FROM `partitions` WHERE `name` = %s'
-
         self._mysql.query(sql, partition.name)
 
     def save_site(self, site): #override
         fields = ('name', 'host', 'storage_type', 'backend', 'storage', 'cpu', 'status')
-        values = ', '.join(['%s'] * len(fields))
-
-        sql = 'INSERT INTO `sites` ('
-        sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (' + values + ')'
-        sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
-
-        self._mysql.query(sql, site.name, site.host, site.storage_type, site.backend, site.storage, site.cpu, site.status)
+        self._insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.storage, site.cpu, site.status)
 
     def delete_site(self, site): #override
         sql = 'DELETE FROM `sites` WHERE `name` = %s'
-
         self._mysql.query(sql, site.name)
 
     def save_sitepartition(self, site_partition): #override
@@ -540,15 +488,7 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('site_id', 'partition_id', 'storage')
-        values = ', '.join(['%s'] * len(fields))
-
-        sql = 'INSERT INTO `quotas` ('
-        sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (' + values + ')'
-        sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
-
-        self._mysql.query(sql, site_id, partition_id, site_partition.quota * 1.e-12)
+        self._insert_update('quotas', fields, site_id, partition_id, site_partition.quota * 1.e-12)
 
     def delete_sitepartition(self, site_partition): #override
         site_id = self._get_site_id(site_partition.site)
@@ -560,8 +500,18 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         sql = 'DELETE FROM `quotas` WHERE `site_id` = %s AND `partition_id` = %s'
-
         self._mysql.query(sql, site_id, partition_id)
+
+    def _insert_update(self, table, fields, *values):
+        placeholders = ', '.join(['%s'] * len(fields))
+
+        sql = 'INSERT INTO `%s` (' % table
+        sql += ', '.join('`%s`' % f for f in fields)
+        sql += ') VALUES (' + placeholders + ')'
+        sql += ' ON DUPLICATE KEY UPDATE '
+        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
+
+        self._mysql.query(sql, *values)
 
     def _get_dataset_id(self, dataset):
         sql = 'SELECT `id` FROM `datasets` WHERE `name` = %s'

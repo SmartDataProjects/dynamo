@@ -66,10 +66,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
 
         for dataset_entry in dataset_entries:
             dataset = Dataset(
-                dataset_entry['name'],
-#                size = dataset_entry['bytes'], # PhEDEx datasvc documentation says this exists, it doesn't
-#                num_files = dataset_entry['files'], # PhEDEx datasvc documentation says this exists, it doesn't
-                is_open = (dataset_entry['is_open'] == 'y')
+                dataset_entry['name']
             )
             
             for block_entry in dataset_entry['block']:
@@ -82,16 +79,8 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
                 block = Block(
                     block_name,
                     dataset,
-                    size = block_entry['bytes'],
-                    num_files = block_entry['files']
+                    block_entry['bytes']
                 )
-                try:
-                    block.is_open = (block_entry['is_open'] == 'y')
-                except KeyError:
-                    pass
-
-                dataset.size += block.size
-                dataset.num_files += block.num_files
 
                 block_replicas.extend(replica_maker(block, block_entry))
 
@@ -102,12 +91,10 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         replicas = []
 
         for replica_entry in block_entry['replica']:
-            group = Group(replica_entry['group'])
-
             block_replica = BlockReplica(
                 block,
                 Site(replica_entry['node']),
-                group,
+                Group(replica_entry['group']),
                 is_complete = (replica_entry['bytes'] == block.size),
                 is_custodial = (replica_entry['custodial'] == 'y'),
                 size = replica_entry['bytes'],

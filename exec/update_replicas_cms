@@ -126,6 +126,9 @@ else:
 
 ## 3. Loop over new and changed block replicas, add them to inventory
 
+updated_datasets = set()
+updated_blocks = set()
+
 for replica in new_and_updated_replicas:
     replica_str = str(replica)
 
@@ -145,60 +148,36 @@ for replica in new_and_updated_replicas:
         LOG.debug('%s is at %s, which is not a tracked site.', replica_str, replica.site.name)
         continue
 
-    # 3.3. Find the dataset in the inventory
+    # 3.3. Update the dataset info
 
-    try:
-        dataset = inventory.datasets[replica.block.dataset.name]
-    except KeyError:
-        # If not found, create a new dataset and inject
-        LOG.info('Unknown dataset %s. Collecting information.', replica.block.dataset.name)
+    dataset_name = replica.block.dataset.name
 
-        dataset_tmp = dataset_source.get_dataset(replica.block.dataset.name)
+    if dataset_name not in updated_datasets:
+        LOG.debug('Updating information for dataset %s', dataset_name)
+
+        dataset_tmp = dataset_source.get_dataset(dataset_name)
         if dataset_tmp is None:
-            LOG.error('Unknown dataset %s.', replica.block.dataset.name)
+            LOG.error('Unknown dataset %s.', dataset_name)
             continue
 
-        inventory.update(dataset_tmp)
-
-        # This is the dataset that is embedded in the inventory
-        dataset = inventory.datasets[replica.block.dataset.name]
+        dataset = inventory.update(dataset_tmp)
 
         # Inject blocks as well
-        for block in dataset_tmp.blocks:
-            inventory.update(block)
+        for block_tmp in dataset_tmp.blocks:
+            inventory.update(block_tmp)
+
+        updated_datasets.add(dataset_name)
+
     else:
-        # If found, update the information (size, last_update, etc.) if necessary
-        LOG.debug('Updating information for dataset %s', dataset.name)
-        inventory.update(replica.block.dataset)
+        dataset = inventory.datasets[dataset_name]
 
     # 3.4. Find the block of the dataset
 
-    block_full_name = replica.block.full_name()
     block = dataset.find_block(replica.block.name)
 
     if block is None:
-        # If not found, create a new block and inject
-        LOG.debug('Unknown block %s. Collecting information.', block_full_name)
-
-        block_tmp = dataset_source.get_block(block_full_name, dataset)
-        if block_tmp is None:
-            LOG.error('Unknown block %s.', block_full_name)
-            continue
-
-        inventory.update(block_tmp)
-
-        # This is the block that is embedded in the inventory (`block.dataset` points to `dataset`)
-        block = dataset.find_block(replica.block.name)
-
-        dataset.size += block.size
-        dataset.num_files += block.num_files
-
-        # Update dataset information
-        inventory.update(dataset)
-    else:
-        # If found, update the information if necessary
-        LOG.debug('Updating information for block %s', block_full_name)
-        inventory.update(replica.block)
+        LOG.error('Unknown block %s.', replica.block.full_name())
+        continue
 
     # 3.5. Find the dataset replica
 
