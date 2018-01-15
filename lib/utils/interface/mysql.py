@@ -431,31 +431,37 @@ class MySQL(object):
 
             execute(pool_expr)
 
-    def table_exists(self, table):
-        return len(self.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s LIMIT 1', self.db_name(), table)) != 0
+    def table_exists(self, table, db = ''):
+        if not db:
+            db = self.db_name()
+
+        return len(self.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s LIMIT 1', db, table)) != 0
 
     def make_map(self, table, objects, object_id_map = None, id_object_map = None, key = None, tmp_join = False):
         objitr = iter(objects)
 
         if tmp_join:
+            tmp_db = self.db_name() + '_tmp'
             tmp_table = '%s_map_tmp' % table
-            if self.table_exists(tmp_table):
-                self.query('DROP TABLE `%s`' % tmp_table)
+            if self.table_exists(tmp_table, db = tmp_db):
+                self.query('DROP TABLE `%s`.`%s`' % (tmp_db, tmp_table))
 
             # need to create a list first because objects can already be an iterator and iterators can iterate only once
             objlist = list(objitr)
             objitr = iter(objlist)
 
-            self.query('CREATE TABLE `%s` (`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL, PRIMARY KEY (`name`)) ENGINE=MyISAM DEFAULT CHARSET=latin1' % tmp_table)
+            self.query('CREATE TEMPORARY TABLE `%s`.`%s` (`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL, PRIMARY KEY (`name`)) ENGINE=MyISAM DEFAULT CHARSET=latin1' % (tmp_db, tmp_table))
 
+            # rather hacky here - pass db`.`table as table_name to insert_many (which adds the enclosing ``)
+            table_name = tmp_db + '`.`' + tmp_table
             if key is None:
-                self.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist)
+                self.insert_many(table_name, ('name',), lambda obj: (obj.name,), objlist)
             else:
-                self.insert_many(tmp_table, ('name',), lambda obj: (key(obj),), objlist)
+                self.insert_many(table_name, ('name',), lambda obj: (key(obj),), objlist)
 
-            name_to_id = dict(self.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_table)))
+            name_to_id = dict(self.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s`.`%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_db, tmp_table)))
 
-            self.query('DROP TABLE `%s`' % tmp_table)
+            self.query('DROP TABLE `%s`.`%s`' % (tmp_db, tmp_table))
 
         else:
             name_to_id = dict(self.xquery('SELECT `name`, `id` FROM `%s`' % table))

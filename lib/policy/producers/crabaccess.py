@@ -22,23 +22,10 @@ class CRABAccessHistory(object):
     produces = ['global_usage_rank', 'local_usage']
 
     def __init__(self, config):
-        # maximum number of days to back track in case of missing records
-        self.max_back_query = config.max_back_query
-
-        self._popdb = PopDB(config.popdb.config)
         self._store = MySQL(config.store.db_params)
 
-    def update(self, inventory):
-        records, last_update = self._get_stored_records(inventory)
-        source_records = self._get_source_records(inventory, last_update)
-        for replica, accesses in source_records.iteritems():
-            try:
-                records[replica].update(accesses)
-            except KeyError:
-                records[replica] = dict(accesses)
-
-        self._save_records(source_records)
-
+    def load(self, inventory):
+        records = self._get_stored_records(inventory)
         self._compute(inventory, records)
 
     def _get_stored_records(self, inventory):
@@ -113,125 +100,7 @@ class CRABAccessHistory(object):
 
         LOG.info('Loaded %d replica access data. Last update on %s UTC', num_records, time.strftime('%Y-%m-%d', time.gmtime(last_update)))
 
-        return all_accesses, last_update
-
-    def _save_records(self, records):
-        """
-        Save the newly fetched access records.
-        @param records  {replica: {date: (number of access, total cpu time)}}
-        """
-
-        site_id_map = {}
-        self._store.make_map('sites', set(r.site for r in records.iterkeys()), site_id_map, None)
-        dataset_id_map = {}
-        self._store.make_map('datasets', set(r.dataset for r in records.iterkeys()), dataset_id_map, None)
-
-        fields = ('dataset_id', 'site_id', 'date', 'access_type', 'num_accesses', 'cputime')
-
-        data = []
-        for replica, entries in records.iteritems():
-            dataset_id = dataset_id_map[replica.dataset]
-            site_id = site_id_map[replica.site]
-
-            for date, (num_accesses, cputime) in entries.iteritems():
-                data.append((dataset_id, site_id, date.strftime('%Y-%m-%d'), 'local', num_accesses, cputime))
-
-        self._store.insert_many('dataset_accesses', fields, None, data, do_update = True)
-
-        # remove old entries
-        self._store.query('DELETE FROM `dataset_accesses` WHERE `date` < DATE_SUB(NOW(), INTERVAL 2 YEAR)')
-        self._store.query('UPDATE `system` SET `dataset_accesses_last_update` = NOW()')
-
-    def _get_source_records(self, inventory, last_update):
-        """
-        Get the replica access data from PopDB.
-        @param inventory  DynamoInventory
-        @param date       datetime.datetime instance
-        @return  {replica: {date: (number of access, total cpu time)}}
-        """
-
-        start_time = max(last_update, (time.time() - 3600 * 24 * self.max_back_query))
-        start_date = datetime.date(*time.gmtime(start_time)[:3])
-
-        days_to_query = []
-
-        utctoday = datetime.date(*time.gmtime()[:3])
-        date = start_date
-        while date <= utctoday: # get records up to today
-            days_to_query.append(date)
-            date += datetime.timedelta(1) # one day
-
-        LOG.info('Updating dataset access info from %s to %s', start_date.strftime('%Y-%m-%d'), utctoday.strftime('%Y-%m-%d'))
-
-        all_accesses = {}
-
-        arg_pool = []
-        for site in inventory.sites.itervalues():
-            for date in days_to_query:
-                arg_pool.append((site, inventory.datasets, date))
-
-        mapper = Map()
-        mapper.logger = LOG
-
-        records = mapper.execute(self._get_site_record, arg_pool)
-
-#                site_record = self._get_site_record(site, inventory.datasets, date)
-#
-#                for replica, naccess, cputime in site_record:
-#                    if replica not in all_accesses:
-#                        all_accesses[replica] = {}
-#
-#                    all_accesses[replica][date] = (naccess, cputime)
-
-        for site_record in records:
-            for replica, date, naccess, cputime in site_record:
-                if replica not in all_accesses:
-                    all_accesses[replica] = {}
-
-                all_accesses[replica][date] = (naccess, cputime)
-
         return all_accesses
-
-    def _get_site_record(self, site, datasets, date):
-        """
-        Get the replica access data on a single site from PopDB.
-        @param site       Site
-        @param datasets   datasets dictionary of inventory
-        @param date       datetime.date
-        @return [(replica, number of access, total cpu time)]
-        """
-
-        if site.name.startswith('T0'):
-            return []
-        elif site.name.startswith('T1') and site.name.count('_') > 2:
-            nameparts = site.name.split('_')
-            sitename = '_'.join(nameparts[:3])
-            service = 'popularity/DSStatInTimeWindow/' # the trailing slash is apparently important
-        elif site.name == 'T2_CH_CERN':
-            sitename = site.name
-            service = 'xrdpopularity/DSStatInTimeWindow'
-        else:
-            sitename = site.name
-            service = 'popularity/DSStatInTimeWindow/'
-
-        datestr = date.strftime('%Y-%m-%d')
-        result = self._popdb.make_request(service, ['sitename=' + sitename, 'tstart=' + datestr, 'tstop=' + datestr])
-
-        records = []
-        
-        for ds_entry in result:
-            try:
-                dataset = datasets[ds_entry['COLLNAME']]
-            except KeyError:
-                continue
-
-            replica = site.find_dataset_replica(dataset)
-            if replica is None:
-                continue
-
-            records.append((replica, date, int(ds_entry['NACC']), float(ds_entry['TOTCPU'])))
-
-        return records
 
     def _compute(self, inventory, all_accesses):
         """
@@ -284,3 +153,129 @@ class CRABAccessHistory(object):
                 global_rank /= len(dataset.replicas)
 
             dataset.attr['global_usage_rank'] = global_rank
+
+    @staticmethod
+    def update(config, inventory):
+        popdb = PopDB(config.popdb.config)
+        store = MySQL(config.store.db_params)
+
+        last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
+
+        start_time = max(last_update, (time.time() - 3600 * 24 * config.max_back_query))
+        start_date = datetime.date(*time.gmtime(start_time)[:3])
+
+        source_records = CRABAccessHistory._get_source_records(popdb, inventory, start_date)
+        CRABAccessHistory._save_records(source_records, store)
+
+        # remove old entries
+        store.query('DELETE FROM `dataset_accesses` WHERE `date` < DATE_SUB(NOW(), INTERVAL 2 YEAR)')
+        store.query('UPDATE `system` SET `dataset_accesses_last_update` = NOW()')
+
+    @staticmethod
+    def _get_source_records(popdb, inventory, start_date):
+        """
+        Get the replica access data from PopDB from start_date to today.
+        @param popdb          PopDB interface
+        @param inventory      DynamoInventory
+        @param start_date     Query start date (datetime.datetime)
+        @return  {replica: {date: (number of access, total cpu time)}}
+        """
+
+        days_to_query = []
+
+        utctoday = datetime.date(*time.gmtime()[:3])
+        date = start_date
+        while date <= utctoday: # get records up to today
+            days_to_query.append(date)
+            date += datetime.timedelta(1) # one day
+
+        LOG.info('Updating dataset access info from %s to %s', start_date.strftime('%Y-%m-%d'), utctoday.strftime('%Y-%m-%d'))
+
+        all_accesses = {}
+
+        arg_pool = []
+        for site in inventory.sites.itervalues():
+            for date in days_to_query:
+                arg_pool.append((popdb, site, inventory.datasets, date))
+
+        mapper = Map()
+        mapper.logger = LOG
+
+        records = mapper.execute(CRABAccessHistory._get_site_record, arg_pool)
+
+        for site_record in records:
+            for replica, date, naccess, cputime in site_record:
+                if replica not in all_accesses:
+                    all_accesses[replica] = {}
+
+                all_accesses[replica][date] = (naccess, cputime)
+
+        return all_accesses
+
+    @staticmethod
+    def _get_site_record(popdb, site, datasets, date):
+        """
+        Get the replica access data on a single site from PopDB.
+        @param popdb      PopDB interface
+        @param site       Site
+        @param datasets   datasets dictionary of inventory
+        @param date       datetime.date
+        @return [(replica, number of access, total cpu time)]
+        """
+
+        if site.name.startswith('T0'):
+            return []
+        elif site.name.startswith('T1') and site.name.count('_') > 2:
+            nameparts = site.name.split('_')
+            sitename = '_'.join(nameparts[:3])
+            service = 'popularity/DSStatInTimeWindow/' # the trailing slash is apparently important
+        elif site.name == 'T2_CH_CERN':
+            sitename = site.name
+            service = 'xrdpopularity/DSStatInTimeWindow'
+        else:
+            sitename = site.name
+            service = 'popularity/DSStatInTimeWindow/'
+
+        datestr = date.strftime('%Y-%m-%d')
+        result = popdb.make_request(service, ['sitename=' + sitename, 'tstart=' + datestr, 'tstop=' + datestr])
+
+        records = []
+        
+        for ds_entry in result:
+            try:
+                dataset = datasets[ds_entry['COLLNAME']]
+            except KeyError:
+                continue
+
+            replica = site.find_dataset_replica(dataset)
+            if replica is None:
+                continue
+
+            records.append((replica, date, int(ds_entry['NACC']), float(ds_entry['TOTCPU'])))
+
+        return records
+
+    @staticmethod
+    def _save_records(records, store):
+        """
+        Save the newly fetched access records.
+        @param records  {replica: {date: (number of access, total cpu time)}}
+        @param store    Write-allowed MySQL interface
+        """
+
+        site_id_map = {}
+        store.make_map('sites', set(r.site for r in records.iterkeys()), site_id_map, None)
+        dataset_id_map = {}
+        store.make_map('datasets', set(r.dataset for r in records.iterkeys()), dataset_id_map, None)
+
+        fields = ('dataset_id', 'site_id', 'date', 'access_type', 'num_accesses', 'cputime')
+
+        data = []
+        for replica, entries in records.iteritems():
+            dataset_id = dataset_id_map[replica.dataset]
+            site_id = site_id_map[replica.site]
+
+            for date, (num_accesses, cputime) in entries.iteritems():
+                data.append((dataset_id, site_id, date.strftime('%Y-%m-%d'), 'local', num_accesses, cputime))
+
+        store.insert_many('dataset_accesses', fields, None, data, do_update = True)

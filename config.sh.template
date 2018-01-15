@@ -1,6 +1,9 @@
 # User under which dynamo runs
 USER=dynamo
 
+# User with the weakest (read-only) privilege
+READ_USER=dynamoread
+
 # Install target directory
 INSTALLPATH=/usr/local/dynamo
 
@@ -32,7 +35,7 @@ WEBPATH=/var/www
 SERVER_DB_WRITE_USER=
 SERVER_DB_WRITE_PASSWD=
 
-SERVER_DB_READ_CNF=/etc/my.cnf.d/dynamo.cnf
+SERVER_DB_READ_CNF=/etc/my.cnf.d/dynamo-read.cnf
 SERVER_DB_READ_CNFGROUP=mysql
 
 SERVER_DB_HOST=localhost

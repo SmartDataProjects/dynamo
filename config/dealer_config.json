@@ -50,16 +50,10 @@
     "attrs": {
       "GlobalQueueRequestHistory": {
         "weight_halflife": 3.0,
-        "htcondor": {
-          "config": {
-            "collector": "cmsgwms-collector-global.cern.ch:9620",
-            "schedd_constraint": "CMSGWMS_Type =?= \"crabschedd\""
-          }
-        },
         "store": {
           "db_params": {
-            "config_file": "/etc/my.cnf",
-            "config_group": "mysql-dynamo",
+            "config_file": "/etc/my.cnf.d/dynamo.cnf",
+            "config_group": "mysql",
             "db": "dynamo"
           }
         }

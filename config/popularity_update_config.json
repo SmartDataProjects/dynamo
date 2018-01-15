@@ -1,0 +1,26 @@
+{
+  "crabaccess": {
+    "max_back_query": 7,
+    "popdb": {
+      "config": {
+        "url_base": "https://cmsweb.cern.ch/popdb",
+        "auth_handler": "HTTPSCertKeyHandler",
+        "auth_handler_conf": {}
+      }
+    },
+    "store": {}
+  },
+  "globalqueue": {
+    "htcondor": {
+      "config": {
+        "collector": "cmsgwms-collector-global.cern.ch:9620",
+        "schedd_constraint": "CMSGWMS_Type =?= \"crabschedd\""
+      }
+    },
+    "store": {}
+  },
+  "mysql": {
+    "db_params": {}
+  },
+  "log_level": "info"
+}

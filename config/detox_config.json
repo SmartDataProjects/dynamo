@@ -34,18 +34,10 @@
         }
       },
       "CRABAccessHistory": {
-        "max_back_query": 7,
-        "popdb": {
-          "config": {
-            "url_base": "https://cmsweb.cern.ch/popdb",
-            "auth_handler": "HTTPSCertKeyHandler",
-            "auth_handler_conf": {}
-          }
-        },
         "store": {
           "db_params": {
-            "config_file": "/etc/my.cnf",
-            "config_group": "mysql-dynamo",
+            "config_file": "/etc/my.cnf.d/dynamo.cnf",
+            "config_group": "mysql",
             "db": "dynamo"
           }
         }

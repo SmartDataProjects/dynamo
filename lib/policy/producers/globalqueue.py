@@ -19,23 +19,13 @@ class GlobalQueueRequestHistory(object):
     produces = ['request_weight']
 
     def __init__(self, config):
-        self._htcondor = HTCondor(config.htcondor.config)
         self._store = MySQL(config.store.db_params)
 
         # Weight computation halflife constant (given in days in config)
         self.weight_halflife = config.weight_halflife * 3600. * 24.
 
-    def update(self, inventory):
-        records, last_update = self._get_stored_records(inventory)
-        source_records = self._get_source_records(inventory, last_update)
-        for dataset, jobs in source_records.iteritems():
-            try:
-                records[dataset].update(jobs)
-            except KeyError:
-                records[dataset] = dict(jobs)
-
-        self._save_records(source_records)
-
+    def load(self, inventory):
+        records = self._get_stored_records(inventory)
         self._compute(inventory, records)
 
     def _get_stored_records(self, inventory):
@@ -83,44 +73,53 @@ class GlobalQueueRequestHistory(object):
 
         LOG.info('Loaded %d dataset request data. Last update at %s UTC', num_records, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(last_update)))
 
-        return all_requests, last_update
+        return all_requests
 
-    def _save_records(self, records):
+    def _compute(self, inventory, all_requests):
         """
-        Save the newly fetched request records.
-        @param records  {dataset: {jobid: GlobalQueueJob}}
+        Set the dataset request weight based on request list. Formula:
+          w = Sum(exp(-t_i/T))
+        where t_i is the time distance of the ith request from now. T is defined in the configuration.
+        @param inventory     DynamoInventory
+        @param all_requests  {dataset: {jobid: GlobalQueueJob}}
         """
 
-        dataset_id_map = {}
-        self._store.make_map('datasets', records.iterkeys(), dataset_id_map, None)
+        now = time.time()
+        decay_constant = self.weight_halflife / math.log(2.)
 
-        fields = ('id', 'dataset_id', 'queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued')
+        for dataset in inventory.datasets.itervalues():
+            try:
+                requests = all_requests[dataset]
+            except KeyError:
+                dataset.attr['request_weight'] = 0.
+                continue
 
-        data = []
-        for dataset, dataset_request_list in records.iteritems():
-            dataset_id = dataset_id_map[dataset]
+            weight = 0.
+            for job in requests.itervalues():
+                # first element of reqdata tuple is the queue time
+                weight += math.exp((job.queue_time - now) / decay_constant)
+            
+            dataset.attr['request_weight'] = weight
 
-            for job_id, (queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued) in dataset_request_list.iteritems():
-                data.append((
-                    job_id,
-                    dataset_id,
-                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(queue_time)),
-                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(completion_time)) if completion_time > 0 else '0000-00-00 00:00:00',
-                    nodes_total,
-                    nodes_done,
-                    nodes_failed,
-                    nodes_queued
-                ))
+    @staticmethod
+    def update(config, inventory):
+        htcondor = HTCondor(config.htcondor.config)
+        store = MySQL(config.store.db_params)
 
-        self._store.insert_many('dataset_requests', fields, None, data, do_update = True)
+        last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
+
+        source_records = GlobalQueueRequestHistory._get_source_records(htcondor, inventory, last_update)
+        GlobalQueueRequestHistory._save_records(source_records, store)
 
         # remove old entries
-        self._store.query('DELETE FROM `dataset_requests` WHERE `queue_time` < DATE_SUB(NOW(), INTERVAL 1 YEAR)')
-        self._store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()')
+        store.query('DELETE FROM `dataset_requests` WHERE `queue_time` < DATE_SUB(NOW(), INTERVAL 1 YEAR)')
+        store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()')
 
-    def _get_source_records(self, inventory, last_update):
+    @staticmethod
+    def _get_source_records(htcondor, inventory, last_update):
         """
         Get the dataset request data from Global Queue schedd.
+        @param htcondor     HTCondor interface
         @param inventory    DynamoInventory
         @param last_update  UNIX timestamp
         @return {dataset: {jobid: GlobalQueueJob}}
@@ -130,7 +129,7 @@ class GlobalQueueRequestHistory(object):
 
         attributes = ['DESIRED_CMSDataset', 'GlobalJobId', 'QDate', 'CompletionDate', 'DAG_NodesTotal', 'DAG_NodesDone', 'DAG_NodesFailed', 'DAG_NodesQueued']
         
-        job_ads = self._htcondor.find_jobs(constraint = constraint, attributes = attributes)
+        job_ads = htcondor.find_jobs(constraint = constraint, attributes = attributes)
 
         job_ads.sort(key = lambda a: a['DESIRED_CMSDataset'])
 
@@ -169,28 +168,34 @@ class GlobalQueueRequestHistory(object):
 
         return all_requests
 
-    def _compute(self, inventory, all_requests):
+    @staticmethod
+    def _save_records(records, store):
         """
-        Set the dataset request weight based on request list. Formula:
-          w = Sum(exp(-t_i/T))
-        where t_i is the time distance of the ith request from now. T is defined in the configuration.
-        @param inventory     DynamoInventory
-        @param all_requests  {dataset: {jobid: GlobalQueueJob}}
+        Save the newly fetched request records.
+        @param records  {dataset: {jobid: GlobalQueueJob}}
+        @param store    Write-allowed MySQL interface
         """
 
-        now = time.time()
-        decay_constant = self.weight_halflife / math.log(2.)
+        dataset_id_map = {}
+        store.make_map('datasets', records.iterkeys(), dataset_id_map, None)
 
-        for dataset in inventory.datasets.itervalues():
-            try:
-                requests = all_requests[dataset]
-            except KeyError:
-                dataset.attr['request_weight'] = 0.
-                continue
+        fields = ('id', 'dataset_id', 'queue_time', 'completion_time', 'nodes_total', 'nodes_done', 'nodes_failed', 'nodes_queued')
 
-            weight = 0.
-            for job in requests.itervalues():
-                # first element of reqdata tuple is the queue time
-                weight += math.exp((job.queue_time - now) / decay_constant)
-            
-            dataset.attr['request_weight'] = weight
+        data = []
+        for dataset, dataset_request_list in records.iteritems():
+            dataset_id = dataset_id_map[dataset]
+
+            for job_id, (queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued) in dataset_request_list.iteritems():
+                data.append((
+                    job_id,
+                    dataset_id,
+                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(queue_time)),
+                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(completion_time)) if completion_time > 0 else '0000-00-00 00:00:00',
+                    nodes_total,
+                    nodes_done,
+                    nodes_failed,
+                    nodes_queued
+                ))
+
+        store.insert_many('dataset_requests', fields, None, data, do_update = True)
+

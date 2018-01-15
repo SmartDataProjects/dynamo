@@ -1,5 +1,6 @@
 {
   "user": "_USER_",
+  "read_user": "_READ_USER_",
   "inventory": {
     "persistency": {
       "module": "MySQLInventoryStore",

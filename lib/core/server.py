@@ -1,5 +1,6 @@
 import os
 import sys
+import pwd
 import time
 import logging
 import hashlib
@@ -20,6 +21,12 @@ class Dynamo(object):
 
     def __init__(self, config):
         LOG.info('Initializing Dynamo server.')
+
+        ## User names
+        # User with full privilege (still not allowed to write to inventory store)
+        self.full_user = config.user
+        # Restricted user
+        self.read_user = config.read_user
 
         ## Create the registry
         self.registry = DynamoRegistry(config.registry)
@@ -283,6 +290,12 @@ class Dynamo(object):
 
         signal_converter = SignalConverter()
         signal_converter.set(signal.SIGTERM)
+
+        # Set the uid of the process
+        if queue is None:
+            os.setuid(pwd.getpwnam(self.read_user).pw_uid)
+        else:
+            os.setuid(pwd.getpwnam(self.full_user).pw_uid)
 
         # Set argv
         sys.argv = [path + '/exec.py']

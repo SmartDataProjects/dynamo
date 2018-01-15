@@ -1,3 +1,10 @@
+"""
+Classes in this package produce dataset attributes (Dataset.attr).
+The classes must provide three methods with the following signature:
+  __init__(self, config)
+  load(self, inventory)
+"""
+
 from crabaccess import CRABAccessHistory
 from globalqueue import GlobalQueueRequestHistory
 from mysqllock import MySQLReplicaLock

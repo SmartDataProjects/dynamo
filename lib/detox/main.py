@@ -46,7 +46,7 @@ class Detox(object):
 
         LOG.info('Updating dataset attributes.')
         for plugin in self.policy.attr_producers:
-            plugin.update(partition_repository)
+            plugin.load(partition_repository)
 
         LOG.info('Saving site and dataset names.')
         self.history.save_sites(partition_repository.sites.values())

@@ -85,7 +85,7 @@ class Dealer(object):
 
         LOG.info('Updating dataset attrs.')
         for plugin in self._attr_producers:
-            plugin.update(inventory)
+            plugin.load(inventory)
 
         LOG.info('Saving site and dataset names.')
         self.history.save_sites(quotas.keys())
