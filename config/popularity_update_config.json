@@ -20,7 +20,10 @@
     "store": {}
   },
   "mysql": {
-    "db_params": {}
+    "db_params": {
+      "config_file": "/etc/my.cnf.d/dynamo.cnf",
+      "config_group": "mysql"
+    }
   },
   "log_level": "info"
 }

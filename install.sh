@@ -177,7 +177,7 @@ else
   cp $SOURCE/config/server_config.json.template $CONFIGPATH/server_config.json
 
   sed -i "s|_USER_|$USER|" $CONFIGPATH/server_config.json
-  sed -i "s|_READ_USER_|$READ_USER|" $CONFIGPATH/server_config.json
+  sed -i "s|_READUSER_|$READUSER|" $CONFIGPATH/server_config.json
   sed -i "s|_LOGPATH_|$LOGPATH|" $CONFIGPATH/server_config.json
   sed -i "s|_SCHEDULER_PATH_|$SCHEDULERPATH|" $CONFIGPATH/server_config.json
   sed -i "s|_REGISTRY_HOST_|$REGISTRY_HOST|" $CONFIGPATH/server_config.json

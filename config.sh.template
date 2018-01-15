@@ -2,7 +2,7 @@
 USER=dynamo
 
 # User with the weakest (read-only) privilege
-READ_USER=dynamoread
+READUSER=dynamoread
 
 # Install target directory
 INSTALLPATH=/usr/local/dynamo
