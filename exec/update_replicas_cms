@@ -112,10 +112,19 @@ else:
 
 ## 3. Loop over new and changed block replicas, add them to inventory
 
+num_replicas = len(new_and_updated_replicas)
+LOG.info('Got %d block replicas to update.', num_replicas)
+
 updated_datasets = set()
 updated_blocks = set()
 
-for replica in new_and_updated_replicas:
+watermark = 0
+
+for irep, replica in enumerate(new_and_updated_replicas):
+    if float(irep) / num_replicas * 100. >= watermark:
+        LOG.info('%d%% done..', watermark)
+        watermark += 5
+
     replica_str = str(replica)
 
     LOG.debug('Updating %s', replica_str)
@@ -139,7 +148,7 @@ for replica in new_and_updated_replicas:
     dataset_name = replica.block.dataset.name
 
     if dataset_name not in updated_datasets:
-        LOG.debug('Updating information for dataset %s', dataset_name)
+        LOG.info('Updating information for dataset %s', dataset_name)
 
         dataset_tmp = dataset_source.get_dataset(dataset_name)
         if dataset_tmp is None:
@@ -169,7 +178,7 @@ for replica in new_and_updated_replicas:
 
     if site.find_dataset_replica(dataset) is None:
         # If not found, create a new replica and inject
-        LOG.debug('Creating new replica of %s at %s', dataset.name, site.name)
+        LOG.info('Creating new replica of %s at %s', dataset.name, site.name)
         inventory.update(DatasetReplica(dataset, site))
 
     # 3.6. Update the block replica
@@ -272,6 +281,7 @@ for replica in deleted_replicas:
     # 5.7. Delete the dataset replica if it is empty
 
     if len(dataset_replica.block_replicas) == 0:
+        LOG.info('Deleting replica %s:%s', site.name, dataset.name)
         inventory.delete(dataset_replica)
 
 ## 6. (If delta update) save the timestamp
