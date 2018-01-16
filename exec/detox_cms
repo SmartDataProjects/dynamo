@@ -30,15 +30,12 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout)
-log_level = getattr(logging, config.log_level.upper())
-log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
+from dynamo.core.executable import make_standard_logger
 
-logging.basicConfig(level = log_level, format = log_format, stream = sys.stdout)
-LOG = logging.getLogger()
+LOG = make_standard_logger(config.log_level)
 
-## Run the main detox object
+## Configure the Detox object
 from dynamo.detox.main import Detox
-from dynamo.core.executable import inventory
 
 LOG.info('Starting Detox.')
 
@@ -55,111 +52,9 @@ with open(os.environ['DYNAMO_BASE'] + '/etc/policies.tag') as tag:
 config.detox.policy_file = args.policy
 config.detox.policy_version = policy_version
 
-## Temporary - translate all web locks into mysql locks
-from dynamo.policy.producers import WebReplicaLock
-from dynamo.core.executable import registry
-from dynamo.utils.interface.webservice import POST
+## Run the main program
+from dynamo.core.executable import inventory
 
-LOG.info('Translating web-based replica locks into DB-based locks.')
-
-expiry = '2018-02-28'
-comment = 'Auto-produced by dynamo'
-weblock_conf = Configuration({
-  "sources": {
-    "unified": {
-      "user": "vlimant", "service": "unified", "url": "https://vocms049.cern.ch/unified/public/globallocks.json",
-      "auth": "noauth", "content_type": "LIST_OF_DATASETS",
-      "lock_url": "https://vocms049.cern.ch/unified/public/globallocks.json.lock"
-    },
-    "unified_testbed": {
-      "user": "vlimant", "service": "unified-testbed", "url": "https://cmst2.web.cern.ch/cmst2/unified-testbed/globallocks.json",
-      "auth": "cert", "content_type": "LIST_OF_DATASETS"
-    },
-    "testsamples": {
-      "user": "vlimant", "service": "wmcore", "url": "https://cmst1.web.cern.ch/CMST1/lockedData/lockTestSamples.json",
-      "auth": "cert", "content_type": "SITE_TO_DATASETS"
-    },
-    "t0_prod": {
-      "user": "dmytro", "service": "t0-prod", "url": "https://cmsweb.cern.ch/t0wmadatasvc/prod/dataset_locked",
-      "auth": "cert", "content_type": "CMSWEB_LIST_OF_DATASETS", "sites": "T0_CH_CERN_Disk"
-    },
-    "t0_replayone": {
-      "user": "dmytro", "service": "t0-replayone", "url": "https://cmsweb.cern.ch/t0wmadatasvc/replayone/dataset_locked",
-      "auth": "cert", "content_type": "CMSWEB_LIST_OF_DATASETS", "sites": "T0_CH_CERN_Disk"
-    },
-    "t0_replaytwo": {
-      "user": "dmytro", "service": "t0-replaytwo", "url": "https://cmsweb.cern.ch/t0wmadatasvc/replaytwo/dataset_locked",
-      "auth": "cert", "content_type": "CMSWEB_LIST_OF_DATASETS", "sites": "T0_CH_CERN_Disk"
-    }
-  },
-  "auth": {
-    "cert": {
-      "auth_handler": "HTTPSCertKeyHandler",
-      "auth_handler_conf": {"x509_key": "$(X509_USER_PROXY)"}
-    },
-    "cookie": {
-      "auth_handler": "CERNSSOCookieAuthHandler"
-    }
-  }
-})
-
-# we process one source at a time, because each source registers mysql locks as a different user
-for name, source_conf in weblock_conf.sources.items():
-    instance_conf = Configuration({'sources': {name: source_conf.clone()}, 'auth': weblock_conf.auth})
-    if args.test_run:
-        # don't block for lock of locks
-        try:
-            instance_conf.sources[name].pop('lock_url')
-        except KeyError:
-            pass
-
-    weblock = WebReplicaLock(instance_conf)
-    weblock.update(inventory)
-
-    data = []
-    
-    for dataset in inventory.datasets.itervalues():
-        try:
-            locked_blocks = dataset.attr['locked_blocks']
-        except KeyError:
-            # weblock did not create any lock for this dataset
-            continue
-    
-        entries = []
-    
-        # if the lock applies to all sites and all blocks of this dataset, we just make one global lock
-        collapse_dataset = True
-        locked_sites = set()
-
-        for site, blocks in locked_blocks.iteritems():
-            locked_sites.add(site)
-
-            replica = site.find_dataset_replica(dataset)
-    
-            if blocks == set(br.block for br in replica.block_replicas):
-                entries.append({'item': dataset.name, 'sites': site.name, 'expires': expiry, 'comment': comment})
-            else:
-                for block in blocks:
-                    entries.append({'item': dataset.name + '#' + block.real_name(), 'sites': site.name, 'expires': expiry, 'comment': comment})
-    
-                collapse_dataset = False
-
-        if locked_sites != set(r.site for r in dataset.replicas):
-            collapse_dataset = False
-    
-        if collapse_dataset:
-            # replace entries with a single-element list
-            entries = [{'item': dataset.name, 'expires': expiry, 'comment': comment}]
-    
-        data.extend(entries)
-    
-        dataset.attr.pop('locked_blocks')
-
-    if not args.test_run:
-        request_url = 'detoxlock/set?asuser=%s&service=%s' % (source_conf.user, source_conf.service)
-        registry.frontend.make_request(request_url, method = POST, options = data, format = 'json')
-
-## Finally run the main program
 detox = Detox(config.detox)
 detox.run(inventory, comment = args.comment)
 

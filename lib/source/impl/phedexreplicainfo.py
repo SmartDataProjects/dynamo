@@ -41,6 +41,8 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         if block is not None:
             options.append('block=' + block)
 
+        LOG.info('get_replicas(' + ','.join(options) + ')  Fetching the list of replicas from PhEDEx')
+
         if len(options) == 0:
             return []
         
@@ -49,11 +51,15 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
 
     def get_updated_replicas(self, updated_since): #override
+        LOG.info('get_updated_replicas(%d)  Fetching the list of replicas from PhEDEx', updated_since)
+
         result = self._phedex.make_request('blockreplicas', ['show_dataset=y', 'update_since=%d' % updated_since])
         
         return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
 
     def get_deleted_replicas(self, deleted_since): #override
+        LOG.info('get_deleted_replicas(%d)  Fetching the list of replicas from PhEDEx')
+
         result = self._phedex.make_request('deletions', ['complete_since=%d' % deleted_since])
 
         return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_deletions)
