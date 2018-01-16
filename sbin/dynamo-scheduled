@@ -63,9 +63,9 @@ from dynamo.core.registry import DynamoRegistry
 
 registry = DynamoRegistry(config.registry)
 
-result = registry.backend.query('SELECT `id` FROM `users` WHERE `name` = %s', config.user)
+result = registry.backend.query('SELECT `id` FROM `users` WHERE `name` = %s', config.scheduler_user)
 if len(result) == 0:
-    raise RuntimeError('User %s not found' % config.user)
+    raise RuntimeError('User %s not found' % config.scheduler_user)
 
 user_id = result[0]
 

@@ -98,17 +98,17 @@ done
 for HOST in 'localhost' '%'
 do
   echo "CREATE USER '$SERVER_USER'@'$HOST' IDENTIFIED BY '$SERVER_USER_PASSWD';" | $ROOTSQL
-  echo "GRANT ALL PRIVILEGES ON `dynamo%`.* TO '$SERVER_USER'@'$HOST';" | $ROOTSQL
+  echo 'GRANT ALL PRIVILEGES ON `dynamo%`.* TO "'$SERVER_USER'"@"'$HOST'";' | $ROOTSQL
 
   echo "CREATE USER '$PRIV_USER'@'$HOST' IDENTIFIED BY '$PRIV_USER_PASSWD';" | $ROOTSQL
   echo "GRANT ALL PRIVILEGES ON `dynamo_tmp`.* TO '$PRIV_USER'@'$HOST';" | $ROOTSQL
-  echo "GRANT SELECT ON `dynamo%`.* TO '$PRIV_USER'@'$HOST';" | $ROOTSQL
-  echo "GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamo`.`dataset_requests` TO '$PRIV_USER'@'$HOST';" | $ROOTSQL
-  echo "GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamo`.`dataset_accesses` TO '$PRIV_USER'@'$HOST';" | $ROOTSQL
+  echo 'GRANT SELECT ON `dynamo%`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamo`.`dataset_requests` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamo`.`dataset_accesses` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
 
   echo "CREATE USER '$NORMAL_USER'@'$HOST' IDENTIFIED BY '$NORMAL_USER_PASSWD';" | $ROOTSQL
-  echo "GRANT ALL PRIVILEGES ON `dynamo_tmp`.* TO '$NORMAL_USER'@'$HOST';" | $ROOTSQL
-  echo "GRANT SELECT ON `dynamo%`.* TO '$NORMAL_USER'@'$HOST';" | $ROOTSQL
+  echo 'GRANT ALL PRIVILEGES ON `dynamo_tmp`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT ON `dynamo%`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
 done
 
 ## Write my.cnf files (optional)

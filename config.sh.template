@@ -2,34 +2,37 @@
 USER=dynamo
 
 # User with the weakest (read-only) privilege
-READUSER=dynamoread
+READ_USER=dynamoread
 
 # Install target directory
-INSTALLPATH=/usr/local/dynamo
+INSTALL_PATH=/usr/local/dynamo
 
 # Configuration directory
-CONFIGPATH=/etc/dynamo
+CONFIG_PATH=/etc/dynamo
 
 # Archival directory
-ARCHIVEPATH=/mnt/hadoop/dynamo/dynamo
+ARCHIVE_PATH=/mnt/hadoop/dynamo/dynamo
 
 # Temporary working directory
-SPOOLPATH=/var/spool/dynamo
+SPOOL_PATH=/var/spool/dynamo
 
 # Server log directory
-LOGPATH=/var/log/dynamo
-
-# Scheduler work directory
-SCHEDULERPATH=/var/spool/dynamo/scheduler
+LOG_PATH=/var/log/dynamo
 
 # 1 -> Install daemons
 DAEMONS=1
 
+# Scheduler work directory
+SCHEDULER_PATH=/var/spool/dynamo/scheduler
+
 # Sequence file for scheduler daemon
-SCHEDULERSEQ=cms.seq
+SCHEDULER_SEQ=cms.seq
+
+# Registry user name to run the scheduler
+SCHEDULER_USER=dynamo
 
 # Httpd content directory
-WEBPATH=/var/www
+WEB_PATH=/var/www
 
 # Server database parameters - need to explicitly set user and password
 SERVER_DB_WRITE_USER=

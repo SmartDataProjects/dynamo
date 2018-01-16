@@ -1,6 +1,7 @@
 {
   "user": "_USER_",
-  "read_user": "_READ_USER_",
+  "read_user": "_READUSER_",
+  "scheduler_user": "_SCHEDULERUSER_",
   "inventory": {
     "persistency": {
       "module": "MySQLInventoryStore",
@@ -36,11 +37,11 @@
     "frontend": {
       "interface": "RESTService",
       "config": {
-        "url_base": "https://_REGISTRY_HOST_/registry"
+        "url_base": "https://_REGISTRYHOST_/registry"
       }
     }
   },
-  "scheduler_path": "_SCHEDULER_PATH_",
+  "scheduler_path": "_SCHEDULERPATH_",
   "logging": {
     "level": "info",
     "path": "_LOGPATH_",
