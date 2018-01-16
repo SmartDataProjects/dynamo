@@ -1,14 +1,30 @@
 #!/bin/bash
 
+echo
 echo "Installing web scripts."
+echo
 
-if ! [ $SOURCE ] || ! [ $WEBPATH ]
+require () {
+  "$@" >/dev/null 2>&1 && return 0
+  echo
+  echo "[Fatal] Failed: $@"
+  exit 1
+}
+
+### Source the configuration parameters
+
+export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]})/..; pwd)
+
+if ! [ -e $SOURCE/config.sh ]
 then
-  echo "Install source path is not set."
+  echo
+  echo "$SOURCE/config.sh does not exist."
   exit 1
 fi
 
-TARGET=$WEBPATH
+require source $SOURCE/config.sh
+
+TARGET=$WEB_PATH
 
 HTMLTARGET=$TARGET/html/dynamo
 BINTARGET=$TARGET/cgi-bin
