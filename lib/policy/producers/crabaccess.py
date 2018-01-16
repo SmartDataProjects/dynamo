@@ -2,6 +2,7 @@ import time
 import datetime
 import collections
 import logging
+import MySQLdb
 
 from dynamo.utils.interface.popdb import PopDB
 from dynamo.utils.interface.mysql import MySQL
@@ -160,16 +161,24 @@ class CRABAccessHistory(object):
         store = MySQL(config.store.db_params)
 
         last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
+        try:
+            store.query('UPDATE `system` SET `dataset_access_last_update` = NOW()')
+        except MySQLdb.OperationalError:
+            # We have a read-only config
+            read_only = True
+        else:
+            read_only = False
 
         start_time = max(last_update, (time.time() - 3600 * 24 * config.max_back_query))
         start_date = datetime.date(*time.gmtime(start_time)[:3])
 
         source_records = CRABAccessHistory._get_source_records(popdb, inventory, start_date)
-        CRABAccessHistory._save_records(source_records, store)
 
-        # remove old entries
-        store.query('DELETE FROM `dataset_accesses` WHERE `date` < DATE_SUB(NOW(), INTERVAL 2 YEAR)')
-        store.query('UPDATE `system` SET `dataset_accesses_last_update` = NOW()')
+        if not read_only:
+            CRABAccessHistory._save_records(source_records, store)
+            # remove old entries
+            store.query('DELETE FROM `dataset_accesses` WHERE `date` < DATE_SUB(NOW(), INTERVAL 2 YEAR)')
+            store.query('UPDATE `system` SET `dataset_accesses_last_update` = NOW()')
 
     @staticmethod
     def _get_source_records(popdb, inventory, start_date):

@@ -2,6 +2,7 @@ import time
 import collections
 import logging
 import math
+import MySQLdb
 
 from dynamo.utils.interface.htc import HTCondor
 from dynamo.utils.interface.mysql import MySQL
@@ -107,13 +108,21 @@ class GlobalQueueRequestHistory(object):
         store = MySQL(config.store.db_params)
 
         last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
+        try:
+            store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()')
+        except MySQLdb.OperationalError:
+            # We have a read-only config
+            read_only = True
+        else:
+            read_only = False
 
         source_records = GlobalQueueRequestHistory._get_source_records(htcondor, inventory, last_update)
-        GlobalQueueRequestHistory._save_records(source_records, store)
 
-        # remove old entries
-        store.query('DELETE FROM `dataset_requests` WHERE `queue_time` < DATE_SUB(NOW(), INTERVAL 1 YEAR)')
-        store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()')
+        if not read_only:
+            GlobalQueueRequestHistory._save_records(source_records, store)
+            # remove old entries
+            store.query('DELETE FROM `dataset_requests` WHERE `queue_time` < DATE_SUB(NOW(), INTERVAL 1 YEAR)')
+            store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()')
 
     @staticmethod
     def _get_source_records(htcondor, inventory, last_update):
