@@ -6,27 +6,27 @@
 {generate_dataset_list} = $(DYNAMO_BASE)/exec/generate_dataset_list_cms
 
 [SEQUENCE delta_update]
-{update_replica} --config $(DYNAMO_BASE)/etc/updater_config.json
-{generate_dataset_list} --config $(DYNAMO_BASE)/etc/updater_config.json
-{update_dataset} --config $(DYNAMO_BASE)/etc/updater_config.json --num-datasets 1000
+{update_replica} --config /etc/dynamo/updater_config.json
+{generate_dataset_list} --config /etc/dynamo/updater_config.json
+{update_dataset} --config /etc/dynamo/updater_config.json --num-datasets 1000
 WAIT 60
 
 [SEQUENCE site_update]
-{update_site} --config $(DYNAMO_BASE)/etc/updater_config.json
+{update_site} --config /etc/dynamo/updater_config.json
 WAIT 1800
 
 #[SEQUENCE full_update]
 #WAIT 3600
-#{update_replica} --config $(DYNAMO_BASE)/etc/updater_config.json --site
+#{update_replica} --config /etc/dynamo/updater_config.json --site
 
 #[SEQUENCE detox_snapshot]
-#{detox} --config $(DYNAMO_BASE)/etc/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --snapshot-run
+#{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --snapshot-run
 #WAIT 1800
 
 [SEQUENCE detox]
-{detox} --config $(DYNAMO_BASE)/etc/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --test-run
+{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --test-run
 WAIT 14400
 
 [SEQUENCE dealer]
-{dealer} --config $(DYNAMO_BASE)/etc/dealer_config.json --test-run
+{dealer} --config /etc/dynamo/dealer_config.json --test-run
 WAIT 120
