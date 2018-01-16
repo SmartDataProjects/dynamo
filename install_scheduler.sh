@@ -47,7 +47,7 @@ cp $SOURCE/schedule/$SCHEDULER_SEQ /etc/dynamo/scheduled.seq
 REGSQL="mysql -u $SERVER_DB_WRITE_USER -p$SERVER_DB_WRITE_PASSWD -h $REGISTRY_HOST -D dynamoregister"
 
 REGID=$(echo 'SELECT `id` FROM `users` WHERE `name` = "'$SCHEDULER_USER'";' | $REGSQL)
-if [ "$REGID" ]
+if ! [ "$REGID" ]
 then
   echo "User $SCHEDULER_USER is not in Dynamo registry."
   exit 1
