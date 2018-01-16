@@ -2,6 +2,7 @@ import time
 import datetime
 import collections
 import logging
+import fnmatch
 import MySQLdb
 
 from dynamo.utils.interface.popdb import PopDB
@@ -37,7 +38,7 @@ class CRABAccessHistory(object):
         """
 
         # pick up all accesses that are less than 2 years old
-        # old accesses will eb removed automatically next time the access information is saved from memory
+        # old accesses will be removed automatically next time the access information is saved from memory
         sql = 'SELECT s.`name`, d.`name`, YEAR(a.`date`), MONTH(a.`date`), DAY(a.`date`), a.`access_type`+0, a.`num_accesses`, a.`cputime` FROM `dataset_accesses` AS a'
         sql += ' INNER JOIN `sites` AS s ON s.`id` = a.`site_id`'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = a.`dataset_id`'
@@ -172,7 +173,10 @@ class CRABAccessHistory(object):
         start_time = max(last_update, (time.time() - 3600 * 24 * config.max_back_query))
         start_date = datetime.date(*time.gmtime(start_time)[:3])
 
-        source_records = CRABAccessHistory._get_source_records(popdb, inventory, start_date)
+        included_sites = list(config.included_sites)
+        excluded_sites = list(config.excluded_sites)
+
+        source_records = CRABAccessHistory._get_source_records(popdb, inventory, included_sites, excluded_sites, start_date)
 
         if not read_only:
             CRABAccessHistory._save_records(source_records, store)
@@ -181,11 +185,13 @@ class CRABAccessHistory(object):
             store.query('UPDATE `system` SET `dataset_accesses_last_update` = NOW()')
 
     @staticmethod
-    def _get_source_records(popdb, inventory, start_date):
+    def _get_source_records(popdb, inventory, included_sites, excluded_sites, start_date):
         """
         Get the replica access data from PopDB from start_date to today.
         @param popdb          PopDB interface
         @param inventory      DynamoInventory
+        @param included_sites List of site name patterns to include
+        @param excluded_sites List of site name patterns to exclude
         @param start_date     Query start date (datetime.datetime)
         @return  {replica: {date: (number of access, total cpu time)}}
         """
@@ -204,8 +210,19 @@ class CRABAccessHistory(object):
 
         arg_pool = []
         for site in inventory.sites.itervalues():
-            for date in days_to_query:
-                arg_pool.append((popdb, site, inventory.datasets, date))
+            matched = False
+            for pattern in included_sites:
+                if fnmatch.fnmatch(site.name, pattern):
+                    matched = True
+                    break
+            for pattern in excluded_sites:
+                if fnmatch.fnmatch(site.name, pattern):
+                    matched = False
+                    break
+
+            if matched:
+                for date in days_to_query:
+                    arg_pool.append((popdb, site, inventory, date))
 
         mapper = Map()
         mapper.logger = LOG
@@ -222,12 +239,12 @@ class CRABAccessHistory(object):
         return all_accesses
 
     @staticmethod
-    def _get_site_record(popdb, site, datasets, date):
+    def _get_site_record(popdb, site, inventory, date):
         """
         Get the replica access data on a single site from PopDB.
         @param popdb      PopDB interface
         @param site       Site
-        @param datasets   datasets dictionary of inventory
+        @param inventory  Inventory
         @param date       datetime.date
         @return [(replica, number of access, total cpu time)]
         """
@@ -252,7 +269,7 @@ class CRABAccessHistory(object):
         
         for ds_entry in result:
             try:
-                dataset = datasets[ds_entry['COLLNAME']]
+                dataset = inventory.datasets[ds_entry['COLLNAME']]
             except KeyError:
                 continue
 
