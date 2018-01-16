@@ -292,6 +292,7 @@ class Dynamo(object):
         signal_converter.set(signal.SIGTERM)
 
         # Set the uid of the process
+        os.seteuid(0)
         if queue is None:
             os.setuid(pwd.getpwnam(self.read_user).pw_uid)
         else:
