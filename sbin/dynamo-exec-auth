@@ -10,7 +10,7 @@ parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', help = '
 parser.add_argument('--executable', '-x', metavar = 'PATH', dest = 'executable', help = 'Executable file.')
 parser.add_argument('--user', '-u', metavar = 'USER', dest = 'user', default = '', help = 'User name.')
 parser.add_argument('--delete', '-D', action = 'store_true', help = 'Delete entry.')
-parser.add_argument('--update', '-U', action = 'store_true', help = 'Overwrite existing entry if there is any.')
+parser.add_argument('--update', '-U', action = 'store_true', help = 'Overwrite existing entry if there is any. Otherwise do nothing.')
 parser.add_argument('--list', '-L', action = 'store_true', help = 'List existing entries.')
 
 args = parser.parse_args()
@@ -88,6 +88,10 @@ if not args.title:
 
 existing = registry.backend.query('SELECT COUNT(*) FROM `authorized_executables` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)[0]
 
+if args.update and not existing:
+    sys.stdout.write('Executable %s for user %s not previously authorized.' % (args.title, args.user))
+    sys.exit(0)
+
 ## Entry deletion
 
 if args.delete:
@@ -110,16 +114,6 @@ if args.delete:
 
 if not args.executable:
     sys.stderr.write('Missing --executable\n')
-    sys.exit(1)
-
-## If entry exists, need --update
-
-if existing and not args.update:
-    sys.stderr.write('Executable %s' % args.title)
-    if user_id != 0:
-        sys.stderr.write(' (user %s)' % args.user)
-    sys.stderr.write(' exists (use --update to overwrite).\n')
-
     sys.exit(1)
 
 ## Compute the checksum and insert/update.
