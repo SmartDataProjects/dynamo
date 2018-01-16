@@ -1,8 +1,33 @@
 #!/bin/bash
 
+###########################################################################################
+## grants.sh
+##
+## Run as root. Sets up MySQL users and grants for the MySQL accounts necessary for Dynamo
+## to operate. Optionally creates MySQL defaults file under /etc/my.cnf.d/.
+###########################################################################################
+
 echo
 echo "Setting up MySQL accounts."
 echo
+
+confirmed () {
+  while true
+  do
+    read RESPONSE
+    case $RESPONSE in
+      y)
+        return 0
+        ;;
+      n)
+        return 1
+        ;;
+      *)
+        echo "Please answer in y/n."
+        ;;
+    esac
+  done
+}
 
 require () {
   "$@" >/dev/null 2>&1 && return 0
@@ -85,3 +110,32 @@ do
   echo "GRANT ALL PRIVILEGES ON `dynamo_tmp`.* TO '$NORMAL_USER'@'$HOST';" | $ROOTSQL
   echo "GRANT SELECT ON `dynamo%`.* TO '$NORMAL_USER'@'$HOST';" | $ROOTSQL
 done
+
+## Write my.cnf files (optional)
+echo "Write my.cnf files? [y/n]"
+if confirmed
+then
+  echo "UNIX user name for elevated-privilege executables:"
+  read UNIX_PRIV_USER
+
+  mkdir -p /etc/my.cnf.d
+
+  echo '[mysql]
+host=localhost
+user='$SERVER_USER'
+password='$SERVER_USER_PASSWD > /etc/my.cnf.d/dynamo-write.cnf
+chmod 600 /etc/my.cnf.d/dynamo-write.cnf
+
+  echo '[mysql]
+host=localhost
+user='$PRIV_USER'
+password='$PRIV_USER_PASSWD > /etc/my.cnf.d/dynamo.cnf
+chown $UNIX_PRIV_USER:$(id -gn $UNIX_PRIV_USER) /etc/my.cnf.d/dynamo.cnf
+chmod 640 /etc/my.cnf.d/dynamo.cnf
+
+  echo '[mysql]
+host=localhost
+user='$SERVER_USER'
+password='$SERVER_USER_PASSWD > /etc/my.cnf.d/dynamo-read.cnf
+
+fi
