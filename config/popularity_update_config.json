@@ -22,7 +22,8 @@
   "mysql": {
     "db_params": {
       "config_file": "/etc/my.cnf.d/dynamo.cnf",
-      "config_group": "mysql"
+      "config_group": "mysql",
+      "db": "dynamo"
     }
   },
   "log_level": "info"
