@@ -102,6 +102,8 @@ function send_response($code, $result, $message, $data = NULL, $format = 'json')
           $kv = '"' . $key .'": ';
           if (is_string($value))
             $kv .= '"' . $value . '"';
+          else if ($value === NULL)
+            $kv .= 'null';
           else
             $kv .= '' . $value;
 

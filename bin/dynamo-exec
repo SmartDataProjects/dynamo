@@ -92,7 +92,6 @@ def submit_request(query = [], headers = [], data = None):
         opener = urllib2.build_opener(HTTPSCertKeyHandler())
         response = opener.open(request)
         content = response.read()
-        result = json.loads(content)
     
     except urllib2.HTTPError as err:
         sys.stderr.write('Server responded: Error %d\n' % err.code)
@@ -100,8 +99,15 @@ def submit_request(query = [], headers = [], data = None):
         sys.stderr.write(err.read())
         sys.exit(1)
 
-    except ValueError: # json error
-        sys.stderr.write('Invalid string received from server (bug!)')
+    except:
+        sys.stderr.write('Unknown error occurred.')
+        sys.exit(1)
+
+    try:
+        result = json.loads(content)
+
+    except ValueError:
+        sys.stderr.write('Invalid string received from server (bug!): \n%s\n' % content)
         sys.exit(1)
 
     return result['data'][0]
@@ -285,5 +291,5 @@ if not args.asynch:
         
         return_code = 2
 
-    sys.stderr.write('Dynamo executable completed with status %s (code %s).', status, return_code)
+    sys.stderr.write('Dynamo executable completed with status %s (code %s).' % (status, return_code))
     sys.exit(return_code)
