@@ -4,12 +4,18 @@ echo
 echo "Setting up MySQL databases."
 echo
 
-if ! [ $SOURCE ]
+### Source the configuration parameters
+
+export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]})/..; pwd)
+
+if ! [ -e $SOURCE/config.sh ]
 then
   echo
-  echo "Install source path is not set."
+  echo "$SOURCE/config.sh does not exist."
   exit 1
 fi
+
+source $SOURCE/config.sh
 
 MYSQLOPT="-u $SERVER_DB_WRITE_USER -p$SERVER_DB_WRITE_PASSWD -h localhost"
 
@@ -18,7 +24,7 @@ echo "SELECT 1;" | mysql $MYSQLOPT >/dev/null 2>&1
 if [ $? -ne 0 ]
 then
   echo
-  echo "MySQL user permission is not set."
+  echo "MySQL user permission is not set. Run db/grants.sh first."
   exit 1
 fi
 

@@ -6,11 +6,13 @@
       "module": "MySQLInventoryStore",
       "config": {
         "db_params": {
+          "db": "dynamo",
           _SERVER_DB_WRITE_PARAMS_1_
         }
       },
       "readonly_config": {
         "db_params": {
+          "db": "dynamo",
           _SERVER_DB_READ_PARAMS_1_
         }
       }
@@ -22,10 +24,12 @@
       "interface": "MySQL",
       "config": {
         "reuse_connection": false,
+        "db": "dynamoregister",
         _SERVER_DB_WRITE_PARAMS_2_
       },
       "readonly_config": {
         "reuse_connection": false,
+        "db": "dynamoregister",
         _SERVER_DB_READ_PARAMS_2_
       }
     },

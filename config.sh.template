@@ -35,12 +35,10 @@ WEBPATH=/var/www
 SERVER_DB_WRITE_USER=
 SERVER_DB_WRITE_PASSWD=
 
+# Typically no need to edit this block if running the DB on localhost
 SERVER_DB_READ_CNF=/etc/my.cnf.d/dynamo-read.cnf
 SERVER_DB_READ_CNFGROUP=mysql
-
 SERVER_DB_HOST=localhost
-SERVER_DB=dynamo
-REGISTRY_DB=dynamoregister
 
 # Registry host
 REGISTRY_HOST=
