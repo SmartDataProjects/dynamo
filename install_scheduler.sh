@@ -59,13 +59,13 @@ while read LINE
 do
   [[ $LINE =~ ^\[SEQUENCE ]] && break
 
-  TITLE=$(echo $LINE | sed -n 's/{\(.*\)} *= *.*/\1/p')
+  TITLE=$(echo $LINE | sed -n 's|<\(.*\)> *= *.*|\1|p')
   [ "$TITLE" ] || continue
 
-  EXEC=$(echo $LINE | sed -n 's/.* *= *\(.*\)/\1/p')
+  EXEC=$(echo $LINE | sed -n 's|<.*> *= *\(.*\)|\1|p')
   [ "$EXEC" ] || continue
 
-  EXEC=$(echo $EXEC | sed 's/\$(DYNAMO_BASE)/'$INSTALL_PATH'/')
+  EXEC=$(echo $EXEC | sed 's|\$(DYNAMO_BASE)|'$INSTALL_PATH'|')
   if ! [ -e $EXEC ]
   then
     echo "Executable $EXEC not found. Cannot add authorization."

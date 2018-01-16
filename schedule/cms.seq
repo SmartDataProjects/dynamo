@@ -1,32 +1,32 @@
-{detox} = $(DYNAMO_BASE)/exec/detox_cms
-{dealer} = $(DYNAMO_BASE)/exec/dealer_cms
-{update_replica} = $(DYNAMO_BASE)/exec/update_replicas_cms
-{update_dataset} = $(DYNAMO_BASE)/exec/update_datasets_cms
-{update_site} = $(DYNAMO_BASE)/exec/update_sites_cms
+<detox> = $(DYNAMO_BASE)/exec/detox_cms
+<dealer> = $(DYNAMO_BASE)/exec/dealer_cms
+<update_replica> = $(DYNAMO_BASE)/exec/update_replicas_cms
+<update_dataset> = $(DYNAMO_BASE)/exec/update_datasets_cms
+<update_site> = $(DYNAMO_BASE)/exec/update_sites_cms
 {generate_dataset_list} = $(DYNAMO_BASE)/exec/generate_dataset_list_cms
 
 [SEQUENCE delta_update]
-{update_replica} --config /etc/dynamo/updater_config.json
+<update_replica> --config /etc/dynamo/updater_config.json
 {generate_dataset_list} --config /etc/dynamo/updater_config.json
-{update_dataset} --config /etc/dynamo/updater_config.json --num-datasets 1000
+<update_dataset> --config /etc/dynamo/updater_config.json --num-datasets 1000
 WAIT 60
 
 [SEQUENCE site_update]
-{update_site} --config /etc/dynamo/updater_config.json
+<update_site> --config /etc/dynamo/updater_config.json
 WAIT 1800
 
 #[SEQUENCE full_update]
 #WAIT 3600
-#{update_replica} --config /etc/dynamo/updater_config.json --site
+#<update_replica> --config /etc/dynamo/updater_config.json --site
 
 #[SEQUENCE detox_snapshot]
 #{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --snapshot-run
 #WAIT 1800
 
 [SEQUENCE detox]
-{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --test-run
+<detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --test-run
 WAIT 14400
 
 [SEQUENCE dealer]
-{dealer} --config /etc/dynamo/dealer_config.json --test-run
+<dealer> --config /etc/dynamo/dealer_config.json --test-run
 WAIT 120

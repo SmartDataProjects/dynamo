@@ -72,12 +72,16 @@ user_id = result[0]
 ## Load the sequences
 EXECUTE, WAIT, TERMINATE = range(3)
 
-executables = {} # {title: (exec path, write_enabled)}
+executables = {} # {title: exec path}
+authorized_executables = set() # set of titles
 sequences = {} # {name: sequence}
 sequence = []
 
 with open(args.sequence) as source:
+    iline = -1
     for line in source:
+        iline += 1
+
         line = line.strip()
         if not line or line.startswith('#'):
             continue
@@ -85,9 +89,13 @@ with open(args.sequence) as source:
         LOG.debug(line)
 
         # Executable definitions
-        matches = re.match('{(\S+)}\s*=\s*(\S+)', line)
+        # {title} = path  ...  This executable cannot write
+        # <title> = path  ...  This executable can be used to write
+        matches = re.match('({\S+}|<\S+>)\s*=\s*(\S+)', line)
         if matches:
-            title = matches.group(1)
+            enclosed_title = matches.group(1)
+            title = enclosed_title[1:-1]
+            write_enabled = (enclosed_title[0] == '<')
             executable = matches.group(2)
 
             # Replace environment variables
@@ -95,45 +103,61 @@ with open(args.sequence) as source:
             for match in matches:
                 executable = executable.replace('$(%s)' % match, os.environ[match])
 
-            # If the executable is write-enabled, we automatically request write access
             try:
                 with open(executable) as source:
                     checksum = hashlib.md5(source.read()).hexdigest()
             except:
-                sys.stderr.write('Could not open executable %s.\n', executable)
+                LOG.error('Could not open executable %s (line %d).', executable, iline)
                 sys.exit(1)
 
-            write_enabled = False
-            sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = UNHEX(%s)'
-            for auth_user_id in registry.backend.query(sql, title, checksum):
-                if auth_user_id == 0 or auth_user_id == user_id:
-                    write_enabled = True
+            if write_enabled:
+                # Is it really write-enabled?
+                sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = UNHEX(%s)'
+                for auth_user_id in registry.backend.query(sql, title, checksum):
+                    if auth_user_id == 0 or auth_user_id == user_id:
+                        break
+                else:
+                    LOG.error('Executable %s (%s) is not authorized for server write operation (line %d).', title, executable, iline)
+                    sys.exit(1)
 
-            LOG.debug('Define executable %s = %s (write enabled: %d)', title, executable, write_enabled)
+            LOG.debug('Define executable %s = %s (write enabled: %d) (line %d)', title, executable, write_enabled, iline)
 
-            executables[title] = (executable, write_enabled)
+            executables[title] = executable
+            if write_enabled:
+                authorized_executables.add(title)
+            
             continue
 
+        # Sequence definitions
+        # [SEQUENCE title]
         matches = re.match('\[SEQUENCE\s(\S+)\]', line)
         if matches:
             # Sequence header
-            LOG.debug('New sequence %s', matches.group(1))
+            LOG.debug('New sequence %s (line %d)', matches.group(1), iline)
             sequence = sequences[matches.group(1)] = []
             continue
 
-        matches = re.match('{(\S+)}\s*(.*)', line)
+        # Sequence executable step definitions
+        # {title} options  ...  Read-only execution
+        # <title> options  ...  Write-request execution
+        matches = re.match('({\S+}|<\S+>)\s*(.*)', line)
         if matches:
-            title = matches.group(1)
+            enclosed_title = matches.group(1)
+            title = enclosed_title[1:-1]
+            write_request = (enclosed_title[0] == '<')
             arguments = matches.group(2)
+
+            if write_request and title not in authorized_executables:
+                LOG.error('Executable %s is not write-enabled (line %d).', iline)
 
             # Replace environment variables
             matches = re.findall('\$\(([^\)]+)\)', arguments)
             for match in matches:
                 arguments = arguments.replace('$(%s)' % match, os.environ[match])
 
-            LOG.debug('Execute %s %s', title, arguments)
+            LOG.debug('Execute %s %s (line %d)', title, arguments, iline)
 
-            sequence.append((EXECUTE, title, arguments))
+            sequence.append((EXECUTE, title, arguments, write_request))
             continue
 
         matches = re.match('WAIT\s+(.*)', line)
@@ -143,10 +167,10 @@ with open(args.sequence) as source:
                 if type(sleep_time) not in [int, float]:
                     raise RuntimeError()
             except:
-                sys.stderr.write('Wait time %s is not a numerical expression.\n')
+                LOG.error('Wait time %s is not a numerical expression (line %d).', matches.group(1), iline)
                 sys.exit(1)
 
-            LOG.debug('Wait for %d seconds', sleep_time)
+            LOG.debug('Wait for %d seconds (line %d)', sleep_time, iline)
             sequence.append((WAIT, sleep_time))
             continue
 
@@ -154,7 +178,7 @@ with open(args.sequence) as source:
             sequence.append([TERMINATE])
 
 if len(sequences) == 0:
-    sys.stderr.write('No sequence was loaded.\n')
+    LOG.error('No sequence was loaded.')
     sys.exit(1)
 
 ## Create the executable directory and copy the scripts over
@@ -181,7 +205,7 @@ for name, sequence in sequences.iteritems():
                 # This executable is used multiple times in the sequence
                 continue
 
-            executable, _ = executables[title]
+            executable = executables[title]
 
             os.makedirs(path)
             shutil.copy(executable, path + '/exec.py')
@@ -223,8 +247,8 @@ def loop_sequence(sequence_name, sequence, user_id, config):
         while True:
             for action in sequence:
                 if action[0] == EXECUTE:
-                    title, arguments = action[1:]
-                    executable, write_enabled = executables[title]
+                    title, arguments, write_request = action[1:]
+                    executable = executables[title]
     
                     LOG.info('Starting %s', title)
                     LOG.info('Command: %s %s', executable, arguments)
@@ -238,7 +262,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
     
                     # Submit the task. Actual executable is in work_dir/title
                     path = '%s/%s' % (work_dir, title)
-                    task_id = registry.backend.query(insert_sql, write_enabled, title, path, arguments)
+                    task_id = registry.backend.query(insert_sql, write_request, title, path, arguments)
     
                     # Poll for task completion
                     while True:
