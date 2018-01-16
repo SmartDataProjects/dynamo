@@ -160,7 +160,7 @@ class Dynamo(object):
 
                 if not os.path.exists(path + '/exec.py'):
                     LOG.info('Executable %s from user %s (write request: %s) not found.', title, user_name, write_request)
-                    self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'failed', exec_id)
+                    self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'notfound', exec_id)
                     continue
 
                 LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
@@ -172,7 +172,7 @@ class Dynamo(object):
                         LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
                         # send a message
 
-                        self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', 'failed', exec_id)
+                        self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', 'authfailed', exec_id)
                         continue
 
                     queue = multiprocessing.Queue()
@@ -260,7 +260,7 @@ class Dynamo(object):
                 child_proc = child_processes.pop(ichild)
                 completed_processes.append((child_proc[1], status))
 
-                self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', status, exec_id)
+                self.registry.backend.query('UPDATE `action` SET `status` = %s, `exit_code` = %s where `id` = %s', status, proc.exitcode, exec_id)
 
         return completed_processes
 

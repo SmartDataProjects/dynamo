@@ -309,3 +309,6 @@ then
     chmod +x /usr/lib64/nagios/plugins/check_dynamo.sh
   fi
 fi
+
+echo
+echo "Dynamo installation completed."

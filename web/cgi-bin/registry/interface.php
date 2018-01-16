@@ -102,12 +102,12 @@ else if (isset($_REQUEST['taskid'])) {
 
   $db->query('LOCK TABLES `action` WRITE');
 
-  $query = 'SELECT `title`, `args`, `write_request`, `email`, `status`, `path` FROM `action`';
+  $query = 'SELECT `title`, `args`, `write_request`, `email`, `status`, `exit_code`, `path` FROM `action`';
   $query .= ' WHERE `id` = ? AND `user_id` = ?';
 
   $stmt = $db->prepare($query);
   $stmt->bind_param('ii', $task_id, $uid);
-  $stmt->bind_result($title, $args, $write_request, $email, $status, $path);
+  $stmt->bind_result($title, $args, $write_request, $email, $status, $exit_code, $path);
   $stmt->execute();
   $task_found = $stmt->fetch();
   $stmt->close();
@@ -117,7 +117,7 @@ else if (isset($_REQUEST['taskid'])) {
 
   if ($task_found) {
     // prepare the return data
-    $data = array('taskid' => $task_id, 'title' => $title, 'args' => $args, 'write_request' => $write_request, 'email' => $email, 'status' => $status);
+    $data = array('taskid' => $task_id, 'title' => $title, 'args' => $args, 'write_request' => $write_request, 'email' => $email, 'status' => $status, 'exit_code' => $exit_code);
     if ($local)
       $data['path'] = $path;
 
@@ -133,8 +133,14 @@ else if (isset($_REQUEST['taskid'])) {
         $data[0]['status'] = 'killed';
         $message = 'Task aborted.';
       }
-      else
-        $message = 'Task already completed with status ' . $status . '.';
+      else {
+        if ($exit_code === NULL)
+          $code_str = 'null';
+        else
+          $code_str = sprintf('%d', $exit_code);
+
+        $message = sprintf('Task already completed with status %s (exit code %s).', $status, $code_str);
+      }
     }
     else {
       // Just checking the task status

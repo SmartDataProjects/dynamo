@@ -220,9 +220,10 @@ if not args.asynch:
     stdout_thread.start()
     stderr_thread.start()
 
-    try:
-        return_code = 0
+    status = 'unknown'
+    return_code = 0
 
+    try:
         while True:
             task_info = submit_request(query = [('taskid', task_id)])
 
@@ -233,8 +234,10 @@ if not args.asynch:
                 break
 
             if status not in ('new', 'run'):
-                if status != 'done':
+                if task_info['exit_code'] is None:
                     return_code = 1
+                else:
+                    return_code = task_info['exit_code']
 
                 stop_reading.set()
                 stdout_thread.join()
@@ -282,4 +285,5 @@ if not args.asynch:
         
         return_code = 2
 
+    sys.stderr.write('Dynamo executable completed with status %s (code %s).', status, return_code)
     sys.exit(return_code)
