@@ -48,7 +48,7 @@ class MySQL(object):
         if self._connection is not None:
             self._connection.close()
 
-    def query(self, sql, *args):
+    def query(self, sql, *args, **kwd):
         """
         Execute an SQL query.
         If the query is an INSERT, return the inserted row id (0 if no insertion happened).
@@ -57,6 +57,16 @@ class MySQL(object):
          - tuples if multiple columns are called
          - values if one column is called
         """
+
+        try:
+            num_attempts = kwd['retries'] + 1
+        except KeyError:
+            num_attempts = 10
+
+        try:
+            silent = kwd['silent']
+        except KeyError:
+            silent = False
 
         if self._connection is None:
             self._connection = MySQLdb.connect(**self._connection_parameters)
@@ -71,7 +81,7 @@ class MySQL(object):
                     LOG.debug(sql + ' % ' + str(args))
     
             try:
-                for _ in range(10):
+                for _ in range(num_attempts):
                     try:
                         cursor.execute(sql, args)
                         break
@@ -79,7 +89,9 @@ class MySQL(object):
                         if not (self.reuse_connection and err.args[0] == 2006):
                             #2006 = MySQL server has gone away
                             #If we are reusing connections, this type of error is to be ignored
-                            LOG.error(str(sys.exc_info()[1]))
+                            if not silent:
+                                LOG.error(str(sys.exc_info()[1]))
+
                             last_except = sys.exc_info()[1]
 
                         # reconnect to server
@@ -88,13 +100,17 @@ class MySQL(object):
                         cursor = self._connection.cursor()
         
                 else: # 10 failures
-                    LOG.error('Too many OperationalErrors. Last exception:')
+                    if not silent:
+                        LOG.error('Too many OperationalErrors. Last exception:')
+
                     raise last_except
     
             except:
-                LOG.error('There was an error executing the following statement:')
-                LOG.error(sql[:10000])
-                LOG.error(sys.exc_info()[1])
+                if not silent:
+                    LOG.error('There was an error executing the following statement:')
+                    LOG.error(sql[:10000])
+                    LOG.error(sys.exc_info()[1])
+
                 raise
     
             result = cursor.fetchall()

@@ -109,7 +109,7 @@ class GlobalQueueRequestHistory(object):
 
         last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
         try:
-            store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()')
+            store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()', retries = 0, silent = True)
         except MySQLdb.OperationalError:
             # We have a read-only config
             read_only = True

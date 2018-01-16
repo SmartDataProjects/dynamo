@@ -28,6 +28,8 @@ from dynamo.core.executable import inventory
 
 ## Update: CRABAccessHistory
 
+LOG.info('Updateing CRABAccessHistory.')
+
 from dynamo.policy.producers.crabaccess import CRABAccessHistory
 
 CRABAccessHistory.update(config.crabaccess, inventory)
@@ -35,6 +37,8 @@ CRABAccessHistory.update(config.crabaccess, inventory)
 LOG.info('CRABAccessHistory update completed.')
 
 ## Update: GlobalQueueRequestHistory
+
+LOG.info('Updating GlobalQueueRequestHistory.')
 
 from dynamo.policy.producers.globalqueue import GlobalQueueRequestHistory
 

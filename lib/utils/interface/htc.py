@@ -14,14 +14,14 @@ class HTCondor(object):
     def __init__(self, config):
         self._collector = htcondor.Collector(config.collector)
 
-        LOG.debug('Finding schedds reporting to collector %s', config.collector)
+        LOG.info('Finding schedds reporting to collector %s', config.collector)
 
         self._schedds = []
 
         attempt = 0
         while True:
             try:
-                schedd_ads = self._collector.query(htcondor.AdTypes.Schedd, config.schedd_constraint, ['MyAddress'])
+                schedd_ads = self._collector.query(htcondor.AdTypes.Schedd, config.schedd_constraint, ['MyAddress', 'ScheddIpAddr'])
                 break
             except IOError:
                 attempt += 1
@@ -30,7 +30,10 @@ class HTCondor(object):
                     LOG.error('Communication with the collector failed. We have no information of the condor pool.')
                     return
 
+        LOG.debug('%d schedd ads', len(schedd_ads))
+
         for ad in schedd_ads:
+            LOG.debug(ad)
             schedd = htcondor.Schedd(ad)
             matches = re.match('<([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):([0-9]+)', ad['MyAddress'])
             # schedd does not have an ipaddr attribute natively, but we can assign it
