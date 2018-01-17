@@ -44,7 +44,7 @@ class Detox(object):
         # Create a full clone of the inventory limited to the partition of the policy
         partition_repository = self._build_partition(inventory)
 
-        LOG.info('Updating dataset attributes.')
+        LOG.info('Loading dataset attributes.')
         for plugin in self.policy.attr_producers:
             plugin.load(partition_repository)
 
@@ -85,6 +85,8 @@ class Detox(object):
 
         partition = inventory.partitions[self.policy.partition_name]
 
+        partition.embed_tree(partition_repository)
+
         # Ask each site if deletion should be triggered.
         target_sites = set() # target sites of this detox cycle
         for site in inventory.sites.itervalues():
@@ -98,13 +100,13 @@ class Detox(object):
 
         if len(target_sites) == 0:
             LOG.info('No site matches the target definition.')
-            return
+            return partition_repository
 
         # Create a copy of the inventory, limiting to the current partition
         # We will be stripping replicas off the image as we process the policy in iterations
         LOG.info('Creating a partition image.')
 
-        partition.embed_tree(partition_repository)
+        LOG.info(partition_repository.partitions.keys())
 
         for group in inventory.groups.itervalues():
             group.embed_into(partition_repository)

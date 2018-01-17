@@ -10,7 +10,7 @@ class ProtectedSiteTagger(object):
     def __init__(self, config):
         self.sites = list(config.sites)
 
-    def update(self, inventory):
+    def load(self, inventory):
         if len(self.sites) == 0:
             return
 

@@ -9,12 +9,14 @@ from crabaccess import CRABAccessHistory
 from globalqueue import GlobalQueueRequestHistory
 from mysqllock import MySQLReplicaLock
 from weblock import WebReplicaLock
+from protectedsite import ProtectedSiteTagger
 
 __all__ = [
     'CRABAccessHistory',
     'GlobalQueueRequestHistory',
     'MySQLReplicaLock',
-    'WebReplicaLock'
+    'WebReplicaLock',
+    'ProtectedSiteTagger'
 ]
 
 # Dictionary of registered producers

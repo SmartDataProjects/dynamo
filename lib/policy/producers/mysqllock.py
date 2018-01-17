@@ -23,7 +23,7 @@ class MySQLReplicaLock(object):
         for user, service in config.users:
             self.users.append((uesr, service))
 
-    def update(self, inventory):
+    def load(self, inventory):
         query = 'SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `unlock_date` IS NULL'
         if len(self.users) != 0:
             query += ' AND (`user_id`, `service_id`) IN ('

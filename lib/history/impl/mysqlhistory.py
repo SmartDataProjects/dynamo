@@ -180,12 +180,11 @@ class MySQLHistory(TransactionHistoryInterface):
             self._make_dataset_id_map()
             
         srun = '%09d' % run_number
-        spool_dir_name = '%s/detox_snapshots' % (config.paths.spool)
-        db_file_name = '%s/snapshot_%09d.db' % (spool_dir_name, run_number)
+        db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
 
         try:
-            os.makedirs(spool_dir_name)
-            os.chmod(spool_dir_name, 0777)
+            os.makedirs(self.config.snapshots_spool_dir)
+            os.chmod(self.config.snapshots_spool_dir, 0777)
         except OSError:
             pass
 
@@ -299,7 +298,7 @@ class MySQLHistory(TransactionHistoryInterface):
         # Archive the sqlite3 file
         # Relying on the fact save_quotas is called after save_deletion_decisions
 
-        archive_dir_name = '%s/detox_snapshots/%s/%s' % (config.paths.archive, srun[:3], srun[3:6])
+        archive_dir_name = '%s/%s/%s' % (self.config.snapshots_archive_dir, srun[:3], srun[3:6])
         xz_file_name = '%s/snapshot_%09d.db.xz' % (archive_dir_name, run_number)
 
         try:
@@ -502,7 +501,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
             srun = '%09d' % run_number
 
-            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_archive_dir, run_number)
+            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
             if not os.path.exists(db_file_name):
                 xz_file_name = '%s/%s/%s/snapshot_%09d.db.xz' % (self.config.snapshots_archive_dir, srun[:3], srun[3:6], run_number)
                 if not os.path.exists(xz_file_name):
