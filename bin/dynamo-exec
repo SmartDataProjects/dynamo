@@ -291,5 +291,5 @@ if not args.asynch:
         
         return_code = 2
 
-    sys.stderr.write('Dynamo executable completed with status %s (code %s).' % (status, return_code))
+    sys.stderr.write('Dynamo executable completed with status %s (code %s).\n' % (status, return_code))
     sys.exit(return_code)

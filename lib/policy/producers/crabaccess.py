@@ -167,6 +167,7 @@ class CRABAccessHistory(object):
         except MySQLdb.OperationalError:
             # We have a read-only config
             read_only = True
+            LOG.info('Running update() in read-only mode.')
         else:
             read_only = False
 
