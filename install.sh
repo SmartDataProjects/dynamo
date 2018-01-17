@@ -269,16 +269,13 @@ fi
 if [ $DAEMONS -eq 1 ]
 then
   echo
-  echo "Installing the daemons."
+  echo "Installing the daemon."
 
   if [[ $(uname -r) =~ el7 ]]
   then
     # systemd daemon
     cp $SOURCE/daemon/dynamod.systemd /usr/lib/systemd/system/dynamod.service
     sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /usr/lib/systemd/system/dynamod.service
-
-    cp $SOURCE/daemon/dynamo-scheduled.systemd /usr/lib/systemd/system/dynamo-scheduled.service
-    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /usr/lib/systemd/system/dynamo-scheduled.service
 
     # environment file for the daemon
     echo "DYNAMO_BASE=$INSTALL_PATH" > /etc/sysconfig/dynamod
@@ -292,10 +289,6 @@ then
     cp $SOURCE/daemon/dynamod.sysv /etc/init.d/dynamod
     sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamod
     chmod +x /etc/init.d/dynamod
-
-    cp $SOURCE/daemon/dynamo-scheduled.sysv /etc/init.d/dynamo-scheduled
-    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamo-scheduled
-    chmod +x /etc/init.d/dynamo-scheduled
   fi
 
   # CRONTAB

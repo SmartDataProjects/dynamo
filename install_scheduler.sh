@@ -75,3 +75,21 @@ do
   dynamo-exec-auth --executable $EXEC --user $SCHEDULER_USER --title $TITLE
 
 done < $SOURCE/schedule/$SCHEDULER_SEQ
+
+if [ $DAEMONS -eq 1 ]
+then
+  echo
+  echo "Installing the daemon."
+
+  if [[ $(uname -r) =~ el7 ]]
+  then
+    cp $SOURCE/daemon/dynamo-scheduled.systemd /usr/lib/systemd/system/dynamo-scheduled.service
+    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /usr/lib/systemd/system/dynamo-scheduled.service
+
+    systemctl daemon-reload
+  else
+    cp $SOURCE/daemon/dynamo-scheduled.sysv /etc/init.d/dynamo-scheduled
+    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamo-scheduled
+    chmod +x /etc/init.d/dynamo-scheduled
+  fi
+fi

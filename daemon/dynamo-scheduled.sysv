@@ -17,6 +17,7 @@ INITLOG_ARGS=""
 
 EXECUTABLE=dynamo-scheduled # executable this script spawns
 TARGET=_INSTALLPATH_/sbin/dynamo-scheduled # full path to the executable
+ARGS="/etc/dynamo/scheduled.seq"
 
 # Path to the running script, server binary, and short-form for messages.
 PIDFILE=${PIDFILE-/var/run/dynamo-scheduled.pid}
@@ -50,7 +51,7 @@ start() {
   touch $LOCKFILE
 
   echo -n $"Starting $EXECUTABLE:"
-  daemon --pidfile=$PIDFILE $TARGET \&
+  daemon --pidfile=$PIDFILE $TARGET $ARGS \&
   EXITCODE=$?
   echo
 
