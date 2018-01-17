@@ -73,48 +73,51 @@ class ThreadCollector(object):
         self._threads.append((thread, time.time(), inputs, outputs, exception))
 
     def collect(self):
-        ith = 0
-        while ith < len(self._threads):
-            thread, time_started, inputs = self._threads[ith][0:3]
+        while len(self._threads) != 0:
+            ith = 0
+            while ith < len(self._threads):
+                ith = self._collect_one(ith)
 
-            if thread.is_alive():
-                if self.timeout > 0 and time.time() - time_started > self.timeout:
-                    if self.logger:
-                        self.logger.error('Thread ' + thread.name + ' timed out.')
-                        self.logger.error('Inputs: ' + str([str(i) for i in inputs]))
+    def _collect_one(self, ith):
+        thread, time_started, inputs = self._threads[ith][0:3]
 
-                    raise ThreadTimeout(thread.name)
-
-                ith += 1
-                continue
-
-            thread.join()
-            thread, time_started, inputs, outputs, exception = self._threads.pop(ith)
-
-            if exception.exception is not None:
+        if thread.is_alive():
+            if self.timeout > 0 and time.time() - time_started > self.timeout:
                 if self.logger:
-                    self.logger.error('Exception in thread ' + thread.name)
+                    self.logger.error('Thread ' + thread.name + ' timed out.')
                     self.logger.error('Inputs: ' + str([str(i) for i in inputs]))
 
-                if self.repeat_on_exception:
-                    if self.logger:
-                        self.logger.error('Repeating execution')
+                raise ThreadTimeout(thread.name)
 
-                    for args in inputs:
-                        self.target.function(*args) # no catch
+            return ith += 1
 
-                    if self.logger:
-                        self.logger.error('No exception was thrown during the repeat.')
+        thread.join()
+        thread, time_started, inputs, outputs, exception = self._threads.pop(ith)
 
-                raise exception.exception
+        if exception.exception is not None:
+            if self.logger:
+                self.logger.error('Exception in thread ' + thread.name)
+                self.logger.error('Inputs: ' + str([str(i) for i in inputs]))
 
-            self.outputs.extend(outputs)
+            if self.repeat_on_exception:
+                if self.logger:
+                    self.logger.error('Repeating execution')
 
-            if self.ntotal != 0 and self.logger: # progress report requested
-                self._ndone += len(inputs)
-                if self._ndone == self.ntotal or self._ndone > self._watermark:
-                    self.logger.info('Processed %.1f%% of input (%ds elapsed).', 100. * self._ndone / self.ntotal, int(time.time() - self._start_time))
-                    self.watermark += max(1, self._ntotal / 20)
+                for args in inputs:
+                    self.target.function(*args) # no catch
+
+                if self.logger:
+                    self.logger.error('No exception was thrown during the repeat.')
+
+            raise exception.exception
+
+        self.outputs.extend(outputs)
+
+        if self.ntotal != 0 and self.logger: # progress report requested
+            self._ndone += len(inputs)
+            if self._ndone == self.ntotal or self._ndone > self._watermark:
+                self.logger.info('Processed %.1f%% of input (%ds elapsed).', 100. * self._ndone / self.ntotal, int(time.time() - self._start_time))
+                self.watermark += max(1, self._ntotal / 20)
 
 class Map(object):
     """
