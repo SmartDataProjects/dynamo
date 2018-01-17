@@ -98,30 +98,6 @@ class DatasetNumFullCopy(DatasetAttr):
 
         return num
 
-class DatasetDemandRank(DatasetAttr):
-    def __init__(self):
-        DatasetAttr.__init__(self, Attr.NUMERIC_TYPE)
-
-        self.required_attrs = ['global_demand_rank']
-
-    def _get(self, dataset):
-        try:
-            return dataset.attr['global_demand_rank']
-        except KeyError:
-            return 0.
-
-class DatasetUsageRank(DatasetAttr):
-    def __init__(self):
-        DatasetAttr.__init__(self, Attr.NUMERIC_TYPE)
-
-        self.required_attrs = ['global_usage_rank']
-
-    def _get(self, dataset):
-        try:
-            return dataset.attr['global_usage_rank']
-        except KeyError:
-            return 0.
-
 class ReplicaSize(DatasetReplicaAttr):
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
@@ -305,9 +281,10 @@ replica_variables = {
     'dataset.size': DatasetAttr(Attr.NUMERIC_TYPE, 'size'),
     'dataset.last_update': DatasetAttr(Attr.TIME_TYPE, 'last_update'),
     'dataset.num_full_disk_copy': DatasetNumFullDiskCopy(),
-    'dataset.usage_rank': DatasetUsageRank(),
-    'dataset.demand_rank': DatasetDemandRank(),
+    'dataset.usage_rank': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'global_demand_rank'),
+    'dataset.demand_rank': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'global_usage_rank'),
     'dataset.release': DatasetRelease(),
+    'dataset.on_protected_site': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'on_protected_site', dict_default = False),
     'replica.is_last_transfer_source': ReplicaIsLastSource(),
     'replica.size': ReplicaSize(),
     'replica.incomplete': ReplicaIncomplete(),

@@ -63,8 +63,12 @@ class Attr(object):
 class DatasetAttr(Attr):
     """Extract an attribute from the dataset regardless of the type of replica passed __call__"""
 
-    def __init__(self, vtype, attr = None, args = None):
+    def __init__(self, vtype, attr = None, args = None, dict_attr = None, dict_default = 0):
         Attr.__init__(self, vtype, attr = attr, args = args)
+
+        if dict_attr is not None:
+            self.required_attrs = [dict_attr]
+            self.dict_default = dict_default
 
     def get(self, replica):
         if type(replica) is DatasetReplica:
@@ -72,7 +76,13 @@ class DatasetAttr(Attr):
         else:
             dataset = replica.block.dataset
 
-        return self._get(dataset)
+        if len(self.required_attrs) == 1:
+            try:
+                return dataset.attr[self.required_attrs[0]]
+            except KeyError:
+                return self.dict_default
+        else:
+            return self._get(dataset)
 
 
 class DatasetReplicaAttr(Attr):
