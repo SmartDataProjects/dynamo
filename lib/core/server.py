@@ -293,10 +293,15 @@ class Dynamo(object):
 
         # Set the uid of the process
         os.seteuid(0)
+        os.setegid(0)
+
         if queue is None:
-            os.setuid(pwd.getpwnam(self.read_user).pw_uid)
+            pwnam = pwd.getpwnam(self.read_user)
         else:
-            os.setuid(pwd.getpwnam(self.full_user).pw_uid)
+            pwnam = pwd.getpwnam(self.full_user)
+
+        os.setuid(pwnam.pw_uid)
+        os.setgid(pwnam.pw_gid)
 
         # Set argv
         sys.argv = [path + '/exec.py']

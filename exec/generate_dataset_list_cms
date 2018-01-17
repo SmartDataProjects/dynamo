@@ -65,6 +65,7 @@ dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 
 ## Collect data and save
 
+# If the state file did not exist, this line will create it
 state_db = sqlite3.connect(state_file)
 
 if args.target == 'dataset':
@@ -126,5 +127,9 @@ else:
 
 state_db.commit()
 state_db.close()
+
+if not file_exists:
+    # This script is run as the read-only user, but the full user has to be able to update the DB
+    os.chmod(state_file, 0666)
 
 LOG.info('Update list written to %s.', state_file)

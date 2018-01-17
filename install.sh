@@ -236,13 +236,13 @@ done
 
 echo
 echo "Installing the policies."
-echo
+echo "Enter tag:"
+read POLICYTAG
 
-TAG=$(cat $SOURCE/etc/policies.tag)
 git clone -b branch-v2.0 https://github.com/yiiyama/dynamo-policies.git $INSTALL_PATH/policies
 #git clone https://github.com/SmartDataProjects/dynamo-policies.git $INSTALL_PATH/policies
 #cd $INSTALL_PATH/policies
-#git checkout $TAG >/dev/null 2>&1
+#git checkout $POLICYTAG >/dev/null 2>&1
 #echo "Policy commit:"
 #git log -1
 #cd - > /dev/null
