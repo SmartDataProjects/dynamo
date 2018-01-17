@@ -43,19 +43,20 @@ function toggle(i,j){
 
 
 // Basic function to draw simple traces
-function makeTrace(title,data_x,data_y,dash,widths,legend,colors){
+function makeTrace(title,data_x,data_y,dash,widths,legend,colors, hoverinfo){
     return{
 	name: title,
 	    x: data_x,
 	    y: data_y,
+	    //	    fill: 'tonexty',
 	    line: {shape:'linear',
 		color: colors,
 		width: widths,
 		dash: dash
 		},
 	    showlegend: legend,    
-	    connectgaps: true
-
+	    connectgaps: true,
+	    hoverinfo: hoverinfo
     }
 }
 
@@ -284,6 +285,7 @@ function drawSummary(data,serviceId){
     var total_total_white = []; // dummy that is set to 0 for all the time entries. Cosmetic Reasons.
     var total_total = []; // target volume of incomplete transfers per time
     var total_copied = []; // currently copied volume of incomplete transfers per time
+    var total_missing = []; // currently copied volume of incomplete transfers per time
     
     var total_total_phedex = []; // same for phedex 
     var total_copied_phedex = []; // ...
@@ -301,39 +303,51 @@ function drawSummary(data,serviceId){
     total_time = data[0][0];
     total_copied = data[0][1];
     total_total = data[0][2];
-
+    
+    var total_missing = [];
     var total_total_white = [];
 
     for (var i =0; i<total_total.length; i++){
         total_total_white.push(0);
+	total_missing.push(total_total[i] - total_copied[i]);
+	    
     }
 
     while ((total_time[total_time.length-1]-18000) % (86400) != 0){
         total_time.push(total_time[total_time.length-1]+900);
         total_total_white.push(0);
+	//total_missing.push(0);
+	//total_total.push(0);
 
     }
 
     while (total_time[0]<total_time[total_time.length-1]-5*24*60*60*1.02){
 	total_time.splice(0,1);
 	total_copied.splice(0,1);
+	total_missing.splice(0,1);
 	total_total.splice(0,1);
 	total_total_white.splice(0,1);
     }
-
+    MorT = "Dynamo";
     //retrieve data for bar graphs
-    if(serviceId == 1)
+    if(serviceId == 1){
+
 	trace_midnight_requested = drawAggregates(total_time, total_copied, total_total)[1];
+    }
     if(serviceId == 2){
-	color_low = "rgba(0,180,0,.2)";
+	color_low = "rgba(0,180,0,.35)";
 	color_high = "rgba(0,180,0, .6)";
-    };
+	MorT = "Other";
+    }
     if(serviceId != 3)
 	trace_midnight_copied = drawAggregates(total_time, total_copied, total_total)[0];
 
-    traces.push(makeTrace("Time", total_time.map(timeConverter), total_total_white, 'solid', 2, false, "rgba(0,0,0,0)"));
-    traces.push(makeTrace("Copied", total_time.map(timeConverter), total_copied, 'dot', 2, true, color_low));
-    traces.push(makeTrace("Total", total_time.map(timeConverter), total_total, 'solid', 2, true, color_high));    
+
+
+    traces.push(makeTrace("Time", total_time.map(timeConverter), total_total_white, 'solid', 2, false, "rgba(0,0,0,0)", 'none'));
+    traces.push(makeTrace( MorT + " Missing", total_time.map(timeConverter), total_missing, 'solid', 2, true, color_high, ''));
+    traces.push(makeTrace(MorT + " Total", total_time.map(timeConverter), total_total, 'dot', 2, true, color_low, ''));    
+    //traces.push(makeTrace("Copied", total_time.map(timeConverter), total_copied, 'dot', 2, true, color_low, ''));
 
     //Compare:
     if(serviceId == 3){
@@ -343,9 +357,10 @@ function drawSummary(data,serviceId){
 	total_total_phedex = data[1][2];	
 	
 	var total_total_white_phedex = [];
-
+	var total_missing_phedex = [];
 	for (var i =0; i<total_total_phedex.length; i++){
 	    total_total_white_phedex.push(0);
+	    total_missing_phedex.push(total_total_phedex[i]-total_copied_phedex[i]);
 	}
 
 	while ((total_time_phedex[total_time_phedex.length-1]-18000) % (86400) != 0){
@@ -359,22 +374,27 @@ function drawSummary(data,serviceId){
 	    total_copied_phedex.splice(0,1);
 	    total_total_phedex.splice(0,1);
 	    total_total_white_phedex.splice(0,1);
+	    total_missing_phedex.splice(0,1);
+
 	}
 	
 	var total_sum = [];
 	var total_sum_copied = [];
-	
+	var total_sum_missing = [];
+
+
 	for (var i = 0; i < total_total_phedex.length; i++){
 	    total_sum.push(total_total_phedex[i] + total_total[i]);
 	    total_sum_copied.push(total_copied_phedex[i] + total_copied[i]);
+	    total_sum_missing.push(total_missing_phedex[i] + total_missing[i]);
 	}
 	
-	traces.push(makeTrace("Time", total_time_phedex.map(timeConverter), total_total_white_phedex, 'solid', 2, false, "rgba(0,0,0,0)"));
-	traces.push(makeTrace("Other Copied", total_time_phedex.map(timeConverter), total_copied_phedex, 'dot', 2, true, "rgba(0,180,0,.2)"));
-	traces.push(makeTrace("Other Total", total_time_phedex.map(timeConverter), total_total_phedex, 'solid', 2, true, "rgba(0,180,0,.6)"));
+	traces.push(makeTrace("Time", total_time_phedex.map(timeConverter), total_total_white_phedex, 'solid', 2, false, "rgba(0,0,0,0)", 'none'));
+	traces.push(makeTrace("Other Missing", total_time_phedex.map(timeConverter), total_missing_phedex, 'solid', 2, true, "rgba(0,180,0,.6)", ''));
+	traces.push(makeTrace("Other Total", total_time_phedex.map(timeConverter), total_total_phedex, 'dot', 2, true, "rgba(0,180,0,.35)", ''));
 
-	traces.push(makeTrace("Sum Total", total_time_phedex.map(timeConverter), total_sum, 'solid', 2, true, "rgba(100, 0, 50, .6)"));
-	traces.push(makeTrace("Sum Copied", total_time_phedex.map(timeConverter), total_sum_copied,'dot', 2, true, "rgba(100, 0, 50, .2)"));
+	traces.push(makeTrace("Sum Total", total_time_phedex.map(timeConverter), total_sum, 'dot', 2, true, "rgba(100, 0, 50, .35x)", ''));
+	traces.push(makeTrace("Sum Missing", total_time_phedex.map(timeConverter), total_sum_missing,'solid', 2, true, "rgba(100, 0, 50, .6)", ''));
 	
     }
 	
@@ -695,7 +715,7 @@ function drawSiteOverview(data,serviceId) {
 	type: 'bar'
     };
     
-    var data = [data_copied_stuck_plot, data_copied_not_stuck_plot, data_total_stuck_plot,data_total_not_stuck_plot,data_dummy,data_dummy_2];
+    var data = [data_dummy, data_dummy_2, data_total_stuck_plot, data_total_not_stuck_plot, data_copied_stuck_plot, data_copied_not_stuck_plot];
 
 
     var service = " Dynamo + Other";
@@ -718,7 +738,7 @@ function drawSiteOverview(data,serviceId) {
 	[{
 		xref: 'paper',
 		yref: 'paper',
-		x: 0.5,
+		x: 0.57,
 		xanchor: 'left',
 		y: 0.94,
 		yanchor: 'bottom',
@@ -747,7 +767,7 @@ function drawSiteOverview(data,serviceId) {
 		    }
 		},    	    
     {
-	x: 0.48,
+	x: 0.55,
 	y: 0.975,
 	xref: 'paper',
 	yref: 'paper',
@@ -763,7 +783,7 @@ function drawSiteOverview(data,serviceId) {
 		 anchor: 'y2',
 		 tickformat: " %I%p",
 		 tickangle: 45,
-		 utorange: true,
+		 //utorange: true,
 		 zeroline: true,
 		 showline: false,
 		 autotick: true,
@@ -773,7 +793,7 @@ function drawSiteOverview(data,serviceId) {
 	yaxis2: {domain: [0, 1],
 		 anchor: 'x2',
 		 range: [0, 1.3*Math.max(...data_sorted[2])],
-		 utorange: true,
+		 //utorange: true,
 		 zeroline: false,
 		 showline: false,
 		 autotick: true,
