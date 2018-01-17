@@ -26,6 +26,12 @@ class ObjectRepository(object):
         # null group always exist
         self.groups[None] = Group(None)
 
+    def update(self, obj):
+        pass
+
+    def delete(self, obj):
+        pass
+
 
 class DynamoInventory(ObjectRepository):
     """

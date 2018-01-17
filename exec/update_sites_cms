@@ -30,8 +30,9 @@ site_source = sources.PhEDExSiteInfoSource(config.sites.config)
 
 ## Start the update
 
-for site in inventory.sites:
+for site in inventory.sites.itervalues():
     current_status = site_source.get_site_status(site.name)
+    LOG.info('Status of %s: %d', site.name, current_status)
     if current_status != site.status:
         site.status = current_status
         inventory.update(site)
