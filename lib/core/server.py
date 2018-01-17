@@ -38,11 +38,12 @@ class Dynamo(object):
 
         ## Load the inventory content (filter according to debug config)
         load_opts = {}
-        for objs in ['groups', 'sites', 'datasets']:
-            included = config.get('included_' + objs, None)
-            excluded = config.get('excluded_' + objs, None)
-
-            load_opts[objs] = (included, excluded)
+        if 'debug' in config:
+            for objs in ['groups', 'sites', 'datasets']:
+                included = config.debug.get('included_' + objs, None)
+                excluded = config.debug.get('excluded_' + objs, None)
+    
+                load_opts[objs] = (included, excluded)
         
         LOG.info('Loading the inventory.')
         self.inventory.load(**load_opts)
