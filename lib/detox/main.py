@@ -28,15 +28,19 @@ class Detox(object):
 
         self.deletion_per_iteration = config.deletion_per_iteration
 
-    def run(self, inventory, comment = ''):
+    def run(self, inventory, comment = '', create_cycle = True):
         """
         Main executable.
-        @param inventory  Dynamo inventory
-        @param comment    Passed to dynamo history
+        @param inventory    Dynamo inventory
+        @param comment      Passed to dynamo history
+        @param create_cycle If True, assign a cycle number and make a permanent record in the history.
         """
 
-        # fetch the deletion cycle number
-        cycle_number = self.history.new_deletion_run(self.policy.partition_name, self.policy.version, comment = comment)
+        if create_cycle:
+            # fetch the deletion cycle number
+            cycle_number = self.history.new_deletion_run(self.policy.partition_name, self.policy.version, comment = comment)
+        else:
+            cycle_number = 0
 
         LOG.info('Detox cycle %d for %s starting', cycle_number, self.policy.partition_name)
 
@@ -65,14 +69,15 @@ class Detox(object):
         partition = partition_repository.partitions[self.policy.partition_name]
         quotas = dict((s, s.partitions[partition].quota * 1.e-12) for s in partition_repository.sites.itervalues())
         self.history.save_quotas(cycle_number, quotas)
-       
-        LOG.info('Committing deletion.')
-        comment = 'Dynamo -- Automatic cache release request for %s partition.' % self.policy.partition_name
-        self._commit_deletions(cycle_number, inventory, deleted, comment)
-        comment = 'Dynamo -- Automatic group reassignment for %s partition.' % self.policy.partition_name
-        self._commit_reassignments(cycle_number, inventory, reowned, comment)
 
-        self.history.close_deletion_run(cycle_number)
+        if create_cycle:
+            LOG.info('Committing deletion.')
+            comment = 'Dynamo -- Automatic cache release request for %s partition.' % self.policy.partition_name
+            self._commit_deletions(cycle_number, inventory, deleted, comment)
+            comment = 'Dynamo -- Automatic group reassignment for %s partition.' % self.policy.partition_name
+            self._commit_reassignments(cycle_number, inventory, reowned, comment)
+
+            self.history.close_deletion_run(cycle_number)
 
         LOG.info('Detox cycle completed')
 

@@ -54,8 +54,8 @@ config.detox.policy_version = policy_version
 from dynamo.core.executable import inventory
 
 detox = Detox(config.detox)
-detox.run(inventory, comment = args.comment)
+detox.run(inventory, comment = args.comment, create_cycle = not args.snapshot_run)
 
 ## If test run, don't send back the inventory updates
-if args.test_run:
+if args.snapshot_run or args.test_run:
     inventory.clear_update()
