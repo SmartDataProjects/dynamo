@@ -62,8 +62,8 @@ log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
 ## Set the effective user id to config.user
 try:
     pwnam = pwd.getpwnam(config.user)
-    os.seteuid(pwnam.pw_uid)
     os.setegid(pwnam.pw_gid)
+    os.seteuid(pwnam.pw_uid)
 except OSError:
     LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 

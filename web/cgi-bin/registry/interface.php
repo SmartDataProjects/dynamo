@@ -130,7 +130,7 @@ else if (isset($_REQUEST['taskid'])) {
         $stmt->execute();
         $stmt->close();
 
-        $data[0]['status'] = 'killed';
+        $data['status'] = 'killed';
         $message = 'Task aborted.';
       }
       else {
