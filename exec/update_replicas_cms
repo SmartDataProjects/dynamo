@@ -9,7 +9,7 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update replica information.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
-parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', const = '', help = 'Do a full update of the site (wildcard allowed).')
+parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', help = 'Do a full update of the site (wildcard allowed).')
 parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'dataset', help = 'Do a full update of the dataset (wildcard allowed).')
 parser.add_argument('--round-robin', '-R', action = 'store_true', dest = 'round_robin', help = 'Do a full update of a site for a data tier at the top of the table in the state file.')
 
@@ -81,6 +81,8 @@ if delta_update:
     cursor = state_db.cursor()
 
     result = cursor.execute('SELECT MAX(`timestamp`) FROM `delta_updates`')
+    last_update = next(result)[0]
+
     if last_update is None:
         LOG.error('Last update timestamp is not set. Run a full update of all sites and create a timestamp.')
         sys.exit(1)

@@ -39,14 +39,8 @@ class Dynamo(object):
         ## Load the inventory content (filter according to debug config)
         load_opts = {}
         for objs in ['groups', 'sites', 'datasets']:
-            try:
-                included = config.debug['included_' + objs]
-            except KeyError:
-                included = None
-            try:
-                excluded = config.debug['excluded_' + objs]
-            except KeyError:
-                excluded = None
+            included = config.get('included_' + objs, None)
+            excluded = config.get('excluded_' + objs, None)
 
             load_opts[objs] = (included, excluded)
         
@@ -300,8 +294,8 @@ class Dynamo(object):
         else:
             pwnam = pwd.getpwnam(self.full_user)
 
-        os.setuid(pwnam.pw_uid)
         os.setgid(pwnam.pw_gid)
+        os.setuid(pwnam.pw_uid)
 
         # Set argv
         sys.argv = [path + '/exec.py']
