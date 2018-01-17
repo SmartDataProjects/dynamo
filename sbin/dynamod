@@ -25,7 +25,7 @@ log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
 LOG = logging.getLogger()
 LOG.setLevel(log_level)
 if config.logging.get('path', ''):
-    log_handler = logging.handlers.RotatingFileHandler(config.logging.path + '/server.log', maxBytes = 1000000, backupCount = 100)
+    log_handler = logging.handlers.RotatingFileHandler(config.logging.path + '/server.log', maxBytes = 10000000, backupCount = 100)
 else:
     log_handler = logging.StreamHandler()
 LOG.addHandler(log_handler)
@@ -45,7 +45,7 @@ changelog = logging.getLogger('changelog')
 changelog.propagate = False
 changelog.setLevel(logging.INFO)
 if config.logging.get('path', ''):
-    log_handler = logging.handlers.RotatingFileHandler(config.logging.path + '/updates.log', maxBytes = 1000000, backupCount = 100)
+    log_handler = logging.handlers.RotatingFileHandler(config.logging.path + '/updates.log', maxBytes = 10000000, backupCount = 100)
 else:
     log_handler = logging.StreamHandler()
 changelog.addHandler(log_handler)

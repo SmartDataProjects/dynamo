@@ -89,7 +89,7 @@ class ThreadCollector(object):
 
                 raise ThreadTimeout(thread.name)
 
-            return ith += 1
+            return ith + 1
 
         thread.join()
         thread, time_started, inputs, outputs, exception = self._threads.pop(ith)
@@ -118,6 +118,9 @@ class ThreadCollector(object):
             if self._ndone == self.ntotal or self._ndone > self._watermark:
                 self.logger.info('Processed %.1f%% of input (%ds elapsed).', 100. * self._ndone / self.ntotal, int(time.time() - self._start_time))
                 self.watermark += max(1, self._ntotal / 20)
+
+        # self._threads.pop reduced the size of the array by one; return the same index
+        return ith
 
 class Map(object):
     """
