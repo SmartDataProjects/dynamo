@@ -247,6 +247,9 @@ git clone -b branch-v2.0 https://github.com/yiiyama/dynamo-policies.git $INSTALL
 #git log -1
 #cd - > /dev/null
 
+# Temporary - will not need this once we publish the policy itself in the web interface
+echo $POLICYTAG > $INSTALL_PATH/etc/policies.tag
+
 ### Install the web scripts ###
 
 if [ $WEB_PATH ]

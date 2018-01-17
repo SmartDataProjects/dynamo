@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import os
 import sys
 import fnmatch
 import sqlite3
@@ -60,6 +61,7 @@ import dynamo.source.impl as sources
 from dynamo.utils.parallel import Map
 
 config.datasets.config.phedex = config.phedex
+config.sites.config.phedex = config.phedex
 
 dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 
@@ -86,7 +88,6 @@ if args.target == 'dataset':
     args = [('datasets', ['acquisition_era_name=' + sd]) for sd in sds]
     results = Map().execute(dataset_source._dbs.make_request, args)
     for result in results:
-        LOG.info(result)
         for entry in result:
             all_datasets.append(entry['dataset'])
     
@@ -119,7 +120,7 @@ else:
         state_db.execute('CREATE TABLE `full_updates` (`id` INTEGER NOT NULL PRIMARY KEY, `site` TEXT NOT NULL, `tier` TEXT NOT NULL)')
         state_db.commit()
 
-    sql = 'INSERT INTO `full_updates` (`site`, `tier`) VALUES (?)'
+    sql = 'INSERT INTO `full_updates` (`site`, `tier`) VALUES (?, ?)'
     cursor = state_db.cursor()
     for site in all_sites:
         for tier in tiers:
