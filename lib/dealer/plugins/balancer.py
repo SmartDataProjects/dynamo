@@ -1,7 +1,7 @@
 import logging
 import random
 
-from dealer.plugins.base import BaseHandler
+from base import BaseHandler
 
 LOG = logging.getLogger(__name__)
 

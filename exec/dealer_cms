@@ -22,11 +22,9 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout)
-log_level = getattr(logging, config.log_level.upper())
-log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
+from dynamo.core.executable import make_standard_logger
 
-logging.basicConfig(level = log_level, format = log_format, stream = sys.stdout)
-LOG = logging.getLogger()
+LOG = make_standard_logger(config.log_level)
 
 ## Run the main detox object
 from dynamo.dealer.main import Dealer
