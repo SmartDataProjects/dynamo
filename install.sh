@@ -281,7 +281,6 @@ then
     echo "DYNAMO_BASE=$INSTALL_PATH" > /etc/sysconfig/dynamod
     echo "DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> /etc/sysconfig/dynamod
     echo "DYNAMO_SPOOL=$SPOOL_PATH" >> /etc/sysconfig/dynamod
-    echo "DYNAMO_SPOOL=$SPOOL_PATH" >> /etc/sysconfig/dynamod
     echo "PYTHONPATH=$INSTALL_PATH/python/site-packages" >> /etc/sysconfig/dynamod
 
     systemctl daemon-reload

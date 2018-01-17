@@ -104,6 +104,7 @@ do
   echo "GRANT ALL PRIVILEGES ON `dynamo_tmp`.* TO '$PRIV_USER'@'$HOST';" | $ROOTSQL
   echo 'GRANT SELECT ON `dynamo%`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT UPDATE ON `dynamo`.`system` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT, INSERT, UPDATE, DELETE, DROP ON `dynamohistory`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamo`.`dataset_requests` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamo`.`dataset_accesses` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
 

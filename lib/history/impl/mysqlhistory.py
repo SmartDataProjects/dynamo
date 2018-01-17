@@ -254,8 +254,7 @@ class MySQLHistory(TransactionHistoryInterface):
             self._make_site_id_map()
             
         srun = '%09d' % run_number
-        spool_dir_name = '%s/detox_snapshots' % (config.paths.spool)
-        db_file_name = '%s/snapshot_%09d.db' % (spool_dir_name, run_number)
+        db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
 
         # hardcoded!!
         site_ready = 1
@@ -503,9 +502,9 @@ class MySQLHistory(TransactionHistoryInterface):
 
             srun = '%09d' % run_number
 
-            db_file_name = '%s/detox_snapshots/snapshot_%09d.db' % (config.paths.spool, run_number)
+            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_archive_dir, run_number)
             if not os.path.exists(db_file_name):
-                xz_file_name = '%s/detox_snapshots/%s/%s/snapshot_%09d.db.xz' % (config.paths.archive, srun[:3], srun[3:6], run_number)
+                xz_file_name = '%s/%s/%s/snapshot_%09d.db.xz' % (self.config.snapshots_archive_dir, srun[:3], srun[3:6], run_number)
                 if not os.path.exists(xz_file_name):
                     raise RuntimeError('Snapshot DB ' + db_file_name + ' does not exist')
 
@@ -550,9 +549,9 @@ class MySQLHistory(TransactionHistoryInterface):
 
             srun = '%09d' % run_number
 
-            db_file_name = '%s/detox_snapshots/snapshot_%09d.db' % (config.paths.spool, run_number)
+            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
             if not os.path.exists(db_file_name):
-                xz_file_name = '%s/detox_snapshots/%s/%s/snapshot_%09d.db.xz' % (config.paths.archive, srun[:3], srun[3:6], run_number)
+                xz_file_name = '%s/%s/%s/snapshot_%09d.db.xz' % (self.config.snapshots_archive_dir, srun[:3], srun[3:6], run_number)
                 if not os.path.exists(xz_file_name):
                     raise RuntimeError('Snapshot DB ' + db_file_name + ' does not exist')
 
@@ -604,7 +603,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         for old_run in set(old_replica_runs) & set(old_site_runs):
             srun = '%09d' % old_run
-            db_file_name = '%s/detox_snapshots/snapshot_%09d.db' % (config.paths.spool, old_run)
+            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, old_run)
             if os.path.exists(db_file_name):
                 try:
                     os.unlink(db_file_name)
