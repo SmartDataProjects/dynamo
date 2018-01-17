@@ -9,15 +9,15 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update replica information.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
-parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', nargs = '?', const = '', help = 'Do a full update of the site (wildcard allowed). If no site is specified, pick up the site name from the state file.')
+parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', const = '', help = 'Do a full update of the site (wildcard allowed).')
 parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'dataset', help = 'Do a full update of the dataset (wildcard allowed).')
+parser.add_argument('--round-robin', '-R', action = 'store_true', dest = 'round_robin', help = 'Do a full update of a site for a data tier at the top of the table in the state file.')
 
 args = parser.parse_args()
 sys.argv = []
 
 ## Type of update
-delta_update = (args.site is None and args.dataset is None)
-rolling_site_update = False
+delta_update = (args.site is None and args.dataset is None and not args.round_robin)
 
 ## Load the configuration
 from dynamo.dataformat.configuration import Configuration
@@ -25,14 +25,15 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout & stderr)
-from dynamo.core.executable import make_standard_logger
+import dynamo.core.executable as executable
 
-LOG = make_standard_logger(config.log_level)
+LOG = executable.make_standard_logger(config.log_level)
 LOG.info('Starting inventory update.')
 
 ## Load and initialize sources
-from dynamo.core.executable import inventory
 import dynamo.source.impl as sources
+
+inventory = executable.inventory
 
 config.groups.config.phedex = config.phedex
 config.sites.config.phedex = config.phedex
@@ -66,60 +67,76 @@ for site in site_source.get_site_list():
     LOG.debug('Updating %s', str(site))
     inventory.update(site)
 
-## 2. Pick up new and changed block replicas
+## 2. Pick up block replicas to update
+
+if not os.path.exists(config.replica_state_file):
+    LOG.error('State file %s does not exist. Run generate_dataset_list_cms first.', config.replica_state_file)
+    sys.exit(1)
 
 if delta_update:
     ## Normal global delta-update
     ## Get the last update timestamp
 
-    try:
-        with open(config.replica_state_file) as source:
-            # first line is the timestamp
-            timestamp_str = source.readline().strip()
-            timestamp = time.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S %Z')
-            # %Z only serves to distinguish daylight saving time. The timestamp in the file has
-            # to be the local time of the system. time.mktime will then convert it to UNIX time.
-            last_update = time.mktime(timestamp)
-    except:
-        LOG.error('Failed to retrieve last update timestamp.')
-        raise
+    state_db = sqlite3.connect(config.replica_state_file)
+    cursor = state_db.cursor()
 
+    result = cursor.execute('SELECT MAX(`timestamp`) FROM `delta_updates`')
+    if last_update is None:
+        LOG.error('Last update timestamp is not set. Run a full update of all sites and create a timestamp.')
+        sys.exit(1)
+
+    state_db.close()
+
+    # Allow 1 minute safety margin to fully collect all updates
+    last_update -= 60
+
+    # The timestamp for this update
     update_start = time.time()
     
     ## Fetch the full list of block replicas that were updated since updated_since.
     ## New datasets and blocks will be caught in the process.
     
+    timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S %Z', time.localtime(last_update))
     LOG.info('Fetching the list of block replicas updated since %s.', timestamp_str)
 
-    new_and_updated_replicas = replica_source.get_updated_replicas(last_update)
+    updated_replicas = replica_source.get_updated_replicas(last_update - 60)
 
 else:
-    if args.site == '':
-        rolling_site_update = True
+    if args.round_robin:
+        ## Round-robin update of a site-tier combination
+        ## Get the combination to run on
 
+        state_db = sqlite3.connect(config.replica_state_file)
+        cursor = state_db.cursor()
+    
+        result = cursor.execute('SELECT `site`, `tier` FROM `full_updates` ORDER BY `id` ASC LIMIT 1')
         try:
-            with open(config.replica_state_file) as source:
-                # second line is the site name
-                source.readline()
-                args.site = source.readline().strip()
-        except:
-            LOG.error('Failed to retrieve site name.')
+            site, tier = next(result)
+        except StopIteration:
+            LOG.error('Round robin state table is empty. Run generate_dataset_list_cms first.')
             sys.exit(1)
 
-    new_and_updated_replicas = replica_source.get_replicas(site = args.site, dataset = args.dataset)
-    # Save the embedded versions
+        args.site = site
+        args.dataset = '/*/*/' + tier
+
+        state_db.close()
+
+    updated_replicas = replica_source.get_replicas(site = args.site, dataset = args.dataset)
+
+    # Save the embedded versions - we cannot query for "replicas deleted since X", so instead compare
+    # what is already in the database to what we get from PhEDEx.
     embedded_updated_replicas = set()
 
 ## 3. Loop over new and changed block replicas, add them to inventory
 
-num_replicas = len(new_and_updated_replicas)
+num_replicas = len(updated_replicas)
 LOG.info('Got %d block replicas to update.', num_replicas)
 
 updated_datasets = set()
 
 watermark = 0
 
-for irep, replica in enumerate(new_and_updated_replicas):
+for irep, replica in enumerate(updated_replicas):
     if float(irep) / num_replicas * 100. >= watermark:
         LOG.info('%d%% done..', watermark)
         watermark += 5
@@ -202,7 +219,7 @@ for irep, replica in enumerate(new_and_updated_replicas):
         embedded_updated_replicas.add(embedded_replica)
 
 ## 3.7. If dataset_state_file exists, remove the updated datasets from the list
-if os.path.exists(config.dataset_state_file):
+if not executable.read_only and os.path.exists(config.dataset_state_file):
     state_db = sqlite3.connect(config.dataset_state_file)
     cursor = state_db.cursor()
     sql = 'DELETE FROM `datasets` WHERE `name` = ?'
@@ -219,7 +236,7 @@ if delta_update:
     deleted_replicas = replica_source.get_deleted_replicas(last_update)
 
 else:
-    # Replicas in inventory but not in new_and_updated_replicas are deleted
+    # Replicas in inventory but not in updated_replicas are deleted
     deleted_replicas = []
 
     if args.site:
@@ -307,28 +324,22 @@ for replica in deleted_replicas:
         LOG.info('Deleting replica %s:%s', site.name, dataset.name)
         inventory.delete(dataset_replica)
 
-## 6. (If delta update) save the timestamp
+## 6. For delta or round-robin update, save the state
 
-if delta_update:
-    ## Store the timestamp of when we started (allow 1 minute safety margin)
-    with open(config.replica_state_file) as source:
-        lines = source.read().split('\n')
+if not executable.read_only and (delta_update or args.round_robin):
+    state_db = sqlite3.connect(config.replica_state_file)
+    cursor = state_db.cursor()    
 
-    local_time = time.localtime(update_start - 60)
-    lines[0] = time.strftime('%Y-%m-%d %H:%M:%S %Z', local_time)
+    if delta_update:
+        sql = 'INSERT INTO `delta_updates` VALUES (?, ?, ?)'
+        cursor.execute(sql, (update_start, len(updated_replicas), len(deleted_replicas)))
 
-    with open(config.replica_state_file, 'w') as source:
-        source.write('\n'.join(lines))
+    else:
+        result = cursor.execute('SELECT MIN(`id`) FROM `full_updates`')
+        min_id = next(result)
+        cursor.execute('DELETE FROM `full_updates` WHERE `id` = ?', (min_id,))
 
-elif rolling_site_update:
-    with open(config.replica_state_file) as source:
-        lines = source.read().split('\n')
-
-    sites = sorted(inventory.sites.keys())
-    isite = (sites.index(args.site) + 1) % len(sites)
-    lines[1] = sites[isite]
-
-    with open(config.replica_state_file, 'w') as source:
-        source.write('\n'.join(lines))
+    state_db.commit()
+    state_db.close()
 
 LOG.info('Inventory update completed.')

@@ -348,6 +348,7 @@ class Dynamo(object):
         executable.inventory = self.inventory
 
         if queue is not None:
+            executable.read_only = False
             # create a list of updated objects the executable can fill
             executable.inventory._updated_objects = []
             executable.inventory._deleted_objects = []

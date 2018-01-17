@@ -6,6 +6,7 @@ as standalone python scripts.
 
 from dynamo.core.inventory import ObjectRepository
 
+read_only = True
 registry = None
 inventory = ObjectRepository()
 
