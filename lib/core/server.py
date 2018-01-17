@@ -276,6 +276,13 @@ class Dynamo(object):
                     return True
         
     def _run_one(self, path, args, queue = None):
+        # Redirect STDOUT and STDERR to file, close STDIN
+        stdout = sys.stdout
+        stderr = sys.stderr
+        sys.stdout = open(path + '/_stdout', 'a')
+        sys.stderr = open(path + '/_stderr', 'a')
+        sys.stdin.close()
+
         ## Ignore SIGINT - see note above proc.terminate()
         ## We will react to SIGTERM by raising KeyboardInterrupt
         import signal
@@ -323,13 +330,6 @@ class Dynamo(object):
     
                 handler.flush()
                 handler.close()
-
-        # Redirect STDOUT and STDERR to file, close STDIN
-        stdout = sys.stdout
-        stderr = sys.stderr
-        sys.stdout = open(path + '/_stdout', 'a')
-        sys.stderr = open(path + '/_stderr', 'a')
-        sys.stdin.close()
 
         # Re-initialize
         #  - inventory store with read-only connection
