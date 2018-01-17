@@ -1,6 +1,8 @@
 {
-  "replica_state_file": "$(DYNAMO_BASE)/etc/update_replicas_cms.state",
-  "dataset_state_file": "$(DYNAMO_BASE)/etc/update_datasets_cms.state",
+  "replica_state_file": "$(DYNAMO_SPOOL)/update_replicas_cms.state",
+  "dataset_state_file": "$(DYNAMO_SPOOL)/update_datasets_cms.state",
+  "excluded_secondary_datasets": [],
+  "num_update_datasets": 50,
   "phedex": {
     "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
     "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",

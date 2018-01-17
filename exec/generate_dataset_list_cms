@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
 import sys
+import fnmatch
 import sqlite3
 
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update datasets, blocks, and files information.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', default = '', help = 'Configuration JSON.')
-parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -17,45 +17,75 @@ from dynamo.dataformat import Configuration
 
 config = Configuration(args.config)
 
-## Set up logging (write to stdout)
-log_level = getattr(logging, config.log_level.upper())
-log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
+## Set up logging (write to stdout & stderr)
+from dynamo.core.executable import make_standard_logger
 
-# Everything above log_level goes to stdout
-out_handler = logging.StreamHandler(sys.stdout)
-out_handler.setLevel(log_level)
-out_handler.setFormatter(logging.Formatter(fmt = log_format))
-# If >= ERROR, goes also to stderr
-err_handler = logging.StreamHandler(sys.stderr)
-err_handler.setLevel(logging.ERROR)
-err_handler.setFormatter(logging.Formatter(fmt = log_format))
-
-LOG = logging.getLogger()
-LOG.setLevel(log_level)
-LOG.addHandler(out_handler)
-LOG.addHandler(err_handler)
+LOG = make_standard_logger(config.log_level)
 
 ## If the dataset list already exists, quit
 if os.path.exists(config.dataset_state_file):
-    LOG.info('Dataset list exists.')
-    sys.exit(0)
+    file_exists = True
+
+    state_db = sqlite3.connect(config.dataset_state_file)
+    cursor = state_db.cursor()
+    result = cursor.execute('SELECT COUNT(*) FROM `datasets`')
+    count = next(result)[0]
+    state_db.close()
+
+    if count != 0:
+        LOG.info('Dataset list exists.')
+        sys.exit(0)
+
+else:
+    file_exists = False
 
 ## Load and initialize sources
 import dynamo.source.impl as sources
+from dynamo.utils.parallel import Map
 
 config.datasets.config.phedex = config.phedex
 
 dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 
-all_datasets = dataset_source.get_dataset_names(include = ['*'])
+## Filter out secondary dataset names
+acquisition_eras = dataset_source._dbs.make_request('acquisitioneras')
+sds = [e['acquisition_era_name'] for e in acquisition_eras]
+
+for pattern in config.excluded_secondary_datasets:
+    for sd in list(sds):
+        if fnmatch.fnmatch(sd, pattern):
+            sds.remove(sd)
+
+sds = sds[:10]
+
+LOG.info('Gathering dataset names from %d acquisition eras.', len(sds))
+LOG.info(sds)
+
+all_datasets = []
+
+# query DBS in parallel (by SD name)
+args = [('datasets', ['acquisition_era_name=' + sd]) for sd in sds]
+results = Map().execute(dataset_source._dbs.make_request, args)
+for result in results:
+    LOG.info(result)
+    for entry in result:
+        all_datasets.append(entry['dataset'])
+
+LOG.info('Collected %d dataset names.', len(all_datasets))
+
+## Save into the state file
 
 state_db = sqlite3.connect(config.dataset_state_file)
-state_db.execute('CREATE TABLE `datasets` (`id` INTEGER NOT NULL PRIMARY KEY, `name` TEXT NOT NULL)')
+if not file_exists:
+    # connect() already created a file. Make the table.
+    state_db.execute('CREATE TABLE `datasets` (`id` INTEGER NOT NULL PRIMARY KEY, `name` TEXT NOT NULL)')
 
 sql = 'INSERT INTO `datasets` (`name`) VALUES (?)'
 cursor = state_db.cursor()
 for dataset in all_datasets:
     cursor.execute(sql, (dataset,))
 
-cursor.close()
+state_db.commit()
 state_db.close()
+
+LOG.info('Dataset names written to %s.', config.dataset_state_file)

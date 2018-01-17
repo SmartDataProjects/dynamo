@@ -166,7 +166,6 @@ INITSCRIPT=$INSTALL_PATH/etc/profile.d/init.sh
 echo "export DYNAMO_BASE=$INSTALL_PATH" > $INITSCRIPT
 echo "export DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> $INITSCRIPT
 echo "export DYNAMO_SPOOL=$SPOOL_PATH" >> $INITSCRIPT
-echo "export DYNAMO_SPOOL=$SPOOL_PATH" >> $INITSCRIPT
 echo "export PYTHONPATH="'$DYNAMO_BASE/python/site-packages:$(echo $PYTHONPATH | sed "s|$DYNAMO_BASE/python/site-packages:||")' >> $INITSCRIPT
 echo "export PATH="'$DYNAMO_BASE/bin:$DYNAMO_BASE/sbin:$(echo $PATH | sed "s|$DYNAMO_BASE/bin:$DYNAMO_BASE/sbin:||")' >> $INITSCRIPT
 
