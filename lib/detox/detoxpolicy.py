@@ -97,7 +97,13 @@ class PolicyLine(object):
 
 class DetoxPolicy(object):
     def __init__(self, config):
+        # Classes from dynamo.policy.producers that provide dataset attrs necessary for
+        # policy evaluation.
         self.attr_producers = []
+
+        # Iterative deletion can be turned off in specific policy files. When this is False,
+        # Detox will finalize the delete and protect list in the first iteration.
+        self.iterative_deletion = True
         
         LOG.info('Reading the policy file.')
         with open(config.policy_file) as policy_def:
@@ -109,10 +115,6 @@ class DetoxPolicy(object):
                 for pred in line.condition.predicates:
                     if type(pred) is predicates.BinaryExpr and pred.variable.vtype == attrs.Attr.TIME_TYPE:
                         pred.rhs += config.time_shift * 24. * 3600.
-
-        # Iterative deletion can be turned off in specific policy files. When this is False,
-        # Detox will finalize the delete and protect list in the first iteration.
-        self.iterative_deletion = True
 
         self.version = config.policy_version
 
@@ -142,7 +144,8 @@ class DetoxPolicy(object):
         self.default_decision = None
         self.candidate_sort_key = None
 
-        LINE_PARTITION, LINE_SITE_TARGET, LINE_DELETION_TRIGGER, LINE_STOP_CONDITION, LINE_POLICY, LINE_ORDER = range(6)
+        LINE_PARTITION, LINE_SITE_TARGET, LINE_DELETION_TRIGGER, LINE_STOP_CONDITION, \
+            LINE_POLICY, LINE_ORDER, LINE_ALGO = range(7)
 
         for line in lines:
             line_type = -1
@@ -158,6 +161,8 @@ class DetoxPolicy(object):
                 line_type = LINE_STOP_CONDITION
             elif words[0] == 'Order':
                 line_type = LINE_ORDER
+            elif words[0] == 'Algo':
+                line_type = LINE_ALGO
             elif words[0] in ('Protect', 'Delete', 'Dismiss', 'ProtectBlock', 'DeleteBlock', 'DismissBlock'):
                 line_type = LINE_POLICY
                 decision = Decision(eval(words[0]))
@@ -187,6 +192,10 @@ class DetoxPolicy(object):
 
                 elif line_type == LINE_ORDER:
                     self.candidate_sort_key = SortKey(cond_text)
+
+                elif line_type == LINE_ALGO:
+                    if words[1] == 'Static':
+                        self.iterative_deletion = False
 
         if self.partition_name == '':
             raise ConfigurationError('Partition name missing')
@@ -227,7 +236,8 @@ class DetoxPolicy(object):
         for producer_cls in producer_names:
             self.attr_producers.append(getattr(producers, producer_cls)(attrs_config[producer_cls]))
 
-        LOG.info('Policy stack for %s: %d lines using dataset attr producers [%s]', self.partition_name, len(self.policy_lines), ' '.join(type(p).__name__ for p in self.attr_producers))
+        LOG.info('Policy stack for %s: %d lines using dataset attr producers [%s]', \
+            self.partition_name, len(self.policy_lines), ' '.join(type(p).__name__ for p in self.attr_producers))
 
     def evaluate(self, replica):
         actions = []
