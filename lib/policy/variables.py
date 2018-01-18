@@ -296,6 +296,7 @@ replica_variables = {
     'blockreplica.last_update': BlockReplicaAttr(Attr.TIME_TYPE, 'last_update'),
     'blockreplica.owner': ReplicaOwner(),
     'blockreplica.is_locked': ReplicaIsLocked(),
+    'site.name': ReplicaSiteAttr(Attr.TEXT_TYPE, 'name'),
     'site.status': ReplicaSiteStatus(),
     'site.storage_type': ReplicaSiteStorageType()
 }
