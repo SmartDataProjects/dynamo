@@ -116,6 +116,9 @@ class Detox(object):
 
         # Now clone the sites, datasets, and replicas
         # Basically a copy-paste of various embed_into() functions ommitting the checks
+
+        # make a map to avoid excessive lookups
+        block_to_clone = {}
         for site in target_sites:
             site_clone = site.embed_into(partition_repository)
 
@@ -124,14 +127,19 @@ class Detox(object):
 
             for dataset_replica, block_replica_set in site_partition.replicas.iteritems():
                 dataset = dataset_replica.dataset
-                dataset_clone = dataset.embed_into(partition_repository)
 
-                block_to_clone = {}
-                for block in dataset.blocks:
-                    block_clone = Block(block.name, dataset)
-                    block_clone.copy(block)
-                    dataset_clone.blocks.add(block_clone)
-                    block_to_clone[block] = block_clone
+                try:
+                    dataset_clone = partition_repository.datasets[dataset.name]
+
+                except KeyError:
+                    dataset_clone = dataset.embed_into(partition_repository)
+
+                    for block in dataset.blocks:
+                        block_clone = Block(block.name, dataset_clone)
+                        block_clone.copy(block)
+                        dataset_clone.blocks.add(block_clone)
+
+                        block_to_clone[block] = block_clone
 
                 replica_clone = DatasetReplica(dataset_clone, site_clone)
                 dataset_clone.replicas.add(replica_clone)
@@ -148,7 +156,8 @@ class Detox(object):
 
                 for block_replica in block_replica_set:
                     block_clone = block_to_clone[block_replica.block]
-                    block_replica_clone = BlockReplica(block_clone, site_clone, group_clone)
+
+                    block_replica_clone = BlockReplica(block_clone, site_clone, block_replica.group)
                     block_replica_clone.copy(block_replica)
                     # group has to be reset to the clone
                     block_replica_clone.group = partition_repository.groups[block_replica.group.name]
@@ -158,7 +167,7 @@ class Detox(object):
 
                     if not full_replica:
                         block_replica_clone_set.add(block_replica_clone)
-                    
+
         return partition_repository
 
     def _execute_policy(self, repository):
@@ -253,8 +262,12 @@ class Detox(object):
                     else:
                         condition_id = matched_line.condition_id
 
+                    # Keep track of block replicas matching block-level conditions
+                    block_replicas = set(replica.block_replicas)
+
                     if isinstance(action, ProtectBlock):
                         get_list(protected, replica, condition_id).update(action.block_replicas)
+                        block_replicas -= action.block_replicas
     
                     elif isinstance(action, DeleteBlock):
                         unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, action.block_replicas)
@@ -262,6 +275,8 @@ class Detox(object):
                             get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
                             for block_replica in unlinked_replicas:
                                 block_replica.delete_from(repository)
+
+                            block_replicas -= set(unlinked_replicas)
 
                         if len(reowned_replicas) != 0:
                             if replica in reowned:
@@ -275,16 +290,17 @@ class Detox(object):
                         else:
                             get_list(keep_candidates, replica, condition_id).update(action.block_replicas)
 
+                        block_replicas -= action.block_replicas
+
                     elif isinstance(action, Protect):
-                        get_list(protected, replica, condition_id).update(replica.block_replicas)
+                        get_list(protected, replica, condition_id).update(block_replicas)
                         fully_protected.add(replica)
     
                     elif isinstance(action, Delete):
-                        unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition)
+                        unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, block_replicas)
                         if len(unlinked_replicas) != 0:
                             get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
 
-                                
                             for block_replica in unlinked_replicas:
                                 block_replica.delete_from(repository)
 
@@ -301,9 +317,9 @@ class Detox(object):
 
                     elif isinstance(action, Dismiss):
                         if replica.site in triggered_sites:
-                            get_list(delete_candidates, replica, condition_id).update(replica.block_replicas)
+                            get_list(delete_candidates, replica, condition_id).update(block_replicas)
                         else:
-                            get_list(keep_candidates, replica, condition_id).update(replica.block_replicas)
+                            get_list(keep_candidates, replica, condition_id).update(block_replicas)
 
             for replica in empty_replicas:
                 replica.delete_from(repository)
