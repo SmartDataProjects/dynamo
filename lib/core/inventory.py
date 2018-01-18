@@ -24,13 +24,23 @@ class ObjectRepository(object):
         self.partitions = NameKeyDict()
 
         # null group always exist
-        self.groups[None] = Group(None)
+        self.groups[None] = Group.null_group
 
     def update(self, obj):
-        pass
+        return obj.embed_into(self)
 
     def delete(self, obj):
-        pass
+        try:
+            obj.delete_from(self)
+        except (KeyError, ObjectError) as e:
+            # When delete is attempted on a nonexistent object or something linked to a nonexistent object
+            # As this is less alarming, error message is suppressed to debug level.
+            LOG.debug('%s in inventory.delete(%s)', type(e).__name__, str(obj))
+            # But we'll still raise - it's up to the users to trap this exception.
+            raise
+        except:
+            LOG.error('Exception in inventory.delete(%s)' % str(obj))
+            raise
 
 
 class DynamoInventory(ObjectRepository):
@@ -66,7 +76,7 @@ class DynamoInventory(ObjectRepository):
         """
         
         self.groups.clear()
-        self.groups[None] = Group(None)
+        self.groups[None] = Group.null_group
         self.sites.clear()
         self.datasets.clear()
         self.partitions.clear()
@@ -253,18 +263,8 @@ class DynamoInventory(ObjectRepository):
         @param obj    Object to delete from this inventory.
         @param write  Record deletion to persistent store.
         """
-        
-        try:
-            obj.delete_from(self)
-        except (KeyError, ObjectError) as e:
-            # When delete is attempted on a nonexistent object or something linked to a nonexistent object
-            # As this is less alarming, error message is suppressed to debug level.
-            LOG.debug('%s in inventory.delete(%s)', type(e).__name__, str(obj))
-            # But we'll still raise - it's up to the users to trap this exception.
-            raise
-        except:
-            LOG.error('Exception in inventory.delete(%s)' % str(obj))
-            raise
+
+        ObjectRepository.delete(self, obj)
 
         if self._deleted_objects is not None:
             self._deleted_objects.append(obj.unlinked_clone())

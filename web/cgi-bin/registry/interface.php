@@ -56,8 +56,13 @@ if ($filedata != '') {
 
   $old_umask = umask(0);
 
-  if (!file_exists($execdir))
+  if (!file_exists($execdir)) {
     mkdir($execdir, 0777, true);
+    touch($execdir . '/_stdout');
+    chmod($execdir . '/_stdout', 0777);
+    touch($execdir . '/_stderr');
+    chmod($execdir . '/_stderr', 0777);
+  }
 
   $execpath = $execdir . "/exec.py";
 

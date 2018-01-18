@@ -4,7 +4,7 @@ import logging
 import collections
 
 from dynamo.core.inventory import ObjectRepository
-from dynamo.dataformat import Dataset, Block, DatasetReplica, BlockReplica
+from dynamo.dataformat import Site, Dataset, Block, DatasetReplica, BlockReplica
 from dynamo.detox.detoxpolicy import DetoxPolicy
 from dynamo.detox.detoxpolicy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
 import dynamo.operation.impl as operation_impl
@@ -56,11 +56,12 @@ class Detox(object):
         self.history.save_sites(partition_repository.sites.values())
         self.history.save_datasets(partition_repository.datasets.values())
 
+        LOG.info('Saving policy conditions.')
+        # Sets policy IDs for each lines from the history DB; need to run this before execute_policy
+        self.history.save_conditions(self.policy.policy_lines)
+
         LOG.info('Applying policy to replicas.')
         deleted, kept, protected, reowned = self._execute_policy(partition_repository)
-
-        LOG.info('Saving policy conditions.')
-        self.history.save_conditions(self.policy.policy_lines)
 
         LOG.info('Saving deletion decisions.')
         self.history.save_deletion_decisions(cycle_number, deleted, kept, protected)
@@ -94,6 +95,7 @@ class Detox(object):
 
         # Ask each site if deletion should be triggered.
         target_sites = set() # target sites of this detox cycle
+        tape_is_target = False
         for site in inventory.sites.itervalues():
             # target_site_defs are SiteConditions, which take site_partition as the argument
             site_partition = site.partitions[partition]
@@ -101,11 +103,30 @@ class Detox(object):
             for targdef in self.policy.target_site_def:
                 if targdef.match(site_partition):
                     target_sites.add(site)
+                    if site.storage_type == Site.TYPE_MSS:
+                        tape_is_target = True
+
                     break
 
         if len(target_sites) == 0:
             LOG.info('No site matches the target definition.')
             return partition_repository
+
+        # Safety measure - if there are empty (no block rep) tape replicas, create block replicas with size 0 and
+        # add them into the partition. We will not report back to the main process though (i.e. won't call inventory.update).
+        if tape_is_target:
+            for dataset in inventory.datasets.itervalues():
+                for replica in dataset.replicas:
+                    if replica.site.storage_type != Site.TYPE_MSS or len(replica.block_replicas) != 0:
+                        continue
+
+                    for block in dataset.blocks:
+                        block_replica = BlockReplica(block, replica.site, Group.null_group, size = 0)
+                        replica.block_replicas.add(block_replica)
+                        block.replicas.add(block_replica)
+
+                    # Add to the site partition
+                    replica.site.partitions[partition].replicas[replica] = None
 
         # Create a copy of the inventory, limiting to the current partition
         # We will be stripping replicas off the image as we process the policy in iterations
@@ -123,7 +144,7 @@ class Detox(object):
             site_clone = site.embed_into(partition_repository)
 
             site_partition = site.partitions[partition]
-            site_partition_clone = site_partition.embed_into(partition_repository)
+            site_partition_clone = site_partition.embed_tree(partition_repository)
 
             for dataset_replica, block_replica_set in site_partition.replicas.iteritems():
                 dataset = dataset_replica.dataset
@@ -252,6 +273,9 @@ class Detox(object):
                 # Sort the evaluation results into the three candidate containers above.
                 actions = self.policy.evaluate(replica)
 
+                # Keep track of block replicas matching block-level conditions
+                block_replicas = set(replica.block_replicas)
+
                 # Block-level actions come first - take out all blocks that matched some condition.
                 # Remaining block replicas are the ones the dataset-level action applies to.
                 for action in actions:
@@ -262,9 +286,6 @@ class Detox(object):
                     else:
                         condition_id = matched_line.condition_id
 
-                    # Keep track of block replicas matching block-level conditions
-                    block_replicas = set(replica.block_replicas)
-
                     if isinstance(action, ProtectBlock):
                         get_list(protected, replica, condition_id).update(action.block_replicas)
                         block_replicas -= action.block_replicas
@@ -272,7 +293,11 @@ class Detox(object):
                     elif isinstance(action, DeleteBlock):
                         unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, action.block_replicas)
                         if len(unlinked_replicas) != 0:
+                            # deleted list contains blocks that should actually be deleted, instead of just kicked out
+                            # from the repository
                             get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
+
+                            # unlinked_replicas on the other hand contains all block replicas that should be kicked out
                             for block_replica in unlinked_replicas:
                                 block_replica.delete_from(repository)
 
@@ -428,7 +453,7 @@ class Detox(object):
         LOG.info(' %d dataset replicas in protect list', len(protected))
 
         for line in self.policy.policy_lines:
-            if hasattr(line, 'has_match') and not line.has_match:
+            if not line.has_match:
                 LOG.warning('Policy %s had no matching replica.' % str(line))
 
         # Do a last-minute check whether we can really delete these replicas

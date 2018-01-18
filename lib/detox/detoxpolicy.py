@@ -60,8 +60,8 @@ class DismissBlock(BlockAction):
 
 class PolicyLine(object):
     """
-    Call this Policy when fixing the terminology.
-    AND-chained list of predicates.
+    Class representing the combination of a Decision (contains Action)
+    and a ReplicaCondition (subclass of policy.condition.Condition).
     """
 
     def __init__(self, decision, text):

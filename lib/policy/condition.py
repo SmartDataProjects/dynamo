@@ -1,6 +1,8 @@
 from dynamo.policy.predicates import Predicate
 
 class Condition(object):
+    """AND-chained Predicates."""
+
     def __init__(self, text, variables):
         self.text = text
         self.predicates = []

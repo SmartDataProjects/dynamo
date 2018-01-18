@@ -7,6 +7,7 @@ import MySQLdb
 
 from dynamo.utils.interface.popdb import PopDB
 from dynamo.utils.interface.mysql import MySQL
+from dynamo.dataformat import Site
 from dynamo.utils.parallel import Map
 
 # last_access is unix time
@@ -121,6 +122,11 @@ class CRABAccessHistory(object):
         for dataset in inventory.datasets.itervalues():
             local_usage = dataset.attr['local_usage'] = {} # {site: ReplicaAccess}
 
+            n_disk_nodes = 0
+            for replica in dataset.replicas:
+                if replica.site.storage_type == Site.TYPE_DISK:
+                    n_disk_nodes += 1
+
             for replica in dataset.replicas:
                 size = replica.size(physical = False) * 1.e-9
 
@@ -151,8 +157,8 @@ class CRABAccessHistory(object):
 
             global_rank = sum(usage.rank for usage in local_usage.values())
 
-            if len(dataset.replicas) != 0:
-                global_rank /= len(dataset.replicas)
+            if n_disk_nodes != 0:
+                global_rank /= n_disk_nodes
 
             dataset.attr['global_usage_rank'] = global_rank
 

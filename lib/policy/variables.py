@@ -93,7 +93,7 @@ class DatasetNumFullCopy(DatasetAttr):
     def _get(self, dataset):
         num = 0
         for rep in dataset.replicas:
-            if rep.is_full():
+            if rep.site.status == Site.STAT_READY and rep.is_full():
                 num += 1
 
         return num
@@ -150,10 +150,6 @@ class ReplicaNumFullDiskCopyCommonOwner(DatasetReplicaAttr):
         dataset = replica.dataset
         num = 0
         for rep in dataset.replicas:
-            if rep == replica:
-                num += 1
-                continue
-    
             if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.is_full():
                 rep_owners = set(br.group for br in rep.block_replicas)
                 if len(owners & rep_owners) != 0:
@@ -162,6 +158,8 @@ class ReplicaNumFullDiskCopyCommonOwner(DatasetReplicaAttr):
         return num
 
 class ReplicaIsLastSource(DatasetReplicaAttr):
+    """True if this replica is the last full disk copy and there is an ongoing transfer."""
+
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.BOOL_TYPE)
 
@@ -172,10 +170,9 @@ class ReplicaIsLastSource(DatasetReplicaAttr):
         nfull = 0
         nincomplete = 0
         for rep in replica.dataset.replicas:
-            if rep.is_full():
+            if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.is_full():
                 nfull += 1
-
-            if not rep.is_complete():
+            elif not rep.is_complete():
                 nincomplete += 1
 
         return nfull == 1 and nincomplete != 0

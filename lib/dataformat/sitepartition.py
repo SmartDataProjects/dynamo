@@ -138,3 +138,11 @@ class SitePartition(object):
                     total_size += sum(br.block.size for br in block_replicas)
 
             return total_size / quota
+
+    def embed_tree(self, inventory):
+        if self._partition._subpartitions is not None:
+            for subp in self._partition._subpartitions:
+                self._site.partitions[subp].embed_tree(inventory)
+
+        return self.embed_into(inventory)
+

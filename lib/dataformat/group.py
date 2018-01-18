@@ -17,6 +17,8 @@ class Group(object):
     def olevel(self):
         return self._olevel
 
+    null_group = Group(None)
+
     def __init__(self, name, olevel = Block):
         self._name = name
         self._olevel = olevel

@@ -9,7 +9,7 @@ import lzma
 
 from dynamo.history.history import TransactionHistoryInterface
 from dynamo.utils.interface.mysql import MySQL
-from dynamo.dataformat import HistoryRecord
+from dynamo.dataformat import Site, HistoryRecord
 
 LOG = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_save_conditions(self, policy_lines): #ovrride
         for line in policy_lines:
             text = re.sub('\s+', ' ', line.condition.text)
-            ids = self._mysql.query('SELECT `id` FROM `policy_conditions` WHERE `text` LIKE %s', text)
+            ids = self._mysql.query('SELECT `id` FROM `policy_conditions` WHERE `text` = %s', text)
             if len(ids) == 0:
                 line.condition_id = self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
             else:
@@ -253,12 +253,6 @@ class MySQLHistory(TransactionHistoryInterface):
         srun = '%09d' % run_number
         db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
 
-        # hardcoded!!
-        site_ready = 1
-        site_waitroom = 2
-        site_morgue = 3
-        site_unknown = 4
-
         # DB file should exist already - this function is called after save_deletion_decisions
 
         snapshot_db = sqlite3.connect(db_file_name)
@@ -269,10 +263,10 @@ class MySQLHistory(TransactionHistoryInterface):
         sql += '`value` TEXT NOT NULL'
         sql += ')'
         snapshot_db.execute(sql)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'ready\')' % site_ready)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'waitroom\')' % site_waitroom)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'morgue\')' % site_morgue)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'unknown\')' % site_unknown)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'ready\')' % Site.STAT_READY)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'waitroom\')' % Site.STAT_WAITROOM)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'morgue\')' % Site.STAT_MORGUE)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'unknown\')' % Site.STAT_UNKNOWN)
 
         sql = 'CREATE TABLE `sites` ('
         sql += '`site_id` SMALLINT PRIMARY KEY NOT NULL,'

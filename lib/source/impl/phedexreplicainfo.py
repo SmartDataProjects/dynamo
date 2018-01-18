@@ -116,7 +116,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         replicas = []
 
         for deletion_entry in block_entry['deletion']:
-            block_replica = BlockReplica(block, Site(deletion_entry['node']), Group(None))
+            block_replica = BlockReplica(block, Site(deletion_entry['node']), Group.null_group)
 
             replicas.append(block_replica)
 

@@ -126,11 +126,12 @@ class Partition(object):
             site.partitions[partition] = SitePartition(site, partition)
 
         if self._subpartitions is not None:
-            partition._subpartitions = []
-
+            subpartitions = []
             for subp in self._subpartitions:
                 new_subp = subp.embed_tree(inventory)
-                partition._subpartitions.append(new_subp)
+                subpartitions.append(new_subp)
                 new_subp._parent = partition
+
+            partition._subpartitions = tuple(subpartitions)
 
         return partition
