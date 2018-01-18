@@ -28,7 +28,7 @@ class Group(object):
         return 'Group(\'%s\')' % (self._name)
 
     def __eq__(self, other):
-        return self._name == other._name and self._olevel is other._olevel
+        return self is other or (self._name == other._name and self._olevel is other._olevel)
 
     def __ne__(self, other):
         return not self.__eq__(other)

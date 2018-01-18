@@ -26,7 +26,7 @@ class DatasetReplica(object):
         return 'DatasetReplica(%s, %s)' % (repr(self._dataset), repr(self._site))
 
     def __eq__(self, other):
-        return self._dataset.name == other._dataset.name and self._site.name == other._site.name
+        return self is other or (self._dataset.name == other._dataset.name and self._site.name == other._site.name)
 
     def __ne__(self, other):
         return not self.__eq__(other)

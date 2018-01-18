@@ -38,10 +38,11 @@ class BlockReplica(object):
         return 'BlockReplica(block=%s, site=%s, group=%s)' % (repr(self._block), repr(self._site), repr(self.group))
 
     def __eq__(self, other):
-        return self._block.full_name() == other._block.full_name() and self._site.name == other._site.name and \
+        return self is other or \
+            (self._block.full_name() == other._block.full_name() and self._site.name == other._site.name and \
             self.group.name == other.group.name and \
             self.is_complete == other.is_complete and self.is_custodial == other.is_custodial and \
-            self.size == other.size and self.last_update == other.last_update
+            self.size == other.size and self.last_update == other.last_update)
 
     def __ne__(self, other):
         return not self.__eq__(other)

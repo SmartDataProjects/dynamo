@@ -49,8 +49,9 @@ class File(object):
         return 'File(lfn=\'%s\', block=%s, size=%d)' % (self.lfn, repr(self._block), self.size)
 
     def __eq__(self, other):
-        return self._directory_id == other._directory_id and self._basename == other._basename and \
-            self._block.full_name() == other._block.full_name() and self.size == other.size
+        return self is other or \
+            (self._directory_id == other._directory_id and self._basename == other._basename and \
+            self._block.full_name() == other._block.full_name() and self.size == other.size)
 
     def __ne__(self, other):
         return not self.__eq__(other)

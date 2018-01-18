@@ -100,9 +100,10 @@ class Site(object):
         return 'Site(\'%s\')' % self._name
 
     def __eq__(self, other):
-        return self._name == other._name and self.host == other.host and self.storage_type == other.storage_type and \
+        return self is other or \
+            (self._name == other._name and self.host == other.host and self.storage_type == other.storage_type and \
             self.backend == other.backend and self.storage == other.storage and self.cpu == other.cpu and \
-            self.status == other.status
+            self.status == other.status)
 
     def __ne__(self, other):
         return not self.__eq__(other)

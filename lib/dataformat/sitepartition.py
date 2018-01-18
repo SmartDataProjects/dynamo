@@ -47,7 +47,8 @@ class SitePartition(object):
         return 'SitePartition(%s, %s)' % (repr(self._site), repr(self._partition))
 
     def __eq__(self, other):
-        return self._site.name == other._site.name and self._partition.name == other._partition.name and self._quota == other._quota
+        return self is other or \
+            (self._site.name == other._site.name and self._partition.name == other._partition.name and self._quota == other._quota)
 
     def __ne__(self, other):
         return not self.__eq__(other)

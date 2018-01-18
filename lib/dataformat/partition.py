@@ -37,7 +37,7 @@ class Partition(object):
 
     def __eq__(self, other):
         # only comparing names since the rest are set by configuration and are basically constants
-        return self._name == other._name
+        return self is other or (self._name == other._name)
 
     def __ne__(self, other):
         return self._name != other._name

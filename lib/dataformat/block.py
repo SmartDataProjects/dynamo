@@ -53,9 +53,10 @@ class Block(object):
         return 'Block(Block.to_internal_name(\'%s\', %s)' % (self.real_name(), repr(self._dataset))
 
     def __eq__(self, other):
-        return self._name == other._name and self._dataset.name == other._dataset.name and \
+        return self is other or \
+            (self._name == other._name and self._dataset.name == other._dataset.name and \
             self.size == other.size and self.num_files == other.num_files and \
-            self.is_open == other.is_open and self.last_update == other.last_update
+            self.is_open == other.is_open and self.last_update == other.last_update)
 
     def __ne__(self, other):
         return not self.__eq__(other)

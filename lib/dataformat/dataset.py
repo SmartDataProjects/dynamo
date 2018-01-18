@@ -81,9 +81,10 @@ class Dataset(object):
         return 'Dataset(\'%s\')' % self._name
 
     def __eq__(self, other):
-        return self._name == other._name and self.size == other.size and self.num_files == other.num_files and \
+        return self is other or \
+            (self._name == other._name and self.size == other.size and self.num_files == other.num_files and \
             self.status == other.status and self.data_type == other.data_type and \
-            self.software_version == other.software_version and self.last_update == other.last_update and self.is_open == other.is_open
+            self.software_version == other.software_version and self.last_update == other.last_update and self.is_open == other.is_open)
 
     def __ne__(self, other):
         return not self.__eq__(other)
