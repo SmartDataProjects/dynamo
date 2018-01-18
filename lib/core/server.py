@@ -20,7 +20,7 @@ class Dynamo(object):
     CMD_UPDATE, CMD_DELETE, CMD_EOM = range(3)
 
     def __init__(self, config):
-        LOG.info('Initializing Dynamo server.')
+        LOG.info('Initializing Dynamo server %s.', __file__)
 
         ## User names
         # User with full privilege (still not allowed to write to inventory store)
