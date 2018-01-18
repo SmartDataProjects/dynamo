@@ -201,7 +201,6 @@ class MySQLInventoryStore(InventoryStore):
 
         # Load site quotas
         sql = 'SELECT q.`site_id`, p.`name`, q.`storage` FROM `quotas` AS q INNER JOIN `partitions` AS p ON p.`id` = q.`partition_id`'
-
         if site_names is not None:
             sql += ' INNER JOIN `sites_load_tmp` AS t ON t.`id` = q.`site_id`'
 
@@ -478,6 +477,10 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query(sql, site.name)
 
     def save_sitepartition(self, site_partition): #override
+        # We are only saving quotas. For superpartitions, there is nothing to do.
+        if site_partition.partition.subpartitions is not None:
+            return
+
         site_id = self._get_site_id(site_partition.site)
         if site_id == 0:
             return
@@ -490,6 +493,10 @@ class MySQLInventoryStore(InventoryStore):
         self._insert_update('quotas', fields, site_id, partition_id, site_partition.quota * 1.e-12)
 
     def delete_sitepartition(self, site_partition): #override
+        # We are only saving quotas. For superpartitions, there is nothing to do.
+        if site_partition.partition.subpartitions is not None:
+            return
+
         site_id = self._get_site_id(site_partition.site)
         if site_id == 0:
             return

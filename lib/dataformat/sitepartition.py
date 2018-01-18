@@ -5,7 +5,7 @@ from exceptions import IntegrityError
 class SitePartition(object):
     """State of a partition at a site."""
 
-    __slots__ = ['_site', '_partition', 'quota', 'replicas']
+    __slots__ = ['_site', '_partition', '_quota', 'replicas']
 
     @property
     def site(self):
@@ -15,11 +15,27 @@ class SitePartition(object):
     def partition(self):
         return self._partition
 
+    @property
+    def quota(self):
+        if self._partition.subpartitions is not None:
+            q = 0
+            for p in self._partition.subpartitions:
+                try:
+                    q += self._site.partitions[p].quota
+                except KeyError:
+                    # can happen in certain fringe cases
+                    pass
+
+            return q
+
+        else:
+            return self._quota
+
     def __init__(self, site, partition, quota = 0.):
         self._site = site
         self._partition = partition
         # partition quota in bytes
-        self.quota = quota
+        self._quota = quota
         # {dataset_replica: set(block_replicas) or None (if all blocks are in)}
         self.replicas = {}
 
@@ -31,7 +47,7 @@ class SitePartition(object):
         return 'SitePartition(%s, %s)' % (repr(self._site), repr(self._partition))
 
     def __eq__(self, other):
-        return self._site.name == other._site.name and self._partition.name == other._partition.name and self.quota == other.quota
+        return self._site.name == other._site.name and self._partition.name == other._partition.name and self._quota == other._quota
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -42,12 +58,12 @@ class SitePartition(object):
         if self._partition.name != other._partition.name:
             raise ObjectError('Cannot copy a site partition of %s into a site partition of %s', other._partition.name, self._partition.name)
 
-        self.quota = other.quota
+        self._quota = other._quota
 
     def unlinked_clone(self):
         site = self._site.unlinked_clone()
         partition = self._partition.unlinked_clone()
-        return SitePartition(site, partition, self.quota)
+        return SitePartition(site, partition, self._quota)
 
     def embed_into(self, inventory, check = False):
         try:
@@ -93,20 +109,22 @@ class SitePartition(object):
             store.save_sitepartition(self)
 
     def set_quota(self, quota):
-        if self._partition.parent is not None:
-            # this is a subpartition. Update the parent partition quota
-            if quota < 0:
-                # quota < 0 -> infinite. This partition cannot be a subpartition
-                raise IntegrityError('Infinite quota set for a subpartition')
+        if self._partition.subpartitions is not None:
+            # this is a superpartition
+            raise IntegrityError('Cannot set quota on a superpartition.')
 
-            self._site.partitions[self._partition.parent].quota += quota - self.quota
+        if self._partition.parent is not None and quota < 0:
+            # quota < 0 -> infinite. This partition cannot be a subpartition
+            raise IntegrityError('Infinite quota set for a subpartition')
 
-        self.quota = quota
+        self._quota = quota
 
     def occupancy_fraction(self, physical = True):
-        if self.quota == 0.:
+        quota = self.quota
+
+        if quota == 0.:
             return sys.float_info.max
-        elif self.quota < 0.:
+        elif quota < 0.:
             return 0.
         else:
             total_size = 0.
@@ -118,4 +136,4 @@ class SitePartition(object):
                 else:
                     total_size += sum(br.block.size for br in block_replicas)
 
-            return total_size / self.quota
+            return total_size / quota
