@@ -4,7 +4,7 @@ import logging
 import collections
 
 from dynamo.core.inventory import ObjectRepository
-from dynamo.dataformat import Dataset
+from dynamo.dataformat import Dataset, Block, DatasetReplica, BlockReplica
 from dynamo.detox.detoxpolicy import DetoxPolicy
 from dynamo.detox.detoxpolicy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
 import dynamo.operation.impl as operation_impl
@@ -115,27 +115,50 @@ class Detox(object):
             group.embed_into(partition_repository)
 
         # Now clone the sites, datasets, and replicas
+        # Basically a copy-paste of various embed_into() functions ommitting the checks
         for site in target_sites:
             site_clone = site.embed_into(partition_repository)
 
             site_partition = site.partitions[partition]
-            site_partition.embed_into(partition_repository)
+            site_partition_clone = site_partition.embed_into(partition_repository)
 
             for dataset_replica, block_replica_set in site_partition.replicas.iteritems():
                 dataset = dataset_replica.dataset
-                dataset.embed_into(partition_repository)
-                for block in dataset.blocks:
-                    block.embed_into(partition_repository)
+                dataset_clone = dataset.embed_into(partition_repository)
 
-                replica_clone = dataset_replica.embed_into(partition_repository)
+                block_to_clone = {}
+                for block in dataset.blocks:
+                    block_clone = Block(block.name, dataset)
+                    block_clone.copy(block)
+                    dataset_clone.blocks.add(block_clone)
+                    block_to_clone[block] = block_clone
+
+                replica_clone = DatasetReplica(dataset_clone, site_clone)
+                dataset_clone.replicas.add(replica_clone)
+                site_clone.add_dataset_replica(replica_clone, add_block_replicas = False)
 
                 if block_replica_set is None:
                     # all block reps in partition
                     block_replica_set = dataset_replica.block_replicas
+                    full_replica = True
+                    site_partition_clone.replicas[replica_clone] = None
+                else:
+                    full_replica = False
+                    block_replica_clone_set = site_partition_clone.replicas[replica_clone] = set()
 
                 for block_replica in block_replica_set:
-                    block_replica.embed_into(partition_repository)
+                    block_clone = block_to_clone[block_replica.block]
+                    block_replica_clone = BlockReplica(block_clone, site_clone, group_clone)
+                    block_replica_clone.copy(block_replica)
+                    # group has to be reset to the clone
+                    block_replica_clone.group = partition_repository.groups[block_replica.group.name]
 
+                    replica_clone.block_replicas.add(block_replica_clone)
+                    block_clone.replicas.add(block_replica_clone)
+
+                    if not full_replica:
+                        block_replica_clone_set.add(block_replica_clone)
+                    
         return partition_repository
 
     def _execute_policy(self, repository):
