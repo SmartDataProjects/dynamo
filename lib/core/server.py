@@ -206,7 +206,10 @@ class Dynamo(object):
 
             for exec_id, proc, user_name, path in child_processes:
                 LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)
+                uid = os.geteuid()
+                os.seteuid(0)
                 proc.terminate()
+                os.seteuid(uid)
                 proc.join(5)
                 if proc.is_alive():
                     LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
@@ -240,7 +243,10 @@ class Dynamo(object):
             result = self.registry.backend.query('SELECT `status` FROM `action` WHERE `id` = %s', exec_id)
             if len(result) == 0 or result[0] != 'run':
                 # Job was aborted in the registry
+                uid = os.geteuid()
+                os.seteuid(0)
                 proc.terminate()
+                os.seteuid(uid)
                 proc.join(5)
                 status = 'killed'
     
@@ -276,6 +282,18 @@ class Dynamo(object):
                     return True
         
     def _run_one(self, path, args, queue = None):
+        # Set the uid of the process
+        os.seteuid(0)
+        os.setegid(0)
+
+        if queue is None:
+            pwnam = pwd.getpwnam(self.read_user)
+        else:
+            pwnam = pwd.getpwnam(self.full_user)
+
+        os.setgid(pwnam.pw_gid)
+        os.setuid(pwnam.pw_uid)
+
         # Redirect STDOUT and STDERR to file, close STDIN
         stdout = sys.stdout
         stderr = sys.stderr
@@ -292,18 +310,6 @@ class Dynamo(object):
 
         signal_converter = SignalConverter()
         signal_converter.set(signal.SIGTERM)
-
-        # Set the uid of the process
-        os.seteuid(0)
-        os.setegid(0)
-
-        if queue is None:
-            pwnam = pwd.getpwnam(self.read_user)
-        else:
-            pwnam = pwd.getpwnam(self.full_user)
-
-        os.setgid(pwnam.pw_gid)
-        os.setuid(pwnam.pw_uid)
 
         # Set argv
         sys.argv = [path + '/exec.py']

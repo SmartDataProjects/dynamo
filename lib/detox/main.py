@@ -116,7 +116,6 @@ class Detox(object):
 
         # Now clone the sites, datasets, and replicas
         for site in target_sites:
-            # We clone & add instead of embed_into to avoid cloning all sitepartitions
             site_clone = site.embed_into(partition_repository)
 
             site_partition = site.partitions[partition]
@@ -135,7 +134,6 @@ class Detox(object):
                     block_replica_set = dataset_replica.block_replicas
 
                 for block_replica in block_replica_set:
-                    block_replica.block.embed_into(partition_repository)
                     block_replica.embed_into(partition_repository)
 
         return partition_repository
