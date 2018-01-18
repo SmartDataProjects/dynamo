@@ -63,6 +63,7 @@ class Partition(object):
             partition = inventory.partitions[self._name]
         except KeyError:
             partition = self.unlinked_clone()
+            partition._condition = self._condition # WARNING! Copying by reference - two _conditions are same objects
     
             if self._subpartitions is not None:
                 partition._subpartitions = []
@@ -117,6 +118,7 @@ class Partition(object):
 
     def embed_tree(self, inventory):
         partition = self.unlinked_clone()
+        partition._condition = self._condition
         inventory.partitions.add(partition)
 
         # update the site partition list at sites

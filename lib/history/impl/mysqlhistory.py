@@ -227,10 +227,8 @@ class MySQLHistory(TransactionHistoryInterface):
                 site_id = self._site_id_map[replica.site.name]
                 dataset_id = self._dataset_id_map[replica.dataset.name]
 
-                for match in matches:
-                    condition_id = match[1]
-                    size = sum(r.size for r in match[0])
-
+                for condition_id, block_replicas in matches.iteritems():
+                    size = sum(r.size for r in block_replicas)
                     snapshot_cursor.execute(sql, (site_id, dataset_id, size, decision, condition_id))
 
             snapshot_db.commit()

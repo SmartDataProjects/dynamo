@@ -111,8 +111,6 @@ class Detox(object):
         # We will be stripping replicas off the image as we process the policy in iterations
         LOG.info('Creating a partition image.')
 
-        LOG.info(partition_repository.partitions.keys())
-
         for group in inventory.groups.itervalues():
             group.embed_into(partition_repository)
 

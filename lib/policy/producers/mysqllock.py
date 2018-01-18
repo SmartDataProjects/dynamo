@@ -138,3 +138,5 @@ class MySQLReplicaLock(object):
     
                         if block_replica.block in blocks:
                             locked_blocks[replica.site].add(block_replica.block)
+
+        LOG.info('Locked %d items.', len(entries))
