@@ -505,8 +505,8 @@ class MySQLHistory(TransactionHistoryInterface):
             # fill from sqlite
             if table_exists:
                 self._cache_db.query('TRUNCATE TABLE `%s`' % table_name)
-
-            self._cache_db.query('CREATE TABLE `%s` LIKE `replicas`' % table_name)
+            else:
+                self._cache_db.query('CREATE TABLE `%s` LIKE `replicas`' % table_name)
 
             srun = '%09d' % run_number
 
@@ -561,8 +561,8 @@ class MySQLHistory(TransactionHistoryInterface):
             # fill from sqlite
             if table_exists:
                 self._cache_db.query('TRUNCATE TABLE `%s`' % table_name)
-
-            self._cache_db.query('CREATE TABLE `%s` LIKE `sites`' % table_name)
+            else:
+                self._cache_db.query('CREATE TABLE `%s` LIKE `sites`' % table_name)
 
             srun = '%09d' % run_number
 
