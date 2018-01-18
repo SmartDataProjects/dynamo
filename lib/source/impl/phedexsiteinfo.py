@@ -1,6 +1,7 @@
 import time
 import logging
 import fnmatch
+import threading
 
 from dynamo.dataformat import Site
 from dynamo.source.siteinfo import SiteInfoSource
@@ -20,6 +21,8 @@ class PhEDExSiteInfoSource(SiteInfoSource):
 
         self.ssb_cache_lifetime = config.ssb_cache_lifetime
         self._ssb_cache_timestamp = 0
+        self._caching_lock = threading.Lock()
+
         self._waitroom_sites = set()
         self._morgue_sites = set()
 
@@ -66,35 +69,36 @@ class PhEDExSiteInfoSource(SiteInfoSource):
         return site_list
 
     def get_site_status(self, site_name): #override
-        if time.time() > self._ssb_cache_timestamp + self.ssb_cache_lifetime:
-            self._waitroom_sites = set()
-            self._morgue_sites = set()
-
-            latest_status = {}
-
-            # get list of sites in waiting room (153) and morgue (199)
-            for colid, stat, sitelist in [(153, Site.STAT_WAITROOM, self._waitroom_sites), (199, Site.STAT_MORGUE, self._morgue_sites)]:
-                result = self._ssb.make_request('getplotdata', 'columnid=%d&time=2184&dateFrom=&dateTo=&sites=all&clouds=undefined&batch=1' % colid)
-                for entry in result:
-                    site = entry['VOName']
-                    
-                    # entry['Time'] is UTC but we are only interested in relative times here
-                    timestamp = time.mktime(time.strptime(entry['Time'], '%Y-%m-%dT%H:%M:%S'))
-                    if site in latest_status and latest_status[site][0] > timestamp:
-                        continue
+        with self._caching_lock:
+            if time.time() > self._ssb_cache_timestamp + self.ssb_cache_lifetime:
+                self._waitroom_sites = set()
+                self._morgue_sites = set()
     
-                    if entry['Status'] == 'in':
-                        latest_status[site] = (timestamp, stat)
-                    else:
-                        latest_status[site] = (timestamp, Site.STAT_READY)
-
-            for site, (_, stat) in latest_status.items():
-                if stat == Site.STAT_WAITROOM:
-                    self._waitroom_sites.add(site)
-                elif stat == Site.STAT_MORGUE:
-                    self._morgue_sites.add(site)
-
-            self._ssb_cache_timestamp = time.time()
+                latest_status = {}
+    
+                # get list of sites in waiting room (153) and morgue (199)
+                for colid, stat, sitelist in [(153, Site.STAT_WAITROOM, self._waitroom_sites), (199, Site.STAT_MORGUE, self._morgue_sites)]:
+                    result = self._ssb.make_request('getplotdata', 'columnid=%d&time=2184&dateFrom=&dateTo=&sites=all&clouds=undefined&batch=1' % colid)
+                    for entry in result:
+                        site = entry['VOName']
+                        
+                        # entry['Time'] is UTC but we are only interested in relative times here
+                        timestamp = time.mktime(time.strptime(entry['Time'], '%Y-%m-%dT%H:%M:%S'))
+                        if site in latest_status and latest_status[site][0] > timestamp:
+                            continue
+        
+                        if entry['Status'] == 'in':
+                            latest_status[site] = (timestamp, stat)
+                        else:
+                            latest_status[site] = (timestamp, Site.STAT_READY)
+    
+                for site, (_, stat) in latest_status.items():
+                    if stat == Site.STAT_WAITROOM:
+                        self._waitroom_sites.add(site)
+                    elif stat == Site.STAT_MORGUE:
+                        self._morgue_sites.add(site)
+    
+                self._ssb_cache_timestamp = time.time()
 
         if site_name in self._waitroom_sites:
             return Site.STAT_WAITROOM

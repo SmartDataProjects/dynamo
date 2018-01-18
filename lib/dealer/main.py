@@ -83,7 +83,7 @@ class Dealer(object):
             LOG.info('No sites can accept transfers at this moment. Exiting Dealer.')
             return
 
-        LOG.info('Updating dataset attrs.')
+        LOG.info('Loading dataset attrs.')
         for plugin in self._attr_producers:
             plugin.load(inventory)
 
@@ -390,6 +390,7 @@ class Dealer(object):
                 # means we can let each plugin to decide which group they want to make replicas in
                 for copy_id, (approved, site, items) in copy_mapping.iteritems():
                     dataset_list = set()
+                    size = 0
                     for item in items:
                         size += item.size
 

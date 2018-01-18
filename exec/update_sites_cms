@@ -29,10 +29,19 @@ config.sites.config.phedex = config.phedex
 site_source = sources.PhEDExSiteInfoSource(config.sites.config)
 
 ## Start the update
+from dynamo.utils.parallel import Map
 
-for site in site_source.get_site_list():
+def set_status(site):
+    global site_source
+
     LOG.info('Updating %s', site.name)
     site.status = site_source.get_site_status(site.name)
+    LOG.info('Status: %d', site.status)
+
+sites = site_source.get_site_list()
+Map().execute(set_status, sites)
+
+for site in sites:
     inventory.update(site)
 
 LOG.info('Site update completed.')

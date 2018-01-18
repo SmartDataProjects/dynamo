@@ -70,21 +70,23 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
     def make_copy_entry(self, run_number, site, operation_id, approved, dataset_list, size):
+        if self.config.get('test', False):
+            # Don't do anything
+            return
+
         self.acquire_lock()
         try:
-            if operation_id < 0:
-                operation_id = self.get_next_test_id()
-
             self._do_make_copy_entry(run_number, site, operation_id, approved, dataset_list, size)
         finally:
             self.release_lock()
 
     def make_deletion_entry(self, run_number, site, operation_id, approved, datasets, size):
+        if self.config.get('test', False):
+            # Don't do anything
+            return
+
         self.acquire_lock()
         try:
-            if operation_id < 0:
-                operation_id = self.get_next_test_id()
-
             self._do_make_deletion_entry(run_number, site, operation_id, approved, datasets, size)
         finally:
             self.release_lock()
@@ -306,15 +308,6 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
         return timestamp        
-
-    def get_next_test_id(self):
-        self.acquire_lock()
-        try:
-            test_id = self._do_get_next_test_id()
-        finally:
-            self.release_lock()
-
-        return test_id
 
     def save_dataset_transfers(self,replica_list,replica_times):
         self.acquire_lock()

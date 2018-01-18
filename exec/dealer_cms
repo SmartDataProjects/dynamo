@@ -33,7 +33,7 @@ from dynamo.core.executable import inventory
 LOG.info('Starting Dealer.')
 
 if args.test_run:
-    config.dealer.history.test = True
+    config.dealer.history.config.test = True
     config.dealer.copy_op.config.dry_run = True
 
 dealer = Dealer(config.dealer)

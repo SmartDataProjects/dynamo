@@ -77,5 +77,5 @@
     "max_site_pending_volume": 100,
     "max_total_cycle_volume": 200
   },
-  "log_level": "debug"
+  "log_level": "info"
 }

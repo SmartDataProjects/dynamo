@@ -40,7 +40,7 @@ LOG.info('Starting Detox.')
 config.detox.deletion_op.config.phedex = config.phedex
 config.detox.copy_op.config.phedex = config.phedex
 if args.snapshot_run or args.test_run:
-    config.detox.history.test = True
+    config.detox.history.config.test = True
     config.detox.deletion_op.config.dry_run = True
     config.detox.copy_op.config.dry_run = True
 
