@@ -71,6 +71,7 @@ echo
 require which python
 require python -c 'import MySQLdb'
 warnifnot python -c 'import htcondor'
+warnifnot python -c 'import rrdtool'
 require which mysql
 require which sqlite3
 if [ $WEB_PATH ]

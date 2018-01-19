@@ -6,6 +6,8 @@
 <update_popularity> = $(DYNAMO_BASE)/exec/update_popularity_cms
 {convert_locks} = $(DYNAMO_BASE)/exec/convert_dynamo_locks
 {generate_dataset_list} = $(DYNAMO_BASE)/exec/generate_dataset_list_cms
+<track_transfers> = $(DYNAMO_BASE)/exec/track_transfers
+<track_phedex> = $(DYNAMO_BASE)/exec/track_phedex
 
 [SEQUENCE delta_update]
 <update_replicas> --config /etc/dynamo/updater_config.json
@@ -42,3 +44,8 @@ WAIT 14400
 <update_popularity> --config /etc/dynamo/popularity_update_config.json --globalqueue
 <dealer> --config /etc/dynamo/dealer_config.json
 WAIT 120
+
+[SEQUENCE dealermon]
+WAIT 900
+<track_transfers> --config /etc/dynamo/dealermon_config.json
+<track_phedex> --config /etc/dynamo/dealermon_config.json

@@ -10,7 +10,7 @@ import fnmatch
 
 from argparse import ArgumentParser
 
-parser = ArgumentParser(description = 'Detox')
+parser = ArgumentParser(description = 'Convert web-based locks to registry locks')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
 
 args = parser.parse_args()
