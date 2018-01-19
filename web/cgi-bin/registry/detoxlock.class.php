@@ -155,7 +155,8 @@ class DetoxLock {
 
     if ($this->format == 'json') {
       $data = json_decode($input, true);
-      if (!is_array($data))
+      // $data needs to be an sequential array
+      if (!is_array($data) || count($data) == 0 || array_keys($data) !== range(0, count($data) - 1))
         $this->send_response(400, 'BadRequest', 'Invalid data posted');
     }
     else if ($this->format == 'xml') {
@@ -312,14 +313,14 @@ class DetoxLock {
 
   private function sanitize_request($command, &$request)
   {
-    $allowed_fields = array('lockid', 'item', 'sites', 'groups');
+    $allowed_fields = array('lockid', 'item', 'sites', 'groups', 'user', 'service');
 
     if ($command == 'lock')
       $allowed_fields = array_merge($allowed_fields, array('expires', 'comment'));
     else if ($command == 'unlock')
       $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after'));
     else if ($command == 'list')
-      $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after', 'showall', 'user', 'service'));
+      $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after', 'showall'));
 
     foreach (array_keys($request) as $key) {
       if (in_array($key, $allowed_fields)) {
@@ -333,7 +334,7 @@ class DetoxLock {
           $request[$key] = $this->_db->real_escape_string($request[$key]);
       }
       else
-        unset($request[$key]);
+        $this->send_response(400, 'BadRequest', 'Field "' . $key . '" not allowed for operation "' . $command . '".');
     }
   }
 

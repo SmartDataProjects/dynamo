@@ -31,12 +31,15 @@ if ((isset($_REQUEST['serviceId']) && $_REQUEST['serviceId'] == 2)){
   $serviceId = 2;
 }
 
-if ((isset($_REQUEST['serviceId']) && $_REQUEST['serviceId'] == 3)){
+if ((isset($_REQUEST['serviceId']) && ($_REQUEST['serviceId'] == 3 || $_REQUEST['serviceId'] == 4))){
   $csvpath[] = "/var/www/html/dynamo/dynamo/dealermon/monitoring/" . $site . "/filelist.txt";
   $csvpath[] = "/var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/" . $site . "/filelist.txt";
   $rrdpaths[] = "/var/www/html/dynamo/dynamo/dealermon/monitoring/";
   $rrdpaths[] = "/var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/"; 
   $serviceId = 3;
+  if ($_REQUEST['serviceId'] == 4){
+    $serviceId = 4;
+  }
 }
 
 

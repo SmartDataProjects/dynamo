@@ -206,14 +206,14 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('datasets', ('name',), None, datasets_to_insert)
         self._make_dataset_id_map()
 
-    def _do_save_conditions(self, rules):
-        for rule in rules:
-            text = re.sub('\s+', ' ', rule.condition.text)
+    def _do_save_conditions(self, policy_lines):
+        for line in policy_lines:
+            text = re.sub('\s+', ' ', line.condition.text)
             ids = self._mysql.query('SELECT `id` FROM `policy_conditions` WHERE `text` LIKE %s', text)
             if len(ids) == 0:
-                rule.condition_id = self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
+                line.condition_id = self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
             else:
-                rule.condition_id = ids[0]
+                line.condition_id = ids[0]
 
     def _do_save_copy_decisions(self, run_number, copies): #override
         pass
@@ -298,17 +298,16 @@ class MySQLHistory(TransactionHistoryInterface):
         sql = 'INSERT INTO `replicas` VALUES (?, ?, ?, ?, ?)'
 
         def do_insert(entries, decision):
-            for replica, condition_id in entries:
-                if type(replica) is list: # list of block replicas
-                    site_name = replica[0].site.name
-                    dataset_name = replica[0].block.dataset.name
-                    size = sum(r.size for r in replica)
-                else:
-                    site_name = replica.site.name
-                    dataset_name = replica.dataset.name
-                    size = replica.size()
+            for replica, matches in entries.iteritems():
+                site_id = self._site_id_map[replica.site.name]
+                dataset_id = self._dataset_id_map[replica.dataset.name]
 
-                snapshot_cursor.execute(sql, (self._site_id_map[site_name], self._dataset_id_map[dataset_name], size, decision, condition_id))
+                for match in matches:
+                    condition_id = match[1]
+                    size = sum(r.size for r in match[0])
+
+                    snapshot_cursor.execute(sql, (site_id, dataset_id, size, decision, condition_id))
+
             snapshot_db.commit()
         
         do_insert(deleted_list, replica_delete)
@@ -635,3 +634,5 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._cache_db.query('DELETE FROM `replica_snapshot_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
         self._cache_db.query('OPTIMIZE TABLE `replica_snapshot_usage`')
+        self._cache_db.query('DELETE FROM `site_snapshot_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
+        self._cache_db.query('OPTIMIZE TABLE `site_snapshot_usage`')

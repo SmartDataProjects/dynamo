@@ -41,11 +41,13 @@ rrd_dir = config.paths.data + '/track_phedex'
 sites = glob(rrd_dir+'/*')
 try:
     sites.remove(config.paths.data + '/track_phedex/total.rrd')
+    sites.remove(config.paths.data + '/track_phedex/total_tape.rrd')
+    sites.remove(config.paths.data + '/track_phedex/total_disk.rrd')
 except:
     pass
 
 # Interval of the rrd file timestamps
-maxtime=int(time.time())-30*24*60*60
+maxtime=int(time.time())-100*24*60*60
 interval = 900
 
 try:
@@ -85,16 +87,18 @@ incomplete_replicas_rrd = []
 total_volume = 0
 copied_volume = 0
 total_rrdfile = rrd_dir+'/total.rrd'
-
+total_tape_rrdfile = rrd_dir+'/total_tape.rrd'
+total_disk_rrdfile = rrd_dir+'/total_disk.rrd'
+total_rrdfiles = [total_rrdfile,total_tape_rrdfile,total_disk_rrdfile]
 
 start = (int(time.time()) / interval - 1) * interval
 
-if not os.path.exists(total_rrdfile):
-    
-    rrdtool.create(total_rrdfile, '--start', str(start), '--step', str(interval),
-                   'DS:copied:GAUGE:%d:0:U' % (interval * 800),
-                   'DS:total:GAUGE:%d:0:U' % (interval * 800),
-                   'RRA:LAST:0:1:%i' % 1344    )
+for rrdfile in total_rrdfiles:
+    if not os.path.exists(rrdfile):
+        rrdtool.create(rrdfile, '--start', str(start), '--step', str(interval),
+                       'DS:copied:GAUGE:%d:0:U' % (interval * 800),
+                       'DS:total:GAUGE:%d:0:U' % (interval * 800),
+                       'RRA:LAST:0:1:%i' % 1344    )
 
 # Now create new rrd files and create pngs
 def is_transfer_stuck(rrd_file):
@@ -296,10 +300,16 @@ with open("%s/overview.txt" % rrd_dir, "w") as overview:
                          "copied" : sum(x[1] for x in sites_copied_ongoing if x[0] == site), "total_stuck" : sum(x[1] for x in sites_total_stuck if x[0] == site), "copied_stuck" : sum(x[1] for x in sites_copied_stuck if x[0] == site)})
 
 total_volume = sum((x[1] for x in sites_total))
+total_tape_volume = sum((x[1] for x in sites_total if "MSS" in x[0]))
+total_disk_volume = sum((x[1] for x in sites_total if "MSS" not in x[0]))
 copied_volume = sum((x[1] for x in sites_copied))
+copied_tape_volume = sum((x[1] for x in sites_copied if "MSS" in x[0]))
+copied_disk_volume = sum((x[1] for x in sites_copied if "MSS" not in x[0]))
 
 try:
     rrdtool.update(total_rrdfile, '%d:%d:%d' % (timestamp, copied_volume, total_volume))
+    rrdtool.update(total_tape_rrdfile, '%d:%d:%d' % (timestamp, copied_tape_volume, total_tape_volume))
+    rrdtool.update(total_disk_rrdfile, '%d:%d:%d' % (timestamp, copied_disk_volume, total_disk_volume))
 except:
     pass
 
@@ -319,10 +329,14 @@ for existing_rrd in existing_rrds:
 # Copying rrds to the /var/www location
 
 subprocess.call("rm -rf /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/T*", shell=True)
-subprocess.call("cp -r /var/spool/dynamo/track_phedex/T* /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
+subprocess.call("cp -r /local/dynamo/dynamo/track_phedex/T* /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
 subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/total.rrd", shell=True)
-subprocess.call("cp /var/spool/dynamo/track_phedex/total.rrd /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
+subprocess.call("cp /local/dynamo/dynamo/track_phedex/total.rrd /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
+subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/total_tape.rrd", shell=True)
+subprocess.call("cp /local/dynamo/dynamo/track_phedex/total_tape.rrd /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
+subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/total_disk.rrd", shell=True)
+subprocess.call("cp /local/dynamo/dynamo/track_phedex/total_disk.rrd /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
 subprocess.call("rm -f /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/overview.txt", shell=True)
-subprocess.call("cp /var/spool/dynamo/track_phedex/overview.txt /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
+subprocess.call("cp /local/dynamo/dynamo/track_phedex/overview.txt /var/www/html/dynamo/dynamo/dealermon/monitoring_phedex/", shell=True)
 
 

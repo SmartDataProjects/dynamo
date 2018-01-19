@@ -457,7 +457,7 @@ class MySQLStore(LocalStoreInterface):
                         id_group_map[group_id],
                         b_is_complete,
                         b_is_custodial,
-                        size = block.size,
+                        size = br_size,
                         last_update = br_last_update
                     )
 
@@ -749,7 +749,7 @@ class MySQLStore(LocalStoreInterface):
         # speedup - fetch all blocks and files of updated datasets
         # if size, num_file, or is_open of a block or a file is updated, its dataset also is
 
-        block_entries = dict((i, []) for i in did for did, dataset in datasets_to_update if dataset.blocks is not None)
+        block_entries = dict((did, []) for did, dataset in datasets_to_update if dataset.blocks is not None)
 
         _dataset_id = 0
         for entry in self._mysql.select_many('blocks', ('dataset_id', 'id', 'name', 'size', 'num_files', 'is_open'), 'dataset_id', block_entries.iterkeys(), order_by = '`dataset_id`'):
@@ -759,7 +759,7 @@ class MySQLStore(LocalStoreInterface):
 
             entry_list.append(entry[1:])
 
-        file_entries = dict((i, []) for i in did for did, dataset in datasets_to_update if dataset.files is not None)
+        file_entries = dict((did, []) for did, dataset in datasets_to_update if dataset.files is not None)
 
         _dataset_id = 0
         for entry in self._mysql.select_many('files', ('dataset_id', 'id', 'size', 'name'), 'dataset_id', file_entries.iterkeys(), order_by = '`dataset_id`'):
@@ -1228,6 +1228,36 @@ class MySQLStore(LocalStoreInterface):
 
             self._mysql.query(sql)
 
+    def _do_update_blockreplicas(self, replica_list): #override
+        # Mass block replica update (e.g. unsubscription after a deletion) typically happens for a few sites and a few datasets.
+        # Fetch site id first to avoid a long query.
+
+        if len(replica_list) == 0:
+            return
+
+        sites = list(set([r.site for r in replica_list])) # list of sites
+        datasets = list(set([r.block.dataset for r in replica_list])) # list of datasets
+        groups = list(set([r.group for r in replica_list])) # list of datasets
+
+        site_id_map = {}
+        self._make_site_map(sites, site_id_map = site_id_map)
+        group_id_map = {}
+        self._make_group_map(groups, group_id_map = group_id_map)
+        dataset_id_map = {}
+        self._make_dataset_map(datasets, dataset_id_map = dataset_id_map)
+
+        block_name_to_id = {}
+        for dataset in datasets:
+            for block_id, block_name in self._mysql.xquery('SELECT `id`, `name` FROM `blocks` WHERE `dataset_id` = %s', dataset_id_map[dataset]):
+                block_name_to_id[Block.translate_name(block_name)] = block_id
+
+        all_replicas = []
+        for replica in replica_list:
+            all_replicas.append((block_name_to_id[replica.block.name], site_id_map[replica.site], group_id_map[replica.group], replica.is_complete, replica.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update))))
+
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
+        self._mysql.insert_many('block_replicas', fields, None, all_replicas, do_update = True)
+
     def _do_set_dataset_status(self, dataset_name, status_str): #override
         self._mysql.query('UPDATE `datasets` SET `status` = %s WHERE `name` LIKE %s', status_str, dataset_name)
 
@@ -1235,7 +1265,11 @@ class MySQLStore(LocalStoreInterface):
         self._make_map('sites', iter(sites), site_id_map, id_site_map)
 
     def _make_group_map(self, groups, group_id_map = None, id_group_map = None):
-        self._make_map('groups', iter(groups), group_id_map, id_group_map)
+        # Sometimes when calling do_update_blockreplicas it can be we're handing over group 'None'
+        cleansed_groups = [g for g in groups if g is not None] 
+        
+        if len(cleansed_groups) > 0:
+            self._make_map('groups', iter(cleansed_groups), group_id_map, id_group_map)
         if group_id_map is not None:
             group_id_map[None] = 0
         if id_group_map is not None:

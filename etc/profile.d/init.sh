@@ -1,5 +1,5 @@
 export DYNAMO_BASE=$(dirname $(dirname $(cd $(dirname ${BASH_SOURCE[0]}); pwd)))
-export DYNAMO_ARCHIVE=/mnt/hadoop/$USER/dynamo
+export DYNAMO_ARCHIVE=/mnt/hadoop/dynamotest/dynamo
 export DYNAMO_SPOOL=/var/spool/dynamo
 export DYNAMO_DATADIR=/local/dynamo/dynamo
 export DYNAMO_LOGDIR=/var/log/dynamo
