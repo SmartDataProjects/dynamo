@@ -95,12 +95,12 @@ function check_cache($history_db, $cycle, $partition_id, $snapshot_spool_path, $
     $snapshot_db->close();
   }
 
-  $stmt = $history_db->prepare('INSERT INTO `' . $cache_db_name . '`.`replica_snapshot_usage` VALUES (?, NOW())');
+  $stmt = $history_db->prepare('INSERT INTO `' . $cache_db_name . '`.`replicas_snapshot_usage` VALUES (?, NOW())');
   $stmt->bind_param('i', $cycle);
   $stmt->execute();
   $stmt->close();
 
-  $stmt = $history_db->prepare('INSERT INTO `' . $cache_db_name . '`.`site_snapshot_usage` VALUES (?, NOW())');
+  $stmt = $history_db->prepare('INSERT INTO `' . $cache_db_name . '`.`sites_snapshot_usage` VALUES (?, NOW())');
   $stmt->bind_param('i', $cycle);
   $stmt->execute();
   $stmt->close();

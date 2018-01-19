@@ -136,7 +136,7 @@ class MySQLHistory(TransactionHistoryInterface):
             self._make_site_id_map()
 
     def _do_get_sites(self, run_number): #override
-        self._fill_site_snapshot_cache(run_number)
+        self._fill_snapshot_cache('sites', run_number)
 
         table_name = 'sites_%d' % run_number
 
@@ -178,9 +178,13 @@ class MySQLHistory(TransactionHistoryInterface):
             self._make_site_id_map()
         if len(self._dataset_id_map) == 0:
             self._make_dataset_id_map()
-            
-        srun = '%09d' % run_number
-        db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
+
+        if type(run_number) is int:
+            # Saving deletion decisions of a cycle
+            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
+        else:
+            # run_number is actually the partition name
+            db_file_name = '%s/snapshot_%s.db' % (self.config.snapshots_spool_dir, run_number)
 
         try:
             os.makedirs(self.config.snapshots_spool_dir)
@@ -242,16 +246,19 @@ class MySQLHistory(TransactionHistoryInterface):
 
         os.chmod(db_file_name, 0666)
 
-        self._fill_replica_snapshot_cache(run_number, overwrite = True)
+        self._fill_snapshot_cache('replicas', run_number, overwrite = True)
 
     def _do_save_quotas(self, run_number, quotas): #override
         # Will save quotas and statuses
 
         if len(self._site_id_map) == 0:
             self._make_site_id_map()
-            
-        srun = '%09d' % run_number
-        db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
+
+        if type(run_number) is int:
+            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
+        else:
+            # run_number is actually the partition name
+            db_file_name = '%s/snapshot_%s.db' % (self.config.snapshots_spool_dir, run_number)
 
         # DB file should exist already - this function is called after save_deletion_decisions
 
@@ -285,12 +292,14 @@ class MySQLHistory(TransactionHistoryInterface):
         snapshot_cursor.close()
         snapshot_db.close()
 
-        self._fill_site_snapshot_cache(run_number, overwrite = True)
+        self._fill_snapshot_cache('sites', run_number, overwrite = True)
 
-        if run_number != 0:
+        if type(run_number) is int:
+            # This was a numbered cycle
             # Archive the sqlite3 file
             # Relying on the fact save_quotas is called after save_deletion_decisions
     
+            srun = '%09d' % run_number
             archive_dir_name = '%s/%s/%s' % (self.config.snapshots_archive_dir, srun[:3], srun[3:6])
             xz_file_name = '%s/snapshot_%09d.db.xz' % (archive_dir_name, run_number)
     
@@ -304,7 +313,7 @@ class MySQLHistory(TransactionHistoryInterface):
                     xz_file.write(lzma.compress(db_file.read()))
 
     def _do_get_deletion_decisions(self, run_number, size_only): #override
-        self._fill_replica_snapshot_cache(run_number)
+        self._fill_snapshot_cache('replicas', run_number)
 
         table_name = 'replicas_%d' % run_number
 
@@ -486,11 +495,9 @@ class MySQLHistory(TransactionHistoryInterface):
         for name, dataset_id in self._mysql.xquery('SELECT `name`, `id` FROM `datasets`'):
             self._dataset_id_map[name] = int(dataset_id)
 
-    def _fill_replica_snapshot_cache(self, run_number, overwrite = False):
-        if run_number == 0:
-            table_name = 'replicas'
-        else:
-            table_name = 'replicas_%d' % run_number
+    def _fill_snapshot_cache(self, template, run_number, overwrite = False):
+        # run_number is either a cycle number or a partition name. %s works for both
+        table_name = '%s_%s' % (template, run_number)
 
         sql = 'SELECT COUNT(*) FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = %s AND `TABLE_NAME` = %s'
         table_exists = (self._mysql.query(sql, self._cache_db.db_name(), table_name)[0] != 0)
@@ -500,27 +507,39 @@ class MySQLHistory(TransactionHistoryInterface):
             if table_exists:
                 self._cache_db.query('TRUNCATE TABLE `%s`' % table_name)
             else:
-                self._cache_db.query('CREATE TABLE `%s` LIKE `replicas`' % table_name)
+                self._cache_db.query('CREATE TABLE `%s` LIKE `%s`' % (table_name, template))
 
-            srun = '%09d' % run_number
+            if type(run_number) is int:
+                db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
 
-            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
-            if not os.path.exists(db_file_name):
-                xz_file_name = '%s/%s/%s/snapshot_%09d.db.xz' % (self.config.snapshots_archive_dir, srun[:3], srun[3:6], run_number)
-                if not os.path.exists(xz_file_name):
-                    raise RuntimeError('Snapshot DB ' + db_file_name + ' does not exist')
+                if not os.path.exists(db_file_name):
+                    srun = '%09d' % run_number
+                    xz_file_name = '%s/%s/%s/snapshot_%09d.db.xz' % (self.config.snapshots_archive_dir, srun[:3], srun[3:6], run_number)
+                    if not os.path.exists(xz_file_name):
+                        raise RuntimeError('Snapshot DB ' + db_file_name + ' does not exist')
+    
+                    with open(xz_file_name, 'rb') as xz_file:
+                        with open(db_file_name, 'wb') as db_file:
+                            db_file.write(lzma.decompress(xz_file.read()))
 
-                with open(xz_file_name, 'rb') as xz_file:
-                    with open(db_file_name, 'wb') as db_file:
-                        db_file.write(lzma.decompress(xz_file.read()))
+            else:
+                db_file_name = '%s/snapshot_%s.db' % (self.config.snapshots_spool_dir, run_number)
+
+                if not os.path.exists(db_file_name):
+                    return
 
             snapshot_db = sqlite3.connect(db_file_name)
             snapshot_db.text_factory = str # otherwise we'll get unicode and MySQLdb cannot convert that
             snapshot_cursor = snapshot_db.cursor()
 
             def make_snapshot_reader():
-                sql = 'SELECT r.`site_id`, r.`dataset_id`, r.`size`, d.`value`, r.`condition` FROM `replicas` AS r'
-                sql += ' INNER JOIN `decisions` AS d ON d.`id` = r.`decision_id`'
+                if template == 'replicas':
+                    sql = 'SELECT r.`site_id`, r.`dataset_id`, r.`size`, d.`value`, r.`condition` FROM `replicas` AS r'
+                    sql += ' INNER JOIN `decisions` AS d ON d.`id` = r.`decision_id`'
+                elif template == 'sites':
+                    sql = 'SELECT s.`site_id`, t.`value`, s.`quota` FROM `sites` AS s'
+                    sql += ' INNER JOIN `statuses` AS t ON t.`id` = s.`status_id`'
+                    
                 snapshot_cursor.execute(sql)
                 
                 while True:
@@ -532,83 +551,35 @@ class MySQLHistory(TransactionHistoryInterface):
 
             snapshot_reader = make_snapshot_reader()
 
-            self._cache_db.insert_many(table_name, ('site_id', 'dataset_id', 'size', 'decision', 'condition'), None, snapshot_reader, do_update = False)
+            if template == 'replicas':
+                fields = ('site_id', 'dataset_id', 'size', 'decision', 'condition')
+            elif template == 'sites':
+                fields = ('site_id', 'status', 'quota')
+                
+            self._cache_db.insert_many(table_name, fields, None, snapshot_reader, do_update = False)
 
             snapshot_cursor.close()
             snapshot_db.close()
 
-        if run_number != 0:
-            self._cache_db.query('INSERT INTO `replica_snapshot_usage` VALUES (%s, NOW())', run_number)
+        if type(run_number) is int:
+            self._cache_db.query('INSERT INTO `{template}_snapshot_usage` VALUES (%s, NOW())'.format(template = template), run_number)
+
             # also save into the main cache table
-            self._fill_replica_snapshot_cache(0, overwrite)
+            sql = 'SELECT p.`name` FROM `partitions` AS p INNER JOIN `runs` AS r ON r.`partition_id` = p.`id` WHERE r.`id` = %s'
+            partition = self._mysql.query(sql, run_number)[0]
 
-        self._clean_old_cache()
-
-    def _fill_site_snapshot_cache(self, run_number, overwrite = False):
-        if run_number == 0:
-            table_name = 'sites'
-        else:
-            table_name = 'sites_%d' % run_number
-
-        sql = 'SELECT COUNT(*) FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = %s AND `TABLE_NAME` = %s'
-        table_exists = (self._mysql.query(sql, self._cache_db.db_name(), table_name)[0] != 0)
-
-        if overwrite or not table_exists:
-            # fill from sqlite
-            if table_exists:
-                self._cache_db.query('TRUNCATE TABLE `%s`' % table_name)
-            else:
-                self._cache_db.query('CREATE TABLE `%s` LIKE `sites`' % table_name)
-
-            srun = '%09d' % run_number
-
-            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
-            if not os.path.exists(db_file_name):
-                xz_file_name = '%s/%s/%s/snapshot_%09d.db.xz' % (self.config.snapshots_archive_dir, srun[:3], srun[3:6], run_number)
-                if not os.path.exists(xz_file_name):
-                    raise RuntimeError('Snapshot DB ' + db_file_name + ' does not exist')
-
-                with open(xz_file_name, 'rb') as xz_file:
-                    with open(db_file_name, 'wb') as db_file:
-                        db_file.write(lzma.decompress(xz_file.read()))
-
-            snapshot_db = sqlite3.connect(db_file_name)
-            snapshot_db.text_factory = str # otherwise we'll get unicode and MySQLdb cannot convert that
-            snapshot_cursor = snapshot_db.cursor()
-
-            def make_snapshot_reader():
-                sql = 'SELECT s.`site_id`, t.`value`, s.`quota` FROM `sites` AS s'
-                sql += ' INNER JOIN `statuses` AS t ON t.`id` = s.`status_id`'
-                snapshot_cursor.execute(sql)
-                
-                while True:
-                    row = snapshot_cursor.fetchone()
-                    if row is None:
-                        return
-
-                    yield row
-
-            snapshot_reader = make_snapshot_reader()
-
-            self._cache_db.insert_many(table_name, ('site_id', 'status', 'quota'), None, snapshot_reader, do_update = False)
-
-            snapshot_cursor.close()
-            snapshot_db.close()
-
-        if run_number != 0:
-            self._cache_db.query('INSERT INTO `site_snapshot_usage` VALUES (%s, NOW())', run_number)
-            self._fill_site_snapshot_cache(0, overwrite)
+            self._fill_snapshot_cache(template, partition, overwrite)
 
         self._clean_old_cache()
 
     def _clean_old_cache(self):
-        sql = 'SELECT `run_id` FROM (SELECT `run_id`, MAX(`timestamp`) AS m FROM `replica_snapshot_usage` GROUP BY `run_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
+        sql = 'SELECT `run_id` FROM (SELECT `run_id`, MAX(`timestamp`) AS m FROM `replicas_snapshot_usage` GROUP BY `run_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
         old_replica_runs = self._cache_db.query(sql)
         for old_run in old_replica_runs:
             table_name = 'replicas_%d' % old_run
             self._cache_db.query('DROP TABLE IF EXISTS `%s`' % table_name)
 
-        sql = 'SELECT `run_id` FROM (SELECT `run_id`, MAX(`timestamp`) AS m FROM `site_snapshot_usage` GROUP BY `run_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
+        sql = 'SELECT `run_id` FROM (SELECT `run_id`, MAX(`timestamp`) AS m FROM `sites_snapshot_usage` GROUP BY `run_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
         old_site_runs = self._cache_db.query(sql)
         for old_run in old_site_runs:
             table_name = 'sites_%d' % old_run
@@ -624,7 +595,7 @@ class MySQLHistory(TransactionHistoryInterface):
                     LOG.error('Failed to delete %s' % db_file_name)
                     pass
 
-        self._cache_db.query('DELETE FROM `replica_snapshot_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
-        self._cache_db.query('OPTIMIZE TABLE `replica_snapshot_usage`')
-        self._cache_db.query('DELETE FROM `site_snapshot_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
-        self._cache_db.query('OPTIMIZE TABLE `site_snapshot_usage`')
+        self._cache_db.query('DELETE FROM `replicas_snapshot_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
+        self._cache_db.query('OPTIMIZE TABLE `replicas_snapshot_usage`')
+        self._cache_db.query('DELETE FROM `sites_snapshot_usage` WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL 1 WEEK)')
+        self._cache_db.query('OPTIMIZE TABLE `sites_snapshot_usage`')

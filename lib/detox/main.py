@@ -38,11 +38,11 @@ class Detox(object):
 
         if create_cycle:
             # fetch the deletion cycle number
-            cycle_number = self.history.new_deletion_run(self.policy.partition_name, self.policy.version, comment = comment)
+            cycle_tag = self.history.new_deletion_run(self.policy.partition_name, self.policy.version, comment = comment)
+            LOG.info('Detox cycle %d for %s starting', cycle_tag, self.policy.partition_name)
         else:
-            cycle_number = 0
-
-        LOG.info('Detox cycle %d for %s starting', cycle_number, self.policy.partition_name)
+            cycle_tag = self.policy.partition_name
+            LOG.info('Detox snapshot cycle for %s starting', self.policy.partition_name)
 
         LOG.info('Building the object repository for the partition.')
         # Create a full clone of the inventory limited to the partition of the policy
@@ -64,21 +64,21 @@ class Detox(object):
         deleted, kept, protected, reowned = self._execute_policy(partition_repository)
 
         LOG.info('Saving deletion decisions.')
-        self.history.save_deletion_decisions(cycle_number, deleted, kept, protected)
+        self.history.save_deletion_decisions(cycle_tag, deleted, kept, protected)
 
         LOG.info('Saving quotas.')
         partition = partition_repository.partitions[self.policy.partition_name]
         quotas = dict((s, s.partitions[partition].quota * 1.e-12) for s in partition_repository.sites.itervalues())
-        self.history.save_quotas(cycle_number, quotas)
+        self.history.save_quotas(cycle_tag, quotas)
 
         if create_cycle:
             LOG.info('Committing deletion.')
             comment = 'Dynamo -- Automatic cache release request for %s partition.' % self.policy.partition_name
-            self._commit_deletions(cycle_number, inventory, deleted, comment)
+            self._commit_deletions(cycle_tag, inventory, deleted, comment)
             comment = 'Dynamo -- Automatic group reassignment for %s partition.' % self.policy.partition_name
-            self._commit_reassignments(cycle_number, inventory, reowned, comment)
+            self._commit_reassignments(cycle_tag, inventory, reowned, comment)
 
-            self.history.close_deletion_run(cycle_number)
+            self.history.close_deletion_run(cycle_tag)
 
         LOG.info('Detox cycle completed')
 

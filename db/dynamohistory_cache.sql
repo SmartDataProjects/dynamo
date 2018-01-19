@@ -1,8 +1,8 @@
 
 
 
-DROP TABLE IF EXISTS `replica_snapshot_usage`;
-CREATE TABLE `replica_snapshot_usage` (
+DROP TABLE IF EXISTS `replicas_snapshot_usage`;
+CREATE TABLE `replicas_snapshot_usage` (
   `run_id` int(11) unsigned NOT NULL,
   `timestamp` datetime NOT NULL,
   KEY `runs` (`run_id`),
@@ -21,8 +21,8 @@ CREATE TABLE `replicas` (
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 
-DROP TABLE IF EXISTS `site_snapshot_usage`;
-CREATE TABLE `site_snapshot_usage` (
+DROP TABLE IF EXISTS `sites_snapshot_usage`;
+CREATE TABLE `sites_snapshot_usage` (
   `run_id` int(11) unsigned NOT NULL,
   `timestamp` datetime NOT NULL,
   KEY `runs` (`run_id`),
@@ -34,7 +34,7 @@ DROP TABLE IF EXISTS `sites`;
 CREATE TABLE `sites` (
   `site_id` int(10) unsigned NOT NULL,
   `status` enum('ready','waitroom','morgue','unknown') NOT NULL,
-  `quota` int(10) unsigned NOT NULL,
+  `quota` int(10) NOT NULL,
   PRIMARY KEY (`site_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
