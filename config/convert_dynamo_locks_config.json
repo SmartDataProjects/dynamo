@@ -1,0 +1,59 @@
+{
+  "sources": {
+    "unified": {
+      "user": "vlimant",
+      "service": "unified",
+      "url": "https://vocms049.cern.ch/unified/public/globallocks.json",
+      "auth": "noauth",
+      "content_type": "LIST_OF_DATASETS",
+      "lock_url": "https://vocms049.cern.ch/unified/public/globallocks.json.lock"
+    },
+    "unified_testbed": {
+      "user": "vlimant",
+      "service": "unified-testbed",
+      "url": "https://cmst2.web.cern.ch/cmst2/unified-testbed/globallocks.json",
+      "auth": "cert",
+      "content_type": "LIST_OF_DATASETS"
+    },
+    "testsamples": {
+      "user": "vlimant",
+      "service": "wmcore",
+      "url": "https://cmst1.web.cern.ch/CMST1/lockedData/lockTestSamples.json",
+      "auth": "cert",
+      "content_type": "SITE_TO_DATASETS"
+    },
+    "t0_prod": {
+      "user": "dmytro",
+      "service": "t0-prod",
+      "url": "https://cmsweb.cern.ch/t0wmadatasvc/prod/dataset_locked",
+      "auth": "cert",
+      "content_type": "CMSWEB_LIST_OF_DATASETS",
+      "sites": "T0_CH_CERN_Disk"
+    },
+    "t0_replayone": {
+      "user": "dmytro",
+      "service": "t0-replayone",
+      "url": "https://cmsweb.cern.ch/t0wmadatasvc/replayone/dataset_locked",
+      "auth": "cert",
+      "content_type": "CMSWEB_LIST_OF_DATASETS",
+      "sites": "T0_CH_CERN_Disk"
+    },
+    "t0_replaytwo": {
+      "user": "dmytro",
+      "service": "t0-replaytwo",
+      "url": "https://cmsweb.cern.ch/t0wmadatasvc/replaytwo/dataset_locked",
+      "auth": "cert",
+      "content_type": "CMSWEB_LIST_OF_DATASETS",
+      "sites": "T0_CH_CERN_Disk"
+    }
+  },
+  "auth": {
+    "cert": {
+      "auth_handler": "HTTPSCertKeyHandler",
+      "auth_handler_conf": {}
+    },
+    "cookie": {
+      "auth_handler": "CERNSSOCookieAuthHandler"
+    }
+  }
+}

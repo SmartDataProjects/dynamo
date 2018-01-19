@@ -1,0 +1,51 @@
+<detox> = $(DYNAMO_BASE)/exec/detox_cms
+<dealer> = $(DYNAMO_BASE)/exec/dealer_cms
+<update_replicas> = $(DYNAMO_BASE)/exec/update_replicas_cms
+<update_datasets> = $(DYNAMO_BASE)/exec/update_datasets_cms
+<update_sites> = $(DYNAMO_BASE)/exec/update_sites_cms
+<update_popularity> = $(DYNAMO_BASE)/exec/update_popularity_cms
+{convert_locks} = $(DYNAMO_BASE)/exec/convert_dynamo_locks
+{generate_dataset_list} = $(DYNAMO_BASE)/exec/generate_dataset_list_cms
+<track_transfers> = $(DYNAMO_BASE)/exec/track_transfers
+<track_phedex> = $(DYNAMO_BASE)/exec/track_phedex
+
+[SEQUENCE delta_update]
+<update_replicas> --config /etc/dynamo/updater_config.json
+{generate_dataset_list} --config /etc/dynamo/updater_config.json --target dataset
+<update_datasets> --config /etc/dynamo/updater_config.json --num-datasets 1000
+WAIT 60
+
+[SEQUENCE site_update]
+<update_sites> --config /etc/dynamo/updater_config.json
+WAIT 1800
+
+[SEQUENCE full_update]
+WAIT 3600
+{generate_dataset_list} --config /etc/dynamo/updater_config.json --target replica
+<update_replicas> --config /etc/dynamo/updater_config.json --site
+
+[SEQUENCE detox_snapshot]
+WAIT 600
+<update_popularity> --config /etc/dynamo/popularity_update_config.json --crabaccess
+{convert_locks} --config /etc/dynamo/convert_dynamo_locks_config.json
+{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --snapshot-run
+{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/RelVal.txt --snapshot-run
+{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/DataOps.txt --snapshot-run
+{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Unsubscribed.txt --snapshot-run
+
+[SEQUENCE detox]
+<update_popularity> --config /etc/dynamo/popularity_update_config.json --crabaccess
+{convert_locks} --config /etc/dynamo/convert_dynamo_locks_config.json
+<detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt
+<detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/RelVal.txt
+WAIT 14400
+
+[SEQUENCE dealer]
+<update_popularity> --config /etc/dynamo/popularity_update_config.json --globalqueue
+<dealer> --config /etc/dynamo/dealer_config.json
+WAIT 120
+
+[SEQUENCE dealermon]
+WAIT 900
+<track_transfers> --config /etc/dynamo/dealermon_config.json
+<track_phedex> --config /etc/dynamo/dealermon_config.json

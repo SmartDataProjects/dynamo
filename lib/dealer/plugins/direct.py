@@ -1,6 +1,7 @@
 import logging
-from dealer.plugins.base import BaseHandler
-from common.interface.mysql import MySQL
+
+from dynamo.utils.interface.mysql import MySQL
+from base import BaseHandler
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ class DirectRequestsHandler(BaseHandler):
             requests[(dset, target)] = request
 
             reps = inventory.datasets[dset].replicas
-            fullreps = [i for i in reps if i.is_complete]
+            fullreps = [i for i in reps if i.is_complete()]
 
             if len([i for i in fullreps if i.site.name == target]) != 0:
                 logger.debug(dset)
@@ -116,7 +117,7 @@ class DirectRequestsHandler(BaseHandler):
 
             #check that the full replicas exist anywhere
             reps = inventory.datasets[dset].replicas
-            fullreps = [i for i in reps if i.is_complete]
+            fullreps = [i for i in reps if i.is_complete()]
             if len(fullreps) < 1:
                 logger.debug(dset)
                 logger.debug(" no full replicas exist, ingnoring")
@@ -171,7 +172,3 @@ class DirectRequestsHandler(BaseHandler):
             datasets_to_request.append((ds, inventory.sites[req.site]))
 
         return datasets_to_request
-
-
-from dealer.plugins._list import plugins
-plugins['DirectRequests'] = DirectRequestsHandler()

@@ -1,358 +1,472 @@
+import sys
 import time
 import logging
-import math
-import pprint
 import collections
-import random
-import sys
-import os
 
-import common.configuration as config
-from common.dataformat import Dataset, Block, Site
-from policy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
-import detox.configuration as detox_config
-from common.misc import timer, parallel_exec, sigint
+from dynamo.core.inventory import ObjectRepository
+from dynamo.dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
+from dynamo.detox.detoxpolicy import DetoxPolicy
+from dynamo.detox.detoxpolicy import Ignore, Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
+import dynamo.operation.impl as operation_impl
+import dynamo.history.impl as history_impl
+from dynamo.utils.signaling import SignalBlocker
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class Detox(object):
 
-    def __init__(self, inventory, transaction, demand, history):
+    def __init__(self, config):
         """
-        @param inventory   An InventoryManager instance
-        @param transaction A TransactionManager instance
-        @param demand      A DemandManager instance
-        @param history     A TransactionHistoryInterface instance
+        @param config      Configuration
         """
 
-        self.inventory_manager = inventory
-        self.transaction_manager = transaction
-        self.demand_manager = demand
-        self.history = history
+        self.deletion_op = getattr(operation_impl, config.deletion_op.module)(config.deletion_op.config)
+        self.copy_op = getattr(operation_impl, config.copy_op.module)(config.copy_op.config)
+        self.history = getattr(history_impl, config.history.module)(config.history.config)
 
-    def run(self, policy, is_test = False, comment = ''):
+        self.policy = DetoxPolicy(config)
+
+        self.deletion_per_iteration = config.deletion_per_iteration
+
+    def run(self, inventory, comment = '', create_cycle = True):
         """
         Main executable.
-
-        @param policy     A Detox Policy object
-        @param is_test    Set to True when e.g. the main binary is invoked with --test-run option.
-        @param comment    Passed to dynamo history as well as the deletion interface
+        @param inventory    Dynamo inventory
+        @param comment      Passed to dynamo history
+        @param create_cycle If True, assign a cycle number and make a permanent record in the history.
         """
 
-        logger.info('Detox cycle for %s starting at %s', policy.partition.name, time.strftime('%Y-%m-%d %H:%M:%S'))
+        if create_cycle:
+            # fetch the deletion cycle number
+            cycle_tag = self.history.new_deletion_run(self.policy.partition_name, self.policy.version, comment = comment)
+            LOG.info('Detox cycle %d for %s starting', cycle_tag, self.policy.partition_name)
+        else:
+            cycle_tag = self.policy.partition_name
+            LOG.info('Detox snapshot cycle for %s starting', self.policy.partition_name)
 
-        # Execute the policy within a try block to avoid dead locks
-        try:
-            # insert new policy lines to the history database
-            logger.info('Saving policy conditions.')
-            self.history.save_conditions(policy.policy_lines)
-    
-            logger.info('Updating dataset demands.')
-            # update requests, popularity, and locks
-            self.demand_manager.update(self.inventory_manager, policy.used_demand_plugins)
-    
-            logger.info('Updating site status.')
-            # update site status
-            self.inventory_manager.site_source.set_site_status(self.inventory_manager.sites) # update site status regardless of inventory updates
-    
-            self._execute_policy(policy, is_test, comment)
+        LOG.info('Building the object repository for the partition.')
+        # Create a full clone of the inventory limited to the partition of the policy
+        partition_repository = self._build_partition(inventory)
 
-        finally:
-            pass
+        LOG.info('Loading dataset attributes.')
+        for plugin in self.policy.attr_producers:
+            plugin.load(partition_repository)
 
-        logger.info('Detox run finished at %s\n', time.strftime('%Y-%m-%d %H:%M:%S'))
+        LOG.info('Saving site and dataset names.')
+        self.history.save_sites(partition_repository.sites.values())
+        self.history.save_datasets(partition_repository.datasets.values())
 
-    def _execute_policy(self, policy, is_test, comment):
-        # fetch the copy/deletion run number
-        run_number = self.history.new_deletion_run(policy.partition.name, policy.version, is_test = is_test, comment = comment)
+        LOG.info('Saving policy conditions.')
+        # Sets policy IDs for each lines from the history DB; need to run this before execute_policy
+        self.history.save_conditions(self.policy.policy_lines)
 
-        logger.info('Preparing deletion run %d', run_number)
+        LOG.info('Applying policy to replicas.')
+        deleted, kept, protected, reowned = self._execute_policy(partition_repository)
 
-        logger.info('Identifying target sites.')
+        LOG.info('Saving deletion decisions.')
+        self.history.save_deletion_decisions(cycle_tag, deleted, kept, protected)
+
+        LOG.info('Saving quotas.')
+        partition = partition_repository.partitions[self.policy.partition_name]
+        quotas = dict((s, s.partitions[partition].quota * 1.e-12) for s in partition_repository.sites.itervalues())
+        self.history.save_quotas(cycle_tag, quotas)
+
+        if create_cycle:
+            LOG.info('Committing deletion.')
+            comment = 'Dynamo -- Automatic cache release request for %s partition.' % self.policy.partition_name
+            self._commit_deletions(cycle_tag, inventory, deleted, comment)
+            comment = 'Dynamo -- Automatic group reassignment for %s partition.' % self.policy.partition_name
+            self._commit_reassignments(cycle_tag, inventory, reowned, comment)
+
+            self.history.close_deletion_run(cycle_tag)
+
+        LOG.info('Detox cycle completed')
+
+    def _build_partition(self, inventory):
+        """Create a mini-inventory consisting only of replicas in the partition."""
+
+        partition_repository = ObjectRepository()
+
+        LOG.info('Identifying target sites.')
+
+        partition = inventory.partitions[self.policy.partition_name]
+
+        partition.embed_tree(partition_repository)
 
         # Ask each site if deletion should be triggered.
         target_sites = set() # target sites of this detox cycle
-        triggered_sites = set() # sites that are e.g. getting full and need dismiss calls
-        for site in self.inventory_manager.sites.itervalues():
-            for targdef in policy.target_site_def:
-                if targdef.match(site):
-                    target_sites.add(site)
-                    break
-            else:
-                # not a target site
-                continue
+        tape_is_target = False
+        for site in inventory.sites.itervalues():
+            # target_site_defs are SiteConditions, which take site_partition as the argument
+            site_partition = site.partitions[partition]
 
-            for trigger in policy.deletion_trigger:
-                if trigger.match(site):
-                    triggered_sites.add(site)
+            for targdef in self.policy.target_site_def:
+                if targdef.match(site_partition):
+                    target_sites.add(site)
+                    if site.storage_type == Site.TYPE_MSS:
+                        tape_is_target = True
+
                     break
 
         if len(target_sites) == 0:
-            logger.info('No site matches the target definition.')
-            return
+            LOG.info('No site matches the target definition.')
+            return partition_repository
 
-        quotas = dict((s, s.partition_quota(policy.partition)) for s in target_sites)
+        # Safety measure - if there are empty (no block rep) tape replicas, create block replicas with size 0 and
+        # add them into the partition. We will not report back to the main process though (i.e. won't call inventory.update).
+        if tape_is_target:
+            for site in filter(lambda s: s.storage_type == Site.TYPE_MSS, target_sites):
+                for replica in site.dataset_replicas():
+                    if len(replica.block_replicas) != 0:
+                        continue
 
-        logger.info('Identifying dataset replicas in the partition.')
+                    for block in replica.dataset.blocks:
+                        block_replica = BlockReplica(block, site, Group.null_group, size = 0)
+                        replica.block_replicas.add(block_replica)
+                        block.replicas.add(block_replica)
 
-        # "partition" as a verb - selecting only the blockreps in the partition
-        # will also select out replicas on sites with quotas
-        all_replicas = policy.partition_replicas(self.inventory_manager, target_sites)
+                    # Add to the site partition
+                    site.partitions[partition].replicas[replica] = None
 
-        logger.info('Saving site and dataset states.')
+        # Create a copy of the inventory, limiting to the current partition
+        # We will be stripping replicas off the image as we process the policy in iterations
+        LOG.info('Creating a partition image.')
 
-        # update site and dataset lists
-        self.history.save_sites(target_sites)
-        self.history.save_datasets(set(r.dataset for r in all_replicas))
+        for group in inventory.groups.itervalues():
+            group.embed_into(partition_repository)
 
-        logger.info('Start deletion. Evaluating %d lines against %d replicas.', len(policy.policy_lines), len(all_replicas))
+        # Now clone the sites, datasets, and replicas
+        # Basically a copy-paste of various embed_into() functions ommitting the checks
 
-        protected_fraction = dict((s, 1. if q == 0 else 0.) for s, q in quotas.iteritems())
+        # make a map to avoid excessive lookups
+        block_to_clone = {}
+        for site in target_sites:
+            site_clone = site.embed_into(partition_repository)
 
-        protected = collections.defaultdict(list) # {replica: [([block_replica], condition_id)]}
-        deleted = collections.defaultdict(list) # same
-        kept = collections.defaultdict(list) # same
+            site_partition = site.partitions[partition]
+            site_partition_clone = site_partition.embed_tree(partition_repository)
+
+            for dataset_replica, block_replica_set in site_partition.replicas.iteritems():
+                dataset = dataset_replica.dataset
+
+                try:
+                    dataset_clone = partition_repository.datasets[dataset.name]
+
+                except KeyError:
+                    dataset_clone = dataset.embed_into(partition_repository)
+
+                    for block in dataset.blocks:
+                        block_clone = Block(block.name, dataset_clone)
+                        block_clone.copy(block)
+                        dataset_clone.blocks.add(block_clone)
+
+                        block_to_clone[block] = block_clone
+
+                replica_clone = DatasetReplica(dataset_clone, site_clone)
+                dataset_clone.replicas.add(replica_clone)
+                site_clone.add_dataset_replica(replica_clone, add_block_replicas = False)
+
+                if block_replica_set is None:
+                    # all block reps in partition
+                    block_replica_set = dataset_replica.block_replicas
+                    full_replica = True
+                    site_partition_clone.replicas[replica_clone] = None
+                else:
+                    full_replica = False
+                    block_replica_clone_set = site_partition_clone.replicas[replica_clone] = set()
+
+                for block_replica in block_replica_set:
+                    block_clone = block_to_clone[block_replica.block]
+
+                    block_replica_clone = BlockReplica(block_clone, site_clone, block_replica.group)
+                    block_replica_clone.copy(block_replica)
+                    # group has to be reset to the clone
+                    block_replica_clone.group = partition_repository.groups[block_replica.group.name]
+
+                    replica_clone.block_replicas.add(block_replica_clone)
+                    block_clone.replicas.add(block_replica_clone)
+
+                    if not full_replica:
+                        block_replica_clone_set.add(block_replica_clone)
+
+        return partition_repository
+
+    def _execute_policy(self, repository):
+        """
+        Sort replicas into deleted, kept, protected, and reowned according to the policy.
+        The lists deleted/kept/protected are disjoint. Reowned list overlaps with others.
+        """
+
+        partition = repository.partitions[self.policy.partition_name]
+
+        # Sites that are e.g. getting full and need dismiss calls
+        triggered_sites = set()
+
+        # Site -> partition quota
+        quotas = {}
+
+        # We will process this list iteratively. Replicas with protection and deletion decisions are
+        # taken out of the list until we are left with datasets to be dismissed only.
+        all_replicas = set()
+
+        for site in repository.sites.itervalues():
+            site_partition = site.partitions[partition]
+            # deletion is triggered by an OR of all triggers
+            for trigger in self.policy.deletion_trigger:
+                if trigger.match(site_partition):
+                    triggered_sites.add(site)
+                    break
+
+            quotas[site] = site.partitions[partition].quota
+
+            for replica in site.dataset_replicas():
+                all_replicas.add(replica)
+
+        LOG.info('Start deletion. Evaluating %d lines against %d replicas.', len(self.policy.policy_lines), len(all_replicas))
+
+        protected = {} # {replica: {condition_id: set(block_replicas)}}
+        deleted = {} # same
+        kept = {} # same
+
+        # list of block replicas that will change ownership at commit stage.
+        reowned = {} # {dataset_replica: [block_replicas]}
+
+        def get_list(outmap, replica, condition_id):
+            try:
+                replica_map = outmap[replica]
+            except KeyError:
+                replica_map = outmap[replica] = {}
+            try:
+                return replica_map[condition_id]
+            except KeyError:
+                s = replica_map[condition_id] = set()
+                return s
 
         iteration = 0
 
         # now iterate through deletions, updating site usage as we go
         while True:
             iteration += 1
-            logger.info('Iteration %d, evaluating %d replicas', iteration, len(all_replicas))
+            LOG.info('Iteration %d, evaluating %d replicas', iteration, len(all_replicas))
 
-            delete_candidates = collections.defaultdict(list) # {replica: [([block_replica], condition_id)]}
-            keep_candidates = collections.defaultdict(list) # {replica: [([block_replica], condition_id)]}
-            protect_candidates = collections.defaultdict(list) # {replica: [([block_replica], condition_id)]}
+            # Delete candidates: replicas that match Dismiss lines and are on sites where deletion is triggered.
+            # We will only move a few replicas (on a single site up to deletion_per_iteration) from
+            # delete_candidates to deleted at each iteration. The rest will be handed to keep_candidates
+            delete_candidates = {} # same structure as deleted
+            # Keep candidates: replicas that match Dismiss lines but are not on sites where deletion is triggered.
+            # Will be passed to the kept list at the end of the final iteration.
+            keep_candidates = {}
 
-            # Call policy.evaluate for each replica
-            # Function evaluate() returns a list of actions. If the replica matches a dataset-level policy, there is only one element in the returned list.
-            # Sort the evaluation results into containers
-            # Block-level actions are triggered only if the condition does not apply to all blocks
-            # Policy object issues a dataset-level action otherwise
-            empty_replicas = []
+            ignored_replicas = set()
+            empty_replicas = set()
             start = time.time()
+
             for replica in all_replicas:
-                actions = policy.evaluate(replica)
+                # Call policy.evaluate for each replica
+                # Function evaluate() returns a list of actions. If the replica matches a dataset-level policy,
+                # there is only one element in the returned list.
+                # Block-level actions are triggered only if the condition does not apply to all blocks.
+                # Sort the evaluation results into the three candidate containers above.
+                actions = self.policy.evaluate(replica)
+
+                # Keep track of block replicas matching block-level conditions
+                block_replicas = set(replica.block_replicas)
 
                 # Block-level actions come first - take out all blocks that matched some condition.
                 # Remaining block replicas are the ones the dataset-level action applies to.
-                block_replicas = set(replica.block_replicas)
-
                 for action in actions:
                     matched_line = action.matched_line
+
                     if matched_line is None:
                         condition_id = 0
                     else:
                         condition_id = matched_line.condition_id
 
                     if isinstance(action, ProtectBlock):
-                        protect_candidates[replica].append((action.block_replicas, condition_id))
-
-                        block_replicas -= set(action.block_replicas)
+                        get_list(protected, replica, condition_id).update(action.block_replicas)
+                        block_replicas -= action.block_replicas
     
                     elif isinstance(action, DeleteBlock):
-                        unlinked_replicas, reowned_replicas = self.unlink_block_replicas(replica, action.block_replicas, policy, is_test)
+                        unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, action.block_replicas)
                         if len(unlinked_replicas) != 0:
-                            deleted[replica].append((unlinked_replicas, condition_id))
+                            # deleted list contains blocks that should actually be deleted, instead of just kicked out
+                            # from the repository
+                            get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
+
+                            # unlinked_replicas on the other hand contains all block replicas that should be kicked out
+                            for block_replica in unlinked_replicas:
+                                block_replica.delete_from(repository)
 
                             block_replicas -= set(unlinked_replicas)
 
-                        # need to swap out block replicas with groups reassigned because blockreplica is immutable
-                        for new_replica in reowned_replicas:
-                            old_replica = next(r for r in block_replicas if r.block == new_replica.block)
-                            block_replicas.remove(old_replica)
-                            block_replicas.add(new_replica)
+                        if len(reowned_replicas) != 0:
+                            if replica in reowned:
+                                reowned[replica].extend(reowned_replicas)
+                            else:
+                                reowned[replica] = list(reowned_replicas)
 
                     elif isinstance(action, DismissBlock):
                         if replica.site in triggered_sites:
-                            delete_candidates[replica].append((action.block_replicas, condition_id))
+                            get_list(delete_candidates, replica, condition_id).update(action.block_replicas)
                         else:
-                            keep_candidates[replica].append((action.block_replicas, condition_id))
+                            get_list(keep_candidates, replica, condition_id).update(action.block_replicas)
 
-                        block_replicas -= set(action.block_replicas)
-    
+                        block_replicas -= action.block_replicas
+
+                    elif isinstance(action, Ignore):
+                        ignored_replicas.add(replica)
+
                     elif isinstance(action, Protect):
-                        protect_candidates[replica].append((list(block_replicas), condition_id))
+                        get_list(protected, replica, condition_id).update(block_replicas)
+                        ignored_replicas.add(replica)
     
                     elif isinstance(action, Delete):
-                        unlinked_replicas, reowned_replicas = self.unlink_block_replicas(replica, block_replicas, policy, is_test)
+                        unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, block_replicas)
                         if len(unlinked_replicas) != 0:
-                            deleted[replica].append((unlinked_replicas, condition_id))
+                            get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
+
+                            for block_replica in unlinked_replicas:
+                                block_replica.delete_from(repository)
 
                         if len(replica.block_replicas) == 0:
                             # if all blocks were deleted, take the replica off all_replicas for later iterations
                             # this is the only place where the replica can become empty
-                            empty_replicas.append(replica)
+                            empty_replicas.add(replica)
 
-                        # no need to update block_replicas set with reassigned blockreplicas because we don't
-                        # need it any more
-    
+                        if len(reowned_replicas) != 0:
+                            if replica in reowned:
+                                reowned[replica].extend(reowned_replicas)
+                            else:
+                                reowned[replica] = list(reowned_replicas)
+
                     elif isinstance(action, Dismiss):
                         if replica.site in triggered_sites:
-                            delete_candidates[replica].append((list(block_replicas), condition_id))
+                            get_list(delete_candidates, replica, condition_id).update(block_replicas)
                         else:
-                            keep_candidates[replica].append((list(block_replicas), condition_id))
+                            get_list(keep_candidates, replica, condition_id).update(block_replicas)
 
             for replica in empty_replicas:
-                all_replicas.remove(replica)
+                replica.delete_from(repository)
 
-            logger.info('Took %f seconds to evaluate', time.time() - start)
+            all_replicas -= empty_replicas
+            all_replicas -= ignored_replicas
 
-            logger.info(' %d dataset replicas in deletion candidates', len(delete_candidates))
-
-            if len(delete_candidates) != 0:
-                # now figure out which of deletion candidates to actually delete
-                # first determine which sites to process
-    
-                # delete from one site at a time
-
-                # compute the increment on the protected fractions
-                fraction_increments = dict((site, 0.) for site in protected_fraction.iterkeys())
-                for replicas, matches in protect_candidates.iteritems():
-                    quota = quotas[replica.site] * 1.e+12
-                    if quota > 0.:
-                        size = sum(sum(br.size for br in match[0]) for match in matches)
-                        fraction_increments[replica.site] += size / quota
-       
-                # find the site with the highest protected fraction
-                candidate_sites = set(r.site for r in delete_candidates.iterkeys())
-                selected_site = max(candidate_sites, key = lambda site: protected_fraction[site] + fraction_increments[site])
-
-                candidates_at_site = [r for r in delete_candidates.iterkeys() if r.site == selected_site]
-                replicas_to_delete = sorted(candidates_at_site, key = policy.candidate_sort_key)
-    
-                deleted_volume = collections.defaultdict(float)
-    
-                for replica in replicas_to_delete:
-                    site = replica.site
-
-                    # has the site reached the stop-deletion threshold?
-                    offtrigger = False
-                    for cond in policy.stop_condition:
-                        if cond.match(site):
-                            offtrigger = True
-                            break
-
-                    if offtrigger:
-                        continue
-    
-                    quota = quotas[site] * 1.e+12
-
-                    # have we deleted more than allowed in a single iteration?
-                    if quota > 0. and deleted_volume[site] / quota > detox_config.main.deletion_per_iteration:
-                        continue
-    
-                    if logger.getEffectiveLevel() == logging.DEBUG:
-                        logger.debug('Deleting replica: %s', str(replica))
-    
-                    matches = delete_candidates.pop(replica)
-    
-                    for match in matches:
-                        # match = ([block_replica], condition_id)
-                        unlinked_replicas, _ = self.unlink_block_replicas(replica, match[0], policy, is_test)
-                        if len(unlinked_replicas) != 0:
-                            deleted_volume[site] += sum(br.size for br in unlinked_replicas)
-                            deleted[replica].append((unlinked_replicas, match[1]))
-
-                    if len(replica.block_replicas) == 0:
-                        all_replicas.remove(replica)
-
-            # remaining delete_candidates are kept
-            for replica, matches in delete_candidates.iteritems():
-                keep_candidates[replica].extend(matches)
+            LOG.info('Took %f seconds to evaluate', time.time() - start)
+            LOG.info(' %d dataset replicas in deletion candidates', len(delete_candidates))
 
             if len(delete_candidates) == 0:
                 # we are done
-                for replica, matches in protect_candidates.iteritems():
-                    protected[replica].extend(matches)
-
                 for replica, matches in keep_candidates.iteritems():
-                    kept[replica].extend(matches)
+                    for condition_id, block_replicas in matches.iteritems():
+                        get_list(kept, replica, condition_id).update(block_replicas)
 
                 break
 
             else:
-                # commit protected candidates if not in keep list
-                # otherwise these replicas are re-evaluated
-                for replica, matches in protect_candidates.iteritems():
-                    if replica in keep_candidates:
+                # now figure out which of deletion candidates to actually delete
+                if self.policy.iterative_deletion:
+                    # we will delete from one site at a time
+
+                    # all sites where delete candidates are
+                    candidate_sites = set(r.site for r in delete_candidates.iterkeys())
+
+                    # fraction of protected data at each candidate site
+                    protected_fraction = dict((s, 0. if quotas[s] > 0. else 1.) for s in candidate_sites)
+
+                    for replica, matches in protected.iteritems():
+                        if replica.site not in protected_fraction:
+                            continue
+
+                        quota = quotas[replica.site]
+                        if quota <= 0.:
+                            continue
+
+                        for condition_id, block_replicas in matches.iteritems():
+                            protected_fraction[replica.site] += sum(r.size for r in block_replicas) / quota
+
+                    # find the site with the highest protected fraction                            
+                    selected_site = max(candidate_sites, key = lambda site: protected_fraction[site])
+
+                    # all delete candidates at the site
+                    candidates_at_site = [r for r in delete_candidates.iterkeys() if r.site == selected_site]
+
+                    # sorted list of replicas to delete
+                    replicas_to_delete = sorted(candidates_at_site, key = self.policy.candidate_sort_key)
+
+                    deleted_volume = 0.
+
+                else:
+                    replicas_to_delete = sorted(delete_candidates.iterkeys(), key = self.policy.candidate_sort_key)
+
+                for replica in replicas_to_delete:
+                    site = replica.site
+
+                    if site not in triggered_sites:
+                        # Site was de-triggered. Move this replica to keep_candidates.
+                        for condition_id, matches in delete_candidates[replica].iteritems():
+                            get_list(keep_candidates, replica, condition_id).update(matches)
+
                         continue
 
-                    protected[replica].extend(matches)
-                    all_replicas.remove(replica)
-
-                    quota = quotas[replica.site] * 1.e+12
-                    if quota > 0.:
-                        size = sum(sum(br.size for br in match[0]) for match in matches)
-                        protected_fraction[replica.site] += size / quota
+                    if self.policy.iterative_deletion:
+                        quota = quotas[site]
     
-                # update the list of target sites
-                for site in list(triggered_sites):
-                    for cond in policy.stop_condition:
-                        if cond.match(site):
+                        # have we deleted more than allowed in a single iteration?
+                        if quota > 0. and deleted_volume / quota > self.deletion_per_iteration:
+                            break
+
+                    LOG.debug('Deleting replica: %s', str(replica))
+
+                    for condition_id, matches in delete_candidates[replica].iteritems():
+                        unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, matches)
+                        if len(unlinked_replicas) != 0:
+                            to_delete = set(unlinked_replicas) - set(reowned_replicas)
+
+                            if self.policy.iterative_deletion:
+                                deleted_volume += sum(br.size for br in to_delete)
+
+                            get_list(deleted, replica, condition_id).update(to_delete)
+                            for block_replica in unlinked_replicas:
+                                block_replica.delete_from(repository)
+
+                        if len(reowned_replicas) != 0:
+                            if replica in reowned:
+                                reowned[replica].extend(reowned_replicas)
+                            else:
+                                reowned[replica] = list(reowned_replicas)
+
+                    if len(replica.block_replicas) == 0:
+                        replica.delete_from(repository)
+                        all_replicas.remove(replica)
+
+                    site_partition = site.partitions[partition]
+
+                    # has the site reached the stop-deletion threshold?
+                    for cond in self.policy.stop_condition:
+                        if cond.match(site_partition):
                             triggered_sites.remove(site)
                             break
 
         # done iterating
 
-        logger.info(' %d dataset replicas in delete list', len(deleted))
-        logger.info(' %d dataset replicas in keep list', len(kept))
-        logger.info(' %d dataset replicas in protect list', len(protected))
+        LOG.info(' %d dataset replicas in delete list', len(deleted))
+        LOG.info(' %d dataset replicas in keep list', len(kept))
+        LOG.info(' %d dataset replicas in protect list', len(protected))
 
-        for line in policy.policy_lines:
-            if hasattr(line, 'has_match') and not line.has_match:
-                logger.warning('Policy %s had no matching replica.' % str(line))
+        for line in self.policy.policy_lines:
+            if not line.has_match:
+                LOG.warning('Policy %s had no matching replica.' % str(line))
 
-        # save replica snapshots and all deletion decisions
-        logger.info('Saving deletion decisions.')
+        # Do a last-minute check whether we can really delete these replicas
+#        if policy.predelete_check is not None:
+#            policy.predelete_check(list_chunk)
 
-        self.history.save_deletion_decisions(run_number, quotas, deleted, kept, protected)
-        
-        logger.info('Committing deletion.')
+        return deleted, kept, protected, reowned
 
-        # we have recorded deletion reasons; we can now consolidate deleted block replicas
-
-        # put aside the block replicas to not delete
-        keep_parts = {}
-
-        deletion_list = []
-        for replica, matches in deleted.iteritems():
-            keep_parts[replica] = replica.block_replicas
-            replica.block_replicas = []
-            for match in matches:
-                replica.block_replicas.extend(match[0])
-
-            deletion_list.append(replica)
-
-        self.commit_deletions(run_number, policy, deletion_list, is_test, comment)
-
-        logger.info('Restoring inventory state.')
-
-        # recover fragmented dataset replicas
-        for replica, block_replicas in keep_parts.iteritems():
-            replica.block_replicas.extend(block_replicas)
-
-        # then bring back replicas not in the partition
-        policy.restore_replicas()
-
-        self.history.close_deletion_run(run_number)
-
-    def unlink_block_replicas(self, replica, block_replicas, policy, is_test):
-        """
-        Unlink the dataset replica or parts of it from the owning containers.
-        Return the list of unlinked block replicas and reowned block replicas.
-        The second list is necessary for the caller to update its list of block
-        replicas to process, because owner change amounts to a rewrite of the
-        entire object under the current immutable blockreplica format.
-        """
-
-        if len(block_replicas) == len(replica.block_replicas):
-            for block_replica in block_replicas:
-                block_replica.unlink()
-
-            replica.unlink()
-
-            return block_replicas, []
+    def _unlink_block_replicas(self, replica, partition, block_replicas = None):
+        if block_replicas is None or len(block_replicas) == len(replica.block_replicas):
+            blocks_to_unlink = list(replica.block_replicas)
+            blocks_to_hand_over = []
 
         else:
             # Special operation - if we are deleting block replicas owned by group B, whose
@@ -369,169 +483,151 @@ class Detox(object):
                     break
 
             if dr_owner is None:
-                blocks_to_hand_over = []
                 blocks_to_unlink = list(block_replicas)
-            else:
                 blocks_to_hand_over = []
+            else:
                 blocks_to_unlink = []
+                blocks_to_hand_over = []
                 for block_replica in block_replicas:
                     if block_replica.group.olevel is Dataset:
                         blocks_to_unlink.append(block_replica)
                     else:
                         blocks_to_hand_over.append(block_replica)
 
-            if len(blocks_to_hand_over) != 0:
-                logger.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
-                # not ideal to make reassignments here, but this operation affects later iterations
-                reassigned_blocks = self.reassign_owner(replica, blocks_to_hand_over, dr_owner, policy.partition, is_test)
-            else:
-                reassigned_blocks = []
+            LOG.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
+            for block_replica in blocks_to_hand_over:
+                block_replica.group = dr_owner
 
-            if len(blocks_to_unlink) != 0:
-                logger.debug('%d blocks to unlink', len(blocks_to_unlink))
+                # if the change of owner disqualifies this block replica from the partition,
+                # we unlink it from the repository.
+                if not partition.contains(block_replica):
+                    blocks_to_unlink.append(block_replica)
 
-                for block_replica in blocks_to_unlink:
-                    block_replica.unlink()
+        return blocks_to_unlink, blocks_to_hand_over
 
-            return blocks_to_unlink, reassigned_blocks
-
-    def reassign_owner(self, dataset_replica, block_replicas, new_owner, partition, is_test):
+    def _commit_deletions(self, cycle_number, inventory, deleted, comment):
         """
-        Add back the block replicas to dataset replica under the new owner.
-        """
-
-        self.transaction_manager.copy.schedule_reassignments(block_replicas, new_owner, comments = 'Dynamo -- Group reassignment', is_test = is_test)
-
-        site = dataset_replica.site
-
-        new_replicas = []
-        for old_replica in block_replicas:
-            old_replica.unlink()
-
-            new_replica = old_replica.clone(group = new_owner)
-
-            dataset_replica.block_replicas.append(new_replica)
-            site.add_block_replica(new_replica, partitions = [partition])
-            
-            new_replicas.append(new_replica)
-
-        if not is_test:
-            # are we relying on do_update = True in insert_many <- add_blockreplicas here?
-            self.inventory_manager.store.add_blockreplicas(new_replicas)
-
-        return new_replicas
-
-    def commit_deletions(self, run_number, policy, deletion_list, is_test, comment):
-        """
-        @param run_number    Cycle number.
-        @param policy        Policy object.
-        @param deletion_list List of dataset replicas (can be partial) to be deleted.
-        @param is_test       Do not actually delete if True
-        @param comment       Comment to be recorded in the history DB
+        @param cycle_number  Cycle number.
+        @param inventory     Global (original) inventory
+        @param deleted       {dataset_replica: {condition_id: set(block_replicas)}}
+        @param comment       Comment to be passed to the deletion interface.
         """
 
-        if not comment:
-            comment = 'Dynamo -- Automatic cache release request'
-            if policy.partition.name != 'Global':
-                comment += ' for %s partition.' % policy.partition.name
+        signal_blocker = SignalBlocker(logger = LOG)
 
-        # organize the replicas into sites and set up block-level deletions
-        deletions_by_site = collections.defaultdict(list)
-        for replica in deletion_list:
-            deletions_by_site[replica.site].append(replica)
+        # organize the replicas into sites
+        deletions_by_site = collections.defaultdict(list) # {site: [(dataset_replica, block_replicas)]}
+        for replica, matches in deleted.iteritems():
+            all_block_replicas = set()
+            for condition_id, block_replicas in matches.iteritems():
+                all_block_replicas.update(block_replicas)
 
-        # now schedule deletion for each site
-        for site in sorted(deletions_by_site.iterkeys()):
-            if site.storage_type == Site.TYPE_MSS:
-                if config.daemon_mode:
-                    logger.warning('Deletion from MSS cannot be done in daemon mode.')
-                    continue
-            
-                print 'Deletion from', site.name, 'is requested. Are you sure? [Y/n]'
-                response = sys.stdin.readline().strip()
-                if response != 'Y':
-                    logger.warning('Aborting.')
-                    continue
+            deletions_by_site[replica.site].append((replica, all_block_replicas))
 
+        # now schedule deletions for each site
+        for site in sorted(deletions_by_site.iterkeys(), key = lambda s: s.name):
             site_deletion_list = deletions_by_site[site]
 
-            logger.info('Deleting %d replicas from %s.', len(site_deletion_list), site.name)
+            LOG.info('Deleting %d replicas from %s.', len(site_deletion_list), site.name)
 
-            sigint.block()
-
-            deletion_mapping = {} #{deletion_id: (approved, [replicas])}
-
-            chunk_size = detox_config.main.deletion_volume_per_request * 1.e+12
-
-            while len(site_deletion_list) != 0:
-                # stack up replicas up to 110% of volume_per_request
-                # unnecessary complication in my mind, but has been requested
-                list_chunk = []
-                list_above_chunk = []
-                deletion_size = 0
-                while len(site_deletion_list) != 0:
-                    size = site_deletion_list[-1].size()
-
-                    if deletion_size > chunk_size and deletion_size + size > chunk_size * 1.1:
-                        # put the excess back
-                        list_above_chunk.reverse()
-                        site_deletion_list.extend(list_above_chunk)
-                        list_above_chunk = []
-                        break
-
-                    replica = site_deletion_list.pop()
-
-                    if deletion_size > chunk_size:
-                        list_above_chunk.append(replica)
-                    else:
-                        list_chunk.append(replica)
-
-                    deletion_size += size
-
-                list_chunk.extend(list_above_chunk)
-
-                # Do a last-minute check whether we can really delete these replicas
-                # Replicas that shouldn't be deleted are removed from list_chunk
-                # Decision here is not recorded in the replica snapshots - should really
-                # be an emergency measure
-                if policy.predelete_check is not None:
-                    policy.predelete_check(list_chunk)
-                
-                chunk_record = self.transaction_manager.deletion.schedule_deletions(list_chunk, comments = comment, is_test = is_test)
-                if is_test:
-                    # record deletion_id always starts from -1 and go negative
-                    for deletion_id, record in chunk_record.iteritems():
-                        while deletion_id in deletion_mapping:
-                            deletion_id -= 1
-                        deletion_mapping[deletion_id] = record
+            flat_list = []
+            for replica, block_replicas in site_deletion_list:
+                if set(block_replicas) == replica.block_replicas:
+                    flat_list.append(replica)
                 else:
-                    deletion_mapping.update(chunk_record)
+                    flat_list.extend(block_replicas)
 
-            total_size = 0
-            num_deleted = 0
+            # Block interruptions until deletion is executed and recorded
+            with signal_blocker:
+                deletion_mapping = self.deletion_op.schedule_deletions(flat_list, comments = comment)
+    
+                total_size = 0
+    
+                for deletion_id, (approved, site, items) in deletion_mapping.iteritems():
+                    # Delete ownership of block replicas in the approved deletions.
+                    # Because replicas in partition_repository are modified already during the iterative
+                    # deletion, we find the original replicas from the global inventory.
+    
+                    size = 0
+                    datasets = set()
+                    for item in items:
+                        if type(item) is Dataset:
+                            dataset = inventory.datasets[item.name]
+                            replica = dataset.find_replica(site.name)
+                            for block_replica in replica.block_replicas:
+                                size += block_replica.size
+                                if approved:
+                                    block_replica.group = inventory.groups[None]
+                                    inventory.update(block_replica)
+                        else:
+                            dataset = inventory.datasets[item.dataset.name]
+                            block = dataset.find_block(item.name)
+                            replica = block.find_replica(site.name)
+                            if replica is None:
+                                LOG.info('Could not find %s:%s in inventory', site.name, block.full_name())
+                                raise RuntimeError()
 
-            for deletion_id, (approved, replicas) in deletion_mapping.iteritems():
-                size = sum([r.size() for r in replicas])
-                for replica in replicas:
-                    blockreplicas = []
-                    for block_replica in replica.block_replicas:
-                        blockreplica = block_replica.clone(group = None)
-                        blockreplicas.append(blockreplica)
-                    
-                    if not is_test:
-                        self.inventory_manager.store.update_blockreplicas(blockreplicas)
+                            size += replica.size
+                            if approved:
+                                replica.group = inventory.groups[None]
+                                inventory.update(replica)
 
-                if approved and not is_test:
+                        datasets.add(dataset)
+    
+                    self.history.make_deletion_entry(cycle_number, site, deletion_id, approved, datasets, size)
                     total_size += size
-                    num_deleted += len(replicas)
 
+            LOG.info('Done deleting %.1f TB from %s.', total_size * 1.e-12, site.name)
+
+    def _commit_reassignments(self, cycle_number, inventory, reowned, comment):
+        """
+        @param cycle_number  Cycle number.
+        @param inventory     Global (original) inventory
+        @param reowned       {dataset_replica: {condition_id: set(block_replicas)}}
+        @param comment       Comment to be passed to the copy interface.
+        """
+
+        # organize the replicas into sites and set up ownership change
+        reown_by_site = collections.defaultdict(list) # {site: [(dataset_replica, block_replicas)]}
+        for replica, block_replicas in reowned.iteritems():
+            reown_by_site[replica.site].append((replica, block_replicas))
+
+        # now schedule change of ownership (transfer request at the site) for each site
+        for site in sorted(reown_by_site.iterkeys(), key = lambda s: s.name):
+            site_reown_list = reown_by_site[site]
+
+            LOG.info('Changing ownership of %d replicas at %s.', len(site_reown_list), site.name)
+
+            flat_list = []
+            for replica, block_replicas in site_reown_list:
+                if set(block_replicas) == replica.block_replicas:
+                    flat_list.append(replica)
                 else:
-                    # restore dataset-replica and site-replica links
-                    for replica in replicas:
-                        replica.link()
+                    flat_list.extend(block_replicas)
 
-                self.history.make_deletion_entry(run_number, site, deletion_id, approved, [r.dataset for r in replicas], size)
+            # Unlike deletions, we don't need to block interruptions here because there is nothing to record.
+            reassigment_mapping = self.copy_op.schedule_copies(flat_list, comments = comment)
 
-            sigint.unblock()
+            for copy_id, (approved, site, items) in reassignment_mapping.iteritems():
+                if not approved:
+                    continue
 
-            logger.info('Done deleting %d replicas (%.1f TB) from %s.', num_deleted, total_size * 1.e-12, site.name)
+                for item in items:
+                    if type(item) is Dataset:
+                        dataset = inventory.datasets[item.name]
+                        replica = dataset.find_replica(site.name)
+
+                        # replica in the partition_repository
+                        clone_replica = item.find_replica(site)
+                        for clone_block_replica in clone_replica.block_replicas:
+                            block_replica = replica.find_block_replica(clone_block_replica.block.name)
+                            block_replica.group = inventory.groups[clone_block_replica.group.name]
+
+                            inventory.update(block_replica)
+                    else:
+                        dataset = inventory.datasets[item.dataset.name]
+                        block = dataset.find_block(item.name)
+                        replica = block.find_replica(site.name)
+                        replica.group = inventory.groups[item.group.name]
+
+                        inventory.update(replica)

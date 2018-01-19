@@ -1,0 +1,3 @@
+SetHandler application/x-httpd-php
+
+SSLOptions +StdEnvVars

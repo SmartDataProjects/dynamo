@@ -1,9 +1,9 @@
 class BaseHandler(object):
     def __init__(self, name):
         self.name = name
-        self.used_demand_plugins = []
+        self.required_attrs = []
 
-    def get_requests(self, inventory, policy):
+    def get_requests(self, inventory, history, policy):
         """
         Return a prioritized list of objects requesting transfer of.
         """

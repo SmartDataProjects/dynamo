@@ -1,0 +1,106 @@
+#!/bin/bash
+# --------------------------------------------------------------------------------------------------
+# dynamod       Startup script for the Dynamo Scheduler Server
+#
+# chkconfig: - 70 15
+# description:
+#
+# processname: dynamo-scheduled
+# pidfile:     /var/run/dynamo-scheduled.pid
+# --------------------------------------------------------------------------------------------------
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# This will prevent initlog from swallowing up a pass-phrase prompt if
+# mod_ssl needs a pass-phrase from the user.
+INITLOG_ARGS=""
+
+EXECUTABLE=dynamo-scheduled # executable this script spawns
+TARGET=_INSTALLPATH_/sbin/dynamo-scheduled # full path to the executable
+ARGS="/etc/dynamo/scheduled.seq"
+
+# Path to the running script, server binary, and short-form for messages.
+PIDFILE=${PIDFILE-/var/run/dynamo-scheduled.pid}
+LOCKFILE=${LOCKFILE-/var/lock/subsys/dynamo-scheduled}
+
+EXITCODE=0
+STOP_TIMEOUT=${STOP_TIMEOUT-120} # it takes some time to restore databases
+
+# Start scheduler daemon (dynamo-scheduled)
+start() {
+  PIDS=$(ps ax | grep $EXECUTABLE | grep -v grep | grep -v 'init\.d' | awk '/^[0-9]/ {print $1}')
+  if [ "$PIDS" ]
+  then
+    echo "$EXECUTABLE already running: $PIDS"
+    return 1
+  fi
+
+  if [ -e $PIDFILE ]
+  then
+    echo "$EXECUTABLE does not appear running but PID file $PIDFILE exists."
+    echo "PID: $(cat $PIDFILE)"
+    return 1
+  fi
+
+  if [ -e $LOCKFILE ]
+  then
+    echo "$EXECUTABLE may have just started in another session."
+    return 1
+  fi
+
+  touch $LOCKFILE
+
+  echo -n $"Starting $EXECUTABLE:"
+  daemon --pidfile=$PIDFILE $TARGET $ARGS \&
+  EXITCODE=$?
+  echo
+
+  if [ $EXITCODE -eq 0 ]
+  then
+    echo $(pgrep -n $EXECUTABLE) > $PIDFILE
+  fi
+
+  rm $LOCKFILE
+
+  return $EXITCODE
+}
+
+# Stop scheduler daemon (dynamo-scheduled)
+stop() {
+  echo -n $"Stopping $EXECUTABLE:"
+  killproc -p $PIDFILE -d $STOP_TIMEOUT $TARGET
+  EXITCODE=$?
+  echo
+
+  rm -f $PIDFILE
+}
+
+# See how we were called.
+case "$1" in
+  start)
+    start
+    ;;
+  stop)
+    stop
+    ;;
+  status)
+    status -p $PIDFILE $EXECUTABLE
+    EXITCODE=$?
+    ;;
+  restart)
+    stop
+    start
+    ;;
+  condrestart|try-restart)
+    if status -p $PIDFILE $EXECUTABLE >&/dev/null
+    then
+      stop
+      start
+    fi
+    ;;
+  *)
+    echo $"Usage: $EXECUTABLE {start|stop|restart|status|help}"
+    EXITCODE=2
+esac
+
+exit $EXITCODE

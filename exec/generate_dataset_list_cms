@@ -1,0 +1,136 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import fnmatch
+import sqlite3
+
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Update datasets, blocks, and files information.')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+parser.add_argument('--target', '-t', metavar = 'TYPE', dest = 'target', help = 'Target state DB file type ("dataset" or "replica").')
+
+args = parser.parse_args()
+sys.argv = []
+
+## Load the configuration
+from dynamo.dataformat import Configuration
+
+config = Configuration(args.config)
+
+## Set up logging (write to stdout & stderr)
+from dynamo.core.executable import make_standard_logger
+
+LOG = make_standard_logger(config.log_level)
+
+## State file
+if args.target == 'dataset':
+    state_file = config.dataset_state_file
+elif args.target == 'replica':
+    state_file = config.replica_state_file
+else:
+    LOG.error('Unknown target %s', args.target)
+    sys.exit(1)
+
+## If the dataset list already exists, quit
+if os.path.exists(state_file):
+    file_exists = True
+
+    state_db = sqlite3.connect(state_file)
+    cursor = state_db.cursor()
+
+    if args.target == 'dataset':
+        sql = 'SELECT COUNT(*) FROM `datasets`'
+    else:
+        sql = 'SELECT COUNT(*) FROM `full_updates`'
+
+    result = cursor.execute(sql)
+    count = next(result)[0]
+    state_db.close()
+
+    if count != 0:
+        LOG.info('Update list exists.')
+        sys.exit(0)
+
+else:
+    file_exists = False
+
+## Load and initialize sources
+import dynamo.source.impl as sources
+from dynamo.utils.parallel import Map
+
+config.datasets.config.phedex = config.phedex
+config.sites.config.phedex = config.phedex
+
+dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
+
+## Collect data and save
+
+# If the state file did not exist, this line will create it
+state_db = sqlite3.connect(state_file)
+
+if args.target == 'dataset':
+    # Filter out secondary dataset names
+    acquisition_eras = dataset_source._dbs.make_request('acquisitioneras')
+    sds = [e['acquisition_era_name'] for e in acquisition_eras]
+    
+    for pattern in config.excluded_secondary_datasets:
+        for sd in list(sds):
+            if fnmatch.fnmatch(sd, pattern):
+                sds.remove(sd)
+    
+    LOG.info('Gathering dataset names from %d acquisition eras.', len(sds))
+    
+    all_datasets = []
+    
+    # Query DBS in parallel (by SD name)
+    args = [('datasets', ['acquisition_era_name=' + sd]) for sd in sds]
+    results = Map().execute(dataset_source._dbs.make_request, args)
+    for result in results:
+        for entry in result:
+            all_datasets.append(entry['dataset'])
+    
+    LOG.info('Collected %d dataset names.', len(all_datasets))
+
+    # Write
+    if not file_exists:
+        # connect() already created a file. Make the table.
+        state_db.execute('CREATE TABLE `datasets` (`id` INTEGER NOT NULL PRIMARY KEY, `name` TEXT NOT NULL)')
+        state_db.commit()
+
+    sql = 'INSERT INTO `datasets` (`name`) VALUES (?)'
+    cursor = state_db.cursor()
+    for dataset in all_datasets:
+        cursor.execute(sql, (dataset,))
+
+else:
+    site_source = sources.PhEDExSiteInfoSource(config.sites.config)
+    
+    # All sites
+    all_sites = site_source.get_site_list()
+
+    # All dataset tiers
+    data_tiers = dataset_source._dbs.make_request('datatiers')
+    tiers = [e['data_tier_name'] for e in data_tiers]
+
+    # Write
+    if not file_exists:
+        state_db.execute('CREATE TABLE `delta_updates` (`timestamp` INTEGER NOT NULL, `num_updated` INTEGER NOT NULL, `num_deleted` INTEGER NOT NULL)')
+        state_db.execute('CREATE TABLE `full_updates` (`id` INTEGER NOT NULL PRIMARY KEY, `site` TEXT NOT NULL, `tier` TEXT NOT NULL)')
+        state_db.commit()
+
+    sql = 'INSERT INTO `full_updates` (`site`, `tier`) VALUES (?, ?)'
+    cursor = state_db.cursor()
+    for site in all_sites:
+        for tier in tiers:
+            cursor.execute(sql, (site.name, tier))
+
+state_db.commit()
+state_db.close()
+
+if not file_exists:
+    # This script is run as the read-only user, but the full user has to be able to update the DB
+    os.chmod(state_file, 0666)
+
+LOG.info('Update list written to %s.', state_file)

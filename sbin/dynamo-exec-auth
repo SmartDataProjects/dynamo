@@ -1,0 +1,137 @@
+#!/usr/bin/python
+
+import os
+import sys
+import hashlib
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Dynamo')
+parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', help = 'Title of the executable.')
+parser.add_argument('--executable', '-x', metavar = 'PATH', dest = 'executable', help = 'Executable file.')
+parser.add_argument('--user', '-u', metavar = 'USER', dest = 'user', default = '', help = 'User name.')
+parser.add_argument('--delete', '-D', action = 'store_true', help = 'Delete entry.')
+parser.add_argument('--update', '-U', action = 'store_true', help = 'Overwrite existing entry if there is any. Otherwise do nothing.')
+parser.add_argument('--list', '-L', action = 'store_true', help = 'List existing entries.')
+
+args = parser.parse_args()
+sys.argv = []
+
+try:
+    debug = (os.environ['DYNAMO_SERVER_DEBUG'] == '1')
+except:
+    debug = False
+
+if not debug:
+    if os.geteuid() != 0:
+        sys.stderr.write('Root privilege required\n')
+        sys.exit(1)
+
+## Read server config (should be readable only to root)
+
+from dynamo.dataformat import Configuration
+
+try:
+    config_path = os.environ['DYNAMO_SERVER_CONFIG']
+except KeyError:
+    config_path = '/etc/dynamo/server_config.json'
+
+server_config = Configuration(config_path)
+
+## Create the registry
+
+from dynamo.core.registry import DynamoRegistry
+
+registry = DynamoRegistry(server_config.registry)
+
+## Find the user id
+
+if args.user:
+    result = registry.backend.query('SELECT `id` FROM `users` WHERE `name` = %s', args.user)
+    if len(result) == 0:
+        sys.stderr.write('Invalid user %s\n' % args.user)
+        sys.exit(1)
+
+    user_id = result[0]
+else:
+    user_id = 0
+
+if args.list:
+    sql = 'SELECT u.`name`, a.`title` FROM `authorized_executables` AS a LEFT JOIN `users` AS u ON u.`id` = a.`user_id`'
+    constraints = []
+    params = []
+    if user_id != 0:
+        constraints.append('u.`id` = %s')
+        params.append(user_id)
+    if args.title:
+        constraints.append('a.`title` = %s')
+        params.append(args.title)
+    if args.executable:
+        with open(args.executable) as source:
+            checksum = hashlib.md5(source.read()).hexdigest()
+        constraints.append('a.`checksum` = %s')
+        params.append(checksum)
+
+    if len(constraints):
+        sql += ' WHERE ' + ' AND '.join(constraints)
+
+    print '%10s  %10s' % ('USER', 'TITLE')
+    for user, title in registry.backend.query(sql, *tuple(params)):
+        print '%10s  %10s' % (user, title)
+
+    sys.exit(0)
+
+if not args.title:
+    sys.stderr.write('--title (-t) is required.\n')
+    sys.exit(1)
+
+## Check for existing entry
+
+existing = registry.backend.query('SELECT COUNT(*) FROM `authorized_executables` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)[0]
+
+if args.update and not existing:
+    sys.stdout.write('Executable %s for user %s not previously authorized.' % (args.title, args.user))
+    sys.exit(0)
+
+## Entry deletion
+
+if args.delete:
+    if existing:
+        registry.backend.query('DELETE FROM `authorized_executables` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)
+        sys.stdout.write('Deleted executable %s' % args.title)
+        if user_id != 0:
+            sys.stdout.write(' (user %s).\n' % args.user)
+        else:
+            sys.stdout.write('.\n')
+    else:
+        sys.stdout.write('Executable %s' % args.title)
+        if user_id != 0:
+            sys.stdout.write(' (user %s)' % args.user)
+        sys.stdout.write(' does not exist.\n')
+
+    sys.exit(0)
+
+## If not deleting, executable must be passed
+
+if not args.executable:
+    sys.stderr.write('Missing --executable\n')
+    sys.exit(1)
+
+## Compute the checksum and insert/update.
+    
+with open(args.executable) as source:
+    checksum = hashlib.md5(source.read()).hexdigest()
+
+sql = 'INSERT INTO `authorized_executables` (`user_id`, `title`, `checksum`) VALUES (%s, %s, UNHEX(%s))'
+sql += ' ON DUPLICATE KEY UPDATE `checksum` = VALUES(`checksum`)'
+registry.backend.query(sql, user_id, args.title, checksum)
+
+if existing:
+    sys.stdout.write('Updated')
+else:
+    sys.stdout.write('Inserted')
+
+sys.stdout.write(' executable %s' % args.title)
+if user_id != 0:
+    sys.stdout.write(' (user %s)' % args.user)
+
+sys.stdout.write(': %s\n' % checksum)

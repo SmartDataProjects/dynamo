@@ -1,0 +1,51 @@
+{
+  "replica_state_file": "$(DYNAMO_SPOOL)/update_replicas_cms.state",
+  "dataset_state_file": "$(DYNAMO_SPOOL)/update_datasets_cms.state",
+  "excluded_secondary_datasets": [],
+  "num_update_datasets": 50,
+  "phedex": {
+    "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
+    "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
+    "auth_handler": "HTTPSCertKeyHandler",
+    "auth_handler_conf": {}
+  },
+  "groups": {
+    "module": "PhEDExGroupInfoSource",
+    "config": {
+      "phedex": {},
+      "dataset_level_groups": ["AnalysisOps", "IB RelVal", "RelVal"]
+    }
+  },
+  "sites": {
+    "module": "PhEDExSiteInfoSource",
+    "config": {
+      "include": ["T0_*", "T1_*", "T2_*"],
+      "exclude": ["T1_UK_RAL_ECHO_Disk", "T2_CH_CERNBOX", "T2_MY_UPM_BIRUNI"],
+      "ssb": {
+        "url_base": "http://dashb-ssb.cern.ch/dashboard/request.py",
+        "auth_handler": "HTTPSCertKeyHandler",
+        "auth_handler_conf": {}
+      },
+      "phedex": {},
+      "ssb_cache_lifetime": 1800
+    }
+  },
+  "datasets": {
+    "module": "PhEDExDatasetInfoSource",
+    "config": {
+      "dbs": {
+        "url_base": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
+        "auth_handler": "HTTPSCertKeyHandler",
+        "auth_handler_conf": {}
+      },
+      "phedex": {}
+    }
+  },
+  "replicas": {
+    "module": "PhEDExReplicaInfoSource",
+    "config": {
+      "phedex": {}
+    }
+  },
+  "log_level": "info"
+}

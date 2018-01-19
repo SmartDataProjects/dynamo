@@ -1,0 +1,11 @@
+[Unit]
+Description=Dynamo Schedule Server
+
+[Service]
+PIDFile=/var/run/dynamo-scheduled.pid
+EnvironmentFile=/etc/sysconfig/dynamod
+ExecStart=_INSTALLPATH_/sbin/dynamo-scheduled /etc/dynamo/scheduled.seq
+ExecReload=/bin/kill -TERM $MAINPID
+RestartSec=5
+KillMode=process
+Restart=on-failure

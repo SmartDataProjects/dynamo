@@ -138,7 +138,12 @@ class QueueManager(object):
 
             #ask for size, update only if size is changing
             if dsetRep == None:
-                dsetRep = self._inventory.add_dataset_to_site(dataset,site,targetGroup)
+                dsetRep = DatasetReplica(dataset, site)
+                self._inventory.update(dsetRep)
+                for block in dataset.blocks:
+                    blockRep = BlockReplica(block, site, targetGroup, size = 0, last_update = 0)
+                    self._inventory.update(blockRep)
+
                 print "making new dataset replica"
 
             dsetDone = True
@@ -153,8 +158,11 @@ class QueueManager(object):
                     
                 if size > blockRep.size:
                     print 'updating block replica ...'
-                    dsetRep.update_block_replica(block, targetGroup, complete, False, size, time.time())
-                    
+                    blockRep.group = targetGroup
+                    blockRep.is_complete = complete
+                    blockRep.is_custodial = False
+                    blockRep.size = size
+                    blockRep.last_update = time.time()
 
             #here we enter done requests into the history databas
             #and delete them them from ongoing activities
@@ -167,7 +175,6 @@ class QueueManager(object):
                 new_dataset_replicas.append(dsetRep)
                 replica_timestamps[dsetRep] = uRequest._created
                 done_requests.append(uRequest._reqid)
-                dsetRep.is_complete = True
 
         #save complete requests into history
         self._history.save_dataset_transfers(new_dataset_replicas,replica_timestamps)
@@ -212,7 +219,8 @@ class QueueManager(object):
                 replica_timestamps[dsetRep] = uRequest._created
                 done_requests.append(uRequest._reqid)
                 print dsetRep.block_replicas
-                dsetRep.unlink()
+                dataset.replicas.remove(dsetRep)
+                site.remove_dataset_replica(dsetRep)
 
         #save complete requests into history
         self._history.save_dataset_deletions(gone_dataset_replicas,replica_timestamps)

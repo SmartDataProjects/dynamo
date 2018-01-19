@@ -24,15 +24,15 @@ logging.basicConfig(level = log_level)
 
 logger = logging.getLogger(__name__)
 
-from common.interface.mysql import MySQL
+from utils.interface.mysql import MySQL
 
 store = MySQL(config_file = '/etc/my.cnf', config_group = 'mysql-dynamo', db = 'dynamoregister')
 
 if args.command[0] == 'update':
     logger.info('Synchronizing the user list to SiteDB.')
 
-    from common.interface.sitedb import SiteDB
-    sitedb = SiteDB()
+    from source.sitedbuserinfo import SiteDBUserInfoSource
+    sitedb = SiteDBUserInfoSource()
 
     domain_id = store.query('SELECT `id` FROM `domains` WHERE `name` = \'cern.ch\'')[0]
 

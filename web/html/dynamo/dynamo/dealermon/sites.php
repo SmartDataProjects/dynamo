@@ -57,12 +57,12 @@ function single_site_csvline_to_array($csvdata, $DorP){
   $filename3 = $DorP . $filename2;
 
   $csvline = array(
-		   $filename3,
-		   $id,
-		   intval($total),
-		   intval($copied),
-		   intval($isstuck)
-		   );
+                   $filename3,
+                   $id,
+                   intval($total),
+                   intval($copied),
+                   intval($isstuck)
+                   );
   return $csvline;
 }
 
@@ -75,18 +75,18 @@ if ( (isset($_REQUEST['getSiteCSVs']) && $_REQUEST['getSiteCSVs']) ){
     if (($handle = fopen($csvpath[$i], "r")) !== FALSE){ 
       $DorP = "D";
       if( strpos($csvpath[$i], 'phedex') !== false){
-	  $DorP = "P";
+        $DorP = "P";
 
-	}	 
+      } 
       $counter = 0;
       while (($data = fgetcsv($handle, 10000, ",")) !== FALSE){
-	if ($counter++ == 0)
-	  continue;
-	
-	$row++;
-	$line = single_site_csvline_to_array($data,$DorP);
-	
-	$final[] = $line;
+        if ($counter++ == 0)
+          continue;
+        
+        $row++;
+        $line = single_site_csvline_to_array($data,$DorP);
+        
+        $final[] = $line;
       }
     }
     
@@ -144,8 +144,8 @@ function single_rrd_to_array($rrd,$rrdpath){
   $rrd_array = array(
                      $time_entries,
                      $copied_entries,
-		     $total_entries,
-		     );
+                     $total_entries,
+                     );
 
   return $rrd_array;
 }
@@ -161,29 +161,32 @@ if ( (isset($_REQUEST['getSiteRRDs']) && $_REQUEST['getSiteRRDs']) ){
 
       $site1 = str_replace($rrdpaths[$i], '', $sitename);
       if ($site1 !=  $_REQUEST['site'])
-	continue;
+        continue;
       $siteinfo = array('site' => $site1, 'data' => array());
  
       foreach (glob($sitename . "/*.rrd") as $replicaname) {
 
 
-	$replicaname = str_replace($sitename . '/', '', $replicaname);
-	$replicaname1 = str_replace('.rrd', '', $replicaname);
-	$replicaname_explode = explode("_", $replicaname1, 2);
-	$replicaname2 = $replicaname_explode[1];
+        $replicaname = str_replace($sitename . '/', '', $replicaname);
+        $replicaname1 = str_replace('.rrd', '', $replicaname);
+        $replicaname_explode = explode("_", $replicaname1, 2);
+        $replicaname2 = $replicaname_explode[1];
+        $replicatograph = str_replace('/', "+",$_REQUEST['replicaname']);
+        $replicatograph = ltrim($replicatograph, '+');
 
-	if ($replicaname2 !=  str_replace(' ', "+",$_REQUEST['replicaname']))
 
-	  continue;
-	$replicadata = single_rrd_to_array($replicaname, $sitename);
-	
-	$ratio = array();
+        if ($replicaname2 !=  $replicatograph)
 
-	for($j = 0; $j < count($replicadata[2]); $j++){
-	  $ratio[] = $replicadata[1][$j]/$replicadata[2][$j];
-	}
-	$replicainfo = array('replica' => $replicaname1, 'time' => $replicadata[0], 'copied' => $replicadata[1], 'total' => $replicadata[2], 'ratio' => $ratio);
-	$siteinfo['data'][] = $replicainfo;
+          continue;
+        $replicadata = single_rrd_to_array($replicaname, $sitename);
+        
+        $ratio = array();
+
+        for($j = 0; $j < count($replicadata[2]); $j++){
+          $ratio[] = $replicadata[1][$j]/$replicadata[2][$j] * 100;
+        }
+        $replicainfo = array('replica' => $replicaname1, 'time' => $replicadata[0], 'copied' => $replicadata[1], 'total' => $replicadata[2], 'ratio' => $ratio);
+        $siteinfo['data'][] = $replicainfo;
       }
       $d[] = $siteinfo;
     }
@@ -193,7 +196,7 @@ if ( (isset($_REQUEST['getSiteRRDs']) && $_REQUEST['getSiteRRDs']) ){
 }
 
 
-if ( !(isset($_REQUEST['getSiteCSVs'])) ){
+if ( !(isset($_REQUEST['norm'])) ){
 
   
   $html = file_get_contents(__DIR__ . '/csvs.html');
@@ -205,4 +208,3 @@ if ( !(isset($_REQUEST['getSiteCSVs'])) ){
 }
 
 ?>
-
