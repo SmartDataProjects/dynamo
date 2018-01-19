@@ -199,6 +199,9 @@ else if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'dumpDeletions')
   $query .= ' INNER JOIN `datasets` AS d ON d.`id` = r.`dataset_id`';
   $query .= ' INNER JOIN ' . $replica_cache_table_name . ' AS c ON (c.`site_id`, c.`dataset_id`) = (q.`site_id`, r.`dataset_id`)';
   $query .= ' WHERE q.`run_id` = ? AND c.`decision` = \'delete\'';
+  // A BAD HACK
+  if ($partition_id != 9)
+    $query .= ' AND s.`name` NOT LIKE "%_MSS"';
   $query .= ' ORDER BY s.`name`, d.`name`';
 
   $stmt = $history_db->prepare($query);
@@ -265,6 +268,8 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
 
     $query = 'SELECT s.`id`, s.`name`, c.`status`, c.`quota` FROM ' . $site_cache_table_name . ' AS c';
     $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
+    if ($partition_id != 9)
+      $query.= ' WHERE s.`name` NOT LIKE "%_MSS"';
     $query .= ' ORDER BY s.`name`';
 
     $stmt = $history_db->prepare($query);
