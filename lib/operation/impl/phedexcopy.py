@@ -76,7 +76,7 @@ class PhEDExCopyInterface(CopyInterface):
                         else:
                             subscription_lists['block'][group].extend(blocks)
                 else:
-                    subscription_lists['block'][group].append(replica.block)
+                    subscription_lists['block'][replica.group].append(replica.block)
 
             for level in ['dataset', 'block']:
                 for group, items in subscription_lists[level].iteritems():
@@ -93,7 +93,7 @@ class PhEDExCopyInterface(CopyInterface):
                 full_catalog[dataset] = []
         elif level == 'block':
             for block in subscription_list:
-                full_catalog[dataset].append(block)
+                full_catalog[block.dataset].append(block)
 
         LOG.info('Subscribing %d datasets for %s at %s', len(full_catalog), group.name, site.name)
 

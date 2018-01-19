@@ -606,7 +606,7 @@ class Detox(object):
                     flat_list.extend(block_replicas)
 
             # Unlike deletions, we don't need to block interruptions here because there is nothing to record.
-            reassigment_mapping = self.copy_op.schedule_copies(flat_list, comments = comment)
+            reassignment_mapping = self.copy_op.schedule_copies(flat_list, comments = comment)
 
             for copy_id, (approved, site, items) in reassignment_mapping.iteritems():
                 if not approved:
@@ -628,6 +628,8 @@ class Detox(object):
                         dataset = inventory.datasets[item.dataset.name]
                         block = dataset.find_block(item.name)
                         replica = block.find_replica(site.name)
-                        replica.group = inventory.groups[item.group.name]
+
+                        clone_replica = item.find_replica(site)
+                        replica.group = inventory.groups[clone_replica.group.name]
 
                         inventory.update(replica)
