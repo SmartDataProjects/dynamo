@@ -19,6 +19,10 @@ class Dataset(object):
     def name(self):
         return self._name
 
+    @property
+    def files(self):
+        return set.union(*tuple(b.files for b in self.blocks))
+
     @staticmethod
     def data_type_name(arg):
         if type(arg) is int:

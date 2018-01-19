@@ -1,11 +1,13 @@
 import time
+import collections
+import threading
 
 from exceptions import ObjectError
 
 class Block(object):
     """Smallest data unit for data management."""
 
-    __slots__ = ['_name', '_dataset', 'size', 'num_files', 'is_open', 'replicas', 'files', 'last_update']
+    __slots__ = ['_name', '_dataset', 'size', 'num_files', 'is_open', 'replicas', 'last_update']
 
     @property
     def name(self):
@@ -14,6 +16,29 @@ class Block(object):
     @property
     def dataset(self):
         return self._dataset
+
+    @property
+    def files(self):
+        with Block._files_cache_lock:
+            try:
+                return Block._files_cache[self]
+            except:
+                return Block._fill_files_cache(self)
+
+    _files_cache = collections.OrderedDict()
+    _files_cache_lock = threading.Lock()
+    _MAX_FILES_CACHE_DEPTH = 100
+    _inventory_store = None
+
+    @staticmethod
+    def _fill_files_cache(block):
+        files = Block._inventory_store.get_files(block)
+        while len(Block._files_cache) >= Block._MAX_FILES_CACHE_DEPTH:
+            # Keep _files_cache FIFO to Block._MAX_FILES_CACHE_DEPTH
+            Block._files_cache.popitem(last = False)
+
+        Block._files_cache[block] = files
+        return files
 
     @staticmethod
     def to_internal_name(name_str):
@@ -37,9 +62,6 @@ class Block(object):
         self.last_update = last_update
 
         self.replicas = set()
-
-        # needs to be a weak set - weakref.WeakSet is only available for py2.7
-        self.files = None
 
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
@@ -128,15 +150,14 @@ class Block(object):
         return self._dataset.name + '#' + self.real_name()
 
     def find_file(self, lfn, must_find = False):
-        if self.files is None:
-            raise ObjectError('Files are not loaded for %s' % self.full_name())
+        files = self.files
 
         try:
             if type(lfn) is str:
-                return next(f for f in self.files if f.lfn == lfn)
+                return next(f for f in files if f.lfn == lfn)
             else:
                 # can be a tuple (directory_id, basename)
-                return next(f for f in self.files if f.fid() == lfn)
+                return next(f for f in files if f.fid() == lfn)
 
         except StopIteration:
             if must_find:
@@ -160,28 +181,26 @@ class Block(object):
     def add_file(self, lfile):
         # this function can change block_replica.is_complete
 
-        if self.files is None:
-            raise ObjectError('Files are not loaded for %s' % self.full_name())
+        files = self.files
 
-        self.files.add(lfile)
+        files.add(lfile)
         self.size += lfile.size
         self.num_files += 1
 
     def remove_file(self, lfile):
         # this function can change block_replica.is_complete
 
-        if self.files is None:
-            raise ObjectError('Files are not loaded for %s' % self.full_name())
+        files = self.files
 
-        self.files.remove(lfile)
+        files.remove(lfile)
         self.size -= lfile.size
         self.num_files -= 1
 
-        for replica in self.replicas:
-            if replica.files is not None:
-                try:
-                    replica.files.remove(lfile)
-                except ValueError:
-                    pass
-                else:
-                    replica.size -= lfile.size
+#        for replica in self.replicas:
+#            if replica.files is not None:
+#                try:
+#                    replica.files.remove(lfile)
+#                except ValueError:
+#                    pass
+#                else:
+#                    replica.size -= lfile.size

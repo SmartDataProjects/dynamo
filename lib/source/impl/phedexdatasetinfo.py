@@ -69,43 +69,144 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
         return updated_datasets
 
-    def get_dataset(self, name): #override
+    def get_dataset(self, name, with_files = False): #override
         ## Get the full dataset-block-file data from PhEDEx
 
-#        result = self._phedex.make_request('data', ['dataset=' + name, 'level=file'])
-        result = self._phedex.make_request('data', ['dataset=' + name, 'level=block'])
+        if with_files:
+            level = 'file'
+        else:
+            level = 'block'
 
-        if len(result) == 0 or 'dataset' not in result[0] or len(result[0]['dataset']) == 0:
+        result = self._phedex.make_request('data', ['dataset=' + name, 'level=' + level])
+
+        try:        
+            dataset_entry = result[0]['dataset'][0]
+        except:
             return None
-        
-        dataset_entry = result[0]['dataset'][0]
 
         ## Create the dataset object
         dataset = self._create_dataset(dataset_entry)
 
+        ## Fill block and file data
+        if 'block' in dataset_entry:
+            for block_entry in dataset_entry['block']:
+                block = self._create_block(block_entry, dataset)
+                dataset.blocks.add(block)
+
+                # size and num_files are left 0 in _create_dataset (PhEDEx does not tell)
+                dataset.size += block.size
+                dataset.num_files += block.num_files
+
+                if with_files and 'file' in block_entry:
+                    files = set()
+                    for file_entry in block_entry['file']:
+                        files.add(self._create_file(file_entry, block))
+        
+                    block.files.update(files)
+                    # _create_block sets size and num_files; just need to update the files list
+
         return dataset
 
-    def get_block(self, name, dataset = None): #override
+    def get_block(self, name, dataset = None, with_files = False): #override
         ## Get the full block-file data from PhEDEx
 
-#        result = self._phedex.make_request('data', ['dataset=' + name, 'level=file'])
-        result = self._phedex.make_request('data', ['block=' + name, 'level=block'])
+        if with_files:
+            level = 'file'
+        else:
+            level = 'block'
 
-        if len(result) == 0 or 'dataset' not in result[0] or len(result[0]['dataset']) == 0:
+        result = self._phedex.make_request('data', ['block=' + name, 'level=' + level])
+
+        try:
+            dataset_entry = result[0]['dataset'][0]
+            block_entry = dataset_entry['block'][0]
+        except:
             return None
-        
-        dataset_entry = result[0]['dataset'][0]
 
         if dataset is None:
+            link_dataset = False
+            # Just need a named object
             dataset = Dataset(dataset_entry['name'])
-        elif dataset.name != dataset_entry['name']:
-            raise IntegrityError('Inconsistent dataset %s passed to get_block(%s)', dataset.name, name)
-
-        block_entry = dataset_entry['block'][0]
+        else:
+            link_dataset = True
+            if dataset.name != dataset_entry['name']:
+                raise IntegrityError('Inconsistent dataset %s passed to get_block(%s)', dataset.name, name)
 
         block = self._create_block(block_entry, dataset)
-        
+
+        if with_files and 'file' in block_entry:
+            files = set()
+            for file_entry in block_entry['file']:
+                files.add(self._create_file(file_entry, block))
+
+            block.files.update(files)
+            # _create_block sets size and num_files; just need to update the files list
+
+        if link_dataset:
+            existing = dataset.find_block(block.name)
+            if existing is None:
+                dataset.blocks.add(block)
+                dataset.size += block.size
+                dataset.num_files += block.num_files
+            else:
+                dataset.blocks.remove(existing)
+                dataset.size += block.size - existing.size
+                dataset.num_files += block.num_files - existing.num_files
+
         return block
+
+    def get_file(self, name, block = None):
+        ## Get the file data from PhEDEx
+
+        result = self._phedex.make_request('data', ['file=' + name, 'level=file'])
+
+        try:
+            block_entry = result[0]['dataset'][0]['block'][0]
+            file_entry = block_entry['file'][0]
+        except:
+            return None
+
+        bname = block_entry['name']
+        block_name = Block.to_internal_name(bname[bname.find('#') + 1:])
+
+        if block is None:
+            link_block = False
+            # Just need a named object
+            dataset = Dataset(dataset_entry['name'])
+            block = Block(block_name, dataset)
+        else:
+            link_block = True
+            if block.name != block_name:
+                raise IntegrityError('Inconsistent block %s passed to get_file(%s)', block.real_name(), name)
+
+        lfile = self._create_file(file_entry, block)
+
+        if link_block:
+            # Caution - by adding this file we edit the block properties too
+
+            existing = block.find_file(lfile.fid())
+            if existing is None:
+                block.add_file(lfile)
+            else:
+                block.remove_file(existing)
+                block.add_file(lfile)
+
+        return lfile
+
+    def get_files(self, block): #override
+        files = set()
+
+        result = self._phedex.make_request('data', ['block=' + name.real_name(), 'level=file'])
+
+        try:
+            file_entries = result[0]['dataset'][0]['block'][0]['file']
+        except:
+            return files
+
+        for file_entry in file_entries:
+            files.add(self._create_file(file_entry, block))
+
+        return files
 
     def _create_dataset(self, dataset_entry):
         """
@@ -121,14 +222,6 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
             dataset.last_update = int(dataset_entry['time_update'])
         else:
             dataset.last_update = int(dataset_entry['time_create'])
-
-        ## Fill block and file data
-
-        for block_entry in dataset_entry['block']:
-            block = self._create_block(block_entry, dataset)
-            dataset.blocks.add(block)
-            dataset.size += block.size
-            dataset.num_files += block.num_files
 
         ## Get other details of the dataset from DBS
         self._fill_dataset_details(dataset)
@@ -156,16 +249,16 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         else:
             block.last_update = int(block_entry['time_create'])
 
-#        for file_entry in block_entry['file']:
-#            lfile = File(
-#                file_entry['lfn'],
-#                block = block,
-#                size = file_entry['bytes']
-#            )
-#
-#            block.files.add(lfile)
-
         return block
+
+    def _create_file(self, file_entry, block):
+        lfile = File(
+            file_entry['lfn'],
+            block = block,
+            size = file_entry['bytes']
+        )
+
+        return lfile
 
     def _fill_dataset_details(self, dataset):
         # 1. status and PD type

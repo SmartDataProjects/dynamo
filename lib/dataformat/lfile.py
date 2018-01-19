@@ -113,9 +113,9 @@ class File(object):
 
     def write_into(self, store, delete = False):
         if delete:
-            store.delete_lfile(self)
+            store.delete_file(self)
         else:
-            store.save_lfile(self)
+            store.save_file(self)
 
     def fid(self):
         return (self._directory_id, self._basename)

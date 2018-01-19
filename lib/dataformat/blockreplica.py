@@ -26,7 +26,7 @@ class BlockReplica(object):
             self.size = size
         self.last_update = last_update
 
-        # set of File objects for incomplete replicas
+        # set of File objects for incomplete replicas (not implemented)
         self.files = None
 
     def __str__(self):

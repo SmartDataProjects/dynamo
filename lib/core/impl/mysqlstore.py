@@ -80,6 +80,22 @@ class MySQLInventoryStore(InventoryStore):
 
         return dataset_names
 
+    def get_files(self, block):
+        if LOG.getEffectiveLevel() == logging.DEBUG:
+            LOG.debug('Loading files for block %s', block.full_name())
+
+        files = set()
+
+        # assuming unique block names
+        sql = 'SELECT f.`size`, f.`name` FROM `files` AS f'
+        sql += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
+        sql += ' WHERE b.`name` = %s'
+
+        for size, name in self._mysql.xquery(sql, block.real_name()):
+            files.add(File(name, block, size))
+
+        return files
+
     def load_data(self, inventory, group_names = None, site_names = None, dataset_names = None): #override
         ## Load groups
         LOG.info('Loading groups.')
@@ -366,12 +382,29 @@ class MySQLInventoryStore(InventoryStore):
         self._insert_update('blocks', fields, dataset_id, block.real_name(), block.size, block.num_files, block.is_open, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
 
     def delete_block(self, block): #override
+        # Here we don't assume block name is unique..
         dataset_id = self._get_dataset_id(block.dataset)
         if dataset_id == 0:
             return
 
         sql = 'DELETE FROM `blocks` WHERE `dataset_id` = %s AND `name` = %s'
         self._mysql.query(sql, dataset_id, block.real_name())
+
+    def save_file(self, lfile): #override
+        dataset_id = self._get_dataset_id(lfile.block.dataset)
+        if dataset_id == 0:
+            return
+
+        block_id = self._get_block_id(block_replica.block)
+        if block_id == 0:
+            return
+
+        fields = ('block_id', 'dataset_id', 'size', 'name')
+        self._insert_update('files', fields, block_id, dataset_id, lfile.size, lfile.lfn)
+
+    def delete_file(self, lfile): #override
+        sql = 'DELETE FROM `files` WHERE `name` = %s'
+        self._mysql.query(sql, lfile.lfn)
 
     def save_blockreplica(self, block_replica): #override
         block_id = self._get_block_id(block_replica.block)

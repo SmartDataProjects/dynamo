@@ -36,6 +36,15 @@ class InventoryStore(object):
         
         raise NotImplementedError('get_dataset_names')
 
+    def get_files(self, block):
+        """
+        Return a set of files belonging to the block.
+
+        @param block  A Block object.
+        """
+        
+        raise NotImplementedError('get_files')
+
     def load_data(self, inventory, group_names = None, site_names = None, dataset_names = None):
         """
         Load data into inventory.

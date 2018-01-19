@@ -37,7 +37,7 @@ class DatasetInfoSource(object):
         """
         raise NotImplementedError('get_updated_datasets')
 
-    def get_dataset(self, name):
+    def get_dataset(self, name, with_files = False):
         """
         Get a linked structure of Dataset-Blocks-Files with full information.
         @param name  Name of dataset
@@ -45,7 +45,7 @@ class DatasetInfoSource(object):
         """
         raise NotImplementedError('get_dataset')
 
-    def get_block(self, name, dataset = None):
+    def get_block(self, name, dataset = None, with_files = False):
         """
         Get a linked set of Blocks-Files with full information.
         @param name     Name of block
@@ -54,10 +54,19 @@ class DatasetInfoSource(object):
         """
         raise NotImplementedError('get_block')
 
-    def get_file(self, name):
+    def get_file(self, name, block = None):
         """
         Get a File object.
         @param name  Name of file
+        @param block If not None, link the file against this block.
         @return  File
         """
         raise NotImplementedError('get_file')
+
+    def get_files(self, block):
+        """
+        Get a set of File objects. Files will not be linked from the block.
+        @param block       Block object
+        @return set of Files
+        """
+        raise NotImplementedError('get_files')

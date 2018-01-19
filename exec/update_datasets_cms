@@ -83,8 +83,20 @@ for dataset_name in datasets_to_update:
     # Inject blocks as well
     updated_block_names = set()
     for block_tmp in dataset_tmp.blocks:
-        inventory.update(block_tmp)
+        block = inventory.update(block_tmp)
         updated_block_names.add(block_tmp.name)
+
+        existing_file_names = set(f.lfn for f in block.files)
+
+        updated_file_names = set()
+        for file_tmp in dataset_source.get_files(block_tmp):
+            inventory.update(file_tmp)
+            updated_file_names.add(file_tmp.lfn)
+
+        # Delete excess files
+        for file_name in (existing_file_names - updated_file_names):
+            lfile = block.find_file(file_name)
+            inventory.delete(lfile)
 
     # Delete excess blocks if there are any
     for block_name in (existing_block_names - updated_block_names):

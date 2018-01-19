@@ -3,7 +3,7 @@ import re
 
 from dynamo.policy.condition import Condition
 from dynamo.policy.variables import replica_variables
-from dynamo.dataformat import Group, Partition, ObjectError
+from dynamo.dataformat import Group, Partition, Block, ObjectError
 import dynamo.core.impl as persistency_impl
 
 LOG = logging.getLogger(__name__)
@@ -66,6 +66,8 @@ class DynamoInventory(ObjectRepository):
     def init_store(self, module, config):
         persistency_cls = getattr(persistency_impl, module)
         self._store = persistency_cls(config)
+
+        Block._inventory_store = self._store
 
     def load(self, groups = (None, None), sites = (None, None), datasets = (None, None)):
         """
