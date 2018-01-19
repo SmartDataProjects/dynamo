@@ -539,6 +539,8 @@ class MySQLHistory(TransactionHistoryInterface):
 
         if run_number != 0:
             self._cache_db.query('INSERT INTO `replica_snapshot_usage` VALUES (%s, NOW())', run_number)
+            # also save into the main cache table
+            self._fill_replica_snapshot_cache(0, overwrite)
 
         self._clean_old_cache()
 
@@ -595,6 +597,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         if run_number != 0:
             self._cache_db.query('INSERT INTO `site_snapshot_usage` VALUES (%s, NOW())', run_number)
+            self._fill_site_snapshot_cache(0, overwrite)
 
         self._clean_old_cache()
 

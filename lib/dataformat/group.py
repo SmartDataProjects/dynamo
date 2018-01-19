@@ -17,8 +17,6 @@ class Group(object):
     def olevel(self):
         return self._olevel
 
-    null_group = Group(None)
-
     def __init__(self, name, olevel = Block):
         self._name = name
         self._olevel = olevel
@@ -86,3 +84,5 @@ class Group(object):
             store.delete_group(self)
         else:
             store.save_group(self)
+
+Group.null_group = Group(None)

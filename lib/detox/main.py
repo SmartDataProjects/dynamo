@@ -4,7 +4,7 @@ import logging
 import collections
 
 from dynamo.core.inventory import ObjectRepository
-from dynamo.dataformat import Site, Dataset, Block, DatasetReplica, BlockReplica
+from dynamo.dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
 from dynamo.detox.detoxpolicy import DetoxPolicy
 from dynamo.detox.detoxpolicy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
 import dynamo.operation.impl as operation_impl
@@ -115,18 +115,18 @@ class Detox(object):
         # Safety measure - if there are empty (no block rep) tape replicas, create block replicas with size 0 and
         # add them into the partition. We will not report back to the main process though (i.e. won't call inventory.update).
         if tape_is_target:
-            for dataset in inventory.datasets.itervalues():
-                for replica in dataset.replicas:
-                    if replica.site.storage_type != Site.TYPE_MSS or len(replica.block_replicas) != 0:
+            for site in filter(lambda s: s.storage_type == Site.TYPE_MSS, target_sites):
+                for replica in site.dataset_replicas():
+                    if len(replica.block_replicas) != 0:
                         continue
 
-                    for block in dataset.blocks:
-                        block_replica = BlockReplica(block, replica.site, Group.null_group, size = 0)
+                    for block in replica.dataset.blocks:
+                        block_replica = BlockReplica(block, site, Group.null_group, size = 0)
                         replica.block_replicas.add(block_replica)
                         block.replicas.add(block_replica)
 
                     # Add to the site partition
-                    replica.site.partitions[partition].replicas[replica] = None
+                    site.partitions[partition].replicas[replica] = None
 
         # Create a copy of the inventory, limiting to the current partition
         # We will be stripping replicas off the image as we process the policy in iterations

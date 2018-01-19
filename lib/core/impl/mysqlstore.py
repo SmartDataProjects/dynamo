@@ -285,10 +285,9 @@ class MySQLInventoryStore(InventoryStore):
         sql = 'SELECT dr.`dataset_id`, dr.`site_id`,'
         sql += ' br.`block_id`, br.`group_id`, br.`is_complete`, br.`is_custodial`, brs.`size`, UNIX_TIMESTAMP(br.`last_update`)'
         sql += ' FROM `dataset_replicas` AS dr'
-        sql += ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`'
-        sql += ' INNER JOIN `blocks` AS b ON b.`dataset_id` = d.`id`'
-        sql += ' INNER JOIN `block_replicas` AS br ON (br.`block_id`, br.`site_id`) = (b.`id`, dr.`site_id`)'
-        sql += ' LEFT JOIN `block_replica_sizes` AS brs ON (brs.`block_id`, brs.`site_id`) = (br.`block_id`, br.`site_id`)'
+        sql += ' INNER JOIN `blocks` AS b ON b.`dataset_id` = dr.`dataset_id`'
+        sql += ' LEFT JOIN `block_replicas` AS br ON (br.`block_id`, br.`site_id`) = (b.`id`, dr.`site_id`)'
+        sql += ' LEFT JOIN `block_replica_sizes` AS brs ON (brs.`block_id`, brs.`site_id`) = (b.`id`, dr.`site_id`)'
 
         if self._mysql.table_exists('groups_load_tmp'):
             sql += ' INNER JOIN `groups_load_tmp` AS gt ON gt.`id` = br.`group_id`'
@@ -300,6 +299,8 @@ class MySQLInventoryStore(InventoryStore):
             sql += ' INNER JOIN `datasets_load_tmp` AS dt ON dt.`id` = dr.`dataset_id`'
 
         sql += ' ORDER BY dr.`dataset_id`, dr.`site_id`'
+
+        # Blocks are left joined -> there will be (# sites) x (# blocks) entries per dataset
 
         _dataset_id = 0
         _site_id = 0
@@ -330,6 +331,10 @@ class MySQLInventoryStore(InventoryStore):
                     dataset,
                     site
                 )
+
+            if block_id is None:
+                # this block replica does not exist
+                continue
 
             block = id_block_map[block_id]
             group = id_group_map[group_id]
