@@ -16,7 +16,7 @@ class PhEDExCopyInterface(CopyInterface):
 
         self._phedex = PhEDEx(config.phedex)
 
-        self.subscription_chunk_size = config.chunk_size * 1.e+12
+        self.subscription_chunk_size = config.get('chunk_size', 50.) * 1.e+12
 
     def schedule_copy(self, replica,  comments = ''): #override
         request_mapping = {}
