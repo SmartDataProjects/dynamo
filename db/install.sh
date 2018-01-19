@@ -49,7 +49,7 @@ cd .tmp
 for SCHEMA in $(ls $SOURCE/db | grep '\.sql$')
 do
   DB=$(echo $SCHEMA | sed 's/\.sql$//')
-  require $SOURCE/db/mysqldump.sh $MYSQLOPT $DB
+  $SOURCE/db/mysqldump.sh $MYSQLOPT $DB
 
   # mysqldump.sh does not create a file if the DB does not exist
   if [ -e $DB.sql ]
@@ -67,6 +67,8 @@ do
     mysql $MYSQLOPT -D $DB < $SOURCE/db/$SCHEMA
   fi
 done
+
+echo "CREATE DATABASE dynamo_tmp;" | mysql $MYSQLOPT
 
 cd ..
 rm -rf .tmp

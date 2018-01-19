@@ -226,7 +226,7 @@ class DynamoInventory(ObjectRepository):
         else:
             return None
 
-    def update(self, obj, write = False):
+    def update(self, obj, write = False, changelog = None):
         """
         Update an object. Only update the member values of the immediate object.
         When calling from a subprocess, pass down the unlinked clone of the argument
@@ -243,12 +243,18 @@ class DynamoInventory(ObjectRepository):
 
         if updated:
             if self._updated_objects is not None:
+                if changelog is not None:
+                    changelog.info('Updating %s', str(obj))
+
                 LOG.debug('%s has changed. Adding a clone to updated objects list.', str(obj))
                 # The content of updated_objects gets pickled and shipped back to the server process.
                 # The objects need to be unlinked clones; otherwise we ship the entire inventory.
                 self._updated_objects.append(embedded_clone.unlinked_clone())
     
             if write:
+                if changelog is not None:
+                    changelog.info('Saving %s', str(obj))
+
                 LOG.debug('%s has changed. Saving changes to inventory store.', str(obj))
                 try:
                     embedded_clone.write_into(self._store)

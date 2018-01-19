@@ -177,7 +177,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         else:
             link_block = True
             if block.name != block_name:
-                raise IntegrityError('Inconsistent block %s passed to get_file(%s)', block.real_name(), name)
+                raise IntegrityError('Inconsistent block %s passed to get_file(%s)', block.full_name(), name)
 
         lfile = self._create_file(file_entry, block)
 
@@ -196,7 +196,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
     def get_files(self, block): #override
         files = set()
 
-        result = self._phedex.make_request('data', ['block=' + name.real_name(), 'level=file'])
+        result = self._phedex.make_request('data', ['block=' + block.full_name(), 'level=file'])
 
         try:
             file_entries = result[0]['dataset'][0]['block'][0]['file']
@@ -255,7 +255,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         lfile = File(
             file_entry['lfn'],
             block = block,
-            size = file_entry['bytes']
+            size = file_entry['size']
         )
 
         return lfile

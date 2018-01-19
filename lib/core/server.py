@@ -109,8 +109,7 @@ class Dynamo(object):
                     # Block system signals and get update done
                     with signal_blocker:
                         for obj in updated_objects:
-                            CHANGELOG.info('Updating %s', str(obj))
-                            self.inventory.update(obj, write = True)
+                            self.inventory.update(obj, write = True, changelog = CHANGELOG)
                         for obj in deleted_objects:
                             CHANGELOG.info('Deleting %s', str(obj))
                             self.inventory.delete(obj, write = True)

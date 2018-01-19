@@ -30,15 +30,6 @@ CREATE TABLE `activity_lock` (
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
 
-DROP TABLE IF EXISTS `authorized_action`;
-CREATE TABLE `authorized_action` (
-  `user_id` int(10) unsigned NOT NULL DEFAULT '0',
-  `title` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
-  `checksum` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
-  KEY `executable` (`title`,`checksum`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
-
-
 DROP TABLE IF EXISTS `authorized_executables`;
 CREATE TABLE `authorized_executables` (
   `user_id` int(10) unsigned NOT NULL,

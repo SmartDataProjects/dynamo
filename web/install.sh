@@ -31,28 +31,35 @@ BINTARGET=$TARGET/cgi-bin
 HTMLSOURCE=$SOURCE/web/html/dynamo
 BINSOURCE=$SOURCE/web/cgi-bin
 
-mkdir -p $HTMLTARGET
-mkdir -p $BINTARGET
-
-mkdir -p $HTMLTARGET/dynamo
-cp -r $HTMLSOURCE/dynamo/* $HTMLTARGET/dynamo/
-mkdir -p $HTMLTARGET/registry
-
-mkdir -p $BINTARGET/dynamo
-cp -r $BINSOURCE/dynamo/* $BINTARGET/dynamo/
-mkdir -p $BINTARGET/registry
-cp -r $BINSOURCE/registry/* $BINTARGET/registry/
-
-# remove the template and check if the configuration exists
-rm $BINTARGET/dynamo/common/db_conf.php.template
-if ! [ -e $BINTARGET/dynamo/common/db_conf.php ]
+if [ -e $BINTARGET/dynamo/common/db_conf.php ]
 then
+  # move the config out of the way
+  mv $BINTARGET/dynamo/common/db_conf.php /tmp/db_conf.php.$$
+else
   echo
   echo "$BINTARGET/dynamo/common/db_conf.php does not exist. "
   echo "Without the configuration file, most of the web applications will not function."
   echo "Template exists at $BINSOURCE/dynamo/common/db_conf.php.template."
   echo
 fi
+
+mkdir -p $HTMLTARGET
+for SUBDIR in $(ls $HTMLSOURCE)
+do
+  rm -rf $HTMLTARGET/$SUBDIR
+  cp -r $HTMLSOURCE/$SUBDIR $HTMLTARGET/
+done
+
+mkdir -p $BINTARGET
+for SUBDIR in $(ls $BINSOURCE)
+do
+  rm -rf $BINTARGET/$SUBDIR
+  cp -r $BINSOURCE/$SUBDIR $BINTARGET/
+done
+
+# remove the template and check if the configuration exists
+rm $BINTARGET/dynamo/common/db_conf.php.template
+[ -e /tmp/db_conf.php.$$ ] && mv /tmp/db_conf.php.$$ $BINTARGET/dynamo/common/db_conf.php
 
 [ -L $HTMLTARGET/dynamo/detox.php ] || ln -sf $BINTARGET/dynamo/detox/main.php $HTMLTARGET/dynamo/detox.php
 [ -L $HTMLTARGET/dynamo/inventory.php ] || ln -sf $BINTARGET/dynamo/inventory/main.php $HTMLTARGET/dynamo/inventory.php
