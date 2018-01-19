@@ -1,7 +1,7 @@
 #!/bin/bash
 
-[ $WEBPATH ] || exit 1
+[ $WEB_PATH ] || exit 1
 
-rm -rf $WEBPATH/html/dynamo
-rm -rf $WEBPATH/cgi-bin/dynamo
-rm -rf $WEBPATH/cgi-bin/registry
+rm -rf $WEB_PATH/html/dynamo
+rm -rf $WEB_PATH/cgi-bin/dynamo
+rm -rf $WEB_PATH/cgi-bin/registry

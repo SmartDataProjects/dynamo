@@ -6,23 +6,22 @@ export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
 
 source $SOURCE/config.sh
 
-rm -rf $INSTALLPATH
+rm -rf $INSTALL_PATH
 
-rm -rf $CONFIGPATH
+rm -rf $SCHEDULER_PATH
 
-rm -rf $LOGPATH
+rm -rf $SPOOL_PATH
 
-rm -rf $SCHEDULERPATH
+echo "The following elements are not deleted:"
+echo " . DB tables"
+echo " . $CONFIG_PATH"
+echo " . $LOG_PATH"
+echo " . $ARCHIVE_PATH"
+echo " . crontab (if any entries were made)"
 
-#rm -rf $ARCHIVEPATH
-
-rm -rf $SPOOLPATH
-
-# Not dropping DB tables
-
-if [ $WEBPATH ]
+if [ $WEB_PATH ]
 then
-  export WEBPATH
+  export WEB_PATH
   $SOURCE/web/uninstall.sh
 fi
 
@@ -47,8 +46,6 @@ then
     rm /etc/init.d/dynamod
     rm /etc/init.d/dynamo-scheduled
   fi
-
-  # Not cleaning crontab
 
   # NRPE PLUGINS
   if [ -d /usr/lib64/nagios/plugins ]
