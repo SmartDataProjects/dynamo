@@ -6,7 +6,7 @@ import collections
 from dynamo.core.inventory import ObjectRepository
 from dynamo.dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
 from dynamo.detox.detoxpolicy import DetoxPolicy
-from dynamo.detox.detoxpolicy import Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
+from dynamo.detox.detoxpolicy import Ignore, Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
 import dynamo.operation.impl as operation_impl
 import dynamo.history.impl as history_impl
 from dynamo.utils.signaling import SignalBlocker
@@ -207,7 +207,7 @@ class Detox(object):
 
         # We will process this list iteratively. Replicas with protection and deletion decisions are
         # taken out of the list until we are left with datasets to be dismissed only.
-        all_replicas = []
+        all_replicas = set()
 
         for site in repository.sites.itervalues():
             site_partition = site.partitions[partition]
@@ -220,7 +220,7 @@ class Detox(object):
             quotas[site] = site.partitions[partition].quota
 
             for replica in site.dataset_replicas():
-                all_replicas.append(replica)
+                all_replicas.add(replica)
 
         LOG.info('Start deletion. Evaluating %d lines against %d replicas.', len(self.policy.policy_lines), len(all_replicas))
 
@@ -243,7 +243,6 @@ class Detox(object):
                 return s
 
         iteration = 0
-        fully_protected = set()
 
         # now iterate through deletions, updating site usage as we go
         while True:
@@ -258,14 +257,11 @@ class Detox(object):
             # Will be passed to the kept list at the end of the final iteration.
             keep_candidates = {}
 
-            empty_replicas = []
+            ignored_replicas = set()
+            empty_replicas = set()
             start = time.time()
 
             for replica in all_replicas:
-                # No need to reevaluate replicas that are fully protected
-                if replica in fully_protected:
-                    continue
-
                 # Call policy.evaluate for each replica
                 # Function evaluate() returns a list of actions. If the replica matches a dataset-level policy,
                 # there is only one element in the returned list.
@@ -317,9 +313,12 @@ class Detox(object):
 
                         block_replicas -= action.block_replicas
 
+                    elif isinstance(action, Ignore):
+                        ignored_replicas.add(replica)
+
                     elif isinstance(action, Protect):
                         get_list(protected, replica, condition_id).update(block_replicas)
-                        fully_protected.add(replica)
+                        ignored_replicas.add(replica)
     
                     elif isinstance(action, Delete):
                         unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, block_replicas)
@@ -332,7 +331,7 @@ class Detox(object):
                         if len(replica.block_replicas) == 0:
                             # if all blocks were deleted, take the replica off all_replicas for later iterations
                             # this is the only place where the replica can become empty
-                            empty_replicas.append(replica)
+                            empty_replicas.add(replica)
 
                         if len(reowned_replicas) != 0:
                             if replica in reowned:
@@ -348,7 +347,9 @@ class Detox(object):
 
             for replica in empty_replicas:
                 replica.delete_from(repository)
-                all_replicas.remove(replica)
+
+            all_replicas -= empty_replicas
+            all_replicas -= ignored_replicas
 
             LOG.info('Took %f seconds to evaluate', time.time() - start)
             LOG.info(' %d dataset replicas in deletion candidates', len(delete_candidates))

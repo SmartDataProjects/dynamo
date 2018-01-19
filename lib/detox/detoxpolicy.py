@@ -13,12 +13,11 @@ LOG = logging.getLogger(__name__)
 class Decision(object):
     """Generator of decisions. An instance of cls is created for each replica."""
 
-    def __init__(self, cls, *common_args):
+    def __init__(self, cls):
         self.action_cls = cls
-        self.common_args = common_args
 
     def action(self, matched_line, *args):
-        return self.action_cls(matched_line, *(args + self.common_args))
+        return self.action_cls(matched_line, *args)
 
 class Action(object):
     def __init__(self, matched_line):
@@ -27,6 +26,9 @@ class Action(object):
 class DatasetAction(Action):
     def __init__(self, matched_line):
         Action.__init__(self, matched_line)
+
+class Ignore(DatasetAction):
+    pass
 
 class Protect(DatasetAction):
     pass
@@ -163,7 +165,7 @@ class DetoxPolicy(object):
                 line_type = LINE_ORDER
             elif words[0] == 'Algo':
                 line_type = LINE_ALGO
-            elif words[0] in ('Protect', 'Delete', 'Dismiss', 'ProtectBlock', 'DeleteBlock', 'DismissBlock'):
+            elif words[0] in ('Ignore', 'Protect', 'Delete', 'Dismiss', 'ProtectBlock', 'DeleteBlock', 'DismissBlock'):
                 line_type = LINE_POLICY
                 decision = Decision(eval(words[0]))
             else:
