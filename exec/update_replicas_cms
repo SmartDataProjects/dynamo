@@ -53,7 +53,7 @@ replica_source = sources.PhEDExReplicaInfoSource(config.replicas.config)
 # 5. Loop over deleted replicas
 # 6. (If delta update) save the timestamp
 
-from dynamo.dataformat import DatasetReplica, ObjectError
+from dynamo.dataformat import Dataset, Block, File, DatasetReplica, BlockReplica, ObjectError
 
 ## 1. Refresh groups
 
@@ -263,7 +263,7 @@ for irep, replica in enumerate(updated_replicas):
     block_replica = block.find_replica(site)
 
     if block_replica is None:
-        block_replica = BlockReplica(block, site)
+        block_replica = BlockReplica(block, site, group)
         block_replica.copy(replica)
         # reset the group
         block_replica.group = group

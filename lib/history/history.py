@@ -70,7 +70,7 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
     def make_copy_entry(self, run_number, site, operation_id, approved, dataset_list, size):
-        if self.config.get('test', False):
+        if self.config.get('test', False) or run_number == 0:
             # Don't do anything
             return
 
@@ -81,7 +81,7 @@ class TransactionHistoryInterface(object):
             self.release_lock()
 
     def make_deletion_entry(self, run_number, site, operation_id, approved, datasets, size):
-        if self.config.get('test', False):
+        if self.config.get('test', False) or run_number == 0:
             # Don't do anything
             return
 

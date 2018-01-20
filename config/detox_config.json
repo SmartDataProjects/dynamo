@@ -8,16 +8,14 @@
         "auto_approval": true,
         "allow_tape_deletion": false,
         "tape_auto_approval": false,
-        "chunk_size": 50,
-        "dry_run": true
+        "chunk_size": 50
       }
     },
     "copy_op": {
       "module": "PhEDExCopyInterface",
       "config": {
         "phedex": {},
-        "chunk_size": 50,
-        "dry_run": true
+        "chunk_size": 50
       }
     },
     "history": {
