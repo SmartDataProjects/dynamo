@@ -25,7 +25,8 @@ class MySQL(object):
     def __init__(self, config):
         self._connection_parameters = {}
         if 'config_file' in config and 'config_group' in config:
-            with open(os.path.exists(config['config_file'])):
+            # Check file exists and readable
+            with open(config['config_file']):
                 pass
 
             self._connection_parameters['read_default_file'] = config['config_file']
