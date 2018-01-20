@@ -129,7 +129,7 @@ else:
 num_replicas = len(updated_replicas)
 LOG.info('Got %d block replicas to update.', num_replicas)
 
-updated_datasets = set()
+updated_dataset_names = set()
 
 watermark = 0
 
@@ -160,46 +160,83 @@ for irep, replica in enumerate(updated_replicas):
 
     dataset_name = replica.block.dataset.name
 
-    if dataset_name not in updated_datasets:
+    if dataset_name not in updated_dataset_names:
         LOG.info('Updating information for dataset %s', dataset_name)
         
-        try:
-            dataset = inventory.datasets[dataset_name]
-            existing_block_names = set(b.name for b in dataset.blocks)
-        except KeyError:
-            existing_block_names = set()
-
         dataset_tmp = dataset_source.get_dataset(dataset_name)
         if dataset_tmp is None:
             LOG.error('Unknown dataset %s.', dataset_name)
             continue
 
-        dataset = inventory.update(dataset_tmp)
+        all_files = dataset_source.get_files(dataset_tmp)
+        file_tmps = dict()
+        for file_tmp in all_files:
+            try:
+                file_tmps[file_tmp.block].append(file_tmp)
+            except KeyError:
+                file_tmps[file_tmp.block] = [file_tmp]
+
+        try:
+            dataset = inventory.datasets[dataset_name]
+        except KeyError:
+            dataset = Dataset(dataset_name)
+            dataset.copy(dataset_tmp)
+            inventory.datasets.add(dataset)
+            inventory.register_update(dataset)
+        else:
+            if dataset != dataset_tmp:
+                dataset.copy(dataset_tmp)
+                inventory.register_update(dataset)
+
+        updated_dataset_names.add(dataset_name)
+
+        existing_blocks = dict((b.name, b) for b in dataset.blocks)
 
         # Inject blocks and files as well
         updated_block_names = set()
         for block_tmp in dataset_tmp.blocks:
-            block = inventory.update(block_tmp)
+            try:
+                block = existing_blocks[block_tmp.name]
+            except KeyError:
+                block = Block(block_tmp.name, dataset)
+                block.copy(block_tmp)
+                dataset.blocks.add(block)
+                inventory.register_update(block)
+            else:
+                if block != block_tmp:
+                    block.copy(block_tmp)
+                    inventory.register_update(block)
+
             updated_block_names.add(block_tmp.name)
 
-            existing_file_names = set(f.lfn for f in block.files)
+            existing_files = dict(((f.lfn, f) for f in block.files))
 
             updated_file_names = set()
-            for file_tmp in dataset_source.get_files(block_tmp):
-                inventory.update(file_tmp)
-                updated_file_names.add(file_tmp.lfn)
+            for file_tmp in file_tmps[block_tmp]:
+                lfn = file_tmp.lfn
+                try:
+                    lfile = existing_files[lfn]
+                except KeyError:
+                    lfile = File(lfn, block)
+                    lfile.copy(file_tmp)
+                    block.add_file(lfile)
+                    inventory.register_update(lfile)
+                else:
+                    if lfile != file_tmp:
+                        lfile.copy(file_tmp)
+                        inventory.register_update(lfile)
+
+                updated_file_names.add(lfn)
 
             # Delete excess files
-            for file_name in (existing_file_names - updated_file_names):
-                lfile = block.find_file(file_name)
+            for lfn in (set(existing_files.iterkeys()) - updated_file_names):
+                lfile = block.find_file(lfn)
                 inventory.delete(lfile)
 
         # Delete excess blocks
-        for block_name in (existing_block_names - updated_block_names):
+        for block_name in (set(existing_blocks.iterkeys()) - updated_block_names):
             block = dataset.find_block(block_name)
             inventory.delete(block)
-
-        updated_datasets.add(dataset_name)
 
     else:
         dataset = inventory.datasets[dataset_name]
@@ -234,7 +271,7 @@ if not executable.read_only and os.path.exists(config.dataset_state_file):
     state_db = sqlite3.connect(config.dataset_state_file)
     cursor = state_db.cursor()
     sql = 'DELETE FROM `datasets` WHERE `name` = ?'
-    for dataset_name in updated_datasets:
+    for dataset_name in updated_dataset_names:
         cursor.execute(sql, (dataset_name,))
 
     state_db.commit()

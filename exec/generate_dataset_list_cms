@@ -23,6 +23,7 @@ config = Configuration(args.config)
 from dynamo.core.executable import make_standard_logger
 
 LOG = make_standard_logger(config.log_level)
+LOG.info('Starting dataset list generation for inventory update.')
 
 ## State file
 if args.target == 'dataset':
@@ -55,6 +56,8 @@ if os.path.exists(state_file):
 
 else:
     file_exists = False
+
+LOG.info('Update list does not exist or is empty. Generating content.')
 
 ## Load and initialize sources
 import dynamo.source.impl as sources

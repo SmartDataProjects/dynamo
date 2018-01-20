@@ -242,27 +242,35 @@ class DynamoInventory(ObjectRepository):
             raise
 
         if updated:
-            if self._updated_objects is not None:
-                if changelog is not None:
-                    changelog.info('Updating %s', str(obj))
-
-                LOG.debug('%s has changed. Adding a clone to updated objects list.', str(obj))
-                # The content of updated_objects gets pickled and shipped back to the server process.
-                # The objects need to be unlinked clones; otherwise we ship the entire inventory.
-                self._updated_objects.append(embedded_clone.unlinked_clone())
-    
-            if write:
-                if changelog is not None:
-                    changelog.info('Saving %s', str(obj))
-
-                LOG.debug('%s has changed. Saving changes to inventory store.', str(obj))
-                try:
-                    embedded_clone.write_into(self._store)
-                except:
-                    LOG.error('Exception writing %s to inventory store', str(obj))
-                    raise
+            self.register_update(embedded_clone, write, changelog)
 
         return embedded_clone
+
+    def register_update(self, obj, write = False, changelog = None):
+        """
+        Put the obj to _updated_objects list and write to store.
+        """
+
+        if self._updated_objects is not None:
+            if changelog is not None:
+                changelog.info('Updating %s', str(obj))
+
+            LOG.debug('%s has changed. Adding a clone to updated objects list.', str(obj))
+            # The content of updated_objects gets pickled and shipped back to the server process.
+            # Pickling process follows all links between the objects. We create an unlinked clone
+            # here to avoid shipping the entire inventory.
+            self._updated_objects.append(obj.unlinked_clone())
+
+        if write:
+            if changelog is not None:
+                changelog.info('Saving %s', str(obj))
+
+            LOG.debug('%s has changed. Saving changes to inventory store.', str(obj))
+            try:
+                obj.write_into(self._store)
+            except:
+                LOG.error('Exception writing %s to inventory store', str(obj))
+                raise
 
     def delete(self, obj, write = False):
         """

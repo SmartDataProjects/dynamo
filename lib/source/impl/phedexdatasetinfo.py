@@ -193,18 +193,37 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
         return lfile
 
-    def get_files(self, block): #override
+    def get_files(self, dataset_or_block): #override
         files = set()
 
-        result = self._phedex.make_request('data', ['block=' + block.full_name(), 'level=file'])
+        if type(dataset_or_block) is Dataset:
+            result = self._phedex.make_request('data', ['dataset=' + dataset_or_block.name, 'level=file'])
+            blocks = dict((b.name, b) for b in dataset_or_block.blocks)
+        else:
+            result = self._phedex.make_request('data', ['block=' + dataset_or_block.full_name(), 'level=file'])
+            blocks = {dataset_or_block.name: block}
 
         try:
-            file_entries = result[0]['dataset'][0]['block'][0]['file']
+            block_entries = result[0]['dataset'][0]['block']
         except:
             return files
 
-        for file_entry in file_entries:
-            files.add(self._create_file(file_entry, block))
+        for block_entry in block_entries:
+            try:
+                file_entries = block_entry['file']
+            except:
+                continue
+
+            bname = block_entry['name']
+            block_name = Block.to_internal_name(bname[bname.find('#') + 1:])
+            try:
+                block = blocks[block_name]
+            except:
+                # unknown block! maybe should raise?
+                continue
+
+            for file_entry in file_entries:
+                files.add(self._create_file(file_entry, block))
 
         return files
 
