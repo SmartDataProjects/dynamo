@@ -1,13 +1,14 @@
 import time
 import collections
 import threading
+import weakref
 
 from exceptions import ObjectError
 
 class Block(object):
     """Smallest data unit for data management."""
 
-    __slots__ = ['_name', '_dataset', 'size', 'num_files', 'is_open', 'replicas', 'last_update']
+    __slots__ = ['_name', '_dataset', 'size', 'num_files', 'is_open', 'replicas', 'last_update', '_files']
 
     @property
     def name(self):
@@ -20,10 +21,19 @@ class Block(object):
     @property
     def files(self):
         with Block._files_cache_lock:
-            try:
-                return Block._files_cache[self]
-            except:
-                return Block._fill_files_cache(self)
+            if self._files is not None:
+                # self._files is either a real set (if _files was directly set), a valid weak proxy to a set,
+                # or an expired weak proxy to a set.
+                try:
+                    len(self._files)
+                except ReferenceError:
+                    # expired proxy
+                    self._files = None
+
+            if self._files is None:
+                self._files = weakref.proxy(Block._fill_files_cache(self))
+
+            return self._files
 
     _files_cache = collections.OrderedDict()
     _files_cache_lock = threading.Lock()
@@ -62,6 +72,8 @@ class Block(object):
         self.last_update = last_update
 
         self.replicas = set()
+
+        self._files = None
 
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))

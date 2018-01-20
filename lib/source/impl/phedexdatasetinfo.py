@@ -98,13 +98,11 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
                 dataset.num_files += block.num_files
 
                 if with_files and 'file' in block_entry:
-                    files = set()
+                    # See comments in get_block
+                    block._files = set()
                     for file_entry in block_entry['file']:
-                        files.add(self._create_file(file_entry, block))
+                        block._files.add(self._create_file(file_entry, block))
         
-                    block.files.update(files)
-                    # _create_block sets size and num_files; just need to update the files list
-
         return dataset
 
     def get_block(self, name, dataset = None, with_files = False): #override
@@ -135,12 +133,13 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         block = self._create_block(block_entry, dataset)
 
         if with_files and 'file' in block_entry:
-            files = set()
-            for file_entry in block_entry['file']:
-                files.add(self._create_file(file_entry, block))
-
-            block.files.update(files)
             # _create_block sets size and num_files; just need to update the files list
+            # Directly creating the _files set
+            # This list will persist (unlike the weak proxy version loaded from inventory), but the returned block
+            # from this function is only used temporarily anyway
+            block._files = set()
+            for file_entry in block_entry['file']:
+                block._files.add(self._create_file(file_entry, block))
 
         if link_dataset:
             existing = dataset.find_block(block.name)

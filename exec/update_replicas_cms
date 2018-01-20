@@ -144,7 +144,9 @@ for irep, replica in enumerate(updated_replicas):
 
     # 3.1. pick up replicas of known groups only
 
-    if replica.group.name not in inventory.groups:
+    try:
+        group = inventory.groups[replica.group.name]
+    except KeyError:
         LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
         continue
 
@@ -163,18 +165,10 @@ for irep, replica in enumerate(updated_replicas):
     if dataset_name not in updated_dataset_names:
         LOG.info('Updating information for dataset %s', dataset_name)
         
-        dataset_tmp = dataset_source.get_dataset(dataset_name)
+        dataset_tmp = dataset_source.get_dataset(dataset_name, with_files = True)
         if dataset_tmp is None:
             LOG.error('Unknown dataset %s.', dataset_name)
             continue
-
-        all_files = dataset_source.get_files(dataset_tmp)
-        file_tmps = dict()
-        for file_tmp in all_files:
-            try:
-                file_tmps[file_tmp.block].append(file_tmp)
-            except KeyError:
-                file_tmps[file_tmp.block] = [file_tmp]
 
         try:
             dataset = inventory.datasets[dataset_name]
@@ -212,7 +206,7 @@ for irep, replica in enumerate(updated_replicas):
             existing_files = dict(((f.lfn, f) for f in block.files))
 
             updated_file_names = set()
-            for file_tmp in file_tmps[block_tmp]:
+            for file_tmp in block_tmp.files:
                 lfn = file_tmp.lfn
                 try:
                     lfile = existing_files[lfn]
@@ -251,18 +245,41 @@ for irep, replica in enumerate(updated_replicas):
 
     # 3.5. Find the dataset replica
 
-    if site.find_dataset_replica(dataset) is None:
+    dataset_replica = site.find_dataset_replica(dataset)
+
+    if dataset_replica is None:
         # If not found, create a new replica and inject
         LOG.info('Creating new replica of %s at %s', dataset.name, site.name)
-        inventory.update(DatasetReplica(dataset, site))
+        dataset_replica = DatasetReplica(dataset, site)
+
+        dataset.replicas.add(dataset_replica)
+        site.add_dataset_replica(dataset_replica, add_block_replicas = False)
+
+        inventory.register_update(dataset_replica)
 
     # 3.6. Update the block replica
 
     LOG.debug('Updating block replica.')
-    embedded_replica = inventory.update(replica)
+    block_replica = block.find_replica(site)
 
+    if block_replica is None:
+        block_replica = BlockReplica(block, site)
+        block_replica.copy(replica)
+        # reset the group
+        block_replica.group = group
+
+        dataset_replica.block_replicas.add(block_replica)
+        block.replicas.add(block_replica)
+        site.add_block_replica(block_replica)
+
+        inventory.register_update(block_replica)
+
+    elif block_replica != replica:
+        block_replica.copy(replica)
+        inventory.register_update(block_replica)
+        
     if not delta_update:
-        embedded_updated_replicas.add(embedded_replica)
+        embedded_updated_replicas.add(block_replica)
 
 LOG.info('100% done.')
 
