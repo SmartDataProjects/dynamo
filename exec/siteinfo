@@ -1,0 +1,209 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import time
+import collections
+import logging
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Generate SitesInfo and RemainingDatasets files for Unified.')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+parser.add_argument('--cycle', '-y', metavar = 'ID', dest = 'cycle', type = int, default = 0, help = 'Cycle number.')
+
+args = parser.parse_args()
+sys.argv = []
+
+from dynamo.dataformat import Configuration, Site
+import dynamo.history.impl as history_impl
+from dynamo.policy.producers import CRABAccessHistory
+from dynamo.core.executable import inventory, make_standard_logger
+
+config = Configuration(args.config)
+
+LOG = make_standard_logger(config.log_level)
+
+# History
+history = getattr(history_impl, config.history.module)(config.history.config)
+
+# CRAB access
+crabaccess = CRABAccessHistory(config.crabaccess)
+crabaccess.load(inventory)
+
+# Start
+LOG.info('Writing ASCII SiteInfo.')
+
+partitions = ['Physics', 'DataOps', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']
+
+# Count datasets for RemainingDatasets
+dataset_lists = collections.defaultdict(dict)
+dscount_now = collections.defaultdict(int)
+dscount_prev = collections.defaultdict(int)
+
+sitesinfo = open(config.out_path + '/SitesInfo.txt', 'w')
+
+sitesinfo.write('#\n')
+sitesinfo.write('#- S I T E S  I N F O R M A T I O N ----\n')
+sitesinfo.write('#\n')
+
+for partition in partitions:
+    # SitesInfo
+
+    if args.cycle == 0:
+        runs = history.get_deletion_runs(partition = partition, first = -1)
+        if len(runs) != 0:
+            cycle = runs[0]
+        else:
+            cycle = 0
+    else:
+        cycle = args.cycle
+
+    if cycle == 0:
+        timestamp = 0
+    else:
+        timestamp = history.get_run_timestamp(cycle)
+
+    sitesinfo.write('#- %s\n' % time.strftime('%Y-%m-%d %H:%M', time.localtime(timestamp)))
+    sitesinfo.write('#\n')
+    sitesinfo.write('#- DDM Partition: ' + partition.replace(' ', '-') + ' -\n')
+    sitesinfo.write('#\n')
+    sitesinfo.write('#  Active Quota[TB] Taken[TB] LastCopy[TB] SiteName\n')
+    sitesinfo.write('#------------------------------------------------------\n')
+
+    if cycle == 0:
+        sitesinfo.write('# N/A\n')
+        continue
+
+    sites_info = history.get_sites(cycle)
+    sites_usage = history.get_deletion_decisions(cycle)
+
+    quota_total = 0
+    used_total = 0.
+    protect_total = 0.
+
+    num_t2 = 0
+    quota_t2total = 0
+    used_t2total = 0.
+    protect_t2total = 0.
+
+    for site in sorted(sites_info):
+        status, quota = sites_info[site]
+        try:
+            protect, delete, keep = sites_usage[site]
+        except KeyError:
+            protect = delete = keep = 0.
+
+        used = protect + delete + keep
+
+        if status == Site.STAT_READY:
+            active = 1
+        elif status == Site.STAT_UNKNOWN:
+            active = 2
+        else:
+            active = 0
+
+        sitesinfo.write("   %-6d %-9d %-9.0f %-12.0f %-20s \n" % \
+            (active, quota, used, protect, site))
+
+        quota_total += quota
+        used_total += used
+        protect_total += protect
+
+        if site.startswith('T2_'):
+            num_t2 += 1
+            quota_t2total += quota
+            used_t2total += used
+            protect_t2total += protect
+
+    sitesinfo.write('#------------------------------------------------------\n')
+
+    sitesinfo.write('#  %-6d %-9d %-9d %-12d %-20s \n' % \
+        (len(sites_info), quota_total, used_total, protect_total, 'Total T2s+T1s'))
+
+    if quota_total > 0:
+        used_fraction = used_total / quota_total
+        protect_fraction = protect_total / quota_total
+    else:
+        used_fraction = 1.
+        protect_fraction = 1.
+
+    sitesinfo.write('#  %-6s %-9s %-4.1f%%     %-4.1f%%\n' % \
+        (' ', ' ', used_fraction * 100., protect_fraction * 100.))
+    
+    sitesinfo.write('#\n')
+
+    sitesinfo.write('#  %-6d %-9d %-9d %-12d %-20s \n' % \
+        (num_t2, quota_t2total, used_t2total, protect_t2total, 'Total T2s'))
+
+    if quota_t2total > 0:
+        used_fraction = used_t2total / quota_t2total
+        protect_fraction = protect_t2total / quota_t2total
+    else:
+        used_fraction = 1.
+        protect_fraction = 1.
+
+    sitesinfo.write('#  %-6s %-9s %-4.1f%%     %-4.1f%%\n' % \
+        (' ', ' ', used_fraction * 100., protect_fraction * 100.))
+
+    sitesinfo.write('#------------------------------------------------------\n')
+    sitesinfo.write('#\n')
+
+    # RemainingDatasets
+
+    results = history.get_deletion_decisions(cycle, size_only = False)
+    for site, datasets in results.items():
+        dataset_lists[site][partition] = []
+        for (dataset, size, decision, reason) in datasets:
+            dscount_now[dataset] += 1
+            dataset_lists[site][partition].append((dataset, size))
+
+    runs = history.get_deletion_runs(partition = partition, first = -1, last = cycle - 1)
+    if len(runs) != 0:
+        prev_cycle = runs[0]
+        results = history.get_deletion_decisions(prev_cycle, size_only = False)
+        for site, datasets in results.items():
+            for (dataset, size, decision, reason) in datasets:
+                dscount_prev[dataset] += 1
+
+sitesinfo.close()
+
+for site in dataset_lists:
+    st = inventory.sites[site]
+
+    if not os.path.isdir(config.out_path + '/result/' + site):
+        os.makedirs(config.out_path + '/result/' + site)
+
+    remaining = open(config.out_path + '/result/' + site + '/RemainingDatasets.txt', 'w')
+
+    remaining.write('# -- ' + time.strftime('%Y-%m-%d %H:%M') + '\n')
+    remaining.write('\n')
+    remaining.write('# Rank = Ta - N - S if N != 0\n')
+    remaining.write('# Rank = Tc - S if N == 0\n')
+    remaining.write('# where\n')
+    remaining.write('#  Ta = (number of days since last access via CRAB)\n')
+    remaining.write('#  Tc = (number of days since dataset transfer to site)\n')
+    remaining.write('#  N = (number of recorded accesses via CRAB)\n')
+    remaining.write('#  S = (dataset size in TB)\n')
+
+    for partition in partitions:
+        remaining.write('#\n')
+        remaining.write('#- DDM Partition: ' + partition + ' -\n')
+        remaining.write('#\n')
+        remaining.write('#  Rank      Size nsites nsites  DatasetName\n')
+        remaining.write('#[~days]     [GB] before after\n')
+        remaining.write('#---------------------------------------------\n')
+
+        if partition not in dataset_lists[site]:
+            continue
+
+        for dataset, size in dataset_lists[site][partition]:
+            try:
+                local_rank = inventory.datasets[dataset].demand['local_usage'][st].rank
+            except KeyError:
+                local_rank = 9999.9
+
+            remaining.write('  %6.1f %9.1f %6d %6d  %s\n' % (local_rank, size * 1.e-9, dscount_prev[dataset], dscount_now[dataset], dataset))
+
+    remaining.close()
+        
+LOG.info('Finished writing ASCII SiteInfo.')
