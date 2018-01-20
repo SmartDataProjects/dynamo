@@ -12,6 +12,7 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Convert web-based locks to registry locks')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Do not upload changes to registry.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -87,6 +88,8 @@ for name, source_conf in config.sources.items():
 
     LOG.info('Sending %d datasets and blocks to registry frontend', len(data))
 
-    if not args.test_run:
+    if args.test_run:
+        LOG.info('Not sending data to registry.')
+    else:
         request_url = 'detoxlock/set?asuser=%s&service=%s' % (source_conf.user, source_conf.service)
         registry.frontend.make_request(request_url, method = POST, options = data, format = 'json')

@@ -16,6 +16,14 @@ LOG = logging.getLogger(__name__)
 
 GET, POST = range(2) # enumerators
 
+# Switch off server cert verification if the switch is available
+# Of course this is not desirable!
+try:
+    ssl._https_verify_certificates(False)
+except AttributeError:
+    # If the switch does not exist, hope urllib2 doesn't verify the server by default
+    pass
+
 class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
     """
     HTTPS handler authenticating by x509 user key and certificate.
@@ -39,13 +47,6 @@ class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
             raise ConfigurationError('X509 proxy missing')
 
         self.cert = self.key
-
-        # Switch off server cert verification if the switch is available
-        try:
-            ssl._https_verify_certificates(False)
-        except AttributeError:
-            # If the switch does not exist, hope urllib2 doesn't verify the server by default
-            pass
 
     def https_open(self, req):
         return self.do_open(self.create_connection, req)
