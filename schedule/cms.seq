@@ -29,10 +29,10 @@ WAIT 3600
 WAIT 600
 <update_popularity> --config /etc/dynamo/popularity_update_config.json --crabaccess
 {convert_locks} --config /etc/dynamo/convert_dynamo_locks_config.json
-{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --snapshot-run
-{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/RelVal.txt --snapshot-run
-{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/DataOps.txt --snapshot-run
-{detox} --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Unsubscribed.txt --snapshot-run
+<detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --snapshot-run
+<detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/RelVal.txt --snapshot-run
+<detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/DataOps.txt --snapshot-run
+<detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Unsubscribed.txt --snapshot-run
 
 [SEQUENCE detox]
 <update_popularity> --config /etc/dynamo/popularity_update_config.json --crabaccess
