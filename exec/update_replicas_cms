@@ -129,7 +129,7 @@ else:
 num_replicas = len(updated_replicas)
 LOG.info('Got %d block replicas to update.', num_replicas)
 
-updated_datasets = set()
+updated_dataset_names = set()
 
 watermark = 0
 
@@ -144,7 +144,9 @@ for irep, replica in enumerate(updated_replicas):
 
     # 3.1. pick up replicas of known groups only
 
-    if replica.group.name not in inventory.groups:
+    try:
+        group = inventory.groups[replica.group.name]
+    except KeyError:
         LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
         continue
 
@@ -160,46 +162,75 @@ for irep, replica in enumerate(updated_replicas):
 
     dataset_name = replica.block.dataset.name
 
-    if dataset_name not in updated_datasets:
+    if dataset_name not in updated_dataset_names:
         LOG.info('Updating information for dataset %s', dataset_name)
         
-        try:
-            dataset = inventory.datasets[dataset_name]
-            existing_block_names = set(b.name for b in dataset.blocks)
-        except KeyError:
-            existing_block_names = set()
-
-        dataset_tmp = dataset_source.get_dataset(dataset_name)
+        dataset_tmp = dataset_source.get_dataset(dataset_name, with_files = True)
         if dataset_tmp is None:
             LOG.error('Unknown dataset %s.', dataset_name)
             continue
 
-        dataset = inventory.update(dataset_tmp)
+        try:
+            dataset = inventory.datasets[dataset_name]
+        except KeyError:
+            dataset = Dataset(dataset_name)
+            dataset.copy(dataset_tmp)
+            inventory.datasets.add(dataset)
+            inventory.register_update(dataset)
+        else:
+            if dataset != dataset_tmp:
+                dataset.copy(dataset_tmp)
+                inventory.register_update(dataset)
+
+        updated_dataset_names.add(dataset_name)
+
+        existing_blocks = dict((b.name, b) for b in dataset.blocks)
 
         # Inject blocks and files as well
         updated_block_names = set()
         for block_tmp in dataset_tmp.blocks:
-            block = inventory.update(block_tmp)
+            try:
+                block = existing_blocks[block_tmp.name]
+            except KeyError:
+                block = Block(block_tmp.name, dataset)
+                block.copy(block_tmp)
+                dataset.blocks.add(block)
+                inventory.register_update(block)
+            else:
+                if block != block_tmp:
+                    block.copy(block_tmp)
+                    inventory.register_update(block)
+
             updated_block_names.add(block_tmp.name)
 
-            existing_file_names = set(f.lfn for f in block.files)
+            existing_files = dict(((f.lfn, f) for f in block.files))
 
             updated_file_names = set()
-            for file_tmp in dataset_source.get_files(block_tmp):
-                inventory.update(file_tmp)
-                updated_file_names.add(file_tmp.lfn)
+            for file_tmp in block_tmp.files:
+                lfn = file_tmp.lfn
+                try:
+                    lfile = existing_files[lfn]
+                except KeyError:
+                    lfile = File(lfn, block)
+                    lfile.copy(file_tmp)
+                    block.add_file(lfile)
+                    inventory.register_update(lfile)
+                else:
+                    if lfile != file_tmp:
+                        lfile.copy(file_tmp)
+                        inventory.register_update(lfile)
+
+                updated_file_names.add(lfn)
 
             # Delete excess files
-            for file_name in (existing_file_names - updated_file_names):
-                lfile = block.find_file(file_name)
+            for lfn in (set(existing_files.iterkeys()) - updated_file_names):
+                lfile = block.find_file(lfn)
                 inventory.delete(lfile)
 
         # Delete excess blocks
-        for block_name in (existing_block_names - updated_block_names):
+        for block_name in (set(existing_blocks.iterkeys()) - updated_block_names):
             block = dataset.find_block(block_name)
             inventory.delete(block)
-
-        updated_datasets.add(dataset_name)
 
     else:
         dataset = inventory.datasets[dataset_name]
@@ -214,18 +245,41 @@ for irep, replica in enumerate(updated_replicas):
 
     # 3.5. Find the dataset replica
 
-    if site.find_dataset_replica(dataset) is None:
+    dataset_replica = site.find_dataset_replica(dataset)
+
+    if dataset_replica is None:
         # If not found, create a new replica and inject
         LOG.info('Creating new replica of %s at %s', dataset.name, site.name)
-        inventory.update(DatasetReplica(dataset, site))
+        dataset_replica = DatasetReplica(dataset, site)
+
+        dataset.replicas.add(dataset_replica)
+        site.add_dataset_replica(dataset_replica, add_block_replicas = False)
+
+        inventory.register_update(dataset_replica)
 
     # 3.6. Update the block replica
 
     LOG.debug('Updating block replica.')
-    embedded_replica = inventory.update(replica)
+    block_replica = block.find_replica(site)
 
+    if block_replica is None:
+        block_replica = BlockReplica(block, site)
+        block_replica.copy(replica)
+        # reset the group
+        block_replica.group = group
+
+        dataset_replica.block_replicas.add(block_replica)
+        block.replicas.add(block_replica)
+        site.add_block_replica(block_replica)
+
+        inventory.register_update(block_replica)
+
+    elif block_replica != replica:
+        block_replica.copy(replica)
+        inventory.register_update(block_replica)
+        
     if not delta_update:
-        embedded_updated_replicas.add(embedded_replica)
+        embedded_updated_replicas.add(block_replica)
 
 LOG.info('100% done.')
 
@@ -234,7 +288,7 @@ if not executable.read_only and os.path.exists(config.dataset_state_file):
     state_db = sqlite3.connect(config.dataset_state_file)
     cursor = state_db.cursor()
     sql = 'DELETE FROM `datasets` WHERE `name` = ?'
-    for dataset_name in updated_datasets:
+    for dataset_name in updated_dataset_names:
         cursor.execute(sql, (dataset_name,))
 
     state_db.commit()

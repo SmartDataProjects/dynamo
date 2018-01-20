@@ -124,7 +124,10 @@ class DatasetReplica(object):
 
     def last_block_created(self):
         # this is actually last *update* not create..
-        return max(br.last_update for br in self.block_replicas)
+        if len(self.block_replicas) == 0:
+            return 0
+        else:
+            return max(br.last_update for br in self.block_replicas)
 
     def size(self, groups = [], physical = True):
         if type(groups) is not list:

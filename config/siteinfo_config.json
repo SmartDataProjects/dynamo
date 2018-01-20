@@ -1,0 +1,31 @@
+{
+  "out_path_tmp": "/home/cmsprod/public_html/IntelROCCS/Detox",
+  "out_path": "/tmp",
+  "history": {
+    "module": "MySQLHistory",
+    "config": {
+      "db_params": {
+        "config_file": "/etc/my.cnf.d/dynamo.cnf",
+        "config_group": "mysql",
+        "db": "dynamohistory"
+      },
+      "cache_db_params": {
+        "config_file": "/etc/my.cnf.d/dynamo.cnf",
+        "config_group": "mysql",
+        "db": "dynamohistory_cache"
+      },
+      "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
+      "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
+    }
+  },
+  "crabaccess": {
+    "store": {
+      "db_params": {
+        "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
+        "config_group": "mysql",
+        "db": "dynamo"
+      }
+    }
+  },
+  "log_level": "info"
+}

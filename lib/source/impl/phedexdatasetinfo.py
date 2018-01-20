@@ -98,13 +98,11 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
                 dataset.num_files += block.num_files
 
                 if with_files and 'file' in block_entry:
-                    files = set()
+                    # See comments in get_block
+                    block._files = set()
                     for file_entry in block_entry['file']:
-                        files.add(self._create_file(file_entry, block))
+                        block._files.add(self._create_file(file_entry, block))
         
-                    block.files.update(files)
-                    # _create_block sets size and num_files; just need to update the files list
-
         return dataset
 
     def get_block(self, name, dataset = None, with_files = False): #override
@@ -135,12 +133,13 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         block = self._create_block(block_entry, dataset)
 
         if with_files and 'file' in block_entry:
-            files = set()
-            for file_entry in block_entry['file']:
-                files.add(self._create_file(file_entry, block))
-
-            block.files.update(files)
             # _create_block sets size and num_files; just need to update the files list
+            # Directly creating the _files set
+            # This list will persist (unlike the weak proxy version loaded from inventory), but the returned block
+            # from this function is only used temporarily anyway
+            block._files = set()
+            for file_entry in block_entry['file']:
+                block._files.add(self._create_file(file_entry, block))
 
         if link_dataset:
             existing = dataset.find_block(block.name)
@@ -193,18 +192,37 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
         return lfile
 
-    def get_files(self, block): #override
+    def get_files(self, dataset_or_block): #override
         files = set()
 
-        result = self._phedex.make_request('data', ['block=' + block.full_name(), 'level=file'])
+        if type(dataset_or_block) is Dataset:
+            result = self._phedex.make_request('data', ['dataset=' + dataset_or_block.name, 'level=file'])
+            blocks = dict((b.name, b) for b in dataset_or_block.blocks)
+        else:
+            result = self._phedex.make_request('data', ['block=' + dataset_or_block.full_name(), 'level=file'])
+            blocks = {dataset_or_block.name: block}
 
         try:
-            file_entries = result[0]['dataset'][0]['block'][0]['file']
+            block_entries = result[0]['dataset'][0]['block']
         except:
             return files
 
-        for file_entry in file_entries:
-            files.add(self._create_file(file_entry, block))
+        for block_entry in block_entries:
+            try:
+                file_entries = block_entry['file']
+            except:
+                continue
+
+            bname = block_entry['name']
+            block_name = Block.to_internal_name(bname[bname.find('#') + 1:])
+            try:
+                block = blocks[block_name]
+            except:
+                # unknown block! maybe should raise?
+                continue
+
+            for file_entry in file_entries:
+                files.add(self._create_file(file_entry, block))
 
         return files
 

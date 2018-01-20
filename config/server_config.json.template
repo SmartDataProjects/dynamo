@@ -7,14 +7,14 @@
       "module": "MySQLInventoryStore",
       "config": {
         "db_params": {
-          "db": "dynamo",
           _SERVER_DB_WRITE_PARAMS_1_
+          "db": "dynamo"
         }
       },
       "readonly_config": {
         "db_params": {
-          "db": "dynamo",
           _SERVER_DB_READ_PARAMS_1_
+          "db": "dynamo"
         }
       }
     },
@@ -24,14 +24,14 @@
     "backend": {
       "interface": "MySQL",
       "config": {
-        "reuse_connection": false,
-        "db": "dynamoregister",
         _SERVER_DB_WRITE_PARAMS_2_
+        "db": "dynamoregister",
+        "reuse_connection": false
       },
       "readonly_config": {
-        "reuse_connection": false,
-        "db": "dynamoregister",
         _SERVER_DB_READ_PARAMS_2_
+        "db": "dynamoregister",
+        "reuse_connection": false
       }
     },
     "frontend": {

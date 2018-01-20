@@ -63,10 +63,10 @@ class DatasetInfoSource(object):
         """
         raise NotImplementedError('get_file')
 
-    def get_files(self, block):
+    def get_files(self, dataset_or_block):
         """
         Get a set of File objects. Files will not be linked from the block.
-        @param block       Block object
+        @param dataset_or_block  Dataset or Block object
         @return set of Files
         """
         raise NotImplementedError('get_files')
