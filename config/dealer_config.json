@@ -11,8 +11,7 @@
           "auth_handler": "HTTPSCertKeyHandler",
           "auth_handler_conf": {}
         },
-        "chunk_size": 50,
-        "dry_run": true
+        "chunk_size": 50
       }
     },
     "history": {

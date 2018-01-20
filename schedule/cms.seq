@@ -8,11 +8,12 @@
 {generate_dataset_list} = $(DYNAMO_BASE)/exec/generate_dataset_list_cms
 <track_transfers> = $(DYNAMO_BASE)/exec/track_transfers
 <track_phedex> = $(DYNAMO_BASE)/exec/track_phedex
+<siteinfo> = $(DYNAMO_BASE)/exec/siteinfo
 
 [SEQUENCE delta_update]
 <update_replicas> --config /etc/dynamo/updater_config.json
 {generate_dataset_list} --config /etc/dynamo/updater_config.json --target dataset
-<update_datasets> --config /etc/dynamo/updater_config.json --num-datasets 1000
+<update_datasets> --config /etc/dynamo/updater_config.json
 WAIT 60
 
 [SEQUENCE site_update]
@@ -38,6 +39,8 @@ WAIT 600
 {convert_locks} --config /etc/dynamo/convert_dynamo_locks_config.json
 <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt
 <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/RelVal.txt
+<detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/DataOps.txt --test-run
+<siteinfo> --config /etc/dynamo/siteinfo_config.json
 WAIT 14400
 
 [SEQUENCE dealer]

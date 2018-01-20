@@ -87,6 +87,9 @@ for partition in partitions:
     protect_t2total = 0.
 
     for site in sorted(sites_info):
+        if site.endswith('_MSS'):
+            continue
+
         status, quota = sites_info[site]
         try:
             protect, delete, keep = sites_usage[site]
