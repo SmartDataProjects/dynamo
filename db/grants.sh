@@ -111,6 +111,8 @@ do
   echo "CREATE USER '$NORMAL_USER'@'$HOST' IDENTIFIED BY '$NORMAL_USER_PASSWD';" | $ROOTSQL
   echo 'GRANT ALL PRIVILEGES ON `dynamo_tmp`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT SELECT ON `dynamo%`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT, LOCK TABLES ON `dynamohistory`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT UPDATE ON `dynamohistory`.`lock` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
 done
 
 ## Write my.cnf files (optional)

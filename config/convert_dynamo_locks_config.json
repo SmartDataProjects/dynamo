@@ -55,5 +55,6 @@
     "cookie": {
       "auth_handler": "CERNSSOCookieAuthHandler"
     }
-  }
+  },
+  "log_level": "info"
 }

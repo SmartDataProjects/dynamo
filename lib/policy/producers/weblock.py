@@ -55,8 +55,12 @@ class WebReplicaLock(object):
             if lock_url is not None:
                 # check that the lock files themselves are not locked
                 while True:
+                    # Hacky but this is temporary any way
+                    opener = urllib2.build_opener(webservice.HTTPSCertKeyHandler(Configuration()))
+                    opener.addheaders.append(('Accept', 'application/json'))
+                    request = urllib2.Request(lock_url)
                     try:
-                        urllib2.urlopen(lock_url)
+                        opener.open(request)
                     except urllib2.HTTPError as err:
                         if err.code == 404:
                             # file not found -> no lock

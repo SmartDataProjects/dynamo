@@ -240,13 +240,12 @@ echo "Installing the policies."
 echo "Enter tag:"
 read POLICYTAG
 
-git clone -b branch-v2.0 https://github.com/yiiyama/dynamo-policies.git $INSTALL_PATH/policies
-#git clone https://github.com/SmartDataProjects/dynamo-policies.git $INSTALL_PATH/policies
-#cd $INSTALL_PATH/policies
-#git checkout $POLICYTAG >/dev/null 2>&1
-#echo "Policy commit:"
-#git log -1
-#cd - > /dev/null
+git clone https://github.com/SmartDataProjects/dynamo-policies.git $INSTALL_PATH/policies
+cd $INSTALL_PATH/policies
+git checkout $POLICYTAG >/dev/null 2>&1
+echo "Policy commit:"
+git log -1
+cd - > /dev/null
 
 # Temporary - will not need this once we publish the policy itself in the web interface
 echo $POLICYTAG > $INSTALL_PATH/etc/policies.tag

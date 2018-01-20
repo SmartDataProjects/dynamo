@@ -1,10 +1,12 @@
-import MySQLdb
-import MySQLdb.converters
-import MySQLdb.cursors
+import os
 import sys
 import logging
 import time
 import re
+
+import MySQLdb
+import MySQLdb.converters
+import MySQLdb.cursors
 
 # Fix for some (newer) versions of MySQLdb
 from types import TupleType, ListType
@@ -23,6 +25,10 @@ class MySQL(object):
     def __init__(self, config):
         self._connection_parameters = {}
         if 'config_file' in config and 'config_group' in config:
+            # Check file exists and readable
+            with open(config['config_file']):
+                pass
+
             self._connection_parameters['read_default_file'] = config['config_file']
             self._connection_parameters['read_default_group'] = config['config_group']
         if 'host' in config:
