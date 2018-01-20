@@ -198,7 +198,7 @@ for site in dataset_lists:
 
         for dataset, size in dataset_lists[site][partition]:
             try:
-                local_rank = inventory.datasets[dataset].demand['local_usage'][st].rank
+                local_rank = inventory.datasets[dataset].attr['local_usage'][st].rank
             except KeyError:
                 local_rank = 9999.9
 
