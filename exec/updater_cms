@@ -169,7 +169,7 @@ def get_dataset(name):
         
     return dataset_tmp
 
-dataset_tmps = Map().execute(get_dataset, dataset_names)
+dataset_tmps = Map().execute(get_dataset, dataset_names, async = True)
 
 for dataset_tmp in dataset_tmps:
     if dataset_tmp is None:
