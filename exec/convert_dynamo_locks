@@ -121,3 +121,6 @@ for name, source_conf in config.sources.items():
     else:
         request_url = 'detoxlock/set?asuser=%s&service=%s' % (source_conf.user, source_conf.service)
         registry.frontend.make_request(request_url, method = POST, options = data, format = 'json')
+
+# Intentionally removing the file only when everything succeeds
+os.unlink(config.process_lock)
