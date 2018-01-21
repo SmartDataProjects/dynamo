@@ -74,13 +74,6 @@ warnifnot python -c 'import htcondor'
 warnifnot python -c 'import rrdtool'
 require which mysql
 require which sqlite3
-if [ $WEB_PATH ]
-then
-  require pgrep -f httpd
-  require which php
-  require [ -e /etc/httpd/conf.d/ssl.conf ]
-  require php -r 'mysqli_connect_errno();'
-fi
 [ $SERVER_DB_HOST = localhost ] && require pgrep -f mysqld
 
 ### (Clear &) Make the directories ###
