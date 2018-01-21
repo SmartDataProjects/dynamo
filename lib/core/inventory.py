@@ -3,7 +3,7 @@ import re
 
 from dynamo.policy.condition import Condition
 from dynamo.policy.variables import replica_variables
-from dynamo.dataformat import Group, Partition, Block, ObjectError
+from dynamo.dataformat import Group, Partition, Block, ObjectError, ConfigurationError
 import dynamo.core.impl as persistency_impl
 
 LOG = logging.getLogger(__name__)
@@ -100,8 +100,6 @@ class DynamoInventory(ObjectRepository):
             dataset_names = dataset_names
         )
 
-        self._save_partitions()
-
         num_dataset_replicas = 0
         num_block_replicas = 0
 
@@ -114,6 +112,8 @@ class DynamoInventory(ObjectRepository):
     def _load_partitions(self):
         """Load partition data from a text table."""
 
+        partition_names = self._store.get_partition_names()
+
         with open(self.partition_def_path) as defsource:
             subpartitions = {}
             for line in defsource:
@@ -122,8 +122,14 @@ class DynamoInventory(ObjectRepository):
                     continue
         
                 name = matches.group(1)
-                condition_text = matches.group(2).strip()
+                try:
+                    partition_names.remove(name)
+                except ValueError:
+                    LOG.warning('Unknown partition %s appears in %s', name, self.partition_def_path)
+                    continue
 
+                condition_text = matches.group(2).strip()
+                
                 matches = re.match('\[(.+)\]$', condition_text)
                 if matches:
                     partition = Partition(name)
@@ -132,6 +138,10 @@ class DynamoInventory(ObjectRepository):
                     partition = Partition(name, Condition(condition_text, replica_variables))
 
                 self.partitions.add(partition)
+
+        if len(partition_names) != 0:
+            LOG.error('No definition given for the following partitions: %s', partition_names)
+            raise ConfigurationError()
 
         for partition, subp_names in subpartitions.iteritems():
             try:
@@ -142,15 +152,6 @@ class DynamoInventory(ObjectRepository):
             partition._subpartitions = subparts
             for subp in subparts:
                 subp._parent = partition
-
-    def _save_partitions(self):
-        """Write partitions loaded from the text partition table into database."""
-
-        for partition in self.partitions.itervalues():
-            self._store.save_partition(partition)
-
-            for site in self.sites.itervalues():
-                self._store.save_sitepartition(site.partitions[partition])
 
     def _get_group_names(self, included, excluded):
         """Return the list of group names or None according to the arguments."""

@@ -343,6 +343,11 @@ for site in sites:
 
 # Copying rrds to the /var/www location
 target_dir = config.rrd_publish_target + '/monitoring'
+try:
+    os.makedirs(target_dir)
+except OSError:
+    pass
+
 for entry in os.listdir(target_dir):
     if entry.startswith('T'):
         target = target_dir + '/' + entry
