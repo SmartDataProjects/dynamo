@@ -1,6 +1,5 @@
 {
-  "out_path_tmp": "/home/cmsprod/public_html/IntelROCCS/Detox",
-  "out_path": "/tmp",
+  "out_path": "/home/cmsprod/public_html/IntelROCCS/Detox",
   "history": {
     "module": "MySQLHistory",
     "config": {
