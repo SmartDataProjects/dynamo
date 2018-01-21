@@ -139,8 +139,10 @@ class ThreadController(object):
 
     def _collect_threads(self, thread_defs, all_outputs, blocking = False):
         if blocking:
-            # Block until there is a terminated thread
+            # Block until there is a completed thread
             self._done_sem.acquire()
+            # Increment the semaphore count by one (to be reduced below)
+            self._done_sem.release()
 
         ith = 0
         while ith != len(thread_defs):
@@ -148,6 +150,8 @@ class ThreadController(object):
             if self._collect_one(thread, start_time, arguments, exception):
                 thread_defs.pop(ith)
                 all_outputs.extend(output)
+                # Reduce the semaphore count by one
+                self._done_sem.acquire()
             else:
                 ith += 1
 
