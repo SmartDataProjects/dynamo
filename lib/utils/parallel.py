@@ -149,7 +149,7 @@ class ThreadController(object):
             thread, start_time, arguments, exception, outputs = thread_defs[ith]
             if self._collect_one(thread, start_time, arguments, exception):
                 thread_defs.pop(ith)
-                all_outputs.extend(output)
+                all_outputs.extend(outputs)
                 # Reduce the semaphore count by one
                 self._done_sem.acquire()
             else:
@@ -233,21 +233,21 @@ class Map(object):
         if self.print_progress:
             controller.ntotal = len(arguments)
 
-        # format the inputs: list (one element for one thread) of lists (arguments x per_thread) of tuples
+        # In case we want to run the function multiple times in a single thread, we make slices of inputs
         inputs = []
         for args in arguments:
             if type(args) is not tuple:
                 args = (args,)
 
             inputs.append(args)
-            if len(input_list[-1]) == self.task_per_thread:
+            if len(inputs) == self.task_per_thread:
                 controller.add_inputs(inputs)
                 inputs = []
     
         if len(inputs) != 0:
             controller.add_inputs(inputs)
 
-        if synchronous:
+        if async:
             return controller.iterate()
         else:
             return controller.execute()
