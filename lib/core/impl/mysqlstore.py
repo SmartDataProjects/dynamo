@@ -16,6 +16,9 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql = MySQL(config.db_params)
 
+    def get_partition_names(self):
+        return self._mysql.query('SELECT `name` FROM `partitions`')
+
     def get_group_names(self, include = ['*'], exclude = []): #override
         # Load groups
         group_names = []
@@ -395,7 +398,7 @@ class MySQLInventoryStore(InventoryStore):
         if dataset_id == 0:
             return
 
-        block_id = self._get_block_id(block_replica.block)
+        block_id = self._get_block_id(lfile.block)
         if block_id == 0:
             return
 

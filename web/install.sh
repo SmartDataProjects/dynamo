@@ -24,6 +24,23 @@ fi
 
 require source $SOURCE/config.sh
 
+### Verify dependencies ###
+
+require pgrep -f httpd
+require which php
+require [ -e /etc/httpd/conf.d/ssl.conf ]
+require php -r 'mysqli_connect_errno();'
+
+TEST=$(sed -n 's/.*max_execution_time[^0-9]*\([0-9]*\)/\1/p' /etc/php.ini)
+if ! [ $TEST ] || [ $TEST -lt 600 ]
+then
+  echo "!!! PHP max_execution_time is less than the recommended value of 10 minutes."
+fi
+
+# Also should check memory_limit
+
+### Copy files ###
+
 TARGET=$WEB_PATH
 
 HTMLTARGET=$TARGET/html/dynamo

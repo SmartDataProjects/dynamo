@@ -56,5 +56,6 @@
       "auth_handler": "CERNSSOCookieAuthHandler"
     }
   },
+  "process_lock": "$(DYNAMO_SPOOL)/convert_dynamo_locks.pid",
   "log_level": "info"
 }

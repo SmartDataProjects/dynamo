@@ -200,7 +200,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
             blocks = dict((b.name, b) for b in dataset_or_block.blocks)
         else:
             result = self._phedex.make_request('data', ['block=' + dataset_or_block.full_name(), 'level=file'])
-            blocks = {dataset_or_block.name: block}
+            blocks = {dataset_or_block.name: dataset_or_block}
 
         try:
             block_entries = result[0]['dataset'][0]['block']

@@ -6,6 +6,13 @@ class InventoryStore(object):
     def __init__(self, config):
         pass
 
+    def get_partition_names(self):
+        """
+        Return a list of partition names.
+        """
+
+        raise NotImplementedError('get_partition_names')
+
     def get_group_names(self, include = ['*'], exclude = []):
         """
         Return a list of group full names from the include and exclude patterns.
