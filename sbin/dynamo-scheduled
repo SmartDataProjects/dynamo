@@ -140,12 +140,13 @@ with open(args.sequence) as source:
         # Sequence executable step definitions
         # {title} options  ...  Read-only execution
         # <title> options  ...  Write-request execution
-        matches = re.match('({\S+}|<\S+>)\s*(.*)', line)
+        matches = re.match('(\*|\+) +({\S+}|<\S+>)\s*(.*)', line)
         if matches:
-            enclosed_title = matches.group(1)
+            critical = (matches.group(1) == '*')
+            enclosed_title = matches.group(2)
             title = enclosed_title[1:-1]
             write_request = (enclosed_title[0] == '<')
-            arguments = matches.group(2)
+            arguments = matches.group(3)
 
             if write_request and title not in authorized_executables:
                 LOG.error('Executable %s is not write-enabled (line %d).', iline)
@@ -157,7 +158,7 @@ with open(args.sequence) as source:
 
             LOG.debug('Execute %s %s (line %d)', title, arguments, iline)
 
-            sequence.append((EXECUTE, title, arguments, write_request))
+            sequence.append((EXECUTE, title, arguments, critical, write_request))
             continue
 
         matches = re.match('WAIT\s+(.*)', line)
@@ -247,7 +248,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
         while True:
             for action in sequence:
                 if action[0] == EXECUTE:
-                    title, arguments, write_request = action[1:]
+                    title, arguments, critical, write_request = action[1:]
                     executable = executables[title]
     
                     LOG.info('Starting %s', title)
@@ -292,6 +293,11 @@ def loop_sequence(sequence_name, sequence, user_id, config):
                         pass
     
                     LOG.info('Finished %s with (status: %s)\n', title, status)
+
+                    if critical and status != 'done':
+                        LOG.error('Critical executable %s failed. Terminating sequence %s.', title, sequence_name)
+                        ## We don't have a way to restart individual sequences - once this happens, the entire scheduler has to be restarted..
+                        break
     
                 elif action[0] == WAIT:
                     LOG.info('Sleeping for %d seconds.\n', action[1])
