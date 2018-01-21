@@ -54,7 +54,7 @@ log_handler.setFormatter(logging.Formatter(fmt = log_format))
 
 ## Set the effective user id to config.user
 try:
-    os.seteuid(pwd.getpwnam(config.user).pw_uid)
+    os.setuid(pwd.getpwnam(config.user).pw_uid)
 except OSError:
     LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 
@@ -190,12 +190,17 @@ for name, sequence in sequences.iteritems():
     except OSError:
         pass
     os.makedirs(work_dir)
+    os.chmod(work_dir, 0777)
 
     with open(work_dir + '/log.out', 'w'):
         pass
 
+    os.chmod(work_dir + '/log.out', 0666)
+
     with open(work_dir + '/log.err', 'w'):
         pass
+
+    os.chmod(work_dir + '/log.err', 0666)
 
     for action in sequence:
         if action[0] == EXECUTE:

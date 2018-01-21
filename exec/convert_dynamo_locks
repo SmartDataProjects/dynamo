@@ -5,6 +5,7 @@
 import sys
 import os
 import re
+import time
 import logging
 import fnmatch
 
@@ -26,6 +27,33 @@ config = Configuration(args.config)
 from dynamo.core.executable import make_standard_logger
 
 LOG = make_standard_logger(config.log_level)
+
+## Check if another process is running
+if os.path.exists(config.process_lock):
+    while True:
+        try:
+            source = open(config.process_lock)
+        except OSError:
+            break
+    
+        pid = int(source.read().strip())
+        source.close()
+
+        try:
+            with open('/proc/%d/cmdline' % pid) as proc:
+                if not 'dynamod' in proc.read():
+                    raise Exception()
+        except:
+            LOG.error('Lock file %s exists but process %d is not a Dynamo process.', config.process_lock, pid)
+    
+        LOG.info('Another process %d is performing the lock conversion. Waiting for completion.')
+        time.sleep(5)
+
+    LOG.info('Locks are converted by another process. Exiting.')
+    sys.exit(0)
+
+with open(config.process_lock, 'w') as process_lock:
+    process_lock.write('%d' % os.getpid())
 
 ## Start conversion
 from dynamo.policy.producers import WebReplicaLock
