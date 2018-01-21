@@ -395,7 +395,7 @@ class MySQLInventoryStore(InventoryStore):
         if dataset_id == 0:
             return
 
-        block_id = self._get_block_id(block_replica.block)
+        block_id = self._get_block_id(lfile.block)
         if block_id == 0:
             return
 

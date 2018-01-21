@@ -368,6 +368,11 @@ for existing_rrd in existing_rrds:
 
 # Copying rrds to the /var/www location
 target_dir = config.rrd_publish_target + '/monitoring_phedex'
+try:
+    os.makedirs(target_dir)
+except OSError:
+    pass
+
 for entry in os.listdir(target_dir):
     if entry.startswith('T'):
         target = target_dir + '/' + entry
@@ -392,5 +397,3 @@ shutil.copy(rrd_dir + '/total.rrd', target_dir)
 shutil.copy(rrd_dir + '/total_tape.rrd', target_dir)
 shutil.copy(rrd_dir + '/total_disk.rrd', target_dir)
 shutil.copy(rrd_dir + '/overview.txt', target_dir)
-
-
