@@ -26,8 +26,14 @@ class ObjectRepository(object):
         # null group always exist
         self.groups[None] = Group.null_group
 
+    def load(self):
+        pass
+
     def update(self, obj):
         return obj.embed_into(self)
+
+    def register_update(self, obj):
+        pass
 
     def delete(self, obj):
         try:
@@ -41,6 +47,9 @@ class ObjectRepository(object):
         except:
             LOG.error('Exception in inventory.delete(%s)' % str(obj))
             raise
+
+    def clear_update(self):
+        pass
 
 
 class DynamoInventory(ObjectRepository):

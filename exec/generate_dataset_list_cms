@@ -9,10 +9,13 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update datasets, blocks, and files information.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
-parser.add_argument('--target', '-t', metavar = 'TYPE', dest = 'target', help = 'Target state DB file type ("dataset" or "replica").')
+parser.add_argument('--target', '-t', metavar = 'TYPE', dest = 'target', nargs = '+', help = 'Target state DB file type ("dataset" or "replica").')
 
 args = parser.parse_args()
 sys.argv = []
+
+if args.target is None:
+    args.target = ['dataset', 'replica']
 
 ## Load the configuration
 from dynamo.dataformat import Configuration
@@ -25,41 +28,48 @@ from dynamo.core.executable import make_standard_logger
 LOG = make_standard_logger(config.log_level)
 LOG.info('Starting dataset list generation for inventory update.')
 
-## State file
-if args.target == 'dataset':
-    state_file = config.dataset_state_file
-elif args.target == 'replica':
-    state_file = config.replica_state_file
-else:
-    LOG.error('Unknown target %s', args.target)
-    sys.exit(1)
-
 ## If the dataset list already exists, quit
-if os.path.exists(state_file):
-    file_exists = True
+if os.path.exists(config.updater_state_file):
+    need_refill = []
 
-    state_db = sqlite3.connect(state_file)
+    state_db = sqlite3.connect(config.updater_state_file)
     cursor = state_db.cursor()
 
-    if args.target == 'dataset':
+    if 'dataset' in args.target:
         sql = 'SELECT COUNT(*) FROM `datasets`'
-    else:
-        sql = 'SELECT COUNT(*) FROM `full_updates`'
+        result = cursor.execute(sql)
+        count = next(result)[0]
+        state_db.close()
+        if count == 0:
+            need_refill.append('dataset')
 
-    result = cursor.execute(sql)
-    count = next(result)[0]
-    state_db.close()
-
-    if count != 0:
+    if 'replica' in args.target:
+        sql = 'SELECT COUNT(*) FROM `replica_full_updates`'
+        result = cursor.execute(sql)
+        count = next(result)[0]
+        state_db.close()
+        if count == 0:
+            need_refill.append('replica')
+        
+    if len(need_refill) == 0:
         LOG.info('Update list exists.')
         sys.exit(0)
 
 else:
-    file_exists = False
+    LOG.info('Creating a new state database %s', config.updater_state_file)
+
+    state_db = sqlite3.connect(config.updater_state_file)
+    state_db.execute('CREATE TABLE `datasets` (`id` INTEGER NOT NULL PRIMARY KEY, `name` TEXT NOT NULL)')
+    state_db.execute('CREATE TABLE `replica_delta_updates` (`timestamp` INTEGER NOT NULL, `num_updated` INTEGER NOT NULL, `num_deleted` INTEGER NOT NULL)')
+    state_db.execute('CREATE TABLE `replica_full_updates` (`id` INTEGER NOT NULL PRIMARY KEY, `site` TEXT NOT NULL, `tier` TEXT NOT NULL)')
+    state_db.commit()
+
+    need_refill = list(args.target)
 
 LOG.info('Update list does not exist or is empty. Generating content.')
 
 ## Load and initialize sources
+
 import dynamo.source.impl as sources
 from dynamo.utils.parallel import Map
 
@@ -70,10 +80,7 @@ dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 
 ## Collect data and save
 
-# If the state file did not exist, this line will create it
-state_db = sqlite3.connect(state_file)
-
-if args.target == 'dataset':
+if 'dataset' in need_refill:
     # Filter out secondary dataset names
     acquisition_eras = dataset_source._dbs.make_request('acquisitioneras')
     sds = [e['acquisition_era_name'] for e in acquisition_eras]
@@ -89,25 +96,19 @@ if args.target == 'dataset':
     
     # Query DBS in parallel (by SD name)
     args = [('datasets', ['acquisition_era_name=' + sd]) for sd in sds]
-    results = Map().execute(dataset_source._dbs.make_request, args)
+    results = Map().execute(dataset_source._dbs.make_request, args, async = True)
     for result in results:
         for entry in result:
             all_datasets.append(entry['dataset'])
     
     LOG.info('Collected %d dataset names.', len(all_datasets))
 
-    # Write
-    if not file_exists:
-        # connect() already created a file. Make the table.
-        state_db.execute('CREATE TABLE `datasets` (`id` INTEGER NOT NULL PRIMARY KEY, `name` TEXT NOT NULL)')
-        state_db.commit()
-
     sql = 'INSERT INTO `datasets` (`name`) VALUES (?)'
     cursor = state_db.cursor()
     for dataset in all_datasets:
         cursor.execute(sql, (dataset,))
 
-else:
+if 'replica' in need_refill:
     site_source = sources.PhEDExSiteInfoSource(config.sites.config)
     
     # All sites
@@ -117,13 +118,7 @@ else:
     data_tiers = dataset_source._dbs.make_request('datatiers')
     tiers = [e['data_tier_name'] for e in data_tiers]
 
-    # Write
-    if not file_exists:
-        state_db.execute('CREATE TABLE `delta_updates` (`timestamp` INTEGER NOT NULL, `num_updated` INTEGER NOT NULL, `num_deleted` INTEGER NOT NULL)')
-        state_db.execute('CREATE TABLE `full_updates` (`id` INTEGER NOT NULL PRIMARY KEY, `site` TEXT NOT NULL, `tier` TEXT NOT NULL)')
-        state_db.commit()
-
-    sql = 'INSERT INTO `full_updates` (`site`, `tier`) VALUES (?, ?)'
+    sql = 'INSERT INTO `replica_full_updates` (`site`, `tier`) VALUES (?, ?)'
     cursor = state_db.cursor()
     for site in all_sites:
         for tier in tiers:
@@ -132,8 +127,7 @@ else:
 state_db.commit()
 state_db.close()
 
-if not file_exists:
-    # This script is run as the read-only user, but the full user has to be able to update the DB
-    os.chmod(state_file, 0666)
+# This script is run as the read-only user, but the full user has to be able to update the DB
+os.chmod(config.updater_state_file, 0666)
 
-LOG.info('Update list written to %s.', state_file)
+LOG.info('Update list written to %s.', config.updater_state_file)
