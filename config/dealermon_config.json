@@ -1,5 +1,5 @@
 {
-  "partitions": ["AnalysisOps", "DataOps"],
+  "partitions": ["AnalysisOps", "Physics"],
   "rrd_path_base": "$(DYNAMO_SPOOL)/dealermon",
   "rrd_publish_target": "/var/www/html/dynamo/dynamo/dealermon",
   "rrd_interval": 900,
