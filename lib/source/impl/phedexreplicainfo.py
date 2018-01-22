@@ -58,7 +58,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
 
     def get_deleted_replicas(self, deleted_since): #override
-        LOG.info('get_deleted_replicas(%d)  Fetching the list of replicas from PhEDEx')
+        LOG.info('get_deleted_replicas(%d)  Fetching the list of replicas from PhEDEx', deleted_since)
 
         result = self._phedex.make_request('deletions', ['complete_since=%d' % deleted_since])
 
