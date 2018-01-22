@@ -7,17 +7,15 @@
     "module": "MySQLHistory",
     "config": {
       "db_params": {
-        "config_file": "/etc/my.cnf.d/dynamo.cnf",
+        "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
         "config_group": "mysql",
         "db": "dynamohistory"
       },
       "cache_db_params": {
-        "config_file": "/etc/my.cnf.d/dynamo.cnf",
+        "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
         "config_group": "mysql",
         "db": "dynamohistory_cache"
-      },
-      "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
-      "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
+      }
     }
   },
   "copy_op": {
