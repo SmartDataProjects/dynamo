@@ -88,7 +88,6 @@ def create_rrd(path):
 
 ## Get all sites with ongoing transfers
 
-sites_with_open_transfers = set()
 records = collections.defaultdict(set)
 
 for partition in config.partitions:
@@ -96,9 +95,8 @@ for partition in config.partitions:
     for record in partition_records:
         site = history.get_site_name(record.operation_id)
         records[site].add(record)
-        sites_with_open_transfers.add(site)
 
-LOG.info('Sites with open transfers: %s', list(sites_with_open_transfers))
+LOG.info('Sites with open transfers: %s', records.keys())
 
 ## Get the copy status
 
@@ -132,7 +130,7 @@ def is_transfer_stuck(rrd_file):
     return 0
 
 
-for site in sites_with_open_transfers:
+for site, site_records in records.iteritems():
     # Will do this per site, parallelizing copy_status query for the records
     LOG.info('Processing %s', site)
 
@@ -158,7 +156,7 @@ for site in sites_with_open_transfers:
 
     dataset_details = []
 
-    status_list = Map(config.parallel).execute(get_copy_status, records[site])
+    status_list = Map(config.parallel).execute(get_copy_status, site_records)
 
     for record, status in status_list:
         LOG.debug('Transfer request ID: %d', record.operation_id)
@@ -259,7 +257,7 @@ with open("%s/overview.txt" % rrd_dir, "w") as overview:
     writer = csv.DictWriter(overview, fieldnames = fieldnames)
     writer.writerow(dict(zip(fieldnames, fieldnames)))
 
-    for site in sites_with_open_transfers:
+    for site in records.iterkeys():
         if totals[site]['total_volume'] == 0:
             continue
 
