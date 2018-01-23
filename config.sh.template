@@ -31,6 +31,9 @@ SCHEDULER_SEQ=cms.seq
 # Registry user name to run the scheduler
 SCHEDULER_USER=dynamo
 
+# Email address to send server notifications to
+EMAIL=
+
 # Httpd content directory
 WEB_PATH=/var/www
 
