@@ -1,5 +1,5 @@
 {
-  "partitions": ["AnalysisOps", "DataOps"],
+  "partitions": ["AnalysisOps", "Physics"],
   "rrd_path_base": "$(DYNAMO_SPOOL)/dealermon",
   "rrd_publish_target": "/var/www/html/dynamo/dynamo/dealermon",
   "rrd_interval": 900,
@@ -10,14 +10,7 @@
         "config_file": "/etc/my.cnf.d/dynamo.cnf",
         "config_group": "mysql",
         "db": "dynamohistory"
-      },
-      "cache_db_params": {
-        "config_file": "/etc/my.cnf.d/dynamo.cnf",
-        "config_group": "mysql",
-        "db": "dynamohistory_cache"
-      },
-      "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
-      "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
+      }
     }
   },
   "copy_op": {

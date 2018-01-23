@@ -11,6 +11,9 @@ import shutil
 import hashlib
 import multiprocessing
 import signal
+import smtplib
+import socket
+from email.mime.text import MIMEText
 
 from argparse import ArgumentParser
 
@@ -251,6 +254,8 @@ def loop_sequence(sequence_name, sequence, user_id, config):
     try:
         ## Start an infinite loop
         while True:
+            repeat = True
+
             for action in sequence:
                 if action[0] == EXECUTE:
                     title, arguments, critical, write_request = action[1:]
@@ -300,8 +305,19 @@ def loop_sequence(sequence_name, sequence, user_id, config):
                     LOG.info('Finished %s with (status: %s)\n', title, status)
 
                     if critical and status != 'done':
-                        LOG.error('Critical executable %s failed. Terminating sequence %s.', title, sequence_name)
-                        ## We don't have a way to restart individual sequences - once this happens, the entire scheduler has to be restarted..
+                        LOG.error('Critical executable %s failed. Restarting sequence %s.', title, sequence_name)
+
+                        msg = MIMEText('Message from dynamo-scheduled@%s:\nExecutable %s of sequence %s failed.' % \
+                            (socket.gethostname(), title, sequence_name))
+
+                        msg['Subject'] = '[Dynamo Scheduler] failure notice'
+                        msg['From'] = 'dynamo@' + socket.gethostname()
+                        msg['To'] = config.notification_recipient
+
+                        mailserv = smtplib.SMTP('localhost')
+                        mailserv.sendmail(msg['From'], [msg['To']], msg.as_string())
+                        mailserv.quit()
+
                         break
     
                 elif action[0] == WAIT:
@@ -310,14 +326,11 @@ def loop_sequence(sequence_name, sequence, user_id, config):
     
                 elif action[0] == TERMINATE:
                     LOG.info('Terminating sequence.')
+                    repeat = False
                     break
     
-            else:
-                # Passed through the sequence without breaking
-                continue
-    
-            # There was a break -> sequence terminated
-            break
+            if not repeat:
+                break
 
     except KeyboardInterrupt:
         if task_id != 0:

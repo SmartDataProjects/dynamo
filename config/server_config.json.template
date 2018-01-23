@@ -42,6 +42,7 @@
     }
   },
   "scheduler_path": "_SCHEDULERPATH_",
+  "notification_recipient": "_EMAIL_",
   "logging": {
     "level": "info",
     "path": "_LOGPATH_",

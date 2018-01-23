@@ -155,7 +155,8 @@ class PhEDExCopyInterface(CopyInterface):
         if len(request) == 0:
             return {}
 
-        site_name = request[0]['destinations']['node'][0]['name']
+        # A single request can have multiple destinations
+        site_names = [d['name'] for d in request[0]['destinations']['node']]
 
         dataset_names = []
         for ds_entry in request[0]['data']['dbs']['dataset']:
@@ -167,15 +168,16 @@ class PhEDExCopyInterface(CopyInterface):
 
         subscriptions = []
 
-        if len(dataset_names) != 0:
-            chunks = [dataset_names[i:i + 35] for i in xrange(0, len(dataset_names), 35)]
-            for chunk in chunks:
-                subscriptions.extend(self._phedex.make_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in chunk]))
-
-        if len(block_names) != 0:
-            chunks = [block_names[i:i + 35] for i in xrange(0, len(block_names), 35)]
-            for chunk in chunks:
-                subscriptions.extend(self._phedex.make_request('subscriptions', ['node=%s' % site_name] + ['block=%s' % n for n in chunk]))
+        for site_name in site_names:
+            if len(dataset_names) != 0:
+                chunks = [dataset_names[i:i + 35] for i in xrange(0, len(dataset_names), 35)]
+                for chunk in chunks:
+                    subscriptions.extend(self._phedex.make_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in chunk]))
+    
+            if len(block_names) != 0:
+                chunks = [block_names[i:i + 35] for i in xrange(0, len(block_names), 35)]
+                for chunk in chunks:
+                    subscriptions.extend(self._phedex.make_request('subscriptions', ['node=%s' % site_name] + ['block=%s' % n for n in chunk]))
 
         status = {}
         for dataset in subscriptions:
@@ -184,16 +186,19 @@ class PhEDExCopyInterface(CopyInterface):
                 bytes = dataset['bytes']
                 node_bytes = cont['node_bytes']
                 time_update = cont['time_update']
+                site_name = cont['node']
             except KeyError:
                 # this was a block-level subscription (no 'subscription' field for the dataset)
                 bytes = 0
                 node_bytes = 0
                 time_update = 0
+                site_name = 'unknown'
                 for block in dataset['block']:
                     cont = block['subscription'][0]
                     bytes += block['bytes']
                     node_bytes += cont['node_bytes']
                     time_update = max(time_update, cont['time_update'])
+                    site_name = cont['node']
 
             status[(site_name, dataset['name'])] = (bytes, node_bytes, time_update)
 
