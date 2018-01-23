@@ -113,7 +113,8 @@ class Site(object):
 
         self.host = other.host
         self.storage_type = other.storage_type
-        self.backend = other.backend
+        # Temporarily commenting out to not overwrite what Max collected
+        # self.backend = other.backend
         self.storage = other.storage
         self.cpu = other.cpu
         self.status = other.status
