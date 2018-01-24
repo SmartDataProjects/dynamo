@@ -251,12 +251,26 @@ def loop_sequence(sequence_name, sequence, user_id, config):
     title = ''
     task_id = 0
 
+    action_texts = []
+    for action in sequence:
+        if action[0] == EXECUTE:
+            action_texts.append(action[1])
+        elif action[0] == WAIT:
+            action_texts.append('WAIT(%d)' % action[2])
+        elif action[0] == TERMINATE:
+            action_texts.append('TERMINATE')
+
     try:
         ## Start an infinite loop
         while True:
             repeat = True
 
-            for action in sequence:
+            for ia, action in enumerate(sequence):
+                current_action_texts = list(action_texts)
+                current_action_texts[ia] = '*' + action_texts[ia]
+                sequence_text = ' '.join(current_action_texts)
+                LOG.info('Sequence %s (PID: %d): %s', sequence_name, os.getpid(), sequence_text)
+
                 if action[0] == EXECUTE:
                     title, arguments, critical, write_request = action[1:]
                     executable = executables[title]
@@ -302,7 +316,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
                     except:
                         pass
     
-                    LOG.info('Finished %s with (status: %s)\n', title, status)
+                    LOG.info('Finished %s with (status: %s)', title, status)
 
                     if critical and status != 'done':
                         LOG.error('Critical executable %s failed. Restarting sequence %s.', title, sequence_name)
@@ -321,7 +335,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
                         break
     
                 elif action[0] == WAIT:
-                    LOG.info('Sleeping for %d seconds.\n', action[1])
+                    LOG.info('Sleeping for %d seconds.', action[1])
                     time.sleep(action[1])
     
                 elif action[0] == TERMINATE:
