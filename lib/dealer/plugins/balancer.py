@@ -2,6 +2,7 @@ import logging
 import random
 
 from base import BaseHandler
+from dynamo.dataformat import Site
 
 LOG = logging.getLogger(__name__)
 
@@ -26,6 +27,9 @@ class BalancingHandler(BaseHandler):
         latest_run = latest_runs[0]
 
         LOG.info('Balancing site occupancy based on the protected fractions in the latest cycle %d', latest_run)
+        LOG.debug('Protection reason considered as "last copy":')
+        for reason in self.target_reasons.keys():
+            LOG.debug(reason)
 
         deletion_decisions = history.get_deletion_decisions(latest_run, size_only = False)
 
@@ -68,6 +72,12 @@ class BalancingHandler(BaseHandler):
                     break
 
                 try:
+                    num_rep = self.target_reasons[reason]
+                except KeyError:
+                    # protected not because it was the last copy
+                    continue
+
+                try:
                     dataset = inventory.datasets[ds_name]
                 except KeyError:
                     continue
@@ -76,18 +86,20 @@ class BalancingHandler(BaseHandler):
                     # this replica has disappeared since then
                     continue
 
-                for target_reason, num_rep in self.target_reasons.items():
-                    if reason != target_reason:
+                num_nonpartial = 0
+                for replica in dataset.replicas:
+                    if replica.site.storage_type == Site.TYPE_MSS:
                         continue
 
-                    num_nonpartial = 0
-                    for replica in dataset.replicas:
-                        if not replica.is_partial():
-                            num_nonpartial += 1
+                    if replica.is_partial():
+                        continue
 
-                    if num_nonpartial < num_rep:
-                        LOG.debug('%s is a last copy at %s', ds_name, site.name)
-                        last_copies[site].append(dataset)
+                    if replica in replica.site.partitions[partition].replicas:
+                        num_nonpartial += 1
+
+                if num_nonpartial < num_rep:
+                    LOG.debug('%s is a last copy at %s', ds_name, site.name)
+                    last_copies[site].append(dataset)
 
         for site, frac in sorted(protected_fractions.items(), key = lambda (s, f): f):
             LOG.debug('Site %s fraction %f', site.name, frac)
