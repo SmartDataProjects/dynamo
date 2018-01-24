@@ -284,11 +284,12 @@ then
     chmod +x /etc/init.d/dynamod
   fi
 
+  
   # CRONTAB
-  crontab -l -u $USER > /tmp/$USER.crontab
-  sed "s|_INSTALLPATH_|$INSTALL_PATH|" $SOURCE/etc/crontab >> /tmp/$USER.crontab
-  sort /tmp/$USER.crontab | uniq | crontab -u $USER -
-  rm /tmp/$USER.crontab
+  #crontab -l -u $USER > /tmp/$USER.crontab
+  #sed "s|_INSTALLPATH_|$INSTALL_PATH|" $SOURCE/etc/crontab >> /tmp/$USER.crontab
+  #sort /tmp/$USER.crontab | uniq | crontab -u $USER -
+  #rm /tmp/$USER.crontab
 
   # NRPE PLUGINS
   if [ -d /usr/lib64/nagios/plugins ]

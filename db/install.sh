@@ -73,3 +73,27 @@ echo "CREATE DATABASE dynamo_tmp;" | mysql $MYSQLOPT
 
 cd ..
 rm -rf .tmp
+
+if [ -r /etc/my.cnf.d/root.cnf ]
+then
+  echo "Setting up a cron job (root) for DB backup."
+  echo "Note: It is advised to set up binary logging of dynamohistory and dynamoregister by adding"
+  echo "the following lines to the [mysqld] section of /etc/my.cnf:"
+  echo "log-bin=/var/log/mysql/mysqld.log"
+  echo "binlog-do-db=dynamohistory"
+  echo "binlog-do-db=dynamoregister"
+  echo
+
+  crontab -l -u root > /tmp/crontab.tmp.$$
+  chmod 600 /tmp/crontab.tmp.$$
+  if ! grep -q $INSTALL_PATH/sbin/backup /tmp/crontab.tmp.$$
+  then
+    echo "00 01 * * * $INSTALL_PATH/sbin/backup > /var/log/dynamo/backup.log 2>&1" >> /tmp/crontab.tmp.$$
+    crontab -u root - < /tmp/crontab.tmp.$$
+  fi
+  rm /tmp/crontab.tmp.$$
+else
+  echo "MySQL root credentials were not found in /etc/my.cnf.d/root.cnf."
+  echo "No automatic DB backup is set up."
+  echo
+fi
