@@ -1,2 +1,0 @@
-00 01 * * * _INSTALLPATH_/bin/backup > /var/log/dynamo/backup.log 2>&1
-15 */2 * * * _INSTALLPATH_/bin/execbin registry_users.py update > /var/log/fill_users.log 2>&1

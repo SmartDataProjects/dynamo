@@ -3,6 +3,7 @@ import time
 
 from dynamo.history.history import TransactionHistoryInterface
 from dynamo.dataformat import Configuration, HistoryRecord
+from dynamo.utils.interface.mysql import MySQL
 
 LOG = logging.getLogger(__name__)
 
@@ -21,7 +22,10 @@ class DummyHistory(TransactionHistoryInterface):
         pass
 
     def _do_new_run(self, operation, partition, policy_version, comment): #override
-        return 1
+        try:
+            return self.config['new_run']
+        except KeyError:
+            return 1
 
     def _do_close_run(self, operation, run_number): #override
         LOG.info('Cycle %d closed.', run_number)
@@ -44,7 +48,10 @@ class DummyHistory(TransactionHistoryInterface):
         LOG.info('Saving %d sites', len(sites))
 
     def _do_get_sites(self, run_number): #override
-        return {}
+        try:
+            return self.config['sites']
+        except KeyError:
+            return {}
 
     def _do_save_datasets(self, datasets): #override
         LOG.info('Saving %d datasets', len(datasets))
@@ -62,28 +69,88 @@ class DummyHistory(TransactionHistoryInterface):
         LOG.info('Saving quotas for %d sites', len(quotas))
 
     def _do_get_deletion_decisions(self, run_number, size_only): #override
-        return {}
+        if 'deletion_decisions' in self.config:
+            return self.config['deletion_decisions']
+
+        elif 'db_params' in self.config and 'cache_db_params' in self.config:
+            db_name = self.config.db_params.db
+            cache_db = MySQL(self.config.cache_db_params)
+
+            table_name = 'replicas_%d' % run_number
+    
+            query = 'SELECT s.`name`, d.`name`, r.`size`, r.`decision`, p.`text` FROM `%s`.`%s` AS r' % (cache_db.db_name(), table_name)
+            query += ' INNER JOIN `%s`.`sites` AS s ON s.`id` = r.`site_id`' % db_name
+            query += ' INNER JOIN `%s`.`datasets` AS d ON d.`id` = r.`dataset_id`' % db_name
+            query += ' INNER JOIN `%s`.`policy_conditions` AS p ON p.`id` = r.`condition`' % db_name
+            query += ' ORDER BY s.`name` ASC, r.`size` DESC'
+    
+            product = {}
+    
+            _site_name = ''
+            
+            for site_name, dataset_name, size, decision, reason in cache_db.xquery(query):
+                if site_name != _site_name:
+                    product[site_name] = []
+                    current = product[site_name]
+                    _site_name = site_name
+                
+                current.append((dataset_name, size, decision, reason))
+    
+            return product
+
+        else:
+            return {}
 
     def _do_save_dataset_popularity(self, run_number, datasets): #override
         LOG.info('Saving popularity for %d datasets', len(datasets))
 
     def _do_get_incomplete_copies(self, partition): #override
-        return []
+        try:
+            return self.config['incomplete_copies']
+        except KeyError:
+            return []            
 
     def _do_get_copied_replicas(self, run_number): #override
-        return []
+        try:
+            return self.config['copied_replicas'][run_number]
+        except KeyError:
+            return []
 
     def _do_get_site_name(self, operation_id): #override
-        return ''
+        try:
+            return self.config['site_name'][operation_id]
+        except KeyError:
+            return ''
 
     def _do_get_deletion_runs(self, partition, first, last): #override
-        return []
+        try:
+            runs = self.config['deletion_runs'][partition]
+        except KeyError:
+            return []
+        else:
+            if first != -1:
+                runs = filter(lambda r: r >= first, runs)
+            if last != -1:
+                runs = filter(lambda r: r <= last, runs)
+                
+            return runs
 
     def _do_get_copy_runs(self, partition, first, last): #override
-        return []
+        try:
+            runs = self.config['copy_runs'][partition]
+        except KeyError:
+            return []
+        else:
+            if first != -1:
+                runs = filter(lambda r: r >= first, runs)
+            if last != -1:
+                runs = filter(lambda r: r <= last, runs)
 
     def _do_get_run_timestamp(self, run_number): #override
-        return 0
+        try:
+            return self.config['run_timestamp'][run_number]
+        except KeyError:
+            return 0
 
     def _do_get_next_test_id(self): #override
         return -1
