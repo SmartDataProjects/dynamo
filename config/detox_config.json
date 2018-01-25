@@ -55,6 +55,9 @@
       },
       "ProtectedSiteTagger": {
         "sites": ["T1_IT_CNAF_MSS"]
+      },
+      "EnforcedProtectionTagger": {
+        "policy": "$(DYNAMO_BASE)/policies/common/enforcer_rules.json"
       }
     }
   },
