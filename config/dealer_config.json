@@ -32,6 +32,14 @@
       }
     },
     "plugins": {
+      "enforcer": {
+        "priority": 4,
+        "module": "EnforcerHandler",
+        "config": {
+           "max_dataset_size": 50.0
+          }
+        }
+      },
       "popularity": {
         "priority": 3,
         "module": "PopularityHandler",
