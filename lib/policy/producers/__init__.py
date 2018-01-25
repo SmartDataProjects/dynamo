@@ -10,13 +10,15 @@ from globalqueue import GlobalQueueRequestHistory
 from mysqllock import MySQLReplicaLock
 from weblock import WebReplicaLock
 from protectedsite import ProtectedSiteTagger
+from datasetrelease import DatasetRelease
 
 __all__ = [
     'CRABAccessHistory',
     'GlobalQueueRequestHistory',
     'MySQLReplicaLock',
     'WebReplicaLock',
-    'ProtectedSiteTagger'
+    'ProtectedSiteTagger',
+    'DatasetRelease'
 ]
 
 # Dictionary of registered producers

@@ -256,7 +256,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
         if action[0] == EXECUTE:
             action_texts.append(action[1])
         elif action[0] == WAIT:
-            action_texts.append('WAIT(%d)' % action[2])
+            action_texts.append('WAIT(%d)' % action[1])
         elif action[0] == TERMINATE:
             action_texts.append('TERMINATE')
 

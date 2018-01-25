@@ -79,6 +79,7 @@ rm $BINTARGET/dynamo/common/db_conf.php.template
 [ -e /tmp/db_conf.php.$$ ] && mv /tmp/db_conf.php.$$ $BINTARGET/dynamo/common/db_conf.php
 
 [ -L $HTMLTARGET/dynamo/detox.php ] || ln -sf $BINTARGET/dynamo/detox/main.php $HTMLTARGET/dynamo/detox.php
+[ -L $HTMLTARGET/dynamo/detoxlocks.php ] || ln -sf $BINTARGET/dynamo/detox/locks.php $HTMLTARGET/dynamo/detoxlocks.php
 [ -L $HTMLTARGET/dynamo/inventory.php ] || ln -sf $BINTARGET/dynamo/inventory/main.php $HTMLTARGET/dynamo/inventory.php
 [ -L $HTMLTARGET/registry/detoxlock ] || ln -sf $BINTARGET/registry/detoxlock.php $HTMLTARGET/registry/detoxlock
 [ -L $HTMLTARGET/registry/activitylock ] || ln -sf $BINTARGET/registry/activitylock.php $HTMLTARGET/registry/activitylock

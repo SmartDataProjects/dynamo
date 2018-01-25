@@ -281,6 +281,7 @@ replica_variables = {
     'dataset.usage_rank': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'global_usage_rank'),
     'dataset.demand_rank': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'global_demand_rank'),
     'dataset.release': DatasetRelease(),
+    'dataset.is_latest_production_release': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'latest_production_release', dict_default = False),
     'dataset.on_protected_site': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'on_protected_site', dict_default = False),
     'replica.is_last_transfer_source': ReplicaIsLastSource(),
     'replica.size': ReplicaSize(),
