@@ -7,7 +7,7 @@ from undertaker import Undertaker
 __all__ = [
     'PopularityHandler',
 #    'DirectRequestsHandler',
-    'EnforcerHandle',
+    'EnforcerHandler',
     'BalancingHandler',
     'Undertaker'
 ]
