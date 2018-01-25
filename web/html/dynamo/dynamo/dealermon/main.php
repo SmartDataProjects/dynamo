@@ -88,9 +88,6 @@ function single_rrd_to_array($rrd,$rrdpath){
   $ncols = count($rrdcolumns);
   $last = rrd_last($rrdpath . '/' . $rrd);
 
-  //echo $rrd . "\n";
-  //echo $rrdpath . "\n";
-  //echo $last . "\n";
 
   $options = array('LAST', sprintf('--start=%d', $last - 3600 * 24 * 6), sprintf('--end=%d', $last - 1));
   $dump = rrd_fetch($rrdpath . '/' . $rrd, $options);//, count($options));                                                                                                                                 
