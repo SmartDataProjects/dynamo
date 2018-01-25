@@ -190,5 +190,17 @@ class In(SetElementExpr):
             return False
 
 class Notin(SetElementExpr):
-    def _eval(self, elem):
-        return not In._eval(self, elem)
+    def _eval(self, lhs):
+        if self.variable.vtype == attrs.Attr.NUMERIC_TYPE:
+            return lhs not in self.rhs
+        else:
+            for elem in self.rhs:
+                if type(elem) is re._pattern_type:
+                    if elem.match(lhs):
+                        return False
+                else:
+                    if elem == lhs:
+                        return False
+
+            return True
+

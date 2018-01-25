@@ -55,6 +55,15 @@
       },
       "ProtectedSiteTagger": {
         "sites": ["T1_IT_CNAF_MSS"]
+      },
+      "DatasetRelease": {
+        "dbs": {
+          "config": {
+            "url_base": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
+            "auth_handler": "HTTPSCertKeyHandler",
+            "auth_handler_conf": {}
+          }
+        }
       }
     }
   },
