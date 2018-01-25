@@ -18,7 +18,7 @@ class EnforcerHandler(BaseHandler):
         self.policy = Configuration(config.policy)
         self.max_dataset_size = config.max_dataset_size * 1.e+12
 
-    def get_requests(self, inventory, policy): # override
+    def get_requests(self, inventory): # override
         requests = []
 
         for rule in self.policy.rules:
@@ -73,5 +73,5 @@ class EnforcerHandler(BaseHandler):
 
                     requests.append((dataset,random_site))
 
-    return requests
+        return requests
 
