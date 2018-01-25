@@ -81,38 +81,34 @@ if ((isset($_REQUEST['serviceId']) && $_REQUEST['serviceId'] == 4)){
 $rrdcolumns = array('copied', 'total');
 
 // function to read rrd file and return array (timestamp, copied, total)
+
 function single_rrd_to_array($rrd,$rrdpath){
 
   global $rrdcolumns;
   $ncols = count($rrdcolumns);
   $last = rrd_last($rrdpath . '/' . $rrd);
 
-  $options = array('LAST', sprintf('--start=%d', $last - 3600 * 24 * 6), sprintf('--end=%d', $last - 1));
-  $dump = rrd_fetch($rrdpath . '/' . $rrd, $options, count($options));
+  //echo $rrd . "\n";
+  //echo $rrdpath . "\n";
+  //echo $last . "\n";
 
-  if (isset($dump['data']) && count($dump['data']) >= $ncols) {
-    $chunks = array_chunk($dump['data'], $ncols);
-    $entry = $chunks;
-  }
-  else
-    $entry = array_fill(0, $ncols, 0);
+  $options = array('LAST', sprintf('--start=%d', $last - 3600 * 24 * 6), sprintf('--end=%d', $last - 1));
+  $dump = rrd_fetch($rrdpath . '/' . $rrd, $options);//, count($options));                                                                                                                                 
+
 
   $copied_entries = array();
   $total_entries = array();
   $time_entries = array();
 
-  $mapped = array();
-  $counter = 0;
-
-  foreach ($entry as $i => $d){
-    if ($counter%1 == 0) {
-      array_push($time_entries,$i*$dump['step']+$dump['start']);
-      array_push($total_entries,$d[1]/1e12);
-      array_push($copied_entries,$d[0]/1e12);
-    }
-    $counter = $counter + 1;
+  foreach ( $dump["data"]["copied"] as $key => $value )
+  {
+    array_push($time_entries,$key);
+    array_push($copied_entries,$value*1e-12);
   }
-
+  foreach ( $dump["data"]["total"] as $key => $value )
+  {
+    array_push($total_entries,$value*1e-12); 
+  }
   $last_copied = array_pop($copied_entries);
   $last_total = array_pop($total_entries);
   $last_time = array_pop($time_entries);
@@ -122,20 +118,20 @@ function single_rrd_to_array($rrd,$rrdpath){
     $first_copied = array_shift($copied_entries);
     $first_time = array_shift($time_entries);
   }
-    
+
   $size = count($total_entries);
-  
-  $rrd_array = array(	
-		     $time_entries,
-		     $copied_entries,
-		     $total_entries,
-				 );
+
+  $rrd_array = array(
+                     $time_entries,
+                     $copied_entries,
+                     $total_entries,
+                     );
 
   return $rrd_array;
+
 }
 
 
-// Reading rrd with total volume of all ongoing requests
 if (isset($_REQUEST['getSummary']) && $_REQUEST['getSummary']) {
   $Summary = array();
   
