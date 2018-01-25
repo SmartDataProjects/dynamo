@@ -3,6 +3,7 @@ import re
 import random
 
 from base import BaseHandler
+from dynamo.dataformat import Configuration
 
 LOG = logging.getLogger(__name__)
 
@@ -14,13 +15,14 @@ class EnforcerHandler(BaseHandler):
     def __init__(self, config):
         BaseHandler.__init__(self, 'Enforcer')
 
+        self.policy = Configuration(config.policy)
         self.max_dataset_size = config.max_dataset_size * 1.e+12
 
     def get_requests(self, inventory, policy): # override
         requests = []
 
-        for rule in config.rules:
-            # split up sites into considered ones and others                                                                                                                                               
+        for rule in self.policy.rules:
+            # split up sites into considered ones and others
             sites_considered = []
             sites_others = []
 
@@ -62,7 +64,8 @@ class EnforcerHandler(BaseHandler):
                     if dataset.find_replica(site_other) is not None:
                         num_others += 1
 
-                if num_considered < rule['num_copies'] and num_others > 0 and rule['num_copies'] <= len(sites_considered):
+                if (num_considered < rule['num_copies'] and num_others > 0 
+                    and rule['num_copies'] <= len(sites_considered)):
                     random_site = random.choice(sites_considered)
 
                     while dataset.find_replica(random_site) is not None:
