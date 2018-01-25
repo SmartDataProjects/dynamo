@@ -268,6 +268,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
 
     $query = 'SELECT s.`id`, s.`name`, c.`status`, c.`quota` FROM ' . $site_cache_table_name . ' AS c';
     $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
+    $query .= ' INNER JOIN (SELECT DISTINCT `site_id` FROM ' . $replica_cache_table_name . ') AS r ON r.`site_id` = s.`id`';
     if ($partition_id != 9)
       $query.= ' WHERE s.`name` NOT LIKE "%_MSS"';
     $query .= ' ORDER BY s.`name`';
