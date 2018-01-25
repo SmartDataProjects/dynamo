@@ -29,26 +29,33 @@ from dynamo.core.executable import make_standard_logger
 LOG = make_standard_logger(config.log_level)
 
 ## Check if another process is running
-if os.path.exists(config.process_lock):
-    while True:
-        try:
-            source = open(config.process_lock)
-        except OSError:
-            break
-    
-        pid = int(source.read().strip())
-        source.close()
+process_exists = False
 
-        try:
-            with open('/proc/%d/cmdline' % pid) as proc:
-                if not 'dynamod' in proc.read():
-                    raise Exception()
-        except:
-            LOG.error('Lock file %s exists but process %d is not a Dynamo process.', config.process_lock, pid)
-    
-        LOG.info('Another process %d is performing the lock conversion. Waiting for completion.')
-        time.sleep(5)
+while os.path.exists(config.process_lock):
+    try:
+        source = open(config.process_lock)
+    except OSError:
+        break
 
+    process_exists = True
+
+    pid = int(source.read().strip())
+    source.close()
+
+    try:
+        with open('/proc/%d/cmdline' % pid) as proc:
+            if not 'dynamod' in proc.read():
+                raise Exception()
+    except:
+        LOG.error('Lock file %s exists but process %d is not a Dynamo process.', config.process_lock, pid)
+        os.unlink(config.process_lock)
+        process_exists = False
+        break
+
+    LOG.info('Another process %d is performing the lock conversion. Waiting for completion.', pid)
+    time.sleep(5)
+
+if process_exists:
     LOG.info('Locks are converted by another process. Exiting.')
     sys.exit(0)
 
