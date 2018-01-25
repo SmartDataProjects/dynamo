@@ -22,7 +22,10 @@ class MySQLHistory(TransactionHistoryInterface):
         TransactionHistoryInterface.__init__(self, config)
 
         self._mysql = MySQL(config.db_params)
-        self._cache_db = MySQL(config.cache_db_params)
+        if 'cache_db_params' in config:
+            self._cache_db = MySQL(config.cache_db_params)
+        else:
+            self._cache_db = None
 
         self._site_id_map = {}
         self._dataset_id_map = {}

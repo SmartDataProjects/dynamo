@@ -3,6 +3,14 @@
 # Copy DB table files to a backup location.
 # Only works for MyISAM tables
 
+DEFAULTSFILE=/etc/my.cnf.d/root.cnf
+
+if ! [ -r $DEFAULTSFILE ]
+then
+  echo "You don't have the right permissions to perform this operation."
+  exit 1
+fi
+
 DYNAMO_BASE=$(cd $(dirname $0)/..; pwd)
 source $DYNAMO_BASE/etc/profile.d/init.sh
 
@@ -14,7 +22,9 @@ mkfifo $FIFO
 
 exec 3<>$FIFO
 
-mysql --defaults-group-suffix=-dynamo < $FIFO &
+MYSQLCMD="mysql --defaults-file=$DEFAULTSFILE"
+
+$MYSQLCMD < $FIFO &
 MYSQL=$!
 trap "rm -f $FIFO; kill -1 $MYSQL 2>&-" 0
 
@@ -23,7 +33,7 @@ echo "FLUSH TABLES WITH READ LOCK;" >&3
 TAG=$(date +%Y%m%d%H%M%S)
 NOW=$(date +"%Y:%m:%d %H:%M:%S")
 
-for DB in dynamo dynamohistory
+for DB in dynamo dynamohistory dynamoregister
 do
   LATEST=$(ls $DYNAMO_ARCHIVE/db/${DB}_* 2>/dev/null | tail -n 1)
   LATEST_TAG=$(echo $LATEST | sed 's/.*'$DB'_\(.*\)\.gz/\1/')
@@ -48,5 +58,4 @@ done
 echo "UNLOCK TABLES;" >&3
 exec 3>&-
 
-echo "INSERT INTO \`snapshots\` VALUES ('$TAG', '$NOW'); DELETE FROM \`snapshots\` WHERE \`timestamp\` < '$NOW';" | mysql --defaults-group-suffix=-dynamo -D dynamohistory
-#echo "PURGE BINARY LOGS BEFORE '$NOW';" | mysql --defaults-group-suffix=-dynamo
+echo "PURGE BINARY LOGS BEFORE '$NOW';" | $MYSQLCMD

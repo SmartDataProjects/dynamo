@@ -11,6 +11,9 @@ import shutil
 import hashlib
 import multiprocessing
 import signal
+import smtplib
+import socket
+from email.mime.text import MIMEText
 
 from argparse import ArgumentParser
 
@@ -248,10 +251,26 @@ def loop_sequence(sequence_name, sequence, user_id, config):
     title = ''
     task_id = 0
 
+    action_texts = []
+    for action in sequence:
+        if action[0] == EXECUTE:
+            action_texts.append(action[1])
+        elif action[0] == WAIT:
+            action_texts.append('WAIT(%d)' % action[1])
+        elif action[0] == TERMINATE:
+            action_texts.append('TERMINATE')
+
     try:
         ## Start an infinite loop
         while True:
-            for action in sequence:
+            repeat = True
+
+            for ia, action in enumerate(sequence):
+                current_action_texts = list(action_texts)
+                current_action_texts[ia] = '*' + action_texts[ia]
+                sequence_text = ' '.join(current_action_texts)
+                LOG.info('Sequence %s (PID: %d): %s', sequence_name, os.getpid(), sequence_text)
+
                 if action[0] == EXECUTE:
                     title, arguments, critical, write_request = action[1:]
                     executable = executables[title]
@@ -297,27 +316,35 @@ def loop_sequence(sequence_name, sequence, user_id, config):
                     except:
                         pass
     
-                    LOG.info('Finished %s with (status: %s)\n', title, status)
+                    LOG.info('Finished %s with (status: %s)', title, status)
 
                     if critical and status != 'done':
-                        LOG.error('Critical executable %s failed. Terminating sequence %s.', title, sequence_name)
-                        ## We don't have a way to restart individual sequences - once this happens, the entire scheduler has to be restarted..
+                        LOG.error('Critical executable %s failed. Restarting sequence %s.', title, sequence_name)
+
+                        msg = MIMEText('Message from dynamo-scheduled@%s:\nExecutable %s of sequence %s failed.' % \
+                            (socket.gethostname(), title, sequence_name))
+
+                        msg['Subject'] = '[Dynamo Scheduler] failure notice'
+                        msg['From'] = 'dynamo@' + socket.gethostname()
+                        msg['To'] = config.notification_recipient
+
+                        mailserv = smtplib.SMTP('localhost')
+                        mailserv.sendmail(msg['From'], [msg['To']], msg.as_string())
+                        mailserv.quit()
+
                         break
     
                 elif action[0] == WAIT:
-                    LOG.info('Sleeping for %d seconds.\n', action[1])
+                    LOG.info('Sleeping for %d seconds.', action[1])
                     time.sleep(action[1])
     
                 elif action[0] == TERMINATE:
                     LOG.info('Terminating sequence.')
+                    repeat = False
                     break
     
-            else:
-                # Passed through the sequence without breaking
-                continue
-    
-            # There was a break -> sequence terminated
-            break
+            if not repeat:
+                break
 
     except KeyboardInterrupt:
         if task_id != 0:

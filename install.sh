@@ -175,6 +175,7 @@ else
   sed -i "s|_LOGPATH_|$LOG_PATH|" $CONFIG_PATH/server_config.json
   sed -i "s|_SCHEDULERPATH_|$SCHEDULER_PATH|" $CONFIG_PATH/server_config.json
   sed -i "s|_REGISTRYHOST_|$REGISTRY_HOST|" $CONFIG_PATH/server_config.json
+  sed -i "s|_EMAIL_|$EMAIL|" $CONFIG_PATH/server_config.json
 
   sed -n '1,/_SERVER_DB_WRITE_PARAMS_1_/ p' $CONFIG_PATH/server_config.json | sed '$ d' > server_config.json.tmp
 
@@ -283,11 +284,12 @@ then
     chmod +x /etc/init.d/dynamod
   fi
 
+  
   # CRONTAB
-  crontab -l -u $USER > /tmp/$USER.crontab
-  sed "s|_INSTALLPATH_|$INSTALL_PATH|" $SOURCE/etc/crontab >> /tmp/$USER.crontab
-  sort /tmp/$USER.crontab | uniq | crontab -u $USER -
-  rm /tmp/$USER.crontab
+  #crontab -l -u $USER > /tmp/$USER.crontab
+  #sed "s|_INSTALLPATH_|$INSTALL_PATH|" $SOURCE/etc/crontab >> /tmp/$USER.crontab
+  #sort /tmp/$USER.crontab | uniq | crontab -u $USER -
+  #rm /tmp/$USER.crontab
 
   # NRPE PLUGINS
   if [ -d /usr/lib64/nagios/plugins ]

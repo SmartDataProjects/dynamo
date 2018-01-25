@@ -358,7 +358,7 @@ class Dynamo(object):
             executable.inventory._updated_objects = []
             executable.inventory._deleted_objects = []
 
-        execfile(path + '/exec.py')
+        execfile(path + '/exec.py', {})
 
         if queue is not None:
             for obj in self.inventory._updated_objects:

@@ -17,7 +17,6 @@ import selinux
 import collections
 import csv
 
-from glob import glob
 from datetime import datetime, timedelta
 
 from argparse import ArgumentParser
@@ -29,344 +28,312 @@ args = parser.parse_args()
 sys.argv = []
 
 from dynamo.dataformat import Configuration
-import dynamo.history.impl as history_impl
-import dynamo.operation.impl as operation_impl
-from dynamo.utils.interface.phedex import PhEDEx
 from dynamo.utils.parallel import Map
 from dynamo.core.executable import make_standard_logger
 
+## Configuration
+
 config = Configuration(args.config)
 
+## Logger
+
 LOG = make_standard_logger(config.log_level)
+
+## Data source
+
+import dynamo.history.impl as history_impl
+import dynamo.operation.impl as operation_impl
+from dynamo.utils.interface.phedex import PhEDEx
+
+history = getattr(history_impl, config.history.module)(config.history.config)
+copy = getattr(operation_impl, config.copy_op.module)(config.copy_op.config)
+phedex = PhEDEx(config.phedex)
+
+## Paths 
 
 rrd_dir = config.rrd_path_base + '/track_phedex'
 try:
     os.makedirs(rrd_dir)
-except:
+except OSError:
     pass
 
-sites = glob(rrd_dir+'/*')
-try:
-    sites.remove(rrd_dir + '/total.rrd')
-    sites.remove(rrd_dir + '/total_tape.rrd')
-    sites.remove(rrd_dir + '/total_disk.rrd')
-except:
-    pass
-
-# Interval of the rrd file timestamps
-maxtime=int(time.time())-100*24*60*60
-
-history = getattr(history_impl, config.history.module)(config.history.config)
-
-dynamo_requests = []
-sites_with_open_transfers = []
-records = collections.defaultdict(set)
-
-sites_ongoings = []
-sites_total = [] # request level
-sites_copied = [] # request level
-sites_total_stuck = [] # dataset level
-sites_copied_stuck = [] # dataset level
-sites_total_ongoing = [] # dataset level
-sites_copied_ongoing = [] # dataset level
-
-# Get all ongoing dynamo transfers
-
-for partition in config.partitions:
-    partition_records = history.get_incomplete_copies(partition)    
-    for record in partition_records:
-        dynamo_requests.append(record.operation_id)
-
-copy = getattr(operation_impl, config.copy_op.module)(config.copy_op.config)
+## RRD functions
 
 interval = int(config.rrd_interval)
 
-timestamp = int(time.time()) / interval * interval
+def create_rrd(path):
+    start = (int(time.time()) / interval - 1) * interval
 
-incomplete_replicas_rrd = []
+    rrdtool.create(path, '--start', str(start), '--step', str(interval),
+                   'DS:copied:GAUGE:%d:0:U' % (interval * 800),
+                   'DS:total:GAUGE:%d:0:U' % (interval * 800),
+                   'RRA:LAST:0:1:%i' % 1344)
 
-# Keeping track of total volume ...
-total_volume = 0
-copied_volume = 0
-total_rrdfile = rrd_dir+'/total.rrd'
-total_tape_rrdfile = rrd_dir+'/total_tape.rrd'
-total_disk_rrdfile = rrd_dir+'/total_disk.rrd'
-total_rrdfiles = [total_rrdfile,total_tape_rrdfile,total_disk_rrdfile]
+    # data source
+    #  DS:<name>:<type>:<heartbeat>:<min>:<max>
+    #  type = GAUGE: quantity that has a value at each time point
+    #  heartbeat: "maximum number of seconds that may pass between two updates of this
+    #              data source before the value of the data source is assumed to be *UNKNOWN*"
+    #  min/max = U: unknown
+    # round robin archive (RRA)
+    #  RRA:<type>:<xff>:<nsteps>:<nrows>
+    #  type = LAST: just use the last value, no averaging etc.
+    #  xff: fraction of <nsteps> that can have UNKNOWN as the value
+    #  nsteps: number of steps used for calculation
+    #  nrows: number of records to keep
 
-start = (int(time.time()) / interval - 1) * interval
-
-for rrdfile in total_rrdfiles:
-    if not os.path.exists(rrdfile):
-        rrdtool.create(rrdfile, '--start', str(start), '--step', str(interval),
-                       'DS:copied:GAUGE:%d:0:U' % (interval * 800),
-                       'DS:total:GAUGE:%d:0:U' % (interval * 800),
-                       'RRA:LAST:0:1:%i' % 1344    )
-
-# Now create new rrd files and create pngs
-def is_transfer_stuck(rrd_file):
-    stuck = 0
-    
-    result = rrdtool.fetch(rrd_file, "LAST")
-        
-    
-    lasttime = result[0][1]
-    firsttime = lasttime - 6*24*3600
-
-    result = rrdtool.fetch(rrd_file, "LAST", '-s', str(firsttime), '-e', str(lasttime))
-
-    rows = result[2]
+    # change selinux context of the RRD so that it can be read by a apache-invoked PHP script
     try:
-        while rows[len(rows)-1][1] is None:
-            rows = rows[:-1]
-
-        if len(rows) > 480 and (rows[len(rows)-1][0] - rows[len(rows)-481][0])/rows[len(rows)-1][1] < 0.01:
-        #480 corresponds to 5 days * 24 hours * 4 timestamps per hour
-            stuck = 1
+        selinux.chcon(path, 'unconfined_u:object_r:httpd_sys_content_t:s0')
     except:
         pass
 
-    return stuck
+## Get all sites with ongoing transfers
 
+records = collections.defaultdict(set)
+
+# First get all ongoing dynamo transfers (to be excluded)
+
+dynamo_requests = set()
+for partition in config.partitions:
+    partition_records = history.get_incomplete_copies(partition)    
+    for record in partition_records:
+        dynamo_requests.add(record.operation_id)
 
 # Get an array of subscription ids, names, sites, copied amounts and total sizes.
 # IDs are looped through the copy.copy_status object to retrieve the remaining
 # properties of the subscription. Also create and write RRD files for each dataset,
 # organized by destination site.
 
-phedex = PhEDEx(config.phedex)
+LOG.info('Collecting all incomplete subscriptions created in the past 100 days.')
+
+maxtime = int(time.time()) - 100 * 24 * 60 * 60
 datasets = phedex.make_request('subscriptions', ['percent_max=99.999', 'create_since=%d' % maxtime])
 
-ids = []
+all_ids = set()
 
 for dataset_entry in datasets:
     if 'block' in dataset_entry:
         for block_entry in dataset_entry['block']:
             for subscription in block_entry['subscription']:
                 request_id = subscription["request"]
-                if request_id not in dynamo_requests and request_id not in ids:
+                if request_id not in dynamo_requests and request_id not in all_ids:
                     site = subscription["node"]
-                    ids.append(request_id)
-                    if site not in sites_with_open_transfers:
-                        sites_with_open_transfers.append(site)
+                    all_ids.add(request_id)
                     records[site].add(request_id)
                 
     else:
         for subscription in dataset_entry['subscription']:
             request_id = subscription["request"]
-            if request_id not in dynamo_requests and request_id not in ids:
+            if request_id not in dynamo_requests and request_id not in all_ids:
                 site = subscription["node"]
-                ids.append(request_id)
-                if site not in sites_with_open_transfers:
-                    sites_with_open_transfers.append(site)
+                all_ids.add(request_id)
                 records[site].add(request_id)
 
-def exec_get(sitename):
-    global rrd_dir
-    global records
-    global copy
-    global incomplete_replicas_rrd
-    global interval
 
-    global sites_ongoings
-    global sites_total
-    global sites_copied
-    global sites_total_stuck
-    global sites_copied_stuck
-    global sites_total_ongoing
-    global sites_copied_ongoing
+## Get the copy status
 
-    # Need this here for some reason
-    import rrdtool
-    import csv
-    
-    debug_counter = 0
+incomplete_replicas_rrd = set()
+totals = {} # {site: tallies}
+ongoing_totals = {} # {site: tallies}
 
-    ongoings = []
-    site_total = 0
-    site_copied = 0
-    site_total_stuck = 0
-    site_copied_stuck = 0
-    site_total_ongoing = 0
-    site_copied_ongoing = 0
+def get_copy_status(request_id):
+    return request_id, copy.copy_status(request_id)
 
-    rrd_filepath = rrd_dir + '/' + str(sitename)
+def is_transfer_stuck(rrd_file):
+    # LAST returns a tuple ((start, end, something), something, records)
+    lasttime = rrdtool.fetch(rrd_file, "LAST")[0][1]
+    firsttime = lasttime - 6*24*3600
 
-    if not os.path.exists(rrd_filepath):
-        # Create path corresponding to site
-        os.mkdir(rrd_filepath)
+    result = rrdtool.fetch(rrd_file, "LAST", '-s', str(firsttime), '-e', str(lasttime))
 
+    rows = result[2]
+
+    # rewind to the last non-null record
+    while len(rows) != 0 and rows[-1][1] is None:
+        rows.pop()
+
+    if len(rows) > 480:
+        if rows[-1][0] is None or rows[-481][0] is None:
+            # Copied is None - you can't tell if the transfer is stuck..
+            return 0
+        elif (rows[-1][0] - rows[-481][0])/rows[-1][1] < 0.01:
+            return 1
+
+    return 0
+
+for site, request_ids in records.iteritems():
+    # Will do this per site, parallelizing copy_status query for the records
+    LOG.info('Processing %s', site)
+
+    # Create a directory for the site
+    site_rrd_dir = rrd_dir + '/' + site
     try:
-        os.unlink("%s/filelist.txt" % rrd_filepath)
-    except:
+        os.mkdir(site_rrd_dir)
+    except OSError:
         pass
 
-    for record in records[sitename]:
-        debug_counter += 1
-        #if debug_counter > 2:
-        #    break    
+    site_totals = totals[site] = {
+        "total_volume": 0., # total of all datasets
+        "copied_volume": 0., # copied volume
+    }
 
-        request_id = record
-        status = copy.copy_status(request_id)
+    site_ongoing_totals = ongoing_totals[site] = {
+        "ongoing": 0., # number of ongoing transfers
+        "total": 0., # total of datasets that are not 100%
+        "total_stuck": 0., # out of which is stuck
+        "copied": 0., # copied volume, out of datasets that are not 100%
+        "copied_stuck": 0. # out of which is stuck
+    }
+
+    dataset_details = []
+
+    status_list = Map(config.parallel).execute(get_copy_status, request_ids)
+
+    for request_id, status in status_list:
+        LOG.debug('Transfer request ID: %d', request_id)
 
         request_total = 0
         request_copied = 0
+    
+        for (sitename, dataset), (total, copied, last_update) in status.iteritems():
+            LOG.debug((sitename, dataset))
 
-        for (site, dataset), (total, copied, last_update) in status.items():
+            if sitename != site:
+                # This happens when multiple sites were chosen as destinations for a single transfer request
+                continue
 
+            if copied is None:
+                # Happens sometimes for very, very, very old requests
+                continue
 
-            if copied is not None:# That happens sometimes for very, very, very old requests
-                site_total += total
-                site_copied += copied
+            # Keeping track of the request status
+            request_total += total
+            request_copied += copied
 
-            tmp = rrd_filepath + '/'  +  str(request_id) + '_' + dataset.replace('/', '+') + '.rrd'
-            rrd_file = tmp.replace('+','',1)
-            incomplete_replicas_rrd.append(rrd_file)
-         
-            if not os.path.exists(rrd_file) and copied != total:
-                # RRD does not exist yet
-                start = (int(time.time()) / interval - 1) * interval
+            site_totals['total_volume'] += total
+            site_totals['copied_volume'] += copied
 
-                # Write rrd file
+            # We have an RRD file for each (site, dataset) combination
+            rrd_file = '%s/%d_%s.rrd' % (site_rrd_dir, request_id, dataset[1:].replace('/', '+'))
+
+            if copied != total:
+                incomplete_replicas_rrd.add(rrd_file)
+
+                if not os.path.exists(rrd_file):
+                    # RRD does not exist yet
+                    create_rrd(rrd_file)
+
+                is_stuck = is_transfer_stuck(rrd_file)
+
+                # Update the RRD file
+
+                timestamp = int(time.time()) / interval * interval
+
                 try:
-                    rrdtool.create(rrd_file, '--start', str(start), '--step', str(interval),
-                                   'DS:copied:GAUGE:%d:0:U' % (interval * 800),
-                                   'DS:total:GAUGE:%d:0:U' % (interval * 800),
-                                   'RRA:LAST:0:1:%i' % 1344    )
+                    lasttime = rrdtool.fetch(rrd_file, "LAST")[0][1]
                 except:
-                    pass
+                    lasttime = 0
 
-                # data source
-                #  DS:<name>:<type>:<heartbeat>:<min>:<max>
-                #  type = GAUGE: quantity that has a value at each time point
-                #  heartbeat: "maximum number of seconds that may pass between two updates of this data source before the value of the data source is assumed to be *UNKNOWN*"
-                #  min/max = U: unknown
-                # round robin archive (RRA)
-                #  RRA:<type>:<xff>:<nsteps>:<nrows>
-                #  type = LAST: just use the last value, no averaging etc.
-                #  xff: fraction of <nsteps> that can have UNKNOWN as the value
-                #  nsteps: number of steps used for calculation
-                #  nrows: number of records to keep
-
-                # change selinux context of the RRD so that it can be read by a apache-invoked PHP script
-                try:
-                    selinux.chcon(rrd_file, 'unconfined_u:object_r:httpd_sys_content_t:s0')
-                except:
-                    pass
-
-            try:
-                # Keeping track of the request status
-                request_total += total
-                request_copied += copied            
-                if copied != total:
-
-                    is_stuck = is_transfer_stuck(rrd_file)
-                    ongoings.append([request_id,dataset,copied,total,is_stuck])
-                    site_total_stuck += is_stuck*total
-                    site_copied_stuck += is_stuck*copied
-                    site_total_ongoing += total
-                    site_copied_ongoing += copied
+                if timestamp != lasttime:
                     rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
+                
+                # Tally up this tranfsfer
 
-                else:
-                    try:
-                        os.unlink(rrd_file)
-                    except:
-                        pass
-            except:
-                pass
+                site_ongoing_totals['ongoing'] += 1
+                site_ongoing_totals['total'] += total
+                site_ongoing_totals['total_stuck'] += is_stuck * total
+                site_ongoing_totals['copied'] += copied
+                site_ongoing_totals['copied_stuck'] += is_stuck * copied
+
+                dataset_details.append({
+                    'id': request_id,
+                    'name': dataset,
+                    'copied': copied,
+                    'total': total,
+                    'stuck': is_stuck
+                })
+
+            else:
+                try:
+                    os.unlink(rrd_file)
+                except OSError:
+                    pass
             
+    with open("%s/filelist.txt" % site_rrd_dir, "w") as csvfilelist:
+        fieldnames = ["id", "name", "copied", "total", "stuck"]
 
-    sites_ongoings.append([sitename,len(ongoings)])
-    sites_total.append([sitename,site_total])
-    sites_copied.append([sitename,site_copied])
-    sites_total_stuck.append([sitename,site_total_stuck])
-    sites_copied_stuck.append([sitename,site_copied_stuck])
-    sites_total_ongoing.append([sitename,site_total_ongoing])
-    sites_copied_ongoing.append([sitename,site_copied_ongoing])
+        writer = csv.DictWriter(csvfilelist, fieldnames = fieldnames)
+        writer.writerow(dict(zip(fieldnames, fieldnames)))
 
-    with open("%s/filelist.txt" % rrd_filepath, "w") as csvfilelist:
-        fieldnames = ["id","name","copied","total","stuck"]
-        writer = csv.DictWriter(csvfilelist, fieldnames=fieldnames)
-        writer.writerow(dict(zip(fieldnames,fieldnames)))
-        for ongoing in ongoings:
-            writer.writerow({"id" : ongoing[0], "name" : ongoing[1], "copied" : ongoing[2], "total" : ongoing[3], "stuck" : ongoing[4]})        
+        for detail in dataset_details:
+            writer.writerow(detail)
 
-Map(config.parallel).execute(exec_get, sites_with_open_transfers)
-
-# Creating overview files
-try:
-    os.unlink("%s/overview.txt" % rrd_filepath)
-except:
-    pass
+## Create overview files
 
 with open("%s/overview.txt" % rrd_dir, "w") as overview:
-    fieldnames = ["sitename","ongoing","total","copied","total_stuck","copied_stuck"]
-    writer = csv.DictWriter(overview, fieldnames=fieldnames)
-    writer.writerow(dict(zip(fieldnames,fieldnames)))
-    for site in sites_with_open_transfers:
-        site_total = 0
-        for x in sites_total:
-            if x[0] == site:
-                site_total += x[1]
+    fieldnames = ["sitename", "ongoing", "total", "copied", "total_stuck", "copied_stuck"]
 
-        if site_total == 0:
+    writer = csv.DictWriter(overview, fieldnames = fieldnames)
+    writer.writerow(dict(zip(fieldnames, fieldnames)))
+
+    for site in records.iterkeys():
+        if totals[site]['total_volume'] == 0:
             continue
 
-        site_ongoing = 0
-        for x in sites_ongoings:
-            if x[0] == site:
-                site_ongoing += x[1]
+        ongoing_totals[site]['sitename'] = site
 
-        site_total_ongoing = 0
-        for x in sites_total_ongoing:
-            if x[0] == site:
-                site_total_ongoing += x[1]
+        writer.writerow(ongoing_totals[site])
 
-        site_copied_ongoing = 0
-        for x in sites_copied_ongoing:
-            if x[0] == site:
-                site_copied_ongoing += x[1]
+total_volume = {
+    'all': sum(t['total_volume'] for s, t in totals.iteritems()),
+    'tape': sum(t['total_volume'] for s, t in totals.iteritems() if s.endswith('_MSS')),
+    'disk': sum(t['total_volume'] for s, t in totals.iteritems() if not s.endswith('_MSS'))
+}
+copied_volume = {
+    'all': sum(t['copied_volume'] for s, t in totals.iteritems()),
+    'tape': sum(t['copied_volume'] for s, t in totals.iteritems() if s.endswith('_MSS')),
+    'disk': sum(t['copied_volume'] for s, t in totals.iteritems() if not s.endswith('_MSS'))
+}
 
-        site_total_stuck = 0
-        for x in sites_total_stuck:
-            if x[0] == site:
-                site_total_stuck += x[1]
+total_rrdfile = {
+    'all': rrd_dir + '/total.rrd',
+    'tape': rrd_dir + '/total_tape.rrd',
+    'disk': rrd_dir + '/total_disk.rrd'
+}
 
-        site_copied_stuck = 0
-        for x in sites_copied_stuck:
-            if x[0] == site:
-                site_copied_stuck += x[1]
+for rrdfile in total_rrdfile.itervalues():
+    if not os.path.exists(rrdfile):
+        create_rrd(rrdfile)
 
-        writer.writerow({"sitename" : site, "ongoing" : site_ongoing, "total" : site_total_ongoing,
-                         "copied" : site_copied_ongoing, "total_stuck" : site_total_stuck, "copied_stuck" : site_copied_stuck})
+timestamp = int(time.time()) / interval * interval
+for scope in ['all', 'tape', 'disk']:
+    try:
+        rrdtool.update(total_rrdfile[scope], '%d:%d:%d' % (timestamp, copied_volume[scope], total_volume[scope]))
+    except:
+        pass
 
-total_volume = sum((x[1] for x in sites_total))
-total_tape_volume = sum((x[1] for x in sites_total if "MSS" in x[0]))
-total_disk_volume = sum((x[1] for x in sites_total if "MSS" not in x[0]))
-copied_volume = sum((x[1] for x in sites_copied))
-copied_tape_volume = sum((x[1] for x in sites_copied if "MSS" in x[0]))
-copied_disk_volume = sum((x[1] for x in sites_copied if "MSS" not in x[0]))
+# Deletion part - first delete rrd files of completed requests that are older than one week,
+# since we do not want them to be a part of the graphs anymore 
 
-try:
-    rrdtool.update(total_rrdfile, '%d:%d:%d' % (timestamp, copied_volume, total_volume))
-    rrdtool.update(total_tape_rrdfile, '%d:%d:%d' % (timestamp, copied_tape_volume, total_tape_volume))
-    rrdtool.update(total_disk_rrdfile, '%d:%d:%d' % (timestamp, copied_disk_volume, total_disk_volume))
-except:
-    pass
+for subdir in os.listdir(rrd_dir):
+    if subdir in ['total.rrd', 'total_tape.rrd', 'total_disk.rrd', 'overview.txt', 'monitoring']:
+        continue
 
+    subpath = rrd_dir + '/' + subdir
 
-# Deletion part - first delete rrd files of completed requests that are older than one week, since we do not want them to be a part of the graphs anymore 
-existing_rrds = glob(rrd_dir+'/*/*.rrd')
+    existing_rrds = ['%s/%s' % (subpath, r) for r in os.listdir(subpath) if r.endswith('.rrd')]
 
-older_than = datetime.now() - timedelta(days=20)
+    older_than = datetime.now() - timedelta(days=20)
+    
+    for existing_rrd in existing_rrds:
+        filetime = datetime.fromtimestamp(os.path.getmtime(existing_rrd))
+        if existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
+            # Delete pngs and rrd files
+            os.unlink(existing_rrd)
 
-for existing_rrd in existing_rrds:
-    filetime = datetime.fromtimestamp(os.path.getmtime(existing_rrd))
-    if existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
-        # Delete pngs and rrd files
-        os.unlink(existing_rrd)
+## Copy rrds to the /var/www location
 
-# Copying rrds to the /var/www location
 target_dir = config.rrd_publish_target + '/monitoring_phedex'
 try:
     os.makedirs(target_dir)
@@ -378,13 +345,13 @@ for entry in os.listdir(target_dir):
         target = target_dir + '/' + entry
         try:
             shutil.rmtree(target)
-        except:
+        except OSError:
             pass
 
 for fname in ['total.rrd', 'total_tape.rrd', 'total_disk.rrd', 'overview.txt']:
     try:
         os.unlink(target_dir + '/' + fname)
-    except:
+    except OSError:
         pass
 
 for entry in os.listdir(rrd_dir):
