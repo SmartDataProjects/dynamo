@@ -358,7 +358,13 @@ class Dynamo(object):
             executable.inventory._updated_objects = []
             executable.inventory._deleted_objects = []
 
-        execfile(path + '/exec.py', {})
+        try:
+            execfile(path + '/exec.py', {'__name__': '__main__'})
+        except SystemExit as exc:
+            if exc.code == 0:
+                pass
+            else:
+                raise
 
         if queue is not None:
             for obj in self.inventory._updated_objects:
