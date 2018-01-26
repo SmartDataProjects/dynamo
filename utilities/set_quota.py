@@ -6,15 +6,21 @@ Absolute:
 /usr/bin/python setQuota.py --volume 999 --site T2_US_MIT --partition DataOps (--adjust_other)
 """
 
+import sys
+
 def update_quota(site_partition, new_quota, changed):
     site = site_partition.site
     partition = site_partition.partition
 
     if partition.subpartitions is not None:
+        if site_partition.quota == 0:
+            sys.stderr.write('Quota for %s at %s is 0. Please set the subpartition quotas first.\n' % (site.name, partition.name))
+            sys.exit(1)
+
         # this is a super partition - doesn't have a quota of its own
         for subp in partition.subpartitions:
-            site_subp = site.partitions[subp].quota
-            sub_quota = int(float(site_subp) / site_partition.quota * new_quota)
+            site_subp = site.partitions[subp]
+            sub_quota = int(float(site_subp.quota) / site_partition.quota * new_quota)
             update_quota(site_subp, sub_quota, changed)
 
     else:
@@ -23,7 +29,6 @@ def update_quota(site_partition, new_quota, changed):
         changed.append(clone)
 
 if __name__ == '__main__':
-    import sys
     from argparse import ArgumentParser
 
     from dynamo.core.executable import inventory
@@ -110,13 +115,17 @@ the other partitions are adjusted only if --adjust-other option is used.'''
     new_quota = args.volume * 1.e+12
 
     if partition.parent is not None and args.adjust_other:
+        others_total_new = site.partitions[partition.parent].quota - new_quota
+
+        if others_total_new < 0:
+            sys.stderr.write('Cannot set quota for subpartition %s to be greater than the total quota for %s\n' % (partition.name, partition.parent.name))
+            sys.exit(1)
+
         # this is a subpartition
         others_total_current = 0
         for subp in partition.parent.subpartitions:
             if subp is not partition:
                 others_total_current += site.partitions[subp].quota
-
-        others_total_new = site.partitions[partition.parent].quota - new_quota
 
         for subp in partition.parent.subpartitions:
             if subp is not partition:
