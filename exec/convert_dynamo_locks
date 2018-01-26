@@ -34,7 +34,7 @@ process_exists = False
 while os.path.exists(config.process_lock):
     try:
         source = open(config.process_lock)
-    except OSError:
+    except (OSError, IOError):
         break
 
     process_exists = True

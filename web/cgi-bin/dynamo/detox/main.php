@@ -385,8 +385,6 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
     }
     $stmt->close();
 
-    error_log(print_r($multi_action_datasets, true));
-
     $query = 'SELECT d.`id`, d.`name`, c.`size` * 1.e-9, c.`decision`, c.`condition`';
     $query .= ' FROM ' . $replica_cache_table_name . ' AS c';
     $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
