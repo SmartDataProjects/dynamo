@@ -33,7 +33,7 @@
     },
     "plugins": {
       "enforcer": {
-        "priority": 4,
+        "priority": 2,
         "module": "EnforcerHandler",
         "config": {
            "max_dataset_size": 50.0,

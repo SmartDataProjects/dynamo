@@ -1,4 +1,5 @@
 import re
+import fnmatch
 
 from dynamo.dataformat import Configuration
 
@@ -15,21 +16,31 @@ class EnforcedProtectionTagger(object):
         self.policy = Configuration(config.policy)
 
     def load(self, inventory):
-        for rule in self.policy.rules:        
+        for rule_name, rule in self.policy.rules.iteritems():
+            site_patterns = []
+            for pattern in rule['sites']:
+                site_patterns.append(re.compile(fnmatch.translate(pattern)))
+
+            dataset_patterns = []
+            for pattern in rule['datasets']:
+                dataset_patterns.append(re.compile(fnmatch.translate(pattern)))
+
             for dataset in inventory.datasets.itervalues():
-                pattern = re.compile(rule['datasets'].replace("*","[^\s]*"))
-                if not pattern.match(dataset.name):
+                for pattern in dataset_patterns:
+                    if pattern.match(dataset.name):
+                        break
+                else:
                     continue
 
-                replicas_in_question = []
+                replicas_in_question = set()
+                for replica in dataset.replicas:
+                    for pattern in site_patterns:
+                        if pattern.match(replica.site.name):
+                            replicas_in_question.add(replica)
+                            break
 
-                for sitename in rule['sites']:
-                    pattern = re.compile(sitename.replace("*","[^\s]*"))
-                    for site in inventory.sites.values():
-                        if not pattern.match(site.name):
-                            continue
-                        if dataset.find_replica(site) is not None:
-                            replicas_in_question.append(dataset.find_replica(site))
-
-                if len(replicas_in_question) <= rule['copies']:
-                    dataset.attr['enforcer_protected_replicas'] = set(replicas_in_question)
+                if len(replicas_in_question) <= rule['num_copies']:
+                    try:
+                        dataset.attr['enforcer_protected_replicas'].update(set(replicas_in_question))
+                    except KeyError:
+                        dataset.attr['enforcer_protected_replicas'] = set(replicas_in_question)

@@ -1,5 +1,6 @@
 import logging
 import re
+import fnmatch
 import random
 
 from base import BaseHandler
@@ -18,60 +19,91 @@ class EnforcerHandler(BaseHandler):
         self.policy = Configuration(config.policy)
         self.max_dataset_size = config.max_dataset_size * 1.e+12
 
-    def get_requests(self, inventory): # override
+    def get_requests(self, inventory, history, policy): # override
         requests = []
 
-        for rule in self.policy.rules:
+        for rule_name, rule in self.policy.rules.iteritems():
             # split up sites into considered ones and others
-            sites_considered = []
-            sites_others = []
+            sites_considered = set()
+            sites_others = set()
+
+            target_num = rule['num_copies']
+
+            site_patterns = []
+            for pattern in rule['sites']:
+                site_patterns.append(re.compile(fnmatch.translate(pattern)))
+
+            dataset_patterns = []
+            for pattern in rule['datasets']:
+                dataset_patterns.append(re.compile(fnmatch.translate(pattern)))
 
             for site in inventory.sites.values():
-                quota = site.partitions[partition].quota
+                quota = site.partitions[policy.partition_name].quota
 
                 LOG.debug('Site %s quota %f TB', site.name, quota * 1.e-12)
 
                 if quota <= 0:
-                # if the site has 0 or infinite quota, don't consider in enforcer
+                    # if the site has 0 or infinite quota, don't consider in enforcer
                     continue
 
-                site_considered = False
-                for sitename in rule['sites']:
-                    pattern = re.compile(sitename.replace("*","[^\s]*"))
+                for pattern in site_patterns:
                     if pattern.match(site.name):
-                        site_considered = True
-                if site_considered:
-                    sites_considered.append(site)
+                        sites_considered.add(site)
+                        break
                 else:
-                    sites_others.append(site)
+                    sites_others.add(site)
 
-            # How many copies already present at considered/other sites?
-            for dataset in inventory.datasets.values():
-                if dataset.size > self.max_dataset_size:
-                    continue
+            if target_num > len(sites_considered):
+                # This is never fulfilled - cap
+                target_num = len(sites_considered)
 
-                pattern = re.compile(rule['datasets'].replace("*","[^\s]*"))
-                if not pattern.match(dataset.name):
-                    continue
+            checked_datasets = set()
 
-                num_considered = 0
-                for site_considered in sites_considered:
-                    if dataset.find_replica(site_considered) is not None:
-                        num_considered += 1
+            # Create a request for datasets that has at least one copy in sites_others and less than
+            # [target_num] copy in sites_considered
 
-                num_others = 0
-                for site_other in sites_others:
-                    if dataset.find_replica(site_other) is not None:
-                        num_others += 1
+            for site in sites_others:
+                for replica in site.partitions[policy.partition_name].replicas.iterkeys():
+                    dataset = replica.dataset
 
-                if (num_considered < rule['num_copies'] and num_others > 0 
-                    and rule['num_copies'] <= len(sites_considered)):
-                    random_site = random.choice(sites_considered)
+                    if dataset in checked_datasets:
+                        continue
 
-                    while dataset.find_replica(random_site) is not None:
-                        random_site = random.choice(sites_considered)
+                    checked_datasets.add(dataset)
 
-                    requests.append((dataset,random_site))
+                    if dataset.size > self.max_dataset_size:
+                        continue
+
+                    for pattern in dataset_patterns:
+                        if pattern.match(dataset.name):
+                            break
+                    else:
+                        continue
+
+                    num_considered = 0
+
+                    for other_replica in dataset.replicas:
+                        if other_replica is replica:
+                            continue
+
+                        if other_replica.site in sites_considered:
+                            num_considered += 1
+                            if num_considered == target_num:
+                                break
+
+                    else:
+                        # num_considered did not hit target_num
+                        # create a request
+
+                        site_candidates = sites_considered - set(r.site for r in dataset.replicas if r.is_full())
+                        if len(site_candidates) != 0:
+                            # can be 0 if the dataset has copies in other partitions
+                            target_site = random.choice(site_candidates)
+
+                            LOG.debug('Enforcer rule %s requesting %s at %s', rule_name, dataset.name, target_site.name)
+                            requests.append((dataset, target_site))
+
+        # randomize requests
+        random.shuffle(requests)
 
         return requests
-
