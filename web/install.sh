@@ -88,5 +88,6 @@ rm $BINTARGET/dynamo/common/db_conf.php.template
 [ -L $HTMLTARGET/registry/application ] || ln -sf $BINTARGET/registry/interface.php $HTMLTARGET/registry/application
 
 mv /tmp/dealermon.$$ $HTMLTARGET/dynamo/dealermon
+chmod 777 $HTMLTARGET/dynamo/dealermon
 
 exit 0
