@@ -324,6 +324,7 @@ class Dealer(object):
 
                 if destination not in target_sites:
                     LOG.warning('Destination %s for %s is not a target site.', destination.name, item_name)
+                    continue
 
                 if find_replica_at(destination) is not None:
                     LOG.info('%s is already at %s', item_name, destination.name)
@@ -439,7 +440,7 @@ class Dealer(object):
         pending_volume -= site_partition.occupancy_fraction(physical = True) * site_partition.quota
 
         if pending_volume > self.policy.max_site_pending_volume:
-            LOG.debug('%s pending volume %f > %f', site_partition.site.name, pending_volume, self.policy.max_site_pending_volume)
+            LOG.debug('%s pending volume %f > %f', site_partition.site.name, pending_volume * 1.e-12, self.policy.max_site_pending_volume * 1.e-12)
             return False
 
         return True
