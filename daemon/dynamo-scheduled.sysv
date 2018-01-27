@@ -19,6 +19,8 @@ EXECUTABLE=dynamo-scheduled # executable this script spawns
 TARGET=_INSTALLPATH_/sbin/dynamo-scheduled # full path to the executable
 ARGS="/etc/dynamo/scheduled.seq"
 
+source _INSTALLPATH_/etc/profile.d/init.sh
+
 # Path to the running script, server binary, and short-form for messages.
 PIDFILE=${PIDFILE-/var/run/dynamo-scheduled.pid}
 LOCKFILE=${LOCKFILE-/var/lock/subsys/dynamo-scheduled}
