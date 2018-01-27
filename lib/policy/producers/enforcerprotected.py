@@ -41,6 +41,6 @@ class EnforcedProtectionTagger(object):
 
                 if len(replicas_in_question) <= rule['num_copies']:
                     try:
-                        dataset.attr['enforcer_protected_replicas'].update(set(replicas_in_question))
+                        dataset.attr['enforcer_protected_replicas'].update(replicas_in_question)
                     except KeyError:
-                        dataset.attr['enforcer_protected_replicas'] = set(replicas_in_question)
+                        dataset.attr['enforcer_protected_replicas'] = replicas_in_question
