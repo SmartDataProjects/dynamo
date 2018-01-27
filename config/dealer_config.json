@@ -32,6 +32,14 @@
       }
     },
     "plugins": {
+      "enforcer": {
+        "priority": 2,
+        "module": "EnforcerHandler",
+        "config": {
+          "max_dataset_size": 50.0,
+          "policy": "$(DYNAMO_BASE)/policies/common/enforcer_rules.json"
+        }
+      },
       "popularity": {
         "priority": 3,
         "module": "PopularityHandler",

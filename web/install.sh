@@ -60,6 +60,8 @@ else
   echo
 fi
 
+mv $HTMLTARGET/dynamo/dealermon /tmp/dealermon.$$ 2>/dev/null
+
 mkdir -p $HTMLTARGET
 for SUBDIR in $(ls $HTMLSOURCE)
 do
@@ -85,4 +87,6 @@ rm $BINTARGET/dynamo/common/db_conf.php.template
 [ -L $HTMLTARGET/registry/activitylock ] || ln -sf $BINTARGET/registry/activitylock.php $HTMLTARGET/registry/activitylock
 [ -L $HTMLTARGET/registry/application ] || ln -sf $BINTARGET/registry/interface.php $HTMLTARGET/registry/application
 
-chmod 777 $HTMLTARGET/dynamo/dealermon
+mv /tmp/dealermon.$$ $HTMLTARGET/dynamo/dealermon
+
+exit 0
