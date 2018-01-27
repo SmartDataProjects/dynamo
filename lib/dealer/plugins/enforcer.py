@@ -22,6 +22,8 @@ class EnforcerHandler(BaseHandler):
     def get_requests(self, inventory, history, policy): # override
         requests = []
 
+        partition = inventory.partitions[policy.partition_name]
+
         for rule_name, rule in self.policy.rules.iteritems():
             # split up sites into considered ones and others
             sites_considered = set()
@@ -38,7 +40,7 @@ class EnforcerHandler(BaseHandler):
                 dataset_patterns.append(re.compile(fnmatch.translate(pattern)))
 
             for site in inventory.sites.values():
-                quota = site.partitions[policy.partition_name].quota
+                quota = site.partitions[partition].quota
 
                 LOG.debug('Site %s quota %f TB', site.name, quota * 1.e-12)
 
@@ -63,7 +65,7 @@ class EnforcerHandler(BaseHandler):
             # [target_num] copy in sites_considered
 
             for site in sites_others:
-                for replica in site.partitions[policy.partition_name].replicas.iterkeys():
+                for replica in site.partitions[partition].replicas.iterkeys():
                     dataset = replica.dataset
 
                     if dataset in checked_datasets:
@@ -98,7 +100,7 @@ class EnforcerHandler(BaseHandler):
                         site_candidates = sites_considered - set(r.site for r in dataset.replicas if r.is_full())
                         if len(site_candidates) != 0:
                             # can be 0 if the dataset has copies in other partitions
-                            target_site = random.choice(site_candidates)
+                            target_site = random.choice(list(site_candidates))
 
                             LOG.debug('Enforcer rule %s requesting %s at %s', rule_name, dataset.name, target_site.name)
                             requests.append((dataset, target_site))
