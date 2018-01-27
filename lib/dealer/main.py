@@ -252,6 +252,16 @@ class Dealer(object):
         copy_list = {}
         copy_volumes = dict((site, 0.) for site in target_sites) # keep track of how much we are assigning to each site
 
+        stats = {}
+        for plugin in self._plugin_priorities.keys():
+            stats[plugin.name] = {}
+        reject_stats = {
+            'Not a target site': 0,
+            'Replica exists': 0,
+            'Not allowed': 0,
+            'Destination is full': 0
+        }
+
         # now go through all requests
         for item, destination, plugin in requests:
             if type(item) is Dataset:
@@ -323,23 +333,35 @@ class Dealer(object):
                 # Check the destination availability
 
                 if destination not in target_sites:
-                    LOG.warning('Destination %s for %s is not a target site.', destination.name, item_name)
+                    LOG.debug('Destination %s for %s is not a target site.', destination.name, item_name)
+                    reject_stats['Not a target site'] += 1
                     continue
 
                 if find_replica_at(destination) is not None:
-                    LOG.info('%s is already at %s', item_name, destination.name)
+                    LOG.debug('%s is already at %s.', item_name, destination.name)
+                    reject_stats['Replica exists'] += 1
+                    continue
+
+                if not self.policy.is_allowed_destination(item, destination):
+                    LOG.debug('Placement of %s to %s not allowed by policy.', item_name, destination_name)
+                    reject_stats['Not allowed'] += 1
                     continue
  
                 site_partition = destination.partitions[partition]
                 occupancy_fraction = site_partition.occupancy_fraction(physical = False)
                 occupancy_fraction += item_size / site_partition.quota
 
-                if occupancy_fraction > 1. or not self.policy.is_allowed_destination(item, destination):
-                    # a plugin specified the destination, but it cannot be copied there
-                    LOG.warning('Cannot copy %s to %s.', item_name, destination.name)
+                if occupancy_fraction > 1.:
+                    LOG.debug('Cannot copy %s to %s because destination is full.', item_name, destination.name)
+                    reject_stats['Destination is full'] += 1
                     continue
 
-            LOG.info('Copying %s to %s requested by %s', item_name, destination.name, plugin.name)
+            LOG.debug('Copying %s to %s requested by %s', item_name, destination.name, plugin.name)
+            try:
+                stat = stats[plugin.name][destination.name]
+            except KeyError:
+                stat = (0, 0)
+            stats[plugin.name][destination.name] = (stat[0] + 1, stat[0] + item_size)
 
             new_replica = make_new_replica(item, destination, group)
 
@@ -359,6 +381,15 @@ class Dealer(object):
             if sum(copy_volumes.itervalues()) > self.policy.max_total_cycle_volume:
                 LOG.warning('Total copy volume has exceeded the limit. No more copies will be made.')
                 break
+
+        for plugin_name in sorted(stats.keys()):
+            plugin_stats = stats[plugin_name]
+            for destination_name in sorted(plugin_stats.keys()):
+                dest_stats = plugin_stats[destination_name]
+                LOG.info('Plugin %s requests %d items (%.1f TB) to %s', plugin_name, dest_stats[0], dest_stats[1] * 1.e-12, destination_name)
+
+        for reason in sorted(reject_stats.keys()):
+            LOG.info('%d items rejected for [%s]', reject_stats[reason], reason)
 
         return copy_list
 
