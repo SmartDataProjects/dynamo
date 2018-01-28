@@ -273,11 +273,11 @@ class Site(object):
                     block_replica_list.add(replica)
 
     def update_partitioning(self, replica):
-        for partition, site_partition in self.partitions.iteritems():
-            if type(replica).__name__ == 'DatasetReplica':
-                if replica not in self._dataset_replicas:
-                    return
+        if type(replica).__name__ == 'DatasetReplica':
+            if replica not in self._dataset_replicas:
+                return
 
+            for partition, site_partition in self.partitions.iteritems():
                 try:
                     block_replicas = site_partition.replicas[replica]
                 except KeyError:
@@ -296,8 +296,7 @@ class Site(object):
                     continue
 
                 # remove block replicas that were deleted
-                deleted_replicas = block_replicas - replica.block_replicas
-                block_replicas -= deleted_replicas
+                block_replicas &= replica.block_replicas
 
                 # reevaluate existing block replicas
                 for block_replica in list(block_replicas):
@@ -320,13 +319,15 @@ class Site(object):
                 else:
                     site_partition.replicas[replica] = block_replicas
 
-            else:
-                # BlockReplica
-                dataset_replica = replica.block.dataset.find_replica(replica.site)
-                if dataset_replica not in self._dataset_replicas:
-                    # has to exist if you can find the replica from dataset
-                    return
+        else:
+            # BlockReplica
+            dataset_replica = replica.block.dataset.find_replica(replica.site)
+            if dataset_replica not in self._dataset_replicas:
+                # has to exist if you can find the replica from dataset
+                # so maybe raise here?
+                return
 
+            for partition, site_partition in self.partitions.iteritems():
                 try:
                     block_replicas = site_partition.replicas[dataset_replica]
                 except KeyError:
@@ -335,7 +336,7 @@ class Site(object):
                 if partition.contains(replica):
                     if block_replicas is None or replica in block_replicas:
                         # already included
-                        pass
+                        continue
                     else:
                         block_replicas.add(replica)
                 else:
