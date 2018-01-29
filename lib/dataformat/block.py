@@ -136,10 +136,22 @@ class Block(object):
         # Remove the block from the dataset, and remove all replicas.
         dataset = inventory.datasets[self._dataset.name]
         block = dataset.find_block(self._name, must_find = True)
-        dataset.remove_block(block)
+
+        return block._unlink()
+
+    def _unlink(self):
+        deleted = []
+
+        for replica in list(self.replicas):
+            deleted.extend(replica._unlink())
+
+        for lfile in list(self.files):
+            deleted.extend(lfile._unlink())
+
+        self._dataset.remove_block(self)
+        deleted.append(self)
         
-        for replica in block.replicas:
-            replica.site.remove_block_replica(replica)
+        return deleted
 
     def write_into(self, store, delete = False):
         if delete:

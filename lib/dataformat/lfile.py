@@ -109,7 +109,11 @@ class File(object):
         dataset = inventory.datasets[self._block.dataset.name]
         block = dataset.find_block(self._block.name)
         lfile = block.find_file(self.fid())
-        block.remove_file(lfile)
+        return lfile._unlink()
+
+    def _unlink(self):
+        self._block.remove_file(self)
+        return [self]
 
     def write_into(self, store, delete = False):
         if delete:

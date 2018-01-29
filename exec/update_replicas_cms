@@ -65,13 +65,13 @@ for group in group_source.get_group_list():
 
 ## 2. Pick up block replicas to update
 
-if not os.path.exists(config.replica_state_file):
-    LOG.error('State file %s does not exist. Run generate_dataset_list_cms first.', config.replica_state_file)
-    sys.exit(1)
-
 if delta_update:
     ## Normal global delta-update
     ## Get the last update timestamp
+
+    if not os.path.exists(config.replica_state_file):
+        LOG.error('State file %s does not exist. Run generate_dataset_list_cms first.', config.replica_state_file)
+        sys.exit(1)
 
     state_db = sqlite3.connect(config.replica_state_file)
     cursor = state_db.cursor()
@@ -101,6 +101,10 @@ if delta_update:
 
 else:
     if args.round_robin:
+        if not os.path.exists(config.replica_state_file):
+            LOG.error('State file %s does not exist. Run generate_dataset_list_cms first.', config.replica_state_file)
+            sys.exit(1)
+
         ## Round-robin update of a site-tier combination
         ## Get the combination to run on
 

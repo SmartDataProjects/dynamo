@@ -80,11 +80,20 @@ class DatasetReplica(object):
         site = inventory.sites[self._site.name]
         replica = site.find_dataset_replica(dataset)
 
-        dataset.replicas.remove(replica)
-        for block_replica in replica.block_replicas:
-            block_replica.block.replicas.remove(block_replica)
+        return replica._unlink()
 
-        site.remove_dataset_replica(replica)
+    def _unlink(self):
+        deleted = []
+
+        for block_replica in list(self.block_replicas):
+            deleted.extend(block_replica._unlink(dataset_replica = self))
+
+        self._site.remove_dataset_replica(self)
+        self._dataset.replicas.remove(self)
+
+        deleted.append(self)
+
+        return deleted
 
     def write_into(self, store, delete = False):
         if delete:
@@ -133,9 +142,9 @@ class DatasetReplica(object):
         if type(groups) is not list:
             # single group given
             if physical:
-                return sum([r.size for r in self.block_replicas if r.group == groups])
+                return sum(r.size for r in self.block_replicas if r.group == groups)
             else:
-                return sum([r.block.size for r in self.block_replicas if r.group == groups])
+                return sum(r.block.size for r in self.block_replicas if r.group == groups)
 
         else: # expect a list
             if len(groups) == 0:
@@ -144,15 +153,15 @@ class DatasetReplica(object):
                     return self._dataset.size
                 else:
                     if physical:
-                        return sum([r.size for r in self.block_replicas])
+                        return sum(r.size for r in self.block_replicas)
                     else:
-                        return sum([r.block.size for r in self.block_replicas])
+                        return sum(r.block.size for r in self.block_replicas)
 
             else:
                 if physical:
-                    return sum([r.size for r in self.block_replicas if r.group in groups])
+                    return sum(r.size for r in self.block_replicas if r.group in groups)
                 else:
-                    return sum([r.block.size for r in self.block_replicas if r.group in groups])
+                    return sum(r.block.size for r in self.block_replicas if r.group in groups)
 
     def find_block_replica(self, block, must_find = False):
         try:
