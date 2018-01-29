@@ -59,7 +59,7 @@ start() {
 
   if [ $EXITCODE -eq 0 ]
   then
-    echo $(pgrep -n $EXECUTABLE) > $PIDFILE
+    echo $(pgrep -f $TARGET) > $PIDFILE
   fi
 
   rm $LOCKFILE
