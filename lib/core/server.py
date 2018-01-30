@@ -368,19 +368,49 @@ class Dynamo(object):
                 raise
 
         if queue is not None:
-            for obj in self.inventory._updated_objects:
+            import pickle
+
+            nobj = len(self.inventory._updated_objects)
+            sys.stderr.write('Sending %d updated objects to the server process.\n' % nobj)
+            wm = 0.
+            for iobj, obj in enumerate(self.inventory._updated_objects):
+                if float(iobj) / nobj * 100. > wm:
+                    sys.stderr.write(' %.0f%%..' % (float(iobj) / nobj * 100.))
+                    wm += 5.
+
+                pkl = pickle.dumps(obj, -1)
+                if len(pkl) > 1000.:
+                    sys.stderr.write('\nLarge (>1kB) object found: %s\n' % str(obj))
+
                 try:
                     queue.put((Dynamo.CMD_UPDATE, obj))
                 except:
                     sys.stderr.write('Exception while sending updated %s\n' % str(obj))
                     raise
 
-            for obj in self.inventory._deleted_objects:
+            if nobj != 0:
+                sys.stderr.write(' 100%.\n')
+
+            nobj = len(self.inventory._deleted_objects)
+            sys.stderr.write('Sending %d deleted objects to the server process.\n' % nobj)
+            wm = 0.
+            for iobj, obj in enumerate(self.inventory._deleted_objects):
+                if float(iobj) / nobj * 100. > wm:
+                    sys.stderr.write(' %.0f%%..' % (float(iobj) / nobj * 100.))
+                    wm += 5.
+
+                pkl = pickle.dumps(obj, -1)
+                if len(pkl) > 1000.:
+                    sys.stderr.write('\nLarge (>1kB) object found: %s\n' % str(obj))
+
                 try:
                     queue.put((Dynamo.CMD_DELETE, obj))
                 except:
                     sys.stderr.write('Exception while sending updated %s\n' % str(obj))
                     raise
+
+            if nobj != 0:
+                sys.stderr.write(' 100%.\n')
             
             # Put end-of-message
             queue.put((Dynamo.CMD_EOM, None))
