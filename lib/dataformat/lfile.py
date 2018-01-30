@@ -90,7 +90,7 @@ class File(object):
         updated = False
         if lfile is None:
             lfile = File(fid, block, self.size)
-            block.add_file(lfile)
+            block.files.add(lfile) # not add_file - block has to be updated by itself
 
             updated = True
         elif check and (lfile is self or lfile == self):

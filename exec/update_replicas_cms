@@ -175,6 +175,8 @@ for irep, replica in enumerate(updated_replicas):
             LOG.error('Unknown dataset %s.', dataset_name)
             continue
 
+        updated_dataset_names.add(dataset_name)
+
         try:
             dataset = inventory.datasets[dataset_name]
         except KeyError:
@@ -182,60 +184,78 @@ for irep, replica in enumerate(updated_replicas):
             dataset.copy(dataset_tmp)
             inventory.datasets.add(dataset)
             inventory.register_update(dataset)
+
+            for block_tmp in dataset_tmp.blocks:
+                block = Block(block_tmp.name, dataset)
+                block.copy(block_tmp)
+                dataset.blocks.add(block) # not add_block because dataset.size is already set
+                inventory.register_update(block)
+
+                for file_tmp in block_tmp.files:
+                    lfile = File(file_tmp.lfn, block)
+                    lfile.copy(file_tmp)
+                    block.files.add(lfile) # same story here
+                    inventory.register_update(lfile)
+
         else:
             if dataset != dataset_tmp:
                 dataset.copy(dataset_tmp)
                 inventory.register_update(dataset)
-
-        updated_dataset_names.add(dataset_name)
-
-        existing_blocks = dict((b.name, b) for b in dataset.blocks)
-
-        # Inject blocks and files as well
-        updated_block_names = set()
-        for block_tmp in dataset_tmp.blocks:
-            try:
-                block = existing_blocks[block_tmp.name]
-            except KeyError:
-                block = Block(block_tmp.name, dataset)
-                block.copy(block_tmp)
-                dataset.blocks.add(block)
-                inventory.register_update(block)
-            else:
+    
+            existing_blocks = dict((b.name, b) for b in dataset.blocks)
+    
+            block_names_in_source = set()
+            for block_tmp in dataset_tmp.blocks:
+                block_names_in_source.add(block_tmp.name)
+    
+                try:
+                    block = existing_blocks[block_tmp.name]
+                except KeyError:
+                    block = Block(block_tmp.name, dataset)
+                    block.copy(block_tmp)
+                    dataset.add_block(block)
+                    inventory.register_update(block)
+    
+                    for file_tmp in block_tmp.files:
+                        lfile = File(file_tmp.lfn, block)
+                        lfile.copy(file_tmp)
+                        block.files.add(lfile) # not add_file
+                        inventory.register_update(lfile)
+    
+                    continue
+    
                 if block != block_tmp:
                     block.copy(block_tmp)
                     inventory.register_update(block)
-
-            updated_block_names.add(block_tmp.name)
-
-            existing_files = dict(((f.lfn, f) for f in block.files))
-
-            updated_file_names = set()
-            for file_tmp in block_tmp.files:
-                lfn = file_tmp.lfn
-                try:
-                    lfile = existing_files[lfn]
-                except KeyError:
-                    lfile = File(lfn, block)
-                    lfile.copy(file_tmp)
-                    block.add_file(lfile)
-                    inventory.register_update(lfile)
-                else:
-                    if lfile != file_tmp:
+    
+                existing_files = dict(((f.lfn, f) for f in block.files))
+    
+                file_names_in_source = set()
+                for file_tmp in block_tmp.files:
+                    lfn = file_tmp.lfn
+                    file_names_in_source.add(lfn)
+    
+                    try:
+                        lfile = existing_files[lfn]
+                    except KeyError:
+                        lfile = File(lfn, block)
                         lfile.copy(file_tmp)
+                        block.add_file(lfile)
                         inventory.register_update(lfile)
-
-                updated_file_names.add(lfn)
-
-            # Delete excess files
-            for lfn in (set(existing_files.iterkeys()) - updated_file_names):
-                lfile = block.find_file(lfn)
-                inventory.delete(lfile)
-
-        # Delete excess blocks
-        for block_name in (set(existing_blocks.iterkeys()) - updated_block_names):
-            block = dataset.find_block(block_name)
-            inventory.delete(block)
+                    else:
+                        if lfile != file_tmp:
+                            lfile.copy(file_tmp)
+                            inventory.register_update(lfile)
+    
+                # Delete excess files
+                for lfn in (set(existing_files.iterkeys()) - file_names_in_source):
+                    lfile = block.find_file(lfn)
+                    inventory.delete(lfile)
+    
+            # Delete excess blocks
+            for block_name in (set(existing_blocks.iterkeys()) - block_names_in_source):
+                block = dataset.find_block(block_name)
+                inventory.delete(block)
 
     else:
         dataset = inventory.datasets[dataset_name]
