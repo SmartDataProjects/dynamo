@@ -31,7 +31,7 @@ class ObjectRepository(object):
 
     def delete(self, obj):
         try:
-            obj.delete_from(self)
+            return obj.delete_from(self)
         except (KeyError, ObjectError) as e:
             # When delete is attempted on a nonexistent object or something linked to a nonexistent object
             # As this is less alarming, error message is suppressed to debug level.
@@ -281,17 +281,19 @@ class DynamoInventory(ObjectRepository):
         @param write  Record deletion to persistent store.
         """
 
-        ObjectRepository.delete(self, obj)
+        deleted_objects = ObjectRepository.delete(self, obj)
 
         if self._deleted_objects is not None:
-            self._deleted_objects.append(obj.unlinked_clone())
+            for dobj in deleted_objects:
+                self._deleted_objects.append(dobj.unlinked_clone())
 
         if write:
-            try:
-                obj.write_into(self._store, delete = True)
-            except:
-                LOG.error('Exception writing deletion of %s to inventory store', str(obj))
-                raise
+            for dobj in deleted_objects:
+                try:
+                    dobj.write_into(self._store, delete = True)
+                except:
+                    LOG.error('Exception writing deletion of %s to inventory store', str(obj))
+                    raise
 
     def clear_update(self):
         """

@@ -498,8 +498,13 @@ class MySQLInventoryStore(InventoryStore):
         self._insert_update('groups', fields, group.name, group.olevel.__name__)
 
     def delete_group(self, group): #override
-        sql = 'DELETE FROM `groups` WHERE `name` = %s'
-        self._mysql.query(sql, group.name)
+        group_id = self._get_group_id(group)
+
+        sql = 'DELETE FROM `groups` WHERE `id` = %s'
+        self._mysql.query(sql, group_id)
+
+        sql = 'UPDATE `block_replicas` SET `group_id` = 0 WHERE `group_id` = %s'
+        self._mysql.query(sql, group_id)
 
     def save_partition(self, partition): #override
         fields = ('name',)

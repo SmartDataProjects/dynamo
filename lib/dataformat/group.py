@@ -68,6 +68,9 @@ class Group(object):
 
         # Pop the group from the main list. All block replicas owned by the group
         # will be disowned.
+        # Update to block replicas will be propagated at by calling Group.delete_from
+        # at each inventory instance.
+        # Database update must be taken care of by persistency store delete_group().
         group = inventory.groups.pop(self._name)
 
         for dataset in inventory.datasets.itervalues():
@@ -75,6 +78,8 @@ class Group(object):
                 for block_replica in replica.block_replicas:
                     if block_replica.group == group:
                         block_replica.group = inventory.groups[None]
+
+        return [group]
 
     def write_into(self, store, delete = False):
         if self._name is None:

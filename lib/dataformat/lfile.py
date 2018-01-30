@@ -90,7 +90,7 @@ class File(object):
         updated = False
         if lfile is None:
             lfile = File(fid, block, self.size)
-            block.add_file(lfile)
+            block.files.add(lfile) # not add_file - block has to be updated by itself
 
             updated = True
         elif check and (lfile is self or lfile == self):
@@ -109,7 +109,11 @@ class File(object):
         dataset = inventory.datasets[self._block.dataset.name]
         block = dataset.find_block(self._block.name)
         lfile = block.find_file(self.fid())
-        block.remove_file(lfile)
+        return lfile._unlink()
+
+    def _unlink(self):
+        self._block.remove_file(self)
+        return [self]
 
     def write_into(self, store, delete = False):
         if delete:

@@ -167,15 +167,15 @@ class Site(object):
     def delete_from(self, inventory):
         # Pop the site from the main list, and remove all replicas on the site.
         site = inventory.sites.pop(self._name)
-        
-        for dataset in inventory.datasets.itervalues():
-            replica = dataset.find_replica(site)
-            if replica is None:
-                continue
 
-            dataset.replicas.remove(replica)
-            for block_replica in replica.block_replicas:
-                block_replica.block.replicas.remove(block_replica)
+        deleted = []
+
+        for replica in site._dataset_replicas.values():
+            deleted.extend(replica._unlink())
+
+        deleted.append(site)
+
+        return deleted
 
     def write_into(self, store, delete = False):
         if delete:
@@ -358,17 +358,20 @@ class Site(object):
                     site_partition.replicas[dataset_replica] = block_replicas
 
     def remove_dataset_replica(self, replica):
-        self._dataset_replicas.pop(replica.dataset)
-
         for site_partition in self.partitions.itervalues():
             try:
                 site_partition.replicas.pop(replica)
             except KeyError:
                 pass
 
-    def remove_block_replica(self, replica):
-        dataset_replica = self._dataset_replicas[replica.block.dataset]
+        self._dataset_replicas.pop(replica.dataset)
 
+    def remove_block_replica(self, replica, local = True):
+        # local: Are we deleting the replica only for this site (BlockReplica object itself survives)?
+        dataset_replica = self._dataset_replicas[replica.block.dataset]
+        self._remove_block_replica(replica, dataset_replica, local)
+
+    def _remove_block_replica(self, replica, dataset_replica, local):
         for site_partition in self.partitions.itervalues():
             try:
                 block_replicas = site_partition.replicas[dataset_replica]
@@ -376,6 +379,13 @@ class Site(object):
                 continue
 
             if block_replicas is None:
-                block_replicas = site_partition.replicas[dataset_replica] = set(dataset_replica.block_replicas)
+                if local:
+                    block_replicas = site_partition.replicas[dataset_replica] = set(dataset_replica.block_replicas)
+                else:
+                    # The site contained all block replicas. It will contain all after a global deletion.
+                    continue
 
             block_replicas.remove(replica)
+
+            if len(block_replicas) == 0:
+                site_partition.replicas.pop(dataset_replica)
