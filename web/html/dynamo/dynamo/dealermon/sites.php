@@ -104,32 +104,24 @@ function single_rrd_to_array($rrd,$rrdpath){
   $ncols = count($rrdcolumns);
   $last = rrd_last($rrdpath . '/' . $rrd);
 
-  $options = array('LAST', sprintf('--start=%d', $last - 3600 * 24 * 6), sprintf('\
---end=%d', $last - 1));
-  $dump = rrd_fetch($rrdpath . '/' . $rrd, $options, count($options));
 
-  if (isset($dump['data']) && count($dump['data']) >= $ncols) {
-    $chunks = array_chunk($dump['data'], $ncols);
-    $entry = $chunks;
-  }
-  else
-    $entry = array_fill(0, $ncols, 0);
+  $options = array('LAST', sprintf('--start=%d', $last - 3600 * 24 * 6), sprintf('--end=%d', $last - 1));
+  $dump = rrd_fetch($rrdpath . '/' . $rrd, $options);//, count($options));                                                                                                                                 
+
 
   $copied_entries = array();
   $total_entries = array();
   $time_entries = array();
 
-  $mapped = array();
-  $counter = 0;
-
-  foreach ($entry as $i => $d){
-    if ($counter%1 == 0) {
-      array_push($time_entries,$i*$dump["step"]+$dump["start"]);      array_push($total_entries,$d[1]/1e12);
-      array_push($copied_entries,$d[0]/1e12);
-    }
-    $counter = $counter + 1;
+  foreach ( $dump["data"]["copied"] as $key => $value )
+  {
+    array_push($time_entries,$key);
+    array_push($copied_entries,$value*1e-12);
   }
-
+  foreach ( $dump["data"]["total"] as $key => $value )
+  {
+    array_push($total_entries,$value*1e-12); 
+  }
   $last_copied = array_pop($copied_entries);
   $last_total = array_pop($total_entries);
   $last_time = array_pop($time_entries);

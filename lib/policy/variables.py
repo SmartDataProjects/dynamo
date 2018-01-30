@@ -157,6 +157,20 @@ class ReplicaNumFullDiskCopyCommonOwner(DatasetReplicaAttr):
     
         return num
 
+class ReplicaEnforcerProtected(DatasetReplicaAttr):
+    def __init__(self):
+        DatasetReplicaAttr.__init__(self, Attr.BOOL_TYPE)
+
+        self.required_attrs = ['enforcer_protected_replicas']
+
+    def _get(self, replica):
+        try:
+            protected_replicas = replica.dataset.attr['enforcer_protected_replicas']
+        except KeyError:
+            return False
+
+        return replica in protected_replicas
+
 class ReplicaIsLastSource(DatasetReplicaAttr):
     """True if this replica is the last full disk copy and there is an ongoing transfer."""
 
@@ -291,6 +305,7 @@ replica_variables = {
     'replica.last_used': ReplicaLastUsed(),
     'replica.num_access': ReplicaNumAccess(),
     'replica.num_full_disk_copy_common_owner': ReplicaNumFullDiskCopyCommonOwner(),
+    'replica.enforcer_protected': ReplicaEnforcerProtected(),
     'blockreplica.last_update': BlockReplicaAttr(Attr.TIME_TYPE, 'last_update'),
     'blockreplica.owner': ReplicaOwner(),
     'blockreplica.is_locked': ReplicaIsLocked(),

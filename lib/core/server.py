@@ -4,6 +4,8 @@ import pwd
 import time
 import logging
 import hashlib
+import shlex
+import signal
 import multiprocessing
 import Queue
 
@@ -302,7 +304,6 @@ class Dynamo(object):
 
         ## Ignore SIGINT - see note above proc.terminate()
         ## We will react to SIGTERM by raising KeyboardInterrupt
-        import signal
         from dynamo.utils.signaling import SignalConverter
         
         signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -313,7 +314,7 @@ class Dynamo(object):
         # Set argv
         sys.argv = [path + '/exec.py']
         if args:
-            sys.argv += args.split()
+            sys.argv += shlex.split(args) # split using shell-like syntax
 
         # Reset logging
         # This is a rather hacky solution relying perhaps on the implementation internals of
@@ -358,7 +359,13 @@ class Dynamo(object):
             executable.inventory._updated_objects = []
             executable.inventory._deleted_objects = []
 
-        execfile(path + '/exec.py', {})
+        try:
+            execfile(path + '/exec.py', {'__name__': '__main__'})
+        except SystemExit as exc:
+            if exc.code == 0:
+                pass
+            else:
+                raise
 
         if queue is not None:
             for obj in self.inventory._updated_objects:

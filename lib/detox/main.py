@@ -485,6 +485,8 @@ class Detox(object):
             if dr_owner is None:
                 blocks_to_unlink = list(block_replicas)
                 blocks_to_hand_over = []
+
+                LOG.debug('All blocks to unlink in %s', len(blocks_to_hand_over), str(replica))
             else:
                 blocks_to_unlink = []
                 blocks_to_hand_over = []
@@ -494,14 +496,15 @@ class Detox(object):
                     else:
                         blocks_to_hand_over.append(block_replica)
 
-            LOG.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
-            for block_replica in blocks_to_hand_over:
-                block_replica.group = dr_owner
+                LOG.debug('%d blocks to hand over to %s in %s', len(blocks_to_hand_over), dr_owner.name, str(replica))
 
-                # if the change of owner disqualifies this block replica from the partition,
-                # we unlink it from the repository.
-                if not partition.contains(block_replica):
-                    blocks_to_unlink.append(block_replica)
+                for block_replica in blocks_to_hand_over:
+                    block_replica.group = dr_owner
+    
+                    # if the change of owner disqualifies this block replica from the partition,
+                    # we unlink it from the repository.
+                    if not partition.contains(block_replica):
+                        blocks_to_unlink.append(block_replica)
 
         return blocks_to_unlink, blocks_to_hand_over
 
@@ -557,8 +560,9 @@ class Detox(object):
                             for block_replica in replica.block_replicas:
                                 size += block_replica.size
                                 if approved:
-                                    block_replica.group = inventory.groups[None]
-                                    inventory.update(block_replica)
+                                    updated_replica = block_replica.unlinked_clone()
+                                    updated_replica.group = inventory.groups[None]
+                                    inventory.update(updated_replica)
                         else:
                             dataset = inventory.datasets[item.dataset.name]
                             block = dataset.find_block(item.name)
@@ -569,8 +573,9 @@ class Detox(object):
 
                             size += replica.size
                             if approved:
-                                replica.group = inventory.groups[None]
-                                inventory.update(replica)
+                                updated_replica = replica.unlinked_clone()
+                                updated_replica.group = inventory.groups[None]
+                                inventory.update(updated_replica)
 
                         datasets.add(dataset)
     

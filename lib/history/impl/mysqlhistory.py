@@ -102,7 +102,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._mysql.query('INSERT INTO `copy_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`, `size`) VALUES (%s, %s, NOW(), %s, %s, %s)', operation_id, run_number, approved, self._site_id_map[site.name], size)
 
-        self._mysql.insert_many('copied_replicas', ('copy_id', 'dataset_id'), lambda d: (operation_id, self._dataset_id_map[d.name]), dataset_list)
+        self._mysql.insert_many('copied_replicas', ('copy_id', 'dataset_id'), lambda d: (operation_id, self._dataset_id_map[d.name]), dataset_list, do_update = False)
 
     def _do_make_deletion_entry(self, run_number, site, operation_id, approved, datasets, size): #override
         """
@@ -115,7 +115,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._mysql.query('INSERT INTO `deletion_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`, `size`) VALUES (%s, %s, NOW(), %s, %s, %s)', operation_id, run_number, approved, site_id, size)
 
-        self._mysql.insert_many('deleted_replicas', ('deletion_id', 'dataset_id'), lambda did: (operation_id, did), dataset_ids)
+        self._mysql.insert_many('deleted_replicas', ('deletion_id', 'dataset_id'), lambda did: (operation_id, did), dataset_ids, do_update = False)
 
     def _do_update_copy_entry(self, copy_record): #override
         self._mysql.query('UPDATE `copy_requests` SET `approved` = %s, `size` = %s, `completed` = %s WHERE `id` = %s', copy_record.approved, copy_record.size, copy_record.completed, copy_record.operation_id)
@@ -182,12 +182,14 @@ class MySQLHistory(TransactionHistoryInterface):
         if len(self._dataset_id_map) == 0:
             self._make_dataset_id_map()
 
-        if type(run_number) is int:
-            # Saving deletion decisions of a cycle
-            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
-        else:
+        try:
+            run_number += 0
+        except TypeError:
             # run_number is actually the partition name
             db_file_name = '%s/snapshot_%s.db' % (self.config.snapshots_spool_dir, run_number)
+        else:
+            # Saving deletion decisions of a cycle
+            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
 
         try:
             os.makedirs(self.config.snapshots_spool_dir)
@@ -257,11 +259,16 @@ class MySQLHistory(TransactionHistoryInterface):
         if len(self._site_id_map) == 0:
             self._make_site_id_map()
 
-        if type(run_number) is int:
-            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
-        else:
+        try:
+            run_number += 0
+        except TypeError:
             # run_number is actually the partition name
             db_file_name = '%s/snapshot_%s.db' % (self.config.snapshots_spool_dir, run_number)
+            is_cycle = False
+        else:
+            # Saving quotas during a cycle
+            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
+            is_cycle = True
 
         # DB file should exist already - this function is called after save_deletion_decisions
 
@@ -297,7 +304,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._fill_snapshot_cache('sites', run_number, overwrite = True)
 
-        if type(run_number) is int:
+        if is_cycle:
             # This was a numbered cycle
             # Archive the sqlite3 file
             # Relying on the fact save_quotas is called after save_deletion_decisions
@@ -512,7 +519,14 @@ class MySQLHistory(TransactionHistoryInterface):
             else:
                 self._cache_db.query('CREATE TABLE `%s` LIKE `%s`' % (table_name, template))
 
-            if type(run_number) is int:
+            try:
+                run_number += 0
+            except TypeError:
+                db_file_name = '%s/snapshot_%s.db' % (self.config.snapshots_spool_dir, run_number)
+
+                if not os.path.exists(db_file_name):
+                    return
+            else:
                 db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, run_number)
 
                 if not os.path.exists(db_file_name):
@@ -524,12 +538,6 @@ class MySQLHistory(TransactionHistoryInterface):
                     with open(xz_file_name, 'rb') as xz_file:
                         with open(db_file_name, 'wb') as db_file:
                             db_file.write(lzma.decompress(xz_file.read()))
-
-            else:
-                db_file_name = '%s/snapshot_%s.db' % (self.config.snapshots_spool_dir, run_number)
-
-                if not os.path.exists(db_file_name):
-                    return
 
             snapshot_db = sqlite3.connect(db_file_name)
             snapshot_db.text_factory = str # otherwise we'll get unicode and MySQLdb cannot convert that
@@ -564,7 +572,11 @@ class MySQLHistory(TransactionHistoryInterface):
             snapshot_cursor.close()
             snapshot_db.close()
 
-        if type(run_number) is int:
+        try:
+            run_number += 0
+        except TypeError:
+            pass
+        else:
             self._cache_db.query('INSERT INTO `{template}_snapshot_usage` VALUES (%s, NOW())'.format(template = template), run_number)
 
             # also save into the main cache table

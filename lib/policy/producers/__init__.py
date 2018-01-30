@@ -11,6 +11,7 @@ from mysqllock import MySQLReplicaLock
 from weblock import WebReplicaLock
 from protectedsite import ProtectedSiteTagger
 from datasetrelease import DatasetRelease
+from enforcerprotected import EnforcedProtectionTagger
 
 __all__ = [
     'CRABAccessHistory',
@@ -18,6 +19,7 @@ __all__ = [
     'MySQLReplicaLock',
     'WebReplicaLock',
     'ProtectedSiteTagger',
+    'EnforcedProtectionTagger',
     'DatasetRelease'
 ]
 

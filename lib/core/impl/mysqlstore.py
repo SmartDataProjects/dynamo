@@ -378,7 +378,7 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_block(self, block): #override
         dataset_id = self._get_dataset_id(block.dataset)
-        if dataset_id == 0:
+        if dataset_id == -1:
             return
 
         fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open', 'last_update')
@@ -387,7 +387,7 @@ class MySQLInventoryStore(InventoryStore):
     def delete_block(self, block): #override
         # Here we don't assume block name is unique..
         dataset_id = self._get_dataset_id(block.dataset)
-        if dataset_id == 0:
+        if dataset_id == -1:
             return
 
         sql = 'DELETE FROM `blocks` WHERE `dataset_id` = %s AND `name` = %s'
@@ -395,11 +395,11 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_file(self, lfile): #override
         dataset_id = self._get_dataset_id(lfile.block.dataset)
-        if dataset_id == 0:
+        if dataset_id == -1:
             return
 
         block_id = self._get_block_id(lfile.block)
-        if block_id == 0:
+        if block_id == -1:
             return
 
         fields = ('block_id', 'dataset_id', 'size', 'name')
@@ -411,15 +411,15 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_blockreplica(self, block_replica): #override
         block_id = self._get_block_id(block_replica.block)
-        if block_id == 0:
+        if block_id == -1:
             return
 
         site_id = self._get_site_id(block_replica.site)
-        if site_id == 0:
+        if site_id == -1:
             return
 
         group_id = self._get_group_id(block_replica.group)
-        if group_id == 0:
+        if group_id == -1:
             return
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
@@ -434,11 +434,11 @@ class MySQLInventoryStore(InventoryStore):
 
     def delete_blockreplica(self, block_replica): #override
         block_id = self._get_block_id(block_replica.block)
-        if block_id == 0:
+        if block_id == -1:
             return
 
         site_id = self._get_site_id(block_replica.site)
-        if site_id == 0:
+        if site_id == -1:
             return
 
         sql = 'DELETE FROM `block_replicas` WHERE `block_id` = %s AND `site_id` = %s'
@@ -471,11 +471,11 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_datasetreplica(self, dataset_replica): #override
         dataset_id = self._get_dataset_id(dataset_replica.dataset)
-        if dataset_id == 0:
+        if dataset_id == -1:
             return
 
         site_id = self._get_site_id(dataset_replica.site)
-        if site_id == 0:
+        if site_id == -1:
             return
 
         fields = ('dataset_id', 'site_id')
@@ -483,11 +483,11 @@ class MySQLInventoryStore(InventoryStore):
 
     def delete_datasetreplica(self, dataset_replica): #override
         dataset_id = self._get_dataset_id(dataset_replica.dataset)
-        if dataset_id == 0:
+        if dataset_id == -1:
             return
 
         site_id = self._get_site_id(dataset_replica.site)
-        if site_id == 0:
+        if site_id == -1:
             return
 
         sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
@@ -523,11 +523,11 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         site_id = self._get_site_id(site_partition.site)
-        if site_id == 0:
+        if site_id == -1:
             return
 
         partition_id = self._get_partition_id(site_partition.partition)
-        if partition_id == 0:
+        if partition_id == -1:
             return
 
         fields = ('site_id', 'partition_id', 'storage')
@@ -539,11 +539,11 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         site_id = self._get_site_id(site_partition.site)
-        if site_id == 0:
+        if site_id == -1:
             return
 
         partition_id = self._get_partition_id(site_partition.partition)
-        if partition_id == 0:
+        if partition_id == -1:
             return
 
         sql = 'DELETE FROM `quotas` WHERE `site_id` = %s AND `partition_id` = %s'
@@ -566,7 +566,7 @@ class MySQLInventoryStore(InventoryStore):
         result = self._mysql.query(sql, dataset.name)
         if len(result) == 0:
             # should I raise?
-            return 0
+            return -1
 
         return result[0]
 
@@ -577,7 +577,7 @@ class MySQLInventoryStore(InventoryStore):
 
         result = self._mysql.query(sql, block.dataset.name, block.real_name())
         if len(result) == 0:
-            return 0
+            return -1
 
         return result[0]
 
@@ -586,7 +586,7 @@ class MySQLInventoryStore(InventoryStore):
         
         result = self._mysql.query(sql, site.name)
         if len(result) == 0:
-            return 0
+            return -1
 
         return result[0]
 
@@ -598,7 +598,7 @@ class MySQLInventoryStore(InventoryStore):
         
         result = self._mysql.query(sql, group.name)
         if len(result) == 0:
-            return 0
+            return -1
 
         return result[0]
 
@@ -607,6 +607,6 @@ class MySQLInventoryStore(InventoryStore):
         
         result = self._mysql.query(sql, partition.name)
         if len(result) == 0:
-            return 0
+            return -1
 
         return result[0]

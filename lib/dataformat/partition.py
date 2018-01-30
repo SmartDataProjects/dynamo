@@ -66,9 +66,11 @@ class Partition(object):
             partition._condition = self._condition # WARNING! Copying by reference - two _conditions are same objects
     
             if self._subpartitions is not None:
-                partition._subpartitions = []
+                subpartitions = []
                 for subp in self._subpartitions:
-                    partition._subpartitions.append(inventory.partitions[subp._name])
+                    subpartitions.append(inventory.partitions[subp._name])
+
+                partition._subpartitions = tuple(subpartitions)
     
             if self._parent is not None:
                 partition._parent = inventory.partitions[self._parent._name]
