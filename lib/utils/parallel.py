@@ -5,8 +5,10 @@ import threading
 from dynamo.dataformat import Configuration
 
 class FunctionWrapper(object):
-    def __init__(self, function):
+    def __init__(self, function, start_sem, done_sem):
         self.function = function
+        self._start_sem = start_sem
+        self._done_sem = done_sem
 
     def __call__(self, inputs, outputs, exception):
         try:
@@ -16,6 +18,9 @@ class FunctionWrapper(object):
 
         except Exception as ex:
             exception.set(ex)
+
+        self._start_sem.release()
+        self._done_sem.release()
 
 
 class ExceptionHolder(object):
@@ -30,11 +35,8 @@ class ThreadTimeout(RuntimeError):
     pass
 
 
-class ThreadCollector(object):
+class ThreadController(object):
     def __init__(self, function, num_threads):
-        self.target = FunctionWrapper(function)
-        self.num_threads = num_threads
-
         self.print_progress = False
         self.timeout = 0
         self.repeat_on_exception = False
@@ -46,41 +48,114 @@ class ThreadCollector(object):
         self._ndone = 0
         self._watermark = 0
 
-        self._threads = []
-        self.outputs = []
+        self._start_sem = threading.Semaphore(num_threads)
+        self._done_sem = threading.Semaphore(0)
+        self._target_function = function
 
-    def add_thread(self, inputs, name = ''):
+        self._inputs = []
+
+    def add_inputs(self, arguments, name = ''):
         """
-        Create a new thread and start. Block if there are already max_threads number of threads.
+        Reserve a thread.
+        @param arguments  List of arguments. Each element corresponds to a single function call
+                          within a thread.
+        @param name       Name of the thread.
         """
 
-        while len(self._threads) >= self.num_threads:
-            self.collect()
-            time.sleep(1)
+        self._inputs.append((arguments, name))
 
-        outputs = []
+    def execute(self):
+        """Run all threads and return the full list of outputs."""
+
+        all_outputs = []
+        thread_defs = []
+
+        for arguments, name in self._inputs:
+            self._start_one(arguments, name, thread_defs)
+            self._collect_threads(thread_defs, all_outputs)
+
+        while len(thread_defs) != 0:
+            self._collect_threads(thread_defs, all_outputs, blocking = True)
+
+        self._start_time = 0
+        self._ndone = 0
+        self._watermark = 0
+        self._inputs = []
+
+        return all_outputs
+
+    def iterate(self):
+        """Run threads and yield the outputs as they become available."""
+
+        all_outputs = []
+        thread_defs = []
+
+        while True:
+            while len(self._inputs) != 0:
+                arguments, name = self._inputs[-1]
+                if self._start_one(arguments, name, thread_defs, blocking = False):
+                    self._inputs.pop()
+                else:
+                    break
+
+            if len(all_outputs) == 0:
+                if len(self._inputs) == 0 and len(thread_defs) == 0:
+                    # we are done
+                    return
+
+                # otherwise block until there is a thread completed
+                self._collect_threads(thread_defs, all_outputs, blocking = True)
+
+            else:
+                yield all_outputs.pop()
+
+    def _start_one(self, arguments, name, thread_defs, blocking = True):
+        # If blocking = True, return False immediately unless there is a free slot
+
+        if not blocking:
+            if not self._start_sem.acquire(False):
+                return False
+
+            self._start_sem.release()
+
         exception = ExceptionHolder()
+        outputs = []
 
-        thread = threading.Thread(target = self.target, args = (inputs, outputs, exception))
+        target = FunctionWrapper(self._target_function, self._start_sem, self._done_sem)
+        thread = threading.Thread(target = target, args = (arguments, outputs, exception))
         thread.daemon = True
         if name:
             thread.name = name
-    
+
+        # Blocks here until there is a free slot
+        self._start_sem.acquire()
         thread.start()
         if self._start_time == 0:
             self._start_time = time.time()
 
-        self._threads.append((thread, time.time(), inputs, outputs, exception))
+        thread_defs.append((thread, time.time(), arguments, exception, outputs))
 
-    def collect(self):
-        while len(self._threads) != 0:
-            ith = 0
-            while ith < len(self._threads):
-                ith = self._collect_one(ith)
+        return True
 
-    def _collect_one(self, ith):
-        thread, time_started, inputs = self._threads[ith][0:3]
+    def _collect_threads(self, thread_defs, all_outputs, blocking = False):
+        if blocking:
+            # Block until there is a completed thread
+            self._done_sem.acquire()
+            # Increment the semaphore count by one (to be reduced below)
+            self._done_sem.release()
 
+        ith = 0
+        while ith != len(thread_defs):
+            thread, start_time, arguments, exception, outputs = thread_defs[ith]
+            if self._collect_one(thread, start_time, arguments, exception):
+                thread_defs.pop(ith)
+                all_outputs.extend(outputs)
+                # Reduce the semaphore count by one
+                self._done_sem.acquire()
+            else:
+                ith += 1
+
+    def _collect_one(self, thread, time_started, inputs, exception):
         if thread.is_alive():
             if self.timeout > 0 and time.time() - time_started > self.timeout:
                 if self.logger:
@@ -89,10 +164,9 @@ class ThreadCollector(object):
 
                 raise ThreadTimeout(thread.name)
 
-            return ith + 1
+            return False
 
         thread.join()
-        thread, time_started, inputs, outputs, exception = self._threads.pop(ith)
 
         if exception.exception is not None:
             if self.logger:
@@ -111,20 +185,17 @@ class ThreadCollector(object):
 
             raise exception.exception
 
-        self.outputs.extend(outputs)
-
         if self.ntotal != 0 and self.logger: # progress report requested
             self._ndone += len(inputs)
             if self._ndone == self.ntotal or self._ndone > self._watermark:
                 self.logger.info('Processed %.1f%% of input (%ds elapsed).', 100. * self._ndone / self.ntotal, int(time.time() - self._start_time))
                 self.watermark += max(1, self._ntotal / 20)
 
-        # self._threads.pop reduced the size of the array by one; return the same index
-        return ith
+        return True
 
 class Map(object):
     """
-    Similar to multiprocessing.Pool.map but with threads. At each execute() call, instantiate a ThreadCollector
+    Similar to multiprocessing.Pool.map but with threads. At each execute() call, instantiate a ThreadController
     object to do the real work. Output list can be out of order.
     """
 
@@ -138,33 +209,45 @@ class Map(object):
 
         self.logger = None
 
-    def execute(self, function, arguments):
+    def execute(self, function, arguments, async = False):
+        """
+        Execute function on each argument and return the function outputs in a list.
+        The output is not ordered.
+        @param function   Thread function.
+        @param arguments  List of arguments. Each element corresponds to a single function call.
+                          Each element can be a single object or a tuple which gets unpacked.
+        @param async      If True, use the iterate function of ThreadController.
+        @return Unordered list of function outputs.
+        """
+
         if len(arguments) == 0:
             return []
-    
-        collector = ThreadCollector(function, self.num_threads)
+
+        controller = ThreadController(function, self.num_threads)
        
-        collector.print_progress = self.print_progress
-        collector.timeout = self.timeout
-        collector.repeat_on_exception = self.repeat_on_exception
-        collector.logger = self.logger
+        controller.print_progress = self.print_progress
+        controller.timeout = self.timeout
+        controller.repeat_on_exception = self.repeat_on_exception
+        controller.logger = self.logger
 
         if self.print_progress:
-            collector.ntotal = len(arguments)
+            controller.ntotal = len(arguments)
 
-        # format the inputs: list (one element for one thread) of lists (arguments x per_thread) of tuples
-        input_list = [[]]
+        # In case we want to run the function multiple times in a single thread, we make slices of inputs
+        inputs = []
         for args in arguments:
             if type(args) is not tuple:
                 args = (args,)
-    
-            input_list[-1].append(args)
-            if len(input_list[-1]) == self.task_per_thread:
-                input_list.append([])
-    
-        for inputs in input_list:
-            collector.add_thread(inputs)
 
-        collector.collect()
+            inputs.append(args)
+            if len(inputs) == self.task_per_thread:
+                controller.add_inputs(inputs)
+                inputs = []
     
-        return collector.outputs
+        if len(inputs) != 0:
+            controller.add_inputs(inputs)
+
+        if async:
+            return controller.iterate()
+        else:
+            return controller.execute()

@@ -1,0 +1,493 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import time
+import fnmatch
+import sqlite3
+import re
+import threading
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Update replica information.')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+parser.add_argument('--mode', '-m', metavar = 'MODE', dest = 'mode', help = 'Automatic update mode. Values are: ReplicaDelta, ReplicaFull, or DatasetFull. When set, --site and --dataset are ignored.')
+parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', help = 'Do a full update of the site (wildcard allowed).')
+parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'dataset', help = 'Do a full update of the dataset (wildcard allowed).')
+
+args = parser.parse_args()
+sys.argv = []
+
+## Load the configuration
+from dynamo.dataformat.configuration import Configuration
+
+config = Configuration(args.config)
+
+## Set up logging (write to stdout & stderr)
+import dynamo.core.executable as executable
+
+LOG = executable.make_standard_logger(config.log_level)
+LOG.info('Starting inventory update.')
+
+## Update mode
+if args.mode not in [None, 'ReplicaDelta', 'ReplicaFull', 'DatasetFull']:
+    LOG.error('Unknown automatic update mode %s.', args.mode)
+    sys.exit(1)
+
+if args.mode is None and args.site is None and args.dataset is None:
+    LOG.error('At least one of --site --dataset is needed for non-automatic update.')
+    sys.exit(1)
+
+if args.mode and not os.path.exists(config.updater_state_file):
+    LOG.error('State file %s does not exist. Run generate_dataset_list_cms first.', config.replica_state_file)
+    sys.exit(1)
+
+## Load and initialize sources
+import dynamo.source.impl as sources
+
+inventory = executable.inventory
+
+config.groups.config.phedex = config.phedex
+config.sites.config.phedex = config.phedex
+config.datasets.config.phedex = config.phedex
+config.replicas.config.phedex = config.phedex
+
+group_source = sources.PhEDExGroupInfoSource(config.groups.config)
+site_source = sources.PhEDExSiteInfoSource(config.sites.config)
+dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
+replica_source = sources.PhEDExReplicaInfoSource(config.replicas.config)
+
+## Start the update
+# 1. Refresh groups
+# 2. Get the list of block replicas and dataset names to update
+# 3. Update the datasets
+# 4. Loop over new and changed block replicas, add them to inventory
+# 5. Pick up deleted block replicas
+# 6. Loop over deleted replicas
+# 7. Save the execution state
+
+from dynamo.dataformat import Dataset, Block, File, DatasetReplica, BlockReplica, ObjectError
+from dynamo.utils.parallel import Map
+
+class TmpStore(object):
+    def get_files(self, block):
+        return set()
+
+Block._inventory_store = TmpStore()
+
+## 1. Refresh groups
+
+LOG.info('Updating list of groups.')
+for group in group_source.get_group_list():
+    LOG.debug('Updating %s', str(group))
+    inventory.update(group)
+
+## 2. Get the list of block replicas and dataset names to update
+
+if args.mode == 'ReplicaDelta':
+    ## Global delta-update of replicas
+    ## Get the last update timestamp
+
+    state_db = sqlite3.connect(config.updater_state_file)
+    cursor = state_db.cursor()
+
+    sql = 'SELECT MAX(`timestamp`) FROM `replica_delta_updates`'
+    result = cursor.execute(sql)
+    last_update = next(result)[0]
+
+    if last_update is None:
+        LOG.error('Last update timestamp is not set. Run a full update of all sites and create a timestamp.')
+        sys.exit(1)
+
+    state_db.close()
+
+    # Allow 30-second safety margin to fully collect all updates
+    last_update -= 30
+
+    # The timestamp for this update
+    update_start = time.time()
+    
+    ## Fetch the full list of block replicas that were updated since updated_since.
+    ## New datasets and blocks will be caught in the process.
+    
+    timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S %Z', time.localtime(last_update))
+    LOG.info('Fetching the list of block replicas updated since %s.', timestamp_str)
+
+    updated_replicas = replica_source.get_updated_replicas(last_update)
+    dataset_names = set(br.block.dataset.name for br in updated_replicas)
+
+    deleted_replicas = replica_source.get_deleted_replicas(last_update)
+
+elif args.mode == 'ReplicaFull':
+    ## Round-robin update of a site-tier combination
+    ## Get the combination to run on
+
+    state_db = sqlite3.connect(config.updater_state_file)
+    cursor = state_db.cursor()
+
+    sql = 'SELECT `site`, `tier` FROM `replica_full_updates` ORDER BY `id` ASC LIMIT 1'
+    result = cursor.execute(sql)
+    try:
+        site, tier = next(result)
+    except StopIteration:
+        LOG.error('Round robin state table is empty. Run generate_dataset_list_cms first.')
+        sys.exit(1)
+
+    state_db.close()
+
+    updated_replicas = replica_source.get_replicas(site = site, dataset = '/*/*/' + tier)
+    dataset_names = set(br.block.dataset.name for br in updated_replicas)
+
+elif args.mode == 'DatasetFull':
+    ## Round-robin update of datasets
+    ## Get the dataset full names
+
+    dataset_names = set()
+
+    state_db = sqlite3.connect(config.updater_state_file)
+    cursor = state_db.cursor()
+
+    sql = 'SELECT `name` FROM `datasets` ORDER BY `id` LIMIT ?'
+    for row in cursor.execute(sql, (config.num_update_datasets,)):
+        dataset_names.add(str(row[0]))
+
+    state_db.close()
+
+    updated_replicas = []
+
+else:
+    updated_replicas = replica_source.get_replicas(site = args.site, dataset = args.dataset)
+    dataset_names = set(br.block.dataset.name for br in updated_replicas)
+
+    if args.dataset:
+        dataset_names.update(set(dataset_source.get_dataset_names(include = [args.dataset])))
+
+# 3. Update the datasets
+
+# 3.1. Query the dataset source (parallelize)
+
+LOG.info('Updating dataset information.')
+
+def get_dataset(name):
+    LOG.info('Updating information for dataset %s', name)
+    
+    dataset_tmp = dataset_source.get_dataset(name, with_files = True)
+
+    if dataset_tmp is None:
+        LOG.error('Unknown dataset %s.', name)
+        
+    return dataset_tmp
+
+dataset_tmps = Map().execute(get_dataset, dataset_names, async = True)
+
+watermark = 0
+idat = 0
+
+for dataset_tmp in dataset_tmps:
+    if float(idat) / len(dataset_names) * 100. >= watermark:
+        LOG.info('%d%% done..', watermark)
+        watermark += 5
+
+    idat += 1
+
+    if dataset_tmp is None:
+        continue
+
+    # 3.2. Find the dataset or create new
+
+    try:
+        dataset = inventory.datasets[dataset_tmp.name]
+    except KeyError:
+        dataset = Dataset(dataset_tmp.name)
+        dataset.copy(dataset_tmp)
+        inventory.datasets.add(dataset)
+        inventory.register_update(dataset)
+
+        # add blocks
+        for block_tmp in dataset_tmp.blocks:
+            block = Block(block_tmp.name, dataset)
+            block.copy(block_tmp)
+            dataset.blocks.add(block) # blocks.add, not add_block (latter will increment dataset attrs which are already set)
+            inventory.register_update(block)
+            
+            # add files
+            for file_tmp in block_tmp.files:
+                lfile = File(lfn, block)
+                lfile.copy(file_tmp)
+                block.files.add(lfile) # same story here
+                inventory.register_update(lfile)
+
+        # done
+        continue
+
+    if dataset != dataset_tmp:
+        dataset.copy(dataset_tmp)
+        inventory.register_update(dataset)
+
+    # 3.3. Update blocks
+
+    existing_blocks = dict((b.name, b) for b in dataset.blocks)
+    block_names_in_source = set()
+
+    for block_tmp in dataset_tmp.blocks:
+        block_names_in_source.add(block_tmp.name)
+
+        try:
+            block = existing_blocks[block_tmp.name]
+        except KeyError:
+            block = Block(block_tmp.name, dataset)
+            block.copy(block_tmp)
+            dataset.add_block(block)
+            inventory.register_update(block)
+
+            for file_tmp in block_tmp.files:
+                lfile = File(lfn, block)
+                lfile.copy(file_tmp)
+                block.files.add(lfile) # see above
+                inventory.register_update(lfile)
+
+            continue
+
+        if block != block_tmp:
+            block.copy(block_tmp)
+            inventory.register_update(block)
+
+        # 3.4. Update files
+
+        existing_files = dict(((f.lfn, f) for f in block.files))
+        file_names_in_source = set()
+
+        for file_tmp in block_tmp.files:
+            lfn = file_tmp.lfn
+            file_names_in_source.add(lfn)
+
+            try:
+                lfile = existing_files[lfn]
+            except KeyError:
+                lfile = File(lfn, block)
+                lfile.copy(file_tmp)
+                block.add_file(lfile)
+                inventory.register_update(lfile)
+                
+                continue
+
+            if lfile != file_tmp:
+                lfile.copy(file_tmp)
+                inventory.register_update(lfile)
+
+        # 3.5. Delete excess files
+
+        for lfn in (set(existing_files.iterkeys()) - file_names_in_source):
+            lfile = block.find_file(lfn)
+            inventory.delete(lfile)
+
+    # 3.6. Delete excess blocks
+
+    for block_name in (set(existing_blocks.iterkeys()) - block_names_in_source):
+        block = dataset.find_block(block_name)
+        inventory.delete(block)
+
+LOG.info('100% done.')
+
+if len(updated_replicas) != 0:
+    ## 4. Loop over new and changed block replicas, add them to inventory
+
+    num_replicas = len(updated_replicas)
+    LOG.info('Got %d block replicas to update.', num_replicas)
+
+    if args.mode != 'ReplicaDelta':
+        # Save the embedded versions - we cannot query for "replicas deleted since X", so instead compare
+        # what is already in the database to what we get from PhEDEx.
+        embedded_updated_replicas = set()
+
+    for replica in updated_replicas:
+        replica_str = str(replica)
+    
+        LOG.debug('Updating %s', replica_str)
+    
+        # 4.1. pick up replicas of known groups only
+    
+        try:
+            group = inventory.groups[replica.group.name]
+        except KeyError:
+            LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
+            continue
+    
+        # 4.2. Pick up replicas at known sites only
+    
+        try:
+            site = inventory.sites[replica.site.name]
+        except KeyError:
+            LOG.debug('%s is at %s, which is not a tracked site.', replica_str, replica.site.name)
+            continue
+    
+        # 4.3. Update the dataset info
+    
+        dataset = inventory.datasets[replica.block.dataset.name]
+    
+        # 4.4. Find the block of the dataset
+    
+        block = dataset.find_block(replica.block.name)
+    
+        if block is None:
+            LOG.error('Unknown block %s.', replica.block.full_name())
+            continue
+    
+        # 4.5. Find the dataset replica
+    
+        dataset_replica = site.find_dataset_replica(dataset)
+    
+        if dataset_replica is None:
+            # If not found, create a new replica and inject
+            LOG.info('Creating new replica of %s at %s', dataset.name, site.name)
+            dataset_replica = DatasetReplica(dataset, site)
+    
+            dataset.replicas.add(dataset_replica)
+            site.add_dataset_replica(dataset_replica, add_block_replicas = False)
+    
+            inventory.register_update(dataset_replica)
+    
+        # 4.6. Update the block replica
+    
+        LOG.debug('Updating block replica.')
+        block_replica = block.find_replica(site)
+    
+        if block_replica is None:
+            block_replica = BlockReplica(block, site, group)
+            block_replica.copy(replica)
+            # reset the group
+            block_replica.group = group
+    
+            dataset_replica.block_replicas.add(block_replica)
+            block.replicas.add(block_replica)
+            site.add_block_replica(block_replica)
+    
+            inventory.register_update(block_replica)
+    
+        elif block_replica != replica:
+            block_replica.copy(replica)
+            inventory.register_update(block_replica)
+            
+        if args.mode != 'ReplicaDelta':
+            embedded_updated_replicas.add(block_replica)
+  
+if args.mode != 'DatasetFull':
+    ## 5. Pick up deleted block replicas
+
+    # deleted_replicas in ReplicaDelta mode is fetched together with updated_replicas
+    if args.mode != 'ReplicaDelta':
+        # Replicas in inventory but not in updated_replicas are deleted
+        deleted_replicas = []
+    
+        if args.site:
+            site_pat = re.compile(fnmatch.translate(args.site))
+        else:
+            site_pat = None
+    
+        if args.dataset:
+            dataset_pat = re.compile(fnmatch.translate(args.dataset))
+        else:
+            dataset_pat = None
+    
+        for site in inventory.sites.itervalues():
+            if site_pat and not site_pat.match(site.name):
+                continue
+    
+            for dataset_replica in site.dataset_replicas():
+                if dataset_pat and not dataset_pat.match(dataset_replica.dataset.name):
+                    continue
+    
+                for block_replica in dataset_replica.block_replicas:
+                    if block_replica not in embedded_updated_replicas:
+                        deleted_replicas.append(block_replica)
+    
+    ## 6. Loop over deleted replicas
+    
+    for replica in deleted_replicas:
+        replica_str = str(replica)
+    
+        LOG.debug('Deleting %s', replica_str)
+    
+        # 6.1. pick up replicas of known groups only
+    
+        if replica.group.name not in inventory.groups:
+            LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
+            continue
+    
+        # 6.2. Pick up replicas at known sites only
+    
+        try:
+            site = inventory.sites[replica.site.name]
+        except KeyError:
+            LOG.debug('%s is at %s, which is not a tracked site.', replica_str, replica.site.name)
+            continue
+    
+        # 6.3. Find the dataset in the inventory
+    
+        try:
+            dataset = inventory.datasets[replica.block.dataset.name]
+        except KeyError:
+            # If not found, create a new dataset and inject
+            LOG.debug('Unknown dataset %s.', replica.block.dataset.name)
+            continue
+    
+        # 6.4. Find the block of the dataset
+    
+        block_full_name = replica.block.full_name()
+        block = dataset.find_block(replica.block.name)
+    
+        if block is None:
+            # If not found, create a new block and inject
+            LOG.debug('Unknown block %s.', block_full_name)
+            continue
+    
+        # 6.5. Find the dataset replica
+    
+        dataset_replica = site.find_dataset_replica(dataset)
+        if dataset_replica is None:
+            LOG.debug('No replica of %s at %s.', dataset.name, site.name)
+            continue
+    
+        # 6.6. Delete the block replica
+    
+        # blockreplica.delete_from() raises a KeyError or ObjectError if
+        # any of the group, site, dataset, ... is not found
+        try:
+            inventory.delete(replica)
+        except (KeyError, ObjectError):
+            LOG.debug('Replica not found.')
+            pass
+    
+        # 6.7. Delete the dataset replica if it is empty
+    
+        if len(dataset_replica.block_replicas) == 0:
+            LOG.info('Deleting replica %s:%s', site.name, dataset.name)
+            inventory.delete(dataset_replica)
+
+# 7. Save the execution state
+
+if not executable.read_only and os.path.exists(config.updater_state_file):
+    # Regardless of update mode, clear the updated datasets from the table
+    state_db = sqlite3.connect(config.updater_state_file)
+    cursor = state_db.cursor()
+
+    sql = 'DELETE FROM `datasets` WHERE `name` = ?'
+    for dataset_name in dataset_names:
+        cursor.execute(sql, (dataset_name,))
+
+    state_db.commit()
+
+    # Additionally for replica updates
+    if args.mode == 'ReplicaDelta':
+        sql = 'INSERT INTO `replica_delta_updates` VALUES (?, ?, ?)'
+        cursor.execute(sql, (update_start, len(updated_replicas), len(deleted_replicas)))
+
+    elif args.mode == 'ReplicaFull':
+        result = cursor.execute('SELECT MIN(`id`) FROM `replica_full_updates`')
+        min_id = next(result)
+        cursor.execute('DELETE FROM `replica_full_updates` WHERE `id` = ?', min_id)
+
+    state_db.commit()
+    state_db.close()
+
+LOG.info('Inventory update completed.')

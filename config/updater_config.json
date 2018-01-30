@@ -1,6 +1,5 @@
 {
-  "replica_state_file": "$(DYNAMO_SPOOL)/update_replicas_cms.state",
-  "dataset_state_file": "$(DYNAMO_SPOOL)/update_datasets_cms.state",
+  "updater_state_file": "$(DYNAMO_SPOOL)/updater_cms.state",
   "excluded_secondary_datasets": [],
   "num_update_datasets": 50,
   "phedex": {
