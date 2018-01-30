@@ -146,11 +146,20 @@ class Dataset(object):
             return dataset
 
     def delete_from(self, inventory):
-        # Pop the dataset from the main list, and remove all replicas.
+        # Remove all replicas and pop the dataset from the main list
+        deleted = []
+
         dataset = inventory.datasets.pop(self._name)
 
-        for replica in dataset.replicas:
-            replica.site.remove_dataset_replica(replica)
+        for replica in list(self.replicas):
+            deleted.extend(replica._unlink())
+        
+        for block in list(self.blocks):
+            deleted.extend(block._unlink())
+
+        deleted.append(dataset)
+
+        return deleted
 
     def write_into(self, store, delete = False):
         if delete:

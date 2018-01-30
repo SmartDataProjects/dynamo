@@ -32,8 +32,6 @@ site_source = sources.PhEDExSiteInfoSource(config.sites.config)
 from dynamo.utils.parallel import Map
 
 def set_status(site):
-    global site_source
-
     LOG.info('Updating %s', site.name)
     site.status = site_source.get_site_status(site.name)
     LOG.info('Status: %d', site.status)

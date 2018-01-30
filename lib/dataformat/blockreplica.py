@@ -112,12 +112,20 @@ class BlockReplica(object):
         dataset = inventory.datasets[self._block.dataset.name]
         block = dataset.find_block(self._block.name, must_find = True)
         site = inventory.sites[self._site.name]
-        dataset_replica = site.find_dataset_replica(dataset)
         replica = block.find_replica(site, must_find = True)
 
-        site.remove_block_replica(replica)
-        dataset_replica.block_replicas.remove(replica)
-        block.replicas.remove(replica)
+        return replica._unlink()
+
+    def _unlink(self, dataset_replica = None):
+        if dataset_replica is None:
+            dataset_replica = self._site.find_dataset_replica(self._block._dataset)
+
+        self._site._remove_block_replica(self, dataset_replica, local = False)
+
+        dataset_replica.block_replicas.remove(self)
+        self._block.replicas.remove(self)
+
+        return [self]
 
     def write_into(self, store, delete = False):
         if delete:

@@ -294,6 +294,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         # 2. software version
 
         result = self._dbs.make_request('releaseversions', ['dataset=' + dataset.name])
+
         if len(result) != 0:
             try:
                 version = result[0]['release_version'][0]

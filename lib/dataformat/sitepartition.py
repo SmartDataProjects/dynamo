@@ -101,7 +101,7 @@ class SitePartition(object):
             return site_partition
 
     def delete_from(self, inventory):
-        raise ObjectError('Deleting a single SitePartition is not allowed.')
+        raise ObjectError('Deletion of a single SitePartition is not allowed.')
 
     def write_into(self, store, delete = False):
         if delete:

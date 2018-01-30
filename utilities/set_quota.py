@@ -41,7 +41,7 @@ the other partitions are adjusted only if --adjust-other option is used.'''
     parser = ArgumentParser(description = desc)
 
     parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', help = 'Site name.')
-    parser.add_argument('--partition', '-g', metavar = 'PARTITION', dest = 'partition', default = 'AnalysisOps', help = 'Partition name.')
+    parser.add_argument('--partition', '-g', metavar = 'PARTITION', dest = 'partition', help = 'Partition name.')
     parser.add_argument('--volume', '-v', metavar = 'VOLUME', dest = 'volume', type = int, help = 'Size of partition in TB.')
     parser.add_argument('--scale', '-c', metavar = 'FACTOR', dest = 'scale', type = float, help = 'Scale the quota by a factor.')
     parser.add_argument('--adjust-other', '-a', action = 'store_true', dest = 'adjust_other', help = 'Automatically adjust the other subpartitions to keep the superpartition quota same? Default: False')

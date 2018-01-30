@@ -102,6 +102,8 @@ class Partition(object):
         for site in inventory.sites.itervalues():
             site.partitions.pop(partition)
 
+        return [partition]
+
     def write_into(self, store, delete = False):
         if delete:
             store.delete_partition(self)
