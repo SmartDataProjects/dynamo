@@ -269,7 +269,7 @@ class DynamoInventory(ObjectRepository):
             # The content of updated_objects gets pickled and shipped back to the server process.
             # Pickling process follows all links between the objects. We create an unlinked clone
             # here to avoid shipping the entire inventory.
-            self._updated_objects.append(obj.unlinked_clone())
+            self._updated_objects.append(obj.unlinked_clone(attrs = False))
 
         if write:
             if changelog is not None:
@@ -294,7 +294,7 @@ class DynamoInventory(ObjectRepository):
 
         if self._deleted_objects is not None:
             for dobj in deleted_objects:
-                self._deleted_objects.append(dobj.unlinked_clone())
+                self._deleted_objects.append(dobj.unlinked_clone(attrs = False))
 
         if write:
             for dobj in deleted_objects:
