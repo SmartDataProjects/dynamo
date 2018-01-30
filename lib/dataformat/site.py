@@ -119,8 +119,11 @@ class Site(object):
         self.cpu = other.cpu
         self.status = other.status
 
-    def unlinked_clone(self):
-        return Site(self._name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
+    def unlinked_clone(self, attrs = True):
+        if attrs:
+            return Site(self._name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
+        else:
+            return Site(self._name)
 
     def embed_into(self, inventory, check = False):
         updated = False

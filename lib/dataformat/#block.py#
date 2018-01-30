@@ -112,10 +112,15 @@ class Block(object):
             return Block(self._name, self._dataset.name)
 
     def embed_into(self, inventory, check = False):
+        if type(self._dataset) is str:
+            dataset_name = self._dataset
+        else:
+            dataset_name = self._dataset.name
+
         try:
-            dataset = inventory.datasets[self._dataset.name]
+            dataset = inventory.datasets[dataset_name]
         except KeyError:
-            raise ObjectError('Unknown dataset %s', self._dataset.name)
+            raise ObjectError('Unknown dataset %s', dataset_name)
 
         block = dataset.find_block(self._name)
         updated = False
@@ -136,8 +141,13 @@ class Block(object):
             return block
 
     def delete_from(self, inventory):
+        if type(self._dataset) is str:
+            dataset_name = self._dataset
+        else:
+            dataset_name = self._dataset.name
+
         # Remove the block from the dataset, and remove all replicas.
-        dataset = inventory.datasets[self._dataset.name]
+        dataset = inventory.datasets[dataset_name]
         block = dataset.find_block(self._name, must_find = True)
 
         return block._unlink()

@@ -61,10 +61,13 @@ class SitePartition(object):
 
         self._quota = other._quota
 
-    def unlinked_clone(self):
-        site = self._site.unlinked_clone()
-        partition = self._partition.unlinked_clone()
-        return SitePartition(site, partition, self._quota)
+    def unlinked_clone(self, attrs = True):
+        site = self._site.unlinked_clone(attrs = False)
+        partition = self._partition.unlinked_clone(attrs = False)
+        if attrs:
+            return SitePartition(site, partition, self._quota)
+        else:
+            return SitePartition(site, partition)
 
     def embed_into(self, inventory, check = False):
         try:

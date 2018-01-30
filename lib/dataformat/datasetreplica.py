@@ -37,9 +37,10 @@ class DatasetReplica(object):
         if self._site.name != other._site.name:
             raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site.name, self._site.name)
 
-    def unlinked_clone(self):
-        dataset = self._dataset.unlinked_clone()
-        site = self._site.unlinked_clone()
+    def unlinked_clone(self, attrs = True):
+        dataset = self._dataset.unlinked_clone(attrs = False)
+        site = self._site.unlinked_clone(attrs = False)
+
         return DatasetReplica(dataset, site)
 
     def embed_into(self, inventory, check = False):

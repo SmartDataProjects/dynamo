@@ -53,7 +53,7 @@ class Partition(object):
     def copy(self, other):
         pass
 
-    def unlinked_clone(self):
+    def unlinked_clone(self, attrs = True):
         return Partition(self._name)
 
     def embed_into(self, inventory, check = False):

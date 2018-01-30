@@ -72,9 +72,12 @@ class File(object):
 
         self.size = other.size
 
-    def unlinked_clone(self):
-        block = self._block.unlinked_clone()
-        return File(self.lfn, block, self.size)
+    def unlinked_clone(self, attrs = True):
+        block = self._block.unlinked_clone(attrs = False)
+        if attrs:
+            return File((self._directory_id, self._basename), block, self.size)
+        else:
+            return File((self._directory_id, self._basename), block)
 
     def embed_into(self, inventory, check = False):
         try:

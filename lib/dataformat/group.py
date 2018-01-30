@@ -36,7 +36,7 @@ class Group(object):
     def copy(self, other):
         self._olevel = other._olevel
 
-    def unlinked_clone(self):
+    def unlinked_clone(self, attrs = True):
         return Group(self._name, self._olevel)
 
     def embed_into(self, inventory, check = False):

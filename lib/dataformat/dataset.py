@@ -114,11 +114,14 @@ class Dataset(object):
 
         self.attr = copy.deepcopy(other.attr)
 
-    def unlinked_clone(self):
-        dataset = Dataset(self._name, self.size, self.num_files, self.status, self.data_type,
-            self.software_version, self.last_update, self.is_open)
-
-        dataset.attr = copy.deepcopy(self.attr)
+    def unlinked_clone(self, attrs = True):
+        if attrs:
+            dataset = Dataset(self._name, self.size, self.num_files, self.status, self.data_type,
+                self.software_version, self.last_update, self.is_open)
+    
+            dataset.attr = copy.deepcopy(self.attr)
+        else:
+            dataset = Dataset(self._name)
 
         return dataset
 

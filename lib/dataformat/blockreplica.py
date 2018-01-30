@@ -59,12 +59,14 @@ class BlockReplica(object):
         self.size = other.size
         self.last_update = other.last_update
 
-    def unlinked_clone(self):
-        block = self._block.unlinked_clone()
-        site = self._site.unlinked_clone()
-        group = self.group.unlinked_clone()
-
-        return BlockReplica(block, site, group, self.is_complete, self.is_custodial, self.size, self.last_update)
+    def unlinked_clone(self, attrs = True):
+        block = self._block.unlinked_clone(attrs = False)
+        site = self._site.unlinked_clone(attrs = False)
+        group = self.group.unlinked_clone(attrs = False)
+        if attrs:
+            return BlockReplica(block, site, group, self.is_complete, self.is_custodial, self.size, self.last_update)
+        else:
+            return BlockReplica(block, site, group)
 
     def embed_into(self, inventory, check = False):
         try:
