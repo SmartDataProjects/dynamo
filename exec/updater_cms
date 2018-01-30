@@ -202,38 +202,65 @@ for dataset_tmp in dataset_tmps:
         dataset.copy(dataset_tmp)
         inventory.datasets.add(dataset)
         inventory.register_update(dataset)
-    else:
-        if dataset != dataset_tmp:
-            dataset.copy(dataset_tmp)
-            inventory.register_update(dataset)
 
-    # 3.2. Update blocks
+        # add blocks
+        for block_tmp in dataset_tmp.blocks:
+            block = Block(block_tmp.name, dataset)
+            block.copy(block_tmp)
+            dataset.blocks.add(block) # blocks.add, not add_block (latter will increment dataset attrs which are already set)
+            inventory.register_update(block)
+            
+            # add files
+            for file_tmp in block_tmp.files:
+                lfile = File(lfn, block)
+                lfile.copy(file_tmp)
+                block.files.add(lfile) # same story here
+                inventory.register_update(lfile)
+
+        # done
+        continue
+
+    if dataset != dataset_tmp:
+        dataset.copy(dataset_tmp)
+        inventory.register_update(dataset)
+
+    # 3.3. Update blocks
 
     existing_blocks = dict((b.name, b) for b in dataset.blocks)
-    updated_block_names = set()
+    block_names_in_source = set()
 
     for block_tmp in dataset_tmp.blocks:
+        block_names_in_source.add(block_tmp.name)
+
         try:
             block = existing_blocks[block_tmp.name]
         except KeyError:
             block = Block(block_tmp.name, dataset)
             block.copy(block_tmp)
-            dataset.blocks.add(block)
+            dataset.add_block(block)
             inventory.register_update(block)
-        else:
-            if block != block_tmp:
-                block.copy(block_tmp)
-                inventory.register_update(block)
 
-        updated_block_names.add(block_tmp.name)
+            for file_tmp in block_tmp.files:
+                lfile = File(lfn, block)
+                lfile.copy(file_tmp)
+                block.files.add(lfile) # see above
+                inventory.register_update(lfile)
 
-        # 3.3. Update files
+            continue
+
+        if block != block_tmp:
+            block.copy(block_tmp)
+            inventory.register_update(block)
+
+        # 3.4. Update files
 
         existing_files = dict(((f.lfn, f) for f in block.files))
-        updated_file_names = set()
+        file_names_in_source = set()
 
         for file_tmp in block_tmp.files:
             lfn = file_tmp.lfn
+            file_names_in_source.add(lfn)
+
             try:
                 lfile = existing_files[lfn]
             except KeyError:
@@ -241,22 +268,22 @@ for dataset_tmp in dataset_tmps:
                 lfile.copy(file_tmp)
                 block.add_file(lfile)
                 inventory.register_update(lfile)
-            else:
-                if lfile != file_tmp:
-                    lfile.copy(file_tmp)
-                    inventory.register_update(lfile)
+                
+                continue
 
-            updated_file_names.add(lfn)
+            if lfile != file_tmp:
+                lfile.copy(file_tmp)
+                inventory.register_update(lfile)
 
-        # 3.4. Delete excess files
+        # 3.5. Delete excess files
 
-        for lfn in (set(existing_files.iterkeys()) - updated_file_names):
+        for lfn in (set(existing_files.iterkeys()) - file_names_in_source):
             lfile = block.find_file(lfn)
             inventory.delete(lfile)
 
-    # 3.5. Delete excess blocks
+    # 3.6. Delete excess blocks
 
-    for block_name in (set(existing_blocks.iterkeys()) - updated_block_names):
+    for block_name in (set(existing_blocks.iterkeys()) - block_names_in_source):
         block = dataset.find_block(block_name)
         inventory.delete(block)
 
