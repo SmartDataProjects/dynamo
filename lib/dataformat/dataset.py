@@ -12,8 +12,10 @@ class Dataset(object):
 
     # Enumerator for dataset type.
     # Starting from 1 to play better with MySQL
-    TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, 10)
-    STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, 8)
+    _data_types = ['unknown', 'align', 'calib', 'cosmic', 'data', 'lumi', 'mc', 'raw', 'test']
+    TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, len(_data_types) + 1)
+    _statuses = ['unknown', 'deleted', 'deprecated', 'invalid', 'production', 'valid', 'ignored']
+    STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, len(_statuses) + 1)
 
     @property
     def name(self):
@@ -26,9 +28,7 @@ class Dataset(object):
     @staticmethod
     def data_type_name(arg):
         if type(arg) is int:
-            data_types = ['UNKNOWN', 'ALIGN', 'CALIB', 'COSMIC', 'DATA', 'LUMI', 'MC', 'RAW', 'TEST']
-            return data_types[arg - 1]
-
+            return Dataset._data_types[arg - 1]
         else:
             return arg
 
@@ -36,16 +36,13 @@ class Dataset(object):
     def data_type_val(arg):
         if type(arg) is str:
             return eval('Dataset.TYPE_' + arg.upper())
-
         else:
             return arg
 
     @staticmethod
     def status_name(arg):
         if type(arg) is int:
-            statuses = ['UNKNOWN', 'DELETED', 'DEPRECATED', 'INVALID', 'PRODUCTION', 'VALID', 'IGNORED']
-            return statuses[arg - 1]
-
+            return Dataset._statuses[arg - 1]
         else:
             return arg
 
@@ -53,7 +50,6 @@ class Dataset(object):
     def status_val(arg):
         if type(arg) is str:
             return eval('Dataset.STAT_' + arg.upper())
-
         else:
             return arg
 

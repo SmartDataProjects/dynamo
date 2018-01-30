@@ -40,7 +40,7 @@ class SitePartition(object):
         self.replicas = {}
 
     def __str__(self):
-        return 'SitePartition %s/%s (quota=%f TB, occupancy %s)' % (self._site.name, self._partition.name, \
+        return 'SitePartition %s/%s (quota=%f TB, occupancy %s)' % (self._site_name(), self._partition_name(), \
             self.quota * 1.e-12, ('%.2f' % self.occupancy_fraction()) if self.quota != 0. else 'inf')
 
     def __repr__(self):
@@ -48,37 +48,37 @@ class SitePartition(object):
 
     def __eq__(self, other):
         return self is other or \
-            (self._site.name == other._site.name and self._partition.name == other._partition.name and self._quota == other._quota)
+            (self._site_name() == other._site_name() and self._partition_name() == other._partition_name() and self._quota == other._quota)
 
     def __ne__(self, other):
         return not self.__eq__(other)
 
     def copy(self, other):
-        if self._site.name != other._site.name:
-            raise ObjectError('Cannot copy a partition at %s into a partition at %s', other._site.name, self._site.name)
-        if self._partition.name != other._partition.name:
-            raise ObjectError('Cannot copy a site partition of %s into a site partition of %s', other._partition.name, self._partition.name)
+        if self._site_name() != other._site_name():
+            raise ObjectError('Cannot copy a partition at %s into a partition at %s', other._site_name(), self._site_name())
+        if self._partition_name() != other._partition_name():
+            raise ObjectError('Cannot copy a site partition of %s into a site partition of %s', other._partition_name(), self._partition_name())
 
         self._quota = other._quota
 
     def unlinked_clone(self, attrs = True):
-        site = self._site.unlinked_clone(attrs = False)
-        partition = self._partition.unlinked_clone(attrs = False)
         if attrs:
+            site = self._site.unlinked_clone(attrs = False)
+            partition = self._partition.unlinked_clone(attrs = False)
             return SitePartition(site, partition, self._quota)
         else:
-            return SitePartition(site, partition)
+            return SitePartition(self._site_name(), self._partition_name())
 
     def embed_into(self, inventory, check = False):
         try:
-            site = inventory.sites[self._site.name]
+            site = inventory.sites[self._site_name()]
         except KeyError:
-            raise ObjectError('Unknown site %s', self._site.name)
+            raise ObjectError('Unknown site %s', self._site_name())
 
         try:
-            partition = inventory.partitions[self._partition.name]
+            partition = inventory.partitions[self._partition_name()]
         except KeyError:
-            raise ObjectError('Unknown partition %s', self._partition.name)
+            raise ObjectError('Unknown partition %s', self._partition_name())
 
         updated = False
 
@@ -149,3 +149,14 @@ class SitePartition(object):
 
         return self.embed_into(inventory)
 
+    def _site_name(self):
+        if type(self._site) is str:
+            return self._site
+        else:
+            return self._site.name
+
+    def _partition_name(self):
+        if type(self._partition) is str:
+            return self._partition
+        else:
+            return self._partition.name

@@ -88,7 +88,7 @@ class Block(object):
 
     def __eq__(self, other):
         return self is other or \
-            (self._name == other._name and self._dataset.name == other._dataset.name and \
+            (self._name == other._name and self._dataset_name() == other._dataset_name() and \
             self.size == other.size and self.num_files == other.num_files and \
             self.is_open == other.is_open and self.last_update == other.last_update)
 
@@ -96,8 +96,8 @@ class Block(object):
         return not self.__eq__(other)
 
     def copy(self, other):
-        if self._dataset.name != other.dataset.name:
-            raise ObjectError('Cannot copy a block of %s into a block of %s', other.dataset.name, self._dataset.name)
+        if self._dataset_name() != other._dataset_name():
+            raise ObjectError('Cannot copy a block of %s into a block of %s', other.dataset.name, self._dataset_name())
 
         self.size = other.size
         self.num_files = other.num_files
@@ -109,13 +109,13 @@ class Block(object):
             dataset = self._dataset.unlinked_clone(attrs = False)
             return Block(self._name, dataset, self.size, self.num_files, self.is_open, self.last_update)
         else:
-            return Block(self._name, self._dataset.name)
+            return Block(self._name, self._dataset_name())
 
     def embed_into(self, inventory, check = False):
         try:
-            dataset = inventory.datasets[self._dataset.name]
+            dataset = inventory.datasets[self._dataset_name()]
         except KeyError:
-            raise ObjectError('Unknown dataset %s', self._dataset.name)
+            raise ObjectError('Unknown dataset %s', self._dataset_name())
 
         block = dataset.find_block(self._name)
         updated = False
@@ -137,7 +137,7 @@ class Block(object):
 
     def delete_from(self, inventory):
         # Remove the block from the dataset, and remove all replicas.
-        dataset = inventory.datasets[self._dataset.name]
+        dataset = inventory.datasets[self._dataset_name()]
         block = dataset.find_block(self._name, must_find = True)
 
         return block._unlink()
@@ -174,7 +174,7 @@ class Block(object):
         Full specification of a block, including the dataset name.
         """
 
-        return self._dataset.name + '#' + self.real_name()
+        return self._dataset_name() + '#' + self.real_name()
 
     def find_file(self, lfn, must_find = False):
         files = self.files
@@ -231,3 +231,9 @@ class Block(object):
 #                    pass
 #                else:
 #                    replica.size -= lfile.size
+
+    def _dataset_name(self):
+        if type(self._dataset) is str:
+            return self._dataset
+        else:
+            return self._dataset.name
