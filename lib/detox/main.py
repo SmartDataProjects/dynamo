@@ -477,7 +477,7 @@ class Detox(object):
             # establish a dataset-level owner
             dr_owner = None
             for block_replica in replica.block_replicas:
-                if block_replica.group.olevel is Dataset:
+                if block_replica.group.olevel == Group.OL_DATASET:
                     # there is a dataset-level owner
                     dr_owner = block_replica.group
                     break
@@ -491,7 +491,7 @@ class Detox(object):
                 blocks_to_unlink = []
                 blocks_to_hand_over = []
                 for block_replica in block_replicas:
-                    if block_replica.group.olevel is Dataset:
+                    if block_replica.group.olevel == Group.OL_DATASET:
                         blocks_to_unlink.append(block_replica)
                     else:
                         blocks_to_hand_over.append(block_replica)

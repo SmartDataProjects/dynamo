@@ -180,12 +180,7 @@ class MySQLInventoryStore(InventoryStore):
             sql += ' INNER JOIN `groups_load_tmp` AS t ON t.`id` = g.`id`'
 
         for group_id, name, olname in self._mysql.xquery(sql):
-            if olname == 'Dataset':
-                olevel = Dataset
-            else:
-                olevel = Block
-
-            group = Group(name, olevel)
+            group = Group(name, Group.olevel_val(olname))
 
             inventory.groups[name] = group
             id_group_map[group_id] = group
@@ -495,7 +490,7 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_group(self, group): #override
         fields = ('name', 'olevel')
-        self._insert_update('groups', fields, group.name, group.olevel.__name__)
+        self._insert_update('groups', fields, group.name, Group.olevel_name(group.olevel))
 
     def delete_group(self, group): #override
         group_id = self._get_group_id(group)
