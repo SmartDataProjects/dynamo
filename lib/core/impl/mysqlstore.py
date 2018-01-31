@@ -97,12 +97,14 @@ class MySQLInventoryStore(InventoryStore):
 
         files = set()
 
-        # assuming unique block names
-        sql = 'SELECT f.`size`, f.`name` FROM `files` AS f'
-        sql += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
-        sql += ' WHERE b.`name` = %s'
+        block_id = self._get_block_id(block)
+        if block_id == -1:
+            return files
 
-        for size, name in self._mysql.xquery(sql, block.real_name()):
+        # assuming unique block names
+        sql = 'SELECT `size`, `name` FROM `files` WHERE `block_id` = %s'
+
+        for size, name in self._mysql.xquery(sql, block_id):
             files.add(File(name, block, size))
 
         return files
