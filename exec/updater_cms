@@ -14,6 +14,7 @@ parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', requi
 parser.add_argument('--mode', '-m', metavar = 'MODE', dest = 'mode', help = 'Automatic update mode. Values are: ReplicaDelta, ReplicaFull, or DatasetFull. When set, --site and --dataset are ignored.')
 parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', help = 'Do a full update of the site (wildcard allowed).')
 parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'dataset', help = 'Do a full update of the dataset (wildcard allowed).')
+parser.add_argument('--dataset-only', '-D', action = 'store_true', dest = 'dataset_only', help = 'Update dataset information only (no replicas).')
 
 args = parser.parse_args()
 sys.argv = []
@@ -27,9 +28,8 @@ config = Configuration(args.config)
 import dynamo.core.executable as executable
 
 LOG = executable.make_standard_logger(config.log_level)
-LOG.info('Starting inventory update.')
 
-## Update mode
+## Option compatibilities
 if args.mode not in [None, 'ReplicaDelta', 'ReplicaFull', 'DatasetFull']:
     LOG.error('Unknown automatic update mode %s.', args.mode)
     sys.exit(1)
@@ -41,6 +41,12 @@ if args.mode is None and args.site is None and args.dataset is None:
 if args.mode and not os.path.exists(config.updater_state_file):
     LOG.error('State file %s does not exist. Run generate_dataset_list_cms first.', config.replica_state_file)
     sys.exit(1)
+
+if args.dataset_only and not args.dataset:
+    LOG.error('Option --dataset-only requires --dataset.')
+    sys.exit(1)
+
+LOG.info('Starting inventory update.')
 
 ## Load and initialize sources
 import dynamo.source.impl as sources
@@ -68,12 +74,6 @@ replica_source = sources.PhEDExReplicaInfoSource(config.replicas.config)
 
 from dynamo.dataformat import Dataset, Block, File, DatasetReplica, BlockReplica, ObjectError
 from dynamo.utils.parallel import Map
-
-class TmpStore(object):
-    def get_files(self, block):
-        return set()
-
-Block._inventory_store = TmpStore()
 
 ## 1. Refresh groups
 
@@ -135,8 +135,15 @@ elif args.mode == 'ReplicaFull':
 
     state_db.close()
 
-    updated_replicas = replica_source.get_replicas(site = site, dataset = '/*/*/' + tier)
+    args.site = site
+    args.dataset = '/*/*/' + tier
+
+    updated_replicas = replica_source.get_replicas(site = args.site, dataset = args.dataset)
     dataset_names = set(br.block.dataset.name for br in updated_replicas)
+
+    # Save the embedded versions - we cannot query for "replicas deleted since X", so instead compare
+    # what is already in the database to what we get from PhEDEx.
+    embedded_updated_replicas = set()
 
 elif args.mode == 'DatasetFull':
     ## Round-robin update of datasets
@@ -155,12 +162,17 @@ elif args.mode == 'DatasetFull':
 
     updated_replicas = []
 
-else:
-    updated_replicas = replica_source.get_replicas(site = args.site, dataset = args.dataset)
-    dataset_names = set(br.block.dataset.name for br in updated_replicas)
+    embedded_updated_replicas = set()
 
-    if args.dataset:
+else:
+    if args.dataset_only:
+        updated_replicas = []
         dataset_names.update(set(dataset_source.get_dataset_names(include = [args.dataset])))
+    else:
+        updated_replicas = replica_source.get_replicas(site = args.site, dataset = args.dataset)
+        dataset_names = set(br.block.dataset.name for br in updated_replicas)
+
+    embedded_updated_replicas = set()
 
 # 3. Update the datasets
 
@@ -198,6 +210,7 @@ for dataset_tmp in dataset_tmps:
     try:
         dataset = inventory.datasets[dataset_tmp.name]
     except KeyError:
+        LOG.debug('Creating new dataset %s', dataset_tmp.name)
         dataset = Dataset(dataset_tmp.name)
         dataset.copy(dataset_tmp)
         inventory.datasets.add(dataset)
@@ -205,6 +218,7 @@ for dataset_tmp in dataset_tmps:
 
         # add blocks
         for block_tmp in dataset_tmp.blocks:
+            LOG.debug('Creating new block %s', block_tmp.full_name())
             block = Block(block_tmp.name, dataset)
             block.copy(block_tmp)
             dataset.blocks.add(block) # blocks.add, not add_block (latter will increment dataset attrs which are already set)
@@ -212,7 +226,8 @@ for dataset_tmp in dataset_tmps:
             
             # add files
             for file_tmp in block_tmp.files:
-                lfile = File(lfn, block)
+                LOG.debug('Creating new file %s', file_tmp.lfn)
+                lfile = File(file_tmp.lfn, block)
                 lfile.copy(file_tmp)
                 block.files.add(lfile) # same story here
                 inventory.register_update(lfile)
@@ -221,8 +236,11 @@ for dataset_tmp in dataset_tmps:
         continue
 
     if dataset != dataset_tmp:
+        LOG.debug('Updating dataset %s', dataset.name)
         dataset.copy(dataset_tmp)
         inventory.register_update(dataset)
+    else:
+        LOG.debug('Checking updates in dataset %s', dataset.name)
 
     # 3.3. Update blocks
 
@@ -235,13 +253,15 @@ for dataset_tmp in dataset_tmps:
         try:
             block = existing_blocks[block_tmp.name]
         except KeyError:
+            LOG.debug('Creating new block %s', block_tmp.full_name())
             block = Block(block_tmp.name, dataset)
             block.copy(block_tmp)
             dataset.add_block(block)
             inventory.register_update(block)
 
             for file_tmp in block_tmp.files:
-                lfile = File(lfn, block)
+                LOG.debug('Creating new file %s', file_tmp.lfn)
+                lfile = File(file_tmp.lfn, block)
                 lfile.copy(file_tmp)
                 block.files.add(lfile) # see above
                 inventory.register_update(lfile)
@@ -249,6 +269,7 @@ for dataset_tmp in dataset_tmps:
             continue
 
         if block != block_tmp:
+            LOG.debug('Updating block %s', block.full_name())
             block.copy(block_tmp)
             inventory.register_update(block)
 
@@ -264,6 +285,7 @@ for dataset_tmp in dataset_tmps:
             try:
                 lfile = existing_files[lfn]
             except KeyError:
+                LOG.debug('Creating new file %s', file_tmp.lfn)
                 lfile = File(lfn, block)
                 lfile.copy(file_tmp)
                 block.add_file(lfile)
@@ -272,18 +294,21 @@ for dataset_tmp in dataset_tmps:
                 continue
 
             if lfile != file_tmp:
+                LOG.debug('Updating file %s', lfile.lfn)
                 lfile.copy(file_tmp)
                 inventory.register_update(lfile)
 
         # 3.5. Delete excess files
 
         for lfn in (set(existing_files.iterkeys()) - file_names_in_source):
+            LOG.debug('Deleting file %s', lfile.lfn)
             lfile = block.find_file(lfn)
             inventory.delete(lfile)
 
     # 3.6. Delete excess blocks
 
     for block_name in (set(existing_blocks.iterkeys()) - block_names_in_source):
+        LOG.debug('Deleting block %s', block.full_name())
         block = dataset.find_block(block_name)
         inventory.delete(block)
 
@@ -295,47 +320,47 @@ if len(updated_replicas) != 0:
     num_replicas = len(updated_replicas)
     LOG.info('Got %d block replicas to update.', num_replicas)
 
-    if args.mode != 'ReplicaDelta':
-        # Save the embedded versions - we cannot query for "replicas deleted since X", so instead compare
-        # what is already in the database to what we get from PhEDEx.
-        embedded_updated_replicas = set()
+    group = None
+    site = None
+    dataset = None
+    dataset_replica = None
 
     for replica in updated_replicas:
         replica_str = str(replica)
     
-        LOG.debug('Updating %s', replica_str)
+        LOG.debug('Checking %s', replica_str)
     
         # 4.1. pick up replicas of known groups only
-    
-        try:
-            group = inventory.groups[replica.group.name]
-        except KeyError:
-            LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
-            continue
+
+        if group is None or group.name != replica.group.name:
+            try:
+                group = inventory.groups[replica.group.name]
+            except KeyError:
+                LOG.debug('%s is owned by %s, which is not a tracked group.', replica_str, replica.group.name)
+                continue
     
         # 4.2. Pick up replicas at known sites only
-    
-        try:
-            site = inventory.sites[replica.site.name]
-        except KeyError:
-            LOG.debug('%s is at %s, which is not a tracked site.', replica_str, replica.site.name)
-            continue
+
+        if site is None or site.name != replica.site.name:
+            try:
+                site = inventory.sites[replica.site.name]
+            except KeyError:
+                LOG.debug('%s is at %s, which is not a tracked site.', replica_str, replica.site.name)
+                continue
+
+            dataset_replica = None
     
         # 4.3. Update the dataset info
-    
-        dataset = inventory.datasets[replica.block.dataset.name]
-    
-        # 4.4. Find the block of the dataset
-    
-        block = dataset.find_block(replica.block.name)
-    
-        if block is None:
-            LOG.error('Unknown block %s.', replica.block.full_name())
-            continue
-    
-        # 4.5. Find the dataset replica
-    
-        dataset_replica = site.find_dataset_replica(dataset)
+
+        if dataset is None or dataset.name != replica.block.dataset.name:
+            # has to exist now
+            dataset = inventory.datasets[replica.block.dataset.name]
+            dataset_replica = None
+
+        # 4.4. Find the dataset replica
+
+        if dataset_replica is None:
+            dataset_replica = site.find_dataset_replica(dataset)
     
         if dataset_replica is None:
             # If not found, create a new replica and inject
@@ -346,13 +371,21 @@ if len(updated_replicas) != 0:
             site.add_dataset_replica(dataset_replica, add_block_replicas = False)
     
             inventory.register_update(dataset_replica)
+
+        # 4.5. Find the block of the dataset
+    
+        block = dataset.find_block(replica.block.name)
+    
+        if block is None:
+            LOG.error('Unknown block %s.', replica.block.full_name())
+            continue
     
         # 4.6. Update the block replica
     
-        LOG.debug('Updating block replica.')
         block_replica = block.find_replica(site)
     
         if block_replica is None:
+            LOG.debug('Creating new replica of %s at %s', block.full_name(), site.name)
             block_replica = BlockReplica(block, site, group)
             block_replica.copy(replica)
             # reset the group
@@ -365,6 +398,7 @@ if len(updated_replicas) != 0:
             inventory.register_update(block_replica)
     
         elif block_replica != replica:
+            LOG.debug('Updating %s', replica_str)
             block_replica.copy(replica)
             inventory.register_update(block_replica)
             
@@ -376,6 +410,7 @@ if args.mode != 'DatasetFull':
 
     # deleted_replicas in ReplicaDelta mode is fetched together with updated_replicas
     if args.mode != 'ReplicaDelta':
+        # direct or ReplicaFull. Lucky we have args.site and args.dataset defined in ReplicaFull.
         # Replicas in inventory but not in updated_replicas are deleted
         deleted_replicas = []
     

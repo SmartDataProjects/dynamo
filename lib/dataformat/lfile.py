@@ -1,3 +1,6 @@
+from exceptions import ObjectError
+from block import Block
+
 class File(object):
     """Represents a file. Atomic unit of data, but not used in data management."""
 
@@ -43,7 +46,7 @@ class File(object):
         self.size = size
 
     def __str__(self):
-        return 'File %s (block=%s, size=%d)' % (self.lfn, repr(self._block), self.size)
+        return 'File %s (block=%s, size=%d)' % (self.lfn, self._block_full_name(), self.size)
 
     def __repr__(self):
         return 'File(lfn=\'%s\', block=%s, size=%d)' % (self.lfn, repr(self._block), self.size)
@@ -51,7 +54,7 @@ class File(object):
     def __eq__(self, other):
         return self is other or \
             (self._directory_id == other._directory_id and self._basename == other._basename and \
-            self._block.full_name() == other._block.full_name() and self.size == other.size)
+            self._block_full_name() == other._block_full_name() and self.size == other.size)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -67,22 +70,27 @@ class File(object):
         self.size = state[2]
 
     def copy(self, other):
-        if self._block.full_name() != other._block.full_name():
-            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._block.full_name(), self._block.full_name())
+        if self._block_full_name() != other._block_full_name():
+            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._block_full_name(), self._block_full_name())
 
         self.size = other.size
 
-    def unlinked_clone(self):
-        block = self._block.unlinked_clone()
-        return File(self.lfn, block, self.size)
+    def unlinked_clone(self, attrs = True):
+        if attrs:
+            return File((self._directory_id, self._basename), self._block_full_name(), self.size)
+        else:
+            return File((self._directory_id, self._basename), self._block_full_name())
 
     def embed_into(self, inventory, check = False):
-        try:
-            dataset = inventory.datasets[self._block.dataset.name]
-        except KeyError:
-            raise SelfectError('Unknown dataset %s', self._block.dataset.name)
+        if self._block_name() is None:
+            raise ObjectError('Cannot embed into inventory a stray file %s', self.lfn)
 
-        block = dataset.find_block(self._block.name, must_find = True)
+        try:
+            dataset = inventory.datasets[self._dataset_name()]
+        except KeyError:
+            raise ObjectError('Unknown dataset %s', self._dataset_name())
+
+        block = dataset.find_block(self._block_name(), must_find = True)
 
         fid = self.fid()
 
@@ -106,8 +114,11 @@ class File(object):
             return lfile
 
     def delete_from(self, inventory):
-        dataset = inventory.datasets[self._block.dataset.name]
-        block = dataset.find_block(self._block.name)
+        if self._block_name() is None:
+            raise ObjectError('Cannot delete from inventory a stray file %s', self.lfn)
+
+        dataset = inventory.datasets[self._dataset_name()]
+        block = dataset.find_block(self._block_name())
         lfile = block.find_file(self.fid())
         return lfile._unlink()
 
@@ -123,3 +134,33 @@ class File(object):
 
     def fid(self):
         return (self._directory_id, self._basename)
+
+    def _block_full_name(self):
+        if type(self._block) is str or self._block is None:
+            return self._block
+        else:
+            return self._block.full_name()
+
+    def _block_real_name(self):
+        if type(self._block) is str:
+            return self._block[self._block.find('#') + 1:]
+        elif self._block is None:
+            return None
+        else:
+            return self._block.real_name()
+
+    def _block_name(self):
+        if type(self._block) is str:
+            return Block.to_internal_name(self._block_real_name())
+        elif self._block is None:
+            return None
+        else:
+            return self._block.name
+
+    def _dataset_name(self):
+        if type(self._block) is str:
+            return self._block[:self._block.find('#')]
+        elif self._block is None:
+            return None
+        else:
+            return self._block.dataset.name

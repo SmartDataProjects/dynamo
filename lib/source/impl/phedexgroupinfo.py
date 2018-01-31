@@ -3,7 +3,7 @@ import fnmatch
 
 from dynamo.source.groupinfo import GroupInfoSource
 from dynamo.utils.interface.phedex import PhEDEx
-from dynamo.dataformat import Group, Dataset, Block
+from dynamo.dataformat import Group
 
 LOG = logging.getLogger(__name__)
 
@@ -39,12 +39,12 @@ class PhEDExGroupInfoSource(GroupInfoSource):
         if len(result) == 0:
             return None
 
-        group = Group(name)
-
         if name in self.dataset_level_groups:
-            group.olevel = Dataset
+            olevel = Group.OL_DATASET
         else:
-            group.olevel = Block
+            olevel = Group.OL_BLOCK
+
+        group = Group(name, olevel)
 
         return group
 
@@ -76,9 +76,9 @@ class PhEDExGroupInfoSource(GroupInfoSource):
                     continue
 
             if entry['name'] in self.dataset_level_groups:
-                olevel = Dataset
+                olevel = Group.OL_DATASET
             else:
-                olevel = Block
+                olevel = Group.OL_BLOCK
 
             group_list.append(Group(entry['name'], olevel = olevel))
 

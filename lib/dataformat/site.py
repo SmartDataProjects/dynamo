@@ -8,8 +8,10 @@ class Site(object):
         'storage', 'cpu', 'status',
         '_dataset_replicas', 'partitions']
 
-    TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, 5)
-    STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, 5)
+    _storage_types = ['disk', 'mss', 'buffer', 'unknown']
+    TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, len(_storage_types) + 1)
+    _statuses = ['ready', 'waitroom', 'morgue', 'unknown']
+    STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, len(_statuses) + 1)
 
     @property
     def name(self):
@@ -18,62 +20,28 @@ class Site(object):
     @staticmethod
     def storage_type_val(arg):
         if type(arg) is str:
-            arg = arg.lower()
-            if arg == 'disk':
-                return Site.TYPE_DISK
-            elif arg == 'mss':
-                return Site.TYPE_MSS
-            elif arg == 'buffer':
-                return Site.TYPE_BUFFER
-            elif arg == 'unknown':
-                return Site.TYPE_UNKNOWN
-
+            return eval('Site.TYPE_' + arg.upper())
         else:
             return arg
 
     @staticmethod
     def storage_type_name(arg):
         if type(arg) is int:
-            if arg == Site.TYPE_DISK:
-                return 'disk'
-            elif arg == Site.TYPE_MSS:
-                return 'mss'
-            elif arg == Site.TYPE_BUFFER:
-                return 'buffer'
-            elif arg == Site.TYPE_UNKNOWN:
-                return 'unknown'
-
+            return Site._storage_types[arg - 1]
         else:
             return arg
 
     @staticmethod
     def status_val(arg):
         if type(arg) is str:
-            arg = arg.lower()
-            if arg == 'ready':
-                return Site.STAT_READY
-            elif arg == 'waitroom':
-                return Site.STAT_WAITROOM
-            elif arg == 'morgue':
-                return Site.STAT_MORGUE
-            elif arg == 'unknown':
-                return Site.STAT_UNKNOWN
-
+            return eval('Site.STAT_' + arg.upper())
         else:
             return arg
 
     @staticmethod
     def status_name(arg):
         if type(arg) is int:
-            if arg == Site.STAT_READY:
-                return 'ready'
-            elif arg == Site.STAT_WAITROOM:
-                return 'waitroom'
-            elif arg == Site.STAT_MORGUE:
-                return 'morgue'
-            elif arg == Site.STAT_UNKNOWN:
-                return 'unknown'
-
+            return Site._statuses[arg - 1]
         else:
             return arg
 
@@ -119,8 +87,11 @@ class Site(object):
         self.cpu = other.cpu
         self.status = other.status
 
-    def unlinked_clone(self):
-        return Site(self._name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
+    def unlinked_clone(self, attrs = True):
+        if attrs:
+            return Site(self._name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
+        else:
+            return Site(self._name)
 
     def embed_into(self, inventory, check = False):
         updated = False
@@ -128,7 +99,8 @@ class Site(object):
         try:
             site = inventory.sites[self._name]
         except KeyError:
-            site = self.unlinked_clone()
+            site = Site(self._name)
+            site.copy(self)
             inventory.sites.add(site)
 
             # Special case: automatically createing new site partitions.

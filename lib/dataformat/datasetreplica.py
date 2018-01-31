@@ -20,38 +20,38 @@ class DatasetReplica(object):
 
     def __str__(self):
         return 'DatasetReplica %s:%s (%d block_replicas)' % \
-            (self._site.name, self._dataset.name, len(self.block_replicas))
+            (self._site_name(), self._dataset_name(), len(self.block_replicas))
 
     def __repr__(self):
         return 'DatasetReplica(%s, %s)' % (repr(self._dataset), repr(self._site))
 
     def __eq__(self, other):
-        return self is other or (self._dataset.name == other._dataset.name and self._site.name == other._site.name)
+        return self is other or (self._dataset_name() == other._dataset_name() and self._site_name() == other._site_name())
 
     def __ne__(self, other):
         return not self.__eq__(other)
 
     def copy(self, other):
-        if self._dataset.name() != other._dataset.name():
-            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._dataset.name, self._dataset.name)
-        if self._site.name != other._site.name:
-            raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site.name, self._site.name)
+        if self._dataset_name() != other._dataset_name():
+            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._dataset_name(), self._dataset_name())
+        if self._site_name() != other._site_name():
+            raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site_name(), self._site_name())
 
-    def unlinked_clone(self):
-        dataset = self._dataset.unlinked_clone()
-        site = self._site.unlinked_clone()
-        return DatasetReplica(dataset, site)
+        # not doing anything, actually
+
+    def unlinked_clone(self, attrs = True):
+        return DatasetReplica(self._dataset_name(), self._site_name())
 
     def embed_into(self, inventory, check = False):
         try:
-            dataset = inventory.datasets[self._dataset.name]
+            dataset = inventory.datasets[self._dataset_name()]
         except KeyError:
-            raise ObjectError('Unknown dataset %s', self._dataset.name)
+            raise ObjectError('Unknown dataset %s', self._dataset_name())
 
         try:
-            site = inventory.sites[self._site.name]
+            site = inventory.sites[self._site_name()]
         except KeyError:
-            raise ObjectError('Unknown site %s', self._site.name)
+            raise ObjectError('Unknown site %s', self._site_name())
 
         replica = dataset.find_replica(site)
         updated = False
@@ -76,8 +76,8 @@ class DatasetReplica(object):
             return replica
 
     def delete_from(self, inventory):
-        dataset = inventory.datasets[self._dataset.name]
-        site = inventory.sites[self._site.name]
+        dataset = inventory.datasets[self._dataset_name()]
+        site = inventory.sites[self._site_name()]
         replica = site.find_dataset_replica(dataset)
 
         return replica._unlink()
@@ -156,3 +156,15 @@ class DatasetReplica(object):
     def remove_block_replica(self, block_replica):
         self.block_replicas.remove(block_replica)
         self._site.update_partitioning(self)
+
+    def _dataset_name(self):
+        if type(self._dataset) is str:
+            return self._dataset
+        else:
+            return self._dataset.name
+
+    def _site_name(self):
+        if type(self._site) is str:
+            return self._site
+        else:
+            return self._site.name

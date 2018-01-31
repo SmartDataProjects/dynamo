@@ -53,7 +53,7 @@ class Partition(object):
     def copy(self, other):
         pass
 
-    def unlinked_clone(self):
+    def unlinked_clone(self, attrs = True):
         return Partition(self._name)
 
     def embed_into(self, inventory, check = False):
@@ -62,7 +62,7 @@ class Partition(object):
         try:
             partition = inventory.partitions[self._name]
         except KeyError:
-            partition = self.unlinked_clone()
+            partition = Partition(self._name)
             partition._condition = self._condition # WARNING! Copying by reference - two _conditions are same objects
     
             if self._subpartitions is not None:
@@ -121,7 +121,7 @@ class Partition(object):
             return False
 
     def embed_tree(self, inventory):
-        partition = self.unlinked_clone()
+        partition = Partition(self._name)
         partition._condition = self._condition
         inventory.partitions.add(partition)
 

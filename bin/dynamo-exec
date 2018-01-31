@@ -271,7 +271,7 @@ if not args.asynch:
 
                 sys.stdout.write('\n' + message + '\n')
 
-            elif respose != 'n':
+            elif response != 'n':
                 sys.stdout.write('Please answer in y/n.\n')
                 continue
 

@@ -294,7 +294,7 @@ class DynamoInventory(ObjectRepository):
 
         if self._deleted_objects is not None:
             for dobj in deleted_objects:
-                self._deleted_objects.append(dobj.unlinked_clone())
+                self._deleted_objects.append(dobj.unlinked_clone(attrs = False))
 
         if write:
             for dobj in deleted_objects:

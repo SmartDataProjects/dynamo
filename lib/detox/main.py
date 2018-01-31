@@ -477,7 +477,7 @@ class Detox(object):
             # establish a dataset-level owner
             dr_owner = None
             for block_replica in replica.block_replicas:
-                if block_replica.group.olevel is Dataset:
+                if block_replica.group.olevel == Group.OL_DATASET:
                     # there is a dataset-level owner
                     dr_owner = block_replica.group
                     break
@@ -491,7 +491,7 @@ class Detox(object):
                 blocks_to_unlink = []
                 blocks_to_hand_over = []
                 for block_replica in block_replicas:
-                    if block_replica.group.olevel is Dataset:
+                    if block_replica.group.olevel == Group.OL_DATASET:
                         blocks_to_unlink.append(block_replica)
                     else:
                         blocks_to_hand_over.append(block_replica)
@@ -560,9 +560,8 @@ class Detox(object):
                             for block_replica in replica.block_replicas:
                                 size += block_replica.size
                                 if approved:
-                                    updated_replica = block_replica.unlinked_clone()
-                                    updated_replica.group = inventory.groups[None]
-                                    inventory.update(updated_replica)
+                                    block_replica.group = inventory.groups[None]
+                                    inventory.register_update(block_replica)
                         else:
                             dataset = inventory.datasets[item.dataset.name]
                             block = dataset.find_block(item.name)
@@ -573,9 +572,8 @@ class Detox(object):
 
                             size += replica.size
                             if approved:
-                                updated_replica = replica.unlinked_clone()
-                                updated_replica.group = inventory.groups[None]
-                                inventory.update(updated_replica)
+                                block_replica.group = inventory.groups[None]                                
+                                inventory.register_update(block_replica)
 
                         datasets.add(dataset)
     
