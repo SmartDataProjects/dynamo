@@ -75,12 +75,6 @@ replica_source = sources.PhEDExReplicaInfoSource(config.replicas.config)
 from dynamo.dataformat import Dataset, Block, File, DatasetReplica, BlockReplica, ObjectError
 from dynamo.utils.parallel import Map
 
-class TmpStore(object):
-    def get_files(self, block):
-        return set()
-
-Block._inventory_store = TmpStore()
-
 ## 1. Refresh groups
 
 LOG.info('Updating list of groups.')
@@ -216,6 +210,7 @@ for dataset_tmp in dataset_tmps:
     try:
         dataset = inventory.datasets[dataset_tmp.name]
     except KeyError:
+        LOG.debug('Creating new dataset %s', dataset_tmp.name)
         dataset = Dataset(dataset_tmp.name)
         dataset.copy(dataset_tmp)
         inventory.datasets.add(dataset)
@@ -223,6 +218,7 @@ for dataset_tmp in dataset_tmps:
 
         # add blocks
         for block_tmp in dataset_tmp.blocks:
+            LOG.debug('Creating new block %s', block_tmp.full_name())
             block = Block(block_tmp.name, dataset)
             block.copy(block_tmp)
             dataset.blocks.add(block) # blocks.add, not add_block (latter will increment dataset attrs which are already set)
@@ -230,6 +226,7 @@ for dataset_tmp in dataset_tmps:
             
             # add files
             for file_tmp in block_tmp.files:
+                LOG.debug('Creating new file %s', file_tmp.lfn)
                 lfile = File(file_tmp.lfn, block)
                 lfile.copy(file_tmp)
                 block.files.add(lfile) # same story here
@@ -239,8 +236,11 @@ for dataset_tmp in dataset_tmps:
         continue
 
     if dataset != dataset_tmp:
+        LOG.debug('Updating dataset %s', dataset.name)
         dataset.copy(dataset_tmp)
         inventory.register_update(dataset)
+    else:
+        LOG.debug('Checking updates in dataset %s', dataset.name)
 
     # 3.3. Update blocks
 
@@ -253,12 +253,14 @@ for dataset_tmp in dataset_tmps:
         try:
             block = existing_blocks[block_tmp.name]
         except KeyError:
+            LOG.debug('Creating new block %s', block_tmp.full_name())
             block = Block(block_tmp.name, dataset)
             block.copy(block_tmp)
             dataset.add_block(block)
             inventory.register_update(block)
 
             for file_tmp in block_tmp.files:
+                LOG.debug('Creating new file %s', file_tmp.lfn)
                 lfile = File(file_tmp.lfn, block)
                 lfile.copy(file_tmp)
                 block.files.add(lfile) # see above
@@ -267,6 +269,7 @@ for dataset_tmp in dataset_tmps:
             continue
 
         if block != block_tmp:
+            LOG.debug('Updating block %s', block.full_name())
             block.copy(block_tmp)
             inventory.register_update(block)
 
@@ -282,6 +285,7 @@ for dataset_tmp in dataset_tmps:
             try:
                 lfile = existing_files[lfn]
             except KeyError:
+                LOG.debug('Creating new file %s', file_tmp.lfn)
                 lfile = File(lfn, block)
                 lfile.copy(file_tmp)
                 block.add_file(lfile)
@@ -290,18 +294,21 @@ for dataset_tmp in dataset_tmps:
                 continue
 
             if lfile != file_tmp:
+                LOG.debug('Updating file %s', lfile.lfn)
                 lfile.copy(file_tmp)
                 inventory.register_update(lfile)
 
         # 3.5. Delete excess files
 
         for lfn in (set(existing_files.iterkeys()) - file_names_in_source):
+            LOG.debug('Deleting file %s', lfile.lfn)
             lfile = block.find_file(lfn)
             inventory.delete(lfile)
 
     # 3.6. Delete excess blocks
 
     for block_name in (set(existing_blocks.iterkeys()) - block_names_in_source):
+        LOG.debug('Deleting block %s', block.full_name())
         block = dataset.find_block(block_name)
         inventory.delete(block)
 
@@ -321,7 +328,7 @@ if len(updated_replicas) != 0:
     for replica in updated_replicas:
         replica_str = str(replica)
     
-        LOG.debug('Updating %s', replica_str)
+        LOG.debug('Checking %s', replica_str)
     
         # 4.1. pick up replicas of known groups only
 
@@ -375,10 +382,10 @@ if len(updated_replicas) != 0:
     
         # 4.6. Update the block replica
     
-        LOG.debug('Updating block replica.')
         block_replica = block.find_replica(site)
     
         if block_replica is None:
+            LOG.debug('Creating new replica of %s at %s', block.full_name(), site.name)
             block_replica = BlockReplica(block, site, group)
             block_replica.copy(replica)
             # reset the group
@@ -391,6 +398,7 @@ if len(updated_replicas) != 0:
             inventory.register_update(block_replica)
     
         elif block_replica != replica:
+            LOG.debug('Updating %s', replica_str)
             block_replica.copy(replica)
             inventory.register_update(block_replica)
             
