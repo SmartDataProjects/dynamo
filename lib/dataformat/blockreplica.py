@@ -21,7 +21,7 @@ class BlockReplica(object):
         self.group = group
         self.is_complete = is_complete
         self.is_custodial = is_custodial
-        if size < 0:
+        if size < 0 and type(block) is not str:
             self.size = block.size
         else:
             self.size = size
@@ -62,12 +62,9 @@ class BlockReplica(object):
 
     def unlinked_clone(self, attrs = True):
         if attrs:
-            block = self._block.unlinked_clone(attrs = False)
-            site = self._site.unlinked_clone(attrs = False)
-            group = self.group.unlinked_clone(attrs = False)
-            return BlockReplica(block, site, group, self.is_complete, self.is_custodial, self.size, self.last_update)
+            return BlockReplica(self._block_full_name(), self._site_name(), self._group_name(), self.is_complete, self.is_custodial, self.size, self.last_update)
         else:
-            return BlockReplica(self._block_full_name(), self._site_name(), self._group_name())
+            return BlockReplica(self._block_full_name(), self._site_name())
 
     def embed_into(self, inventory, check = False):
         try:
@@ -103,6 +100,10 @@ class BlockReplica(object):
             pass
         else:
             replica.copy(self)
+            if self.group is None:
+                # can happen if self is an unlinked clone
+                replica.group = inventory.groups[None]
+
             site.update_partitioning(replica)
             updated = True
 
@@ -167,7 +168,7 @@ class BlockReplica(object):
             return self._site.name
 
     def _group_name(self):
-        if type(self.group) is str:
+        if type(self.group) is str or self.group is None:
             return self.group
         else:
             return self.group.name

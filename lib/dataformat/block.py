@@ -97,7 +97,7 @@ class Block(object):
 
     def copy(self, other):
         if self._dataset_name() != other._dataset_name():
-            raise ObjectError('Cannot copy a block of %s into a block of %s', other.dataset.name, self._dataset_name())
+            raise ObjectError('Cannot copy a block of %s into a block of %s', other._dataset_name(), self._dataset_name())
 
         self.size = other.size
         self.num_files = other.num_files
@@ -106,8 +106,7 @@ class Block(object):
 
     def unlinked_clone(self, attrs = True):
         if attrs:
-            dataset = self._dataset.unlinked_clone(attrs = False)
-            return Block(self._name, dataset, self.size, self.num_files, self.is_open, self.last_update)
+            return Block(self._name, self._dataset_name(), self.size, self.num_files, self.is_open, self.last_update)
         else:
             return Block(self._name, self._dataset_name())
 

@@ -112,14 +112,10 @@ class Dataset(object):
 
     def unlinked_clone(self, attrs = True):
         if attrs:
-            dataset = Dataset(self._name, self.size, self.num_files, self.status, self.data_type,
+            return Dataset(self._name, self.size, self.num_files, self.status, self.data_type,
                 self.software_version, self.last_update, self.is_open)
-    
-            dataset.attr = copy.deepcopy(self.attr)
         else:
-            dataset = Dataset(self._name)
-
-        return dataset
+            return Dataset(self._name)
 
     def embed_into(self, inventory, check = False):
         updated = False
@@ -127,7 +123,8 @@ class Dataset(object):
         try:
             dataset = inventory.datasets[self._name]
         except KeyError:
-            dataset = self.unlinked_clone()
+            dataset = Dataset(self._name)
+            dataset.copy(self)
             inventory.datasets.add(dataset)
     
             updated = True

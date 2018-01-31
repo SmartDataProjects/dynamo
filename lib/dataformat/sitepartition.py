@@ -63,9 +63,7 @@ class SitePartition(object):
 
     def unlinked_clone(self, attrs = True):
         if attrs:
-            site = self._site.unlinked_clone(attrs = False)
-            partition = self._partition.unlinked_clone(attrs = False)
-            return SitePartition(site, partition, self._quota)
+            return SitePartition(self._site_name(), self._partition_name(), self._quota)
         else:
             return SitePartition(self._site_name(), self._partition_name())
 

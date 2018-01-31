@@ -560,9 +560,8 @@ class Detox(object):
                             for block_replica in replica.block_replicas:
                                 size += block_replica.size
                                 if approved:
-                                    updated_replica = block_replica.unlinked_clone()
-                                    updated_replica.group = inventory.groups[None]
-                                    inventory.update(updated_replica)
+                                    block_replica.group = inventory.groups[None]
+                                    inventory.register_update(block_replica)
                         else:
                             dataset = inventory.datasets[item.dataset.name]
                             block = dataset.find_block(item.name)
@@ -573,9 +572,8 @@ class Detox(object):
 
                             size += replica.size
                             if approved:
-                                updated_replica = replica.unlinked_clone()
-                                updated_replica.group = inventory.groups[None]
-                                inventory.update(updated_replica)
+                                block_replica.group = inventory.groups[None]                                
+                                inventory.register_update(block_replica)
 
                         datasets.add(dataset)
     

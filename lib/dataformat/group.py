@@ -64,7 +64,7 @@ class Group(object):
         try:
             group = inventory.groups[self._name]
         except KeyError:
-            group = self.unlinked_clone()
+            group = Group(self._name, self._olevel)
             inventory.groups.add(group)
 
             updated = True
