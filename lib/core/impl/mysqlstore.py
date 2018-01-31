@@ -16,6 +16,14 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql = MySQL(config.db_params)
 
+        # Because updates often happen for the same datasets/blocks
+        # We can do something smarter at some point (e.g. automatically consolidate update calls)
+        self._dataset_id_cache = ('', 0)
+        self._block_id_cache = ('', 0, 0)
+        self._site_id_cache = ('', 0)
+        self._group_id_cache = ('', 0)
+        self._partition_id_cache = ('', 0)
+
     def get_partition_names(self):
         return self._mysql.query('SELECT `name` FROM `partitions`')
 
@@ -561,6 +569,9 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query(sql, *values)
 
     def _get_dataset_id(self, dataset):
+        if dataset.name == self._dataset_id_cache[0]:
+            return self._dataset_id_cache[1]
+
         sql = 'SELECT `id` FROM `datasets` WHERE `name` = %s'
 
         result = self._mysql.query(sql, dataset.name)
@@ -568,9 +579,14 @@ class MySQLInventoryStore(InventoryStore):
             # should I raise?
             return -1
 
+        self._dataset_id_cache = (dataset.name, result[0])
+
         return result[0]
 
     def _get_block_id(self, block):
+        if block.name == self._block_id_cache[1] and block.dataset.name == self._block_id_cache[0]:
+            return self._block_id_cache[2]
+
         sql = 'SELECT b.`id` FROM `blocks` AS b'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         sql += ' WHERE d.`name` = %s AND b.`name` = %s'
@@ -579,14 +595,21 @@ class MySQLInventoryStore(InventoryStore):
         if len(result) == 0:
             return -1
 
+        self._block_id_cache = (block.dataset.name, block.name, result[0])
+
         return result[0]
 
     def _get_site_id(self, site):
+        if site.name == self._site_id_cache[0]:
+            return self._site_id_cache[1]
+
         sql = 'SELECT `id` FROM `sites` WHERE `name` = %s'
         
         result = self._mysql.query(sql, site.name)
         if len(result) == 0:
             return -1
+
+        self._site_id_cache = (site.name, result[0])
 
         return result[0]
 
@@ -594,19 +617,29 @@ class MySQLInventoryStore(InventoryStore):
         if group.name is None:
             return 0
 
+        if group.name == self._group_id_cache[0]:
+            return self._group_id_cache[1]
+
         sql = 'SELECT `id` FROM `groups` WHERE `name` = %s'
         
         result = self._mysql.query(sql, group.name)
         if len(result) == 0:
             return -1
 
+        self._group_id_cache = (group.name, result[0])
+
         return result[0]
 
     def _get_partition_id(self, partition):
+        if partition.name == self._partition_id_cache[0]:
+            return self._partition_id_cache[1]
+
         sql = 'SELECT `id` FROM `partitions` WHERE `name` = %s'
         
         result = self._mysql.query(sql, partition.name)
         if len(result) == 0:
             return -1
+
+        self._partition_id_cache = (partition.name, result[0])
 
         return result[0]
