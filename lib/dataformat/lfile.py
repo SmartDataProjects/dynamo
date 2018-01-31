@@ -77,9 +77,9 @@ class File(object):
 
     def unlinked_clone(self, attrs = True):
         if attrs:
-            return File((self._directory_id, self._basename), self._block_full_name(), self.size)
+            return File(self.fid(), self._block_full_name(), self.size)
         else:
-            return File((self._directory_id, self._basename), self._block_full_name())
+            return File(self.fid(), self._block_full_name())
 
     def embed_into(self, inventory, check = False):
         if self._block_name() is None:
@@ -120,6 +120,10 @@ class File(object):
         dataset = inventory.datasets[self._dataset_name()]
         block = dataset.find_block(self._block_name())
         lfile = block.find_file(self.fid())
+        if lfile is None:
+            # somehow this happens
+            return []
+
         return lfile._unlink()
 
     def _unlink(self):
