@@ -275,6 +275,9 @@ class Dynamo(object):
             except Queue.Empty:
                 return False
             else:
+                if LOG.getEffectiveLevel() == logging.DEBUG:
+                    LOG.debug('From queue: %d %s', cmd, obj)
+
                 if cmd == Dynamo.CMD_UPDATE:
                     updated_objects.append(obj)
                 elif cmd == Dynamo.CMD_DELETE:
