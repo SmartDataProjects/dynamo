@@ -100,9 +100,9 @@ class BlockReplica(object):
             pass
         else:
             replica.copy(self)
-            if self.group is None:
+            if type(self.group) is str or self.group is None:
                 # can happen if self is an unlinked clone
-                replica.group = inventory.groups[None]
+                replica.group = group
 
             site.update_partitioning(replica)
             updated = True

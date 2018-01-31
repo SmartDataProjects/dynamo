@@ -99,7 +99,8 @@ class Site(object):
         try:
             site = inventory.sites[self._name]
         except KeyError:
-            site = self.unlinked_clone()
+            site = Site(self._name)
+            site.copy(self)
             inventory.sites.add(site)
 
             # Special case: automatically createing new site partitions.
