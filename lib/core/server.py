@@ -280,11 +280,12 @@ class Dynamo(object):
                 elif cmd == DynamoInventory.CMD_DELETE:
                     deletes_received += 1
                     update_commands.append((cmd, obj))
-                elif cmd == DynamoInventory.CMD_EOM:
-                    return 'done', update_commands
 
-                if len(update_commands) % print_every == 0:
+                if cmd == DynamoInventory.CMD_EOM or len(update_commands) % print_every == 0:
                     LOG.info('Received %d updates and %d deletes.', updates_received, deletes_received)
+
+                if cmd == DynamoInventory.CMD_EOM:
+                    return 'done', update_commands
         
     def _run_one(self, path, args, queue = None):
         # Set the uid of the process

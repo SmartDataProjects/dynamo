@@ -54,6 +54,9 @@ class PhEDExSiteInfoSource(SiteInfoSource):
         site_list = []
 
         for entry in self._phedex.make_request('nodes', options):
+            if entry['name'].endswith('_Export') or entry['name'].endswith('_Buffer'):
+                continue
+
             if self.exclude is not None:
                 matched = False
                 for pattern in self.exclude:

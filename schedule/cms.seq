@@ -18,7 +18,7 @@ WAIT 60
 WAIT 1800
 
 [SEQUENCE full_update]
-WAIT 3600
+WAIT 600
 + {generate_dataset_list} --config /etc/dynamo/updater_config.json
 * <updater> --config /etc/dynamo/updater_config.json --mode ReplicaFull
 * <updater> --config /etc/dynamo/updater_config.json --mode DatasetFull
