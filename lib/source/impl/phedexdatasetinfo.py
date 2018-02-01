@@ -1,6 +1,7 @@
 import logging
 import fnmatch
 import re
+import threading
 
 from dynamo.source.datasetinfo import DatasetInfoSource
 from dynamo.utils.interface.phedex import PhEDEx
@@ -62,15 +63,23 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
             return []
 
         updated_datasets = []
-        
-        for dataset_entry in result[0]['dataset']:
-            dataset = self._create_dataset(dataset_entry)
-            updated_datasets.append(dataset)
 
-        return updated_datasets
+        return Map().execute(self._create_dataset, result[0]['dataset'])
 
     def get_dataset(self, name, with_files = False): #override
         ## Get the full dataset-block-file data from PhEDEx
+
+        def get_dbs_datasets(name, dbs_data):
+            dbs_data['datasets'] = self._dbs.make_request('datasets', ['dataset=' + name, 'dataset_access_type=*', 'detail=True'])
+
+        def get_dbs_releaseversions(name, dbs_data):
+            dbs_data['releaseversions'] = self._dbs.make_request('releaseversions', ['dataset=' + name])
+
+        dbs_data = {}
+        th1 = threading.Thread(target = get_dbs_datasets, args = (name, dbs_data))
+        th1.start()
+        th2 = threading.Thread(target = get_dbs_releaseversions, args = (name, dbs_data))
+        th2.start()
 
         if with_files:
             level = 'file'
@@ -79,13 +88,16 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
         result = self._phedex.make_request('data', ['dataset=' + name, 'level=' + level])
 
+        th1.join()
+        th2.join()
+
         try:        
             dataset_entry = result[0]['dataset'][0]
         except:
             return None
 
         ## Create the dataset object
-        dataset = self._create_dataset(dataset_entry)
+        dataset = self._create_dataset(dataset_entry, dbs_data)
 
         ## Fill block and file data
         if 'block' in dataset_entry:
@@ -226,7 +238,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
         return files
 
-    def _create_dataset(self, dataset_entry):
+    def _create_dataset(self, dataset_entry, dbs_data = None):
         """
         Create a dataset object with blocks and files from a PhEDEx dataset entry
         """
@@ -242,7 +254,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
             dataset.last_update = int(dataset_entry['time_create'])
 
         ## Get other details of the dataset from DBS
-        self._fill_dataset_details(dataset)
+        self._fill_dataset_details(dataset, dbs_data)
 
         return dataset
 
@@ -278,13 +290,16 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
         return lfile
 
-    def _fill_dataset_details(self, dataset):
-        # 1. status and PD type
+    def _fill_dataset_details(self, dataset, dbs_data = None):
+        if dbs_data is None:
+            dbs_data = {}
+            dbs_data['datasets'] = self._dbs.make_request('datasets', ['dataset=' + dataset.name, 'dataset_access_type=*', 'detail=True'])
+            dbs_data['releaseversions'] = self._dbs.make_request('releaseversions', ['dataset=' + dataset.name])
 
-        result = self._dbs.make_request('datasets', ['dataset=' + dataset.name, 'dataset_access_type=*', 'detail=True'])
+        # 1. status and PD type
         
-        if len(result) != 0:
-            dbs_entry = result[0]
+        if len(dbs_data['datasets']) != 0:
+            dbs_entry = dbs_data['datasets'][0]
             dataset.status = Dataset.status_val(dbs_entry['dataset_access_type'])
             dataset.data_type = Dataset.data_type_val(dbs_entry['primary_ds_type'])
         else:
@@ -293,11 +308,9 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
         # 2. software version
 
-        result = self._dbs.make_request('releaseversions', ['dataset=' + dataset.name])
-
-        if len(result) != 0:
+        if len(dbs_data['releaseversions']) != 0:
             try:
-                version = result[0]['release_version'][0]
+                version = dbs_data['releaseversions'][0]['release_version'][0]
             except KeyError:
                 pass
             else:
