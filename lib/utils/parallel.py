@@ -178,7 +178,7 @@ class ThreadController(object):
                     self.logger.error('Repeating execution')
 
                 for args in inputs:
-                    self.target.function(*args) # no catch
+                    self._target_function(*args) # no catch
 
                 if self.logger:
                     self.logger.error('No exception was thrown during the repeat.')
