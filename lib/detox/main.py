@@ -557,22 +557,20 @@ class Detox(object):
                         if type(item) is Dataset:
                             dataset = inventory.datasets[item.name]
                             replica = dataset.find_replica(site.name)
-                            for block_replica in replica.block_replicas:
-                                size += block_replica.size
-                                if approved:
-                                    block_replica.group = inventory.groups[None]
-                                    inventory.register_update(block_replica)
+                            block_replicas = replica.block_replicas
                         else:
                             dataset = inventory.datasets[item.dataset.name]
                             block = dataset.find_block(item.name)
-                            replica = block.find_replica(site.name)
-                            if replica is None:
-                                LOG.info('Could not find %s:%s in inventory', site.name, block.full_name())
+                            block_replica = block.find_replica(site.name)
+                            if block_replica is None:
+                                LOG.error('Could not find %s:%s in inventory', site.name, block.full_name())
                                 raise RuntimeError()
+                            block_replicas = [block_replica]
 
-                            size += replica.size
+                        for block_replica in replica.block_replicas:
+                            size += block_replica.size
                             if approved:
-                                block_replica.group = inventory.groups[None]                                
+                                block_replica.group = inventory.groups[None]
                                 inventory.register_update(block_replica)
 
                         datasets.add(dataset)
