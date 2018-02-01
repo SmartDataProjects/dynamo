@@ -57,6 +57,9 @@ class DynamoInventory(ObjectRepository):
     Inventory class. ObjectRepository with a persistent store backend.
     """
 
+    CMD_UPDATE, CMD_DELETE, CMD_EOM = range(3)
+    _cmd_str = ['UPDATE', 'DELETE', 'EOM']
+
     def __init__(self, config, load = True):
         ObjectRepository.__init__(self)
 
@@ -68,9 +71,8 @@ class DynamoInventory(ObjectRepository):
             self.load()
 
         # When the user application is authorized to change the inventory state, all updated
-        # and deleted objects are kept in the two lists until the end of execution.
-        self._updated_objects = None
-        self._deleted_objects = None
+        # and deleted objects are kept in this list until the end of execution.
+        self._update_commands = None
 
     def init_store(self, module, config):
         persistency_cls = getattr(persistency_impl, module)
@@ -240,7 +242,7 @@ class DynamoInventory(ObjectRepository):
         """
         Update an object. Only update the member values of the immediate object.
         When calling from a subprocess, pass down the unlinked clone of the argument
-        to _updated_objects.
+        to _update_commands.
         @param obj    Object to embed into this inventory.
         @param write  Write updated object to persistent store.
         """
@@ -258,18 +260,18 @@ class DynamoInventory(ObjectRepository):
 
     def register_update(self, obj, write = False, changelog = None):
         """
-        Put the obj to _updated_objects list and write to store.
+        Put the obj to _update_commands list and write to store.
         """
 
-        if self._updated_objects is not None:
+        if self._update_commands is not None:
             if changelog is not None:
                 changelog.info('Updating %s', str(obj))
 
             LOG.debug('%s has changed. Adding a clone to updated objects list.', str(obj))
-            # The content of updated_objects gets pickled and shipped back to the server process.
+            # The content of update_commands gets pickled and shipped back to the server process.
             # Pickling process follows all links between the objects. We create an unlinked clone
             # here to avoid shipping the entire inventory.
-            self._updated_objects.append(obj.unlinked_clone())
+            self._update_commands.append((DynamoInventory.CMD_UPDATE, obj.unlinked_clone()))
 
         if write:
             if changelog is not None:
@@ -292,9 +294,9 @@ class DynamoInventory(ObjectRepository):
 
         deleted_objects = ObjectRepository.delete(self, obj)
 
-        if self._deleted_objects is not None:
+        if self._update_commands is not None:
             for dobj in deleted_objects:
-                self._deleted_objects.append(dobj.unlinked_clone(attrs = False))
+                self._update_commands.append((DynamoInventory.CMD_DELETE, dobj.unlinked_clone(attrs = False)))
 
         if write:
             for dobj in deleted_objects:
@@ -307,8 +309,7 @@ class DynamoInventory(ObjectRepository):
     def clear_update(self):
         """
         Empty the _updated_objects and _deleted_objects lists. This operation
-        *does not* revert the updates.
+        *does not* revert the updates done to this inventory.
         """
 
-        self._updated_objects = []
-        self._deleted_objects = []
+        self._update_commands = []
