@@ -192,6 +192,39 @@ def get_dataset(name):
 
 dataset_tmps = Map().execute(get_dataset, dataset_names, async = True)
 
+def create_file(file_tmp, block):
+    LOG.debug('Creating new file %s', file_tmp.lfn)
+    lfile = File(file_tmp.lfn, block)
+    lfile.copy(file_tmp)
+    # files.add, not add_file (latter increments block attrs which are already set)
+    block.files.add(lfile)
+    inventory.register_update(lfile)
+
+def create_block(block_tmp, dataset):
+    LOG.debug('Creating new block %s', block_tmp.full_name())
+    block = Block(block_tmp.name, dataset)
+    block.copy(block_tmp)
+    # blocks.add, not add_block (latter increments dataset attrs which are already set)
+    dataset.blocks.add(block)
+    inventory.register_update(block)
+    # avoid database query
+    block._files = set()
+
+    # add files
+    for file_tmp in block_tmp.files:
+        create_file(file_tmp, block)
+
+def create_dataset(dataset_tmp):
+    LOG.debug('Creating new dataset %s', dataset_tmp.name)
+    dataset = Dataset(dataset_tmp.name)
+    dataset.copy(dataset_tmp)
+    inventory.datasets.add(dataset)
+    inventory.register_update(dataset)
+
+    # add blocks
+    for block_tmp in dataset_tmp.blocks:
+        create_block(block_tmp, dataset)
+
 watermark = 0
 idat = 0
 
@@ -210,39 +243,16 @@ for dataset_tmp in dataset_tmps:
     try:
         dataset = inventory.datasets[dataset_tmp.name]
     except KeyError:
-        LOG.debug('Creating new dataset %s', dataset_tmp.name)
-        dataset = Dataset(dataset_tmp.name)
-        dataset.copy(dataset_tmp)
-        inventory.datasets.add(dataset)
-        inventory.register_update(dataset)
-
-        # add blocks
-        for block_tmp in dataset_tmp.blocks:
-            LOG.debug('Creating new block %s', block_tmp.full_name())
-            block = Block(block_tmp.name, dataset)
-            block.copy(block_tmp)
-            dataset.blocks.add(block) # blocks.add, not add_block (latter will increment dataset attrs which are already set)
-            inventory.register_update(block)
-            
-            # add files
-            files = block.files
-
-            for file_tmp in block_tmp.files:
-                LOG.debug('Creating new file %s', file_tmp.lfn)
-                lfile = File(file_tmp.lfn, block)
-                lfile.copy(file_tmp)
-                files.add(lfile) # same story here
-                inventory.register_update(lfile)
-
-        # done
+        create_dataset(dataset_tmp)
         continue
 
-    if dataset != dataset_tmp:
+    if dataset == dataset_tmp:
+        # if dataset size, num_files, etc. are identical, it's safe to assume all blocks are
+        continue
+    else:
         LOG.debug('Updating dataset %s', dataset.name)
         dataset.copy(dataset_tmp)
         inventory.register_update(dataset)
-    else:
-        LOG.debug('Checking updates in dataset %s', dataset.name)
 
     # 3.3. Update blocks
 
@@ -255,24 +265,12 @@ for dataset_tmp in dataset_tmps:
         try:
             block = existing_blocks[block_tmp.name]
         except KeyError:
-            LOG.debug('Creating new block %s', block_tmp.full_name())
-            block = Block(block_tmp.name, dataset)
-            block.copy(block_tmp)
-            dataset.add_block(block)
-            inventory.register_update(block)
-
-            files = block.files
-
-            for file_tmp in block_tmp.files:
-                LOG.debug('Creating new file %s', file_tmp.lfn)
-                lfile = File(file_tmp.lfn, block)
-                lfile.copy(file_tmp)
-                files.add(lfile) # see above
-                inventory.register_update(lfile)
-
+            create_block(block_tmp, dataset)
             continue
 
-        if block != block_tmp:
+        if block == block_tmp:
+            continue
+        else:
             LOG.debug('Updating block %s', block.full_name())
             block.copy(block_tmp)
             inventory.register_update(block)
@@ -289,12 +287,7 @@ for dataset_tmp in dataset_tmps:
             try:
                 lfile = existing_files[lfn]
             except KeyError:
-                LOG.debug('Creating new file %s', file_tmp.lfn)
-                lfile = File(lfn, block)
-                lfile.copy(file_tmp)
-                block.add_file(lfile)
-                inventory.register_update(lfile)
-                
+                create_file(file_tmp, block)
                 continue
 
             if lfile != file_tmp:
@@ -305,16 +298,14 @@ for dataset_tmp in dataset_tmps:
         # 3.5. Delete excess files
 
         for lfn in (set(existing_files.iterkeys()) - file_names_in_source):
-            LOG.debug('Deleting file %s', lfile.lfn)
-            lfile = block.find_file(lfn)
-            inventory.delete(lfile)
+            LOG.debug('Deleting file %s', lfn)
+            inventory.delete(existing_files[lfn])
 
     # 3.6. Delete excess blocks
 
     for block_name in (set(existing_blocks.iterkeys()) - block_names_in_source):
-        LOG.debug('Deleting block %s', block.full_name())
-        block = dataset.find_block(block_name)
-        inventory.delete(block)
+        LOG.debug('Deleting block %s', block_name)
+        inventory.delete(existing_blocks[block_name])
 
 LOG.info('100% done.')
 
