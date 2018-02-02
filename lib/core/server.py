@@ -125,7 +125,7 @@ class Dynamo(object):
 
                 if not os.path.exists(path + '/exec.py'):
                     LOG.info('Executable %s from user %s (write request: %s) not found.', title, user_name, write_request)
-                    self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'notfound', exec_id)
+                    self.registry.backend.query('UPDATE `action` SET `status` = \'notfound\' WHERE `id` = %s', exec_id)
                     continue
 
                 LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
@@ -137,7 +137,7 @@ class Dynamo(object):
                         LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
                         # send a message
 
-                        self.registry.backend.query('UPDATE `action` SET `status` = %s where `id` = %s', 'authfailed', exec_id)
+                        self.registry.backend.query('UPDATE `action` SET `status` = \'authfailed\' where `id` = %s', exec_id)
                         continue
 
                     queue = multiprocessing.Queue()
@@ -146,7 +146,7 @@ class Dynamo(object):
                     writing_process = (exec_id, queue)
 
                 ## Step 3: Spawn a child process for the script
-                self.registry.backend.query('UPDATE `action` SET `status` = %s WHERE `id` = %s', 'run', exec_id)
+                self.registry.backend.query('UPDATE `action` SET `status` = \'run\' WHERE `id` = %s', exec_id)
 
                 proc = multiprocessing.Process(target = self._run_one, name = title, args = proc_args)
                 child_processes.append((exec_id, proc, user_name, path))
@@ -204,11 +204,22 @@ class Dynamo(object):
 
             status = ''
 
-            # If this is the writing process, read data from the queue
-            if exec_id == writing_process[0]:
-                status, update_commands = self.collect_updates(writing_process[1])
+            # Was the job aborted in the registry?
+            result = self.registry.backend.query('SELECT `status` FROM `action` WHERE `id` = %s', exec_id)
+            if len(result) == 0 or result[0] != 'run':
+                status = 'killed'
+                killproc(proc)
+                proc.join(60)
 
-                if status == 'done':
+            elif exec_id == writing_process[0]:
+                # If this is the writing process, read data from the queue
+                
+                # read_state: 0 -> nothing written yet, 1 -> read OK, 2 -> failure
+                read_state, update_commands = self.collect_updates(writing_process[1])
+
+                if read_state == 1:
+                    status = 'done'
+
                     # Block system signals and get update done
                     with SignalBlocker(logger = LOG):
                         for cmd, obj in update_commands:
@@ -218,21 +229,20 @@ class Dynamo(object):
                                 CHANGELOG.info('Deleting %s', str(obj))
                                 self.inventory.delete(obj, write = True)
 
-                elif status == 'failed':
+                elif read_state == 2:
+                    status = 'failed'
                     killproc(proc)
 
-                # We now assume that the writing process exited.
-                # After writing EOM, the only thing the process does is to close the output files - what can go wrong?
-
-            result = self.registry.backend.query('SELECT `status` FROM `action` WHERE `id` = %s', exec_id)
-            if len(result) == 0 or result[0] != 'run':
-                # Job was aborted in the registry
-                killproc(proc)
-
-                status = 'killed'
+                if read_state != 0:
+                    proc.join(60)
     
-            if not status and proc.is_alive():
-                ichild += 1
+            if proc.is_alive():
+                if not status:
+                    ichild += 1
+                    continue
+                else:
+                    # status set -> the process must be complete but did not join within 60 seconds
+                    LOG.error('Executable %s (%s) from user %s is stuck (Status %s).', proc.name, path, user_name, status)
             else:
                 if not status:
                     if proc.exitcode == 0:
@@ -242,10 +252,11 @@ class Dynamo(object):
 
                 LOG.info('Executable %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, status)
 
-                child_proc = child_processes.pop(ichild)
-                completed_processes.append((child_proc[0], status))
+            # process completed or is alive but stuck -> remove from the list and set status in the table
+            child_proc = child_processes.pop(ichild)
+            completed_processes.append((child_proc[0], status))
 
-                self.registry.backend.query('UPDATE `action` SET `status` = %s, `exit_code` = %s where `id` = %s', status, proc.exitcode, exec_id)
+            self.registry.backend.query('UPDATE `action` SET `status` = %s, `exit_code` = %s where `id` = %s', status, proc.exitcode, exec_id)
 
         return completed_processes
 
@@ -265,9 +276,9 @@ class Dynamo(object):
             except Queue.Empty:
                 if reading:
                     # The child process crashed or timed out
-                    return 'failed', update_commands
+                    return 2, update_commands
                 else:
-                    return '', update_commands
+                    return 0, update_commands
             else:
                 reading = True
 
@@ -285,7 +296,7 @@ class Dynamo(object):
                     LOG.info('Received %d updates and %d deletes.', updates_received, deletes_received)
 
                 if cmd == DynamoInventory.CMD_EOM:
-                    return 'done', update_commands
+                    return 1, update_commands
         
     def _run_one(self, path, args, queue = None):
         # Set the uid of the process
