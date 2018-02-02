@@ -533,9 +533,9 @@ if not executable.read_only and os.path.exists(config.updater_state_file):
         cursor.execute(sql, (update_start, len(updated_replicas), len(deleted_replicas)))
 
     elif args.mode == 'ReplicaFull':
-        result = cursor.execute('SELECT MIN(`id`) FROM `replica_full_updates`')
-        min_id = next(result)
-        cursor.execute('DELETE FROM `replica_full_updates` WHERE `id` = ?', min_id)
+        for site_name, dataset_name in site_dataset_combos:
+            tier = dataset_name[dataset_name.rfind('/') + 1:]
+            cursor.execute('DELETE FROM `replica_full_updates` WHERE `site` = ? AND `tier` = ?', site_name, tier)
 
     state_db.commit()
     state_db.close()

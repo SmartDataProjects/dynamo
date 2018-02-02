@@ -245,6 +245,9 @@ class Site(object):
                     block_replica_list.add(replica)
 
     def update_partitioning(self, replica):
+        if replica.site is not self:
+            raise ObjectError('%s passed to update_partitioning of %s', replica, self)
+
         if type(replica).__name__ == 'DatasetReplica':
             if replica not in self._dataset_replicas:
                 return
@@ -293,10 +296,9 @@ class Site(object):
 
         else:
             # BlockReplica
-            dataset_replica = replica.block.dataset.find_replica(replica.site)
-            if dataset_replica not in self._dataset_replicas:
-                # has to exist if you can find the replica from dataset
-                # so maybe raise here?
+            dataset_replica = self.find_dataset_replica(replica.block.dataset)
+
+            if dataset_replica is None:
                 return
 
             for partition, site_partition in self.partitions.iteritems():
@@ -314,16 +316,22 @@ class Site(object):
                 else:
                     if block_replicas is None:
                         # this dataset replica used to be fully included but now it's not
+                        # make a copy of the full list of block replicas
                         block_replicas = set(dataset_replica.block_replicas)
                         block_replicas.remove(replica)
-                    elif replica in block_replicas:
-                        block_replicas.remove(replica)
+                    else:
+                        try:
+                            block_replicas.remove(replica)
+                        except KeyError:
+                            # not included already
+                            pass
 
                 if len(block_replicas) == 0:
                     try:
                         site_partition.replicas.pop(dataset_replica)
                     except KeyError:
                         pass
+
                 elif block_replicas == dataset_replica.block_replicas:
                     site_partition.replicas[dataset_replica] = None
                 else:
