@@ -518,14 +518,20 @@ class Detox(object):
 
         signal_blocker = SignalBlocker(logger = LOG)
 
-        # organize the replicas into sites
+        # get the original replicas from the inventory and organize them into sites
         deletions_by_site = collections.defaultdict(list) # {site: [(dataset_replica, block_replicas)]}
         for replica, matches in deleted.iteritems():
-            all_block_replicas = set()
-            for condition_id, block_replicas in matches.iteritems():
-                all_block_replicas.update(block_replicas)
+            site = inventory.sites[replica.site.name]
 
-            deletions_by_site[replica.site].append((replica, all_block_replicas))
+            original_replica = inventory.datasets[replica.dataset.name].find_replica(site)
+            original_block_replicas = dict((br.block.name, br) for br in original_replica.block_replicas)
+            
+            all_block_replicas = set()
+            for block_replicas in matches.itervalues():
+                for block_replica in block_replicas:
+                    all_block_replicas.add(original_block_replicas[block_replica.block.name])
+
+            deletions_by_site[site].append((original_replica, all_block_replicas))
 
         # now schedule deletions for each site
         for site in sorted(deletions_by_site.iterkeys(), key = lambda s: s.name):
@@ -535,7 +541,7 @@ class Detox(object):
 
             flat_list = []
             for replica, block_replicas in site_deletion_list:
-                if set(block_replicas) == replica.block_replicas:
+                if block_replicas == replica.block_replicas:
                     flat_list.append(replica)
                 else:
                     flat_list.extend(block_replicas)
@@ -550,24 +556,18 @@ class Detox(object):
                     # Delete ownership of block replicas in the approved deletions.
                     # Because replicas in partition_repository are modified already during the iterative
                     # deletion, we find the original replicas from the global inventory.
-    
+
                     size = 0
                     datasets = set()
                     for item in items:
                         if type(item) is Dataset:
-                            dataset = inventory.datasets[item.name]
-                            replica = dataset.find_replica(site.name)
-                            block_replicas = replica.block_replicas
+                            dataset = item
+                            block_replicas = item.find_replica(site).block_replicas
                         else:
-                            dataset = inventory.datasets[item.dataset.name]
-                            block = dataset.find_block(item.name)
-                            block_replica = block.find_replica(site.name)
-                            if block_replica is None:
-                                LOG.error('Could not find %s:%s in inventory', site.name, block.full_name())
-                                raise RuntimeError()
-                            block_replicas = [block_replica]
+                            dataset = item.dataset
+                            block_replicas = [item.find_replica(site)]
 
-                        for block_replica in replica.block_replicas:
+                        for block_replica in block_replicas:
                             size += block_replica.size
                             if approved:
                                 block_replica.group = inventory.groups[None]

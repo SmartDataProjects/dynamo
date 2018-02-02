@@ -22,6 +22,9 @@ class PhEDExDeletionInterface(DeletionInterface):
 
         self.deletion_chunk_size = config.chunk_size * 1.e+12
 
+        if self.dry_run:
+            self._next_operation_id = 1
+
     def schedule_deletion(self, replica, comments = ''): #override
         request_mapping = {}
 
@@ -117,7 +120,8 @@ class PhEDExDeletionInterface(DeletionInterface):
     
             # result = [{'id': <id>}] (item 'request_created' of PhEDEx response) if successful
             if self.dry_run:
-                result = [{'id': '0'}]
+                result = [{'id': '%d' % self._next_operation_id}]
+                self._next_operation_id += 1
             else:
                 try:
                     result = self._phedex.make_request('delete', options, method = POST)
