@@ -39,7 +39,6 @@ if os.path.exists(config.updater_state_file):
         sql = 'SELECT COUNT(*) FROM `datasets`'
         result = cursor.execute(sql)
         count = next(result)[0]
-        state_db.close()
         if count == 0:
             need_refill.append('dataset')
 
@@ -47,10 +46,11 @@ if os.path.exists(config.updater_state_file):
         sql = 'SELECT COUNT(*) FROM `replica_full_updates`'
         result = cursor.execute(sql)
         count = next(result)[0]
-        state_db.close()
         if count == 0:
             need_refill.append('replica')
         
+    state_db.close()
+
     if len(need_refill) == 0:
         LOG.info('Update list exists.')
         sys.exit(0)
@@ -63,6 +63,7 @@ else:
     state_db.execute('CREATE TABLE `replica_delta_updates` (`timestamp` INTEGER NOT NULL, `num_updated` INTEGER NOT NULL, `num_deleted` INTEGER NOT NULL)')
     state_db.execute('CREATE TABLE `replica_full_updates` (`id` INTEGER NOT NULL PRIMARY KEY, `site` TEXT NOT NULL, `tier` TEXT NOT NULL)')
     state_db.commit()
+    state_db.close()
 
     need_refill = list(args.target)
 
@@ -79,6 +80,8 @@ config.sites.config.phedex = config.phedex
 dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
 
 ## Collect data and save
+
+state_db = sqlite3.connect(config.updater_state_file)
 
 if 'dataset' in need_refill:
     # Filter out secondary dataset names
