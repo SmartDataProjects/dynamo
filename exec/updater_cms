@@ -535,7 +535,7 @@ if not executable.read_only and os.path.exists(config.updater_state_file):
     elif args.mode == 'ReplicaFull':
         for site_name, dataset_name in site_dataset_combos:
             tier = dataset_name[dataset_name.rfind('/') + 1:]
-            cursor.execute('DELETE FROM `replica_full_updates` WHERE `site` = ? AND `tier` = ?', site_name, tier)
+            cursor.execute('DELETE FROM `replica_full_updates` WHERE `site` = ? AND `tier` = ?', (site_name, tier))
 
     state_db.commit()
     state_db.close()
