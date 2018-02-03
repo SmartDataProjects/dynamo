@@ -142,20 +142,18 @@ class Dataset(object):
             return dataset
 
     def delete_from(self, inventory):
-        # Remove all replicas and pop the dataset from the main list
-        deleted = []
+        try:
+            dataset = inventory.datasets.pop(self._name)
+        except KeyError:
+            return None
 
-        dataset = inventory.datasets.pop(self._name)
-
-        for replica in list(self.replicas):
-            deleted.extend(replica._unlink())
+        for replica in list(dataset.replicas):
+            replica.unlink()
         
-        for block in list(self.blocks):
-            deleted.extend(block._unlink())
+        for block in list(dataset.blocks):
+            block.unlink()
 
-        deleted.append(dataset)
-
-        return deleted
+        return dataset
 
     def write_into(self, store, delete = False):
         if delete:
@@ -200,13 +198,3 @@ class Dataset(object):
         self.blocks.add(block)
         self.size += block.size
         self.num_files += block.num_files
-
-    def remove_block(self, block):
-        self.blocks.remove(block)
-        self.size -= block.size
-        self.num_files -= block.num_files
-
-        for replica in self.replicas:
-            block_replica = replica.find_block_replica(block)
-            if block_replica is not None:
-                replica.remove_block_replica(block_replica)

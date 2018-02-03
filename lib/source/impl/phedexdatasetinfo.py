@@ -199,7 +199,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
             if existing is None:
                 block.add_file(lfile)
             else:
-                block.remove_file(existing)
+                existing.unlink()
                 block.add_file(lfile)
 
         return lfile

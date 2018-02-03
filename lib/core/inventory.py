@@ -292,19 +292,20 @@ class DynamoInventory(ObjectRepository):
         @param write  Record deletion to persistent store.
         """
 
-        deleted_objects = ObjectRepository.delete(self, obj)
+        deleted_object = ObjectRepository.delete(self, obj)
+
+        if deleted_object is None:
+            return
 
         if self._update_commands is not None:
-            for dobj in deleted_objects:
-                self._update_commands.append((DynamoInventory.CMD_DELETE, dobj.unlinked_clone(attrs = False)))
+            self._update_commands.append((DynamoInventory.CMD_DELETE, deleted_object.unlinked_clone(attrs = False)))
 
         if write:
-            for dobj in deleted_objects:
-                try:
-                    dobj.write_into(self._store, delete = True)
-                except:
-                    LOG.error('Exception writing deletion of %s to inventory store', str(obj))
-                    raise
+            try:
+                deleted_object.write_into(self._store, delete = True)
+            except:
+                LOG.error('Exception writing deletion of %s to inventory store', str(obj))
+                raise
 
     def clear_update(self):
         """

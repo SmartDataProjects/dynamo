@@ -113,23 +113,41 @@ class BlockReplica(object):
             return replica
 
     def delete_from(self, inventory):
-        dataset = inventory.datasets[self._dataset_name()]
-        block = dataset.find_block(self._block_name(), must_find = True)
-        site = inventory.sites[self._site_name()]
-        replica = block.find_replica(site, must_find = True)
+        try:
+            dataset = inventory.datasets[self._dataset_name()]
+            block = dataset.find_block(self._block_name(), must_find = True)
+            site = inventory.sites[self._site_name()]
+            replica = block.find_replica(site, must_find = True)
+        except (KeyError, ObjecError):
+            return None
 
-        return replica._unlink()
+        replica.unlink()
+        return replica
 
-    def _unlink(self, dataset_replica = None):
+    def unlink(self, dataset_replica = None, unlink_dataset_replica = True):
         if dataset_replica is None:
-            dataset_replica = self._site.find_dataset_replica(self._block._dataset)
+            dataset_replica = self._site.find_dataset_replica(self._block._dataset, must_find = True)
 
-        self._site._remove_block_replica(self, dataset_replica, local = False)
+        for site_partition in self._site.partitions.itervalues():
+            try:
+                block_replicas = site_partition.replicas[dataset_replica]
+            except KeyError:
+                continue
+
+            if block_replicas is None:
+                # site_partition contained all block replicas. It will contain all after a deletion.
+                continue
+
+            block_replicas.remove(replica)
+
+            if len(block_replicas) == 0:
+                site_partition.replicas.pop(dataset_replica)
 
         dataset_replica.block_replicas.remove(self)
-        self._block.replicas.remove(self)
+        if unlink_dataset_replica and len(dataset_replica.block_replicas) == 0:
+            dataset_replica.unlink()
 
-        return [self]
+        self._block.replicas.remove(self)
 
     def write_into(self, store, delete = False):
         if delete:
