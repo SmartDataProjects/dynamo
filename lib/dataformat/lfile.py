@@ -115,20 +115,26 @@ class File(object):
 
     def delete_from(self, inventory):
         if self._block_name() is None:
-            raise ObjectError('Cannot delete from inventory a stray file %s', self.lfn)
+            return None
 
-        dataset = inventory.datasets[self._dataset_name()]
-        block = dataset.find_block(self._block_name())
-        lfile = block.find_file(self.fid())
-        if lfile is None:
-            # somehow this happens
-            return []
+        try:
+            dataset = inventory.datasets[self._dataset_name()]
+            block = dataset.find_block(self._block_name())
+            lfile = block.find_file(self.fid(), must_find = True)
+        except (KeyError, ObjectError):
+            return None
 
-        return lfile._unlink()
+        lfile.unlink()
+        return lfile
 
-    def _unlink(self):
-        self._block.remove_file(self)
-        return [self]
+    def unlink(self, files = None):
+        if files is None:
+            files = self._block.files
+
+        files.remove(self)
+
+        self._block.size -= self.size
+        self._block.num_files -= 1
 
     def write_into(self, store, delete = False):
         if delete:

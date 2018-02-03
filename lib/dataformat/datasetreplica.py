@@ -76,24 +76,32 @@ class DatasetReplica(object):
             return replica
 
     def delete_from(self, inventory):
-        dataset = inventory.datasets[self._dataset_name()]
-        site = inventory.sites[self._site_name()]
+        try:
+            dataset = inventory.datasets[self._dataset_name()]
+            site = inventory.sites[self._site_name()]
+        except KeyError:
+            return None
+
         replica = site.find_dataset_replica(dataset)
+        if replica is None:
+            return None
 
-        return replica._unlink()
+        replica.unlink()
+        return replica
 
-    def _unlink(self):
-        deleted = []
+    def unlink(self):
+        for site_partition in self._site.partitions.itervalues():
+            try:
+                site_partition.replicas.pop(self)
+            except KeyError:
+                pass
+
+        self._site._dataset_replicas.pop(self._dataset)
 
         for block_replica in list(self.block_replicas):
-            deleted.extend(block_replica._unlink(dataset_replica = self))
+            block_replica.unlink(dataset_replica = self, unlink_dataset_replica = False)
 
-        self._site.remove_dataset_replica(self)
         self._dataset.replicas.remove(self)
-
-        deleted.append(self)
-
-        return deleted
 
     def write_into(self, store, delete = False):
         if delete:
@@ -152,10 +160,6 @@ class DatasetReplica(object):
                 raise ObjectError('Cannot find block replica %s/%s', self._site.name, block.full_name())
             else:
                 return None
-
-    def remove_block_replica(self, block_replica):
-        self.block_replicas.remove(block_replica)
-        self._site.update_partitioning(self)
 
     def _dataset_name(self):
         if type(self._dataset) is str:

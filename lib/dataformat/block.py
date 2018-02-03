@@ -5,6 +5,10 @@ import weakref
 
 from exceptions import ObjectError
 
+## TODO
+# Add/remove operations on block.files in the subprocesses may get reset
+# Need a mechanism to permanintize files once there is a write operation
+
 class Block(object):
     """Smallest data unit for data management."""
 
@@ -135,25 +139,25 @@ class Block(object):
             return block
 
     def delete_from(self, inventory):
-        # Remove the block from the dataset, and remove all replicas.
-        dataset = inventory.datasets[self._dataset_name()]
-        block = dataset.find_block(self._name, must_find = True)
+        try:
+            dataset = inventory.datasets[self._dataset_name()]
+            block = dataset.find_block(self._name, must_find = True)
+        except (KeyError, ObjectError):
+            return None
 
-        return block._unlink()
+        block.unlink()
+        return block
 
-    def _unlink(self):
-        deleted = []
-
+    def unlink(self):
         for replica in list(self.replicas):
-            deleted.extend(replica._unlink())
+            replica.unlink()
 
         for lfile in list(self.files):
-            deleted.extend(lfile._unlink())
+            lfile.unlink(files = self.files)
 
-        self._dataset.remove_block(self)
-        deleted.append(self)
-        
-        return deleted
+        self._dataset.blocks.remove(self)
+        self._dataset.size -= self.size
+        self._dataset.num_files -= self.num_files
 
     def write_into(self, store, delete = False):
         if delete:
@@ -210,26 +214,9 @@ class Block(object):
         files = self.files
 
         files.add(lfile)
+
         self.size += lfile.size
         self.num_files += 1
-
-    def remove_file(self, lfile):
-        # this function can change block_replica.is_complete
-
-        files = self.files
-
-        files.remove(lfile)
-        self.size -= lfile.size
-        self.num_files -= 1
-
-#        for replica in self.replicas:
-#            if replica.files is not None:
-#                try:
-#                    replica.files.remove(lfile)
-#                except ValueError:
-#                    pass
-#                else:
-#                    replica.size -= lfile.size
 
     def _dataset_name(self):
         if type(self._dataset) is str:

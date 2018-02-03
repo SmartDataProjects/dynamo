@@ -96,13 +96,15 @@ class Partition(object):
             return partition
 
     def delete_from(self, inventory):
-        # Pop the partition from the main list, and remove site_partitions.
-        partition = inventory.partitions.pop(self._name)
+        try:
+            partition = inventory.partitions.pop(self._name)
+        except KeyError:
+            return None
 
         for site in inventory.sites.itervalues():
             site.partitions.pop(partition)
 
-        return [partition]
+        return partition
 
     def write_into(self, store, delete = False):
         if delete:

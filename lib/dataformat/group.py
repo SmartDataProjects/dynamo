@@ -90,7 +90,10 @@ class Group(object):
         # Update to block replicas will be propagated at by calling Group.delete_from
         # at each inventory instance.
         # Database update must be taken care of by persistency store delete_group().
-        group = inventory.groups.pop(self._name)
+        try:
+            group = inventory.groups.pop(self._name)
+        except KeyError:
+            return None
 
         for dataset in inventory.datasets.itervalues():
             for replica in dataset.replicas:
@@ -98,7 +101,7 @@ class Group(object):
                     if block_replica.group == group:
                         block_replica.group = inventory.groups[None]
 
-        return [group]
+        return group
 
     def write_into(self, store, delete = False):
         if self._name is None:
