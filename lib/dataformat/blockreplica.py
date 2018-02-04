@@ -138,7 +138,11 @@ class BlockReplica(object):
                 # site_partition contained all block replicas. It will contain all after a deletion.
                 continue
 
-            block_replicas.remove(self)
+            try:
+                block_replicas.remove(self)
+            except KeyError:
+                # this replica was not part of the partition
+                continue
 
             if len(block_replicas) == 0:
                 site_partition.replicas.pop(dataset_replica)
