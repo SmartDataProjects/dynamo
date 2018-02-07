@@ -96,6 +96,7 @@ require mkdir -p $INSTALL_PATH
 require mkdir -p $INSTALL_PATH/python/site-packages/dynamo
 require mkdir -p $INSTALL_PATH/bin
 require mkdir -p $INSTALL_PATH/exec
+require mkdir -p $INSTALL_PATH/utilities
 require mkdir -p $INSTALL_PATH/sbin
 require mkdir -p $INSTALL_PATH/etc/profile.d
 chown -R $USER:$(id -gn $USER) $INSTALL_PATH
@@ -129,6 +130,10 @@ chmod 755 $INSTALL_PATH/bin/*
 cp $SOURCE/exec/* $INSTALL_PATH/exec/
 chown $USER:$(id -gn $USER) $INSTALL_PATH/exec/*
 chmod 755 $INSTALL_PATH/exec/*
+
+cp $SOURCE/utilities/* $INSTALL_PATH/utilities/
+chown $USER:$(id -gn $USER) $INSTALL_PATH/utilities/*
+chmod 755 $INSTALL_PATH/utilities/*
 
 cp $SOURCE/sbin/* $INSTALL_PATH/sbin/
 chown root:$(id -gn $USER) $INSTALL_PATH/sbin/*
