@@ -132,11 +132,6 @@ for dataset_entry in datasets:
                 all_ids.add(request_id)
                 records[site].add(request_id)
 
-for site in records.keys():
-    if site != 'T2_HU_Budapest':
-        records.pop(site)
-
-
 ## Get the copy status
 
 incomplete_replicas_rrd = set()
