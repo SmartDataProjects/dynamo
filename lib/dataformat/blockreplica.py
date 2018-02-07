@@ -118,7 +118,7 @@ class BlockReplica(object):
             block = dataset.find_block(self._block_name(), must_find = True)
             site = inventory.sites[self._site_name()]
             replica = block.find_replica(site, must_find = True)
-        except (KeyError, ObjecError):
+        except (KeyError, ObjectError):
             return None
 
         replica.unlink()
