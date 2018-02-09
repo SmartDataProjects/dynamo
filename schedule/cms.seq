@@ -17,11 +17,10 @@ WAIT 60
 * <update_sites> --config /etc/dynamo/updater_config.json
 WAIT 1800
 
-[SEQUENCE full_update]
-WAIT 600
-+ {generate_dataset_list} --config /etc/dynamo/updater_config.json
-* <updater> --config /etc/dynamo/updater_config.json --mode ReplicaFull
-* <updater> --config /etc/dynamo/updater_config.json --mode DatasetFull
+#[SEQUENCE full_update]
+#WAIT 600
+#+ {generate_dataset_list} --config /etc/dynamo/updater_config.json
+#* <updater> --config /etc/dynamo/updater_config.json --mode ReplicaFull
 
 [SEQUENCE detox_snapshot]
 WAIT 600
@@ -33,6 +32,12 @@ WAIT 600
 + <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Unsubscribed.txt --snapshot-run
 
 [SEQUENCE detox]
+* <updater> --config /etc/dynamo/updater_config.json --site T2*
+* <updater> --config /etc/dynamo/updater_config.json --site T1_US_FNAL_Disk
+* <updater> --config /etc/dynamo/updater_config.json --site T0_CH_CERN_Disk T1_DE_KIT_Disk T1_ES_PIC_Disk T1_FR_CCIN2P3_Disk T1_IT_CNAF_Disk T1_RU_JINR_Disk T1_UK_RAL_Disk T1_UK_RAL_ECHO_Disk
+* <updater> --config /etc/dynamo/updater_config.json --site T0_CH_CERN_MSS
+* <updater> --config /etc/dynamo/updater_config.json --site T1_US_FNAL_MSS
+* <updater> --config /etc/dynamo/updater_config.json --site T1_DE_KIT_MSS T1_ES_PIC_MSS T1_FR_CCIN2P3_MSS T1_IT_CNAF_MSS T1_RU_JINR_MSS T1_UK_RAL_MSS T1_UK_RAL_ECHO_MSS
 + <update_popularity> --config /etc/dynamo/popularity_update_config.json --crabaccess
 * {convert_locks} --config /etc/dynamo/convert_dynamo_locks_config.json
 + <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt
@@ -44,7 +49,7 @@ WAIT 14400
 [SEQUENCE dealer]
 * <update_popularity> --config /etc/dynamo/popularity_update_config.json --globalqueue
 * <dealer> --config /etc/dynamo/dealer_config.json
-WAIT 120
+WAIT 3600
 
 [SEQUENCE dealermon]
 WAIT 900

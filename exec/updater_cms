@@ -11,9 +11,9 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update replica information.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
-parser.add_argument('--mode', '-m', metavar = 'MODE', dest = 'mode', help = 'Automatic update mode. Values are: ReplicaDelta, ReplicaFull, or DatasetFull. When set, --site and --dataset are ignored.')
-parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', help = 'Do a full update of the site (wildcard allowed).')
-parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'dataset', help = 'Do a full update of the dataset (wildcard allowed).')
+parser.add_argument('--mode', '-m', metavar = 'MODE', dest = 'mode', help = 'Automatic update mode. Values are: ReplicaDelta, ReplicaFull. When set, --site and --dataset are ignored.')
+parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'sites', nargs = '+', help = 'Do a full update of the site (wildcard allowed).')
+parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'datasets', nargs = '+', help = 'Do a full update of the dataset (wildcard allowed).')
 parser.add_argument('--dataset-only', '-D', action = 'store_true', dest = 'dataset_only', help = 'Update dataset information only (no replicas).')
 
 args = parser.parse_args()
@@ -30,11 +30,11 @@ import dynamo.core.executable as executable
 LOG = executable.make_standard_logger(config.log_level)
 
 ## Option compatibilities
-if args.mode not in [None, 'ReplicaDelta', 'ReplicaFull', 'DatasetFull']:
+if args.mode not in [None, 'ReplicaDelta', 'ReplicaFull']:
     LOG.error('Unknown automatic update mode %s.', args.mode)
     sys.exit(1)
 
-if args.mode is None and args.site is None and args.dataset is None:
+if args.mode is None and args.sites is None and args.datasets is None:
     LOG.error('At least one of --site --dataset is needed for non-automatic update.')
     sys.exit(1)
 
@@ -42,7 +42,7 @@ if args.mode and not os.path.exists(config.updater_state_file):
     LOG.error('State file %s does not exist. Run generate_dataset_list_cms first.', config.replica_state_file)
     sys.exit(1)
 
-if args.dataset_only and not args.dataset:
+if args.dataset_only and not args.datasets:
     LOG.error('Option --dataset-only requires --dataset.')
     sys.exit(1)
 
@@ -161,31 +161,25 @@ elif args.mode == 'ReplicaFull':
 
     dataset_names = set(br.block.dataset.name for br in updated_replicas)
 
-elif args.mode == 'DatasetFull':
-    ## Round-robin update of datasets
-    ## Get the dataset full names
-
-    check_replicas = False
-
-    dataset_names = set()
-
-    state_db = sqlite3.connect(config.updater_state_file)
-    cursor = state_db.cursor()
-
-    sql = 'SELECT `name` FROM `datasets` ORDER BY `id` LIMIT ?'
-    for row in cursor.execute(sql, (config.num_update_datasets,)):
-        dataset_names.add(str(row[0]))
-
-    state_db.close()
-
 else:
     if args.dataset_only:
         check_replicas = False
-        dataset_names.update(set(dataset_source.get_dataset_names(include = [args.dataset])))
+        dataset_names.update(set(dataset_source.get_dataset_names(include = args.datasets)))
     else:
         check_replicas = True
-        updated_replicas = replica_source.get_replicas(site = args.site, dataset = args.dataset)
-        site_dataset_combos = [(args.site, args.dataset)]
+
+        if args.sites:
+            site_dataset_combos = [(s, None) for s in args.sites]
+        else:
+            site_dataset_combos = [(None, None)]
+
+        if args.datasets:
+            site_dataset_combos = [(c[0], d) for d in args.datasets for c in site_dataset_combos]
+
+        updated_replicas = []
+        for site_name, dataset_name in site_dataset_combos:
+            updated_replicas.extend(replica_source.get_replicas(site = site_name, dataset = dataset_name))
+
         dataset_names = set(br.block.dataset.name for br in updated_replicas)
 
 # 3. Update the datasets
@@ -516,16 +510,10 @@ if check_replicas:
 
 # 7. Save the execution state
 
-if not executable.read_only and os.path.exists(config.updater_state_file):
+if not executable.read_only and args.mode is not None and os.path.exists(config.updater_state_file):
     # Regardless of update mode, clear the updated datasets from the table
     state_db = sqlite3.connect(config.updater_state_file)
     cursor = state_db.cursor()
-
-    sql = 'DELETE FROM `datasets` WHERE `name` = ?'
-    for dataset_name in dataset_names:
-        cursor.execute(sql, (dataset_name,))
-
-    state_db.commit()
 
     # Additionally for replica updates
     if args.mode == 'ReplicaDelta':
