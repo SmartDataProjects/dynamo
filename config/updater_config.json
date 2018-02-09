@@ -6,7 +6,8 @@
     "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
     "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
     "auth_handler": "HTTPSCertKeyHandler",
-    "auth_handler_conf": {}
+    "auth_handler_conf": {},
+    "num_attempts": 5
   },
   "groups": {
     "module": "PhEDExGroupInfoSource",
@@ -35,7 +36,8 @@
       "dbs": {
         "url_base": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
         "auth_handler": "HTTPSCertKeyHandler",
-        "auth_handler_conf": {}
+        "auth_handler_conf": {},
+        "num_attempts": 5
       },
       "phedex": {}
     }
