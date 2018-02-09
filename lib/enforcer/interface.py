@@ -3,12 +3,12 @@ import re
 import fnmatch
 import random
 
-from base import BaseHandler
-from dynamo.dataformat import Configuration
+LOG = logging.getLogger(__name__)
 
 class EnforcerInterface(object):
     """
-    Interface for obtaining infos from enforcer
+    Interface for obtaining infos from enforcer--the requests themselves
+    or info for writing rrd files
     """
 
     def __init__(self, write_rrds, max_dataset_size):
@@ -28,7 +28,7 @@ class EnforcerInterface(object):
 
             target_num = rule['num_copies']
 
-            already_fulfilled = 0
+            already_there = 0
             still_missing = 0
 
             site_patterns = []
@@ -41,7 +41,6 @@ class EnforcerInterface(object):
 
             for site in inventory.sites.values():
                 quota = site.partitions[partition].quota
-
 
                 LOG.debug('Site %s quota %f TB', site.name, quota * 1.e-12)
 
@@ -92,7 +91,7 @@ class EnforcerInterface(object):
                         if other_replica.site in sites_considered:
                             num_considered += 1
                             if num_considered == target_num:
-                                already_fulfilled += 1
+                                already_there += 1
                                 break
 
                     else:

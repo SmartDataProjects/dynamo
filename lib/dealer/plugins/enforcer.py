@@ -7,8 +7,6 @@ from base import BaseHandler
 from dynamo.dataformat import Configuration
 from dynamo.enforcer import EnforcerInterface
 
-LOG = logging.getLogger(__name__)
-
 class EnforcerHandler(BaseHandler):
     """
     Request replication of datasets using custom rules and destinations.
@@ -22,11 +20,10 @@ class EnforcerHandler(BaseHandler):
 
     def get_requests(self, inventory, history, policy): # override
         requests = []
-        rrd_info = []
 
         partition = inventory.partitions[policy.partition_name]
 
-        write_rrds = False
+        write_rrds = False # we only want the requests, not interested in other information
 
         enforcer_instance = EnforcerInterface(write_rrds, self.max_dataset_size)
         requests = enforcer_instance.report_back(inventory, self.policy, partition)

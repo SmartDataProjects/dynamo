@@ -7,6 +7,7 @@
 {generate_dataset_list} = $(DYNAMO_BASE)/exec/generate_dataset_list_cms
 <track_transfers> = $(DYNAMO_BASE)/exec/track_transfers
 <track_phedex> = $(DYNAMO_BASE)/exec/track_phedex
+<track_enforcer> = $(DYNAMO_BASE)/exec/track_enforcer
 <siteinfo> = $(DYNAMO_BASE)/exec/siteinfo
 
 [SEQUENCE delta_update]
@@ -50,3 +51,4 @@ WAIT 120
 WAIT 900
 + <track_transfers> --config /etc/dynamo/dealermon_config.json
 + <track_phedex> --config /etc/dynamo/dealermon_config.json
++ <track_enforcer> --config /etc/dynamo/dealermon_config.json
