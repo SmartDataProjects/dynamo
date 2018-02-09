@@ -12,7 +12,7 @@ from argparse import ArgumentParser
 parser = ArgumentParser(description = 'Update replica information.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
 parser.add_argument('--mode', '-m', metavar = 'MODE', dest = 'mode', help = 'Automatic update mode. Values are: ReplicaDelta, ReplicaFull. When set, --site and --dataset are ignored.')
-parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'sites', nargs = '+', help = 'Do a full update of the site (wildcard allowed).')
+parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'sites', nargs = '+', help = 'Do a full update of the site (wildcard allowed). Prepend ! to veto match.')
 parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'datasets', nargs = '+', help = 'Do a full update of the dataset (wildcard allowed).')
 parser.add_argument('--dataset-only', '-D', action = 'store_true', dest = 'dataset_only', help = 'Update dataset information only (no replicas).')
 
@@ -172,6 +172,19 @@ else:
             site_dataset_combos = []
             site_list = None
             for site_name in args.sites:
+                if site_name.startswith('!'):
+                    # remove matching site from list filled so far
+                    site_pat = re.compile(fnmatch.translate(site_name[1:]))
+
+                    ic = 0
+                    while ic != len(site_dataset_combos):
+                        if site_pat.match(site_dataset_combos[ic][0]):
+                            site_dataset_combos.pop(ic)
+                        else:
+                            ic += 1
+
+                    continue
+
                 if '*' in site_name:
                     # expand site name already so that we don't download a humongous replica list
                     site_pat = re.compile(fnmatch.translate(site_name))
