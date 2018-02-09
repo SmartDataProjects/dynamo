@@ -49,8 +49,9 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
                 add_datasets(result)
 
         for in_pattern in include:
-            result = self._dbs.make_request('datasets', ['dataset=' + in_pattern])
-            add_datasets(result)
+            if in_pattern.startswith('/') and in_pattern.count('/') == 3:
+                result = self._dbs.make_request('datasets', ['dataset=' + in_pattern])
+                add_datasets(result)
 
         return dataset_names
 
@@ -70,7 +71,10 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         ## Get the full dataset-block-file data from PhEDEx
 
         def get_dbs_datasets(name, dbs_data):
-            dbs_data['datasets'] = self._dbs.make_request('datasets', ['dataset=' + name, 'dataset_access_type=*', 'detail=True'])
+            if name.startswith('/') and name.count('/') == 3:
+                dbs_data['datasets'] = self._dbs.make_request('datasets', ['dataset=' + name, 'dataset_access_type=*', 'detail=True'])
+            else:
+                dbs_data['datasets'] = []
 
         def get_dbs_releaseversions(name, dbs_data):
             dbs_data['releaseversions'] = self._dbs.make_request('releaseversions', ['dataset=' + name])
@@ -293,7 +297,12 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
     def _fill_dataset_details(self, dataset, dbs_data = None):
         if dbs_data is None:
             dbs_data = {}
-            dbs_data['datasets'] = self._dbs.make_request('datasets', ['dataset=' + dataset.name, 'dataset_access_type=*', 'detail=True'])
+
+            if dataset.name.startswith('/') and dataset.name.count('/') == 3:
+                dbs_data['datasets'] = self._dbs.make_request('datasets', ['dataset=' + dataset.name, 'dataset_access_type=*', 'detail=True'])
+            else:
+                dbs_data['datasets'] = []
+
             dbs_data['releaseversions'] = self._dbs.make_request('releaseversions', ['dataset=' + dataset.name])
 
         # 1. status and PD type
