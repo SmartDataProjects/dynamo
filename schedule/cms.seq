@@ -10,49 +10,51 @@
 <siteinfo> = $(DYNAMO_BASE)/exec/siteinfo
 
 [SEQUENCE delta_update]
-* <updater> --config /etc/dynamo/updater_config.json --mode ReplicaDelta
+& <updater> --config /etc/dynamo/updater_config.json --mode ReplicaDelta
 WAIT 60
 
 [SEQUENCE site_update]
-* <update_sites> --config /etc/dynamo/updater_config.json
+& <update_sites> --config /etc/dynamo/updater_config.json
 WAIT 1800
 
 #[SEQUENCE full_update]
 #WAIT 600
-#+ {generate_dataset_list} --config /etc/dynamo/updater_config.json
-#* <updater> --config /etc/dynamo/updater_config.json --mode ReplicaFull
+#| {generate_dataset_list} --config /etc/dynamo/updater_config.json
+#& <updater> --config /etc/dynamo/updater_config.json --mode ReplicaFull
 
 [SEQUENCE detox_snapshot]
 WAIT 600
-+ <update_popularity> --config /etc/dynamo/popularity_update_config.json --crabaccess
-* {convert_locks} --config /etc/dynamo/convert_dynamo_locks_config.json
-+ <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --snapshot-run
-+ <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/RelVal.txt --snapshot-run
-+ <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/DataOps.txt --snapshot-run
-+ <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Unsubscribed.txt --snapshot-run
+| <update_popularity> --config /etc/dynamo/popularity_update_config.json --crabaccess
+& {convert_locks} --config /etc/dynamo/convert_dynamo_locks_config.json
+| <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt --snapshot-run
+| <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/RelVal.txt --snapshot-run
+| <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/DataOps.txt --snapshot-run
+| <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Unsubscribed.txt --snapshot-run
 
 [SEQUENCE detox]
-* <updater> --config /etc/dynamo/updater_config.json --site T2*
-* <updater> --config /etc/dynamo/updater_config.json --site T1_US_FNAL_Disk
-* <updater> --config /etc/dynamo/updater_config.json --site T0_CH_CERN_Disk T1_DE_KIT_Disk T1_ES_PIC_Disk T1_FR_CCIN2P3_Disk T1_IT_CNAF_Disk T1_RU_JINR_Disk T1_UK_RAL_Disk T1_UK_RAL_ECHO_Disk
-* <updater> --config /etc/dynamo/updater_config.json --site T0_CH_CERN_MSS
-* <updater> --config /etc/dynamo/updater_config.json --site T1_US_FNAL_MSS
-* <updater> --config /etc/dynamo/updater_config.json --site T1_DE_KIT_MSS T1_ES_PIC_MSS T1_FR_CCIN2P3_MSS T1_IT_CNAF_MSS
-* <updater> --config /etc/dynamo/updater_config.json --site T1_RU_JINR_MSS T1_UK_RAL_MSS T1_UK_RAL_ECHO_MSS
-+ <update_popularity> --config /etc/dynamo/popularity_update_config.json --crabaccess
-* {convert_locks} --config /etc/dynamo/convert_dynamo_locks_config.json
-+ <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt
-+ <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/RelVal.txt
-+ <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/DataOps.txt --test-run
-+ <siteinfo> --config /etc/dynamo/siteinfo_config.json
+& <updater> --config /etc/dynamo/updater_config.json --site T2_* !T2_CH_CERN !T2_US_*
+& <updater> --config /etc/dynamo/updater_config.json --site T2_CH_CERN
+& <updater> --config /etc/dynamo/updater_config.json --site T2_US_*
+& <updater> --config /etc/dynamo/updater_config.json --site T0_CH_CERN_Disk T1_*_Disk !T1_US_FNAL_Disk
+& <updater> --config /etc/dynamo/updater_config.json --site T1_US_FNAL_Disk
+& <updater> --config /etc/dynamo/updater_config.json --site T0_CH_CERN_MSS
+& <updater> --config /etc/dynamo/updater_config.json --site T1_US_FNAL_MSS
+& <updater> --config /etc/dynamo/updater_config.json --site T1_DE_KIT_MSS T1_ES_PIC_MSS T1_FR_CCIN2P3_MSS T1_IT_CNAF_MSS
+& <updater> --config /etc/dynamo/updater_config.json --site T1_RU_JINR_MSS T1_UK_RAL_MSS T1_UK_RAL_ECHO_MSS
+| <update_popularity> --config /etc/dynamo/popularity_update_config.json --crabaccess
+& {convert_locks} --config /etc/dynamo/convert_dynamo_locks_config.json
+& <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt
+& <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/RelVal.txt
+& <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/DataOps.txt --test-run
+& <siteinfo> --config /etc/dynamo/siteinfo_config.json
 WAIT 14400
 
 [SEQUENCE dealer]
-* <update_popularity> --config /etc/dynamo/popularity_update_config.json --globalqueue
-* <dealer> --config /etc/dynamo/dealer_config.json
+| <update_popularity> --config /etc/dynamo/popularity_update_config.json --globalqueue
+^ <dealer> --config /etc/dynamo/dealer_config.json
 WAIT 3600
 
 [SEQUENCE dealermon]
 WAIT 900
-+ <track_transfers> --config /etc/dynamo/dealermon_config.json
-+ <track_phedex> --config /etc/dynamo/dealermon_config.json
+| <track_transfers> --config /etc/dynamo/dealermon_config.json
+| <track_phedex> --config /etc/dynamo/dealermon_config.json
