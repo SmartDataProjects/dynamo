@@ -169,7 +169,23 @@ else:
         check_replicas = True
 
         if args.sites:
-            site_dataset_combos = [(s, None) for s in args.sites]
+            site_dataset_combos = []
+            site_list = None
+            for site_name in args.sites:
+                if '*' in site_name:
+                    # expand site name already so that we don't download a humongous replica list
+                    site_pat = re.compile(fnmatch.translate(site_name))
+
+                    if site_list is None:
+                        site_list = site_source.get_site_list()
+
+                    for site in site_list:
+                        if site_pat.match(site.name):
+                            site_dataset_combos.append((site.name, None))
+
+                else:
+                    site_dataset_combos.append((site_name, None))
+                        
         else:
             site_dataset_combos = [(None, None)]
 
