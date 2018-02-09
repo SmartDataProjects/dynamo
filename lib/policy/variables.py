@@ -115,32 +115,6 @@ class ReplicaIncomplete(DatasetReplicaAttr):
     
         return False
 
-class ReplicaLastUsed(DatasetReplicaAttr):
-    def __init__(self):
-        DatasetReplicaAttr.__init__(self, Attr.TIME_TYPE)
-
-        self.required_attrs = ['local_usage']
-
-    def _get(self, replica):
-        try:
-            last_used = replica.dataset.attr['local_usage'][replica.site].last_access
-        except KeyError:
-            last_used = 0
-    
-        return max(replica.last_block_created(), last_used)
-
-class ReplicaNumAccess(DatasetReplicaAttr):
-    def __init__(self):
-        DatasetReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
-
-        self.required_attrs = ['local_usage']
-
-    def _get(self, replica):
-        try:
-            return replica.dataset.attr['local_usage'][replica.site].num_access
-        except KeyError:
-            return 0
-
 class ReplicaNumFullDiskCopyCommonOwner(DatasetReplicaAttr):
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
@@ -302,8 +276,7 @@ replica_variables = {
     'replica.incomplete': ReplicaIncomplete(),
     'replica.last_block_created': DatasetReplicaAttr(Attr.TIME_TYPE, 'last_block_created', tuple()),
     'replica.first_block_created': ReplicaFirstBlockCreated(),
-    'replica.last_used': ReplicaLastUsed(),
-    'replica.num_access': ReplicaNumAccess(),
+    'replica.num_access': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'num_access'),
     'replica.num_full_disk_copy_common_owner': ReplicaNumFullDiskCopyCommonOwner(),
     'replica.enforcer_protected': ReplicaEnforcerProtected(),
     'blockreplica.last_update': BlockReplicaAttr(Attr.TIME_TYPE, 'last_update'),
