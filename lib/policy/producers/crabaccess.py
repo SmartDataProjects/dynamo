@@ -87,20 +87,21 @@ class CRABAccessHistory(object):
         today = datetime.datetime.utcfromtimestamp(now).date()
 
         for dataset in inventory.datasets.itervalues():
+            last_access = 0
             num_access = 0
+
             try:
                 accesses = all_accesses[dataset]
             except KeyError:
-                try:
-                    last_access = max(r.last_block_created() for r in dataset.replicas)
-                except ValueError:
-                    last_access = dataset.last_update
+                pass
             else:
                 last_access = accesses[-1][0]
                 if dataset.size != 0:
-                    num_access = sum(e[1] for e in accesses) / float(dataset.size * 1.e-9)
+                    num_access = sum(e[1] for e in accesses)
 
-            rank = (now - last_access) / (24. * 3600.) - num_access
+            last_change = max(last_access, dataset.last_update, max(r.last_block_created() for r in dataset.replicas))
+
+            rank = (now - last_change) / (24. * 3600.) - num_access / (dataset.size * 1.e-9)
 
             dataset.attr['global_usage_rank'] = rank
             dataset.attr['num_access'] = num_access
