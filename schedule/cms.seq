@@ -37,7 +37,8 @@ WAIT 600
 * <updater> --config /etc/dynamo/updater_config.json --site T0_CH_CERN_Disk T1_DE_KIT_Disk T1_ES_PIC_Disk T1_FR_CCIN2P3_Disk T1_IT_CNAF_Disk T1_RU_JINR_Disk T1_UK_RAL_Disk T1_UK_RAL_ECHO_Disk
 * <updater> --config /etc/dynamo/updater_config.json --site T0_CH_CERN_MSS
 * <updater> --config /etc/dynamo/updater_config.json --site T1_US_FNAL_MSS
-* <updater> --config /etc/dynamo/updater_config.json --site T1_DE_KIT_MSS T1_ES_PIC_MSS T1_FR_CCIN2P3_MSS T1_IT_CNAF_MSS T1_RU_JINR_MSS T1_UK_RAL_MSS T1_UK_RAL_ECHO_MSS
+* <updater> --config /etc/dynamo/updater_config.json --site T1_DE_KIT_MSS T1_ES_PIC_MSS T1_FR_CCIN2P3_MSS T1_IT_CNAF_MSS
+* <updater> --config /etc/dynamo/updater_config.json --site T1_RU_JINR_MSS T1_UK_RAL_MSS T1_UK_RAL_ECHO_MSS
 + <update_popularity> --config /etc/dynamo/popularity_update_config.json --crabaccess
 * {convert_locks} --config /etc/dynamo/convert_dynamo_locks_config.json
 + <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt
