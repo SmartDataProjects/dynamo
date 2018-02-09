@@ -15,6 +15,13 @@ class EnforcerInterface(object):
         self.write_rrds = write_rrds
 
     def report_back(self, inventory, policy, partition, max_dataset_size):
+        """
+        The main enforcer logic for the replication part.
+        @param inventory        Current status of replica placement across system
+        @param policy           The defining policy how much of what should be where
+        @param partition        Which partition do we want to consider?
+        @param max_dataset_size Not considering datasets larger than this value.
+        """
         
         requests = []
         rrd_info = []
