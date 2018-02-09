@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
 Usage examples:
 Relative:
@@ -7,6 +9,10 @@ Absolute:
 """
 
 import sys
+try:
+    from dynamo.dataformat import SitePartition
+except:
+    pass
 
 def update_quota(site_partition, new_quota, changed):
     site = site_partition.site
@@ -24,15 +30,12 @@ def update_quota(site_partition, new_quota, changed):
             update_quota(site_subp, sub_quota, changed)
 
     else:
-        clone = site_partition.unlinked_clone()
-        clone.set_quota(new_quota)
+        clone = SitePartition(site, partition, new_quota)
         changed.append(clone)
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
 
-    from dynamo.core.executable import inventory
-    
     desc = '''Use this script to change the quota of site partitions.
 When used against a superpartition (partition with subpartitions), subpartition
 quotas are scaled keeping the current proportions. When used against a subpartition,
@@ -48,6 +51,9 @@ the other partitions are adjusted only if --adjust-other option is used.'''
     parser.add_argument('--dump', '-d', action = 'store_true', dest = 'dump', help = 'Just print all of them. Default: False')
     
     args = parser.parse_args()
+    sys.argv = []
+
+    from dynamo.core.executable import inventory
 
     ## Check argument sanity
 

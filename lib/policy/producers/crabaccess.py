@@ -10,19 +10,16 @@ from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Site
 from dynamo.utils.parallel import Map
 
-# last_access is unix time
-ReplicaAccess = collections.namedtuple('ReplicaAccess', ['rank', 'num_access', 'tot_cpu', 'last_access'])
-
 LOG = logging.getLogger(__name__)
 
 class CRABAccessHistory(object):
     """
     Sets two attrs:
       global_usage_rank:  float value
-      local_usage:        {site: ReplicaAccess}
+      num_access: integer
     """
 
-    produces = ['global_usage_rank', 'local_usage']
+    produces = ['global_usage_rank', 'num_access']
 
     def __init__(self, config):
         self._store = MySQL(config.store.db_params)
@@ -35,45 +32,24 @@ class CRABAccessHistory(object):
         """
         Get the replica access data from DB.
         @param inventory  DynamoInventory
-        @return  {replica: {date: (number of access, total cpu time)}}
+        @return  {dataset: [(date, number of access)]}
         """
 
         # pick up all accesses that are less than 2 years old
         # old accesses will be removed automatically next time the access information is saved from memory
-        sql = 'SELECT s.`name`, d.`name`, YEAR(a.`date`), MONTH(a.`date`), DAY(a.`date`), a.`access_type`+0, a.`num_accesses`, a.`cputime` FROM `dataset_accesses` AS a'
-        sql += ' INNER JOIN `sites` AS s ON s.`id` = a.`site_id`'
+        sql = 'SELECT d.`name`, UNIX_TIMESTAMP(a.`date`), a.`num_accesses` FROM `dataset_accesses` AS a'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = a.`dataset_id`'
-        sql += ' WHERE a.`date` > DATE_SUB(NOW(), INTERVAL 2 YEAR) ORDER BY s.`id`, d.`id`, a.`date`'
+        sql += ' WHERE a.`date` > DATE_SUB(NOW(), INTERVAL 2 YEAR) ORDER BY d.`id`, a.`date`'
 
         all_accesses = {}
         num_records = 0
 
         # little speedup by not repeating lookups for the same replica
-        current_site_name = ''
-        site_exists = True
         current_dataset_name = ''
         dataset_exists = True
         replica = None
-        for site_name, dataset_name, year, month, day, access_type, num_accesses, cputime in self._store.xquery(sql):
+        for dataset_name, timestamp, num_accesses in self._store.xquery(sql):
             num_records += 1
-
-            if site_name == current_site_name:
-                if not site_exists:
-                    continue
-            else:
-                current_site_name = site_name
-
-                current_dataset_name = ''
-                dataset_exists = True
-                replica = None
-
-                try:
-                    site = inventory.sites[site_name]
-                except KeyError:
-                    site_exists = False
-                    continue
-                else:
-                    site_exists = True
 
             if dataset_name == current_dataset_name:
                 if not dataset_exists:
@@ -89,15 +65,9 @@ class CRABAccessHistory(object):
                 else:
                     dataset_exists = True
 
-                replica = site.find_dataset_replica(dataset)
-                if replica is not None:
-                    accesses = all_accesses[replica] = {}
+                accesses = all_accesses[dataset] = []
 
-            if replica is None:
-                continue
-
-            date = datetime.date(year, month, day)
-            accesses[date] = (num_accesses, cputime)
+            accesses.append((timestamp, num_accesses))
 
         last_update = self._store.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
 
@@ -108,59 +78,32 @@ class CRABAccessHistory(object):
     def _compute(self, inventory, all_accesses):
         """
         Set the dataset usage rank based on access list.
-        Following the IntelROCCS implementation for local rank:
-        datasetRank = (1-used)*(now-creationDate)/(60*60*24) + \
-            used*( (now-lastAccessed)/(60*60*24)-nAccessed) - size/1000
         nAccessed is NACC normalized by size (in GB).
         @param inventory   DynamoInventory
-        @param all_accesses {replica: {date: (number of access, cpu time)}}
+        @param all_accesses {dataset: [(date, number of access)]} (time ordered)
         """
 
         now = time.time()
         today = datetime.datetime.utcfromtimestamp(now).date()
 
         for dataset in inventory.datasets.itervalues():
-            local_usage = dataset.attr['local_usage'] = {} # {site: ReplicaAccess}
-
-            n_disk_nodes = 0
-            for replica in dataset.replicas:
-                if replica.site.storage_type == Site.TYPE_DISK:
-                    n_disk_nodes += 1
-
-            for replica in dataset.replicas:
-                size = replica.size(physical = False) * 1.e-9
-
+            num_access = 0
+            try:
+                accesses = all_accesses[dataset]
+            except KeyError:
                 try:
-                    accesses = all_accesses[replica]
-                except KeyError:
-                    accesses = {}
-                    last_used = 0
-                    num_access = 0
-                    tot_cpu = 0.
-                else:
-                    last_access = max(accesses.iterkeys())
-                    # mktime returns expects the local time but the timetuple we pass is for UTC. subtracting time.timezone
-                    last_used = time.mktime(last_access.timetuple()) - time.timezone
-                    num_access = sum(e[0] for e in accesses.itervalues())
-                    tot_cpu = sum(e[1] for e in accesses.itervalues())
+                    last_access = max(r.last_block_created() for r in dataset.replicas)
+                except ValueError:
+                    last_access = dataset.last_update
+            else:
+                last_access = accesses[-1][0]
+                if dataset.size != 0:
+                    num_access = sum(e[1] for e in accesses) / float(dataset.size * 1.e-9)
 
-                if num_access == 0:
-                    local_rank = (now - replica.last_block_created()) / (24. * 3600.)
-                elif size > 0.:
-                    local_rank = (today - last_access).days - num_access / size
-                else:
-                    local_rank = (today - last_access).days
+            rank = (now - last_access) / (24. * 3600.) - num_access
 
-                local_rank -= size * 1.e-3
-
-                local_usage[replica.site] = ReplicaAccess(local_rank, num_access, tot_cpu, last_used)
-
-            global_rank = sum(usage.rank for usage in local_usage.values())
-
-            if n_disk_nodes != 0:
-                global_rank /= n_disk_nodes
-
-            dataset.attr['global_usage_rank'] = global_rank
+            dataset.attr['global_usage_rank'] = rank
+            dataset.attr['num_access'] = num_access
 
     @staticmethod
     def update(config, inventory):
