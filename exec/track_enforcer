@@ -14,7 +14,6 @@ import time
 import shutil
 import rrdtool
 import selinux
-import collections
 import csv
 
 from datetime import datetime, timedelta
@@ -115,3 +114,8 @@ for rule_name, already_there, still_missing in rrd_info:
             rrdtool.update(rrd_file, '%d:%i:%i' % (timestamp, still_missing, already_there))
 
 
+target_dir = config.rrd_publish_target + '/monitoring_enforcer'
+
+for entry in os.listdir(rrd_dir):
+    if entry.endswith('.rrd'):
+        shutil.copy(rrd_dir + '/' + entry, target_dir)
