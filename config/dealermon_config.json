@@ -1,6 +1,6 @@
 {
   "dealer_config": "/etc/dynamo/dealer_config.json",
-  "partitions": ["Physics"],
+  "partitions": ["AnalysisOps", "DataOps"],
   "rrd_path_base": "$(DYNAMO_SPOOL)/dealermon",
   "rrd_publish_target": "/var/www/html/dynamo/dynamo/dealermon",
   "rrd_interval": 900,

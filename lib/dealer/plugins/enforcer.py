@@ -25,7 +25,7 @@ class EnforcerHandler(BaseHandler):
 
         write_rrds = False # we only want the requests, not interested in other information
 
-        enforcer_instance = EnforcerInterface(write_rrds, self.max_dataset_size)
-        requests = enforcer_instance.report_back(inventory, self.policy, partition)
+        enforcer_instance = EnforcerInterface(write_rrds)
+        requests = enforcer_instance.report_back(inventory, self.policy, partition, self.max_dataset_size)
 
         return requests

@@ -90,8 +90,8 @@ partition = inventory.partitions[dealer_config.partition_name]
 
 write_rrds = True 
 
-enforcer_instance = EnforcerInterface(write_rrds, enforcer.max_dataset_size)
-rrd_info = enforcer_instance.report_back(inventory, self.policy, partition)
+enforcer_instance = EnforcerInterface(write_rrds)
+rrd_info = enforcer_instance.report_back(inventory, self.policy, partition, enforcer.max_dataset_size)
 
 
 for rule_name, already_there, still_missing in rrd_info:

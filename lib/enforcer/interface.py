@@ -11,11 +11,10 @@ class EnforcerInterface(object):
     or info for writing rrd files
     """
 
-    def __init__(self, write_rrds, max_dataset_size):
+    def __init__(self, write_rrds):
         self.write_rrds = write_rrds
-        self.max_dataset_size = max_dataset_size
 
-    def report_back(self, inventory, policy, partition):
+    def report_back(self, inventory, policy, partition, max_dataset_size):
         
         requests = []
         rrd_info = []
