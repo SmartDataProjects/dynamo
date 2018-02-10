@@ -389,8 +389,12 @@ if check_replicas:
         # 4.3. Update the dataset info
 
         if dataset is None or dataset.name != replica.block.dataset.name:
-            # has to exist now
-            dataset = inventory.datasets[replica.block.dataset.name]
+            dataset_name = replica.block.dataset.name
+            if not dataset_name.startswith('/') or dataset_name.count('/') != 3:
+                continue
+
+            # valid datasets should exist in the repository now
+            dataset = inventory.datasets[dataset_name]
             dataset_replica = None
 
         # 4.4. Find the dataset replica
