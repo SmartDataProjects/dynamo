@@ -349,8 +349,6 @@ def loop_sequence(sequence_name, sequence, user_id, config):
                             LOG.error('Critical executable %s failed. Restarting executable %s.', title, title)
                             continue
 
-                    ia += 1
-    
                 elif action[0] == WAIT:
                     LOG.info('Sleeping for %d seconds.', action[1])
                     time.sleep(action[1])
@@ -359,6 +357,8 @@ def loop_sequence(sequence_name, sequence, user_id, config):
                     LOG.info('Terminating sequence.')
                     repeat = False
                     break
+
+                ia += 1
     
             if not repeat:
                 break
