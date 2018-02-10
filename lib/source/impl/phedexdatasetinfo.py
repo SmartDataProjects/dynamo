@@ -69,12 +69,11 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
     def get_dataset(self, name, with_files = False): #override
         ## Get the full dataset-block-file data from PhEDEx
+        if not name.startswith('/') or name.count('/') != 3:
+            return None
 
         def get_dbs_datasets(name, dbs_data):
-            if name.startswith('/') and name.count('/') == 3:
-                dbs_data['datasets'] = self._dbs.make_request('datasets', ['dataset=' + name, 'dataset_access_type=*', 'detail=True'])
-            else:
-                dbs_data['datasets'] = []
+            dbs_data['datasets'] = self._dbs.make_request('datasets', ['dataset=' + name, 'dataset_access_type=*', 'detail=True'])
 
         def get_dbs_releaseversions(name, dbs_data):
             dbs_data['releaseversions'] = self._dbs.make_request('releaseversions', ['dataset=' + name])
@@ -123,6 +122,8 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
     def get_block(self, name, dataset = None, with_files = False): #override
         ## Get the full block-file data from PhEDEx
+        if not name.startswith('/') or name.count('/') != 3 or '#' in name:
+            return None
 
         if with_files:
             level = 'file'
