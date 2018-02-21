@@ -207,8 +207,7 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
         return sql
 
 
-    def schedule_copies(self, replica_list, group, comments = '', is_test = False): 
-#override (CopyInterface)
+    def schedule_copies(self, replica_list, group, comments = '', is_test = False): #override (CopyInterface)
         #here we take user wishes and transfer them, if needed" into
         #entries for file management system (DFMS)
         nowTime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")

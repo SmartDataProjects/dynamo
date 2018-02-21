@@ -427,19 +427,19 @@ class DetoxLock {
       }
 
       if (isset($request['item'])) {
-        $where_clause[] =  '`detox_locks`.`item` LIKE ?';
+        $where_clause[] =  '`detox_locks`.`item` = ?';
         $params[0] .= 's';
         $params[] = &$request['item'];
       }
 
       if (isset($request['sites'])) {
-        $where_clause[] =  '`detox_locks`.`sites` LIKE ?';
+        $where_clause[] =  '`detox_locks`.`sites` = ?';
         $params[0] .= 's';
         $params[] = &$request['sites'];
       }
 
       if (isset($request['groups'])) {
-        $where_clause[] =  '`detox_locks`.`groups` LIKE ?';
+        $where_clause[] =  '`detox_locks`.`groups` = ?';
         $params[0] .= 's';
         $params[] = &$request['groups'];
       }
