@@ -145,26 +145,6 @@ class ReplicaEnforcerProtected(DatasetReplicaAttr):
 
         return replica in protected_replicas
 
-class ReplicaIsLastSource(DatasetReplicaAttr):
-    """True if this replica is the last full disk copy and there is an ongoing transfer."""
-
-    def __init__(self):
-        DatasetReplicaAttr.__init__(self, Attr.BOOL_TYPE)
-
-    def _get(self, replica):
-        if not replica.is_full():
-            return False
-
-        nfull = 0
-        nincomplete = 0
-        for rep in replica.dataset.replicas:
-            if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.is_full():
-                nfull += 1
-            elif not rep.is_complete():
-                nincomplete += 1
-
-        return nfull == 1 and nincomplete != 0
-
 class ReplicaFirstBlockCreated(DatasetReplicaAttr):
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.TIME_TYPE)
@@ -176,6 +156,31 @@ class ReplicaFirstBlockCreated(DatasetReplicaAttr):
                 value = block_replica.last_update
 
         return value
+
+class ReplicaIsLastSource(BlockReplicaAttr):
+    """True if there is an incomplete replica of the block somewhere and there is no block replica."""
+
+    def __init__(self):
+        BlockReplicaAttr.__init__(self, Attr.BOOL_TYPE)
+
+    def _get(self, replica):
+        if not replica.is_complete:
+            return False
+
+        transfer_ongoing = False
+        for other_replica in replica.block.replicas:
+            if other_replica is replica:
+                continue
+
+            if other_replica.is_complete:
+                site = other_replica.site
+                if site.storage_type == Site.TYPE_DISK and site.status == Site.STAT_READY:
+                    return False
+
+            else:
+                transfer_ongoing = True
+
+        return transfer_ongoing
 
 class ReplicaOwner(BlockReplicaAttr):
     def __init__(self):
@@ -271,7 +276,6 @@ replica_variables = {
     'dataset.release': DatasetRelease(),
     'dataset.is_latest_production_release': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'latest_production_release', dict_default = False),
     'dataset.on_protected_site': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'on_protected_site', dict_default = False),
-    'replica.is_last_transfer_source': ReplicaIsLastSource(),
     'replica.size': ReplicaSize(),
     'replica.incomplete': ReplicaIncomplete(),
     'replica.last_block_created': DatasetReplicaAttr(Attr.TIME_TYPE, 'last_block_created', tuple()),
@@ -279,6 +283,7 @@ replica_variables = {
     'replica.num_access': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'num_access'),
     'replica.num_full_disk_copy_common_owner': ReplicaNumFullDiskCopyCommonOwner(),
     'replica.enforcer_protected': ReplicaEnforcerProtected(),
+    'blockreplica.is_last_transfer_source': ReplicaIsLastSource(),
     'blockreplica.last_update': BlockReplicaAttr(Attr.TIME_TYPE, 'last_update'),
     'blockreplica.owner': ReplicaOwner(),
     'blockreplica.is_locked': ReplicaIsLocked(),
