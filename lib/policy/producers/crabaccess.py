@@ -99,7 +99,7 @@ class CRABAccessHistory(object):
                 last_access = accesses[-1][0]
                 num_access = sum(e[1] for e in accesses)
                 if dataset.size != 0:
-                    norm_access = float(num_access) / dataset.size
+                    norm_access = float(num_access) / (dataset.size * 1.e-9)
 
             try:
                 last_block_created = max(r.last_block_created() for r in dataset.replicas)

@@ -23,11 +23,13 @@ class DatasetName(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.TEXT_TYPE, attr = 'name')
 
-    def rhs_map(self, expr):
-        if not re.match('/[^/]+/[^/]+/[^/]+', expr):
+    def rhs_map(self, expr, is_re = False):
+        if not is_re and not re.match('/[^/]+/[^/]+/[^/]+', expr):
             raise InvalidExpression('Invalid dataset name ' + expr)
         
-        if '*' in expr or '?' in expr:
+        if is_re:
+            return re.compile(expr)
+        elif '*' in expr or '?' in expr:
             return re.compile(fnmatch.translate(expr))
         else:
             return expr
@@ -36,14 +38,14 @@ class DatasetStatus(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         return getattr(Dataset, 'STAT_' + expr)
 
 class DatasetOnTape(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.NUMERIC_TYPE)
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         # historic mapping
         if expr == 'NONE':
             return 0
@@ -210,14 +212,14 @@ class ReplicaSiteStatus(ReplicaSiteAttr):
     def __init__(self):
         ReplicaSiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         return getattr(Site, 'STAT_' + expr)
 
 class ReplicaSiteStorageType(ReplicaSiteAttr):
     def __init__(self):
         ReplicaSiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'storage_type')
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         return getattr(Site, 'TYPE_' + expr)
 
 class SiteName(SiteAttr):
@@ -230,7 +232,7 @@ class SiteStatus(SiteAttr):
         SiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
         self.get_from_site = True
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         return getattr(Site, 'STAT_' + expr)
 
 class SiteStorageType(SiteAttr):
@@ -238,7 +240,7 @@ class SiteStorageType(SiteAttr):
         SiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'storage_type')
         self.get_from_site = True
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         return getattr(Site, 'TYPE_' + expr)
 
 class SiteOccupancy(SiteAttr):

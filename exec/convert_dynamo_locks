@@ -66,11 +66,16 @@ from dynamo.policy.producers import WebReplicaLock
 from dynamo.utils.interface.webservice import POST
 from dynamo.core.executable import inventory
 from dynamo.core.executable import registry
+from dynamo.operation.impl.mysqlapplock import MySQLApplicationLockInterface
 
 LOG.info('Translating web-based replica locks into DB-based locks.')
 
 expiry = '2018-02-28'
 comment = 'Auto-produced by dynamo'
+
+lock = MySQLApplicationLockInterface(config.applock)
+# we don't unlock within this application - need to run detox immediately afterwards
+lock.lock()
 
 # we process one source at a time, because each source registers mysql locks as a different user
 for name, source_conf in config.sources.items():
