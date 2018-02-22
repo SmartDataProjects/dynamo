@@ -130,7 +130,6 @@ CREATE TABLE `deletion_requests` (
   `site` varchar(32) NOT NULL,
   `user_id` int(10) unsigned NOT NULL,
   `timestamp` datetime NOT NULL,
-  `active_id` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `request` (`item`,`site`,`user_id`),
   KEY `site` (`site`),
@@ -142,6 +141,7 @@ CREATE TABLE `deletion_requests` (
 DROP TABLE IF EXISTS `active_transfers`;
 CREATE TABLE `active_transfers` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `request_id` int(10) unsigned NOT NULL,
   `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
   `site` varchar(32) NOT NULL,
   `group` varchar(32)  NOT NULL,
@@ -151,6 +151,7 @@ CREATE TABLE `active_transfers` (
   `created` datetime NOT NULL,
   `updated` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
+  KEY `request` (`request_id`),
   KEY `item` (`item`),
   KEY `site` (`site`),  
   KEY `timestamp` (`timestamp`)
@@ -160,6 +161,7 @@ CREATE TABLE `active_transfers` (
 DROP TABLE IF EXISTS `active_deletions`;
 CREATE TABLE `active_deletions` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `request_id` int(10) unsigned NOT NULL,
   `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
   `site` varchar(32) NOT NULL,
   `timestamp` datetime NOT NULL,
@@ -167,17 +169,10 @@ CREATE TABLE `active_deletions` (
   `created` datetime NOT NULL,
   `updated` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
+  KEY `request` (`request_id`),
   KEY `item` (`item`),
   KEY `site` (`site`),  
   KEY `timestamp` (`timestamp`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
-
-
-DROP TABLE IF EXISTS `transfer_activations`;
-CREATE TABLE `transfer_activations` (
-  `request_id` int(10) unsigned NOT NULL,
-  `active_id` int(10) unsigned NOT NULL,
-  UNIQUE KEY `activation` (`request_id`, `active_id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
