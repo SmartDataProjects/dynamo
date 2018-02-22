@@ -48,4 +48,4 @@ class MySQLApplicationLockInterface(ApplicationLockInterface):
         query += ' INNER JOIN `services` AS s ON s.`id` = l.`service_id`'
         query += ' WHERE u.`name` = %s AND s.`name` = %s AND l.`application` = %s'
 
-        self._registry.query(query, self.user, self.service, self.application)
+        self._registry.query(query, self.user, self.service, self.app)
