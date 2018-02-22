@@ -10,11 +10,18 @@ class MySQLApplicationLockInterface(ApplicationLockInterface):
     def __init__(self, config):
         ApplicationLockInterface.__init__(self, config)
 
-        self.user = config.user
-        self.service = config.service
-        self.app = config.app
-
         self._registry = MySQL(config.db_config)
+
+    def check(self): # override
+        query = 'SELECT `users`.`name`, `services`.`name` FROM `activity_lock`'
+        query += ' INNER JOIN `users` ON `users`.`id` = `activity_lock`.`user_id`'
+        query += ' INNER JOIN `services` ON `services`.`id` = `activity_lock`.`service_id`'
+        query += ' WHERE `application` = %s ORDER BY `timestamp` ASC LIMIT 1'
+        result = self._registry.query(query, self.app)
+        if len(result) == 0:
+            return None
+
+        return result[0]
 
     def lock(self): # override
         query = 'INSERT IGNORE INTO `activity_lock` (`user_id`, `service_id`, `application`, `timestamp`, `note`)'
@@ -23,18 +30,14 @@ class MySQLApplicationLockInterface(ApplicationLockInterface):
         self._registry.query(query, self.app, self.user, self.service)
 
         while True:
-            query = 'SELECT `users`.`name`, `services`.`name` FROM `activity_lock`'
-            query += ' INNER JOIN `users` ON `users`.`id` = `activity_lock`.`user_id`'
-            query += ' INNER JOIN `services` ON `services`.`id` = `activity_lock`.`service_id`'
-            query += ' WHERE `application` = %s ORDER BY `timestamp` ASC LIMIT 1'
-            result = self._registry.query(query, self.app)
-            if len(result) == 0:
+            owner = self.check()
+            if owner is None:
+                raise RuntimeError('Lock logic error - lock disappeared')
+
+            elif owner == (self.user, self.service):
                 break
 
-            elif result[0] == (self.user, self.service):
-                break
-
-            LOG.info('Activity lock for %s in place: user = %s, service = %s', self.app, *result[0])
+            LOG.info('Activity lock for %s in place: user = %s, service = %s', self.app, *owner)
             time.sleep(30)
 
         LOG.info('Locked system for %s', self.app)
