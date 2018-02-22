@@ -84,7 +84,7 @@ rm $BINTARGET/dynamo/common/db_conf.php.template
 [ -L $HTMLTARGET/dynamo/detoxlocks.php ] || ln -sf $BINTARGET/dynamo/detox/locks.php $HTMLTARGET/dynamo/detoxlocks.php
 [ -L $HTMLTARGET/dynamo/inventory.php ] || ln -sf $BINTARGET/dynamo/inventory/main.php $HTMLTARGET/dynamo/inventory.php
 [ -L $HTMLTARGET/registry/detoxlock ] || ln -sf $BINTARGET/registry/detoxlock.php $HTMLTARGET/registry/detoxlock
-[ -L $HTMLTARGET/registry/activitylock ] || ln -sf $BINTARGET/registry/activitylock.php $HTMLTARGET/registry/activitylock
+[ -L $HTMLTARGET/registry/applock ] || ln -sf $BINTARGET/registry/activitylock.php $HTMLTARGET/registry/applock
 [ -L $HTMLTARGET/registry/application ] || ln -sf $BINTARGET/registry/interface.php $HTMLTARGET/registry/application
 
 mv /tmp/dealermon.$$ $HTMLTARGET/dynamo/dealermon

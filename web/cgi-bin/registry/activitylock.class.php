@@ -36,7 +36,7 @@ class ActivityLock {
     $authorized = get_user($this->_db, $cert_dn, $issuer_dn, $service, $as_user, $this->_uid, $this->_uname, $this->_sid);
 
     if ($this->_uid == 0 || $this->_sid == 0)
-      send_response(400, 'BadRequest', 'Unknown user');
+      $this->send_response(400, 'BadRequest', 'Unknown user');
 
     $this->_read_only = !$authorized;
   }
@@ -44,10 +44,10 @@ class ActivityLock {
   public function execute($command, $request)
   {
     if (!in_array($command, array('check', 'lock', 'unlock')))
-      send_response(400, 'BadRequest', 'Invalid command (possible values: check, lock, unlock)');
+      $this->send_response(400, 'BadRequest', 'Invalid command (possible values: check, lock, unlock)');
 
     if ($command != 'check' && $this->_read_only)
-      send_response(400, 'BadRequest', 'User not authorized');
+      $this->send_response(400, 'BadRequest', 'User not authorized');
 
     $this->sanitize_request($command, $request);
 
@@ -64,60 +64,82 @@ class ActivityLock {
 
   private function exec_check($request)
   {
+    $query = 'SELECT `users`.`name`, `services`.`name`, `activity_lock`.`timestamp`, `activity_lock`.`note` FROM `activity_lock`';
+    $query .= ' INNER JOIN `users` ON `users`.`id` = `activity_lock`.`user_id`';
+    $query .= ' INNER JOIN `services` ON `services`.`id` = `activity_lock`.`service_id`';
+    $query .= ' WHERE `activity_lock`.`application` = ?';
+    $query .= ' ORDER BY `activity_lock`.`timestamp` ASC LIMIT 1';
+
+    $stmt = $this->_db->prepare($query);
+    $stmt->bind_param('s', $request['app']);
+    $stmt->bind_result($uname,  $sname, $timestamp, $note);
+    $stmt->execute();
+    $active = $stmt->fetch();
+    $stmt->close();
+
+    if (!$active)
+      $this->send_response(200, 'OK', 'Unlocked');
+
     $data = array();
-    $active = $this->get_data($request['app'], $data);
-    if ($active)
-      send_response(200, 'OK', 'Lock active', array($data));
-    else
-      send_response(200, 'OK', 'No activity');
+
+    $data['user'] = $uname;
+    if ($sname != 'user')
+      $data['service'] = $sname;
+
+    $data['timestamp'] = $timestamp;
+    if ($note !== NULL)
+      $data['note'] = $note;
+
+    $this->send_response(200, 'OK', 'Locked', array($data));
   }
 
   private function exec_lock($request)
   {
-    $this->_db->query('LOCK TABLES `activity_lock` WRITE, `users` WRITE, `services` WRITE');
+    $this->lock_table(true);
 
-    $existing = array();
+    $query = 'SELECT `user_id`, `service_id` FROM `activity_lock`';
+    $query .= ' WHERE `application` = ? ORDER BY `timestamp` ASC';
+    $stmt = $this->_db->prepare($query);
+    $stmt->bind_param('s', $request['app']);
+    $stmt->bind_result($uid, $sid);
+    $stmt->execute();
+    $num_locks = 0;
+    while ($stmt->fetch()) {
+      if ($num_locks == 0 && $uid == $this->_uid && $sid == $this->_sid) {
+        // this user has the first lock
+        $stmt->close();
+        $this->send_response(200, 'OK', 'Application already locked');
+      }
 
-    if ($this->get_data($request['app'], $existing))
-      send_response(200, 'OK', 'Failed: application already locked', array($existing));
-    else {
-      $note = isset($request['note']) ? $request['note'] : NULL;
-
-      $query = 'INSERT INTO `activity_lock` (`user_id`, `service_id`, `application`, `timestamp`, `note`) VALUES (?, ?, ?, NOW(), ?)';
-      $stmt = $this->_db->prepare($query);
-      $stmt->bind_param('iiss', $this->_uid, $this->_sid, $request['app'], $note);
-      $stmt->execute();
-      $stmt->close();
-
-      $data = array();
-
-      if ($this->get_data($request['app'], $data))
-        send_response(200, 'OK', 'OK: Lock active', array($data));
-      else
-        send_response(400, 'InternalError', 'Failed to lock ' . $request['app']);
+      ++$num_locks;
     }
+    $stmt->close();
+
+    $query = 'INSERT IGNORE INTO `activity_lock` (`user_id`, `service_id`, `application`, `timestamp`, `note`) VALUES (?, ?, ?, NOW(), ?)';
+    $stmt = $this->_db->prepare($query);
+    $stmt->bind_param('iiss', $this->_uid, $this->_sid, $request['app'], $note);
+    $stmt->execute();
+    $stmt->close();
+
+    if ($num_locks == 0)
+      $this->send_response(200, 'OK', 'Locked');
+    else
+      $this->send_response(200, 'WAIT', sprintf('Locked by %d other users', $num_locks));
   }
 
   private function exec_unlock($request)
   {
-    $this->_db->query('LOCK TABLES `activity_lock` WRITE');
+    $query = 'DELETE FROM `activity_lock` WHERE `user_id` = ? AND `service_id` = ? AND `application` = ?';
+    $stmt = $this->_db->prepare($query);
+    $stmt->bind_param('iis', $this->_uid, $this->_sid, $request['app']);
+    $stmt->execute();
+    $unlocked = ($stmt->affected_rows != 0);
+    $stmt->close();
 
-    $existing = array();
-
-    if (!$this->get_data($request['app'], $existing, true))
-      send_response(200, 'OK', 'OK: application already unlocked');
-
-    if ($existing['uid'] == $this->_uid && $existing['sid'] == $this->_sid) {
-      $query = 'DELETE FROM `activity_lock` WHERE `user_id` = ? AND `service_id` = ? AND `application` = ?';
-      $stmt = $this->_db->prepare($query);
-      $stmt->bind_param('iis', $this->_uid, $this->_sid, $request['app']);
-      $stmt->execute();
-      $stmt->close();
-
-      send_response(200, 'OK', 'OK: Lock disactivated');
-    }
+    if ($unlocked)
+      $this->send_response(200, 'OK', 'Unlocked');
     else
-      send_response(200, 'OK', 'Failed: application locked by another user');
+      $this->send_response(200, 'OK', 'Application already unlocked');
   }
 
   private function sanitize_request($command, &$request)
@@ -136,46 +158,26 @@ class ActivityLock {
     }
 
     if (!isset($request['app']))
-      send_response(400, 'BadRequest', 'No app given');
+      $this->send_response(400, 'BadRequest', 'No app given');
     else if(!in_array($request['app'], $this->_apps))
-      send_response(400, 'BadRequest', 'Unknown app');
+      $this->send_response(400, 'BadRequest', 'Unknown app');
   }
 
-  private function get_data($application, &$data, $numerical = false)
+  private function lock_table($updating)
   {
-    if ($numerical) {
-      $query = 'SELECT `user_id`, `service_id`, `timestamp`, `note` FROM `activity_lock`';
-      $query .= ' WHERE `application` = ?';
-    }
-    else {
-      $query = 'SELECT `users`.`name`, `services`.`name`, `activity_lock`.`timestamp`, `activity_lock`.`note` FROM `activity_lock`';
-      $query .= ' INNER JOIN `users` ON `users`.`id` = `activity_lock`.`user_id`';
-      $query .= ' INNER JOIN `services` ON `services`.`id` = `activity_lock`.`service_id`';
-      $query .= ' WHERE `activity_lock`.`application` = ?';
-    }
+    if ($updating)
+      $query = 'LOCK TABLES `activity_lock` WRITE, `users` WRITE, `services` WRITE';
+    else
+      $query = 'UNLOCK TABLES';
 
-    $stmt = $this->_db->prepare($query);
-    $stmt->bind_param('s', $application);
-    $stmt->bind_result($uname,  $sname, $timestamp, $note);
-    $stmt->execute();
-    $active = $stmt->fetch();
-    $stmt->close();
+    $this->_db->query($query);
+  }
 
-    if ($numerical) {
-      $data['uid'] = $uname;
-      $data['sid'] = $sname;
-    }
-    else {
-      $data['user'] = $uname;
-      if ($sname != 'user')
-        $data['service'] = $sname;
-    }
-
-    $data['timestamp'] = $timestamp;
-    if ($note !== NULL)
-      $data['note'] = $note;
-    
-    return $active;
+  private function send_response($code, $result, $message, $data = NULL)
+  {
+    // Table lock will be released at the end of the session. Explicit unlocking is in principle unnecessary.
+    $this->lock_table(false);
+    send_response($code, $result, $message, $data);
   }
 }
 
