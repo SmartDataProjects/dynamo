@@ -125,6 +125,7 @@ do
   echo 'GRANT SELECT ON `dynamo%`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT SELECT, LOCK TABLES ON `dynamohistory`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT UPDATE ON `dynamohistory`.`lock` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`activity_lock` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
 done
 
 ## Write my.cnf files (optional)
