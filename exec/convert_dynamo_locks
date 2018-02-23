@@ -74,64 +74,68 @@ expiry = '2018-02-28'
 comment = 'Auto-produced by dynamo'
 
 lock = MySQLApplicationLockInterface(config.applock)
-# we don't unlock within this application - need to run detox immediately afterwards
+# we don't unlock within this application unless something fails - need to run detox immediately afterwards
 lock.lock()
 
-# we process one source at a time, because each source registers mysql locks as a different user
-for name, source_conf in config.sources.items():
-    LOG.info('Translating ' + name)
-
-    instance_conf = Configuration({'sources': {name: source_conf.clone()}, 'auth': config.auth})
-
-    weblock = WebReplicaLock(instance_conf)
-    weblock.update(inventory)
-
-    data = []
+try:
+    # we process one source at a time, because each source registers mysql locks as a different user
+    for name, source_conf in config.sources.items():
+        LOG.info('Translating ' + name)
     
-    for dataset in inventory.datasets.itervalues():
-        try:
-            locked_blocks = dataset.attr['locked_blocks']
-        except KeyError:
-            # weblock did not create any lock for this dataset
-            continue
+        instance_conf = Configuration({'sources': {name: source_conf.clone()}, 'auth': config.auth})
     
-        entries = []
+        weblock = WebReplicaLock(instance_conf)
+        weblock.update(inventory)
     
-        # if the lock applies to all sites and all blocks of this dataset, we just make one global lock
-        collapse_dataset = True
-        locked_sites = set()
-
-        for site, blocks in locked_blocks.iteritems():
-            locked_sites.add(site)
-
-            replica = site.find_dataset_replica(dataset)
+        data = []
+        
+        for dataset in inventory.datasets.itervalues():
+            try:
+                locked_blocks = dataset.attr['locked_blocks']
+            except KeyError:
+                # weblock did not create any lock for this dataset
+                continue
+        
+            entries = []
+        
+            # if the lock applies to all sites and all blocks of this dataset, we just make one global lock
+            collapse_dataset = True
+            locked_sites = set()
     
-            if blocks == set(br.block for br in replica.block_replicas):
-                entries.append({'item': dataset.name, 'sites': site.name, 'expires': expiry, 'comment': comment})
-            else:
-                for block in blocks:
-                    entries.append({'item': dataset.name + '#' + block.real_name(), 'sites': site.name, 'expires': expiry, 'comment': comment})
+            for site, blocks in locked_blocks.iteritems():
+                locked_sites.add(site)
     
+                replica = site.find_dataset_replica(dataset)
+        
+                if blocks == set(br.block for br in replica.block_replicas):
+                    entries.append({'item': dataset.name, 'sites': site.name, 'expires': expiry, 'comment': comment})
+                else:
+                    for block in blocks:
+                        entries.append({'item': dataset.name + '#' + block.real_name(), 'sites': site.name, 'expires': expiry, 'comment': comment})
+        
+                    collapse_dataset = False
+    
+            if locked_sites != set(r.site for r in dataset.replicas):
                 collapse_dataset = False
-
-        if locked_sites != set(r.site for r in dataset.replicas):
-            collapse_dataset = False
+        
+            if collapse_dataset:
+                # replace entries with a single-element list
+                entries = [{'item': dataset.name, 'expires': expiry, 'comment': comment}]
+        
+            data.extend(entries)
+        
+            dataset.attr.pop('locked_blocks')
     
-        if collapse_dataset:
-            # replace entries with a single-element list
-            entries = [{'item': dataset.name, 'expires': expiry, 'comment': comment}]
+        LOG.info('Sending %d datasets and blocks to registry frontend', len(data))
     
-        data.extend(entries)
+        if args.test_run:
+            LOG.info('Not sending data to registry.')
+        else:
+            request_url = 'detoxlock/set?asuser=%s&service=%s' % (source_conf.user, source_conf.service)
+            registry.frontend.make_request(request_url, method = POST, options = data, format = 'json')
     
-        dataset.attr.pop('locked_blocks')
+    # Intentionally removing the file only when everything succeeds
+    os.unlink(config.process_lock)
 
-    LOG.info('Sending %d datasets and blocks to registry frontend', len(data))
-
-    if args.test_run:
-        LOG.info('Not sending data to registry.')
-    else:
-        request_url = 'detoxlock/set?asuser=%s&service=%s' % (source_conf.user, source_conf.service)
-        registry.frontend.make_request(request_url, method = POST, options = data, format = 'json')
-
-# Intentionally removing the file only when everything succeeds
-os.unlink(config.process_lock)
+except:
+    lock.unlock()
