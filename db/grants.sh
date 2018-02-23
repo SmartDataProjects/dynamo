@@ -112,18 +112,32 @@ do
   new_user $PRIV_USER $HOST $PRIV_USER_PASSWD
   new_user $NORMAL_USER $HOST $NORMAL_USER_PASSWD
 
+  # SERVER_USER gets all privileges, so wildcard is fine
   echo 'GRANT ALL PRIVILEGES ON `dynamo%`.* TO "'$SERVER_USER'"@"'$HOST'";' | $ROOTSQL
 
-  echo 'GRANT ALL PRIVILEGES ON `dynamo_tmp`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT ON `dynamo%`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  # Other users have table-specific grants, in which case use of wildcard can result in unexpected behavior
+
+  # DB-wide operations (PRIV_USER)
+  echo 'GRANT SELECT ON `dynamo`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT ALL PRIVILEGES ON `dynamo\_tmp`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT ON `dynamoregister`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT, INSERT, UPDATE, DELETE, LOCK TABLES ON `dynamohistory`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE, DROP ON `dynamohistory\_cache`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+
+  # Table-specific operations (PRIV_USER)
   echo 'GRANT UPDATE ON `dynamo`.`system` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE, DROP ON `dynamohistory%`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamo`.`dataset_requests` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamo`.`dataset_accesses` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`activity_lock` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
 
-  echo 'GRANT ALL PRIVILEGES ON `dynamo_tmp`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT ON `dynamo%`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  # DB-wide operations (NORMAL_USER)
+  echo 'GRANT SELECT ON `dynamo`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT ALL PRIVILEGES ON `dynamo\_tmp`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT ON `dynamoregister`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT SELECT, LOCK TABLES ON `dynamohistory`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT ON `dynamohistory\_cache`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+
+  # Table-specific operations (NORMAL_USER)
   echo 'GRANT UPDATE ON `dynamohistory`.`lock` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`activity_lock` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
 done
