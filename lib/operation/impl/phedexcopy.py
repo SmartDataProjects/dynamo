@@ -184,7 +184,10 @@ class PhEDExCopyInterface(CopyInterface):
             try:
                 cont = dataset['subscription'][0]
                 bytes = dataset['bytes']
-                node_bytes = cont['node_bytes']
+                if cont['node_bytes'] is not None:
+                    node_bytes = cont['node_bytes']
+                else:
+                    node_bytes = 0
                 time_update = cont['time_update']
                 site_name = cont['node']
             except KeyError:
@@ -196,7 +199,9 @@ class PhEDExCopyInterface(CopyInterface):
                 for block in dataset['block']:
                     cont = block['subscription'][0]
                     bytes += block['bytes']
-                    node_bytes += cont['node_bytes']
+                    if cont['node_bytes'] is not None:
+                        node_bytes += cont['node_bytes']
+
                     time_update = max(time_update, cont['time_update'])
                     site_name = cont['node']
 
