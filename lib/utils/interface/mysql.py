@@ -41,8 +41,10 @@ class MySQL(object):
             self._connection_parameters['db'] = config['db']
 
         self._connection = None
-
-        self.reuse_connection = config.get('reuse_connection', True)
+        
+        # Use with care! A deadlock can occur when another session tries to lock a table used by a session with
+        # reuse_connection = True
+        self.reuse_connection = config.get('reuse_connection', False)
 
         # default 1M characters
         self.max_query_len = config.get('max_query_len', 1000000)

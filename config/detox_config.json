@@ -75,7 +75,7 @@
     "service": "dynamo",
     "app": "detox",
     "db_config": {
-      "config_file": "/etc/my.cnf.d/dynamo.cnf",
+      "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
       "config_group": "mysql",
       "db": "dynamoregister"
     }

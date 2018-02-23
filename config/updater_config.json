@@ -24,7 +24,8 @@
       "ssb": {
         "url_base": "http://dashb-ssb.cern.ch/dashboard/request.py",
         "auth_handler": "HTTPSCertKeyHandler",
-        "auth_handler_conf": {}
+        "auth_handler_conf": {},
+        "num_attempts": 5
       },
       "phedex": {},
       "ssb_cache_lifetime": 1800
