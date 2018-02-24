@@ -116,12 +116,15 @@ CREATE TABLE `transfer_requests` (
   `first_request_time` datetime NOT NULL,
   `last_request_time` datetime NOT NULL,
   `request_count` int(10) unsigned NOT NULL DEFAULT '1',
+  `status` enum('new', 'activated', 'updated', 'completed', 'rejected') NOT NULL DEFAULT 'new',
+  `rejection_reason` text CHARACTER SET latin1 COLLATE latin1_general_cs NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `request` (`item`,`site`,`user_id`),
   KEY `site` (`site`),
   KEY `user` (`user_id`),
   KEY `first_request_time` (`first_request_time`),
-  KEY `last_request_time` (`last_request_time`)
+  KEY `last_request_time` (`last_request_time`),
+  KEY `status` (`status`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 
@@ -132,11 +135,14 @@ CREATE TABLE `deletion_requests` (
   `site` varchar(32) NOT NULL,
   `user_id` int(10) unsigned NOT NULL,
   `timestamp` datetime NOT NULL,
+  `status` enum('new', 'activated', 'completed', 'rejected') NOT NULL DEFAULT 'new',
+  `rejection_reason` text CHARACTER SET latin1 COLLATE latin1_general_cs NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `request` (`item`,`site`,`user_id`),
   KEY `site` (`site`),
   KEY `user` (`user_id`),
-  KEY `timestamp` (`timestamp`)
+  KEY `timestamp` (`timestamp`),
+  KEY `status` (`status`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 
@@ -149,7 +155,7 @@ CREATE TABLE `active_transfers` (
   `group` varchar(32)  NOT NULL,
   `timestamp` datetime NOT NULL,
   `rank` int(10) unsigned DEFAULT '0',
-  `status` enum('new','queued','failed','completed') NOT NULL,
+  `status` enum('new','queued','failed','completed') NOT NULL DEFAULT 'new',
   `created` datetime NOT NULL,
   `updated` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
@@ -167,7 +173,7 @@ CREATE TABLE `active_deletions` (
   `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
   `site` varchar(32) NOT NULL,
   `timestamp` datetime NOT NULL,
-  `status` enum('new','queued') NOT NULL,
+  `status` enum('new','queued') NOT NULL DEFAULT 'new',
   `created` datetime NOT NULL,
   `updated` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),

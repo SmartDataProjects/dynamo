@@ -191,9 +191,11 @@ class Requests {
       '`transfer_requests`.`site`',
       '`transfer_requests`.`group`',
       '`transfer_requests`.`num_copies`',
+      '`transfer_requests`.`status`',
       '`transfer_requests`.`first_request_time`',
       '`transfer_requests`.`last_request_time`',
       '`transfer_requests`.`request_count`',
+      '`transfer_requests`.`rejection_reason`',
       '`active_transfers`.`site`',
       '`active_transfers`.`status`',
       '`active_transfers`.`updated`'
@@ -247,9 +249,9 @@ class Requests {
       call_user_func_array(array($stmt, "bind_param"), $params);
 
     if ($add_user)
-      $stmt->bind_result($rid, $item, $site, $group, $ncopy, $first_request, $last_request, $request_count, $asite, $astatus, $atimestamp, $uname);
+      $stmt->bind_result($rid, $item, $site, $group, $ncopy, $status, $first_request, $last_request, $request_count, $reason, $asite, $astatus, $atimestamp, $uname);
     else
-      $stmt->bind_result($rid, $item, $site, $group, $ncopy, $first_request, $last_request, $request_count, $asite, $astatus, $atimestamp);
+      $stmt->bind_result($rid, $item, $site, $group, $ncopy, $status, $first_request, $last_request, $request_count, $reason, $asite, $astatus, $atimestamp);
 
     $stmt->execute();
 
@@ -266,6 +268,7 @@ class Requests {
           'site' => $site,
           'group' => $group,
           'ncopy' => $ncopy,
+          'status' => $status,
           'first_request' => $first_request,
           'last_request' => $last_request,
           'request_count' => $request_count
@@ -276,7 +279,10 @@ class Requests {
         if ($add_user)
           $datum['user'] = $uname;
 
-        $datum['transfer'] = array();
+        if ($status == 'rejected')
+          $datum['reason'] = $reason;
+        else if ($status != 'new')
+          $datum['transfer'] = array();
       }
 
       if ($astatus !== NULL)
@@ -302,7 +308,9 @@ class Requests {
 
   private function update_transfer_request($request_ids, $content)
   {
-    $query = 'UPDATE `transfer_requests` SET `last_request_time` = NOW(), `request_count` = `request_count` + 1, ';
+    $query = 'UPDATE `transfer_requests` SET `last_request_time` = NOW(), `request_count` = `request_count` + 1,';
+    $query .= '`status` = IF(`status` = "new", "new", "updated")';
+
     $params = array('');
 
     if (isset($content['group'])) {
@@ -360,7 +368,9 @@ class Requests {
       '`deletion_requests`.`id`',
       '`deletion_requests`.`item`',
       '`deletion_requests`.`site`',
+      '`deletion_requests`.`status`',
       '`deletion_requests`.`timestamp`',
+      '`deletion_requests`.`rejection_reason`',
       '`active_deletions`.`status`',
       '`active_deletions`.`updated`'
     );
@@ -405,9 +415,9 @@ class Requests {
       call_user_func_array(array($stmt, "bind_param"), $params);
 
     if ($add_user)
-      $stmt->bind_result($rid, $item, $site, $timestamp, $astatus, $atimestamp, $uname);
+      $stmt->bind_result($rid, $item, $site, $status, $timestamp, $reason, $astatus, $atimestamp, $uname);
     else
-      $stmt->bind_result($rid, $item, $site, $timestamp, $astatus, $atimestamp);
+      $stmt->bind_result($rid, $item, $site, $status, $timestamp, $reason, $astatus, $atimestamp);
 
     $stmt->execute();
     $_rid = 0;
@@ -419,6 +429,7 @@ class Requests {
           'request_id' => $rid,
           'item' => $item,
           'site' => $site,
+          'status' => $status,
           'requested' => $timestamp
         );
 
@@ -427,10 +438,13 @@ class Requests {
         if ($add_user)
           $datum['user'] = $uname;
 
-        $datum['deletion'] = array();
+        if ($status == 'rejected')
+          $datum['reason'] = $reason;
+        else if ($status != 'new')
+          $datum['deletion'] = array();
       }
 
-      if ($astatus === NULL)
+      if ($astatus !== NULL)
         $datum['deletion'][] = array('status' => $astatus, 'updated' => $atimestamp);
     }
 
