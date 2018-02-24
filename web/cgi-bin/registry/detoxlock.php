@@ -21,8 +21,10 @@ if ($_SERVER['SSL_CLIENT_VERIFY'] != 'SUCCESS')
 
 include_once('detoxlock.class.php');
 
-if (isset($_REQUEST['service']))
+if (isset($_REQUEST['service'])) {
   $service = $_REQUEST['service'];
+  // $request['service'] is used to look up locks when command = list
+}
 else
   $service = 'user';
 

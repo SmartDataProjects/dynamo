@@ -78,7 +78,7 @@ class ActivityLock {
     $stmt->close();
 
     if (!$active)
-      $this->send_response(200, 'OK', 'Unlocked');
+      $this->send_response(200, 'OK', 'Not locked');
 
     $data = array();
 
