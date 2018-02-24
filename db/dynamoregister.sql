@@ -113,12 +113,15 @@ CREATE TABLE `transfer_requests` (
   `group` varchar(32)  NOT NULL,
   `num_copies` tinyint(1) NOT NULL,
   `user_id` int(10) unsigned NOT NULL,
-  `timestamp` datetime NOT NULL,
+  `first_request_time` datetime NOT NULL,
+  `last_request_time` datetime NOT NULL,
+  `request_count` int(10) unsigned NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`),
   UNIQUE KEY `request` (`item`,`site`,`user_id`),
   KEY `site` (`site`),
   KEY `user` (`user_id`),
-  KEY `timestamp` (`timestamp`)
+  KEY `first_request_time` (`first_request_time`),
+  KEY `last_request_time` (`last_request_time`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 
@@ -146,7 +149,7 @@ CREATE TABLE `active_transfers` (
   `group` varchar(32)  NOT NULL,
   `timestamp` datetime NOT NULL,
   `rank` int(10) unsigned DEFAULT '0',
-  `status` enum('new','queued') NOT NULL,
+  `status` enum('new','queued','failed','completed') NOT NULL,
   `created` datetime NOT NULL,
   `updated` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),

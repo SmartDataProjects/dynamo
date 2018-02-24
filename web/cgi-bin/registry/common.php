@@ -86,6 +86,58 @@ function get_user($db, $cert_dn, $issuer_dn, $service, $as_user, &$uid, &$uname,
   }
 }
 
+function jsonize($array)
+{
+  // serially convert PHP data structure to JSON without integrity check.
+
+  if (count($array) == 0 || array_keys($array) === range(0, count($array) - 1)) {
+    // sequential array
+    $json = '[';
+    
+    $delim = '';
+    foreach ($array as $elem) {
+      $json .= $delim;
+
+      if (is_array($elem))
+        $json .= jsonize($elem);
+      else if (is_numeric($elem))
+        $json .= $elem;
+      else if ($value === NULL)
+        $json .= 'null';
+      else
+        $json .= sprintf('"%s"', $elem);
+
+      $delim = ', ';
+    }
+
+    $json .= ']';
+  }
+  else {
+    // associative array
+    $json = '{';
+
+    $delim = '';
+    foreach ($array as $key => $value) {
+      $json .= sprintf('%s"%s": ', $delim, $key);
+
+      if (is_array($value))
+        $json .= jsonize($value);
+      else if (is_numeric($value))
+        $json .= $value;
+      else if ($value === NULL)
+        $json .= 'null';
+      else
+        $json .= sprintf('"%s"', $value);
+
+      $delim = ', ';
+    }
+
+    $json .= '}';
+  }
+
+  return $json;
+}
+
 function send_response($code, $result, $message, $data = NULL, $format = 'json')
 {
   header($_SERVER['SERVER_PROTOCOL'] . ' ' . $code, true, $code);
@@ -94,25 +146,7 @@ function send_response($code, $result, $message, $data = NULL, $format = 'json')
     $json = '{"result": "' . $result . '", "message": "' . $message . '"';
 
     if ($data !== NULL) {
-      $json .= ', "data": [';
-      $data_json = array();
-      foreach ($data as $elem) {
-        $j = array();
-        foreach($elem as $key => $value) {
-          $kv = '"' . $key .'": ';
-          if (is_string($value))
-            $kv .= '"' . $value . '"';
-          else if ($value === NULL)
-            $kv .= 'null';
-          else
-            $kv .= '' . $value;
-
-          $j[] = $kv;
-        }
-        $data_json[] = '{' . implode(', ', $j) . '}';
-      }
-      $json .= implode(', ', $data_json);
-      $json .= ']';
+      $json .= ', "data": ' . jsonize($data);
     }
   
     echo $json . "}\n";

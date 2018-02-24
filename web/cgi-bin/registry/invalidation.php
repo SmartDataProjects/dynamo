@@ -17,8 +17,8 @@ if ($command == 'help') {
 include_once(__DIR__ . '/../dynamo/common/db_conf.php');
 include_once(__DIR__ . '/common.php');
 
-if ($_SERVER['SSL_CLIENT_VERIFY'] != 'SUCCESS')
-  send_response(401, 'AuthFailed', 'SSL authentication failed.');
+/* if ($_SERVER['SSL_CLIENT_VERIFY'] != 'SUCCESS') */
+/*   send_response(401, 'AuthFailed', 'SSL authentication failed.'); */
 
 if ($command == 'invalidate' || $command == 'clear') {
   if (!isset($_REQUEST['item']))

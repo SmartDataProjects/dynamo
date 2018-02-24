@@ -15,14 +15,14 @@ class Requests {
   private $_uname = '';
   private $_read_only = true;
 
-  public function __construct($cert_dn, $issuer_dn, $as_user = NULL)
+  public function __construct($cert_dn, $issuer_dn, $service, $as_user = NULL)
   {
     global $db_conf;
 
     $this->_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], 'dynamoregister');
 
     $sid = 0;
-    $authorized = get_user($this->_db, $cert_dn, $issuer_dn, 'user', $as_user, $this->_uid, $this->_uname, $sid);
+    $authorized = get_user($this->_db, $cert_dn, $issuer_dn, $service, $as_user, $this->_uid, $this->_uname, $sid);
 
     if ($this->_uid == 0 || $sid == 0)
       $this->send_response(400, 'BadRequest', 'Unknown user');
@@ -54,7 +54,7 @@ class Requests {
   private function exec_transfer($request)
   {
     // we need the table to be consistent between get_data and insert
-    $this->lock_table(true);
+    $this->lock_table('transfer');
 
     $existing_data = $this->get_transfer_data($request);
     
@@ -71,13 +71,15 @@ class Requests {
 
       $request_id = $this->create_transfer_request($request['item'], $request['site'], $request['group'], $ncopy);
 
-      if ($request_id != 0)
-        $this->send_response(200, 'OK', 'Transfer requested', array_values($this->get_transfer_data(array('request_id' => $request_id))));
+      if ($request_id != 0) {
+        $new_transfer = $this->get_transfer_data(array('request_id' => $request_id));
+        $this->send_response(200, 'OK', 'Transfer requested', array_values($new_transfer));
+      }
       else
         $this->send_response(400, 'InternalError', 'Failed to request transfer');
     }
     else {
-      // known lock - update
+      // known transfer - update
       $updates = array();
       if (isset($request['group']))
         $updates['group'] = $request['group'];
@@ -101,7 +103,7 @@ class Requests {
   private function exec_delete($request)
   {
     // we need the table to be consistent between get_deletion_data and insert
-    $this->lock_table(true);
+    $this->lock_table('deletion');
 
     $existing_data = $this->get_deletion_data($request);
     
@@ -129,9 +131,9 @@ class Requests {
       $this->send_response(400, 'BadRequest', 'Request type not given');
 
     if ($request['type'] == 'transfer')
-      $existing_data = $this->get_transfer_data($request);
+      $existing_data = $this->get_transfer_data($request, true);
     else if ($request['type'] == 'deletion')
-      $existing_data = $this->get_deletion_data($request);
+      $existing_data = $this->get_deletion_data($request, true);
     else
       $this->send_response(400, 'BadRequest', 'Invalid request type');
 
@@ -173,7 +175,7 @@ class Requests {
     return false;
   }
 
-  private function get_transfer_data($request)
+  private function get_transfer_data($request, $add_user = false)
   {
     // structure:
     // array(
@@ -183,11 +185,26 @@ class Requests {
 
     $data = array();
 
-    $query = 'SELECT `transfer_requests`.`id`, `transfer_requests`.`item`, `transfer_requests`.`site`, `transfer_requests`.`group`,';
-    $query .= ' `transfer_requests`.`num_copies`, `transfer_requests`.`timestamp`,';
-    $query .= ' `users`.`name`, `active_transfers`.`site`, `active_transfers`.`status`, `active_transfers`.`updated` FROM `transfer_requests`';
-    $query .= ' INNER JOIN `users` ON `users`.`id` = `transfer_requests`.`user_id`';
+    $fields = array(
+      '`transfer_requests`.`id`',
+      '`transfer_requests`.`item`',
+      '`transfer_requests`.`site`',
+      '`transfer_requests`.`group`',
+      '`transfer_requests`.`num_copies`',
+      '`transfer_requests`.`first_request_time`',
+      '`transfer_requests`.`last_request_time`',
+      '`transfer_requests`.`request_count`',
+      '`active_transfers`.`site`',
+      '`active_transfers`.`status`',
+      '`active_transfers`.`updated`'
+    );
+    if ($add_user)
+      $fields[] = '`users`.`name`';
+
+    $query = 'SELECT ' . implode(',', $fields) . ' FROM `transfer_requests`';
     $query .= ' LEFT JOIN `active_transfers` ON `active_transfers`.`request_id` = `transfer_requests`.`id`';
+    if ($add_user)
+      $query .= ' INNER JOIN `users` ON `users`.`id` = `transfer_requests`.`user_id`';
 
     $where_clause = array();
     $params = array('');
@@ -220,35 +237,50 @@ class Requests {
     if (count($where_clause) != 0)
       $query .= ' WHERE ' . implode(' AND ', $where_clause);
 
+    $query .= ' ORDER BY `transfer_requests`.`id`';
+
     $stmt = $this->_db->prepare($query);
+
+    error_log($this->_db->error);
 
     if (count($params) > 1)
       call_user_func_array(array($stmt, "bind_param"), $params);
 
-    $stmt->bind_result($rid, $item, $site, $group, $ncopy, $timestamp, $uname, $asite, $astatus, $atimestamp);
+    if ($add_user)
+      $stmt->bind_result($rid, $item, $site, $group, $ncopy, $first_request, $last_request, $request_count, $asite, $astatus, $atimestamp, $uname);
+    else
+      $stmt->bind_result($rid, $item, $site, $group, $ncopy, $first_request, $last_request, $request_count, $asite, $astatus, $atimestamp);
+
     $stmt->execute();
+
+    $_rid = 0;
     while ($stmt->fetch()) {
-      $datum =
-        array(
-              'request_id' => $rid,
-              'user' => $uname,
-              'item' => $item,
-              'site' => $site,
-              'group' => $group,
-              'ncopy' => $ncopy,
-              'requested' => $timestamp
-              );
+      error_log($rid . $item);
 
-      if ($astatus === NULL) {
-        $datum['status'] = 'undefined';
-        $datum['updated'] = $timestamp;
-      }
-      else {
-        $datum['status'] = $astatus;
-        $datum['updated'] = $atimestamp;
+      if ($rid != $_rid) {
+        $_rid = $rid;
+
+        $data[$rid] = array(
+          'request_id' => $rid,
+          'item' => $item,
+          'site' => $site,
+          'group' => $group,
+          'ncopy' => $ncopy,
+          'first_request' => $first_request,
+          'last_request' => $last_request,
+          'request_count' => $request_count
+        );
+
+        $datum = &$data[$rid];
+
+        if ($add_user)
+          $datum['user'] = $uname;
+
+        $datum['transfer'] = array();
       }
 
-      $data[$rid] = $datum;
+      if ($astatus !== NULL)
+        $datum['transfer'][] = array('site' => $asite, 'status' => $astatus, 'updated' => $atimestamp);
     }
 
     $stmt->close();
@@ -258,7 +290,7 @@ class Requests {
 
   private function create_transfer_request($item, $site, $group, $ncopy)
   {
-    $query = 'INSERT INTO `transfer_requests` (`item`, `site`, `group`, `num_copies`, `user_id`, `timestamp`) VALUES (?, ?, ?, ?, ?, NOW())';
+    $query = 'INSERT INTO `transfer_requests` (`item`, `site`, `group`, `num_copies`, `user_id`, `first_request_time`, `last_request_time`) VALUES (?, ?, ?, ?, ?, NOW(), NOW())';
     $stmt = $this->_db->prepare($query);
     $stmt->bind_param('sssii', $item, $site, $group, $ncopy, $this->_uid);
     $stmt->execute();
@@ -268,95 +300,9 @@ class Requests {
     return $request_id;
   }
 
-  private function get_deletion_data($request)
-  {
-    // structure:
-    // array(
-    //   id => array('request_id' => id, 'item' => name, ...),
-    //   ...
-    // )
-
-    $data = array();
-
-    $query = 'SELECT `deletion_requests`.`id`, `deletion_requests`.`item`, `deletion_requests`.`site`, `deletion_requests`.`timestamp`,';
-    $query .= ' `users`.`name`, `active_deletions`.`status`, `active_deletions`.`updated` FROM `deletion_requests`';
-    $query .= ' INNER JOIN `users` ON `users`.`id` = `deletion_requests`.`user_id`';
-    $query .= ' LEFT JOIN `active_deletions` ON `active_deletions`.`request_id` = `deletion_requests`.`id`';
-
-    $where_clause = array();
-    $params = array('');
-
-    if (isset($request['request_id'])) {
-      $where_clause[] = '`deletion_requests`.`id` = ?';
-      $params[0] .= 'i';
-      $params[] = &$request['request_id'];
-    }
-    else {
-      if (isset($request['item'])) {
-        $where_clause[] =  '`deletion_requests`.`item` = ?';
-        $params[0] .= 's';
-        $params[] = &$request['item'];
-      }
-
-      if (isset($request['site'])) {
-        $where_clause[] =  '`deletion_requests`.`site` = ?';
-        $params[0] .= 's';
-        $params[] = &$request['site'];
-      }
-    }
-
-    if (count($where_clause) != 0)
-      $query .= ' WHERE ' . implode(' AND ', $where_clause);
-
-    $stmt = $this->_db->prepare($query);
-
-    if (count($params) > 1)
-      call_user_func_array(array($stmt, "bind_param"), $params);
-
-    $stmt->bind_result($rid, $item, $site, $timestamp, $uname, $astatus, $atimestamp);
-    $stmt->execute();
-    while ($stmt->fetch()) {
-      $datum =
-        array(
-              'request_id' => $rid,
-              'user' => $uname,
-              'item' => $item,
-              'site' => $site,
-              'requested' => $timestamp
-              );
-
-      if ($astatus === NULL) {
-        $datum['status'] = 'undefined';
-        $datum['updated'] = $timestamp;
-      }
-      else {
-        $datum['status'] = $astatus;
-        $datum['updated'] = $atimestamp;
-      }
-
-      $data[$rid] = $datum;
-    }
-
-    $stmt->close();
-
-    return $data;
-  }
-
-  private function create_deletion_request($item, $site)
-  {
-    $query = 'INSERT INTO `deletion_requests` (`item`, `site`, `user_id`, `timestamp`) VALUES (?, ?, ?, NOW())';
-    $stmt = $this->_db->prepare($query);
-    $stmt->bind_param('ssi', $item, $site, $this->_uid);
-    $stmt->execute();
-    $request_id = $stmt->insert_id;
-    $stmt->close();
-
-    return $request_id;
-  }
-
   private function update_transfer_request($request_ids, $content)
   {
-    $query = 'UPDATE `transfer_requests` SET ';
+    $query = 'UPDATE `transfer_requests` SET `last_request_time` = NOW(), `request_count` = `request_count` + 1, ';
     $params = array('');
 
     if (isset($content['group'])) {
@@ -400,15 +346,119 @@ class Requests {
     return $data;
   }
 
-  private function lock_table($updating)
+  private function get_deletion_data($request, $add_user = false)
   {
-    if ($updating) {
-      $query = 'LOCK TABLES `transfer_requests` WRITE, `deletion_requests` WRITE,';
-      $query .= '`active_transfers` WRITE, `active_deletions` WRITE,';
-      $query .= '`users` WRITE';
+    // structure:
+    // array(
+    //   id => array('request_id' => id, 'item' => name, ...),
+    //   ...
+    // )
+
+    $data = array();
+
+    $fields = array(
+      '`deletion_requests`.`id`',
+      '`deletion_requests`.`item`',
+      '`deletion_requests`.`site`',
+      '`deletion_requests`.`timestamp`',
+      '`active_deletions`.`status`',
+      '`active_deletions`.`updated`'
+    );
+    if ($add_user)
+      $fields[] = '`users`.`name`';
+    
+    $query = 'SELECT ' . implode(',', $fields) . ' FROM `deletion_requests`';
+    $query .= ' LEFT JOIN `active_deletions` ON `active_deletions`.`request_id` = `deletion_requests`.`id`';
+    if ($add_user)
+      $query .= ' INNER JOIN `users` ON `users`.`id` = `deletion_requests`.`user_id`';
+
+    $where_clause = array();
+    $params = array('');
+
+    if (isset($request['request_id'])) {
+      $where_clause[] = '`deletion_requests`.`id` = ?';
+      $params[0] .= 'i';
+      $params[] = &$request['request_id'];
     }
+    else {
+      if (isset($request['item'])) {
+        $where_clause[] =  '`deletion_requests`.`item` = ?';
+        $params[0] .= 's';
+        $params[] = &$request['item'];
+      }
+
+      if (isset($request['site'])) {
+        $where_clause[] =  '`deletion_requests`.`site` = ?';
+        $params[0] .= 's';
+        $params[] = &$request['site'];
+      }
+    }
+
+    if (count($where_clause) != 0)
+      $query .= ' WHERE ' . implode(' AND ', $where_clause);
+
+    $query .= ' ORDER BY `deletion_requests`.`id`';
+
+    $stmt = $this->_db->prepare($query);
+
+    if (count($params) > 1)
+      call_user_func_array(array($stmt, "bind_param"), $params);
+
+    if ($add_user)
+      $stmt->bind_result($rid, $item, $site, $timestamp, $astatus, $atimestamp, $uname);
     else
-      $query = 'UNLOCK TABLES';
+      $stmt->bind_result($rid, $item, $site, $timestamp, $astatus, $atimestamp);
+
+    $stmt->execute();
+    $_rid = 0;
+    while ($stmt->fetch()) {
+      if ($rid != $_rid) {
+        $_rid = $rid;
+
+        $data[$rid] = array(
+          'request_id' => $rid,
+          'item' => $item,
+          'site' => $site,
+          'requested' => $timestamp
+        );
+
+        $datum = &$data[$rid];
+
+        if ($add_user)
+          $datum['user'] = $uname;
+
+        $datum['deletion'] = array();
+      }
+
+      if ($astatus === NULL)
+        $datum['deletion'][] = array('status' => $astatus, 'updated' => $atimestamp);
+    }
+
+    $stmt->close();
+
+    return $data;
+  }
+
+  private function create_deletion_request($item, $site)
+  {
+    $query = 'INSERT INTO `deletion_requests` (`item`, `site`, `user_id`, `timestamp`) VALUES (?, ?, ?, NOW())';
+    $stmt = $this->_db->prepare($query);
+    $stmt->bind_param('ssi', $item, $site, $this->_uid);
+    $stmt->execute();
+    $request_id = $stmt->insert_id;
+    $stmt->close();
+
+    return $request_id;
+  }
+
+  private function lock_table($operation = '')
+  {
+    if ($operation == 'transfer')
+      $query = 'LOCK TABLES `transfer_requests` WRITE, `active_transfers` WRITE';
+    else if ($operation == 'deletion')
+      $query = 'LOCK TABLES `deletion_requests` WRITE, `active_deletions` WRITE';
+    else
+       $query = 'UNLOCK TABLES';
 
     $this->_db->query($query);
   }

@@ -21,6 +21,13 @@ if ($_SERVER['SSL_CLIENT_VERIFY'] != 'SUCCESS')
 
 include_once('requests.class.php');
 
+if (isset($_REQUEST['service'])) {
+  $service = $_REQUEST['service'];
+  // $request['service'] is used to look up locks when command = list
+}
+else
+  $service = 'user';
+
 // admin users can specify to act as another user
 if (isset($_REQUEST['asuser'])) {
   $as_user = $_REQUEST['asuser'];
