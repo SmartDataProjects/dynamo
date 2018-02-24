@@ -1,7 +1,7 @@
 import logging
 
+from dynamo.dealer.plugins.base import BaseHandler
 from dynamo.utils.interface.mysql import MySQL
-from base import BaseHandler
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class UserRequest:
         else:
             return False
 
-    def updateRequest(self, tstamp, is_active = False):
+    def update_request(self, tstamp, set_active = False):
         self.updated = True
         if self.nrequests == 0:
             self._earliest = tstamp
@@ -38,7 +38,7 @@ class UserRequest:
             self._latest = tstamp
 
         self.nrequests += 1
-        if not self._is_active and is_active == True:
+        if set_active:
             self._is_active = True
 
     def request_time(self):
@@ -50,9 +50,10 @@ class DirectRequestsHandler(BaseHandler):
     Create dataset transfer proposals from direct user requests.
     """
 
-    def __init__(self):
+    def __init__(self, config):
         BaseHandler.__init__(self, 'Direct')
-        self._mysql = MySQL(**config.registry.db_params)
+
+        self.registry = MySQL(config.db_config)
 
     def release_requests(self, table, reqs2delete):
         array = []
@@ -76,72 +77,85 @@ class DirectRequestsHandler(BaseHandler):
         reqs2delete = []
         unif2delete = []
 
-        reqs = self._mysql.query("SELECT `reqid`, `item`, `site`, `rank`, `status`, `created` FROM `requests_unified`")
-        for reqid, dset, target, rank, status, create_datetime in reqs:
+        reqs = self._mysql.xquery("SELECT `reqid`, `item`, `site`, `rank`, `status`, `created` FROM `requests_unified`")
+        for reqid, item, target, rank, status, create_datetime in reqs:
+            try:
+                dataset = inventory.datasets[item]
+            except KeyError:
+                logger.debug("Dataset %s not known to inventory. Request rejected" % item)
+                unif2delete.append((item, target))
+                continue
+
             reqtime = int(time.mktime(create_datetime.timetuple()))
 
-            request = UserRequest(dset, target, reqtime, True)
+            request = UserRequest(item, target, reqtime, True)
             request.reqid = reqid
             request.nrequests = rank
             request.status = status
 
-            requests[(dset, target)] = request
+            requests[(item, target)] = request
 
-            reps = inventory.datasets[dset].replicas
-            fullreps = [i for i in reps if i.is_complete()]
+            if dataset.replicas is None:
+                inventory.store.load_replicas(dataset)
 
-            if len([i for i in fullreps if i.site.name == target]) != 0:
-                logger.debug(dset)
+            try:
+                next(rep for rep in dataset.replicas if rep.is_complete and rep.site.name == target)
+            except StopIteration:
+                pass
+            else:
+                logger.debug(item)
                 logger.debug(" request already done, trash it")
-                unif2delete.append((dset, target))
+                unif2delete.append((item, target))
 
-        reqs = self._mysql.query("SELECT `item`, `site`, `reqtype`, `created` FROM `requests`")
-        for dset, target, reqtype, create_datetime in reqs:
+        reqs = self._mysql.xquery("SELECT `item`, `site`, `reqtype`, `created` FROM `requests` WHERE `reqtype` = 'copy'")
+        for item, target, reqtype, create_datetime in reqs:
             if create_datetime != None:
                 reqtime = int(time.mktime(create_datetime.timetuple()))
             else:
                 reqtime = int(time.time())
                       
-            #we only deal with copy requests here
-            if reqtype != 'copy':
-                logger.debug(dset)
-                logger.debug(" ignoring non-copy request")
+            #pass only requests with data known to inverntory
+            try:
+                dataset = inventory.datasets[item]
+            except KeyError:
+                logger.debug(item)
+                logger.debug(" non existing dataset, trash it ")
+                reqs2delete.append((item, target))
                 continue
 
-            #pass only reqyests with data known to inverntory
-            if dset not in inventory.datasets:
-                logger.debug(dset)
-                logger.debug(" non existing dataset, trash it ")
-                reqs2delete.append((dset, target))
-                continue
+            if dataset.replicas is None:
+                inventory.store.load_replicas(dataset)
 
             #check that the full replicas exist anywhere
-            reps = inventory.datasets[dset].replicas
-            fullreps = [i for i in reps if i.is_complete()]
-            if len(fullreps) < 1:
-                logger.debug(dset)
-                logger.debug(" no full replicas exist, ingnoring")
+            fullreps = filter(lambda rep: rep.is_complete, dataset.replicas)
+            if len(fullreps) == 0:
+                logger.debug(item)
+                logger.debug(" no full replicas exist, ignoring")
                 continue
             
             #check if this dataset already exists in full at target site
-            if len([i for i in fullreps if i.site.name == target]) != 0:
-                logger.debug(dset)
+            try:
+                next(rep for rep in fullreps if rep.site.name == target)
+            except StopIteration:
+                pass
+            else:
+                logger.debug(item)
                 logger.debug(" request already done, trash it")
-                reqs2delete.append((dset, target))
+                reqs2delete.append((item, target))
                 continue
                 
-            if (dset, target) not in requests:
-                requests[(dset, target)] = UserRequest(dset, target)
+            if (item, target) not in requests:
+                requests[(item, target)] = UserRequest(item, target)
 
-            requests[(dset, target)].updateRequest(reqtime, False)
+            requests[(item, target)].update_request(reqtime, False)
 
-        for (dset, target), request in requests.items():
+        for request in requests.itervalues():
             #if is_active true it means we already acting upon it
             #collapse all other requests and update the date
             if request.is_active:
-                logger.debug(dset)
+                logger.debug(request.dataset)
                 logger.debug("master request is in")
-                reqs2delete.append((dset, target))
+                reqs2delete.append((request.dataset, request.site))
 
         for (dset, target), request in requests.items():
             created = datetime.datetime.fromtimestamp(request.request_time())
