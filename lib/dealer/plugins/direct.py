@@ -63,14 +63,6 @@ class DirectRequestsHandler(BaseHandler):
         self._mysql.delete_many(table, ('item', 'site', 'reqtype'), array)
 
     def get_requests(self, inventory, policy): # override
-        self._mysql.query("LOCK TABLES `requests` WRITE")
-
-        try:
-            self._get_requests(inventory, policy)
-        finally:
-            self._mysql.query("UNLOCK TABLES")
-
-    def _get_requests(self, inventory, policy):
         requests = {}
         newRequests = {}
 

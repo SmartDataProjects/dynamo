@@ -18,6 +18,22 @@ class ReplicaPlacementRule(object):
         return True
 
 
+def dataset_already_exists(site, dataset):
+    replica = site.find_dataset_replica(dataset)
+    return replica is not None and replica.is_full()
+
+def block_already_exists(site, block):
+    replica = site.find_block_replica(block)
+    return replica is not None and replica.is_complete
+
+def blocks_already_exist(site, blocks):
+    for block in blocks:
+        replica = site.find_block_replica(block)
+        if replica is None or not replica.is_complete:
+            return False
+
+    return True
+
 class DealerPolicy(object):
     """
     Defined for each partition and implements the concrete conditions for copies.
@@ -115,16 +131,16 @@ class DealerPolicy(object):
 
         return True
 
-    def _convert_item(self, item):
+    def item_info(self, item):
         if type(item) is Dataset:
             item_name = item.name
             item_size = item.size
-            find_replica_at = lambda s: s.find_dataset_replica(item)
+            already_exists = dataset_already_exists
 
         elif type(item) is Block:
             item_name = item.full_name()
             item_size = item.size
-            find_replica_at = lambda s: s.find_block_replica(item)
+            already_exists = block_already_exists
 
         elif type(item) is list:
             # list of blocks (must belong to the same dataset)
@@ -134,15 +150,15 @@ class DealerPolicy(object):
             dataset = item[0].dataset
             item_name = dataset.name
             item_size = sum(b.size for b in item)
-            find_replica_at = lambda s: s.find_dataset_replica(dataset)
+            already_exists = blocks_already_exist
 
         else:
             return None, None, None
 
-        return item_name, item_size, find_replica_at
+        return item_name, item_size, already_exists
 
-    def find_destination_for(self, item, partition):
-        item_name, item_size, find_replica_at = self._convert_item(item)
+    def find_destination_for(self, item, partition, match_patterns = None, exclude_patterns = None):
+        item_name, item_size, already_exists = self.item_info(item)
 
         if item_name is None:
             LOG.warning('Invalid request found. Skipping.')
@@ -150,6 +166,24 @@ class DealerPolicy(object):
 
         site_array = []
         for site in self.target_sites:
+            if match_patterns is not None:
+                for pattern in match_patterns:
+                    if fnmatch.fnmatch(site.name, pattern):
+                        break
+                else:
+                    # no match
+                    continue
+
+            if exclude_patterns is not None:
+                excluded = False
+                for pattern in exclude_patterns:
+                    if fnmatch.fnmatch(site.name, pattern):
+                        excluded = True
+                        break
+
+                if excluded:
+                    continue
+
             site_partition = site.partitions[partition]
 
             projected_occupancy = site_partition.occupancy_fraction(physical = False)
@@ -160,7 +194,7 @@ class DealerPolicy(object):
                 continue
 
             # replica must not be at the site already
-            if find_replica_at(site) is not None:
+            if already_exists(site, item):
                 continue
 
             # placement must be allowed by the policy
@@ -184,7 +218,7 @@ class DealerPolicy(object):
         return site_array[isite][0], item_name, item_size, None
 
     def check_destination(self, item, destination, partition):
-        item_name, item_size, find_replica_at = self._convert_item(item)
+        item_name, item_size, already_exists = self.item_info(item)
 
         if item_name is None:
             LOG.warning('Invalid request found. Skipping.')
@@ -192,15 +226,15 @@ class DealerPolicy(object):
 
         if destination not in self.target_sites:
             LOG.debug('Destination %s for %s is not a target site.', destination.name, item_name)
-            return None, None, 'Not a target site'
+            return item_name, item_size, 'Not a target site'
 
-        if find_replica_at(destination) is not None:
+        if already_exists(destination, item):
             LOG.debug('%s is already at %s.', item_name, destination.name)
-            return None, None, 'Replica exists'
+            return item_name, item_size, 'Replica exists'
 
         if not self.is_allowed_destination(item, destination):
             LOG.debug('Placement of %s to %s not allowed by policy.', item_name, destination.name)
-            return None, None, 'Not allowed'
+            return item_name, item_size, 'Not allowed'
 
         site_partition = destination.partitions[partition]
         occupancy_fraction = site_partition.occupancy_fraction(physical = False)
@@ -209,7 +243,6 @@ class DealerPolicy(object):
 
         if occupancy_fraction > 1.:
             LOG.debug('Cannot copy %s to %s because destination is full.', item_name, destination.name)
-            return None, None, 'Destination is full'
-
+            return item_name, item_size, 'Destination is full'
 
         return item_name, item_size, None

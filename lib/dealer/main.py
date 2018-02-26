@@ -102,7 +102,7 @@ class Dealer(object):
         LOG.info('Saving the record')
         for plugin in self._plugin_priorities.keys():
             if plugin in copy_list:
-                plugin.save_record(cycle_number, self.history, copy_list[plugin])
+                plugin.postprocess(cycle_number, self.history, copy_list[plugin])
 
         # We don't care about individual plugins any more - flatten the copy list
         all_copies = sum(copy_list.itervalues(), [])
@@ -250,6 +250,7 @@ class Dealer(object):
         stats = {}
         for plugin in self._plugin_priorities.keys():
             stats[plugin.name] = {}
+
         reject_stats = {
             'Not a target site': 0,
             'Replica exists': 0,
@@ -277,6 +278,7 @@ class Dealer(object):
                 stat = stats[plugin.name][destination.name]
             except KeyError:
                 stat = (0, 0)
+
             stats[plugin.name][destination.name] = (stat[0] + 1, stat[0] + item_size)
 
             if type(item) is Dataset:

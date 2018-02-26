@@ -10,5 +10,11 @@ class BaseHandler(object):
 
         return []
 
-    def save_record(self, run_number, history, copy_list):
+    def postprocess(self, cycle_number, history, copy_list):
+        """
+        Do post-request processing.
+        @param cycle_number   Dealer cycle number
+        @param history        History object
+        @param copy_list      List of replica objects (DatasetReplica or BlockReplica)
+        """
         pass
