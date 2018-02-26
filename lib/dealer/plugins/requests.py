@@ -1,8 +1,10 @@
+import collections
 import logging
 
 from dynamo.dealer.plugins.base import BaseHandler
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration, Dataset, Block, DatasetReplica, BlockReplica
+from dynamo.dataformat.exceptions import ObjectError
 
 LOG = logging.getLogger(__name__)
 
@@ -30,13 +32,12 @@ class CopyRequestsHandler(BaseHandler):
         2. Find all transfer requests with status new or updated.
         3. Decide whether to accept the request. Set status accordingly.
         4. Find the destinations if wildcard was used.
-        In multiple parts of this module, block name is assumed to have the form dataset#block
         """
 
         partition = inventory.partitions[policy.partition_name]
         
-        # final list to be returned
-        dealer_requests = [] # [(item, site)]
+        # full list of blocks to be proposed to Dealer
+        blocks_to_propose = collections.defaultdict(lambda: collections.defaultdict(set)) # {site: {dataset: set of blocks}}
 
         # re-request all new active copies
         self.registry.query('LOCK TABLES `active_copies` AS a WRITE')
@@ -57,30 +58,12 @@ class CopyRequestsHandler(BaseHandler):
                 self.registry.query(fail_sql, request_id, item_name, site_name)
                 continue
 
-            if '#' in item_name:
-                dataset_name = item_name[:item_name.find('#')]
-                if dataset_name != _dataset_name:
-                    _dataset_name = dataset_name
-                    active_requests.append(([], site))
+            try:
+                dataset_name, block_name = Block.from_full_name(item_name)
 
-                try:
-                    dataset = inventory.datasets[dataset_name]
-                except KeyError:
-                    # shouldn't happen but for safety
-                    self.registry.query(fail_sql, request_id, item_name, site_name)
-                    continue
+            except ObjectError:
+                # item_name is (supposed to be) a dataset name
 
-                block_name = item_name[item_name.find('#') + 1:]
-                block = dataset.find_block(Block.to_internal_name(block_name))
-
-                if block is None:
-                    # shouldn't happen but for safety
-                    self.registry.query(fail_sql, request_id, item_name, site_name)
-                    continue
-
-                active_requests[-1][0].append(block)
-
-            else:
                 _dataset_name = ''
 
                 try:
@@ -92,12 +75,35 @@ class CopyRequestsHandler(BaseHandler):
 
                 active_requests.append((dataset, site))
 
-        for item, site in active_requests:
-            if type(item) is list and len(item) == 1:
-                # convert to single block request
-                dealer_requests.append((item[0], site))
             else:
-                dealer_requests.append((item, site))
+                # item_name is a block name
+
+                if dataset_name != _dataset_name:
+                    _dataset_name = dataset_name
+                    active_requests.append(([], site))
+
+                try:
+                    dataset = inventory.datasets[dataset_name]
+                except KeyError:
+                    # shouldn't happen but for safety
+                    self.registry.query(fail_sql, request_id, item_name, site_name)
+                    continue
+
+                block = dataset.find_block(block_name)
+
+                if block is None:
+                    # shouldn't happen but for safety
+                    self.registry.query(fail_sql, request_id, item_name, site_name)
+                    continue
+
+                active_requests[-1][0].append(block)
+
+        for item, site in active_requests:
+            # item is a dataset or a list of blocks
+            if type(item) is Dataset:
+                blocks_to_propose[site][item] = set(item.blocks)
+            else:
+                blocks_to_propose[site][item[0].dataset].update(item)
 
         self.registry.query('UNLOCK TABLES')
 
@@ -111,15 +117,15 @@ class CopyRequestsHandler(BaseHandler):
 
         # item can be the name of a dataset or a block
         # -> group into (request id, site, group, # copies, [list of items])
-        grouped = []
+        grouped_requests = []
 
         _request_id = 0
         for request_id, site_name, group_name, num_copies, item_name in self.registry.xquery(sql):
             if request_id != _request_id:
                 _request_id = request_id
-                grouped.append((request_id, site_name, group_name, num_copies, []))
+                grouped_requests.append((request_id, site_name, group_name, num_copies, []))
 
-            grouped[-1][4].append(item_name)
+            grouped_requests[-1][4].append(item_name)
 
         reject_sql = 'UPDATE `copy_requests` AS r SET r.`status` = \'rejected\', r.`rejection_reason` = %s'
         reject_sql += ' WHERE r.`request_id` = %s'
@@ -128,17 +134,16 @@ class CopyRequestsHandler(BaseHandler):
             activate_sql = 'INSERT INTO `active_copies` (`request_id`, `item`, `site`, `status`, `created`, `updated`)'
             activate_sql += ' VALUES (%s, %s, %s, %s, %s, NOW(), NOW())'
 
+            # item is a dataset or a list of blocks
             if type(item) is Dataset:
                 self.registry.query(activate_sql, request_id, item.name, site.name, 'new')
-            elif type(item) is Block:
-                self.registry.query(activate_sql, request_id, item.full_name(), site.name, 'new')
             else:
                 for block in item:
                     self.registry.query(activate_sql, request_id, block.full_name(), site.name, 'new')
 
 
         # loop over requests and find items and destinations
-        for request_id, site_name, group_name, num_copies, item_names in grouped:
+        for request_id, site_name, group_name, num_copies, item_names in grouped_requests:
             try:
                 group = inventory.groups[group_name]
             except KeyError:
@@ -150,9 +155,26 @@ class CopyRequestsHandler(BaseHandler):
 
             _dataset_name = ''
             for item_name in sorted(item_names):
-                if '#' in item_name:
-                    # this is a block
-                    dataset_name = item_name[:item_name.find('#')]
+                try:
+                    dataset_name, block_name = Block.from_full_name(item_name)
+
+                except ObjectError:
+                    # item_name is (supposed to be) a dataset name
+
+                    _dataset_name = ''
+
+                    # this is a dataset
+                    try:
+                        dataset = inventory.datasets[item_name]
+                    except KeyError:
+                        self.registry.query(reject_sql, 'Dataset %s not found' % item_name, request_id)
+                        rejected = True
+                        break
+
+                    items.append(dataset)
+
+                else:
+                    # item_name is a block name
 
                     if dataset_name != _dataset_name:
                         # of a new dataset
@@ -166,9 +188,8 @@ class CopyRequestsHandler(BaseHandler):
 
                         _dataset_name = dataset_name
                         items.append([])
-    
-                    block_name = item_name[item_name.find('#') + 1:]
-                    block = dataset.find_block(Block.to_internal_name(block_name))
+
+                    block = dataset.find_block(block_name)
                     if block is None:
                         self.registry.query(reject_sql, 'Block %s not found' % item_name, request_id)
                         rejected = True
@@ -177,26 +198,21 @@ class CopyRequestsHandler(BaseHandler):
                     # last element of the items list is a list
                     items[-1].append(block)
 
-                else:
-                    _dataset_name = ''
-
-                    # this is a dataset
-                    try:
-                        dataset = inventory.datasets[item_name]
-                    except KeyError:
-                        self.registry.query(reject_sql, 'Dataset %s not found' % item_name, request_id)
-                        rejected = True
-                        break
-
-                    items.append(dataset)
-
             if rejected:
                 continue
+
+            # elements of items are either a dataset or a list of blocks
 
             # process the items list
             for ii in range(len(items)):
                 item = items[ii]
-                if type(item) is list:
+                if type(item) is Dataset:
+                    if dataset.size > self.max_size:
+                        self.registry.query(reject_sql, 'Dataset %s is too large (>%.0f TB)' % (dataset.name, self.max_size * 1.e-12), request_id)
+                        rejected = True
+                        break
+
+                else:
                     dataset = item[0].dataset
 
                     total_size = sum(b.size for b in item)
@@ -211,16 +227,6 @@ class CopyRequestsHandler(BaseHandler):
                         # covers the case where we actually have the full list of blocks (if block_request_max is less than 1)
                         items[ii] = dataset
 
-                    elif len(item) == 1:
-                        # a single block request
-                        items[ii] = item[0]
-
-                else:
-                    if dataset.size > self.max_size:
-                        self.registry.query(reject_sql, 'Dataset %s is too large (>%.0f TB)' % (dataset.name, self.max_size * 1.e-12), request_id)
-                        rejected = True
-                        break
-
             if rejected:
                 continue
 
@@ -230,6 +236,7 @@ class CopyRequestsHandler(BaseHandler):
             # find destinations (num_copies times) for each item
             for item in items:
                 # function to find existing copies
+                # will not make a request only if there is a full copy of the item
                 _, _, already_exists = policy.item_info(item)
 
                 if '*' in site_name:
@@ -287,8 +294,12 @@ class CopyRequestsHandler(BaseHandler):
 
             # finally add to the returned requests
             for item, site in new_requests:
-                dealer_requests.append((item, site))
                 activate(request_id, item, site, 'new')
+
+                if type(item) is Dataset:
+                    blocks_to_propose[site][item] = set(item.blocks)
+                else:
+                    blocks_to_propose[site][item[0].dataset].update(item)
 
             for item, site in wont_request:
                 activate(request_id, item, site, 'completed')
@@ -297,6 +308,15 @@ class CopyRequestsHandler(BaseHandler):
 
         self.registry.query('UNLOCK TABLES')
 
+        # form the final proposal
+        dealer_requests = []
+        for site, block_list in blocks_to_propose.iteritems():
+            for dataset, blocks in block_list.iteritems():
+                if blocks == dataset.blocks:
+                    dealer_requests.append((dataset, site))
+                else:
+                    daeler_requests.append((list(blocks), site))
+
         return dealer_requests
 
     def postprocess(self, run_number, history, copy_list): # override
@@ -304,16 +324,15 @@ class CopyRequestsHandler(BaseHandler):
         Create active copy entries for accepted copies.
         """
 
-        sql = 'UPDATE `active_copies` SET `status` = \'queued\', `updated` = NOW() WHERE `item` = %s AND `site` = %s AND `status` = \'new\''
+        sql = 'UPDATE `active_copies` SET `status` = \'queued\', `updated` = NOW() WHERE `item` LIKE %s AND `site` = %s AND `status` = \'new\''
 
         for replica in copy_list:
             if type(replica) is DatasetReplica:
-                if len(replica.block_replicas) == len(replica.dataset.blocks):
-                    # dataset-level request
-                    self.registry.query(sql, replica.dataset.name, replica.site.name)
-                else:
-                    for block_replica in replica.block_replicas:
-                        self.registry.query(sql, block_replica.block.full_name(), replica.site.name)
+                # active copies with dataset name
+                self.registry.query(sql, replica.dataset.name, replica.site.name)
+
+                # active copies with block name
+                self.registry.query(sql, Block.to_full_name(replica.dataset.name, '%'), replica.site.name)
 
             else:
                 self.registry.query(sql, replica.block.full_name(), replica.site.name)
