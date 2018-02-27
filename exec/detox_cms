@@ -3,7 +3,6 @@
 import sys
 import os
 import re
-import logging
 import fnmatch
 
 from argparse import ArgumentParser
@@ -34,6 +33,7 @@ LOG = make_standard_logger(config.log_level)
 
 ## Configure the Detox object
 from dynamo.detox.main import Detox
+from dynamo.operation.impl.mysqlapplock import MySQLApplicationLockInterface
 
 LOG.info('Starting Detox.')
 
@@ -53,8 +53,11 @@ config.detox.policy_version = policy_version
 ## Run the main program
 from dynamo.core.executable import inventory
 
-detox = Detox(config.detox)
-detox.run(inventory, comment = args.comment, create_cycle = not args.snapshot_run)
+lock = MySQLApplicationLockInterface(config.applock)
+
+with lock:
+    detox = Detox(config.detox)
+    detox.run(inventory, comment = args.comment, create_cycle = not args.snapshot_run)
 
 ## If test run, don't send back the inventory updates
 if args.snapshot_run or args.test_run:

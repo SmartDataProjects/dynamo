@@ -14,8 +14,6 @@ class BalancingHandler(BaseHandler):
     def __init__(self, config):
         BaseHandler.__init__(self, 'Balancer')
 
-        self.required_attrs = ['request_weight']
-
         self.max_dataset_size = config.max_dataset_size * 1.e+12
         self.target_reasons = dict(config.target_reasons)
 

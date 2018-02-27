@@ -35,14 +35,16 @@ class Attr(object):
             # callable
             return getattr(obj, self.attr)(*self.args)
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         """Map the rhs string in binary expressions. Raise if invalid."""
 
         if self.vtype == Attr.NUMERIC_TYPE:
             return float(expr)
 
         elif self.vtype == Attr.TEXT_TYPE:
-            if '*' in expr or '?' in expr:
+            if is_re:
+                return re.compile(expr)
+            elif '*' in expr or '?' in expr:
                 return re.compile(fnmatch.translate(expr))
             else:
                 return expr

@@ -56,6 +56,16 @@
       "auth_handler": "CERNSSOCookieAuthHandler"
     }
   },
+  "applock": {
+    "user": "dynamo",
+    "service": "dynamo",
+    "app": "detox",
+    "db_config": {
+      "config_file": "/etc/my.cnf.d/dynamo.cnf",
+      "config_group": "mysql",
+      "db": "dynamoregister"
+    }
+  },
   "process_lock": "$(DYNAMO_SPOOL)/convert_dynamo_locks.pid",
   "log_level": "info"
 }

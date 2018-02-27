@@ -49,8 +49,9 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
                 add_datasets(result)
 
         for in_pattern in include:
-            result = self._dbs.make_request('datasets', ['dataset=' + in_pattern])
-            add_datasets(result)
+            if in_pattern.startswith('/') and in_pattern.count('/') == 3:
+                result = self._dbs.make_request('datasets', ['dataset=' + in_pattern])
+                add_datasets(result)
 
         return dataset_names
 
@@ -68,6 +69,8 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
     def get_dataset(self, name, with_files = False): #override
         ## Get the full dataset-block-file data from PhEDEx
+        if not name.startswith('/') or name.count('/') != 3:
+            return None
 
         def get_dbs_datasets(name, dbs_data):
             dbs_data['datasets'] = self._dbs.make_request('datasets', ['dataset=' + name, 'dataset_access_type=*', 'detail=True'])
@@ -119,6 +122,8 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
     def get_block(self, name, dataset = None, with_files = False): #override
         ## Get the full block-file data from PhEDEx
+        if not name.startswith('/') or name.count('/') != 3 or '#' in name:
+            return None
 
         if with_files:
             level = 'file'
@@ -293,7 +298,12 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
     def _fill_dataset_details(self, dataset, dbs_data = None):
         if dbs_data is None:
             dbs_data = {}
-            dbs_data['datasets'] = self._dbs.make_request('datasets', ['dataset=' + dataset.name, 'dataset_access_type=*', 'detail=True'])
+
+            if dataset.name.startswith('/') and dataset.name.count('/') == 3:
+                dbs_data['datasets'] = self._dbs.make_request('datasets', ['dataset=' + dataset.name, 'dataset_access_type=*', 'detail=True'])
+            else:
+                dbs_data['datasets'] = []
+
             dbs_data['releaseversions'] = self._dbs.make_request('releaseversions', ['dataset=' + dataset.name])
 
         # 1. status and PD type
