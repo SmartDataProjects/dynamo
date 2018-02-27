@@ -102,7 +102,7 @@ function jsonize($array)
         $json .= jsonize($elem);
       else if (is_numeric($elem))
         $json .= $elem;
-      else if ($value === NULL)
+      else if ($elem === NULL)
         $json .= 'null';
       else
         $json .= sprintf('"%s"', $elem);
