@@ -3,6 +3,8 @@ import re
 import fnmatch
 import random
 
+from dynamo.dataformat import Configuration
+
 LOG = logging.getLogger(__name__)
 
 class EnforcerInterface(object):
@@ -11,22 +13,24 @@ class EnforcerInterface(object):
     or info for writing rrd files
     """
 
-    def __init__(self, write_rrds):
-        self.write_rrds = write_rrds
+    def __init__(self, config):
+        # If True, report_back returns a list to be fed to RRD writing
+        self.write_rrds = config.get('write_rrds', False)
+        # Not considering datasets larger than this value.
+        self.max_dataset_size = config.max_dataset_size
+        # Enforcer policies
+        self.rules = Configuration(config.rules)
 
-    def report_back(self, inventory, policy, partition, max_dataset_size):
+    def report_back(self, inventory, partition):
         """
         The main enforcer logic for the replication part.
         @param inventory        Current status of replica placement across system
-        @param policy           The policy defining how much of what should be where
         @param partition        Which partition do we want to consider?
-        @param max_dataset_size Not considering datasets larger than this value.
         """
         
-        requests = []
-        rrd_info = []
+        product = []
 
-        for rule_name, rule in policy.rules.iteritems():
+        for rule_name, rule in self.rules.iteritems():
             # split up sites into considered ones and others
 
             sites_considered = set()
@@ -109,18 +113,18 @@ class EnforcerInterface(object):
                             # can be 0 if the dataset has copies in other partitions
 
                             still_missing += 1
-                            target_site = random.choice(list(site_candidates))
 
-                            LOG.debug('Enforcer rule %s requesting %s at %s', rule_name, dataset.name, target_site.name)
-                            requests.append((dataset, target_site))
+                            if not self.write_rrds:
+                                target_site = random.choice(list(site_candidates))
+    
+                                LOG.debug('Enforcer rule %s requesting %s at %s', rule_name, dataset.name, target_site.name)
+                                product.append((dataset, target_site))
 
             if self.write_rrds:
-                rrd_info.append([rule_name,already_there,still_missing])
-
-        # randomize requests
-        random.shuffle(requests)
+                product.append((rule_name, already_there, still_missing))
 
         if not self.write_rrds:
-            return requests
-        else:
-            return rrd_info
+            # randomize requests
+            random.shuffle(product)
+
+        return product

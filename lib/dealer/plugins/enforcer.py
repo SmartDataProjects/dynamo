@@ -5,7 +5,7 @@ import random
 
 from base import BaseHandler
 from dynamo.dataformat import Configuration
-from dynamo.enforcer import EnforcerInterface
+from dynamo.enforcer.interface import EnforcerInterface
 
 class EnforcerHandler(BaseHandler):
     """
@@ -15,17 +15,11 @@ class EnforcerHandler(BaseHandler):
     def __init__(self, config):
         BaseHandler.__init__(self, 'Enforcer')
 
-        self.policy = Configuration(config.policy)
-        self.max_dataset_size = config.max_dataset_size * 1.e+12
+        self.interface = EnforcerInterface(config.enforcer)
 
     def get_requests(self, inventory, history, policy): # override
-        requests = []
-
         partition = inventory.partitions[policy.partition_name]
 
-        write_rrds = False # we only want the requests, not interested in other information
-
-        enforcer_instance = EnforcerInterface(write_rrds)
-        requests = enforcer_instance.report_back(inventory, self.policy, partition, self.max_dataset_size)
+        requests = self.interface.report_back(inventory, partition)
 
         return requests

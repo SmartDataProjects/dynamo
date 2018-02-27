@@ -4,33 +4,6 @@
   "rrd_path_base": "$(DYNAMO_SPOOL)/dealermon",
   "rrd_publish_target": "/var/www/html/dynamo/dynamo/dealermon",
   "rrd_interval": 900,
-  "history": {
-    "module": "MySQLHistory",
-    "config": {
-      "db_params": {
-        "config_file": "/etc/my.cnf.d/dynamo.cnf",
-        "config_group": "mysql",
-        "db": "dynamohistory"
-      }
-    }
-  },
-  "copy_op": {
-    "module": "PhEDExCopyInterface",
-    "config": {
-      "phedex": {
-        "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
-        "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
-        "auth_handler": "HTTPSCertKeyHandler",
-        "auth_handler_conf": {}
-      }
-    }
-  },
-  "phedex": {
-    "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
-    "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
-    "auth_handler": "HTTPSCertKeyHandler",
-    "auth_handler_conf": {}
-  },
   "parallel": {
     "num_threads": 32,
     "print_progress": true,
