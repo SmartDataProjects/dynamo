@@ -28,7 +28,7 @@ sys.argv = []
 
 from dynamo.dataformat import Configuration
 from dynamo.core.executable import inventory, make_standard_logger
-from dynamo.enforcer import EnforcerInterface
+from dynamo.enforcer.interface import EnforcerInterface
 
 ## Configuration for steering tracking (intervals, output directories, etc)
 
