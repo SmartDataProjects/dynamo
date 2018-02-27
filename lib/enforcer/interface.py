@@ -18,7 +18,7 @@ class EnforcerInterface(object):
         """
         The main enforcer logic for the replication part.
         @param inventory        Current status of replica placement across system
-        @param policy           The defining policy how much of what should be where
+        @param policy           The policy defining how much of what should be where
         @param partition        Which partition do we want to consider?
         @param max_dataset_size Not considering datasets larger than this value.
         """
