@@ -454,7 +454,7 @@ class Requests {
       $params[] = &$content['n'];
     }
 
-    $increment = true;
+    $cancelled = false;
 
     if (isset($content['status'])) {
       $set[] = '`status` = ?';
@@ -462,10 +462,10 @@ class Requests {
       $params[] = &$content['status'];
 
       if ($content['status'] == 'cancelled')
-        $increment = false;
+        $cancelled = true;
     }
 
-    if ($increment)
+    if (!$cancelled)
       $query .= '`request_count` = `request_count` + 1, ';
 
     $query .= implode(', ', $set);
@@ -476,6 +476,9 @@ class Requests {
     call_user_func_array(array($stmt, "bind_param"), $params);
     $stmt->execute();
     $stmt->close();
+
+    if ($cancelled)
+      $this->_db->query(sprintf('DELETE FROM `active_copies` WHERE `request_id` = %d', $request_id));
 
     $data = $this->get_copy_data($request_id);
 
@@ -636,6 +639,9 @@ class Requests {
   private function cancel_deletion_request($request_id)
   {
     $query = sprintf('UPDATE `deletion_requests` AS r SET `status` = \'cancelled\' WHERE r.`id` = %d', $request_id);
+    $this->_db->query($query);
+
+    $query = sprintf('DELETE FROM `active_deletions` WHERE `request_id` = %d', $request_id);
     $this->_db->query($query);
 
     $data = $this->get_deletion_data($request_id);
