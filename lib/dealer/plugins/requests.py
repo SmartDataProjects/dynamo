@@ -42,7 +42,7 @@ class CopyRequestsHandler(BaseHandler):
         # re-request all new active copies
         self.registry.query('LOCK TABLES `active_copies` AS a WRITE')
 
-        sql = 'SELECT a.`request_id`, a.`item`, a.`site`, FROM `active_copies` AS a WHERE a.`status` = \'new\''
+        sql = 'SELECT a.`request_id`, a.`item`, a.`site` FROM `active_copies` AS a WHERE a.`status` = \'new\''
         sql += ' ORDER BY a.`site`, a.`item`'
 
         fail_sql = 'UPDATE `active_copies` AS a SET a.`status` = \'failed\' WHERE a.`request_id` = %s AND a.`item` = %s AND a.`site` = %s'
@@ -67,7 +67,7 @@ class CopyRequestsHandler(BaseHandler):
                 _dataset_name = ''
 
                 try:
-                    dataset = inventory.datasets[dataset_name]
+                    dataset = inventory.datasets[item_name]
                 except KeyError:
                     # shouldn't happen but for safety
                     self.registry.query(fail_sql, request_id, item_name, site_name)
@@ -108,31 +108,35 @@ class CopyRequestsHandler(BaseHandler):
         self.registry.query('UNLOCK TABLES')
 
         # deal with new requests
-        self.registry.query('LOCK TABLES `copy_requests` AS r WRITE, `copy_request_items` AS i WRITE, `active_copies` AS a WRITE')
+        self.registry.query('LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `copy_request_items` AS i WRITE, `active_copies` WRITE, `active_copies` AS a WRITE')
 
-        sql = 'SELECT r.`id`, r.`site`, r.`group`, r.`num_copies`, i.`item` FROM `copy_requests` AS r'
+        sql = 'SELECT r.`id`, r.`site`, r.`group`, r.`num_copies`, i.`item`, r.`request_count`, r.`first_request_time` FROM `copy_requests` AS r'
         sql += ' INNER JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
         sql += ' WHERE r.`status` = \'new\' OR r.`status` = \'updated\''
-        sql += ' ORDER BY r.`request_count`, r.`first_request_time`'
 
         # item can be the name of a dataset or a block
-        # -> group into (request id, site, group, # copies, [list of items])
-        grouped_requests = []
+        # -> group into (site, group, # copies, request count, request time, [list of items], [list of active transfers])
+        grouped_requests = {} # {request_id: copy info}
 
-        _request_id = 0
-        for request_id, site_name, group_name, num_copies, item_name in self.registry.xquery(sql):
-            if request_id != _request_id:
-                _request_id = request_id
-                grouped_requests.append((request_id, site_name, group_name, num_copies, []))
+        for request_id, site_name, group_name, num_copies, item_name, request_count, request_time in self.registry.xquery(sql):
+            if request_id not in grouped_requests:
+                grouped_requests[request_id] = (site_name, group_name, num_copies, request_count, request_time, [], [])
 
-            grouped_requests[-1][4].append(item_name)
+            grouped_requests[request_id][5].append(item_name)
+
+        sql = 'SELECT r.`id`, a.`item`, a.`site` FROM `copy_requests` AS r'
+        sql += ' INNER JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
+        sql += ' WHERE r.`status` = \'new\' OR r.`status` = \'updated\'' # new requests shouldn't have any active copies, but just to be safe
+
+        for request_id, item_name, site_name in self.registry.xquery(sql):
+            grouped_requests[request_id][6].append((item_name, site_name))
 
         reject_sql = 'UPDATE `copy_requests` AS r SET r.`status` = \'rejected\', r.`rejection_reason` = %s'
-        reject_sql += ' WHERE r.`request_id` = %s'
+        reject_sql += ' WHERE r.`id` = %s'
 
         def activate(request_id, item, site, status):
             activate_sql = 'INSERT INTO `active_copies` (`request_id`, `item`, `site`, `status`, `created`, `updated`)'
-            activate_sql += ' VALUES (%s, %s, %s, %s, %s, NOW(), NOW())'
+            activate_sql += ' VALUES (%s, %s, %s, %s, NOW(), NOW())'
 
             # item is a dataset or a list of blocks
             if type(item) is Dataset:
@@ -143,7 +147,7 @@ class CopyRequestsHandler(BaseHandler):
 
 
         # loop over requests and find items and destinations
-        for request_id, site_name, group_name, num_copies, item_names in grouped_requests:
+        for request_id, (site_name, group_name, num_copies, request_count, request_time, item_names, active_copies) in grouped_requests.iteritems():
             try:
                 group = inventory.groups[group_name]
             except KeyError:
@@ -154,6 +158,7 @@ class CopyRequestsHandler(BaseHandler):
             items = [] # list of datasets or (list of blocks from a dataset)
 
             _dataset_name = ''
+            # sorted(item_names) -> assuming dataset name comes first in the block full name so blocks get automatically clustered in the listing
             for item_name in sorted(item_names):
                 try:
                     dataset_name, block_name = Block.from_full_name(item_name)
@@ -240,6 +245,24 @@ class CopyRequestsHandler(BaseHandler):
                 _, _, already_exists = policy.item_info(item)
 
                 if '*' in site_name:
+                    # count existing active copies
+                    if type(item) is Dataset:
+                        for it, st in active_copies:
+                            if it == item.name:
+                                num_copies -= 1
+                    else:
+                        # count the destinations of active copies
+                        block_names = set(block.full_name() for block in item)
+                        destinations = set()
+                        for it, st in active_copies:
+                            if it in block_names:
+                                destinations.add(st)
+
+                        num_copies -= len(destinations)
+
+                    if num_copies <= 0:
+                        continue
+
                     # check the existing copies and create activation entries with status completed
                     for site in inventory.sites.itervalues():
                         if not fnmatch.fnmatch(site.name, site_name):
@@ -248,9 +271,8 @@ class CopyRequestsHandler(BaseHandler):
                         if already_exists(site, item):
                             wont_request.append((item, site))
                             num_copies -= 1
-
-                        if num_copies == 0:
-                            break
+                            if num_copies == 0:
+                                break
 
                     matched_destinations = []
                     for icopy in range(num_copies):
@@ -267,6 +289,25 @@ class CopyRequestsHandler(BaseHandler):
 
                 else:
                     # if a destination is specified, num_copies must be 1
+
+                    is_active = False
+
+                    if type(item) is Dataset:
+                        for it, st in active_copies:
+                            if it == item.name:
+                                is_active = True
+                                break
+                    else:
+                        # count the destinations of active copies
+                        block_names = set(block.full_name() for block in item)
+                        for it, st in active_copies:
+                            if it in block_names:
+                                is_active = True
+                                break
+
+                    if is_active:
+                        continue
+
                     try:
                         destination = inventory.sites[site_name]
                     except KeyError:

@@ -1,6 +1,8 @@
 import logging
 import fnmatch
 
+from dynamo.dataformat import Site, Dataset, Block
+
 LOG = logging.getLogger(__name__)
 
 class ReplicaPlacementRule(object):
@@ -116,11 +118,11 @@ class DealerPolicy(object):
         """
 
         for rule in self.placement_rules:
-            if type(item).__name__ == 'Dataset':
+            if item is Dataset:
                 if not rule.dataset_allowed(item, site):
                     return False
 
-            elif type(item).__name__ == 'Block':
+            elif item is Block:
                 if not rule.block_allowed(item, site):
                     return False
 
