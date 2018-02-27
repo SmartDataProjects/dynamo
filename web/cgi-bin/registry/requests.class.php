@@ -73,8 +73,12 @@ class Requests {
 
     $request_id = isset($request['request_id']) ? $request['request_id'] : NULL;
 
-    if (isset($request['item']))
-      $item = $request['item']; // can be an array
+    if (isset($request['item'])) {
+      if (is_string($request['item']))
+        $item = explode(',', trim($request['item'], ','));
+      else
+        $item = $request['item'];
+    }
     else if ($request_id === NULL)
       $this->send_response(400, 'BadRequest', 'Item not given');
     else
@@ -148,8 +152,12 @@ class Requests {
 
     $request_id = isset($request['request_id']) ? $request['request_id'] : NULL;
 
-    if (isset($request['item']))
-      $item = $request['item']; // can be an array
+    if (isset($request['item'])) {
+      if (is_string($request['item']))
+        $item = explode(',', trim($request['item'], ','));
+      else
+        $item = $request['item'];
+    }
     else if ($request_id === NULL)
       $this->send_response(400, 'BadRequest', 'Item not given');
     else
