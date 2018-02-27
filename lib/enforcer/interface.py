@@ -79,7 +79,7 @@ class EnforcerInterface(object):
 
                     checked_datasets.add(dataset)
 
-                    if dataset.size > self.max_dataset_size:
+                    if dataset.size > max_dataset_size:
                         continue
 
                     for pattern in dataset_patterns:
@@ -115,7 +115,7 @@ class EnforcerInterface(object):
                             requests.append((dataset, target_site))
 
             if self.write_rrds:
-                rrd_info.append([rule_name,already_fulfilled,still_missing])
+                rrd_info.append([rule_name,already_there,still_missing])
 
         # randomize requests
         random.shuffle(requests)
