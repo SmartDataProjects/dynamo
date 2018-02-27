@@ -79,7 +79,7 @@ class EnforcerInterface(object):
 
                     checked_datasets.add(dataset)
 
-                    if dataset.size > max_dataset_size:
+                    if dataset.size > max_dataset_size * 1.e12:
                         continue
 
                     for pattern in dataset_patterns:
