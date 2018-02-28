@@ -85,18 +85,6 @@ CREATE TABLE `domains` (
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
 
-DROP TABLE IF EXISTS `executables`;
-CREATE TABLE `executables` (
-  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `title` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
-  `path` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
-  `user_id` int(10) unsigned NOT NULL,
-  `body` mediumtext CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
-  `write_request` tinyint(1) NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
-
-
 DROP TABLE IF EXISTS `invalidations`;
 CREATE TABLE `invalidations` (
   `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
@@ -105,28 +93,87 @@ CREATE TABLE `invalidations` (
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 
-DROP TABLE IF EXISTS `requests`;
-CREATE TABLE `requests` (
-  `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
-  `datatype` enum('dataset','block') CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
+DROP TABLE IF EXISTS `copy_requests`;
+CREATE TABLE `copy_requests` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `site` varchar(32) NOT NULL,
-  `reqtype` enum('copy','delete') NOT NULL,
-  `created` datetime NOT NULL
+  `group` varchar(32)  NOT NULL,
+  `num_copies` tinyint(1) unsigned NOT NULL DEFAULT '1',
+  `user_id` int(10) unsigned NOT NULL,
+  `first_request_time` datetime NOT NULL,
+  `last_request_time` datetime NOT NULL,
+  `request_count` int(10) unsigned NOT NULL DEFAULT '1',
+  `status` enum('new','activated','updated','completed','rejected','cancelled') NOT NULL DEFAULT 'new',
+  `rejection_reason` text CHARACTER SET latin1 COLLATE latin1_general_cs NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `site` (`site`),
+  KEY `user` (`user_id`),
+  KEY `first_request_time` (`first_request_time`),
+  KEY `last_request_time` (`last_request_time`),
+  KEY `request_count` (`request_count`),
+  KEY `status` (`status`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 
-DROP TABLE IF EXISTS `requests_unified`;
-CREATE TABLE `requests_unified` (
-  `reqid` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
-  `datatype` enum('dataset','block') CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
+DROP TABLE IF EXISTS `copy_request_items`;
+CREATE TABLE `copy_request_items` (
+  `request_id` int(10) unsigned NOT NULL,
+  `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+   KEY `request` (`request_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+
+
+DROP TABLE IF EXISTS `deletion_requests`;
+CREATE TABLE `deletion_requests` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `site` varchar(32) NOT NULL,
-  `reqtype` enum('copy','delete') NOT NULL,
-  `rank` int(10) unsigned DEFAULT '0',
-  `status` enum('new','queued') NOT NULL,
+  `user_id` int(10) unsigned NOT NULL,
+  `timestamp` datetime NOT NULL,
+  `status` enum('new','activated','completed','rejected','cancelled') NOT NULL DEFAULT 'new',
+  `rejection_reason` text CHARACTER SET latin1 COLLATE latin1_general_cs NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `site` (`site`),
+  KEY `user` (`user_id`),
+  KEY `timestamp` (`timestamp`),
+  KEY `status` (`status`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+
+
+DROP TABLE IF EXISTS `deletion_request_items`;
+CREATE TABLE `deletion_request_items` (
+  `request_id` int(10) unsigned NOT NULL,
+  `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+   KEY `request` (`request_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+
+
+DROP TABLE IF EXISTS `active_copies`;
+CREATE TABLE `active_copies` (
+  `request_id` int(10) unsigned NOT NULL,
+  `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `site` varchar(32) NOT NULL,
+  `status` enum('new','queued','failed','completed') NOT NULL DEFAULT 'new',
   `created` datetime NOT NULL,
   `updated` datetime DEFAULT NULL,
-  PRIMARY KEY (`reqid`)
+  KEY `request` (`request_id`),
+  KEY `item` (`item`),
+  KEY `site` (`site`)
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
+
+
+DROP TABLE IF EXISTS `active_deletions`;
+CREATE TABLE `active_deletions` (
+  `request_id` int(10) unsigned NOT NULL,
+  `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `site` varchar(32) NOT NULL,
+  `timestamp` datetime NOT NULL,
+  `status` enum('new','queued') NOT NULL DEFAULT 'new',
+  `created` datetime NOT NULL,
+  `updated` datetime DEFAULT NULL,
+  KEY `request` (`request_id`),
+  KEY `item` (`item`),
+  KEY `site` (`site`),  
+  KEY `timestamp` (`timestamp`)
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 

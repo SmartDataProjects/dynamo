@@ -132,6 +132,3 @@ class BalancingHandler(BaseHandler):
             total_size += size
 
         return request
-
-    def save_record(self, run_number, history, copy_list):
-        pass

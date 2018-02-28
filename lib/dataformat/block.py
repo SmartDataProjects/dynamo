@@ -67,6 +67,20 @@ class Block(object):
 
         return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]        
 
+    @staticmethod
+    def to_full_name(dataset_name, block_real_name):
+        return dataset_name + '#' + block_real_name
+
+    @staticmethod
+    def from_full_name(full_name):
+        # return dataset name, block internal name
+
+        delim = full_name.find('#')
+        if delim == -1:
+            raise ObjectError('Invalid block name %s' % full_name)
+
+        return full_name[:delim], Block.to_internal_name(full_name[delim + 1:])
+
     def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False, last_update = 0):
         self._name = name
         self._dataset = dataset
@@ -177,7 +191,7 @@ class Block(object):
         Full specification of a block, including the dataset name.
         """
 
-        return self._dataset_name() + '#' + self.real_name()
+        return Block.to_full_name(self._dataset_name(), self.real_name())
 
     def find_file(self, lfn, must_find = False):
         files = self.files

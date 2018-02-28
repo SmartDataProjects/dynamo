@@ -86,6 +86,8 @@ rm $BINTARGET/dynamo/common/db_conf.php.template
 [ -L $HTMLTARGET/registry/detoxlock ] || ln -sf $BINTARGET/registry/detoxlock.php $HTMLTARGET/registry/detoxlock
 [ -L $HTMLTARGET/registry/applock ] || ln -sf $BINTARGET/registry/activitylock.php $HTMLTARGET/registry/applock
 [ -L $HTMLTARGET/registry/application ] || ln -sf $BINTARGET/registry/interface.php $HTMLTARGET/registry/application
+[ -L $HTMLTARGET/registry/invalidation ] || ln -sf $BINTARGET/registry/invalidation.php $HTMLTARGET/registry/invalidation
+[ -L $HTMLTARGET/registry/request ] || ln -sf $BINTARGET/registry/requests.php $HTMLTARGET/registry/request
 
 mv /tmp/dealermon.$$ $HTMLTARGET/dynamo/dealermon
 chmod 777 $HTMLTARGET/dynamo/dealermon

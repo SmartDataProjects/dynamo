@@ -29,22 +29,6 @@
       "auth": "cert",
       "content_type": "CMSWEB_LIST_OF_DATASETS",
       "sites": "T0_CH_CERN_Disk"
-    },
-    "t0_replayone": {
-      "user": "dmytro",
-      "service": "t0-replayone",
-      "url": "https://cmsweb.cern.ch/t0wmadatasvc/replayone/dataset_locked",
-      "auth": "cert",
-      "content_type": "CMSWEB_LIST_OF_DATASETS",
-      "sites": "T0_CH_CERN_Disk"
-    },
-    "t0_replaytwo": {
-      "user": "dmytro",
-      "service": "t0-replaytwo",
-      "url": "https://cmsweb.cern.ch/t0wmadatasvc/replaytwo/dataset_locked",
-      "auth": "cert",
-      "content_type": "CMSWEB_LIST_OF_DATASETS",
-      "sites": "T0_CH_CERN_Disk"
     }
   },
   "auth": {
@@ -61,7 +45,7 @@
     "service": "dynamo",
     "app": "detox",
     "db_config": {
-      "config_file": "/etc/my.cnf.d/dynamo.cnf",
+      "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
       "config_group": "mysql",
       "db": "dynamoregister"
     }

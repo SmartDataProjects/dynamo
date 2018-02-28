@@ -8,13 +8,15 @@
       "config": {
         "db_params": {
           _SERVER_DB_WRITE_PARAMS_1_
-          "db": "dynamo"
+          "db": "dynamo",
+          "reuse_connection": true
         }
       },
       "readonly_config": {
         "db_params": {
           _SERVER_DB_READ_PARAMS_1_
-          "db": "dynamo"
+          "db": "dynamo",
+          "reuse_connection": true
         }
       }
     },

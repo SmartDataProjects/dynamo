@@ -78,7 +78,7 @@ class ActivityLock {
     $stmt->close();
 
     if (!$active)
-      $this->send_response(200, 'OK', 'Unlocked');
+      $this->send_response(200, 'OK', 'Not locked');
 
     $data = array();
 
@@ -166,7 +166,7 @@ class ActivityLock {
   private function lock_table($updating)
   {
     if ($updating)
-      $query = 'LOCK TABLES `activity_lock` WRITE, `users` WRITE, `services` WRITE';
+      $query = 'LOCK TABLES `activity_lock` WRITE';
     else
       $query = 'UNLOCK TABLES';
 
