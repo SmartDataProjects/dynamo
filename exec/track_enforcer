@@ -28,17 +28,18 @@ sys.argv = []
 
 from dynamo.dataformat import Configuration
 from dynamo.core.executable import inventory, make_standard_logger
-from dynamo.enforcer import EnforcerInterface
+from dynamo.enforcer.interface import EnforcerInterface
 
 ## Configuration for steering tracking (intervals, output directories, etc)
 
 config = Configuration(args.config)
+dealer_config = Configuration(config.dealer_config).dealer
 
-## Specific enforcer config - what was done in the dealer plugin
+## Create an enforcer instance
 
-dealer_config = Configuration(config.dealer_config)
-enforcer = Configuration(dealer_config.dealer.plugins.enforcer)
-policy = Configuration(enforcer.config.policy)
+enforcer_config = Configuration(dealer_config.plugins.enforcer.config.enforcer)
+enforcer_config['write_rrds'] = True
+enforcer = EnforcerInterface(enforcer_config)
 
 ## Logger
 
@@ -85,13 +86,11 @@ def create_rrd(path):
 
 ## Get all enforcer rules' statuses
 
-partition = inventory.partitions[dealer_config.dealer.partition_name]
+partition = inventory.partitions[dealer_config.partition_name]
 
 write_rrds = True 
 
-enforcer_instance = EnforcerInterface(write_rrds)
-rrd_info = enforcer_instance.report_back(inventory, policy, partition, enforcer.config.max_dataset_size)
-
+rrd_info = enforcer.report_back(inventory, partition)
 
 for rule_name, already_there, still_missing in rrd_info:
     

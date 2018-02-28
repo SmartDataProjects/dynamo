@@ -34,6 +34,7 @@ from dynamo.core.executable import read_only, make_standard_logger
 ## Configuration
 
 config = Configuration(args.config)
+dealer_config = Configuration(config.dealer_config).dealer
 
 ## Logger
 
@@ -45,9 +46,9 @@ import dynamo.history.impl as history_impl
 import dynamo.operation.impl as operation_impl
 from dynamo.utils.interface.phedex import PhEDEx
 
-history = getattr(history_impl, config.history.module)(config.history.config)
-copy = getattr(operation_impl, config.copy_op.module)(config.copy_op.config)
-phedex = PhEDEx(config.phedex)
+history = getattr(history_impl, dealer_config.history.module)(dealer_config.history.config)
+copy = getattr(operation_impl, dealer_config.copy_op.module)(dealer_config.copy_op.config)
+phedex = PhEDEx(dealer_config.copy_op.config.phedex)
 
 ## Paths 
 
