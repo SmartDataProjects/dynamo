@@ -1,15 +1,6 @@
 
 
 
-DROP TABLE IF EXISTS `replicas_snapshot_usage`;
-CREATE TABLE `replicas_snapshot_usage` (
-  `run_id` int(11) unsigned NOT NULL,
-  `timestamp` datetime NOT NULL,
-  KEY `runs` (`run_id`),
-  KEY `timestamps` (`timestamp`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
-
-
 DROP TABLE IF EXISTS `replicas`;
 CREATE TABLE `replicas` (
   `site_id` int(10) unsigned NOT NULL,
@@ -21,8 +12,8 @@ CREATE TABLE `replicas` (
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 
-DROP TABLE IF EXISTS `sites_snapshot_usage`;
-CREATE TABLE `sites_snapshot_usage` (
+DROP TABLE IF EXISTS `replicas_snapshot_usage`;
+CREATE TABLE `replicas_snapshot_usage` (
   `run_id` int(11) unsigned NOT NULL,
   `timestamp` datetime NOT NULL,
   KEY `runs` (`run_id`),
@@ -36,6 +27,15 @@ CREATE TABLE `sites` (
   `status` enum('ready','waitroom','morgue','unknown') NOT NULL,
   `quota` int(10) NOT NULL,
   PRIMARY KEY (`site_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+
+
+DROP TABLE IF EXISTS `sites_snapshot_usage`;
+CREATE TABLE `sites_snapshot_usage` (
+  `run_id` int(11) unsigned NOT NULL,
+  `timestamp` datetime NOT NULL,
+  KEY `runs` (`run_id`),
+  KEY `timestamps` (`timestamp`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 

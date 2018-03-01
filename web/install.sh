@@ -35,6 +35,7 @@ TEST=$(sed -n 's/.*max_execution_time[^0-9]*\([0-9]*\)/\1/p' /etc/php.ini)
 if ! [ $TEST ] || [ $TEST -lt 600 ]
 then
   echo "!!! PHP max_execution_time is less than the recommended value of 10 minutes."
+  echo
 fi
 
 # Also should check memory_limit
@@ -91,5 +92,21 @@ rm $BINTARGET/dynamo/common/db_conf.php.template
 
 mv /tmp/dealermon.$$ $HTMLTARGET/dynamo/dealermon
 chmod 777 $HTMLTARGET/dynamo/dealermon
+
+### Verify .htaccess override
+MESSAGE=$(curl -s 'http://localhost/registry/application?greet')
+if [ "$MESSAGE" != "Hello" ]
+then
+  echo "Web server installation failed. This is most likely due to the base http server configuration."
+  echo "Please check if the following line is under the root directory configuration directive:"
+  echo "   AllowOverride FileInfo Options AuthConfig"
+  exit 1
+fi
+
+echo "Please confirm that the web server is capable of serving requests using X509 certificate proxies."
+echo "In particular, for apache, the environment variable"
+echo "export OPENSSL_ALLOW_PROXY_CERTS=1"
+echo "must be set in the httpd execution environment."
+echo "The line above should be placed in /etc/init.d/httpd (SL6) or /etc/sysconfig/httpd (CentOS 7, without export)."
 
 exit 0

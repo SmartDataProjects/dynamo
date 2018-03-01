@@ -116,7 +116,21 @@ mkdir -p $SPOOL_PATH
 chown $USER:$(id -gn $USER) $SPOOL_PATH
 chmod 777 $SPOOL_PATH
 
+if [ $(ls -ldZ $SPOOL_PATH | awk '{print $4}' | cut -d: -f3) != "httpd_sys_rw_content_t" ]
+then
+  ### Set SELinux context to allow the web server to write to SPOOL
+  
+  echo "Updating SELinux contexts.."
+  
+  semanage fcontext -a -t httpd_sys_rw_content_t $SPOOL_PATH
+  restorecon $SPOOL_PATH
+  setsebool -P httpd_can_network_connect on
+  setsebool -P httpd_can_network_connect_db on
+fi
+
 ### Install python libraries ###
+
+echo "Installing.."
 
 cp -r $SOURCE/lib/* $INSTALL_PATH/python/site-packages/dynamo/
 python -m compileall $INSTALL_PATH/python/site-packages/dynamo > /dev/null

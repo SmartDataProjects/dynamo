@@ -3,6 +3,11 @@
 include_once(__DIR__ . '/../dynamo/common/db_conf.php');
 include_once(__DIR__ . '/common.php');
 
+if (isset($_REQUEST['greet'])) {
+  echo "Hello";
+  exit(0);
+}
+
 $username = $_SERVER['SSL_CLIENT_S_DN_CN'];
 
 $filedata = '';

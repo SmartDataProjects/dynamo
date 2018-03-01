@@ -1,0 +1,110 @@
+#!/usr/bin/env python
+
+import os
+import sys
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Dynamo registry user tools')
+parser.add_argument('--user', '-u', metavar = 'USER', dest = 'user', help = 'User name.')
+parser.add_argument('--dn', '-n', metavar = 'DN', dest = 'dn', help = 'Add or update the user and link to this DN.')
+parser.add_argument('--email', '-m', metavar = 'ADDR', dest = 'email', help = 'Set user email address.')
+parser.add_argument('--service', '-s', metavar = 'NAME', dest = 'service', help = 'Service name to authorize the user in.')
+parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
+parser.add_argument('--revoke', '-R', action = 'store_true', dest = 'revoke', help = 'Revoke the authorization.')
+parser.add_argument('--list', '-L', action = 'store_true', dest = 'list', help = 'List authorizations')
+
+args = parser.parse_args()
+sys.argv = []
+
+## Process option combinations
+if not args.list and (not args.user or not args.service):
+    print '--user and --service are required if not --list.'
+    sys.exit(2)
+
+try:
+    debug = (os.environ['DYNAMO_SERVER_DEBUG'] == '1')
+except:
+    debug = False
+
+if not debug:
+    if os.geteuid() != 0:
+        sys.stderr.write('Root privilege required\n')
+        sys.exit(1)
+
+## Read server config (should be readable only to root)
+
+from dynamo.dataformat import Configuration
+
+try:
+    config_path = os.environ['DYNAMO_SERVER_CONFIG']
+except KeyError:
+    config_path = '/etc/dynamo/server_config.json'
+
+server_config = Configuration(config_path)
+
+## Create the registry
+
+from dynamo.core.registry import DynamoRegistry
+
+registry = DynamoRegistry(server_config.registry)
+
+if args.user:
+    uid_arr = registry.backend.query('SELECT `id` FROM `users` WHERE `name` = %s', args.user)
+    
+    if len(uid_arr) == 0:
+        if args.revoke:
+            print 'User does not exist'
+            sys.exit(0)
+    
+        if not args.dn:
+            print 'New user; DN is required'
+            sys.exit(1)
+    
+        user_id = registry.backend.query('INSERT INTO `users` (`name`, `domain_id`, `email`, `dn`) VALUES (%s, 0, %s, %s)', args.user, args.email, args.dn)
+    else:
+        user_id = uid_arr[0]
+else:
+    user_id = 0
+
+if args.service:
+    sid_arr = registry.backend.query('SELECT `id` FROM `services` WHERE `name` = %s', args.service)
+    
+    if len(sid_arr) == 0:
+        print 'Create new service "%s"? [y/N]' % args.service
+        while True:
+            response = sys.stdin.readline().strip()
+            if response == 'y':
+                break
+            elif response == 'N':
+                print 'Exiting.'
+                sys.exit(0)
+            else:
+                print 'Please answer in y/N.'
+    
+        service_id = registry.backend.query('INSERT INTO `services` (`name`) VALUES (%s)', args.service)
+    else:
+        service_id = sid_arr[0]
+else:
+    service_id = 0
+
+if args.list:
+    sql = 'SELECT u.`name`, s.`name` FROM `authorized_users` AS a'
+    sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
+    sql += ' INNER JOIN `services` AS s ON s.`id` = a.`service_id`'
+    constraints = []
+    if user_id != 0:
+        constraints.append('u.`id` = %d' % user_id)
+    if service_id != 0:
+        constraints.append('s.`id` = %d' % service_id)
+
+    if len(constraints):
+        sql += ' WHERE ' + ' AND '.join(constraints)
+
+    print 'USER   SERVICE'
+    for user, service in registry.backend.query(sql):
+        print user, service
+        
+elif args.revoke:
+    registry.backend.query('DELETE FROM `authorized_users` WHERE `user_id` = %s AND `service_id` = %s', user_id, service_id)
+else:
+    registry.backend.query('INSERT IGNORE INTO `authorized_users` VALUES (%s, %s)', user_id, service_id)
