@@ -38,6 +38,7 @@ config = Configuration(args.config)
 
 dealer_config = Configuration(config.dealer_config)
 enforcer = Configuration(dealer_config.dealer.plugins.enforcer)
+#enforcer = Configuration(dealer_config.plugins.enforcer)
 policy = Configuration(enforcer.config.policy)
 
 ## Logger
@@ -103,15 +104,15 @@ for rule_name, already_there, still_missing in rrd_info:
 
         # Update the RRD file
 
-        timestamp = int(time.time()) / interval * interval
+    timestamp = int(time.time()) / interval * interval
 
-        try:
-            lasttime = rrdtool.fetch(rrd_file, "LAST")[0][1]
-        except:
-            lasttime = 0
+    try:
+        lasttime = rrdtool.fetch(rrd_file, "LAST")[0][1]
+    except:
+        lasttime = 0
             
-        if timestamp != lasttime:
-            rrdtool.update(rrd_file, '%d:%i:%i' % (timestamp, still_missing, already_there))
+    if timestamp != lasttime:
+        rrdtool.update(rrd_file, '%d:%i:%i' % (timestamp, still_missing, already_there))
 
 
 target_dir = config.rrd_publish_target + '/monitoring_enforcer'
