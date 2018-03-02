@@ -103,8 +103,9 @@ if args.mode == 'ReplicaDelta':
 
     state_db.close()
 
-    # Allow 30-second safety margin to fully collect all updates
-    last_update -= 30
+    # Allow 30-minute safety margin to fully collect all updates
+    # Yes we really need that much (have seen as far as 20 minute delay in blockreplicas)
+    last_update -= 1800
 
     # The timestamp for this update
     update_start = time.time()

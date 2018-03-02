@@ -63,6 +63,7 @@ with open(config.process_lock, 'w') as process_lock:
 
 ## Start conversion
 from dynamo.policy.producers import WebReplicaLock
+from dynamo.policy.producers import MySQLReplicaLock
 from dynamo.utils.interface.webservice import POST
 from dynamo.core.executable import inventory
 from dynamo.core.executable import registry
@@ -70,16 +71,30 @@ from dynamo.operation.impl.mysqlapplock import MySQLApplicationLockInterface
 
 LOG.info('Translating web-based replica locks into DB-based locks.')
 
-expiry = '2018-02-28'
+expiry = '2018-04-30'
 comment = 'Auto-produced by dynamo'
 
 lock = MySQLApplicationLockInterface(config.applock)
 # we don't unlock within this application unless something fails - need to run detox immediately afterwards
 lock.lock()
 
+unlocked_datasets = set()
+
 try:
     # we process one source at a time, because each source registers mysql locks as a different user
     for name, source_conf in config.sources.items():
+        # first load the existing locks
+        instance_conf = Configuration({'db_params': config.mysqllock.db_params, 'users': [[source_conf.user, source_conf.service]]})
+        mysqllock = MySQLReplicaLock(instance_conf)
+        mysqllock.load(inventory)
+
+        for dataset in inventory.datasets.itervalues():
+            try:
+                dataset.attr['locked_blocks_original'] = dataset.attr['locked_blocks']
+                dataset.attr.pop('locked_blocks')
+            except KeyError:
+                pass
+
         LOG.info('Translating ' + name)
     
         instance_conf = Configuration({'sources': {name: source_conf.clone()}, 'auth': config.auth})
@@ -94,8 +109,40 @@ try:
                 locked_blocks = dataset.attr['locked_blocks']
             except KeyError:
                 # weblock did not create any lock for this dataset
+                try:
+                    locked_blocks_original = dataset.attr['locked_blocks_original']
+                except KeyError:
+                    pass
+                else:
+                    for site, blocks in locked_blocks_original.iteritems():
+                        for block in blocks:
+                            block_replica = site.find_block_replica(block)
+                            if block_replica is not None:
+                                unlocked_datasets.add(site.find_dataset_replica(block.dataset))
+
                 continue
-        
+
+            # check for unlocked block replicas
+            try:
+                locked_blocks_original = dataset.attr['locked_blocks_original']
+            except KeyError:
+                pass
+            else:
+                for site, blocks in locked_blocks_original.iteritems():
+                    try:
+                        site_locked_blocks = locked_blocks[site]
+                    except KeyError:
+                        for block in blocks:
+                            block_replica = site.find_block_replica(block)
+                            if block_replica is not None:
+                                unlocked_datasets.add(site.find_dataset_replica(block.dataset))
+                    else:
+                        for block in blocks:
+                            if block not in site_locked_blocks:
+                                block_replica = site.find_block_replica(block)
+                                if block_replica is not None:
+                                    unlocked_datasets.add(site.find_dataset_replica(block.dataset))
+       
             entries = []
         
             # if the lock applies to all sites and all blocks of this dataset, we just make one global lock
@@ -123,8 +170,17 @@ try:
                 entries = [{'item': dataset.name, 'expires': expiry, 'comment': comment}]
         
             data.extend(entries)
-        
-            dataset.attr.pop('locked_blocks')
+            
+        # cleanup
+        for dataset in inventory.datasets.itervalues():
+            try:
+                dataset.attr.pop('locked_blocks')
+            except KeyError:
+                pass
+            try:
+                dataset.attr.pop('locked_blocks_original')
+            except KeyError:
+                pass
     
         LOG.info('Sending %d datasets and blocks to registry frontend', len(data))
     
@@ -137,5 +193,25 @@ try:
     # Intentionally removing the file only when everything succeeds
     os.unlink(config.process_lock)
 
-except:
+finally:
     lock.unlock()
+
+# update block replicas that got unlocked
+from dynamo.source.impl import PhEDExReplicaInfoSource
+
+replica_source = PhEDExReplicaInfoSource(config.replica_source)
+
+for dataset_replica in unlocked_datasets:
+    dataset = dataset_replica.dataset
+    site = dataset_replica.site
+
+    source_reps = replica_source.get_replicas(dataset = dataset.name, site = site.name)
+    if len(source_reps) == 0:
+        # not good but fine
+        continue
+
+    block_names = set(brep.block.name for brep in dataset_replica.block_replicas)
+
+    for rep in source_reps:
+        if rep.block.name in block_names:
+            inventory.update(rep)

@@ -21,7 +21,7 @@ class MySQLReplicaLock(object):
 
         self.users = []
         for user, service in config.users:
-            self.users.append((uesr, service))
+            self.users.append((user, service))
 
     def load(self, inventory):
         query = 'SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `unlock_date` IS NULL'
