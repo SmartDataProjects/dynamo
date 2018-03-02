@@ -35,11 +35,13 @@ class DetoxLock {
 
   public function execute($command, $request)
   {
-    if (!in_array($command, array('lock', 'unlock', 'list', 'set')))
-      $this->send_response(400, 'BadRequest', 'Invalid command (possible values: lock, unlock, list, set)');
+    if ($command != 'list') {
+      if ($this->_read_only)
+        $this->send_response(400, 'BadRequest', 'User not authorized');
 
-    if ($command != 'list' && $this->_read_only)
-      $this->send_response(400, 'BadRequest', 'User not authorized');
+      // service is only used to authorize - should be unset now
+      unset($request['service']);
+    }
 
     $this->sanitize_request($command, $request);
 
@@ -47,9 +49,6 @@ class DetoxLock {
       $this->exec_lock($request);
     }
     else {
-      // service is only used to authorize - should be unset now
-      unset($request['service']);
-
       if ($command == 'unlock') {
         $this->exec_unlock($request);
       }
@@ -330,6 +329,8 @@ class DetoxLock {
       $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after'));
     else if ($command == 'list')
       $allowed_fields = array_merge($allowed_fields, array('user', 'service', 'created_before', 'created_after', 'expires_before', 'expires_after', 'showall'));
+    else if ($command != 'set')
+      $this->send_response(400, 'BadRequest', 'Invalid command (possible values: lock, unlock, list, set)');
 
     foreach (array_keys($request) as $key) {
       if (in_array($key, $allowed_fields)) {
