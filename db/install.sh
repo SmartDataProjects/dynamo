@@ -68,7 +68,7 @@ do
   fi
 done
 
-echo "DROP DATABASE dynamo_tmp;" | mysql $MYSQLOPT
+echo "DROP DATABASE IF EXISTS dynamo_tmp;" | mysql $MYSQLOPT
 echo "CREATE DATABASE dynamo_tmp;" | mysql $MYSQLOPT
 
 cd ..

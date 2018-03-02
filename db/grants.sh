@@ -79,7 +79,7 @@ new_user () {
   HOST=$2
   PASSWD=$3
 
-  NEXIST=$(echo 'SELECT COUNT(*) FROM `mysql`.`user` WHERE `User` = "dynamowrite" AND `Host` = "'$HOST'";' | $ROOTSQL --skip-column-names)
+  NEXIST=$(echo 'SELECT COUNT(*) FROM `mysql`.`user` WHERE `User` = "'$USER'" AND `Host` = "'$HOST'";' | $ROOTSQL --skip-column-names)
   if [ $NEXIST -gt 0 ]
   then
     echo
@@ -92,15 +92,15 @@ new_user () {
 
 
 ## Ask for user names
-echo "User name for the Dynamo server (config.sh:$SERVER_DB_WRITE_USER):"
+echo 'User name for the Dynamo server (config.sh:$SERVER_DB_WRITE_USER):'
 read SERVER_USER
 echo "Password for $SERVER_USER:"
 read SERVER_USER_PASSWD
-echo "User name for elevated-privilege executables (write-allowed to some tables; not in config.sh):"
+echo 'User name for elevated-privilege executables (write-allowed to some tables; not in config.sh):'
 read PRIV_USER
 echo "Password for $PRIV_USER:"
 read PRIV_USER_PASSWD
-echo "User name for normal executables (config.sh:$SERVER_DB_READ_USER):"
+echo 'User name for normal executables (config.sh:$SERVER_DB_READ_USER):'
 read NORMAL_USER
 echo "Password for $NORMAL_USER:"
 read NORMAL_USER_PASSWD
