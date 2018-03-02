@@ -89,7 +89,7 @@ class BlockReplica(object):
         if replica is None:
             replica = BlockReplica(block, site, group, self.is_complete, self.is_custodial, self.size, self.last_update)
     
-            dataset_replica = dataset.find_replica(site, must_find = True)
+            dataset_replica = site.find_dataset_replica(dataset, must_find = True)
             dataset_replica.block_replicas.add(replica)
             block.replicas.add(replica)
             site.add_block_replica(replica)
