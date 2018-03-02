@@ -30,6 +30,12 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         
         source = self._phedex.make_request('blockreplicas', options)
 
+        if len(source) != 0:
+            return True
+
+        # blockreplicas has max ~20 minutes latency
+        source = self._phedex.make_request('subscriptions', options)
+
         return len(source) != 0
 
     def get_replicas(self, site = None, dataset = None, block = None): #override
