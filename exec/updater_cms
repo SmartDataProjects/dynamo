@@ -228,7 +228,9 @@ def get_dataset(name):
         
     return dataset_tmp
 
-dataset_tmps = Map().execute(get_dataset, dataset_names, async = True)
+parallelizer = Map()
+parallelizer.timeout = 7200
+dataset_tmps = parallelizer.execute(get_dataset, dataset_names, async = True)
 
 def create_file(file_tmp, block):
     LOG.debug('Creating new file %s', file_tmp.lfn)
