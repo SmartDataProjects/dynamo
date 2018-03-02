@@ -48,7 +48,58 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         
         result = self._phedex.make_request('blockreplicas', ['show_dataset=y'] + options)
 
-        return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
+        block_replicas = PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
+        
+        # Also use subscriptions call which has a lower latency than blockreplicas
+        # For example, group change on a block replica at time T may not show up in blockreplicas until up to T + 15 minutes
+        # while in subscriptions it is visible within a few seconds
+        result = self._phedex.make_request('subscriptions', options)
+
+        for dataset_entry in result:
+            dataset_name = dataset_entry['name']
+
+            try:
+                subscriptions = dataset_entry['subscription']
+            except KeyError:
+                pass
+            else:
+                for sub_entry in subscriptions:
+                    site_name = sub_entry['node']
+                    for replica in block_replicas:
+                        if replica.block.dataset.name == dataset_name and replica.site.name == site_name:
+                            replica.group = Group(sub_entry['group'])
+                            replica.is_custodial = (sub_entry['custodial'] == 'y')
+
+            try:
+                block_entries = dataset_entry['block']
+            except KeyError:
+                pass
+            else:
+                for block_entry in block_entries:
+                    _, block_name = Block.from_full_name(block_entry['name'])
+
+                    try:
+                        subscriptions = block_entry['subscription']
+                    except KeyError:
+                        pass
+                    else:
+                        for sub_entry in subscriptions:
+                            site_name = sub_entry['node']
+                            for replica in block_replicas:
+                                if replica.block.dataset.name == dataset_name and \
+                                        replica.block.name == block_name and \
+                                        replica.site.name == site_name:
+
+                                    replica.group = Group(sub_entry['group'])
+                                    replica.is_complete = (sub_entry['node_bytes'] == block_entry['bytes'])
+                                    replica.is_custodial = (sub_entry['custodial'] == 'y')
+                                    replica.size = sub_entry['node_bytes']
+                                    if sub_entry['time_update'] is not None:
+                                        replica.last_update = 0
+                                    else:
+                                        replica.last_update = int(sub_entry['time_update'])
+
+        return block_replicas
 
     def get_updated_replicas(self, updated_since): #override
         LOG.info('get_updated_replicas(%d)  Fetching the list of replicas from PhEDEx', updated_since)
@@ -76,9 +127,8 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
             )
             
             for block_entry in dataset_entry['block']:
-                name = block_entry['name']
                 try:
-                    block_name = Block.to_internal_name(name[name.find('#') + 1:])
+                    _, block_name = Block.from_full_name(block_entry['name'])
                 except ValueError: # invalid name
                     continue
 
@@ -97,6 +147,10 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         replicas = []
 
         for replica_entry in block_entry['replica']:
+            time_update = replica_entry['time_update']
+            if time_update is None:
+                time_update = 0
+
             block_replica = BlockReplica(
                 block,
                 Site(replica_entry['node']),
@@ -104,7 +158,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
                 is_complete = (replica_entry['bytes'] == block.size),
                 is_custodial = (replica_entry['custodial'] == 'y'),
                 size = replica_entry['bytes'],
-                last_update = int(replica_entry['time_update'])
+                last_update = int(time_update)
             )
 
             replicas.append(block_replica)
