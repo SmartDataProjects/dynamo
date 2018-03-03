@@ -3,10 +3,10 @@
     "unified": {
       "user": "vlimant",
       "service": "unified",
-      "url": "https://vocms049.cern.ch/unified/public/globallocks.json",
+      "url": "https://cms-unified.web.cern.ch/cms-unified/public/globallocks.json",
       "auth": "noauth",
       "content_type": "LIST_OF_DATASETS",
-      "lock_url": "https://vocms049.cern.ch/unified/public/globallocks.json.lock"
+      "lock_url": "https://cms-unified.web.cern.ch/cms-unified/public/globallocks.json.lock"
     },
     "unified_testbed": {
       "user": "vlimant",
