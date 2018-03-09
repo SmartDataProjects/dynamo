@@ -59,8 +59,9 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         # Also use subscriptions call which has a lower latency than blockreplicas
         # For example, group change on a block replica at time T may not show up in blockreplicas until up to T + 15 minutes
         # while in subscriptions it is visible within a few seconds
+        # But subscriptions call without a dataset or block takes too long
         if dataset is None and block is None:
-            options.append('create_since=0')
+            return block_replicas
 
         result = self._phedex.make_request('subscriptions', options)
 
