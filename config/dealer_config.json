@@ -33,6 +33,19 @@
       }
     },
     "plugins": {
+      "requests": {
+        "priority": 1,
+        "module": "CopyRequestsHandler",
+        "config": {
+          "max_size": 20.0,
+          "block_request_max": 0.5,
+          "db_params": {
+            "config_file": "/etc/my.cnf.d/dynamo.cnf",
+            "config_group": "mysql",
+            "db": "dynamoregister"
+          }
+        }
+      },
       "enforcer": {
         "priority": 2,
         "module": "EnforcerHandler",
@@ -52,22 +65,6 @@
           "max_replication": 10,
           "request_to_replica_threshold": 1.75
         }
-      },
-      "balancer": {
-        "priority": 2,
-        "module": "BalancingHandler",
-        "config": {
-          "max_dataset_size": 50.0,
-          "target_reasons": {
-            "dataset.name == /*/*/MINIAOD* and replica.num_full_disk_copy_common_owner < 3": 3,
-            "replica.num_full_disk_copy_common_owner < 2": 2
-          }
-        }
-      },
-      "undertaker": {
-        "priority": 1,
-        "module": "Undertaker",
-        "config": {}
       }
     },
     "attrs": {

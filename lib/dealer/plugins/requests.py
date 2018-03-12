@@ -1,5 +1,6 @@
 import collections
 import logging
+import fnmatch
 
 from dynamo.dealer.plugins.base import BaseHandler
 from dynamo.utils.interface.mysql import MySQL
@@ -14,7 +15,7 @@ class CopyRequestsHandler(BaseHandler):
     def __init__(self, config):
         BaseHandler.__init__(self, 'DirectRequests')
 
-        db_config = Configuration(config.db_config)
+        db_config = Configuration(config.db_params)
         db_config['reuse_connection'] = True # need to work with table locks
         
         self.registry = MySQL(db_config)
@@ -40,12 +41,12 @@ class CopyRequestsHandler(BaseHandler):
         blocks_to_propose = collections.defaultdict(lambda: collections.defaultdict(set)) # {site: {dataset: set of blocks}}
 
         # re-request all new active copies
-        self.registry.query('LOCK TABLES `active_copies` AS a WRITE')
+        self.registry.query('LOCK TABLES `active_copies` WRITE')
 
-        sql = 'SELECT a.`request_id`, a.`item`, a.`site` FROM `active_copies` AS a WHERE a.`status` = \'new\''
-        sql += ' ORDER BY a.`site`, a.`item`'
+        sql = 'SELECT `request_id`, `item`, `site` FROM `active_copies` WHERE `status` = \'new\''
+        sql += ' ORDER BY `site`, `item`'
 
-        fail_sql = 'UPDATE `active_copies` AS a SET a.`status` = \'failed\' WHERE a.`request_id` = %s AND a.`item` = %s AND a.`site` = %s'
+        fail_sql = 'UPDATE `active_copies` SET `status` = \'failed\' WHERE `request_id` = %s AND `item` = %s AND `site` = %s'
 
         active_requests = []
 

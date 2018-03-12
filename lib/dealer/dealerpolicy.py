@@ -1,5 +1,6 @@
 import logging
 import fnmatch
+import random
 
 from dynamo.dataformat import Site, Dataset, Block
 
