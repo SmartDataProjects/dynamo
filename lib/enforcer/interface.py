@@ -17,7 +17,7 @@ class EnforcerInterface(object):
         # If True, report_back returns a list to be fed to RRD writing
         self.write_rrds = config.get('write_rrds', False)
         # Not considering datasets larger than this value.
-        self.max_dataset_size = config.max_dataset_size
+        self.max_dataset_size = config.max_dataset_size * 1.e+12
         # Enforcer policies
         self.rules = Configuration(config.rules)
 
@@ -83,7 +83,7 @@ class EnforcerInterface(object):
 
                     checked_datasets.add(dataset)
 
-                    if dataset.size > max_dataset_size * 1.e12:
+                    if dataset.size > self.max_dataset_size:
                         continue
 
                     for pattern in dataset_patterns:
