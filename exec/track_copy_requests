@@ -1,0 +1,116 @@
+#!/usr/bin/env python
+
+import sys
+import os
+
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Detox')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+
+args = parser.parse_args()
+sys.argv = []
+
+## Load the configuration
+from dynamo.dataformat.configuration import Configuration
+
+config = Configuration(args.config)
+
+## Set up logging (write to stdout)
+from dynamo.core.executable import make_standard_logger
+
+LOG = make_standard_logger(config.log_level)
+
+## Instantiate registry backend
+from dynamo.utils.interface import MySQL
+
+# need to lock tables -> reuse connections
+config.registry['reuse_connection'] = True
+
+registry = MySQL(config.registry)
+
+## Loop over active transfers and check against inventory
+from dynamo.core.executable import inventory
+from dynamo.dataformat import Block, ObjectError
+
+registry.query('LOCK TABLES `active_copies` WRITE')
+
+sql = 'SELECT `request_id`, `item`, `site` FROM `active_copies` WHERE `status` IN (\'new\', \'queued\')'
+
+update_sql = 'UPDATE `active_copies` SET `status` = \'completed\', `updated` = NOW() WHERE `request_id` = %s AND `item` = %s AND `site` = %s'
+
+for request_id, item_name, site_name in registry.query(sql):
+    try:
+        site = inventory.sites[site_name]
+    except KeyError:
+        LOG.error('Unknown site %s', site_name)
+        continue
+
+    try:
+        dataset_name, block_name = Block.from_full_name(item_name)
+    except ObjectError:
+        dataset_name = item_name
+        block_name = None
+    else:
+        pass
+        
+    try:
+        dataset = inventory.datasets[dataset_name]
+    except KeyError:
+        LOG.error('Unknown dataset %s', dataset_name)
+        continue
+
+    if block_name is None:
+        replica = site.find_dataset_replica(dataset)
+        if replica is None:
+            LOG.debug('Replica %s not created yet', replica)
+            continue
+
+        if replica.is_complete():
+            LOG.debug('Replica %s complete', replica)
+            registry.query(update_sql, request_id, item_name, site_name)
+        else:
+            LOG.debug('Replica %s incomplete', replica)
+
+    else:
+        block = dataset.find_block(block_name)
+        if block is None:
+            LOG.error('Unknown block %s', item_name)
+
+        replica = site.find_block_replica(block)
+        if replica is None:
+            LOG.debug('Replica %s not created yet', replica)
+            continue
+
+        if replica.is_complete:
+            LOG.debug('Replica %s complete', replica)
+            registry.query(update_sql, request_id, item_name, site_name)
+        else:
+            LOG.debug('Replica %s incomplete', replica)
+
+registry.query('UNLOCK TABLES')
+
+registry.query('LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `active_copies` AS a WRITE')
+
+sql = 'SELECT r.`id`, a.`status` FROM `copy_requests` AS r INNER JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
+sql += ' WHERE r.`status` = \'activated\''
+
+update_sql = 'UPDATE `copy_requests` SET `status` = \'completed\' WHERE `id` = %s'
+
+_request_id = 0
+all_complete = False
+for request_id, status in registry.query(sql):
+    if request_id != _request_id:
+        if all_complete:
+            registry.query(update_sql, _request_id)
+
+        _request_id = request_id
+        all_complete = True
+
+    if status != 'completed':
+        all_complete = False
+
+if all_complete:
+    registry.query(update_sql, _request_id)
+
+registry.query('UNLOCK TABLES')

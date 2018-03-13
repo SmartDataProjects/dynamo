@@ -10,12 +10,20 @@ $cache_db_name = $history_db_name . '_cache';
 
 $history_db = new mysqli($db_conf['host'], $db_conf['user'], $db_conf['password'], $history_db_name);
 
-$operation = 'deletion';
-
-if (isset($TESTMODE) && $TESTMODE)
+if (!isset($TESTMODE) || !$TESTMODE) {
+  $TESTMODE = false;
+  $operation = 'deletion';
+}
+else {
   $operation = 'deletion_test';
+}
 
-if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getPartitions') {
+if (isset($_REQUEST['command']))
+  $command = $_REQUEST['command'];
+else
+  $command = '';
+
+if ($command == 'getPartitions') {
   $data = array();
   
   $stmt = $history_db->prepare('SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `runs` INNER JOIN `partitions` ON `partitions`.`id` = `runs`.`partition_id` WHERE `runs`.`operation` = ? ORDER BY `partitions`.`id`');
@@ -23,7 +31,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getPartitions') {
   $stmt->bind_result($id, $name);
   $stmt->execute();
   while ($stmt->fetch()) {
-    if ((!isset($TESTMODE) || !$TESTMODE) && ($name == 'AnalysisOps' || $name == 'DataOps'))
+    if (!$TESTMODE && ($name == 'AnalysisOps' || $name == 'DataOps'))
       continue;
 
     $elem = array('id' => $id, 'name' => $name);
@@ -37,7 +45,7 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getPartitions') {
   echo json_encode($data);
   exit(0);
 }
-else if(isset($_REQUEST['command']) && $_REQUEST['command'] == 'findCycle') {
+else if($command == 'findCycle') {
   $phedex = isset($_REQUEST['phedex']) ? $_REQUEST['phedex'] + 0 : 0;
 
   $cycle = 0;
@@ -93,7 +101,7 @@ if ($cycle == 0) {
   $stmt->close();
 }
 
-if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'checkUpdate') {
+if ($command == 'checkUpdate') {
   echo $cycle;
   exit(0);
 }
@@ -106,7 +114,7 @@ if (!check_cache($history_db, $cycle, $partition_id, $snapshot_spool_path, $snap
 $replica_cache_table_name = sprintf('`%s`.`replicas_%d`', $cache_db_name, $cycle);
 $site_cache_table_name = sprintf('`%s`.`sites_%d`', $cache_db_name, $cycle);
 
-if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
+if ($command == 'searchDataset') {
   // return
   // {"results": [{"siteData": [{"name": site, "datasets": [datasets]}]}], "conditions": [conditions]}
 
@@ -190,15 +198,13 @@ if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'searchDataset') {
   echo '{"results":[' . implode(',', $results_data) . '],"conditions":{' . implode(',', $cond_data) . '}}';
   exit(0);  
 }
-else if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'dumpDeletions') {
+else if ($command == 'dumpDeletions') {
   $list = '';
 
-  $query = 'SELECT s.`name`, d.`name`, c.`size` * 1.e-9 FROM `deleted_replicas` AS r';
-  $query .= ' INNER JOIN `deletion_requests` AS q ON q.`id` = r.`deletion_id`';
-  $query .= ' INNER JOIN `sites` AS s ON s.`id` = q.`site_id`';
-  $query .= ' INNER JOIN `datasets` AS d ON d.`id` = r.`dataset_id`';
-  $query .= ' INNER JOIN ' . $replica_cache_table_name . ' AS c ON (c.`site_id`, c.`dataset_id`) = (q.`site_id`, r.`dataset_id`)';
-  $query .= ' WHERE q.`run_id` = ? AND c.`decision` = \'delete\'';
+  $query = 'SELECT s.`name`, d.`name`, c.`size` * 1.e-9 FROM ' . $replica_cache_table_name . ' AS c';
+  $query .= ' INNER JOIN `sites` AS s ON s.`id` = c.`site_id`';
+  $query .= ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`';
+  $query .= ' WHERE c.`decision` = "delete"';
   // A BAD HACK
   if ($partition_id != 9)
     $query .= ' AND s.`name` NOT LIKE "%_MSS"';
@@ -236,7 +242,7 @@ if (!$stmt->fetch())
   $prev_cycle = 0;
 $stmt->close();
 
-if (isset($_REQUEST['command']) && $_REQUEST['command'] == 'getData') {
+if ($command == 'getData') {
   // main data structure
   $data = array();
 

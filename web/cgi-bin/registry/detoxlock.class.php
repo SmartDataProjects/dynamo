@@ -351,7 +351,6 @@ class DetoxLock {
   private function identify_locks($lock1, $lock2)
   {
     return $lock1['item'] == $lock2['item'] &&
-      $lock1['user'] == $lock2['user'] &&
       (isset($lock1['sites']) ? $lock1['sites'] : NULL) === (isset($lock2['sites']) ? $lock2['sites'] : NULL) &&
       (isset($lock1['groups']) ? $lock1['groups'] : NULL) === (isset($lock2['groups']) ? $lock2['groups'] : NULL) &&
       ((!isset($lock1['service']) || $lock1['service'] == 'user') ? NULL : $lock1['service']) === ((!isset($lock2['service']) || $lock2['service'] == 'user') ? NULL : $lock2['service']);

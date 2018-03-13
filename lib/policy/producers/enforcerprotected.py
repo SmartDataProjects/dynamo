@@ -16,7 +16,7 @@ class EnforcedProtectionTagger(object):
         self.policy = Configuration(config.policy)
 
     def load(self, inventory):
-        for rule_name, rule in self.policy.rules.iteritems():
+        for rule_name, rule in self.policy.iteritems():
             site_patterns = []
             for pattern in rule['sites']:
                 site_patterns.append(re.compile(fnmatch.translate(pattern)))
