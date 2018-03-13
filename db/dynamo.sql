@@ -37,7 +37,7 @@ CREATE TABLE `blocks` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`),
   KEY `datasets` (`dataset_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
 DROP TABLE IF EXISTS `dataset_accesses`;
@@ -95,7 +95,7 @@ CREATE TABLE `datasets` (
   `is_open` tinyint(1) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
 DROP TABLE IF EXISTS `files`;
@@ -109,7 +109,7 @@ CREATE TABLE `files` (
   UNIQUE KEY `name` (`name`),
   KEY `datasets` (`dataset_id`),
   KEY `blocks` (`block_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
 DROP TABLE IF EXISTS `groups`;
@@ -119,7 +119,7 @@ CREATE TABLE `groups` (
   `olevel` enum('Dataset','Block') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'Block',
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
 DROP TABLE IF EXISTS `partitions`;
@@ -128,7 +128,7 @@ CREATE TABLE `partitions` (
   `name` varchar(16) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
 DROP TABLE IF EXISTS `quotas`;
@@ -153,7 +153,7 @@ CREATE TABLE `sites` (
   `status` enum('ready','waitroom','morgue','unknown') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'ready',
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
 DROP TABLE IF EXISTS `software_versions`;
@@ -165,7 +165,7 @@ CREATE TABLE `software_versions` (
   `suffix` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL DEFAULT '',
   PRIMARY KEY (`id`),
   UNIQUE KEY `release` (`cycle`,`major`,`minor`,`suffix`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
 DROP TABLE IF EXISTS `system`;
