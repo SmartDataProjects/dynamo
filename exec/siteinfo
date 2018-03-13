@@ -200,11 +200,11 @@ for site in dataset_lists:
 
         for dataset, size in dataset_lists[site][partition]:
             try:
-                local_rank = inventory.datasets[dataset].attr['local_usage'][st].rank
+                rank = inventory.datasets[dataset].attr['global_usage_rank']
             except KeyError:
-                local_rank = 9999.9
+                rank = 9999.9
 
-            remaining.write('  %6.1f %9.1f %6d %6d  %s\n' % (local_rank, size * 1.e-9, dscount_prev[dataset], dscount_now[dataset], dataset))
+            remaining.write('  %6.1f %9.1f %6d %6d  %s\n' % (rank, size * 1.e-9, dscount_prev[dataset], dscount_now[dataset], dataset))
 
     remaining.close()
         

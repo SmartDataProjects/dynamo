@@ -126,18 +126,18 @@ do
 
   # Table-specific operations (PRIV_USER)
   echo 'GRANT UPDATE ON `dynamo`.`system` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamo`.`dataset_requests` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamo`.`dataset_accesses` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`activity_lock` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`copy_requests` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`copy_request_items` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`active_copies` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`deletion_requests` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`deletion_request_items` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`active_deletions` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`deletion_queue` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`transfer_queue` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`stage_queue` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamo`.`dataset_requests` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamo`.`dataset_accesses` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`activity_lock` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`copy_requests` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`copy_request_items` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`active_copies` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`deletion_requests` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`deletion_request_items` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`active_deletions` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`deletion_queue` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`transfer_queue` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`stage_queue` TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
 
   # DB-wide operations (NORMAL_USER)
   echo 'GRANT SELECT ON `dynamo`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
@@ -148,7 +148,9 @@ do
 
   # Table-specific operations (NORMAL_USER)
   echo 'GRANT UPDATE ON `dynamohistory`.`lock` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT, INSERT, UPDATE, DELETE ON `dynamoregister`.`activity_lock` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamohistory_cache`.`sites_snapshot_usage` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamohistory_cache`.`replicas_snapshot_usage` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`activity_lock` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
 done
 
 ## Write my.cnf files (optional)

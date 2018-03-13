@@ -4,12 +4,11 @@
 <update_sites> = $(DYNAMO_BASE)/exec/update_sites_cms
 <update_popularity> = $(DYNAMO_BASE)/exec/update_popularity_cms
 <convert_locks> = $(DYNAMO_BASE)/exec/convert_dynamo_locks
-{generate_dataset_list} = $(DYNAMO_BASE)/exec/generate_dataset_list_cms
 <track_transfers> = $(DYNAMO_BASE)/exec/track_transfers
 <track_phedex> = $(DYNAMO_BASE)/exec/track_phedex
 <track_enforcer> = $(DYNAMO_BASE)/exec/track_enforcer
 <track_copy_requests> = $(DYNAMO_BASE)/exec/track_copy_requests
-<siteinfo> = $(DYNAMO_BASE)/exec/siteinfo
+{siteinfo} = $(DYNAMO_BASE)/exec/siteinfo
 
 [SEQUENCE delta_update]
 & <updater> --config /etc/dynamo/updater_config.json --mode ReplicaDelta
@@ -46,7 +45,8 @@ WAIT 600
 & <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/Physics.txt
 & <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/RelVal.txt
 & <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/DataOps.txt --test-run
-& <siteinfo> --config /etc/dynamo/siteinfo_config.json
+& <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/caf-alca.txt --test-run
+& {siteinfo} --config /etc/dynamo/siteinfo_config.json
 WAIT 14400
 
 [SEQUENCE dealer]
