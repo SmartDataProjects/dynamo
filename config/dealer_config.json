@@ -37,7 +37,7 @@
         "priority": 1,
         "module": "CopyRequestsHandler",
         "config": {
-          "max_size": 20.0,
+          "max_size": 200.0,
           "block_request_max": 0.5,
           "db_params": {
             "config_file": "/etc/my.cnf.d/dynamo.cnf",

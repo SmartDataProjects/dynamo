@@ -15,7 +15,7 @@ CREATE TABLE `action` (
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `email` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
 DROP TABLE IF EXISTS `active_copies`;
@@ -103,7 +103,7 @@ CREATE TABLE `copy_requests` (
   KEY `last_request_time` (`last_request_time`),
   KEY `request_count` (`request_count`),
   KEY `status` (`status`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
 DROP TABLE IF EXISTS `deletion_queue`;
@@ -111,7 +111,11 @@ CREATE TABLE `deletion_queue` (
   `reqid` int(10) unsigned NOT NULL DEFAULT '0',
   `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
   `site` varchar(32) COLLATE latin1_general_cs NOT NULL,
-  `status` enum('new','done','failed') COLLATE latin1_general_cs NOT NULL,
+  `status` enum('new','done','failed','inbatch') COLLATE latin1_general_cs NOT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `start` bigint(20) DEFAULT NULL,
+  `finish` bigint(20) unsigned DEFAULT NULL,
+  `batchid` varchar(40) COLLATE latin1_general_cs DEFAULT NULL,
   UNIQUE KEY `file` (`file`,`site`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
@@ -137,7 +141,7 @@ CREATE TABLE `deletion_requests` (
   KEY `user` (`user_id`),
   KEY `timestamp` (`timestamp`),
   KEY `status` (`status`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
 DROP TABLE IF EXISTS `detox_locks`;
@@ -158,7 +162,7 @@ CREATE TABLE `detox_locks` (
   KEY `expires` (`expiration_date`),
   KEY `lock_data` (`item`,`sites`,`groups`),
   KEY `user_id` (`user_id`,`service_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
 
 DROP TABLE IF EXISTS `domains`;
@@ -166,7 +170,7 @@ CREATE TABLE `domains` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(32) COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
 
 DROP TABLE IF EXISTS `invalidations`;
@@ -182,6 +186,19 @@ CREATE TABLE `services` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(32) COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`)
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+
+
+DROP TABLE IF EXISTS `stage_queue`;
+CREATE TABLE `stage_queue` (
+  `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
+  `site` varchar(32) COLLATE latin1_general_cs NOT NULL,
+  `status` enum('new','done','failed','inbatch') COLLATE latin1_general_cs NOT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `start` bigint(20) unsigned DEFAULT NULL,
+  `finish` bigint(20) unsigned DEFAULT NULL,
+  `batchid` varchar(40) COLLATE latin1_general_cs DEFAULT NULL,
+  UNIQUE KEY `file_site` (`file`,`site`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
 
@@ -191,8 +208,11 @@ CREATE TABLE `transfer_queue` (
   `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
   `site_from` varchar(32) COLLATE latin1_general_cs NOT NULL,
   `site_to` varchar(32) COLLATE latin1_general_cs NOT NULL,
-  `status` enum('new','done','failed') COLLATE latin1_general_cs NOT NULL,
-  UNIQUE KEY `file` (`file`,`site_from`,`site_to`)
+  `status` enum('new','done','failed','inbatch','instage','staged') COLLATE latin1_general_cs NOT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `start` bigint(20) unsigned DEFAULT NULL,
+  `finish` bigint(20) unsigned DEFAULT NULL,
+  `batchid` varchar(40) COLLATE latin1_general_cs DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
 
@@ -206,6 +226,6 @@ CREATE TABLE `users` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`,`domain_id`),
   UNIQUE KEY `dn` (`dn`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
 

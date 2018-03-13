@@ -354,6 +354,8 @@ class Dealer(object):
                             if approved:
                                 replica = new_replica_from_dataset(item, site, group)
                                 inventory.update(replica)
+                                for block_replica in replica.block_replicas:
+                                    inventory.update(block_replica)
 
                         else:
                             dataset_list.add(item.dataset)
