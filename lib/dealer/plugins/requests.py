@@ -141,10 +141,10 @@ class CopyRequestsHandler(BaseHandler):
 
             # item is a dataset or a list of blocks
             if type(item) is Dataset:
-                self.registry.query(activate_sql, request_id, item.name, site.name, 'new')
+                self.registry.query(activate_sql, request_id, item.name, site.name, status)
             else:
                 for block in item:
-                    self.registry.query(activate_sql, request_id, block.full_name(), site.name, 'new')
+                    self.registry.query(activate_sql, request_id, block.full_name(), site.name, status)
 
 
         # loop over requests and find items and destinations

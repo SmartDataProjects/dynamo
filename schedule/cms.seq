@@ -8,6 +8,7 @@
 <track_transfers> = $(DYNAMO_BASE)/exec/track_transfers
 <track_phedex> = $(DYNAMO_BASE)/exec/track_phedex
 <track_enforcer> = $(DYNAMO_BASE)/exec/track_enforcer
+<track_copy_requests> = $(DYNAMO_BASE)/exec/track_copy_requests
 <siteinfo> = $(DYNAMO_BASE)/exec/siteinfo
 
 [SEQUENCE delta_update]
@@ -51,10 +52,14 @@ WAIT 14400
 [SEQUENCE dealer]
 | <update_popularity> --config /etc/dynamo/popularity_update_config.json --globalqueue
 ^ <dealer> --config /etc/dynamo/dealer_config.json
-WAIT 3600
+WAIT 1800
 
 [SEQUENCE dealermon]
 WAIT 900
 | <track_transfers> --config /etc/dynamo/dealermon_config.json
 | <track_phedex> --config /etc/dynamo/dealermon_config.json
 | <track_enforcer> --config /etc/dynamo/dealermon_config.json
+
+[SEQUENCE queuemanager]
+| <track_copy_requests> --config /etc/dynamo/track_copy_requests_config.json
+WAIT 120
