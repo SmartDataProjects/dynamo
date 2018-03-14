@@ -173,14 +173,17 @@ class CopyRequestsHandler(BaseHandler):
             for site_name in site_names:
                 if '*' in site_name:
                     site_pat = re.compile(fnmatch.translate(site_name))
-                    for site in inventory.sites.itervalues():
+                    for site in policy.target_sites:
                         if site_pat.match(site.name):
                             sites.append(site)
                 else:
                     try:
-                        sites.append(inventory.sites[site_name])
+                        site = inventory.sites[site_name]
                     except KeyError:
                         continue
+
+                    if site in policy.target_sites:
+                        sites.append(site)
 
             if len(sites) == 0:
                 self.registry.query(reject_sql, 'No valid site name in list', request_id)
@@ -305,7 +308,7 @@ class CopyRequestsHandler(BaseHandler):
                             
                             if rejection_reason is not None:
                                 # item_name is guaranteed to be valid
-                                self.registry.query(reject_sql, 'Cannot copy %s to %s' % (item_name, site_name), request_id)
+                                self.registry.query(reject_sql, 'Cannot copy %s to %s' % (item_name, destination.name), request_id)
                                 rejected = True
         
                             new_requests.append((item, destination))
