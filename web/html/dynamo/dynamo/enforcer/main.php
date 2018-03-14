@@ -96,13 +96,11 @@ foreach($array as $key => $value) {
     continue;
   }
   foreach($value['sites'] as $pattern => $val) {
-    //	echo $val;
     if ($handle = fopen(__DIR__ . "/geodata/lat_long_sites.csv", "r")) {
       $count = 0;
       while (($line = fgets($handle, 4096)) !== FALSE) {
 	$line_array = explode(",",$line);
 	if (fnmatch($val,$line_array[0])){
-	  //    echo $line_array[0];
 	  $considered_sites[] = $line_array[0];
 	  $considered_backends[] = $line_array[1];
 	  $considered_lat[] = $line_array[2];
@@ -115,8 +113,8 @@ foreach($array as $key => $value) {
   }
 }
 
-// Obtain status from txt file (will be rrd file in the end)<
-if ( (isset($_REQUEST['getStatus']) && $_REQUEST['getStatus'])){// or (isset($_REQUEST['whichRule']) && $_REQUEST['whichRule'])) {
+// Obtain status from rrd file
+if ( (isset($_REQUEST['getStatus']) && $_REQUEST['getStatus'])){
 
   $status_array = array();
   $directory = 'monitoring_enforcer/';
