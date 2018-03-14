@@ -160,33 +160,18 @@ class DealerPolicy(object):
 
         return item_name, item_size, already_exists
 
-    def find_destination_for(self, item, partition, match_patterns = None, exclude_patterns = None):
+    def find_destination_for(self, item, partition, candidates = None):
         item_name, item_size, already_exists = self.item_info(item)
 
         if item_name is None:
             LOG.warning('Invalid request found. Skipping.')
             return None, None, None, 'Invalid request'
 
+        if candidates is None:
+            candidates = self.target_sites
+
         site_array = []
-        for site in self.target_sites:
-            if match_patterns is not None:
-                for pattern in match_patterns:
-                    if fnmatch.fnmatch(site.name, pattern):
-                        break
-                else:
-                    # no match
-                    continue
-
-            if exclude_patterns is not None:
-                excluded = False
-                for pattern in exclude_patterns:
-                    if fnmatch.fnmatch(site.name, pattern):
-                        excluded = True
-                        break
-
-                if excluded:
-                    continue
-
+        for site in candidates:
             site_partition = site.partitions[partition]
 
             projected_occupancy = site_partition.occupancy_fraction(physical = False)
