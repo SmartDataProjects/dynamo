@@ -17,9 +17,10 @@ class CRABAccessHistory(object):
     Sets two attrs:
       global_usage_rank:  float value
       num_access: integer
+      last_access: timestamp
     """
 
-    produces = ['global_usage_rank', 'num_access']
+    produces = ['global_usage_rank', 'num_access', 'last_access']
 
     def __init__(self, config):
         self._store = MySQL(config.store.db_params)
@@ -112,6 +113,7 @@ class CRABAccessHistory(object):
 
             dataset.attr['global_usage_rank'] = rank
             dataset.attr['num_access'] = num_access
+            dataset.attr['last_access'] = max(last_access, dataset.last_update)
 
     @staticmethod
     def update(config, inventory):
