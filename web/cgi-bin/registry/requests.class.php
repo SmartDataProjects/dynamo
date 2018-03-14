@@ -38,6 +38,17 @@ class Requests {
     if ($command != 'pollcopy' && $command != 'polldeletion' && $this->_read_only)
       $this->send_response(400, 'BadRequest', 'User not authorized');
 
+    $input = file_get_contents('php://input');
+
+    if ($input) {
+      // json uploaded
+      $json_request = json_decode($input, true);
+      if (!is_array($json_request))
+        $this->send_response(400, 'BadRequest', 'Invalid data posted');
+
+      $request = array_replace($request, $json_request);
+    }
+
     $this->sanitize_request($command, $request);
 
     if ($command == 'copy') {
@@ -62,15 +73,6 @@ class Requests {
 
   private function exec_copy($request)
   {
-    $input = file_get_contents('php://input');
-
-    if ($input) {
-      // json uploaded
-      $request = json_decode($input, true);
-      if (!is_array($request))
-        $this->send_response(400, 'BadRequest', 'Invalid data posted');
-    }
-
     // can update copy data using an existing request_id
     $request_id = isset($request['request_id']) ? $request['request_id'] : NULL;
 
@@ -145,15 +147,6 @@ class Requests {
 
   private function exec_delete($request)
   {
-    if (isset($_SERVER['CONTENT_TYPE']) && strcasecmp(trim($_SERVER['CONTENT_TYPE']), 'application/json') == 0) {
-      // json uploaded
-      $input = file_get_contents('php://input');
-
-      $request = json_decode($input, true);
-      if (!is_array($request))
-        $this->send_response(400, 'BadRequest', 'Invalid data posted');
-    }
-
     $request_id = isset($request['request_id']) ? $request['request_id'] : NULL;
 
     if (isset($request['item']))
@@ -275,12 +268,14 @@ class Requests {
 
   private function sanitize_request($command, &$request)
   {
-    $allowed_fields = array('request_id', 'item', 'site');
+    $allowed_fields = array('request_id');
 
     if ($command == 'copy')
-      $allowed_fields = array_merge($allowed_fields, array('group', 'n'));
+      $allowed_fields = array_merge($allowed_fields, array('item', 'site', 'group', 'n'));
+    else if ($command == 'delete')
+      $allowed_fields = array_merge($allowed_fields, array('item', 'site'));
     else if ($command == 'pollcopy' || $command == 'polldeletion')
-      $allowed_fields = array_merge($allowed_fields, array('user'));
+      $allowed_fields = array_merge($allowed_fields, array('item', 'site', 'user'));
 
     foreach (array_keys($request) as $key) {
       if (in_array($key, $allowed_fields)) {
@@ -342,6 +337,7 @@ class Requests {
       'r.`last_request_time`',
       'r.`request_count`',
       'r.`rejection_reason`',
+      'a.`item`',
       'a.`site`',
       'a.`status`',
       'a.`updated`'
@@ -402,9 +398,9 @@ class Requests {
       call_user_func_array(array($stmt, "bind_param"), $params);
 
     if ($users !== NULL)
-      $stmt->bind_result($rid, $group, $ncopy, $status, $first_request, $last_request, $request_count, $reason, $asite, $astatus, $atimestamp, $uname, $udn);
+      $stmt->bind_result($rid, $group, $ncopy, $status, $first_request, $last_request, $request_count, $reason, $aitem, $asite, $astatus, $atimestamp, $uname, $udn);
     else
-      $stmt->bind_result($rid, $group, $ncopy, $status, $first_request, $last_request, $request_count, $reason, $asite, $astatus, $atimestamp);
+      $stmt->bind_result($rid, $group, $ncopy, $status, $first_request, $last_request, $request_count, $reason, $aitem, $asite, $astatus, $atimestamp);
 
     $stmt->execute();
 
@@ -439,7 +435,7 @@ class Requests {
       }
 
       if ($astatus !== NULL)
-        $datum['copy'][] = array('site' => $asite, 'status' => $astatus, 'updated' => $atimestamp);
+        $datum['copy'][] = array('item' => $aitem, 'site' => $asite, 'status' => $astatus, 'updated' => $atimestamp);
     }
 
     $stmt->close();
@@ -580,6 +576,8 @@ class Requests {
       'r.`status`',
       'r.`timestamp`',
       'r.`rejection_reason`',
+      'a.`item`',
+      'a.`site`',
       'a.`status`',
       'a.`updated`'
     );
@@ -637,9 +635,9 @@ class Requests {
       call_user_func_array(array($stmt, "bind_param"), $params);
 
     if ($users !== NULL)
-      $stmt->bind_result($rid, $status, $timestamp, $reason, $astatus, $atimestamp, $uname, $udn);
+      $stmt->bind_result($rid, $status, $timestamp, $reason, $aitem, $asite, $astatus, $atimestamp, $uname, $udn);
     else
-      $stmt->bind_result($rid, $status, $timestamp, $reason, $astatus, $atimestamp);
+      $stmt->bind_result($rid, $status, $timestamp, $reason, $aitem, $asite, $astatus, $atimestamp);
 
     $stmt->execute();
 
@@ -669,7 +667,7 @@ class Requests {
       }
 
       if ($astatus !== NULL)
-        $datum['deletion'][] = array('status' => $astatus, 'updated' => $atimestamp);
+        $datum['deletion'][] = array('item' => $aitem, 'site' => $asite, 'status' => $astatus, 'updated' => $atimestamp);
     }
 
     $stmt->close();
