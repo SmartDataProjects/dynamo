@@ -65,12 +65,14 @@ foreach (glob(__DIR__ . '/monitoring_enforcer/*') as $filename) {
 $html_replace = '<form method="GET">';
 $html_replace = $html_replace .'<select name="rule" onchange="this.form.submit()">';
 $html_replace = $html_replace . "<option value='Choose rule'>" . "Choose rule" . "</option>";
+
 foreach (glob(__DIR__ . '/monitoring_enforcer/*.rrd') as $filename) {
   if ($var === $filename){
     $html_replace = $html_replace . "<option selected='selected'>" . basename(str_replace(".rrd","",$filename)) . "</option>";
   }
   $html_replace = $html_replace . "<option value=" . basename(str_replace(".rrd","",$filename)) .">" . basename(str_replace(".rrd","",$filename)) . "</option>";
 }
+
 $html_replace = $html_replace .'</select>';
 $html_replace = $html_replace .'</form>';
 
@@ -113,11 +115,8 @@ foreach($array as $key => $value) {
   }
 }
 
-//echo "hi";
-$final_array = array();
-// Obtain status from txt file (will be rrd file in the end)
+// Obtain status from txt file (will be rrd file in the end)<
 if ( (isset($_REQUEST['getStatus']) && $_REQUEST['getStatus'])){// or (isset($_REQUEST['whichRule']) && $_REQUEST['whichRule'])) {
-
 
   $status_array = array();
   $directory = 'monitoring_enforcer/';
@@ -150,25 +149,17 @@ if ( (isset($_REQUEST['getStatus']) && $_REQUEST['getStatus'])){// or (isset($_R
       }
 
       $siteinfo = array('rule' => str_replace('.rrd','',$file)."_".$line_number, 'data' => array());
-      
-
-      $flag = true;
-
-
-      
+            
       $rrd_info = single_rrd_to_array("usa_miniaod.rrd",__DIR__ . "/monitoring_enforcer/");
-      $tmp_array = array('date' => $rrd_info[0], 'missing' => $rrd_info[1], 'there' => $rrd_info[2], 'sites' => $considered_sites, 'backends' => $considered_backends, 'lat' => $considered_lat, 'long' => $considered_long);
-      $siteinfo['data'][] = $tmp_array;
+      $siteinfo['data'][] = array('date' => $rrd_info[0], 'missing' => $rrd_info[1], 'there' => $rrd_info[2], 'sites' => $considered_sites, 'backends' => $considered_backends, 'lat' => $considered_lat, 'long' => $considered_long);
       $status_array[] = $siteinfo;
 	
     }
   }
 
-  $final_array = $status_array; 
   echo @json_encode($status_array);
   
 }
-//echo @json_encode($final_array);
 
 // Communciation with html file
 if ( !(isset($_REQUEST['getStatus'])) ){
