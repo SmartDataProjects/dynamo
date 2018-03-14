@@ -1,6 +1,7 @@
 import collections
 import logging
 import fnmatch
+import re
 
 from dynamo.dealer.plugins.base import BaseHandler
 from dynamo.utils.interface.mysql import MySQL
@@ -108,26 +109,38 @@ class CopyRequestsHandler(BaseHandler):
 
         self.registry.query('UNLOCK TABLES')
 
-        # deal with new requests
-        self.registry.query('LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `copy_request_items` AS i WRITE, `active_copies` WRITE, `active_copies` AS a WRITE')
+        ## deal with new requests
 
-        sql = 'SELECT r.`id`, r.`site`, r.`group`, r.`num_copies`, i.`item`, r.`request_count`, r.`first_request_time` FROM `copy_requests` AS r'
-        sql += ' INNER JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
-        sql += ' WHERE r.`status` = \'new\' OR r.`status` = \'updated\''
+        self.registry.query('LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `copy_request_sites` AS s WRITE, `copy_request_items` AS i WRITE, `active_copies` WRITE, `active_copies` AS a WRITE')
 
-        # item can be the name of a dataset or a block
-        # -> group into (site, group, # copies, request count, request time, [list of items], [list of active transfers])
+        # group into (group, # copies, request count, request time, [list of sites], [list of items], [list of active transfers])
         grouped_requests = {} # {request_id: copy info}
 
-        for request_id, site_name, group_name, num_copies, item_name, request_count, request_time in self.registry.xquery(sql):
-            if request_id not in grouped_requests:
-                grouped_requests[request_id] = (site_name, group_name, num_copies, request_count, request_time, [], [])
+        sql = 'SELECT `id`, `group`, `num_copies`, `request_count`, `first_request_time` FROM `copy_requests`'
+        sql += ' WHERE `status` = \'new\' OR `status` = \'updated\''
 
+        for request_id, group_name, num_copies, request_count, request_time in self.registry.xquery(sql):
+            if request_id not in grouped_requests:
+                grouped_requests[request_id] = (group_name, num_copies, request_count, request_time, [], [], [])
+
+        sql = 'SELECT s.`request_id`, s.`site` FROM `copy_request_sites` AS s'
+        sql += ' INNER JOIN `copy_requests` AS r ON r.`id` = s.`request_id`'
+        sql += ' WHERE r.`status` = \'new\' OR r.`status` = \'updated\''
+
+        for request_id, site_name in self.registry.xquery(sql):
+            grouped_requests[request_id][4].append(site_name)
+
+        sql = 'SELECT i.`request_id`, i.`item` FROM `copy_request_items` AS i'
+        sql += ' INNER JOIN `copy_requests` AS r ON r.`id` = i.`request_id`'
+        sql += ' WHERE r.`status` = \'new\' OR r.`status` = \'updated\''
+
+        for request_id, item_name in self.registry.xquery(sql):
             grouped_requests[request_id][5].append(item_name)
 
-        sql = 'SELECT r.`id`, a.`item`, a.`site` FROM `copy_requests` AS r'
-        sql += ' INNER JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
-        sql += ' WHERE r.`status` = \'new\' OR r.`status` = \'updated\'' # new requests shouldn't have any active copies, but just to be safe
+        # active copies should only exist for updated requests, but we query status = new just in case
+        sql = 'SELECT a.`request_id`, a.`item`, a.`site` FROM `active_copies` AS a'
+        sql += ' INNER JOIN `copy_requests` AS r ON r.`id` = a.`request_id`'
+        sql += ' WHERE r.`status` = \'new\' OR r.`status` = \'updated\''
 
         for request_id, item_name, site_name in self.registry.xquery(sql):
             grouped_requests[request_id][6].append((item_name, site_name))
@@ -148,14 +161,36 @@ class CopyRequestsHandler(BaseHandler):
 
 
         # loop over requests and find items and destinations
-        for request_id, (site_name, group_name, num_copies, request_count, request_time, item_names, active_copies) in grouped_requests.iteritems():
+        for request_id, (group_name, num_copies, request_count, request_time, site_names, item_names, active_copies) in grouped_requests.iteritems():
             try:
                 group = inventory.groups[group_name]
             except KeyError:
                 self.registry.query(reject_sql, 'Invalid group name %s' % group_name, request_id)
                 continue
 
+            sites = [] # list of sites
+
+            for site_name in site_names:
+                if '*' in site_name:
+                    site_pat = re.compile(fnmatch.translate(site_name))
+                    for site in policy.target_sites:
+                        if site_pat.match(site.name):
+                            sites.append(site)
+                else:
+                    try:
+                        site = inventory.sites[site_name]
+                    except KeyError:
+                        continue
+
+                    if site in policy.target_sites:
+                        sites.append(site)
+
+            if len(sites) == 0:
+                self.registry.query(reject_sql, 'No valid site name in list', request_id)
+                continue
+
             rejected = False
+
             items = [] # list of datasets or (list of blocks from a dataset)
 
             _dataset_name = ''
@@ -207,7 +242,7 @@ class CopyRequestsHandler(BaseHandler):
             if rejected:
                 continue
 
-            # elements of items are either a dataset or a list of blocks
+            # each element of items is either a dataset or a list of blocks
 
             # process the items list
             for ii in range(len(items)):
@@ -237,99 +272,100 @@ class CopyRequestsHandler(BaseHandler):
                 continue
 
             new_requests = []
-            wont_request = []
+            completed_requests = []
 
             # find destinations (num_copies times) for each item
             for item in items:
                 # function to find existing copies
                 # will not make a request only if there is a full copy of the item
                 _, _, already_exists = policy.item_info(item)
+                
+                if num_copies == 0:
+                    # make one copy at each site
 
-                if '*' in site_name:
-                    # count existing active copies
-                    if type(item) is Dataset:
-                        for it, st in active_copies:
-                            if it == item.name:
-                                num_copies -= 1
-                    else:
-                        # count the destinations of active copies
-                        block_names = set(block.full_name() for block in item)
-                        destinations = set()
-                        for it, st in active_copies:
-                            if it in block_names:
-                                destinations.add(st)
+                    for destination in sites:
+                        # skip already activated requests
+                        if type(item) is Dataset:
+                            if (item.name, destination.name) in active_copies:
+                                continue
+                        else:
+                            is_active = False
 
-                        num_copies -= len(destinations)
+                            # if there is at least one active copy of any of the blocks, this request must be active
+                            block_names = set(block.full_name() for block in item)
+                            for it, st in active_copies:
+                                if st == destination.name and it in block_names:
+                                    is_active = True
+                                    break
+    
+                            if is_active:
+                                continue
+    
+                        if already_exists(destination, item):
+                            completed_requests.append((item, destination))
+                        else:
+                            item_name, _, rejection_reason = policy.check_destination(item, destination, partition)
+                            
+                            if rejection_reason is not None:
+                                # item_name is guaranteed to be valid
+                                self.registry.query(reject_sql, 'Cannot copy %s to %s' % (item_name, destination.name), request_id)
+                                rejected = True
+        
+                            new_requests.append((item, destination))
 
-                    if num_copies <= 0:
-                        continue
+                else:
+                    # total of n copies
 
-                    # check the existing copies and create activation entries with status completed
-                    for site in inventory.sites.itervalues():
-                        if not fnmatch.fnmatch(site.name, site_name):
-                            continue
+                    candidate_sites = []
+                    num_new = num_copies
 
-                        if already_exists(site, item):
-                            wont_request.append((item, site))
-                            num_copies -= 1
-                            if num_copies == 0:
-                                break
+                    for destination in sites:
+                        if num_new == 0:
+                            break
 
-                    matched_destinations = []
-                    for icopy in range(num_copies):
-                        destination, item_name, _, _ = policy.find_destination_for(item, partition, match_patterns = [site_name], exclude_patterns = matched_destinations)
+                        # skip already activated requests
+                        if type(item) is Dataset:
+                            if (item.name, destination.name) in active_copies:
+                                num_new -= 1
+                                continue
+                        else:
+                            is_active = False
+
+                            # if there is at least one active copy of any of the blocks, this request must be active
+                            block_names = set(block.full_name() for block in item)
+                            for it, st in active_copies:
+                                if st == destination.name and it in block_names:
+                                    is_active = True
+                                    break
+    
+                            if is_active:
+                                num_new -= 1
+                                continue
+   
+                        if already_exists(destination, item):
+                            num_new -= 1
+                            completed_requests.append((item, destination))
+                        else:
+                            candidate_sites.append(destination)
+
+                    for icopy in range(num_new):
+                        destination, item_name, _, _ = policy.find_destination_for(item, partition, candidates = candidate_sites)
     
                         if destination is None:
-                            # if any of the item cannot find any of the num_copies destinations, reject the request
+                            # if any of the item cannot find any of the num_new destinations, reject the request
                             self.registry.query(reject_sql, 'Destination %d for %s not available' % (icopy, item_name), request_id)
                             rejected = True
                             break
     
-                        matched_destinations.append(destination.name)
+                        candidate_sites.remove(destination)
                         new_requests.append((item, destination))
 
-                else:
-                    # if a destination is specified, num_copies must be 1
-
-                    is_active = False
-
-                    if type(item) is Dataset:
-                        for it, st in active_copies:
-                            if it == item.name:
-                                is_active = True
-                                break
-                    else:
-                        # count the destinations of active copies
-                        block_names = set(block.full_name() for block in item)
-                        for it, st in active_copies:
-                            if it in block_names:
-                                is_active = True
-                                break
-
-                    if is_active:
-                        continue
-
-                    try:
-                        destination = inventory.sites[site_name]
-                    except KeyError:
-                        self.registry.query(reject_sql, 'Invalid site name %s' % site_name, request_id)
-                        rejected = True
-                        break
-
-                    if already_exists(destination, item):
-                        wont_request.append((item, destination))
-                    else:
-                        item_name, _, rejection_reason = policy.check_destination(item, destination, partition)
-                        
-                        if rejection_reason is not None:
-                            # item_name is guaranteed to be valid
-                            self.registry.query(reject_sql, 'Cannot copy %s to %s' % (item_name, site_name), request_id)
-                            rejected = True
-    
-                        new_requests.append((item, destination))
+                # if num_copies == 0, else
 
                 if rejected:
                     break
+
+            # for each item in request
 
             if rejected:
                 continue
@@ -343,7 +379,7 @@ class CopyRequestsHandler(BaseHandler):
                 else:
                     blocks_to_propose[site][item[0].dataset].update(item)
 
-            for item, site in wont_request:
+            for item, site in completed_requests:
                 activate(request_id, item, site, 'completed')
 
             self.registry.query('UPDATE `copy_requests` SET `status` = \'activated\' WHERE `id` = %s', request_id)
