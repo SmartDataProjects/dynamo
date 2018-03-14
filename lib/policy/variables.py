@@ -272,6 +272,7 @@ replica_variables = {
     'dataset.on_tape': DatasetOnTape(),
     'dataset.size': DatasetAttr(Attr.NUMERIC_TYPE, 'size'),
     'dataset.last_update': DatasetAttr(Attr.TIME_TYPE, 'last_update'),
+    'dataset.last_access': DatasetAttr(Attr.TIME_TYPE, dict_attr = 'last_access', dict_default = 0),
     'dataset.num_full_disk_copy': DatasetNumFullDiskCopy(),
     'dataset.usage_rank': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'global_usage_rank'),
     'dataset.demand_rank': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'global_demand_rank'),
