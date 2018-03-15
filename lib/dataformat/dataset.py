@@ -141,7 +141,7 @@ class Dataset(object):
         else:
             return dataset
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         try:
             dataset = inventory.datasets.pop(self._name)
         except KeyError:
@@ -155,11 +155,11 @@ class Dataset(object):
 
         return dataset
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_dataset(self)
-        else:
-            store.save_dataset(self)
+    def write_into(self, store):
+        store.save_dataset(self)
+
+    def delete_from(self, store):
+        store.delete_dataset(self)
 
     def find_block(self, block_name, must_find = False):
         try:

@@ -530,7 +530,7 @@ if check_replicas:
     
         # 6.6. Delete the block replica
     
-        # blockreplica.delete_from() raises a KeyError or ObjectError if
+        # blockreplica.unlink_from() raises a KeyError or ObjectError if
         # any of the group, site, dataset, ... is not found
         try:
             inventory.delete(replica)

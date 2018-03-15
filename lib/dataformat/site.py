@@ -103,25 +103,10 @@ class Site(object):
             site.copy(self)
             inventory.sites.add(site)
 
-            # Special case: automatically createing new site partitions.
-            # In write-enabled applications, inventory will add the newly created
-            # site clone into _updated_objects after this function returns.
-            # To have site partitions also added to _updated_objects *after* the
-            # site is added to the list, we need to call the update() back from within.
-
-            # Just set some value off so updated is triggered
-            site.status = self.status + 1
-            inventory.update(self)
-
-            # Now site is saved in inventory._updated_objects
-
             for partition in inventory.partitions.itervalues():
-                inventory.update(SitePartition(site, partition))
+                site.partitions[partition] = SitePartition(site, partition)
 
-            # Reporting updated = True causes the site to be added to _updated_objects twice,
-            # but this is the only way to trigger writing update by the server
             updated = True
-            # site_partitions will always be written in Site.write_into.
 
         else:
             if check and (site is self or site == self):
@@ -136,7 +121,7 @@ class Site(object):
         else:
             return site
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         try:
             site = inventory.sites.pop(self._name)
         except KeyError:
@@ -145,16 +130,17 @@ class Site(object):
         for replica in site._dataset_replicas.values():
             replica.unlink()
 
+        for partition in site.partitions.keys():
+            site.partitions.pop(partition)
+
         return site
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_site(self)
-        else:
-            store.save_site(self)
+    def write_into(self, store):
+        store.save_site(self)
+        # if a new site, store must create SitePartition entries with default values
 
-        for site_partition in self.partitions.itervalues():
-            site_partition.write_into(store, delete = delete)
+    def delete_from(self, store):
+        store.delete_site(self)
 
     def find_dataset_replica(self, dataset, must_find = False):
         try:

@@ -295,7 +295,7 @@ class Detox(object):
 
                             # unlinked_replicas on the other hand contains all block replicas that should be kicked out
                             for block_replica in unlinked_replicas:
-                                block_replica.delete_from(repository)
+                                block_replica.unlink_from(repository)
 
                             block_replicas -= set(unlinked_replicas)
 
@@ -326,7 +326,7 @@ class Detox(object):
                             get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
 
                             for block_replica in unlinked_replicas:
-                                block_replica.delete_from(repository)
+                                block_replica.unlink_from(repository)
 
                         if len(replica.block_replicas) == 0:
                             # if all blocks were deleted, take the replica off all_replicas for later iterations
@@ -346,7 +346,7 @@ class Detox(object):
                             get_list(keep_candidates, replica, condition_id).update(block_replicas)
 
             for replica in empty_replicas:
-                replica.delete_from(repository)
+                replica.unlink_from(repository)
 
             all_replicas -= empty_replicas
             all_replicas -= ignored_replicas
@@ -427,7 +427,7 @@ class Detox(object):
 
                             get_list(deleted, replica, condition_id).update(to_delete)
                             for block_replica in unlinked_replicas:
-                                block_replica.delete_from(repository)
+                                block_replica.unlink_from(repository)
 
                         if len(reowned_replicas) != 0:
                             if replica in reowned:
@@ -436,7 +436,7 @@ class Detox(object):
                                 reowned[replica] = list(reowned_replicas)
 
                     if len(replica.block_replicas) == 0:
-                        replica.delete_from(repository)
+                        replica.unlink_from(repository)
                         all_replicas.remove(replica)
 
                     site_partition = site.partitions[partition]

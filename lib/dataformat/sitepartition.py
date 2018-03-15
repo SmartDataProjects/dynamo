@@ -1,6 +1,6 @@
 import sys
 
-from exceptions import IntegrityError
+from exceptions import ObjectError, IntegrityError
 
 class SitePartition(object):
     """State of a partition at a site."""
@@ -83,11 +83,7 @@ class SitePartition(object):
         try:
             site_partition = site.partitions[partition]
         except KeyError:
-            site_partition = SitePartition(site, partition)
-            site_partition.copy(self)
-            site.partitions[partition] = site_partition
-            updated = True
-
+            IntegrityError('SitePartition %s/%s must exist but does not.', site.name, partition.name)
         else:            
             if check and (site_partition is self or site_partition == self):
                 # identical object -> return False if check is requested
@@ -101,14 +97,14 @@ class SitePartition(object):
         else:
             return site_partition
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         raise ObjectError('Deletion of a single SitePartition is not allowed.')
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_sitepartition(self)
-        else:
-            store.save_sitepartition(self)
+    def write_into(self, store):
+        store.save_sitepartition(self)
+
+    def delete_from(self, store):
+        raise ObjectError('Deletion of a single SitePartition is not allowed.')
 
     def set_quota(self, quota):
         if self._partition.subpartitions is not None:

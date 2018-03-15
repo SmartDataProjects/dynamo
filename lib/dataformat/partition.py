@@ -95,7 +95,7 @@ class Partition(object):
         else:
             return partition
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         try:
             partition = inventory.partitions.pop(self._name)
         except KeyError:
@@ -106,11 +106,12 @@ class Partition(object):
 
         return partition
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_partition(self)
-        else:
-            store.save_partition(self)
+    def write_into(self, store):
+        store.save_partition(self)
+        # if a new partition, store must create SitePartition entries with default values
+
+    def delete_from(self, store):
+        store.delete_partition(self)
 
     def contains(self, replica):
         if self._subpartitions is None:

@@ -112,7 +112,7 @@ class BlockReplica(object):
         else:
             return replica
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         try:
             dataset = inventory.datasets[self._dataset_name()]
             block = dataset.find_block(self._block_name(), must_find = True)
@@ -153,11 +153,11 @@ class BlockReplica(object):
 
         self._block.replicas.remove(self)
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_blockreplica(self)
-        else:
-            store.save_blockreplica(self)
+    def write_into(self, store):
+        store.save_blockreplica(self)
+
+    def delete_from(self, store):
+        store.delete_blockreplica(self)
 
     def _block_full_name(self):
         if type(self._block) is str:
