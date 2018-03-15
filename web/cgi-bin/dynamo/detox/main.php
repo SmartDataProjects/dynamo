@@ -3,7 +3,7 @@
 include_once(__DIR__ . '/../common/db_conf.php');
 include(__DIR__ . '/check_cache.php');
 
-date_default_timezone_set('America/New_York');
+date_default_timezone_set('UTC');
 
 $history_db_name = 'dynamohistory';
 $cache_db_name = $history_db_name . '_cache';
@@ -69,7 +69,7 @@ $partition_id = 0;
 
 if (isset($_REQUEST['cycleNumber'])) {
   $cycle = 0 + $_REQUEST['cycleNumber'];
-  $stmt = $history_db->prepare('SELECT `partition_id`, `policy_version`, `comment`, `time_start` FROM `runs` WHERE `id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ?');
+  $stmt = $history_db->prepare('SELECT `partition_id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `runs` WHERE `id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ?');
   $stmt->bind_param('is', $cycle, $operation);
   $stmt->bind_result($partition_id, $policy_version, $comment, $timestamp);
   $stmt->execute();
@@ -93,7 +93,7 @@ if ($cycle == 0) {
   if ($partition_id == 0)
     $partition_id = 10;
 
-  $stmt = $history_db->prepare('SELECT `id`, `policy_version`, `comment`, `time_start` FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ? ORDER BY `id` DESC LIMIT 1');
+  $stmt = $history_db->prepare('SELECT `id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ? ORDER BY `id` DESC LIMIT 1');
   $stmt->bind_param('is', $partition_id, $operation);
   $stmt->bind_result($cycle, $policy_version, $comment, $timestamp);
   $stmt->execute();
@@ -252,16 +252,13 @@ if ($command == 'getData') {
   $data['nextCycle'] = $next_cycle;
   $data['cyclePolicy'] = $policy_version;
   $data['comment'] = $comment;
-  $data['cycleTimestamp'] = $timestamp;
+  $data['cycleTimestamp'] = strftime('%Y-%m-%d %H:%M:%S UTC', $timestamp);
   $data['partition'] = $partition_id;
 
   if ($next_cycle == 0) {
     // we are showing the latest cycle
-    // $timestamp is local time string
-    $ts = strptime($timestamp, '%Y-%m-%d %H:%M:%S');
-    // converting a local time tuple to unix time
-    $unixtime = mktime($ts['tm_hour'], $ts['tm_min'], $ts['tm_sec'], 1 + $ts['tm_mon'], $ts['tm_mday'], 1900 + $ts['tm_year']);
-    $data['timestampWarning'] = ($unixtime < mktime() - 3600 * 18); // warn if timestamp is more than 18 hours in the past
+    // $timestamp is in UTC
+    $data['timestampWarning'] = ($timestamp < mktime() - 3600 * 18); // warn if timestamp is more than 18 hours in the past
   }
   else
     $data['timestampWarning'] = false;
