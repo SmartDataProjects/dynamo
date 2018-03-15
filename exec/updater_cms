@@ -532,17 +532,13 @@ if check_replicas:
     
         # blockreplica.unlink_from() raises a KeyError or ObjectError if
         # any of the group, site, dataset, ... is not found
+        # containing dataset replica will be deleted within blockreplica.unlink()
+        # if it becomes empty
         try:
             inventory.delete(replica)
         except (KeyError, ObjectError):
             LOG.debug('Replica not found.')
             pass
-    
-        # 6.7. Delete the dataset replica if it is empty
-    
-        if len(dataset_replica.block_replicas) == 0:
-            LOG.info('Deleting replica %s:%s', site.name, dataset.name)
-            inventory.delete(dataset_replica)
 
 # 7. Save the execution state
 
