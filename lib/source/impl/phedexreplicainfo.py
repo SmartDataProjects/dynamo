@@ -114,7 +114,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
     def get_updated_replicas(self, updated_since): #override
         LOG.info('get_updated_replicas(%d)  Fetching the list of replicas from PhEDEx', updated_since)
 
-        result = self._phedex.make_request('blockreplicas', ['show_dataset=y', 'update_since=%d' % updated_since])
+        result = self._phedex.make_request('blockreplicas', ['show_dataset=y', 'create_since=0', 'update_since=%d' % updated_since])
         
         return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
 
