@@ -49,6 +49,8 @@ class MySQL(object):
         # default 1M characters
         self.max_query_len = config.get('max_query_len', 1000000)
 
+        self.last_insert_id = 0
+
     def db_name(self):
         return self._connection_parameters['db']
 
@@ -80,6 +82,8 @@ class MySQL(object):
             self._connection = MySQLdb.connect(**self._connection_parameters)
 
         cursor = self._connection.cursor()
+
+        self.last_insert_id = 0
 
         try:
             if LOG.getEffectiveLevel() == logging.DEBUG:
@@ -126,6 +130,7 @@ class MySQL(object):
             if cursor.description is None:
                 if cursor.lastrowid != 0:
                     # insert query
+                    self.last_insert_id = cursor.lastrowid
                     return cursor.lastrowid
                 else:
                     # update query
@@ -157,6 +162,8 @@ class MySQL(object):
             self._connection = MySQLdb.connect(**self._connection_parameters)
 
         cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
+
+        self.last_insert_id = 0
 
         try:
             if LOG.getEffectiveLevel() == logging.DEBUG:

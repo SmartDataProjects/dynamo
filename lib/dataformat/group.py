@@ -81,13 +81,13 @@ class Group(object):
         else:
             return group
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         if self._name is None:
             raise ObjectError('Deletion of null group not allowed')
 
         # Pop the group from the main list. All block replicas owned by the group
         # will be disowned.
-        # Update to block replicas will be propagated at by calling Group.delete_from
+        # Update to block replicas will be propagated at by calling Group.unlink_from
         # at each inventory instance.
         # Database update must be taken care of by persistency store delete_group().
         try:
@@ -103,13 +103,16 @@ class Group(object):
 
         return group
 
-    def write_into(self, store, delete = False):
+    def write_into(self, store):
         if self._name is None:
             return
 
-        if delete:
-            store.delete_group(self)
-        else:
-            store.save_group(self)
+        store.save_group(self)
+
+    def delete_from(self, store):
+        if self._name is None:
+            raise ObjectError('Deletion of null group not allowed')
+
+        store.delete_group(self)
 
 Group.null_group = Group(None)

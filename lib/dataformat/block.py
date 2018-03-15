@@ -152,7 +152,7 @@ class Block(object):
         else:
             return block
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         try:
             dataset = inventory.datasets[self._dataset_name()]
             block = dataset.find_block(self._name, must_find = True)
@@ -173,11 +173,11 @@ class Block(object):
         self._dataset.size -= self.size
         self._dataset.num_files -= self.num_files
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_block(self)
-        else:
-            store.save_block(self)
+    def write_into(self, store):
+        store.save_block(self)
+
+    def delete_from(self, store):
+        store.delete_block(self)
 
     def real_name(self):
         """

@@ -1,7 +1,11 @@
 import time
 
 class InventoryStore(object):
-    """Interface definition for local inventory data store."""
+    """
+    Interface definition for local inventory data store.
+    Implementation of save_* functions must mirror what is in embed_into() of the object.
+    Implementation of delete_* functions must mirror what is in unlink_from() of the object.
+    """
 
     def __init__(self, config):
         pass
@@ -83,37 +87,77 @@ class InventoryStore(object):
         raise NotImplementedError('save_file')
     
     def save_partition(self, partition):
+        """
+        If a new partition, create site partitions with default parameters.
+        """
         raise NotImplementedError('save_file')
 
     def save_site(self, site):
+        """
+        If a new site, create site partitions with default parameters.
+        """
         raise NotImplementedError('save_site')
 
     def save_sitepartition(self, site_partition):
+        """
+        Should only do updates.
+        """
         raise NotImplementedError('save_sitepartition')
 
     def delete_block(self, block):
+        """
+        1. Delete all replicas of the block.
+        2. Delete all files belonging to the block.
+        3. Delete the block.
+        """
         raise NotImplementedError('delete_block')
 
     def delete_blockreplica(self, block_replica):
+        """
+        1. Delete the block replica.
+        2. Delete the owning dataset replica if it becomes empty.
+        """
         raise NotImplementedError('delete_blockreplica')
 
     def delete_dataset(self, dataset):
+        """
+        1. Delete all replicas of the dataset.
+        2. Delete all blocks belonging to the block.
+        3. Delete the dataset.
+        """
         raise NotImplementedError('delete_dataset')
 
     def delete_datasetreplica(self, dataset_replica):
+        """
+        1. Delete all block replicas.
+        2. Delete the dataset replica.
+        """
         raise NotImplementedError('delete_datasetreplica')
 
     def delete_group(self, group):
+        """
+        1. Set owner of all the block replicas owned by the group to None.
+        2. Delete the group.
+        """
         raise NotImplementedError('delete_group')
 
     def delete_file(self, lfile):
+        """
+        1. Delete the file.
+        """
         raise NotImplementedError('delete_file')
     
     def delete_partition(self, partition):
+        """
+        1. Delete all site partitions.
+        2. Delete the partition.
+        """
         raise NotImplementedError('delete_file')
 
     def delete_site(self, site):
+        """
+        1. Delete all dataset replicas at the site.
+        2. Delete the site partitions.
+        3. Delete the site.
+        """
         raise NotImplementedError('delete_site')
-
-    def delete_sitepartition(self, site_partition):
-        raise NotImplementedError('delete_sitepartition')

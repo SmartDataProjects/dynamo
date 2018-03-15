@@ -350,14 +350,14 @@ class Requests {
       'r.`group`',
       'r.`num_copies`',
       'r.`status`',
-      'r.`first_request_time`',
-      'r.`last_request_time`',
+      'UNIX_TIMESTAMP(r.`first_request_time`)',
+      'UNIX_TIMESTAMP(r.`last_request_time`)',
       'r.`request_count`',
       'r.`rejection_reason`',
       'a.`item`',
       'a.`site`',
       'a.`status`',
-      'a.`updated`'
+      'UNIX_TIMESTAMP(a.`updated`)'
     );
     if ($users !== NULL) {
       $fields[] = 'u.`name`';
@@ -440,8 +440,8 @@ class Requests {
           'group' => $group,
           'n' => $ncopy,
           'status' => $status,
-          'first_request' => $first_request,
-          'last_request' => $last_request,
+          'first_request' => strftime('%Y-%m-%d %H:%M:%S UTC', $first_request),
+          'last_request' => strftime('%Y-%m-%d %H:%M:%S UTC', $last_request),
           'request_count' => $request_count
         );
 
@@ -459,7 +459,7 @@ class Requests {
       }
 
       if ($astatus !== NULL)
-        $datum['copy'][] = array('item' => $aitem, 'site' => $asite, 'status' => $astatus, 'updated' => $atimestamp);
+        $datum['copy'][] = array('item' => $aitem, 'site' => $asite, 'status' => $astatus, 'updated' => strftime('%Y-%m-%d %H:%M:%S UTC', $atimestamp));
     }
 
     $stmt->close();
@@ -599,12 +599,12 @@ class Requests {
     $fields = array(
       'r.`id`',
       'r.`status`',
-      'r.`timestamp`',
+      'UNIX_TIMESTAMP(r.`timestamp`)',
       'r.`rejection_reason`',
       'a.`item`',
       'a.`site`',
       'a.`status`',
-      'a.`updated`'
+      'UNIX_TIMESTAMP(a.`updated`)'
     );
     if ($users !== NULL) {
       $fields[] = 'u.`name`';
@@ -687,7 +687,7 @@ class Requests {
           'request_id' => $rid,
           'item' => array(),
           'status' => $status,
-          'requested' => $timestamp
+          'requested' => strftime('%Y-%m-%d %H:%M:%S UTC', $timestamp)
         );
 
         $datum = &$data[$rid];
@@ -704,7 +704,7 @@ class Requests {
       }
 
       if ($astatus !== NULL)
-        $datum['deletion'][] = array('item' => $aitem, 'site' => $asite, 'status' => $astatus, 'updated' => $atimestamp);
+        $datum['deletion'][] = array('item' => $aitem, 'site' => $asite, 'status' => $astatus, 'updated' => strftime('%Y-%m-%d %H:%M:%S UTC', $atimestamp));
     }
 
     $stmt->close();

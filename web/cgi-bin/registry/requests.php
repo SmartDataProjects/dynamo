@@ -23,7 +23,7 @@ include_once('requests.class.php');
 
 if (isset($_REQUEST['service'])) {
   $service = $_REQUEST['service'];
-  // $request['service'] is used to look up locks when command = list
+  unset($_REQUEST['service']);
 }
 else
   $service = 'user';

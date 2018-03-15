@@ -134,7 +134,7 @@ class ActivityLock {
   
   private function get_lock($app, &$first_uid, &$first_sid)
   {
-    $query = 'SELECT u.`id`, s.`id`, u.`name`, s.`name`, l.`timestamp`, l.`note` FROM `activity_lock` AS l';
+    $query = 'SELECT u.`id`, s.`id`, u.`name`, s.`name`, UNIX_TIMESTAMP(l.`timestamp`), l.`note` FROM `activity_lock` AS l';
     $query .= ' INNER JOIN `users` AS u ON u.`id` = l.`user_id`';
     $query .= ' INNER JOIN `services` AS s ON s.`id` = l.`service_id`';
     $query .= ' WHERE l.`application` = ?';
@@ -161,7 +161,7 @@ class ActivityLock {
     $data['user'] = $uname;
     if ($sname != 'user')
       $data['service'] = $sname;
-    $data['lock_time'] = $timestamp;
+    $data['lock_time'] = strftime('%Y-%m-%d %H:%M:%S UTC', $timestamp);
     if ($note !== NULL)
       $data['note'] = $note;
 

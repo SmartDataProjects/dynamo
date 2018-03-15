@@ -75,7 +75,7 @@ class DatasetReplica(object):
         else:
             return replica
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         try:
             dataset = inventory.datasets[self._dataset_name()]
             site = inventory.sites[self._site_name()]
@@ -103,11 +103,11 @@ class DatasetReplica(object):
 
         self._dataset.replicas.remove(self)
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_datasetreplica(self)
-        else:
-            store.save_datasetreplica(self)
+    def write_into(self, store):
+        store.save_datasetreplica(self)
+
+    def delete_from(self, store):
+        store.delete_datasetreplica(self)
 
     def is_last_copy(self):
         return len(self._dataset.replicas) == 1 and self._dataset.replicas[0] == self
