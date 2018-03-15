@@ -81,7 +81,7 @@
       </li>
       <li><strong>pollcopy</strong>
         <p>
-          Get the information of copy requests. Takes options <strong>request_id</strong>, <strong>item</strong>, <strong>site</strong>, and <strong>user</strong>. At least one parameter must be specified. All parameters except for <strong>request_id</strong> can be a list (comma-separated in direct GET/POST, a list in JSON). When polling with <strong>request_id</strong>, all requests regardless of status is searched for. Otherwise, only new, activated, or updated requests are returned. When polling with <strong>item</strong> and/or <strong>site</strong>, all requests that contain the given list of items and sites are returned.
+          Get the information of copy requests. Takes options <strong>request_id</strong>, <strong>item</strong>, <strong>site</strong>, <strong>user</strong>, and <strong>status</strong>. At least one parameter must be specified. All parameters except for <strong>request_id</strong> can be a list (comma-separated in direct GET/POST, a list in JSON). If <strong>status</strong> is not specified, all requests regardless of status is searched for if <strong>request_id</strong> is given, and otherwise only new, activated, or updated requests are returned. When polling with <strong>item</strong> and/or <strong>site</strong>, all requests that contain the given list of items and sites are returned.
         </p>
         <p>
           A JSON is returned in the HTTP body. If one or more requests are found, the format is
@@ -93,7 +93,7 @@
       </li>
       <li><strong>polldeletion</strong>
         <p>
-          Get the information of deletion requests. Takes options <strong>request_id</strong>, <strong>item</strong>, <strong>site</strong>, and <strong>user</strong>. At least one parameter must be specified. All parameters except for <strong>request_id</strong> can be a list (comma-separated in direct GET/POST, a list in JSON). When polling with <strong>request_id</strong>, all requests regardless of status is searched for. Otherwise, only new, activated, or updated requests are returned. When polling with <strong>item</strong> and/or <strong>site</strong>, all requests that contain the given list of items and sites are returned.
+          Get the information of deletion requests. Takes options <strong>request_id</strong>, <strong>item</strong>, <strong>site</strong>, <strong>user</strong>, and <strong>status</strong>. At least one parameter must be specified. All parameters except for <strong>request_id</strong> can be a list (comma-separated in direct GET/POST, a list in JSON). If <strong>status</strong> is not specified, all requests regardless of status is searched for if <strong>request_id</strong>is given, and otherwise only new, activated, or updated requests are returned. When polling with <strong>item</strong> and/or <strong>site</strong>, all requests that contain the given list of items and sites are returned.
         </p>
       </li>
       <li><strong>cancelcopy</strong>
@@ -157,6 +157,14 @@
         </p>
         <p><i>Value</i><br>
           A string, a comma-separated list of strings, or an array of strings (if POSTed in a JSON).
+        </p>
+      </li>
+      <li><strong>status</strong>
+        <p>
+          Used only with <i>pollcopy</i> and <i>polldeletion</i> commands. Limit the returned data to requests in given statuses.
+        </p>
+        <p><i>Value</i><br>
+          A string, a comma-separated list of strings, or an array of strings (if POSTed in a JSON) with values 'new', 'activated', 'updated', 'completed', 'rejected', 'cancelled'.
         </p>
       </li>
     </ul>

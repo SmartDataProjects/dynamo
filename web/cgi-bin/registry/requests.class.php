@@ -209,6 +209,11 @@ class Requests {
     else
       $users = NULL;
 
+    if (isset($request['status']))
+      $statuses = $request['status'];
+    else
+      $statuses = NULL;
+
     // don't allow an empty query
     if ($request_id === NULL && $items === NULL && $sites === NULL && $users === NULL)
       $this->send_response(400, 'BadRequest', 'Need request_id, item, site, or user');
@@ -218,9 +223,9 @@ class Requests {
       $users = array('*');
 
     if ($type == 'copy')
-      $existing_data = $this->get_copy_data($request_id, $items, $sites, $users);
+      $existing_data = $this->get_copy_data($request_id, $items, $sites, $users, $statuses);
     else
-      $existing_data = $this->get_deletion_data($request_id, $items, $sites, $users);
+      $existing_data = $this->get_deletion_data($request_id, $items, $sites, $users, $statuses);
 
     if (count($existing_data) == 0)
       $this->send_response(200, 'EmptyResult', 'Request not found');
@@ -275,7 +280,7 @@ class Requests {
     else if ($command == 'delete')
       $allowed_fields = array_merge($allowed_fields, array('item', 'site'));
     else if ($command == 'pollcopy' || $command == 'polldeletion')
-      $allowed_fields = array_merge($allowed_fields, array('item', 'site', 'user'));
+      $allowed_fields = array_merge($allowed_fields, array('item', 'site', 'user', 'status'));
 
     foreach (array_keys($request) as $key) {
       if (in_array($key, $allowed_fields)) {
@@ -302,6 +307,17 @@ class Requests {
               $this->send_response(400, 'BadRequest', 'Invalid item name ' . $item);
           }
         }
+        else if ($key == 'status') {
+          if (is_string($value))
+            $value = $request[$key] = explode(',', trim($value, ','));
+
+          $statuses = array('new', 'activated', 'updated', 'completed', 'rejected', 'cancelled');
+
+          foreach ($value as $item) {
+            if (!in_array($item, $statuses))
+              $this->send_response(400, 'BadRequest', 'Invalid status ' . $item);
+          }
+        }
         else if ($key == 'site' || $key == 'user') {
           if (is_string($value))
             $request[$key] = explode(',', trim($value, ','));
@@ -312,13 +328,14 @@ class Requests {
     }
   }
 
-  private function get_copy_data($request_id, $items = NULL, $sites = NULL, $users = NULL)
+  private function get_copy_data($request_id, $items = NULL, $sites = NULL, $users = NULL, $statuses = NULL)
   {
     // param
     //  request_id: integer
     //  items: array
     //  sites: array
     //  users: array
+    //  statuses: array
     //
     // Structure of the returned data:
     // array(
@@ -361,15 +378,24 @@ class Requests {
       $params[] = &$this->_uid;
     }
 
+    if ($statuses !== NULL) {
+      $n = count($statuses);
+      $where_clause[] = 'r.`status` IN (' . implode(',', array_fill(0, $n, '?')) . ')';
+      $params[0] .= str_repeat('s', $n);
+      for ($i = 0; $i != $n; ++$i)
+        $params[] = &$statuses[$i];
+    }
+    else if ($request_id === NULL) {
+      // limit to live requests
+      $where_clause[] = 'r.`status` IN (\'new\', \'activated\', \'updated\')';
+    }
+
     if ($request_id !== NULL) {
       $where_clause[] = 'r.`id` = ?';
       $params[0] .= 'i';
       $params[] = &$request_id;
     }
     else {
-      // limit to live requests
-      $where_clause[] = 'r.`status` IN (\'new\', \'activated\', \'updated\')';
-
       if ($users !== NULL && !in_array('*', $users)) {
         $quoted = array();
         foreach ($users as $u)
@@ -389,8 +415,6 @@ class Requests {
       $query .= ' WHERE ' . implode(' AND ', $where_clause);
 
     $query .= ' ORDER BY r.`id`';
-
-    error_log($query);
 
     $stmt = $this->_db->prepare($query);
 
@@ -555,13 +579,14 @@ class Requests {
       $this->_db->query(sprintf('DELETE FROM `active_copies` WHERE `request_id` = %d', $request_id));
   }
 
-  private function get_deletion_data($request_id, $items = NULL, $sites = NULL, $users = NULL)
+  private function get_deletion_data($request_id, $items = NULL, $sites = NULL, $users = NULL, $statuses = NULL)
   {
     // param
     //  request_id: integer
     //  items: array
     //  sites: array
     //  users: array
+    //  statuses: array
     //
     // Returned structure:
     // array(
@@ -598,6 +623,18 @@ class Requests {
       $where_clause[] = 'r.`user_id` = ?';
       $params[0] .= 'i';
       $params[] = &$this->_uid;
+    }
+
+    if ($statuses !== NULL) {
+      $n = count($statuses);
+      $where_clause[] = 'r.`status` IN (' . implode(',', array_fill(0, $n, '?')) . ')';
+      $params[0] .= str_repeat('s', $n);
+      for ($i = 0; $i != $n; ++$i)
+        $params[] = &$statuses[$i];
+    }
+    else if ($request_id === NULL) {
+      // limit to live requests
+      $where_clause[] = 'r.`status` IN (\'new\', \'activated\', \'updated\')';
     }
 
     if ($request_id !== NULL) {

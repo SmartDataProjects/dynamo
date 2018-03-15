@@ -279,6 +279,11 @@ class CopyRequestsHandler(BaseHandler):
                 # function to find existing copies
                 # will not make a request only if there is a full copy of the item
                 _, _, already_exists = policy.item_info(item)
+
+                if type(item) is Dataset:
+                    dataset = item
+                else:
+                    dataset = item[0].dataset
                 
                 if num_copies == 0:
                     # make one copy at each site
@@ -328,6 +333,7 @@ class CopyRequestsHandler(BaseHandler):
                             if (item.name, destination.name) in active_copies:
                                 num_new -= 1
                                 continue
+
                         else:
                             is_active = False
 
@@ -341,7 +347,26 @@ class CopyRequestsHandler(BaseHandler):
                             if is_active:
                                 num_new -= 1
                                 continue
-   
+
+                        # consider copies proposed by other requests as complete
+                        try:
+                            proposed_blocks = blocks_to_propose[destination][dataset]
+                        except KeyError:
+                            pass
+                        else:
+                            if type(item) is Dataset:
+                                if item.blocks == proposed_blocks:
+                                    num_new -= 1
+                                    completed_requests.append((item, destination))
+                                    continue
+
+                            else:
+                                if set(item) <= proposed_blocks:
+                                    num_new -= 1
+                                    completed_requests.append((item, destination))
+                                    continue
+
+                        # if the item already exists, it's a complete copy too
                         if already_exists(destination, item):
                             num_new -= 1
                             completed_requests.append((item, destination))
@@ -393,7 +418,7 @@ class CopyRequestsHandler(BaseHandler):
                 if blocks == dataset.blocks:
                     dealer_requests.append((dataset, site))
                 else:
-                    daeler_requests.append((list(blocks), site))
+                    dealer_requests.append((list(blocks), site))
 
         return dealer_requests
 
