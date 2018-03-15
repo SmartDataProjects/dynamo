@@ -12,6 +12,20 @@ class MySQLApplicationLockInterface(ApplicationLockInterface):
 
         self._registry = MySQL(config.db_config)
 
+        query = 'SELECT `id` FROM `users` WHERE `name` = %s'
+        result = self._registry.query(query, self.user)
+        if len(result) == 0:
+            raise RuntimeError('User %s is not in registry' % self.user)
+
+        self._uid = result[0]
+
+        query = 'SELECT `id` FROM `services` WHERE `name` = %s'
+        result = self._registry.query(query, self.service)
+        if len(result) == 0:
+            raise RuntimeError('Service %s is not in registry' % self.service)
+
+        self._sid = result[0]
+
     def check(self): # override
         query = 'SELECT `users`.`name`, `services`.`name` FROM `activity_lock`'
         query += ' INNER JOIN `users` ON `users`.`id` = `activity_lock`.`user_id`'
@@ -25,9 +39,8 @@ class MySQLApplicationLockInterface(ApplicationLockInterface):
 
     def lock(self): # override
         query = 'INSERT INTO `activity_lock` (`user_id`, `service_id`, `application`, `timestamp`, `note`)'
-        query += ' SELECT `users`.`id`, `services`.`id`, %s, NOW(), \'Dynamo running\' FROM `users`, `services`'
-        query += ' WHERE `users`.`name` = %s AND `services`.`name` = %s'
-        self._registry.query(query, self.app, self.user, self.service)
+        query += ' VALUES (%s, %s, %s, NOW(), \'Dynamo running\')'
+        self._registry.query(query, self._uid, self._sid, self.app)
 
         while True:
             owner = self.check()
@@ -43,14 +56,13 @@ class MySQLApplicationLockInterface(ApplicationLockInterface):
         LOG.info('Locked system for %s', self.app)
 
     def unlock(self): # override
-        query = 'DELETE FROM l USING `activity_lock` AS l'
-        query += ' INNER JOIN `users` AS u ON u.`id` = l.`user_id`'
-        query += ' INNER JOIN `services` AS s ON s.`id` = l.`service_id`'
-        query += ' WHERE u.`name` = %s AND s.`name` = %s AND l.`application` = %s AND l.`timestamp` = ('
+
+        query = 'DELETE FROM `activity_lock`'
+        query += ' WHERE `user_id` = %s AND `service_id` = %s AND `application` = %s AND `timestamp` = ('
         query += 'SELECT x.t FROM ('
         query += 'SELECT MAX(`timestamp`) AS t FROM `activity_lock` WHERE'
-        query += ' `user_id` = l.`user_id` AND `service_id` = l.`service_id` AND `application` = l.`application`'
+        query += ' `user_id` = %s AND `service_id` = %s AND `application` = %s'
         query += ') AS x'
         query += ') LIMIT 1'
 
-        self._registry.query(query, self.user, self.service, self.app)
+        self._registry.query(query, self._uid, self._sid, self.app, self._uid, self._sid, self.app)

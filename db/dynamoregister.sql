@@ -150,7 +150,6 @@ CREATE TABLE `deletion_requests` (
   `status` enum('new','activated','completed','rejected','cancelled') NOT NULL DEFAULT 'new',
   `rejection_reason` text CHARACTER SET latin1 COLLATE latin1_general_cs,
   PRIMARY KEY (`id`),
-  KEY `site` (`site`),
   KEY `user` (`user_id`),
   KEY `timestamp` (`timestamp`),
   KEY `status` (`status`)
