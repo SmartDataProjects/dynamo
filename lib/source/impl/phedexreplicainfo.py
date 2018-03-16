@@ -2,6 +2,7 @@ import logging
 
 from dynamo.source.replicainfo import ReplicaInfoSource
 from dynamo.utils.interface.phedex import PhEDEx
+from dynamo.utils.parallel import Map
 from dynamo.dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)
@@ -114,9 +115,20 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
     def get_updated_replicas(self, updated_since): #override
         LOG.info('get_updated_replicas(%d)  Fetching the list of replicas from PhEDEx', updated_since)
 
-        result = self._phedex.make_request('blockreplicas', ['show_dataset=y', 'create_since=0', 'update_since=%d' % updated_since])
-        
-        return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
+        nodes = []
+        for entry in self._phedex.make_request('nodes'):
+            if entry['name'].endswith('_Export') or entry['name'].endswith('_Buffer'):
+                continue
+
+            nodes.append(entry['name'])
+
+        args = [('blockreplicas', ['show_dataset=y', 'update_since=%d' % updated_since, 'node=%s' % node]) for node in nodes]
+        results = Map().execute(self._phedex.make_request, args)
+        all_replicas = []
+        for result in results:
+            all_replicas.extend(result)
+
+        return PhEDExReplicaInfoSource.make_block_replicas(all_replicas, PhEDExReplicaInfoSource.maker_blockreplicas)
 
     def get_deleted_replicas(self, deleted_since): #override
         LOG.info('get_deleted_replicas(%d)  Fetching the list of replicas from PhEDEx', deleted_since)
