@@ -15,6 +15,7 @@ parser.add_argument('--mode', '-m', metavar = 'MODE', dest = 'mode', help = 'Aut
 parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'sites', nargs = '+', help = 'Do a full update of the site (wildcard allowed). Prepend ! to veto match.')
 parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'datasets', nargs = '+', help = 'Do a full update of the dataset (wildcard allowed).')
 parser.add_argument('--dataset-only', '-D', action = 'store_true', dest = 'dataset_only', help = 'Update dataset information only (no replicas).')
+parser.add_argument('--delta-since', '-t', metavar = 'TIME', dest = 'delta_since', type = int, help = 'With --mode=ReplicaDelta, override the update_since timestamp.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -90,22 +91,26 @@ if args.mode == 'ReplicaDelta':
 
     check_replicas = True
 
-    state_db = sqlite3.connect(config.updater_state_file)
-    cursor = state_db.cursor()
+    if args.delta_since:
+        last_update = args.delta_since
 
-    sql = 'SELECT MAX(`timestamp`) FROM `replica_delta_updates`'
-    result = cursor.execute(sql)
-    last_update = next(result)[0]
-
-    if last_update is None:
-        LOG.error('Last update timestamp is not set. Run a full update of all sites and create a timestamp.')
-        sys.exit(1)
-
-    state_db.close()
-
-    # Allow 30-minute safety margin to fully collect all updates
-    # Yes we really need that much (have seen as far as 20 minute delay in blockreplicas)
-    last_update -= 1800
+    else:
+        state_db = sqlite3.connect(config.updater_state_file)
+        cursor = state_db.cursor()
+    
+        sql = 'SELECT MAX(`timestamp`) FROM `replica_delta_updates`'
+        result = cursor.execute(sql)
+        last_update = next(result)[0]
+    
+        if last_update is None:
+            LOG.error('Last update timestamp is not set. Run a full update of all sites and create a timestamp.')
+            sys.exit(1)
+    
+        state_db.close()
+    
+        # Allow 30-minute safety margin to fully collect all updates
+        # Yes we really need that much (have seen as far as 20 minute delay in blockreplicas)
+        last_update -= 1800
 
     # The timestamp for this update
     update_start = time.time()
