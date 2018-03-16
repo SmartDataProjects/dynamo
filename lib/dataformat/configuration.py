@@ -13,7 +13,7 @@ class Configuration(dict):
     def __init__(self, _arg = None, **kwd):
         if _arg is None:
             config = dict()
-        elif type(_arg) is dict:
+        elif type(_arg) is dict or type(_arg) is Configuration:
             config = dict(_arg)
         elif type(_arg) is file:
             config = json.loads(_arg.read())
