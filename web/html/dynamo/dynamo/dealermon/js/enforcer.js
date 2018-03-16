@@ -114,7 +114,7 @@ function drawStatus(data) {
 
 	var counter = 0;
         for (var j in obj['data']){
-	    times = obj['data'][j].date.map(timeConverter);
+	    times = obj['data'][j].date;
 	    missing = obj['data'][j].missing;
 	    there = obj['data'][j].there;
 	    considered_sites = obj['data'][j].sites;
@@ -164,7 +164,7 @@ function drawStatus(data) {
 
     var trend = [
 	    {
-		x: times,
+		x: times.map(timeConverter),
 		y: missing,
 		type: 'scatter',
 		mode: 'lines',
