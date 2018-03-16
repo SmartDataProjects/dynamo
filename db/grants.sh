@@ -144,12 +144,10 @@ do
   echo 'GRANT ALL PRIVILEGES ON `dynamo\_tmp`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT SELECT ON `dynamoregister`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT SELECT, LOCK TABLES ON `dynamohistory`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT SELECT ON `dynamohistory\_cache`.* TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
+  echo 'GRANT SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE, DROP ON `dynamohistory\_cache`.* TO "'$PRIV_USER'"@"'$HOST'";' | $ROOTSQL
 
   # Table-specific operations (NORMAL_USER)
   echo 'GRANT UPDATE ON `dynamohistory`.`lock` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamohistory_cache`.`sites_snapshot_usage` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
-  echo 'GRANT INSERT, UPDATE, DELETE ON `dynamohistory_cache`.`replicas_snapshot_usage` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
   echo 'GRANT INSERT, UPDATE, DELETE ON `dynamoregister`.`activity_lock` TO "'$NORMAL_USER'"@"'$HOST'";' | $ROOTSQL
 done
 
