@@ -360,7 +360,7 @@ class MySQLHistory(TransactionHistoryInterface):
             query = 'SELECT s.`name`, d.`name`, r.`size`, r.`decision`, p.`text` FROM `%s`.`%s` AS r' % (self._cache_db.db_name(), table_name)
             query += ' INNER JOIN `%s`.`sites` AS s ON s.`id` = r.`site_id`' % self._mysql.db_name()
             query += ' INNER JOIN `%s`.`datasets` AS d ON d.`id` = r.`dataset_id`' % self._mysql.db_name()
-            query += ' INNER JOIN `%s`.`policy_conditions` AS p ON p.`id` = r.`condition`' % self._mysql.db_name()
+            query += ' LEFT JOIN `%s`.`policy_conditions` AS p ON p.`id` = r.`condition`' % self._mysql.db_name()
             query += ' ORDER BY s.`name` ASC, r.`size` DESC'
 
             product = {}

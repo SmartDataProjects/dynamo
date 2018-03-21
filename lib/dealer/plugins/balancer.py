@@ -53,7 +53,7 @@ class BalancingHandler(BaseHandler):
                 continue
 
             protections = [(ds_name, size, reason) for ds_name, size, decision, reason in decisions if decision == 'protect']
-            protected_fraction = sum(size for ds_name, size, reason in protections) / quota
+            protected_fraction = sum(size for _, size, _ in protections) / quota
 
             LOG.debug('Site %s protected fraction %f', site.name, protected_fraction)
 

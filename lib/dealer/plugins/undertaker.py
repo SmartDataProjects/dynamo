@@ -35,7 +35,7 @@ class Undertaker(BaseHandler):
             except KeyError:
                 continue
 
-            for ds_name, size, decision, reason in decisions:
+            for ds_name, size, decision, _ in decisions:
                 if decision != 'protect':
                     continue
 
