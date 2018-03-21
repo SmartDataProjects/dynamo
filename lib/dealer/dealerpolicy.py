@@ -21,18 +21,23 @@ class ReplicaPlacementRule(object):
         return True
 
 
-def dataset_already_exists(site, dataset):
+def dataset_already_exists(dataset, site, group):
     replica = site.find_dataset_replica(dataset)
-    return replica is not None and replica.is_full()
+    if replica is not None and replica.is_full():
+        owners = set(brep.group for brep in replica.block_replicas)
+        if len(owners) == 1 or list(owners)[0] == group:
+            return True
 
-def block_already_exists(site, block):
+    return False
+
+def block_already_exists(block, site, group):
     replica = site.find_block_replica(block)
-    return replica is not None and replica.is_complete
+    return replica is not None and replica.is_complete and replica.group == group
 
-def blocks_already_exist(site, blocks):
+def blocks_already_exist(blocks, site, group):
     for block in blocks:
         replica = site.find_block_replica(block)
-        if replica is None or not replica.is_complete:
+        if replica is None or not replica.is_complete or replica.group != group:
             return False
 
     return True
@@ -160,7 +165,7 @@ class DealerPolicy(object):
 
         return item_name, item_size, already_exists
 
-    def find_destination_for(self, item, partition, candidates = None):
+    def find_destination_for(self, item, group, partition, candidates = None):
         item_name, item_size, already_exists = self.item_info(item)
 
         if item_name is None:
@@ -182,7 +187,7 @@ class DealerPolicy(object):
                 continue
 
             # replica must not be at the site already
-            if already_exists(site, item):
+            if already_exists(item, site, group):
                 continue
 
             # placement must be allowed by the policy
@@ -205,7 +210,7 @@ class DealerPolicy(object):
 
         return site_array[isite][0], item_name, item_size, None
 
-    def check_destination(self, item, destination, partition):
+    def check_destination(self, item, destination, group, partition):
         item_name, item_size, already_exists = self.item_info(item)
 
         if item_name is None:
@@ -216,7 +221,7 @@ class DealerPolicy(object):
             LOG.debug('Destination %s for %s is not a target site.', destination.name, item_name)
             return item_name, item_size, 'Not a target site'
 
-        if already_exists(destination, item):
+        if already_exists(item, destination, group):
             LOG.debug('%s is already at %s.', item_name, destination.name)
             return item_name, item_size, 'Replica exists'
 

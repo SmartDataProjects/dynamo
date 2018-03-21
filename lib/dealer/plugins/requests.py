@@ -39,7 +39,7 @@ class CopyRequestsHandler(BaseHandler):
         partition = inventory.partitions[policy.partition_name]
         
         # full list of blocks to be proposed to Dealer
-        blocks_to_propose = collections.defaultdict(lambda: collections.defaultdict(set)) # {site: {dataset: set of blocks}}
+        blocks_to_propose = {} # {site: {dataset: set of blocks}}
 
         # re-request all new active copies
         self.registry.query('LOCK TABLES `active_copies` WRITE')
@@ -101,11 +101,22 @@ class CopyRequestsHandler(BaseHandler):
                 active_requests[-1][0].append(block)
 
         for item, site in active_requests:
+            try:
+                site_blocks = blocks_to_propose[site]
+            except KeyError:
+                site_blocks = blocks_to_propose[site] = {}
+
             # item is a dataset or a list of blocks
             if type(item) is Dataset:
-                blocks_to_propose[site][item] = set(item.blocks)
+                site_blocks[item] = set(item.blocks)
             else:
-                blocks_to_propose[site][item[0].dataset].update(item)
+                dataset = item[0].dataset
+                try:
+                    blocks = site_blocks[dataset]
+                except KeyError:
+                    blocks = site_blocks[dataset] = set()
+
+                blocks.update(item)
 
         self.registry.query('UNLOCK TABLES')
 
@@ -306,10 +317,10 @@ class CopyRequestsHandler(BaseHandler):
                             if is_active:
                                 continue
     
-                        if already_exists(destination, item):
+                        if already_exists(item, destination, group):
                             completed_requests.append((item, destination))
                         else:
-                            item_name, _, rejection_reason = policy.check_destination(item, destination, partition)
+                            item_name, _, rejection_reason = policy.check_destination(item, destination, group, partition)
                             
                             if rejection_reason is not None:
                                 # item_name is guaranteed to be valid
@@ -367,14 +378,14 @@ class CopyRequestsHandler(BaseHandler):
                                     continue
 
                         # if the item already exists, it's a complete copy too
-                        if already_exists(destination, item):
+                        if already_exists(item, destination, group):
                             num_new -= 1
                             completed_requests.append((item, destination))
                         else:
                             candidate_sites.append(destination)
 
                     for icopy in range(num_new):
-                        destination, item_name, _, _ = policy.find_destination_for(item, partition, candidates = candidate_sites)
+                        destination, item_name, _, _ = policy.find_destination_for(item, group, partition, candidates = candidate_sites)
     
                         if destination is None:
                             # if any of the item cannot find any of the num_new destinations, reject the request
@@ -399,10 +410,21 @@ class CopyRequestsHandler(BaseHandler):
             for item, site in new_requests:
                 activate(request_id, item, site, 'new')
 
+                try:
+                    site_blocks = blocks_to_propose[site]
+                except KeyError:
+                    site_blocks = blocks_to_propose[site] = {}
+
                 if type(item) is Dataset:
                     blocks_to_propose[site][item] = set(item.blocks)
                 else:
-                    blocks_to_propose[site][item[0].dataset].update(item)
+                    dataset = item[0].dataset
+                    try:
+                        blocks = site_blocks[dataset]
+                    except KeyError:
+                        blocks = site_blocks[dataset] = set()
+    
+                    blocks.update(item)
 
             for item, site in completed_requests:
                 activate(request_id, item, site, 'completed')
