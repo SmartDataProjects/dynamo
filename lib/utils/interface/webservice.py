@@ -8,6 +8,7 @@ import time
 import json
 import re
 import logging
+import threading
 
 from dynamo.dataformat import Configuration, ConfigurationError
 from dynamo.utils.transform import unicode2str
@@ -23,6 +24,25 @@ try:
 except AttributeError:
     # If the switch does not exist, hope urllib2 doesn't verify the server by default
     pass
+
+class RequestWatcher(object):
+    """
+    Class used to set timeouts for HTTP requests.
+    """
+
+    def __init__(self, name):
+        self.event = threading.Event()
+        self.name = name
+
+    def wait(self, timeout):
+        self.event.clear()
+        self.event.wait(timeout)
+        if not self.event.is_set():
+            raise RuntimeError('Timeout in %s' % name)
+
+    def stop(self):
+        self.event.set()
+    
 
 class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
     """
@@ -130,13 +150,14 @@ class RESTService(object):
         self.last_errorcode = 0
         self.last_exception = None
 
-    def make_request(self, resource = '', options = [], method = GET, format = 'url', retry_on_error = True):
+    def make_request(self, resource = '', options = [], method = GET, format = 'url', retry_on_error = True, timeout = 0):
         """
         @param resource       What comes after url_base
         @param options        For GET calls, compiled into key=value&key=value&... For POST calls, becomes data
         @param method         GET or POST
         @param format         Format to send data in.
         @param retry_on_error Retry on general error (error code != 400 - Bad request).
+        @param timeout        If > 0, launch a monitoring thread and raise an exception when more than given number of seconds have elapsed.
         """
 
         url = self.url_base
@@ -208,7 +229,18 @@ class RESTService(object):
 
                 opener.addheaders.extend(self.headers)
 
+                if timeout > 0:
+                    watcher = RequestWatcher('Webservice (%s)' % url)
+                    watcher_thread = threading.Thread(target = watcher.wait, args = (timeout,))
+                    watcher_thread.daemon = True
+                    watcher_thread.name = 'Timeout watcher'
+                    watcher_thread.start()
+
                 response = opener.open(request)
+
+                if timeout > 0:
+                    watcher.stop()
+                    watcher_thread.join()
 
                 # clean up - break reference cycle so python can free the memory up
                 for handler in opener.handlers:
@@ -253,3 +285,5 @@ class RESTService(object):
         LOG.error('%s' % ' '.join(map(str, exceptions)))
 
         raise RuntimeError('webservice too many attempts')
+
+        

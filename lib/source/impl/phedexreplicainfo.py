@@ -29,13 +29,13 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         else:
             raise RuntimeError('Invalid input passed: ' + repr(item))
         
-        source = self._phedex.make_request('blockreplicas', options)
+        source = self._phedex.make_request('blockreplicas', options, timeout = 600)
 
         if len(source) != 0:
             return True
 
         # blockreplicas has max ~20 minutes latency
-        source = self._phedex.make_request('subscriptions', options)
+        source = self._phedex.make_request('subscriptions', options, timeout = 600)
 
         return len(source) != 0
 
@@ -53,7 +53,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         if len(options) == 0:
             return []
         
-        result = self._phedex.make_request('blockreplicas', ['show_dataset=y'] + options)
+        result = self._phedex.make_request('blockreplicas', ['show_dataset=y'] + options, timeout = 3600)
 
         block_replicas = PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
         
@@ -64,7 +64,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         if dataset is None and block is None:
             return block_replicas
 
-        result = self._phedex.make_request('subscriptions', options)
+        result = self._phedex.make_request('subscriptions', options, timeout = 3600)
 
         for dataset_entry in result:
             dataset_name = dataset_entry['name']
@@ -116,14 +116,18 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         LOG.info('get_updated_replicas(%d)  Fetching the list of replicas from PhEDEx', updated_since)
 
         nodes = []
-        for entry in self._phedex.make_request('nodes'):
+        for entry in self._phedex.make_request('nodes', timeout = 600):
             if entry['name'].endswith('_Export') or entry['name'].endswith('_Buffer'):
                 continue
 
             nodes.append(entry['name'])
 
         args = [('blockreplicas', ['show_dataset=y', 'update_since=%d' % updated_since, 'node=%s' % node]) for node in nodes]
-        results = Map().execute(self._phedex.make_request, args)
+
+        parallelizer = Map()
+        parallelizer.timeout = 7200
+        results = parallelizer.execute(self._phedex.make_request, args)
+
         all_replicas = []
         for result in results:
             all_replicas.extend(result)
@@ -133,7 +137,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
     def get_deleted_replicas(self, deleted_since): #override
         LOG.info('get_deleted_replicas(%d)  Fetching the list of replicas from PhEDEx', deleted_since)
 
-        result = self._phedex.make_request('deletions', ['complete_since=%d' % deleted_since])
+        result = self._phedex.make_request('deletions', ['complete_since=%d' % deleted_since], timeout = 7200)
 
         return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_deletions)
 
