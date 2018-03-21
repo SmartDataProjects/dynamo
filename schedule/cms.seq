@@ -19,7 +19,8 @@ WAIT 60
 WAIT 1800
 
 [SEQUENCE full_update]
-WAIT 345600
+# two weeks
+WAIT 1209600
 & <updater> --config /etc/dynamo/updater_config.json --site T2_* !T2_CH_CERN !T2_US_*
 & <updater> --config /etc/dynamo/updater_config.json --site T2_CH_CERN
 & <updater> --config /etc/dynamo/updater_config.json --site T2_US_*
