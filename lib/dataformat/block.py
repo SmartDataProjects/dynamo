@@ -97,9 +97,9 @@ class Block(object):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
         return 'Block %s (size=%d, num_files=%d, is_open=%s, last_update=%s, replicas=%s)' % \
-            (self.full_name(), self.size, self.num_files, self.is_open, \
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), \
-            replica_sites)
+            (self.full_name(), self.size, self.num_files, self.is_open,
+                time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)),
+                replica_sites)
 
     def __repr__(self):
         return 'Block(Block.to_internal_name(\'%s\', %s)' % (self.real_name(), repr(self._dataset))
