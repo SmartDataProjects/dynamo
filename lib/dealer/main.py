@@ -218,7 +218,7 @@ class Dealer(object):
                 if type(item).__name__ == 'Dataset':
                     name = item.name
                 elif type(item).__name__ == 'Block':
-                    name = item.dataset.name + '#' + item.real_name()
+                    name = item.full_name()
                 elif type(item) is list:
                     name = item[0].dataset.name + '#'
                     name += ':'.join(block.real_name() for block in item)
@@ -264,10 +264,10 @@ class Dealer(object):
         for item, destination, plugin in requests:
             if destination is None:
                 # Randomly choose the destination site with probability proportional to free space
-                destination, item_name, item_size, reject_reason = self.policy.find_destination_for(item, partition)
+                destination, item_name, item_size, reject_reason = self.policy.find_destination_for(item, group, partition)
             else:
                 # Check the destination availability
-                item_name, item_size, reject_reason = self.policy.check_destination(item, destination, partition)
+                item_name, item_size, reject_reason = self.policy.check_destination(item, destination, group, partition)
 
             if reject_reason is not None:
                 reject_stats[reject_reason] += 1
