@@ -1,5 +1,6 @@
 {
   "out_path": "/home/cmsprod/public_html/IntelROCCS/Detox",
+  "partitions": ["Physics", "DataOps", "caf-comm", "caf-alca", "local", "IB RelVal"],
   "history": {
     "module": "MySQLHistory",
     "config": {
