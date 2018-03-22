@@ -208,6 +208,18 @@ class ReplicaIsLocked(BlockReplicaAttr):
 
         return replica.block in locked_blocks
 
+class BlockNumFullDiskCopy(BlockReplicaAttr):
+    def __init__(self):
+        BlockReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
+
+    def _get(self, replica):
+        num = 0
+        for rep in replica.block.replicas:
+            if rep.is_complete:
+                num += 1
+    
+        return num
+
 class ReplicaSiteStatus(ReplicaSiteAttr):
     def __init__(self):
         ReplicaSiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
@@ -290,6 +302,7 @@ replica_variables = {
     'blockreplica.last_update': BlockReplicaAttr(Attr.TIME_TYPE, 'last_update'),
     'blockreplica.owner': ReplicaOwner(),
     'blockreplica.is_locked': ReplicaIsLocked(),
+    'blockreplica.num_full_disk_copy': BlockNumFullDiskCopy(),
     'site.name': ReplicaSiteAttr(Attr.TEXT_TYPE, 'name'),
     'site.status': ReplicaSiteStatus(),
     'site.storage_type': ReplicaSiteStorageType()
