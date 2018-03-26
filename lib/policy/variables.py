@@ -220,6 +220,17 @@ class BlockNumFullDiskCopy(BlockReplicaAttr):
     
         return num
 
+class BlockReplicaOnTape(BlockReplicaAttr):
+    def __init__(self):
+        BlockReplicaAttr.__init__(self, Attr.BOOL_TYPE)
+
+    def _get(self, replica):
+        for rep in replica.block.replicas:
+            if rep.site.storage_type == Site.TYPE_MSS and rep.is_complete:
+                return True
+
+        return False
+
 class ReplicaSiteStatus(ReplicaSiteAttr):
     def __init__(self):
         ReplicaSiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
@@ -303,6 +314,7 @@ replica_variables = {
     'blockreplica.owner': ReplicaOwner(),
     'blockreplica.is_locked': ReplicaIsLocked(),
     'blockreplica.num_full_disk_copy': BlockNumFullDiskCopy(),
+    'blockreplica.on_tape': BlockReplicaOnTape(),
     'site.name': ReplicaSiteAttr(Attr.TEXT_TYPE, 'name'),
     'site.status': ReplicaSiteStatus(),
     'site.storage_type': ReplicaSiteStorageType()
