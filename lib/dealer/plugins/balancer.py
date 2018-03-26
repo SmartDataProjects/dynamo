@@ -15,6 +15,7 @@ class BalancingHandler(BaseHandler):
         BaseHandler.__init__(self, 'Balancer')
 
         self.max_dataset_size = config.max_dataset_size * 1.e+12
+        self.max_cycle_volume = config.max_cycle_volume * 1.e+12
         self.target_reasons = dict(config.target_reasons)
 
     def get_requests(self, inventory, history, policy):
@@ -106,9 +107,8 @@ class BalancingHandler(BaseHandler):
 
         total_size = 0
         variation = 1.
-        # The actual cutoff will be imposed by Dealer later
-        # This cutoff is just to not make copy proposals that are never fulfilled
-        while len(protected_fractions) != 0 and total_size < policy.max_total_cycle_volume:
+
+        while len(protected_fractions) != 0 and total_size < self.max_cycle_volume:
             maxsite, maxfrac = max(protected_fractions.items(), key = lambda x: x[1])
             minsite, minfrac = min(protected_fractions.items(), key = lambda x: x[1])
 

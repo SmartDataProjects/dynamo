@@ -65,6 +65,23 @@
           "max_replication": 10,
           "request_to_replica_threshold": 1.75
         }
+      },
+      "balancer": {
+        "priority": 8,
+        "module": "BalancingHandler",
+        "config": {
+          "max_dataset_size": 50.0,
+          "max_cycle_volume": 5.0,
+          "target_reasons": {
+            "dataset.name == /*/*/MINIAOD* and replica.num_full_disk_copy_common_owner < 3": 3,
+            "replica.num_full_disk_copy_common_owner < 2": 2
+          }
+        }
+      },
+      "undertaker": {
+        "priority": 2,
+        "module": "Undertaker",
+        "config": {}
       }
     },
     "attrs": {
@@ -81,7 +98,7 @@
     },
     "target_sites": ["T1_*_Disk", "T2_*"],
     "target_site_occupancy": 0.93,
-    "max_site_pending_volume": 200,
+    "max_site_pending_fraction": 0.03,
     "max_total_cycle_volume": 200
   },
   "log_level": "info"
