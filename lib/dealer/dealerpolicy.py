@@ -54,9 +54,8 @@ class DealerPolicy(object):
         self.target_site_names = list(config.target_sites)
         # Do not copy data to sites beyond target occupancy fraction (0-1)
         self.target_site_occupancy = config.target_site_occupancy
-        # Maximum volume that can be queued for transfer to a single site.
-        # The value is given in TB in the configuration file.
-        self.max_site_pending_volume = config.max_site_pending_volume * 1.e+12
+        # Maximum fraction of the quota that can be pending at a single site.
+        self.max_site_pending_fraction = config.max_site_pending_fraction
         # Maximum overall volume that can be queued in this cycle for transfer.
         # The value is given in TB in the configuration file.
         self.max_total_cycle_volume = config.max_total_cycle_volume * 1.e+12
@@ -109,11 +108,11 @@ class DealerPolicy(object):
             return False
 
         # Difference between projected and physical volumes
-        pending_volume = occupancy_fraction * quota
-        pending_volume -= site_partition.occupancy_fraction(physical = True) * quota
+        pending_fraction = occupancy_fraction
+        pending_fraction -= site_partition.occupancy_fraction(physical = True)
 
-        if pending_volume > self.max_site_pending_volume:
-            LOG.debug('%s pending volume %f > %f', site.name, pending_volume * 1.e-12, self.max_site_pending_volume * 1.e-12)
+        if pending_fraction > self.max_site_pending_fraction:
+            LOG.debug('%s pending fraction %f > %f', site.name, pending_fraction, self.max_site_pending_fraction)
             return False
 
         return True
