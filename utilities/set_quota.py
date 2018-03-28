@@ -9,6 +9,9 @@ Absolute:
 """
 
 import sys
+import re
+import fnmatch
+
 try:
     from dynamo.dataformat import SitePartition
 except:
@@ -43,7 +46,7 @@ the other partitions are adjusted only if --adjust-other option is used.'''
 
     parser = ArgumentParser(description = desc)
 
-    parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', help = 'Site name.')
+    parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', help = 'Site name.', nargs='+')
     parser.add_argument('--partition', '-g', metavar = 'PARTITION', dest = 'partition', help = 'Partition name.')
     parser.add_argument('--volume', '-v', metavar = 'VOLUME', dest = 'volume', type = int, help = 'Size of partition in TB.')
     parser.add_argument('--scale', '-c', metavar = 'FACTOR', dest = 'scale', type = float, help = 'Scale the quota by a factor.')
@@ -73,10 +76,6 @@ the other partitions are adjusted only if --adjust-other option is used.'''
             sys.stderr.write('--volume and --scale cannot be used at the same time.\n')
             sys.exit(2)
 
-    if args.site is not None and args.site not in inventory.sites:
-        sys.stderr.write("Invalid site name %s.\n" % args.site)
-        sys.exit(2)
-
     if args.partition is not None and args.partition not in inventory.partitions:
         sys.stderr.write("Invalid partition name %s.\n" % args.partition)
         sys.exit(2)
@@ -86,7 +85,19 @@ the other partitions are adjusted only if --adjust-other option is used.'''
     if args.site is None:
         site_names = sorted(inventory.sites.keys())
     else:
-        site_names = [args.site]
+        site_names = []
+        site_patterns = {}
+        for pattern in args.site:
+            site_patterns[pattern] = re.compile(fnmatch.translate(pattern))
+        for key, pattern in site_patterns.iteritems():
+            at_least_one_match = False
+            for site in inventory.sites.keys():
+                if pattern.match(site) and site not in site_names:
+                    site_names.append(site)
+                    at_least_one_match = True
+            if not at_least_one_match:
+                sys.stderr.write("Could not find site(s) matching %s.\n" % key)
+                sys.exit(2) 
 
     if args.partition is None:
         partition_names = sorted(inventory.partitions.keys())
@@ -106,48 +117,50 @@ the other partitions are adjusted only if --adjust-other option is used.'''
     if args.dump:
         sys.exit(0)
 
-    ## Compute the new quotas
 
-    changed = []
+    for sitetmp in site_names:
+        ## Compute the new quotas
+        
+        changed = []
 
-    site = inventory.sites[args.site]
-    partition = inventory.partitions[args.partition]
+        site = inventory.sites[sitetmp]
+        partition = inventory.partitions[args.partition]
 
-    site_partition = site.partitions[partition]
+        site_partition = site.partitions[partition]
 
-    if args.scale:
-        args.volume = int(site_partition.quota * args.scale * 1.e-12)
+        if args.scale:
+            args.volume = int(site_partition.quota * args.scale * 1.e-12)
 
-    new_quota = args.volume * 1.e+12
+        new_quota = args.volume * 1.e+12
 
-    if partition.parent is not None and args.adjust_other:
-        others_total_new = site.partitions[partition.parent].quota - new_quota
+        if partition.parent is not None and args.adjust_other:
+            others_total_new = site.partitions[partition.parent].quota - new_quota
 
-        if others_total_new < 0:
-            sys.stderr.write('Cannot set quota for subpartition %s to be greater than the total quota for %s\n' % (partition.name, partition.parent.name))
-            sys.exit(1)
+            if others_total_new < 0:
+                sys.stderr.write('Cannot set quota for subpartition %s to be greater than the total quota for %s\n' % (partition.name, partition.parent.name))
+                sys.exit(1)
 
-        # this is a subpartition
-        others_total_current = 0
-        for subp in partition.parent.subpartitions:
-            if subp is not partition:
-                others_total_current += site.partitions[subp].quota
+            # this is a subpartition
+            others_total_current = 0
+            for subp in partition.parent.subpartitions:
+                if subp is not partition:
+                    others_total_current += site.partitions[subp].quota
 
-        for subp in partition.parent.subpartitions:
-            if subp is not partition:
-                site_subp = site.partitions[subp]
-                new_subp_quota = int(float(site_subp.quota) / others_total_current * others_total_new)
-                update_quota(site_subp, new_subp_quota, changed)
+            for subp in partition.parent.subpartitions:
+                if subp is not partition:
+                    site_subp = site.partitions[subp]
+                    new_subp_quota = int(float(site_subp.quota) / others_total_current * others_total_new)
+                    update_quota(site_subp, new_subp_quota, changed)
     
-    update_quota(site_partition, new_quota, changed)
+        update_quota(site_partition, new_quota, changed)
 
-    ## Summarize
+        ## Summarize
 
-    print "\nQuota changes"
+        print "\nQuota changes"
 
-    for sp in changed:
-        part = inventory.partitions[sp.partition.name]
-        print "Site %16s | Partition %10s | Quota %6i -> %6i TB" % (site.name, part.name, site.partitions[part].quota * 1.e-12, sp.quota * 1.e-12)
-        inventory.update(sp)
+        for sp in changed:
+            part = inventory.partitions[sp.partition.name]
+            print "Site %16s | Partition %10s | Quota %6i -> %6i TB" % (site.name, part.name, site.partitions[part].quota * 1.e-12, sp.quota * 1.e-12)
+            inventory.update(sp)
 
-    print "Done."
+        print "Done."
