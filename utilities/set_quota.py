@@ -116,7 +116,7 @@ the other partitions are adjusted only if --adjust-other option is used.'''
     site_partition = site.partitions[partition]
 
     if args.scale:
-        args.volume = int(site_partition.quota * args.scale)
+        args.volume = int(site_partition.quota * args.scale * 1.e-12)
 
     new_quota = args.volume * 1.e+12
 
