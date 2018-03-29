@@ -18,6 +18,8 @@ INITLOG_ARGS=""
 EXECUTABLE=dynamod # executable this script spawns
 TARGET=_INSTALLPATH_/sbin/dynamod # full path to the executable
 
+source _INSTALLPATH_/etc/profile.d/init.sh
+
 # Path to the running script, server binary, and short-form for messages.
 PIDFILE=${PIDFILE-/var/run/dynamod.pid}
 LOCKFILE=${LOCKFILE-/var/lock/subsys/dynamod}
@@ -56,7 +58,7 @@ start() {
 
   if [ $EXITCODE -eq 0 ]
   then
-    echo $(pgrep -n $EXECUTABLE) > $PIDFILE
+    echo $(pgrep -f $TARGET) > $PIDFILE
   fi
 
   rm $LOCKFILE

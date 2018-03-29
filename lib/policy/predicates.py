@@ -78,7 +78,7 @@ class UnaryExpr(Predicate):
             raise InvalidOperator(op)
 
 class BinaryExpr(Predicate):
-    operators = ['==', '!=', '<', '>', 'older_than', 'newer_than']
+    operators = ['==', '!=', '=~', '!=~', '<', '>', 'older_than', 'newer_than']
 
     @staticmethod
     def get(variable, op, rhs_expr):
@@ -86,6 +86,10 @@ class BinaryExpr(Predicate):
             return Eq(variable, rhs_expr)
         elif op == '!=':
             return Neq(variable, rhs_expr)
+        elif op == '=~':
+            return Eq(variable, rhs_expr, is_re = True)
+        elif op == '!=~':
+            return Neq(variable, rhs_expr, is_re = True)
         elif op == '<' or op == 'older_than':
             return Lt(variable, rhs_expr)
         elif op == '>' or op == 'newer_than':
@@ -93,10 +97,10 @@ class BinaryExpr(Predicate):
         else:
             raise InvalidOperator(op)
 
-    def __init__(self, variable, rhs_expr):
+    def __init__(self, variable, rhs_expr, is_re = False):
         Predicate.__init__(self, variable)
 
-        self.rhs = self.variable.rhs_map(rhs_expr)
+        self.rhs = self.variable.rhs_map(rhs_expr, is_re = is_re)
 
 class SetElementExpr(Predicate):
     operators = ['in', 'notin']
@@ -139,8 +143,8 @@ class Negate(UnaryExpr):
 #####################################
 
 class Eq(BinaryExpr):
-    def __init__(self, variable, rhs_expr):
-        BinaryExpr.__init__(self, variable, rhs_expr)
+    def __init__(self, variable, rhs_expr, is_re = False):
+        BinaryExpr.__init__(self, variable, rhs_expr, is_re = is_re)
 
         if type(self.rhs) is re._pattern_type:
             self._call = lambda lhs: self.rhs.match(lhs) is not None
@@ -151,8 +155,8 @@ class Eq(BinaryExpr):
         return self._call(lhs)
 
 class Neq(BinaryExpr):
-    def __init__(self, variable, rhs_expr):
-        BinaryExpr.__init__(self, variable, rhs_expr)
+    def __init__(self, variable, rhs_expr, is_re = False):
+        BinaryExpr.__init__(self, variable, rhs_expr, is_re = is_re)
 
         if type(self.rhs) is re._pattern_type:
             self._call = lambda lhs: self.rhs.match(lhs) is None
@@ -190,5 +194,17 @@ class In(SetElementExpr):
             return False
 
 class Notin(SetElementExpr):
-    def _eval(self, elem):
-        return not In._eval(self, elem)
+    def _eval(self, lhs):
+        if self.variable.vtype == attrs.Attr.NUMERIC_TYPE:
+            return lhs not in self.rhs
+        else:
+            for elem in self.rhs:
+                if type(elem) is re._pattern_type:
+                    if elem.match(lhs):
+                        return False
+                else:
+                    if elem == lhs:
+                        return False
+
+            return True
+

@@ -71,15 +71,11 @@ class Dealer(object):
         partition = inventory.partitions[self.policy.partition_name]
         # Group of newly created replicas
         group = inventory.groups[self.policy.group_name]
-        quotas = dict((s, s.partitions[partition].quota) for s in inventory.sites.itervalues())
 
         # Ask each site if it should be considered as a copy destination.
-        target_sites = set()
-        for site in quotas.keys():
-            if self._is_target_site(site.partitions[partition]):
-                target_sites.add(site)
+        self.policy.set_target_sites(inventory.sites.itervalues(), partition)
 
-        if len(target_sites) == 0:
+        if len(self.policy.target_sites) == 0:
             LOG.info('No sites can accept transfers at this moment. Exiting Dealer.')
             return
 
@@ -88,7 +84,7 @@ class Dealer(object):
             plugin.load(inventory)
 
         LOG.info('Saving site and dataset names.')
-        self.history.save_sites(quotas.keys())
+        self.history.save_sites(inventory.sites.values())
         self.history.save_datasets(inventory.datasets.values())
 
         LOG.info('Collecting copy proposals.')
@@ -101,12 +97,12 @@ class Dealer(object):
 
         LOG.info('Determining the list of transfers to make.')
         # copy_list is {plugin: [new_replica]}
-        copy_list = self._determine_copies(target_sites, partition, group, requests)
+        copy_list = self._determine_copies(partition, group, requests)
 
         LOG.info('Saving the record')
         for plugin in self._plugin_priorities.keys():
             if plugin in copy_list:
-                plugin.save_record(cycle_number, self.history, copy_list[plugin])
+                plugin.postprocess(cycle_number, self.history, copy_list[plugin])
 
         # We don't care about individual plugins any more - flatten the copy list
         all_copies = sum(copy_list.itervalues(), [])
@@ -222,7 +218,7 @@ class Dealer(object):
                 if type(item).__name__ == 'Dataset':
                     name = item.name
                 elif type(item).__name__ == 'Block':
-                    name = item.dataset.name + '#' + item.real_name()
+                    name = item.full_name()
                 elif type(item) is list:
                     name = item[0].dataset.name + '#'
                     name += ':'.join(block.real_name() for block in item)
@@ -240,9 +236,8 @@ class Dealer(object):
 
         return requests
 
-    def _determine_copies(self, target_sites, partition, group, requests):
+    def _determine_copies(self, partition, group, requests):
         """
-        @param target_sites    List of target sites
         @param partition       Partition we copy into.
         @param group           Make new replicas owned by this group.
         @param requests        [(item, destination, plugin)], where item is a Dataset, Block, or [Block]
@@ -250,97 +245,48 @@ class Dealer(object):
         """
 
         copy_list = {}
-        copy_volumes = dict((site, 0.) for site in target_sites) # keep track of how much we are assigning to each site
+        copy_volumes = dict((site, 0.) for site in self.policy.target_sites) # keep track of how much we are assigning to each site
+
+        stats = {}
+        for plugin in self._plugin_priorities.keys():
+            stats[plugin.name] = {}
+
+        reject_stats = {
+            'Not a target site': 0,
+            'Replica exists': 0,
+            'Not allowed': 0,
+            'Destination is full': 0,
+            'Invalid request': 0,
+            'No destination available': 0
+        }
 
         # now go through all requests
         for item, destination, plugin in requests:
-            if type(item) is Dataset:
-                item_name = item.name
-                item_size = item.size
-                find_replica_at = lambda s: s.find_dataset_replica(item)
-                make_new_replica = new_replica_from_dataset
-
-            elif type(item) is Block:
-                item_name = item.dataset.name + '#' + item.real_name()
-                item_size = item.size
-                find_replica_at = lambda s: s.find_block_replica(item)
-                make_new_replica = new_replica_from_block
-
-            elif type(item) is list:
-                # list of blocks (must belong to the same dataset)
-                if len(item) == 0:
-                    continue
-
-                dataset = item[0].dataset
-                item_name = dataset.name
-                item_size = sum(b.size for b in item)
-                find_replica_at = lambda s: s.find_dataset_replica(dataset)
-                make_new_replica = new_replica_from_blocks
-
-            else:
-                LOG.warning('Invalid request found. Skipping.')
-                continue
-
             if destination is None:
                 # Randomly choose the destination site with probability proportional to free space
-
-                site_array = []
-                for site in target_sites:
-                    site_partition = site.partitions[partition]
-
-                    projected_occupancy = site_partition.occupancy_fraction(physical = False)
-                    projected_occupancy += item_size / site_partition.quota
-
-                    # total projected volume must not exceed the quota
-                    if projected_occupancy > 1.:
-                        continue
-
-                    # replica must not be at the site already
-                    if find_replica_at(site) is not None:
-                        continue
-
-                    # placement must be allowed by the policy
-                    if not self.policy.is_allowed_destination(item, site):
-                        continue
-
-                    p = 1. - projected_occupancy
-                    if len(site_array) != 0:
-                        p += site_array[-1][1]
-    
-                    site_array.append((site, p))
-
-                if len(site_array) == 0:
-                    LOG.warning('%s has no copy destination.', item_name)
-                    continue
-
-                x = random.uniform(0., site_array[-1][1])
-        
-                isite = next(k for k in range(len(site_array)) if x < site_array[k][1])
-        
-                destination = site_array[isite][0]
-
+                destination, item_name, item_size, reject_reason = self.policy.find_destination_for(item, group, partition)
             else:
                 # Check the destination availability
+                item_name, item_size, reject_reason = self.policy.check_destination(item, destination, group, partition)
 
-                if destination not in target_sites:
-                    LOG.warning('Destination %s for %s is not a target site.', destination.name, item_name)
+            if reject_reason is not None:
+                reject_stats[reject_reason] += 1
+                continue
 
-                if find_replica_at(destination) is not None:
-                    LOG.info('%s is already at %s', item_name, destination.name)
-                    continue
- 
-                site_partition = destination.partitions[partition]
-                occupancy_fraction = site_partition.occupancy_fraction(physical = False)
-                occupancy_fraction += item_size / site_partition.quota
+            LOG.debug('Copying %s to %s requested by %s', item_name, destination.name, plugin.name)
+            try:
+                stat = stats[plugin.name][destination.name]
+            except KeyError:
+                stat = (0, 0)
 
-                if occupancy_fraction > 1. or not self.policy.is_allowed_destination(item, destination):
-                    # a plugin specified the destination, but it cannot be copied there
-                    LOG.warning('Cannot copy %s to %s.', item_name, destination.name)
-                    continue
+            stats[plugin.name][destination.name] = (stat[0] + 1, stat[0] + item_size)
 
-            LOG.info('Copying %s to %s requested by %s', item_name, destination.name, plugin.name)
-
-            new_replica = make_new_replica(item, destination, group)
+            if type(item) is Dataset:
+                new_replica = new_replica_from_dataset(item, destination, group)
+            elif type(item) is Block:
+                new_replica = new_replica_from_block(item, destination, group)
+            elif type(item) is list:
+                new_replica = new_replica_from_blocks(item, destination, group)
 
             try:
                 plugin_copy_list = copy_list[plugin]
@@ -351,13 +297,22 @@ class Dealer(object):
             # New replicas may not be in the target partition, but we add the size up to be conservative
             copy_volumes[destination] += item_size
 
-            if not self._is_target_site(destination.partitions[partition], copy_volumes[destination]):
+            if not self.policy.is_target_site(destination.partitions[partition], copy_volumes[destination]):
                 LOG.info('%s is not a target site any more.', destination.name)
-                target_sites.remove(destination)
+                self.policy.target_sites.remove(destination)
 
             if sum(copy_volumes.itervalues()) > self.policy.max_total_cycle_volume:
                 LOG.warning('Total copy volume has exceeded the limit. No more copies will be made.')
                 break
+
+        for plugin_name in sorted(stats.keys()):
+            plugin_stats = stats[plugin_name]
+            for destination_name in sorted(plugin_stats.keys()):
+                dest_stats = plugin_stats[destination_name]
+                LOG.info('Plugin %s requests %d items (%.1f TB) to %s', plugin_name, dest_stats[0], dest_stats[1] * 1.e-12, destination_name)
+
+        for reason in sorted(reject_stats.keys()):
+            LOG.info('%d items rejected for [%s]', reject_stats[reason], reason)
 
         return copy_list
 
@@ -399,6 +354,8 @@ class Dealer(object):
                             if approved:
                                 replica = new_replica_from_dataset(item, site, group)
                                 inventory.update(replica)
+                                for block_replica in replica.block_replicas:
+                                    inventory.update(block_replica)
 
                         else:
                             dataset_list.add(item.dataset)
@@ -411,35 +368,3 @@ class Dealer(object):
                                 inventory.update(replica)
     
                     self.history.make_copy_entry(cycle_number, site, copy_id, approved, dataset_list, size)
-
-    def _is_target_site(self, site_partition, additional_volume = 0.):
-        if site_partition.quota <= 0.:
-            LOG.debug('%s has quota %f TB <= 0', site_partition.site.name, site_partition.quota * 1.e-12)
-            return False
-
-        site = site_partition.site
-
-        if site.status != Site.STAT_READY:
-            LOG.debug('%s is not ready', site_partition.site.name)
-            return False
-
-        if not self.policy.target_site_def(site):
-            LOG.debug('%s does not match target site def', site_partition.site.name)
-            return False
-
-        occupancy_fraction = site_partition.occupancy_fraction(physical = False)
-        occupancy_fraction += additional_volume / site_partition.quota
-
-        if occupancy_fraction > self.policy.target_site_occupancy:
-            LOG.debug('%s occupancy fraction %f > %f', site_partition.site.name, occupancy_fraction, self.policy.target_site_occupancy)
-            return False
-
-        # Difference between projected and physical volumes
-        pending_volume = occupancy_fraction * site_partition.quota
-        pending_volume -= site_partition.occupancy_fraction(physical = True) * site_partition.quota
-
-        if pending_volume > self.policy.max_site_pending_volume:
-            LOG.debug('%s pending volume %f > %f', site_partition.site.name, pending_volume, self.policy.max_site_pending_volume)
-            return False
-
-        return True

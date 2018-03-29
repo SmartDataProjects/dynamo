@@ -295,7 +295,7 @@ class Detox(object):
 
                             # unlinked_replicas on the other hand contains all block replicas that should be kicked out
                             for block_replica in unlinked_replicas:
-                                block_replica.delete_from(repository)
+                                block_replica.unlink_from(repository)
 
                             block_replicas -= set(unlinked_replicas)
 
@@ -326,7 +326,7 @@ class Detox(object):
                             get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
 
                             for block_replica in unlinked_replicas:
-                                block_replica.delete_from(repository)
+                                block_replica.unlink_from(repository)
 
                         if len(replica.block_replicas) == 0:
                             # if all blocks were deleted, take the replica off all_replicas for later iterations
@@ -346,7 +346,7 @@ class Detox(object):
                             get_list(keep_candidates, replica, condition_id).update(block_replicas)
 
             for replica in empty_replicas:
-                replica.delete_from(repository)
+                replica.unlink_from(repository)
 
             all_replicas -= empty_replicas
             all_replicas -= ignored_replicas
@@ -427,7 +427,7 @@ class Detox(object):
 
                             get_list(deleted, replica, condition_id).update(to_delete)
                             for block_replica in unlinked_replicas:
-                                block_replica.delete_from(repository)
+                                block_replica.unlink_from(repository)
 
                         if len(reowned_replicas) != 0:
                             if replica in reowned:
@@ -436,7 +436,7 @@ class Detox(object):
                                 reowned[replica] = list(reowned_replicas)
 
                     if len(replica.block_replicas) == 0:
-                        replica.delete_from(repository)
+                        replica.unlink_from(repository)
                         all_replicas.remove(replica)
 
                     site_partition = site.partitions[partition]
@@ -477,7 +477,7 @@ class Detox(object):
             # establish a dataset-level owner
             dr_owner = None
             for block_replica in replica.block_replicas:
-                if block_replica.group.olevel is Dataset:
+                if block_replica.group.olevel == Group.OL_DATASET:
                     # there is a dataset-level owner
                     dr_owner = block_replica.group
                     break
@@ -485,23 +485,26 @@ class Detox(object):
             if dr_owner is None:
                 blocks_to_unlink = list(block_replicas)
                 blocks_to_hand_over = []
+
+                LOG.debug('All blocks to unlink in %s', len(blocks_to_hand_over), str(replica))
             else:
                 blocks_to_unlink = []
                 blocks_to_hand_over = []
                 for block_replica in block_replicas:
-                    if block_replica.group.olevel is Dataset:
+                    if block_replica.group.olevel == Group.OL_DATASET:
                         blocks_to_unlink.append(block_replica)
                     else:
                         blocks_to_hand_over.append(block_replica)
 
-            LOG.debug('%d blocks to hand over to %s', len(blocks_to_hand_over), dr_owner.name)
-            for block_replica in blocks_to_hand_over:
-                block_replica.group = dr_owner
+                LOG.debug('%d blocks to hand over to %s in %s', len(blocks_to_hand_over), dr_owner.name, str(replica))
 
-                # if the change of owner disqualifies this block replica from the partition,
-                # we unlink it from the repository.
-                if not partition.contains(block_replica):
-                    blocks_to_unlink.append(block_replica)
+                for block_replica in blocks_to_hand_over:
+                    block_replica.group = dr_owner
+    
+                    # if the change of owner disqualifies this block replica from the partition,
+                    # we unlink it from the repository.
+                    if not partition.contains(block_replica):
+                        blocks_to_unlink.append(block_replica)
 
         return blocks_to_unlink, blocks_to_hand_over
 
@@ -515,14 +518,20 @@ class Detox(object):
 
         signal_blocker = SignalBlocker(logger = LOG)
 
-        # organize the replicas into sites
+        # get the original replicas from the inventory and organize them into sites
         deletions_by_site = collections.defaultdict(list) # {site: [(dataset_replica, block_replicas)]}
         for replica, matches in deleted.iteritems():
-            all_block_replicas = set()
-            for condition_id, block_replicas in matches.iteritems():
-                all_block_replicas.update(block_replicas)
+            site = inventory.sites[replica.site.name]
 
-            deletions_by_site[replica.site].append((replica, all_block_replicas))
+            original_replica = inventory.datasets[replica.dataset.name].find_replica(site)
+            original_block_replicas = dict((br.block.name, br) for br in original_replica.block_replicas)
+            
+            all_block_replicas = set()
+            for block_replicas in matches.itervalues():
+                for block_replica in block_replicas:
+                    all_block_replicas.add(original_block_replicas[block_replica.block.name])
+
+            deletions_by_site[site].append((original_replica, all_block_replicas))
 
         # now schedule deletions for each site
         for site in sorted(deletions_by_site.iterkeys(), key = lambda s: s.name):
@@ -532,7 +541,7 @@ class Detox(object):
 
             flat_list = []
             for replica, block_replicas in site_deletion_list:
-                if set(block_replicas) == replica.block_replicas:
+                if block_replicas == replica.block_replicas:
                     flat_list.append(replica)
                 else:
                     flat_list.extend(block_replicas)
@@ -547,30 +556,22 @@ class Detox(object):
                     # Delete ownership of block replicas in the approved deletions.
                     # Because replicas in partition_repository are modified already during the iterative
                     # deletion, we find the original replicas from the global inventory.
-    
+
                     size = 0
                     datasets = set()
                     for item in items:
                         if type(item) is Dataset:
-                            dataset = inventory.datasets[item.name]
-                            replica = dataset.find_replica(site.name)
-                            for block_replica in replica.block_replicas:
-                                size += block_replica.size
-                                if approved:
-                                    block_replica.group = inventory.groups[None]
-                                    inventory.update(block_replica)
+                            dataset = item
+                            block_replicas = item.find_replica(site).block_replicas
                         else:
-                            dataset = inventory.datasets[item.dataset.name]
-                            block = dataset.find_block(item.name)
-                            replica = block.find_replica(site.name)
-                            if replica is None:
-                                LOG.info('Could not find %s:%s in inventory', site.name, block.full_name())
-                                raise RuntimeError()
+                            dataset = item.dataset
+                            block_replicas = [item.find_replica(site)]
 
-                            size += replica.size
+                        for block_replica in block_replicas:
+                            size += block_replica.size
                             if approved:
-                                replica.group = inventory.groups[None]
-                                inventory.update(replica)
+                                block_replica.group = inventory.groups[None]
+                                inventory.register_update(block_replica)
 
                         datasets.add(dataset)
     

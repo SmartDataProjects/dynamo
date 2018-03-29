@@ -96,6 +96,7 @@ require mkdir -p $INSTALL_PATH
 require mkdir -p $INSTALL_PATH/python/site-packages/dynamo
 require mkdir -p $INSTALL_PATH/bin
 require mkdir -p $INSTALL_PATH/exec
+require mkdir -p $INSTALL_PATH/utilities
 require mkdir -p $INSTALL_PATH/sbin
 require mkdir -p $INSTALL_PATH/etc/profile.d
 chown -R $USER:$(id -gn $USER) $INSTALL_PATH
@@ -115,7 +116,21 @@ mkdir -p $SPOOL_PATH
 chown $USER:$(id -gn $USER) $SPOOL_PATH
 chmod 777 $SPOOL_PATH
 
+if [ $(ls -ldZ $SPOOL_PATH | awk '{print $4}' | cut -d: -f3) != "httpd_sys_rw_content_t" ]
+then
+  ### Set SELinux context to allow the web server to write to SPOOL
+  
+  echo "Updating SELinux contexts.."
+  
+  semanage fcontext -a -t httpd_sys_rw_content_t $SPOOL_PATH
+  restorecon $SPOOL_PATH
+  setsebool -P httpd_can_network_connect on
+  setsebool -P httpd_can_network_connect_db on
+fi
+
 ### Install python libraries ###
+
+echo "Installing.."
 
 cp -r $SOURCE/lib/* $INSTALL_PATH/python/site-packages/dynamo/
 python -m compileall $INSTALL_PATH/python/site-packages/dynamo > /dev/null
@@ -129,6 +144,10 @@ chmod 755 $INSTALL_PATH/bin/*
 cp $SOURCE/exec/* $INSTALL_PATH/exec/
 chown $USER:$(id -gn $USER) $INSTALL_PATH/exec/*
 chmod 755 $INSTALL_PATH/exec/*
+
+cp $SOURCE/utilities/* $INSTALL_PATH/utilities/
+chown $USER:$(id -gn $USER) $INSTALL_PATH/utilities/*
+chmod 755 $INSTALL_PATH/utilities/*
 
 cp $SOURCE/sbin/* $INSTALL_PATH/sbin/
 chown root:$(id -gn $USER) $INSTALL_PATH/sbin/*
@@ -175,6 +194,7 @@ else
   sed -i "s|_LOGPATH_|$LOG_PATH|" $CONFIG_PATH/server_config.json
   sed -i "s|_SCHEDULERPATH_|$SCHEDULER_PATH|" $CONFIG_PATH/server_config.json
   sed -i "s|_REGISTRYHOST_|$REGISTRY_HOST|" $CONFIG_PATH/server_config.json
+  sed -i "s|_EMAIL_|$EMAIL|" $CONFIG_PATH/server_config.json
 
   sed -n '1,/_SERVER_DB_WRITE_PARAMS_1_/ p' $CONFIG_PATH/server_config.json | sed '$ d' > server_config.json.tmp
 
@@ -283,11 +303,12 @@ then
     chmod +x /etc/init.d/dynamod
   fi
 
+  
   # CRONTAB
-  crontab -l -u $USER > /tmp/$USER.crontab
-  sed "s|_INSTALLPATH_|$INSTALL_PATH|" $SOURCE/etc/crontab >> /tmp/$USER.crontab
-  sort /tmp/$USER.crontab | uniq | crontab -u $USER -
-  rm /tmp/$USER.crontab
+  #crontab -l -u $USER > /tmp/$USER.crontab
+  #sed "s|_INSTALLPATH_|$INSTALL_PATH|" $SOURCE/etc/crontab >> /tmp/$USER.crontab
+  #sort /tmp/$USER.crontab | uniq | crontab -u $USER -
+  #rm /tmp/$USER.crontab
 
   # NRPE PLUGINS
   if [ -d /usr/lib64/nagios/plugins ]

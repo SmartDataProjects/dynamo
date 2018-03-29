@@ -3,10 +3,10 @@
     "unified": {
       "user": "vlimant",
       "service": "unified",
-      "url": "https://vocms049.cern.ch/unified/public/globallocks.json",
+      "url": "https://cms-unified.web.cern.ch/cms-unified/public/globallocks.json",
       "auth": "noauth",
       "content_type": "LIST_OF_DATASETS",
-      "lock_url": "https://vocms049.cern.ch/unified/public/globallocks.json.lock"
+      "lock_url": "https://cms-unified.web.cern.ch/cms-unified/public/globallocks.json.lock"
     },
     "unified_testbed": {
       "user": "vlimant",
@@ -29,22 +29,6 @@
       "auth": "cert",
       "content_type": "CMSWEB_LIST_OF_DATASETS",
       "sites": "T0_CH_CERN_Disk"
-    },
-    "t0_replayone": {
-      "user": "dmytro",
-      "service": "t0-replayone",
-      "url": "https://cmsweb.cern.ch/t0wmadatasvc/replayone/dataset_locked",
-      "auth": "cert",
-      "content_type": "CMSWEB_LIST_OF_DATASETS",
-      "sites": "T0_CH_CERN_Disk"
-    },
-    "t0_replaytwo": {
-      "user": "dmytro",
-      "service": "t0-replaytwo",
-      "url": "https://cmsweb.cern.ch/t0wmadatasvc/replaytwo/dataset_locked",
-      "auth": "cert",
-      "content_type": "CMSWEB_LIST_OF_DATASETS",
-      "sites": "T0_CH_CERN_Disk"
     }
   },
   "auth": {
@@ -54,6 +38,32 @@
     },
     "cookie": {
       "auth_handler": "CERNSSOCookieAuthHandler"
+    }
+  },
+  "mysqllock": {
+    "db_params": {
+      "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
+      "config_group": "mysql",
+      "db": "dynamoregister"
+    }
+  },
+  "replica_source": {
+    "phedex": {
+      "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
+      "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
+      "auth_handler": "HTTPSCertKeyHandler",
+      "auth_handler_conf": {},
+      "num_attempts": 5
+    }
+  },
+  "applock": {
+    "user": "dynamo",
+    "service": "dynamo",
+    "app": "detox",
+    "db_config": {
+      "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
+      "config_group": "mysql",
+      "db": "dynamoregister"
     }
   },
   "process_lock": "$(DYNAMO_SPOOL)/convert_dynamo_locks.pid",

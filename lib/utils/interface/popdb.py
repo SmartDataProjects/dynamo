@@ -8,11 +8,11 @@ class PopDB(RESTService):
     def __init__(self, config):
         RESTService.__init__(self, config)
 
-    def make_request(self, resource = '', options = [], method = GET, format = 'url', retry_on_error = True): #override
+    def make_request(self, resource = '', options = [], method = GET, format = 'url', retry_on_error = True, timeout = 0): #override
         """
         Strip the "header" and return the body JSON.
         """
 
-        response = RESTService.make_request(self, resource, options = options, method = method, format = format, retry_on_error = retry_on_error)
+        response = RESTService.make_request(self, resource, options = options, method = method, format = format, retry_on_error = retry_on_error, timeout = timeout)
 
         return response['DATA']

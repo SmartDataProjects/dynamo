@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import sys
-import logging
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update dataset popularity.')
@@ -36,7 +35,7 @@ from dynamo.core.executable import inventory
 if args.crabaccess:
     ## Update: CRABAccessHistory
     
-    LOG.info('Updateing CRABAccessHistory.')
+    LOG.info('Updating CRABAccessHistory.')
     
     from dynamo.policy.producers.crabaccess import CRABAccessHistory
     

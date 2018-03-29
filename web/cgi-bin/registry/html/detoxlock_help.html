@@ -21,7 +21,7 @@
       There is NO browser-friendly interface for detox locks at the moment, aside from this manual page. Use
       cURL to access the API:
       <pre>
-        curl -k --cert <i>proxy</i> --key <i>proxy</i> 'https://dynamo.mit.edu/registry/detoxlock/<i>command</i>[?<i>options</i>]'
+        curl --cert <i>proxy</i> --key <i>proxy</i> 'https://dynamo.mit.edu/registry/detoxlock/<i>command</i>[?<i>options</i>]'
       </pre>
       where <i>proxy</i> is a valid CMS grid proxy and <i>command</i> is one of the commands listed below. <br>
       <span style="color:red;">Note that authentication with grid proxies work only with cURL+OpenSSL, which is not the default build in Scientific Linux and CentOS. CMS environment sourced from CVMFS provides a working configuration.</span>

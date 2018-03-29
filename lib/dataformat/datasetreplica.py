@@ -20,38 +20,38 @@ class DatasetReplica(object):
 
     def __str__(self):
         return 'DatasetReplica %s:%s (%d block_replicas)' % \
-            (self._site.name, self._dataset.name, len(self.block_replicas))
+            (self._site_name(), self._dataset_name(), len(self.block_replicas))
 
     def __repr__(self):
         return 'DatasetReplica(%s, %s)' % (repr(self._dataset), repr(self._site))
 
     def __eq__(self, other):
-        return self is other or (self._dataset.name == other._dataset.name and self._site.name == other._site.name)
+        return self is other or (self._dataset_name() == other._dataset_name() and self._site_name() == other._site_name())
 
     def __ne__(self, other):
         return not self.__eq__(other)
 
     def copy(self, other):
-        if self._dataset.name() != other._dataset.name():
-            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._dataset.name, self._dataset.name)
-        if self._site.name != other._site.name:
-            raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site.name, self._site.name)
+        if self._dataset_name() != other._dataset_name():
+            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._dataset_name(), self._dataset_name())
+        if self._site_name() != other._site_name():
+            raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site_name(), self._site_name())
 
-    def unlinked_clone(self):
-        dataset = self._dataset.unlinked_clone()
-        site = self._site.unlinked_clone()
-        return DatasetReplica(dataset, site)
+        # not doing anything, actually
+
+    def unlinked_clone(self, attrs = True):
+        return DatasetReplica(self._dataset_name(), self._site_name())
 
     def embed_into(self, inventory, check = False):
         try:
-            dataset = inventory.datasets[self._dataset.name]
+            dataset = inventory.datasets[self._dataset_name()]
         except KeyError:
-            raise ObjectError('Unknown dataset %s', self._dataset.name)
+            raise ObjectError('Unknown dataset %s', self._dataset_name())
 
         try:
-            site = inventory.sites[self._site.name]
+            site = inventory.sites[self._site_name()]
         except KeyError:
-            raise ObjectError('Unknown site %s', self._site.name)
+            raise ObjectError('Unknown site %s', self._site_name())
 
         replica = dataset.find_replica(site)
         updated = False
@@ -75,22 +75,39 @@ class DatasetReplica(object):
         else:
             return replica
 
-    def delete_from(self, inventory):
-        dataset = inventory.datasets[self._dataset.name]
-        site = inventory.sites[self._site.name]
+    def unlink_from(self, inventory):
+        try:
+            dataset = inventory.datasets[self._dataset_name()]
+            site = inventory.sites[self._site_name()]
+        except KeyError:
+            return None
+
         replica = site.find_dataset_replica(dataset)
+        if replica is None:
+            return None
 
-        dataset.replicas.remove(replica)
-        for block_replica in replica.block_replicas:
-            block_replica.block.replicas.remove(block_replica)
+        replica.unlink()
+        return replica
 
-        site.remove_dataset_replica(replica)
+    def unlink(self):
+        for site_partition in self._site.partitions.itervalues():
+            try:
+                site_partition.replicas.pop(self)
+            except KeyError:
+                pass
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_datasetreplica(self)
-        else:
-            store.save_datasetreplica(self)
+        self._site._dataset_replicas.pop(self._dataset)
+
+        for block_replica in list(self.block_replicas):
+            block_replica.unlink(dataset_replica = self, unlink_dataset_replica = False)
+
+        self._dataset.replicas.remove(self)
+
+    def write_into(self, store):
+        store.save_datasetreplica(self)
+
+    def delete_from(self, store):
+        store.delete_datasetreplica(self)
 
     def is_last_copy(self):
         return len(self._dataset.replicas) == 1 and self._dataset.replicas[0] == self
@@ -103,8 +120,6 @@ class DatasetReplica(object):
         return True
 
     def is_partial(self):
-        # dataset.blocks must be loaded if a replica is created for the dataset
-
         # has all block replicas -> not partial
         if len(self.block_replicas) == len(self._dataset.blocks):
             return False
@@ -113,8 +128,6 @@ class DatasetReplica(object):
         return self.is_complete()
 
     def is_full(self):
-        # dataset.blocks must be loaded if a replica is created for the dataset
-
         # does not have all block replicas -> not full
         if len(self.block_replicas) != len(self._dataset.blocks):
             return False
@@ -129,30 +142,11 @@ class DatasetReplica(object):
         else:
             return max(br.last_update for br in self.block_replicas)
 
-    def size(self, groups = [], physical = True):
-        if type(groups) is not list:
-            # single group given
-            if physical:
-                return sum([r.size for r in self.block_replicas if r.group == groups])
-            else:
-                return sum([r.block.size for r in self.block_replicas if r.group == groups])
-
-        else: # expect a list
-            if len(groups) == 0:
-                # no group spec
-                if self.is_full():
-                    return self._dataset.size
-                else:
-                    if physical:
-                        return sum([r.size for r in self.block_replicas])
-                    else:
-                        return sum([r.block.size for r in self.block_replicas])
-
-            else:
-                if physical:
-                    return sum([r.size for r in self.block_replicas if r.group in groups])
-                else:
-                    return sum([r.block.size for r in self.block_replicas if r.group in groups])
+    def size(self, physical = True):
+        if physical:
+            return sum(r.size for r in self.block_replicas)
+        else:
+            return sum(r.block.size for r in self.block_replicas)
 
     def find_block_replica(self, block, must_find = False):
         try:
@@ -167,6 +161,14 @@ class DatasetReplica(object):
             else:
                 return None
 
-    def remove_block_replica(self, block_replica):
-        self.block_replicas.remove(block_replica)
-        self._site.update_partitioning(self)
+    def _dataset_name(self):
+        if type(self._dataset) is str:
+            return self._dataset
+        else:
+            return self._dataset.name
+
+    def _site_name(self):
+        if type(self._site) is str:
+            return self._site
+        else:
+            return self._site.name

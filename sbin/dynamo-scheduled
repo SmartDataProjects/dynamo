@@ -11,6 +11,9 @@ import shutil
 import hashlib
 import multiprocessing
 import signal
+import smtplib
+import socket
+from email.mime.text import MIMEText
 
 from argparse import ArgumentParser
 
@@ -70,7 +73,10 @@ if len(result) == 0:
 user_id = result[0]
 
 ## Load the sequences
+# commands
 EXECUTE, WAIT, TERMINATE = range(3)
+# criticality
+REPEAT_SEQ, REPEAT_LINE, PASS = range(3)
 
 executables = {} # {title: exec path}
 authorized_executables = set() # set of titles
@@ -140,9 +146,15 @@ with open(args.sequence) as source:
         # Sequence executable step definitions
         # {title} options  ...  Read-only execution
         # <title> options  ...  Write-request execution
-        matches = re.match('(\*|\+) +({\S+}|<\S+>)\s*(.*)', line)
+        matches = re.match('(\^|\&|\|) +({\S+}|<\S+>)\s*(.*)', line)
         if matches:
-            critical = (matches.group(1) == '*')
+            if matches.group(1) == '^':
+                criticality = REPEAT_SEQ
+            elif matches.group(1) == '&':
+                criticality = REPEAT_LINE
+            else:
+                criticality = PASS
+
             enclosed_title = matches.group(2)
             title = enclosed_title[1:-1]
             write_request = (enclosed_title[0] == '<')
@@ -158,7 +170,7 @@ with open(args.sequence) as source:
 
             LOG.debug('Execute %s %s (line %d)', title, arguments, iline)
 
-            sequence.append((EXECUTE, title, arguments, critical, write_request))
+            sequence.append((EXECUTE, title, arguments, criticality, write_request))
             continue
 
         matches = re.match('WAIT\s+(.*)', line)
@@ -248,12 +260,31 @@ def loop_sequence(sequence_name, sequence, user_id, config):
     title = ''
     task_id = 0
 
+    action_texts = []
+    for action in sequence:
+        if action[0] == EXECUTE:
+            action_texts.append(action[1])
+        elif action[0] == WAIT:
+            action_texts.append('WAIT(%d)' % action[1])
+        elif action[0] == TERMINATE:
+            action_texts.append('TERMINATE')
+
     try:
         ## Start an infinite loop
         while True:
-            for action in sequence:
+            repeat = True
+
+            ia = 0
+            while ia != len(sequence):
+                action = sequence[ia]
+
+                current_action_texts = list(action_texts)
+                current_action_texts[ia] = '*' + action_texts[ia]
+                sequence_text = ' '.join(current_action_texts)
+                LOG.info('Sequence %s (PID: %d): %s', sequence_name, os.getpid(), sequence_text)
+
                 if action[0] == EXECUTE:
-                    title, arguments, critical, write_request = action[1:]
+                    title, arguments, criticality, write_request = action[1:]
                     executable = executables[title]
     
                     LOG.info('Starting %s', title)
@@ -297,27 +328,40 @@ def loop_sequence(sequence_name, sequence, user_id, config):
                     except:
                         pass
     
-                    LOG.info('Finished %s with (status: %s)\n', title, status)
+                    LOG.info('Finished %s with (status: %s)', title, status)
 
-                    if critical and status != 'done':
-                        LOG.error('Critical executable %s failed. Terminating sequence %s.', title, sequence_name)
-                        ## We don't have a way to restart individual sequences - once this happens, the entire scheduler has to be restarted..
-                        break
-    
+                    if criticality != PASS and status != 'done':
+                        msg = MIMEText('Message from dynamo-scheduled@%s:\nExecutable %s of sequence %s failed.' % \
+                            (socket.gethostname(), title, sequence_name))
+
+                        msg['Subject'] = '[Dynamo Scheduler] failure notice'
+                        msg['From'] = 'dynamo@' + socket.gethostname()
+                        msg['To'] = config.notification_recipient
+
+                        mailserv = smtplib.SMTP('localhost')
+                        mailserv.sendmail(msg['From'], [msg['To']], msg.as_string())
+                        mailserv.quit()
+
+                        if criticality == REPEAT_SEQ:
+                            LOG.error('Critical executable %s failed. Restarting sequence %s.', title, sequence_name)
+                            break
+                        elif criticality == REPEAT_LINE:
+                            LOG.error('Critical executable %s failed. Restarting executable %s.', title, title)
+                            continue
+
                 elif action[0] == WAIT:
-                    LOG.info('Sleeping for %d seconds.\n', action[1])
+                    LOG.info('Sleeping for %d seconds.', action[1])
                     time.sleep(action[1])
     
                 elif action[0] == TERMINATE:
                     LOG.info('Terminating sequence.')
+                    repeat = False
                     break
+
+                ia += 1
     
-            else:
-                # Passed through the sequence without breaking
-                continue
-    
-            # There was a break -> sequence terminated
-            break
+            if not repeat:
+                break
 
     except KeyboardInterrupt:
         if task_id != 0:

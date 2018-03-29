@@ -53,7 +53,7 @@ class Partition(object):
     def copy(self, other):
         pass
 
-    def unlinked_clone(self):
+    def unlinked_clone(self, attrs = True):
         return Partition(self._name)
 
     def embed_into(self, inventory, check = False):
@@ -62,13 +62,15 @@ class Partition(object):
         try:
             partition = inventory.partitions[self._name]
         except KeyError:
-            partition = self.unlinked_clone()
+            partition = Partition(self._name)
             partition._condition = self._condition # WARNING! Copying by reference - two _conditions are same objects
     
             if self._subpartitions is not None:
-                partition._subpartitions = []
+                subpartitions = []
                 for subp in self._subpartitions:
-                    partition._subpartitions.append(inventory.partitions[subp._name])
+                    subpartitions.append(inventory.partitions[subp._name])
+
+                partition._subpartitions = tuple(subpartitions)
     
             if self._parent is not None:
                 partition._parent = inventory.partitions[self._parent._name]
@@ -93,18 +95,23 @@ class Partition(object):
         else:
             return partition
 
-    def delete_from(self, inventory):
-        # Pop the partition from the main list, and remove site_partitions.
-        partition = inventory.partitions.pop(self._name)
+    def unlink_from(self, inventory):
+        try:
+            partition = inventory.partitions.pop(self._name)
+        except KeyError:
+            return None
 
         for site in inventory.sites.itervalues():
             site.partitions.pop(partition)
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_partition(self)
-        else:
-            store.save_partition(self)
+        return partition
+
+    def write_into(self, store):
+        store.save_partition(self)
+        # if a new partition, store must create SitePartition entries with default values
+
+    def delete_from(self, store):
+        store.delete_partition(self)
 
     def contains(self, replica):
         if self._subpartitions is None:
@@ -117,7 +124,7 @@ class Partition(object):
             return False
 
     def embed_tree(self, inventory):
-        partition = self.unlinked_clone()
+        partition = Partition(self._name)
         partition._condition = self._condition
         inventory.partitions.add(partition)
 

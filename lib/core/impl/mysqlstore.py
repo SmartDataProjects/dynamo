@@ -16,6 +16,14 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql = MySQL(config.db_params)
 
+        # Because updates often happen for the same datasets/blocks
+        # We can do something smarter at some point (e.g. automatically consolidate update calls)
+        self._dataset_id_cache = ('', 0)
+        self._block_id_cache = ('', 0, 0)
+        self._site_id_cache = ('', 0)
+        self._group_id_cache = ('', 0)
+        self._partition_id_cache = ('', 0)
+
     def get_partition_names(self):
         return self._mysql.query('SELECT `name` FROM `partitions`')
 
@@ -89,37 +97,48 @@ class MySQLInventoryStore(InventoryStore):
 
         files = set()
 
-        # assuming unique block names
-        sql = 'SELECT f.`size`, f.`name` FROM `files` AS f'
-        sql += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
-        sql += ' WHERE b.`name` = %s'
+        block_id = self._get_block_id(block)
+        if block_id == -1:
+            return files
 
-        for size, name in self._mysql.xquery(sql, block.real_name()):
+        # assuming unique block names
+        sql = 'SELECT `size`, `name` FROM `files` WHERE `block_id` = %s'
+
+        for size, name in self._mysql.xquery(sql, block_id):
             files.add(File(name, block, size))
 
         return files
 
     def load_data(self, inventory, group_names = None, site_names = None, dataset_names = None): #override
+        ## We need the temporary tables to stay alive
+        reuse_connection_orig = self._mysql.reuse_connection
+        self._mysql.reuse_connection = True
+
         ## Load groups
         LOG.info('Loading groups.')
 
-        # name constraints communicated between _load_* functions via load_tmp tables
-        if self._mysql.table_exists('groups_load_tmp'):
-            self._mysql.query('DROP TABLE `groups_load_tmp`')
+        if group_names is not None:
+            # set up a temporary table to be joined with later queries
+            groups_tmp = self._setup_constraints('groups', group_names)
+        else:
+            groups_tmp = None
 
         id_group_map = {0: inventory.groups[None]}
-        self._load_groups(inventory, group_names, id_group_map)
+        self._load_groups(inventory, id_group_map, groups_tmp)
 
         LOG.info('Loaded %d groups.', len(inventory.groups))
 
         ## Load sites
         LOG.info('Loading sites.')
 
-        if self._mysql.table_exists('sites_load_tmp'):
-            self._mysql.query('DROP TABLE `sites_load_tmp`')
+        if site_names is not None:
+            # set up a temporary table to be joined with later queries
+            sites_tmp = self._setup_constraints('sites', site_names)
+        else:
+            sites_tmp = None
 
         id_site_map = {}
-        self._load_sites(inventory, site_names, id_site_map)
+        self._load_sites(inventory, id_site_map, sites_tmp)
 
         LOG.info('Loaded %d sites.', len(inventory.sites))
 
@@ -127,11 +146,14 @@ class MySQLInventoryStore(InventoryStore):
         LOG.info('Loading datasets.')
         start = time.time()
 
-        if self._mysql.table_exists('datasets_load_tmp'):
-            self._mysql.query('DROP TABLE `datasets_load_tmp`')
+        if dataset_names is not None:
+            # set up a temporary table to be joined with later queries
+            datasets_tmp = self._setup_constraints('datasets', dataset_names)
+        else:
+            datasets_tmp = None
 
         id_dataset_map = {}
-        self._load_datasets(inventory, dataset_names, id_dataset_map)
+        self._load_datasets(inventory, id_dataset_map, datasets_tmp)
 
         LOG.info('Loaded %d datasets in %.1f seconds.', len(inventory.datasets), time.time() - start)
 
@@ -140,7 +162,7 @@ class MySQLInventoryStore(InventoryStore):
         start = time.time()
 
         id_block_maps = {} # {dataset_id: {block_id: block}}
-        self._load_blocks(inventory, id_dataset_map, id_block_maps)
+        self._load_blocks(inventory, id_dataset_map, id_block_maps, datasets_tmp)
 
         num_blocks = sum(len(m) for m in id_block_maps.itervalues())
 
@@ -150,7 +172,10 @@ class MySQLInventoryStore(InventoryStore):
         LOG.info('Loading replicas.')
         start = time.time()
 
-        self._load_replicas(inventory, id_group_map, id_site_map, id_dataset_map, id_block_maps)
+        self._load_replicas(
+            inventory, id_group_map, id_site_map, id_dataset_map, id_block_maps,
+            groups_tmp, sites_tmp, datasets_tmp
+        )
 
         num_dataset_replicas = 0
         num_block_replicas = 0
@@ -160,46 +185,33 @@ class MySQLInventoryStore(InventoryStore):
 
         LOG.info('Loaded %d dataset replicas and %d block replicas in %.1f seconds.', num_dataset_replicas, num_block_replicas, time.time() - start)
 
-        ## cleanup
-        if self._mysql.table_exists('blocks_load_tmp'):
-            self._mysql.query('DROP TABLE `blocks_load_tmp`')
-        if self._mysql.table_exists('sites_load_tmp'):
-            self._mysql.query('DROP TABLE `sites_load_tmp`')
-        if self._mysql.table_exists('datasets_load_tmp'):
-            self._mysql.query('DROP TABLE `datasets_load_tmp`')
+        ## Cleanup
+        if group_names is not None:
+            self._mysql.drop_tmp_table('groups_load')
+        if site_names is not None:
+            self._mysql.drop_tmp_table('sites_load')
+        if dataset_names is not None:
+            self._mysql.drop_tmp_table('datasets_load')
 
-    def _load_groups(self, inventory, group_names, id_group_map):
+        self._mysql.reuse_connection = reuse_connection_orig
+
+    def _load_groups(self, inventory, id_group_map, groups_tmp):
         sql = 'SELECT g.`id`, g.`name`, g.`olevel` FROM `groups` AS g'
 
-        if group_names is not None:
-            # first dump the group ids into a temporary table, then constrain the original table
-            self._mysql.query('CREATE TABLE `groups_load_tmp` (`id` int(11) unsigned NOT NULL, PRIMARY KEY (`id`))')
-            sqlbase = 'INSERT INTO `groups_load_tmp` SELECT `id` FROM `groups`'
-            self._mysql.execute_many(sqlbase, 'name', group_names)
-
-            sql += ' INNER JOIN `groups_load_tmp` AS t ON t.`id` = g.`id`'
+        if groups_tmp is not None:
+            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = g.`id`' % groups_tmp
 
         for group_id, name, olname in self._mysql.xquery(sql):
-            if olname == 'Dataset':
-                olevel = Dataset
-            else:
-                olevel = Block
-
-            group = Group(name, olevel)
+            group = Group(name, Group.olevel_val(olname))
 
             inventory.groups[name] = group
             id_group_map[group_id] = group
 
-    def _load_sites(self, inventory, site_names, id_site_map):
+    def _load_sites(self, inventory, id_site_map, sites_tmp):
         sql = 'SELECT s.`id`, s.`name`, s.`host`, s.`storage_type`+0, s.`backend`, s.`storage`, s.`cpu`, `status`+0 FROM `sites` AS s'
 
-        if site_names is not None:
-            # first dump the site ids into a temporary table, then constrain the original table
-            self._mysql.query('CREATE TABLE `sites_load_tmp` (`id` int(11) unsigned NOT NULL, PRIMARY KEY (`id`))')
-            sqlbase = 'INSERT INTO `sites_load_tmp` SELECT `id` FROM `sites`'
-            self._mysql.execute_many(sqlbase, 'name', site_names)
-
-            sql += ' INNER JOIN `sites_load_tmp` AS t ON t.`id` = s.`id`'
+        if sites_tmp is not None:
+            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = s.`id`' % sites_tmp
 
         for site_id, name, host, storage_type, backend, storage, cpu, status in self._mysql.xquery(sql):
             site = Site(
@@ -220,8 +232,9 @@ class MySQLInventoryStore(InventoryStore):
 
         # Load site quotas
         sql = 'SELECT q.`site_id`, p.`name`, q.`storage` FROM `quotas` AS q INNER JOIN `partitions` AS p ON p.`id` = q.`partition_id`'
-        if site_names is not None:
-            sql += ' INNER JOIN `sites_load_tmp` AS t ON t.`id` = q.`site_id`'
+
+        if sites_tmp is not None:
+            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = q.`site_id`' % sites_tmp
 
         for site_id, partition_name, storage in self._mysql.xquery(sql):
             try:
@@ -232,18 +245,13 @@ class MySQLInventoryStore(InventoryStore):
             partition = inventory.partitions[partition_name]
             site.partitions[partition].set_quota(storage * 1.e+12)
 
-    def _load_datasets(self, inventory, dataset_names, id_dataset_map):
+    def _load_datasets(self, inventory, id_dataset_map, datasets_tmp):
         sql = 'SELECT d.`id`, d.`name`, d.`size`, d.`num_files`, d.`status`+0, d.`data_type`+0, s.`cycle`, s.`major`, s.`minor`, s.`suffix`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
         sql += ' FROM `datasets` AS d'
         sql += ' LEFT JOIN `software_versions` AS s ON s.`id` = d.`software_version_id`'
 
-        if dataset_names is not None:
-            # first dump the dataset ids into a temporary table, then constrain the original table
-            self._mysql.query('CREATE TABLE `datasets_load_tmp` (`id` int(11) unsigned NOT NULL, PRIMARY KEY (`id`))')
-            sqlbase = 'INSERT INTO `datasets_load_tmp` SELECT `id` FROM `datasets`'
-            self._mysql.execute_many(sqlbase, 'name', dataset_names)
-
-            sql += ' INNER JOIN `datasets_load_tmp` AS t ON t.`id` = d.`id`'
+        if datasets_tmp is not None:
+            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = d.`id`' % datasets_tmp
 
         for dataset_id, name, size, num_files, status, data_type, sw_cycle, sw_major, sw_minor, sw_suffix, last_update, is_open in self._mysql.xquery(sql):
             # size and num_files are reset when loading blocks
@@ -264,11 +272,11 @@ class MySQLInventoryStore(InventoryStore):
             inventory.datasets[name] = dataset
             id_dataset_map[dataset_id] = dataset
 
-    def _load_blocks(self, inventory, id_dataset_map, id_block_maps):
+    def _load_blocks(self, inventory, id_dataset_map, id_block_maps, datasets_tmp):
         sql = 'SELECT b.`id`, b.`dataset_id`, b.`name`, b.`size`, b.`num_files`, b.`is_open`, UNIX_TIMESTAMP(b.`last_update`) FROM `blocks` AS b'
 
-        if self._mysql.table_exists('datasets_load_tmp'):
-            sql += ' INNER JOIN `datasets_load_tmp` AS t ON t.`id` = b.`dataset_id`'
+        if datasets_tmp is not None:
+            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = b.`dataset_id`' % datasets_tmp
 
         sql += ' ORDER BY b.`dataset_id`'
 
@@ -300,7 +308,7 @@ class MySQLInventoryStore(InventoryStore):
 
             id_block_map[block_id] = block
 
-    def _load_replicas(self, inventory, id_group_map, id_site_map, id_dataset_map, id_block_maps):
+    def _load_replicas(self, inventory, id_group_map, id_site_map, id_dataset_map, id_block_maps, groups_tmp, sites_tmp, datasets_tmp):
         sql = 'SELECT dr.`dataset_id`, dr.`site_id`,'
         sql += ' br.`block_id`, br.`group_id`, br.`is_complete`, br.`is_custodial`, brs.`size`, UNIX_TIMESTAMP(br.`last_update`)'
         sql += ' FROM `dataset_replicas` AS dr'
@@ -308,14 +316,14 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' LEFT JOIN `block_replicas` AS br ON (br.`block_id`, br.`site_id`) = (b.`id`, dr.`site_id`)'
         sql += ' LEFT JOIN `block_replica_sizes` AS brs ON (brs.`block_id`, brs.`site_id`) = (b.`id`, dr.`site_id`)'
 
-        if self._mysql.table_exists('groups_load_tmp'):
-            sql += ' INNER JOIN `groups_load_tmp` AS gt ON gt.`id` = br.`group_id`'
+        if groups_tmp is not None:
+            sql += ' INNER JOIN `%s`.`%s` AS gt ON gt.`id` = br.`group_id`' % groups_tmp
 
-        if self._mysql.table_exists('sites_load_tmp'):
-            sql += ' INNER JOIN `sites_load_tmp` AS st ON st.`id` = dr.`site_id`'
+        if sites_tmp is not None:
+            sql += ' INNER JOIN `%s`.`%s` AS st ON st.`id` = dr.`site_id`' % sites_tmp
 
-        if self._mysql.table_exists('datasets_load_tmp'):
-            sql += ' INNER JOIN `datasets_load_tmp` AS dt ON dt.`id` = dr.`dataset_id`'
+        if datasets_tmp is not None:
+            sql += ' INNER JOIN `%s`.`%s` AS dt ON dt.`id` = dr.`dataset_id`' % datasets_tmp
 
         sql += ' ORDER BY dr.`dataset_id`, dr.`site_id`'
 
@@ -376,9 +384,19 @@ class MySQLInventoryStore(InventoryStore):
             dataset_replica.dataset.replicas.add(dataset_replica)
             dataset_replica.site.add_dataset_replica(dataset_replica, add_block_replicas = True)
 
+    def _setup_constraints(self, table, names):
+        columns = ['`id` int(11) unsigned NOT NULL', 'PRIMARY KEY (`id`)']
+        tmp_db, tmp_table = self._mysql.create_tmp_table(table + '_load', columns)
+
+        # first dump the group ids into a temporary table, then constrain the original table
+        sqlbase = 'INSERT INTO `%s`.`%s` SELECT `id` FROM `%s`' % (tmp_db, tmp_table, table)
+        self._mysql.execute_many(sqlbase, 'name', names)
+
+        return tmp_db, tmp_table
+
     def save_block(self, block): #override
         dataset_id = self._get_dataset_id(block.dataset)
-        if dataset_id == 0:
+        if dataset_id == -1:
             return
 
         fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open', 'last_update')
@@ -387,19 +405,23 @@ class MySQLInventoryStore(InventoryStore):
     def delete_block(self, block): #override
         # Here we don't assume block name is unique..
         dataset_id = self._get_dataset_id(block.dataset)
-        if dataset_id == 0:
+        if dataset_id == -1:
             return
 
-        sql = 'DELETE FROM `blocks` WHERE `dataset_id` = %s AND `name` = %s'
+        sql = 'DELETE FROM b, f, r USING `blocks` AS b'
+        sql += ' LEFT JOIN `block_replicas` AS r ON r.`block_id` = b.`id`'
+        sql += ' LEFT JOIN `files` AS f ON f.`block_id` = b.`id`'
+        sql += ' WHERE b.`dataset_id` = %s AND b.`name` = %s'
+
         self._mysql.query(sql, dataset_id, block.real_name())
 
     def save_file(self, lfile): #override
         dataset_id = self._get_dataset_id(lfile.block.dataset)
-        if dataset_id == 0:
+        if dataset_id == -1:
             return
 
         block_id = self._get_block_id(lfile.block)
-        if block_id == 0:
+        if block_id == -1:
             return
 
         fields = ('block_id', 'dataset_id', 'size', 'name')
@@ -411,15 +433,15 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_blockreplica(self, block_replica): #override
         block_id = self._get_block_id(block_replica.block)
-        if block_id == 0:
+        if block_id == -1:
             return
 
         site_id = self._get_site_id(block_replica.site)
-        if site_id == 0:
+        if site_id == -1:
             return
 
         group_id = self._get_group_id(block_replica.group)
-        if group_id == 0:
+        if group_id == -1:
             return
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
@@ -433,12 +455,16 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query(sql, block_id, site_id)
 
     def delete_blockreplica(self, block_replica): #override
+        dataset_id = self._get_dataset_id(block_replica.block.dataset)
+        if dataset_id == -1:
+            return
+
         block_id = self._get_block_id(block_replica.block)
-        if block_id == 0:
+        if block_id == -1:
             return
 
         site_id = self._get_site_id(block_replica.site)
-        if site_id == 0:
+        if site_id == -1:
             return
 
         sql = 'DELETE FROM `block_replicas` WHERE `block_id` = %s AND `site_id` = %s'
@@ -446,6 +472,13 @@ class MySQLInventoryStore(InventoryStore):
 
         sql = 'DELETE FROM `block_replica_sizes` WHERE `block_id` = %s AND `site_id` = %s'
         self._mysql.query(sql, block_id, site_id)
+
+        sql = 'SELECT COUNT(*) FROM `block_replicas` AS br'
+        sql += ' INNER JOIN `blocks` AS b ON b.`id` = br.`block_id`'
+        sql += ' WHERE b.`dataset_id` = %s AND br.`site_id` = %s'
+        if self._mysql.query(sql, dataset_id, site_id)[0] == 0:
+            sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
+            self._mysql.query(sql, dataset_id, site_id)
 
     def save_dataset(self, dataset): #override
         if dataset.software_version is None:
@@ -466,16 +499,23 @@ class MySQLInventoryStore(InventoryStore):
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
     def delete_dataset(self, dataset): #override
-        sql = 'DELETE FROM `datasets` WHERE `name` = %s'
+        sql = 'DELETE FROM d, b, f, dr, br, brs USING `datasets` AS d'
+        sql += ' LEFT JOIN `blocks` AS b ON b.`dataset_id` = d.`id`'
+        sql += ' LEFT JOIN `files` AS f ON f.`dataset_id` = d.`id`'
+        sql += ' LEFT JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
+        sql += ' LEFT JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
+        sql += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id`'
+        sql += ' WHERE d.`name` = %s'
+
         self._mysql.query(sql, dataset.name)
 
     def save_datasetreplica(self, dataset_replica): #override
         dataset_id = self._get_dataset_id(dataset_replica.dataset)
-        if dataset_id == 0:
+        if dataset_id == -1:
             return
 
         site_id = self._get_site_id(dataset_replica.site)
-        if site_id == 0:
+        if site_id == -1:
             return
 
         fields = ('dataset_id', 'site_id')
@@ -483,38 +523,65 @@ class MySQLInventoryStore(InventoryStore):
 
     def delete_datasetreplica(self, dataset_replica): #override
         dataset_id = self._get_dataset_id(dataset_replica.dataset)
-        if dataset_id == 0:
+        if dataset_id == -1:
             return
 
         site_id = self._get_site_id(dataset_replica.site)
-        if site_id == 0:
+        if site_id == -1:
             return
+
+        sql = 'DELETE FROM br, brs USING `blocks` AS b'
+        sql += ' INNER JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
+        sql += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id` AND brs.`site_id` = br.`site_id`'
+        sql += ' WHERE b.`dataset_id` = %s AND br.`site_id` = %s'
+
+        self._mysql.query(sql, dataset_id, site_id)
 
         sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
         self._mysql.query(sql, dataset_id, site_id)
 
     def save_group(self, group): #override
         fields = ('name', 'olevel')
-        self._insert_update('groups', fields, group.name, group.olevel.__name__)
+        self._insert_update('groups', fields, group.name, Group.olevel_name(group.olevel))
 
     def delete_group(self, group): #override
-        sql = 'DELETE FROM `groups` WHERE `name` = %s'
-        self._mysql.query(sql, group.name)
+        group_id = self._get_group_id(group)
+
+        sql = 'DELETE FROM `groups` WHERE `id` = %s'
+        self._mysql.query(sql, group_id)
+
+        sql = 'UPDATE `block_replicas` SET `group_id` = 0 WHERE `group_id` = %s'
+        self._mysql.query(sql, group_id)
 
     def save_partition(self, partition): #override
         fields = ('name',)
         self._insert_update('partitions', fields, partition.name)
 
+        # For new partitions, persistency requires saving site partition data with default parameters.
+        # We handle missing site partition entries at load time - if a row is missing, SitePartition object with
+        # default parameters will be created.
+
     def delete_partition(self, partition): #override
-        sql = 'DELETE FROM `partitions` WHERE `name` = %s'
+        sql = 'DELETE FROM p, q USING `partitions` AS p'
+        sql += ' LEFT JOIN `quotas` AS q ON q.`partition_id` = p.`id`'
+        sql += ' WHERE p.`name` = %s'
         self._mysql.query(sql, partition.name)
 
     def save_site(self, site): #override
         fields = ('name', 'host', 'storage_type', 'backend', 'storage', 'cpu', 'status')
         self._insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.storage, site.cpu, site.status)
 
+        # For new sites, persistency requires saving site partition data with default parameters.
+        # We handle missing site partition entries at load time - if a row is missing, SitePartition object with
+        # default parameters will be created.
+
     def delete_site(self, site): #override
-        sql = 'DELETE FROM `sites` WHERE `name` = %s'
+        sql = 'DELETE FROM s, dr, br, brs, q USING `sites` AS s'
+        sql += ' LEFT JOIN `dataset_replicas` AS dr ON dr.`site_id` = s.`id`'
+        sql += ' LEFT JOIN `block_replicas` AS br ON br.`site_id` = s.`id`'
+        sql += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`site_id` = s.`id`'
+        sql += ' LEFT JOIN `quotas` AS q ON q.`site_id` = s.`id`'
+        sql += ' WHERE s.`name` = %s'
         self._mysql.query(sql, site.name)
 
     def save_sitepartition(self, site_partition): #override
@@ -523,31 +590,15 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         site_id = self._get_site_id(site_partition.site)
-        if site_id == 0:
+        if site_id == -1:
             return
 
         partition_id = self._get_partition_id(site_partition.partition)
-        if partition_id == 0:
+        if partition_id == -1:
             return
 
         fields = ('site_id', 'partition_id', 'storage')
         self._insert_update('quotas', fields, site_id, partition_id, site_partition.quota * 1.e-12)
-
-    def delete_sitepartition(self, site_partition): #override
-        # We are only saving quotas. For superpartitions, there is nothing to do.
-        if site_partition.partition.subpartitions is not None:
-            return
-
-        site_id = self._get_site_id(site_partition.site)
-        if site_id == 0:
-            return
-
-        partition_id = self._get_partition_id(site_partition.partition)
-        if partition_id == 0:
-            return
-
-        sql = 'DELETE FROM `quotas` WHERE `site_id` = %s AND `partition_id` = %s'
-        self._mysql.query(sql, site_id, partition_id)
 
     def _insert_update(self, table, fields, *values):
         placeholders = ', '.join(['%s'] * len(fields))
@@ -561,32 +612,50 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query(sql, *values)
 
     def _get_dataset_id(self, dataset):
+        if dataset.name == self._dataset_id_cache[0]:
+            return self._dataset_id_cache[1]
+
         sql = 'SELECT `id` FROM `datasets` WHERE `name` = %s'
 
         result = self._mysql.query(sql, dataset.name)
         if len(result) == 0:
             # should I raise?
-            return 0
+            return -1
+
+        self._dataset_id_cache = (dataset.name, result[0])
 
         return result[0]
 
     def _get_block_id(self, block):
-        sql = 'SELECT b.`id` FROM `blocks` AS b'
-        sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
-        sql += ' WHERE d.`name` = %s AND b.`name` = %s'
+        if block.name == self._block_id_cache[1] and block.dataset.name == self._block_id_cache[0]:
+            return self._block_id_cache[2]
 
-        result = self._mysql.query(sql, block.dataset.name, block.real_name())
+        dataset_id = self._get_dataset_id(block.dataset)
+
+        if dataset_id == -1:
+            return -1
+
+        sql = 'SELECT `id` FROM `blocks` WHERE `dataset_id` = %s AND `name` = %s'
+
+        result = self._mysql.query(sql, dataset_id, block.real_name())
         if len(result) == 0:
-            return 0
+            return -1
+
+        self._block_id_cache = (block.dataset.name, block.name, result[0])
 
         return result[0]
 
     def _get_site_id(self, site):
+        if site.name == self._site_id_cache[0]:
+            return self._site_id_cache[1]
+
         sql = 'SELECT `id` FROM `sites` WHERE `name` = %s'
         
         result = self._mysql.query(sql, site.name)
         if len(result) == 0:
-            return 0
+            return -1
+
+        self._site_id_cache = (site.name, result[0])
 
         return result[0]
 
@@ -594,19 +663,29 @@ class MySQLInventoryStore(InventoryStore):
         if group.name is None:
             return 0
 
+        if group.name == self._group_id_cache[0]:
+            return self._group_id_cache[1]
+
         sql = 'SELECT `id` FROM `groups` WHERE `name` = %s'
         
         result = self._mysql.query(sql, group.name)
         if len(result) == 0:
-            return 0
+            return -1
+
+        self._group_id_cache = (group.name, result[0])
 
         return result[0]
 
     def _get_partition_id(self, partition):
+        if partition.name == self._partition_id_cache[0]:
+            return self._partition_id_cache[1]
+
         sql = 'SELECT `id` FROM `partitions` WHERE `name` = %s'
         
         result = self._mysql.query(sql, partition.name)
         if len(result) == 0:
-            return 0
+            return -1
+
+        self._partition_id_cache = (partition.name, result[0])
 
         return result[0]

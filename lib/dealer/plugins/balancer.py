@@ -2,6 +2,7 @@ import logging
 import random
 
 from base import BaseHandler
+from dynamo.dataformat import Site
 
 LOG = logging.getLogger(__name__)
 
@@ -13,9 +14,8 @@ class BalancingHandler(BaseHandler):
     def __init__(self, config):
         BaseHandler.__init__(self, 'Balancer')
 
-        self.required_attrs = ['request_weight']
-
         self.max_dataset_size = config.max_dataset_size * 1.e+12
+        self.max_cycle_volume = config.max_cycle_volume * 1.e+12
         self.target_reasons = dict(config.target_reasons)
 
     def get_requests(self, inventory, history, policy):
@@ -26,6 +26,9 @@ class BalancingHandler(BaseHandler):
         latest_run = latest_runs[0]
 
         LOG.info('Balancing site occupancy based on the protected fractions in the latest cycle %d', latest_run)
+        LOG.debug('Protection reason considered as "last copy":')
+        for reason in self.target_reasons.keys():
+            LOG.debug(reason)
 
         deletion_decisions = history.get_deletion_decisions(latest_run, size_only = False)
 
@@ -51,7 +54,7 @@ class BalancingHandler(BaseHandler):
                 continue
 
             protections = [(ds_name, size, reason) for ds_name, size, decision, reason in decisions if decision == 'protect']
-            protected_fraction = sum(size for ds_name, size, reason in protections) / quota
+            protected_fraction = sum(size for _, size, _ in protections) / quota
 
             LOG.debug('Site %s protected fraction %f', site.name, protected_fraction)
 
@@ -68,6 +71,12 @@ class BalancingHandler(BaseHandler):
                     break
 
                 try:
+                    num_rep = self.target_reasons[reason]
+                except KeyError:
+                    # protected not because it was the last copy
+                    continue
+
+                try:
                     dataset = inventory.datasets[ds_name]
                 except KeyError:
                     continue
@@ -76,18 +85,20 @@ class BalancingHandler(BaseHandler):
                     # this replica has disappeared since then
                     continue
 
-                for target_reason, num_rep in self.target_reasons.items():
-                    if reason != target_reason:
+                num_nonpartial = 0
+                for replica in dataset.replicas:
+                    if replica.site.storage_type == Site.TYPE_MSS:
                         continue
 
-                    num_nonpartial = 0
-                    for replica in dataset.replicas:
-                        if not replica.is_partial():
-                            num_nonpartial += 1
+                    if replica.is_partial():
+                        continue
 
-                    if num_nonpartial < num_rep:
-                        LOG.debug('%s is a last copy at %s', ds_name, site.name)
-                        last_copies[site].append(dataset)
+                    if replica in replica.site.partitions[partition].replicas:
+                        num_nonpartial += 1
+
+                if num_nonpartial < num_rep:
+                    LOG.debug('%s is a last copy at %s', ds_name, site.name)
+                    last_copies[site].append(dataset)
 
         for site, frac in sorted(protected_fractions.items(), key = lambda (s, f): f):
             LOG.debug('Site %s fraction %f', site.name, frac)
@@ -96,9 +107,8 @@ class BalancingHandler(BaseHandler):
 
         total_size = 0
         variation = 1.
-        # The actual cutoff will be imposed by Dealer later
-        # This cutoff is just to not make copy proposals that are never fulfilled
-        while len(protected_fractions) != 0 and total_size < policy.max_total_cycle_volume:
+
+        while len(protected_fractions) != 0 and total_size < self.max_cycle_volume:
             maxsite, maxfrac = max(protected_fractions.items(), key = lambda x: x[1])
             minsite, minfrac = min(protected_fractions.items(), key = lambda x: x[1])
 
@@ -122,6 +132,3 @@ class BalancingHandler(BaseHandler):
             total_size += size
 
         return request
-
-    def save_record(self, run_number, history, copy_list):
-        pass

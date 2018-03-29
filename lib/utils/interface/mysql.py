@@ -41,11 +41,15 @@ class MySQL(object):
             self._connection_parameters['db'] = config['db']
 
         self._connection = None
-
-        self.reuse_connection = config.get('reuse_connection', True)
+        
+        # Use with care! A deadlock can occur when another session tries to lock a table used by a session with
+        # reuse_connection = True
+        self.reuse_connection = config.get('reuse_connection', False)
 
         # default 1M characters
         self.max_query_len = config.get('max_query_len', 1000000)
+
+        self.last_insert_id = 0
 
     def db_name(self):
         return self._connection_parameters['db']
@@ -78,6 +82,8 @@ class MySQL(object):
             self._connection = MySQLdb.connect(**self._connection_parameters)
 
         cursor = self._connection.cursor()
+
+        self.last_insert_id = 0
 
         try:
             if LOG.getEffectiveLevel() == logging.DEBUG:
@@ -124,6 +130,7 @@ class MySQL(object):
             if cursor.description is None:
                 if cursor.lastrowid != 0:
                     # insert query
+                    self.last_insert_id = cursor.lastrowid
                     return cursor.lastrowid
                 else:
                     # update query
@@ -155,6 +162,8 @@ class MySQL(object):
             self._connection = MySQLdb.connect(**self._connection_parameters)
 
         cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
+
+        self.last_insert_id = 0
 
         try:
             if LOG.getEffectiveLevel() == logging.DEBUG:
@@ -266,7 +275,7 @@ class MySQL(object):
 
         self.execute_many(sqlbase, key, pool, additional_conditions)
 
-    def insert_many(self, table, fields, mapping, objects, do_update = True):
+    def insert_many(self, table, fields, mapping, objects, do_update = True, db = ''):
         """
         INSERT INTO table (fields) VALUES (mapping(objects)).
         Arguments:
@@ -291,7 +300,10 @@ class MySQL(object):
         except StopIteration:
             return
 
-        sqlbase = 'INSERT INTO `{table}` ({fields}) VALUES %s'.format(table = table, fields = ','.join(['`%s`' % f for f in fields]))
+        if db == '':
+            db = self.db_name()
+
+        sqlbase = 'INSERT INTO `{db}`.`{table}` ({fields}) VALUES %s'.format(db = db, table = table, fields = ','.join(['`%s`' % f for f in fields]))
         if do_update:
             sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join(['`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields])
 
@@ -459,31 +471,52 @@ class MySQL(object):
 
         return len(self.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s LIMIT 1', db, table)) != 0
 
+    def create_tmp_table(self, table, columns, db = ''):
+        if not db:
+            db = self.db_name()
+
+        tmp_db = db + '_tmp'
+        tmp_table = '%s_tmp' % table
+
+        self.drop_tmp_table(table, db = db)
+
+        sql = 'CREATE TEMPORARY TABLE `%s`.`%s` (' % (tmp_db, tmp_table)
+        sql += ','.join(columns)
+        sql += ') ENGINE=MyISAM DEFAULT CHARSET=latin1'
+
+        self.query(sql)
+
+        return tmp_db, tmp_table
+
+    def drop_tmp_table(self, table, db = ''):
+        if not db:
+            db = self.db_name()
+
+        tmp_db = db + '_tmp'
+        tmp_table = '%s_tmp' % table
+
+        if self.table_exists(tmp_table, db = tmp_db):
+            self.query('DROP TEMPORARY TABLE `%s`.`%s`' % (tmp_db, tmp_table))
+
     def make_map(self, table, objects, object_id_map = None, id_object_map = None, key = None, tmp_join = False):
         objitr = iter(objects)
 
         if tmp_join:
-            tmp_db = self.db_name() + '_tmp'
-            tmp_table = '%s_map_tmp' % table
-            if self.table_exists(tmp_table, db = tmp_db):
-                self.query('DROP TABLE `%s`.`%s`' % (tmp_db, tmp_table))
+            columns = ['`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL', 'PRIMARY KEY (`name`)']
+            tmp_db, tmp_table = self.create_tmp_table(table + '_map', columns)
 
             # need to create a list first because objects can already be an iterator and iterators can iterate only once
             objlist = list(objitr)
             objitr = iter(objlist)
 
-            self.query('CREATE TEMPORARY TABLE `%s`.`%s` (`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL, PRIMARY KEY (`name`)) ENGINE=MyISAM DEFAULT CHARSET=latin1' % (tmp_db, tmp_table))
-
-            # rather hacky here - pass db`.`table as table_name to insert_many (which adds the enclosing ``)
-            table_name = tmp_db + '`.`' + tmp_table
             if key is None:
-                self.insert_many(table_name, ('name',), lambda obj: (obj.name,), objlist)
+                self.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist, db = tmp_db)
             else:
-                self.insert_many(table_name, ('name',), lambda obj: (key(obj),), objlist)
+                self.insert_many(tmp_table, ('name',), lambda obj: (key(obj),), objlist, db = tmp_db)
 
             name_to_id = dict(self.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s`.`%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_db, tmp_table)))
 
-            self.query('DROP TABLE `%s`.`%s`' % (tmp_db, tmp_table))
+            self.drop_tmp_table(table)
 
         else:
             name_to_id = dict(self.xquery('SELECT `name`, `id` FROM `%s`' % table))

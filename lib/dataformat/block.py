@@ -5,6 +5,10 @@ import weakref
 
 from exceptions import ObjectError
 
+## TODO
+# Add/remove operations on block.files in the subprocesses may get reset
+# Need a mechanism to permanintize files once there is a write operation
+
 class Block(object):
     """Smallest data unit for data management."""
 
@@ -63,6 +67,20 @@ class Block(object):
 
         return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]        
 
+    @staticmethod
+    def to_full_name(dataset_name, block_real_name):
+        return dataset_name + '#' + block_real_name
+
+    @staticmethod
+    def from_full_name(full_name):
+        # return dataset name, block internal name
+
+        delim = full_name.find('#')
+        if delim == -1:
+            raise ObjectError('Invalid block name %s' % full_name)
+
+        return full_name[:delim], Block.to_internal_name(full_name[delim + 1:])
+
     def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False, last_update = 0):
         self._name = name
         self._dataset = dataset
@@ -79,16 +97,16 @@ class Block(object):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
         return 'Block %s (size=%d, num_files=%d, is_open=%s, last_update=%s, replicas=%s)' % \
-            (self.full_name(), self.size, self.num_files, self.is_open, \
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), \
-            replica_sites)
+            (self.full_name(), self.size, self.num_files, self.is_open,
+                time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)),
+                replica_sites)
 
     def __repr__(self):
         return 'Block(Block.to_internal_name(\'%s\', %s)' % (self.real_name(), repr(self._dataset))
 
     def __eq__(self, other):
         return self is other or \
-            (self._name == other._name and self._dataset.name == other._dataset.name and \
+            (self._name == other._name and self._dataset_name() == other._dataset_name() and \
             self.size == other.size and self.num_files == other.num_files and \
             self.is_open == other.is_open and self.last_update == other.last_update)
 
@@ -96,23 +114,25 @@ class Block(object):
         return not self.__eq__(other)
 
     def copy(self, other):
-        if self._dataset.name != other.dataset.name:
-            raise ObjectError('Cannot copy a block of %s into a block of %s', other.dataset.name, self._dataset.name)
+        if self._dataset_name() != other._dataset_name():
+            raise ObjectError('Cannot copy a block of %s into a block of %s', other._dataset_name(), self._dataset_name())
 
         self.size = other.size
         self.num_files = other.num_files
         self.is_open = other.is_open
         self.last_update = other.last_update
 
-    def unlinked_clone(self):
-        dataset = self._dataset.unlinked_clone()
-        return Block(self._name, dataset, self.size, self.num_files, self.is_open, self.last_update)
+    def unlinked_clone(self, attrs = True):
+        if attrs:
+            return Block(self._name, self._dataset_name(), self.size, self.num_files, self.is_open, self.last_update)
+        else:
+            return Block(self._name, self._dataset_name())
 
     def embed_into(self, inventory, check = False):
         try:
-            dataset = inventory.datasets[self._dataset.name]
+            dataset = inventory.datasets[self._dataset_name()]
         except KeyError:
-            raise ObjectError('Unknown dataset %s', self._dataset.name)
+            raise ObjectError('Unknown dataset %s', self._dataset_name())
 
         block = dataset.find_block(self._name)
         updated = False
@@ -132,20 +152,32 @@ class Block(object):
         else:
             return block
 
-    def delete_from(self, inventory):
-        # Remove the block from the dataset, and remove all replicas.
-        dataset = inventory.datasets[self._dataset.name]
-        block = dataset.find_block(self._name, must_find = True)
-        dataset.remove_block(block)
-        
-        for replica in block.replicas:
-            replica.site.remove_block_replica(replica)
+    def unlink_from(self, inventory):
+        try:
+            dataset = inventory.datasets[self._dataset_name()]
+            block = dataset.find_block(self._name, must_find = True)
+        except (KeyError, ObjectError):
+            return None
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_block(self)
-        else:
-            store.save_block(self)
+        block.unlink()
+        return block
+
+    def unlink(self):
+        for replica in list(self.replicas):
+            replica.unlink()
+
+        for lfile in list(self.files):
+            lfile.unlink(files = self.files)
+
+        self._dataset.blocks.remove(self)
+        self._dataset.size -= self.size
+        self._dataset.num_files -= self.num_files
+
+    def write_into(self, store):
+        store.save_block(self)
+
+    def delete_from(self, store):
+        store.delete_block(self)
 
     def real_name(self):
         """
@@ -159,7 +191,7 @@ class Block(object):
         Full specification of a block, including the dataset name.
         """
 
-        return self._dataset.name + '#' + self.real_name()
+        return Block.to_full_name(self._dataset_name(), self.real_name())
 
     def find_file(self, lfn, must_find = False):
         files = self.files
@@ -196,23 +228,12 @@ class Block(object):
         files = self.files
 
         files.add(lfile)
+
         self.size += lfile.size
         self.num_files += 1
 
-    def remove_file(self, lfile):
-        # this function can change block_replica.is_complete
-
-        files = self.files
-
-        files.remove(lfile)
-        self.size -= lfile.size
-        self.num_files -= 1
-
-#        for replica in self.replicas:
-#            if replica.files is not None:
-#                try:
-#                    replica.files.remove(lfile)
-#                except ValueError:
-#                    pass
-#                else:
-#                    replica.size -= lfile.size
+    def _dataset_name(self):
+        if type(self._dataset) is str:
+            return self._dataset
+        else:
+            return self._dataset.name

@@ -10,6 +10,42 @@ from dynamo.utils.interface.ssb import SiteStatusBoard
 
 LOG = logging.getLogger(__name__)
 
+def lfn_to_pfn(lfn, protocol, xml):
+
+    if type(xml) is str:
+        a = ET.parse(xml)
+        root = a.getroot()
+    else:
+        root = xml
+
+    for lfn_tag in root.findall('lfn-to-pfn'):
+        path_match = lfn_tag.get('path-match')
+        protocol_tag = lfn_tag.get('protocol')
+        match = re.match(path_match, lfn)
+        chain_protocol = lfn_tag.get('chain')
+        result = lfn_tag.get('result')
+
+        if match and protocol_tag == protocol:
+            if chain_protocol is not None: 
+                replacement = lfn_to_pfn(lfn, chain_protocol, root)
+                pfn = result.replace(r'$1', replacement)
+            else:
+                pfn = result
+
+                idx = 1
+                while True:
+                    try:
+                        replacement = match.group(idx)
+                        pfn = pfn.replace(r'$%d' % (idx), replacement)
+                    except IndexError:
+                        break
+
+                    idx += 1
+
+            return pfn
+
+    return lfn
+
 class PhEDExSiteInfoSource(SiteInfoSource):
     """SiteInfoSource for PhEDEx. Also use CMS Site Status Board for additional information."""
 
@@ -41,7 +77,11 @@ class PhEDExSiteInfoSource(SiteInfoSource):
 
         entry = result[0]
 
-        return Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology'])
+        dummy_lfn = '/store/data/Run2010A/AlCaP0/ALCARECO/v1/000/135/809/48D7671F-B063-DF11-BDB5-0030487CD17C.root'
+        pfn = lfn_to_pfn(dummy_lfn, 'srmv2', xmlfile)
+        backend = pfn.replace(dummy_lfn, '')
+
+        return Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = backend)
 
     def get_site_list(self): #override
         options = []
@@ -54,6 +94,9 @@ class PhEDExSiteInfoSource(SiteInfoSource):
         site_list = []
 
         for entry in self._phedex.make_request('nodes', options):
+            if entry['name'].endswith('_Export') or entry['name'].endswith('_Buffer'):
+                continue
+
             if self.exclude is not None:
                 matched = False
                 for pattern in self.exclude:

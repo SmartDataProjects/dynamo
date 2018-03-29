@@ -12,8 +12,10 @@ class Dataset(object):
 
     # Enumerator for dataset type.
     # Starting from 1 to play better with MySQL
-    TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, 10)
-    STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, 8)
+    _data_types = ['unknown', 'align', 'calib', 'cosmic', 'data', 'lumi', 'mc', 'raw', 'test']
+    TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, len(_data_types) + 1)
+    _statuses = ['unknown', 'deleted', 'deprecated', 'invalid', 'production', 'valid', 'ignored']
+    STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, len(_statuses) + 1)
 
     @property
     def name(self):
@@ -26,9 +28,7 @@ class Dataset(object):
     @staticmethod
     def data_type_name(arg):
         if type(arg) is int:
-            data_types = ['UNKNOWN', 'ALIGN', 'CALIB', 'COSMIC', 'DATA', 'LUMI', 'MC', 'RAW', 'TEST']
-            return data_types[arg - 1]
-
+            return Dataset._data_types[arg - 1]
         else:
             return arg
 
@@ -36,16 +36,13 @@ class Dataset(object):
     def data_type_val(arg):
         if type(arg) is str:
             return eval('Dataset.TYPE_' + arg.upper())
-
         else:
             return arg
 
     @staticmethod
     def status_name(arg):
         if type(arg) is int:
-            statuses = ['UNKNOWN', 'DELETED', 'DEPRECATED', 'INVALID', 'PRODUCTION', 'VALID', 'IGNORED']
-            return statuses[arg - 1]
-
+            return Dataset._statuses[arg - 1]
         else:
             return arg
 
@@ -53,7 +50,6 @@ class Dataset(object):
     def status_val(arg):
         if type(arg) is str:
             return eval('Dataset.STAT_' + arg.upper())
-
         else:
             return arg
 
@@ -78,7 +74,7 @@ class Dataset(object):
 
         return 'Dataset %s (size=%d, num_files=%d, status=%s, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
             (self._name, self.size, self.num_files, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
-            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), \
+            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)), str(self.is_open), \
             len(self.blocks), replica_sites)
 
     def __repr__(self):
@@ -114,13 +110,12 @@ class Dataset(object):
 
         self.attr = copy.deepcopy(other.attr)
 
-    def unlinked_clone(self):
-        dataset = Dataset(self._name, self.size, self.num_files, self.status, self.data_type,
-            self.software_version, self.last_update, self.is_open)
-
-        dataset.attr = copy.deepcopy(self.attr)
-
-        return dataset
+    def unlinked_clone(self, attrs = True):
+        if attrs:
+            return Dataset(self._name, self.size, self.num_files, self.status, self.data_type,
+                self.software_version, self.last_update, self.is_open)
+        else:
+            return Dataset(self._name)
 
     def embed_into(self, inventory, check = False):
         updated = False
@@ -128,7 +123,8 @@ class Dataset(object):
         try:
             dataset = inventory.datasets[self._name]
         except KeyError:
-            dataset = self.unlinked_clone()
+            dataset = Dataset(self._name)
+            dataset.copy(self)
             inventory.datasets.add(dataset)
     
             updated = True
@@ -145,18 +141,25 @@ class Dataset(object):
         else:
             return dataset
 
-    def delete_from(self, inventory):
-        # Pop the dataset from the main list, and remove all replicas.
-        dataset = inventory.datasets.pop(self._name)
+    def unlink_from(self, inventory):
+        try:
+            dataset = inventory.datasets.pop(self._name)
+        except KeyError:
+            return None
 
-        for replica in dataset.replicas:
-            replica.site.remove_dataset_replica(replica)
+        for replica in list(dataset.replicas):
+            replica.unlink()
+        
+        for block in list(dataset.blocks):
+            block.unlink()
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_dataset(self)
-        else:
-            store.save_dataset(self)
+        return dataset
+
+    def write_into(self, store):
+        store.save_dataset(self)
+
+    def delete_from(self, store):
+        store.delete_dataset(self)
 
     def find_block(self, block_name, must_find = False):
         try:
@@ -195,13 +198,3 @@ class Dataset(object):
         self.blocks.add(block)
         self.size += block.size
         self.num_files += block.num_files
-
-    def remove_block(self, block):
-        self.blocks.remove(block)
-        self.size -= block.size
-        self.num_files -= block.num_files
-
-        for replica in self.replicas:
-            block_replica = replica.find_block_replica(block)
-            if block_replica is not None:
-                replica.remove_block_replica(block_replica)

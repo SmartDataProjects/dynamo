@@ -1,4 +1,7 @@
+import time
+
 from exceptions import ObjectError
+from block import Block
 
 class BlockReplica(object):
     """Block placement at a site. Holds an attribute 'group' which can be None.
@@ -20,7 +23,7 @@ class BlockReplica(object):
         self.group = group
         self.is_complete = is_complete
         self.is_custodial = is_custodial
-        if size < 0:
+        if size < 0 and type(block) is not str:
             self.size = block.size
         else:
             self.size = size
@@ -30,17 +33,18 @@ class BlockReplica(object):
         self.files = None
 
     def __str__(self):
-        return 'BlockReplica %s:%s (group=%s, is_complete=%s, size=%d, last_update=%d)' % \
-            (self._site.name, self._block.full_name(),
-                self.group.name, self.is_complete, self.size, self.last_update)
+        return 'BlockReplica %s:%s (group=%s, is_complete=%s, size=%d, last_update=%s)' % \
+            (self._site_name(), self._block_full_name(),
+                self._group_name(), self.is_complete, self.size,
+                time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)))
 
     def __repr__(self):
         return 'BlockReplica(block=%s, site=%s, group=%s)' % (repr(self._block), repr(self._site), repr(self.group))
 
     def __eq__(self, other):
         return self is other or \
-            (self._block.full_name() == other._block.full_name() and self._site.name == other._site.name and \
-            self.group.name == other.group.name and \
+            (self._block_full_name() == other._block_full_name() and self._site_name() == other._site_name() and \
+            self._group_name() == other._group_name() and \
             self.is_complete == other.is_complete and self.is_custodial == other.is_custodial and \
             self.size == other.size and self.last_update == other.last_update)
 
@@ -48,10 +52,10 @@ class BlockReplica(object):
         return not self.__eq__(other)
 
     def copy(self, other):
-        if self._block.full_name() != other._block.full_name():
-            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._block.full_name(), self._block.full_name())
-        if self._site.name != other._site.name:
-            raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site.name, self._site.name)
+        if self._block_full_name() != other._block_full_name():
+            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._block_full_name(), self._block_full_name())
+        if self._site_name() != other._site_name():
+            raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site.name, self._site_name())
 
         self.group = other.group
         self.is_complete = other.is_complete
@@ -59,37 +63,36 @@ class BlockReplica(object):
         self.size = other.size
         self.last_update = other.last_update
 
-    def unlinked_clone(self):
-        block = self._block.unlinked_clone()
-        site = self._site.unlinked_clone()
-        group = self.group.unlinked_clone()
-
-        return BlockReplica(block, site, group, self.is_complete, self.is_custodial, self.size, self.last_update)
+    def unlinked_clone(self, attrs = True):
+        if attrs:
+            return BlockReplica(self._block_full_name(), self._site_name(), self._group_name(), self.is_complete, self.is_custodial, self.size, self.last_update)
+        else:
+            return BlockReplica(self._block_full_name(), self._site_name(), self._group_name())
 
     def embed_into(self, inventory, check = False):
         try:
-            dataset = inventory.datasets[self._block.dataset.name]
+            dataset = inventory.datasets[self._dataset_name()]
         except KeyError:
-            raise ObjectError('Unknown dataset %s', self._block.dataset.name)
+            raise ObjectError('Unknown dataset %s', self._dataset_name())
 
-        block = dataset.find_block(self._block.name, must_find = True)
-
-        try:
-            site = inventory.sites[self._site.name]
-        except KeyError:
-            raise ObjectError('Unknown site %s', self._site.name)
+        block = dataset.find_block(self._block_name(), must_find = True)
 
         try:
-            group = inventory.groups[self.group.name]
+            site = inventory.sites[self._site_name()]
         except KeyError:
-            raise ObjectError('Unknown group %s', self.group.name)
+            raise ObjectError('Unknown site %s', self._site_name())
+
+        try:
+            group = inventory.groups[self._group_name()]
+        except KeyError:
+            raise ObjectError('Unknown group %s', self._group_name())
 
         replica = block.find_replica(site)
         updated = False
         if replica is None:
             replica = BlockReplica(block, site, group, self.is_complete, self.is_custodial, self.size, self.last_update)
     
-            dataset_replica = dataset.find_replica(site, must_find = True)
+            dataset_replica = site.find_dataset_replica(dataset, must_find = True)
             dataset_replica.block_replicas.add(replica)
             block.replicas.add(replica)
             site.add_block_replica(replica)
@@ -100,6 +103,10 @@ class BlockReplica(object):
             pass
         else:
             replica.copy(self)
+            if type(self.group) is str or self.group is None:
+                # can happen if self is an unlinked clone
+                replica.group = group
+
             site.update_partitioning(replica)
             updated = True
 
@@ -108,19 +115,85 @@ class BlockReplica(object):
         else:
             return replica
 
-    def delete_from(self, inventory):
-        dataset = inventory.datasets[self._block.dataset.name]
-        block = dataset.find_block(self._block.name, must_find = True)
-        site = inventory.sites[self._site.name]
-        dataset_replica = site.find_dataset_replica(dataset)
-        replica = block.find_replica(site, must_find = True)
+    def unlink_from(self, inventory):
+        try:
+            dataset = inventory.datasets[self._dataset_name()]
+            block = dataset.find_block(self._block_name(), must_find = True)
+            site = inventory.sites[self._site_name()]
+            replica = block.find_replica(site, must_find = True)
+        except (KeyError, ObjectError):
+            return None
 
-        site.remove_block_replica(replica)
-        dataset_replica.block_replicas.remove(replica)
-        block.replicas.remove(replica)
+        replica.unlink()
+        return replica
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_blockreplica(self)
+    def unlink(self, dataset_replica = None, unlink_dataset_replica = True):
+        if dataset_replica is None:
+            dataset_replica = self._site.find_dataset_replica(self._block._dataset, must_find = True)
+
+        for site_partition in self._site.partitions.itervalues():
+            try:
+                block_replicas = site_partition.replicas[dataset_replica]
+            except KeyError:
+                continue
+
+            if block_replicas is None:
+                # site_partition contained all block replicas. It will contain all after a deletion.
+                continue
+
+            try:
+                block_replicas.remove(self)
+            except KeyError:
+                # this replica was not part of the partition
+                continue
+
+            if len(block_replicas) == 0:
+                site_partition.replicas.pop(dataset_replica)
+
+        dataset_replica.block_replicas.remove(self)
+        if unlink_dataset_replica and len(dataset_replica.block_replicas) == 0:
+            dataset_replica.unlink()
+
+        self._block.replicas.remove(self)
+
+    def write_into(self, store):
+        store.save_blockreplica(self)
+
+    def delete_from(self, store):
+        store.delete_blockreplica(self)
+
+    def _block_full_name(self):
+        if type(self._block) is str:
+            return self._block
         else:
-            store.save_blockreplica(self)
+            return self._block.full_name()
+
+    def _block_real_name(self):
+        if type(self._block) is str:
+            return self._block[self._block.find('#') + 1:]
+        else:
+            return self._block.real_name()
+
+    def _block_name(self):
+        if type(self._block) is str:
+            return Block.to_internal_name(self._block_real_name())
+        else:
+            return self._block.name
+
+    def _dataset_name(self):
+        if type(self._block) is str:
+            return self._block[:self._block.find('#')]
+        else:
+            return self._block.dataset.name
+
+    def _site_name(self):
+        if type(self._site) is str:
+            return self._site
+        else:
+            return self._site.name
+
+    def _group_name(self):
+        if type(self.group) is str or self.group is None:
+            return self.group
+        else:
+            return self.group.name

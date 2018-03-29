@@ -8,8 +8,10 @@ class Site(object):
         'storage', 'cpu', 'status',
         '_dataset_replicas', 'partitions']
 
-    TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, 5)
-    STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, 5)
+    _storage_types = ['disk', 'mss', 'buffer', 'unknown']
+    TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, len(_storage_types) + 1)
+    _statuses = ['ready', 'waitroom', 'morgue', 'unknown']
+    STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, len(_statuses) + 1)
 
     @property
     def name(self):
@@ -18,62 +20,28 @@ class Site(object):
     @staticmethod
     def storage_type_val(arg):
         if type(arg) is str:
-            arg = arg.lower()
-            if arg == 'disk':
-                return Site.TYPE_DISK
-            elif arg == 'mss':
-                return Site.TYPE_MSS
-            elif arg == 'buffer':
-                return Site.TYPE_BUFFER
-            elif arg == 'unknown':
-                return Site.TYPE_UNKNOWN
-
+            return eval('Site.TYPE_' + arg.upper())
         else:
             return arg
 
     @staticmethod
     def storage_type_name(arg):
         if type(arg) is int:
-            if arg == Site.TYPE_DISK:
-                return 'disk'
-            elif arg == Site.TYPE_MSS:
-                return 'mss'
-            elif arg == Site.TYPE_BUFFER:
-                return 'buffer'
-            elif arg == Site.TYPE_UNKNOWN:
-                return 'unknown'
-
+            return Site._storage_types[arg - 1]
         else:
             return arg
 
     @staticmethod
     def status_val(arg):
         if type(arg) is str:
-            arg = arg.lower()
-            if arg == 'ready':
-                return Site.STAT_READY
-            elif arg == 'waitroom':
-                return Site.STAT_WAITROOM
-            elif arg == 'morgue':
-                return Site.STAT_MORGUE
-            elif arg == 'unknown':
-                return Site.STAT_UNKNOWN
-
+            return eval('Site.STAT_' + arg.upper())
         else:
             return arg
 
     @staticmethod
     def status_name(arg):
         if type(arg) is int:
-            if arg == Site.STAT_READY:
-                return 'ready'
-            elif arg == Site.STAT_WAITROOM:
-                return 'waitroom'
-            elif arg == Site.STAT_MORGUE:
-                return 'morgue'
-            elif arg == Site.STAT_UNKNOWN:
-                return 'unknown'
-
+            return Site._statuses[arg - 1]
         else:
             return arg
 
@@ -113,13 +81,17 @@ class Site(object):
 
         self.host = other.host
         self.storage_type = other.storage_type
-        self.backend = other.backend
+        # Temporarily commenting out to not overwrite what Max collected
+        # self.backend = other.backend
         self.storage = other.storage
         self.cpu = other.cpu
         self.status = other.status
 
-    def unlinked_clone(self):
-        return Site(self._name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
+    def unlinked_clone(self, attrs = True):
+        if attrs:
+            return Site(self._name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
+        else:
+            return Site(self._name)
 
     def embed_into(self, inventory, check = False):
         updated = False
@@ -127,28 +99,14 @@ class Site(object):
         try:
             site = inventory.sites[self._name]
         except KeyError:
-            site = self.unlinked_clone()
+            site = Site(self._name)
+            site.copy(self)
             inventory.sites.add(site)
 
-            # Special case: automatically createing new site partitions.
-            # In write-enabled applications, inventory will add the newly created
-            # site clone into _updated_objects after this function returns.
-            # To have site partitions also added to _updated_objects *after* the
-            # site is added to the list, we need to call the update() back from within.
-
-            # Just set some value off so updated is triggered
-            site.status = self.status + 1
-            inventory.update(self)
-
-            # Now site is saved in inventory._updated_objects
-
             for partition in inventory.partitions.itervalues():
-                inventory.update(SitePartition(site, partition))
+                site.partitions[partition] = SitePartition(site, partition)
 
-            # Reporting updated = True causes the site to be added to _updated_objects twice,
-            # but this is the only way to trigger writing update by the server
             updated = True
-            # site_partitions will always be written in Site.write_into.
 
         else:
             if check and (site is self or site == self):
@@ -163,27 +121,26 @@ class Site(object):
         else:
             return site
 
-    def delete_from(self, inventory):
-        # Pop the site from the main list, and remove all replicas on the site.
-        site = inventory.sites.pop(self._name)
-        
-        for dataset in inventory.datasets.itervalues():
-            replica = dataset.find_replica(site)
-            if replica is None:
-                continue
+    def unlink_from(self, inventory):
+        try:
+            site = inventory.sites.pop(self._name)
+        except KeyError:
+            return None
 
-            dataset.replicas.remove(replica)
-            for block_replica in replica.block_replicas:
-                block_replica.block.replicas.remove(block_replica)
+        for replica in site._dataset_replicas.values():
+            replica.unlink()
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_site(self)
-        else:
-            store.save_site(self)
+        for partition in site.partitions.keys():
+            site.partitions.pop(partition)
 
-        for site_partition in self.partitions.itervalues():
-            site_partition.write_into(store, delete = delete)
+        return site
+
+    def write_into(self, store):
+        store.save_site(self)
+        # if a new site, store must create SitePartition entries with default values
+
+    def delete_from(self, store):
+        store.delete_site(self)
 
     def find_dataset_replica(self, dataset, must_find = False):
         try:
@@ -272,11 +229,14 @@ class Site(object):
                     block_replica_list.add(replica)
 
     def update_partitioning(self, replica):
-        for partition, site_partition in self.partitions.iteritems():
-            if type(replica).__name__ == 'DatasetReplica':
-                if replica not in self._dataset_replicas:
-                    return
+        if replica.site is not self:
+            raise ObjectError('%s passed to update_partitioning of %s', replica, self)
 
+        if type(replica).__name__ == 'DatasetReplica':
+            if replica not in self._dataset_replicas:
+                return
+
+            for partition, site_partition in self.partitions.iteritems():
                 try:
                     block_replicas = site_partition.replicas[replica]
                 except KeyError:
@@ -295,8 +255,7 @@ class Site(object):
                     continue
 
                 # remove block replicas that were deleted
-                deleted_replicas = block_replicas - replica.block_replicas
-                block_replicas -= deleted_replicas
+                block_replicas &= replica.block_replicas
 
                 # reevaluate existing block replicas
                 for block_replica in list(block_replicas):
@@ -319,13 +278,14 @@ class Site(object):
                 else:
                     site_partition.replicas[replica] = block_replicas
 
-            else:
-                # BlockReplica
-                dataset_replica = replica.block.dataset.find_replica(replica.site)
-                if dataset_replica not in self._dataset_replicas:
-                    # has to exist if you can find the replica from dataset
-                    return
+        else:
+            # BlockReplica
+            dataset_replica = self.find_dataset_replica(replica.block.dataset)
 
+            if dataset_replica is None:
+                return
+
+            for partition, site_partition in self.partitions.iteritems():
                 try:
                     block_replicas = site_partition.replicas[dataset_replica]
                 except KeyError:
@@ -334,46 +294,29 @@ class Site(object):
                 if partition.contains(replica):
                     if block_replicas is None or replica in block_replicas:
                         # already included
-                        pass
+                        continue
                     else:
                         block_replicas.add(replica)
                 else:
                     if block_replicas is None:
                         # this dataset replica used to be fully included but now it's not
+                        # make a copy of the full list of block replicas
                         block_replicas = set(dataset_replica.block_replicas)
                         block_replicas.remove(replica)
-                    elif replica in block_replicas:
-                        block_replicas.remove(replica)
+                    else:
+                        try:
+                            block_replicas.remove(replica)
+                        except KeyError:
+                            # not included already
+                            pass
 
                 if len(block_replicas) == 0:
                     try:
                         site_partition.replicas.pop(dataset_replica)
                     except KeyError:
                         pass
+
                 elif block_replicas == dataset_replica.block_replicas:
                     site_partition.replicas[dataset_replica] = None
                 else:
                     site_partition.replicas[dataset_replica] = block_replicas
-
-    def remove_dataset_replica(self, replica):
-        self._dataset_replicas.pop(replica.dataset)
-
-        for site_partition in self.partitions.itervalues():
-            try:
-                site_partition.replicas.pop(replica)
-            except KeyError:
-                pass
-
-    def remove_block_replica(self, replica):
-        dataset_replica = self._dataset_replicas[replica.block.dataset]
-
-        for site_partition in self.partitions.itervalues():
-            try:
-                block_replicas = site_partition.replicas[dataset_replica]
-            except KeyError:
-                continue
-
-            if block_replicas is None:
-                block_replicas = site_partition.replicas[dataset_replica] = set(dataset_replica.block_replicas)
-
-            block_replicas.remove(replica)

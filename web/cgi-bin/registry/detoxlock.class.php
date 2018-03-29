@@ -35,25 +35,29 @@ class DetoxLock {
 
   public function execute($command, $request)
   {
-    if (!in_array($command, array('lock', 'unlock', 'list', 'set')))
-      $this->send_response(400, 'BadRequest', 'Invalid command (possible values: lock, unlock, list, set)');
+    if ($command != 'list') {
+      if ($this->_read_only)
+        $this->send_response(400, 'BadRequest', 'User not authorized');
 
-    if ($command != 'list' && $this->_read_only)
-      $this->send_response(400, 'BadRequest', 'User not authorized');
+      // service is only used to authorize - should be unset now
+      unset($request['service']);
+    }
 
     $this->sanitize_request($command, $request);
 
     if ($command == 'lock') {
       $this->exec_lock($request);
     }
-    else if ($command == 'unlock') {
-      $this->exec_unlock($request);
-    }
-    else if ($command == 'list') {
-      $this->exec_list($request);
-    }
-    else if ($command == 'set') {
-      $this->exec_set($request);
+    else {
+      if ($command == 'unlock') {
+        $this->exec_unlock($request);
+      }
+      else if ($command == 'list') {
+        $this->exec_list($request);
+      }
+      else if ($command == 'set') {
+        $this->exec_set($request);
+      }
     }
   }
 
@@ -62,7 +66,7 @@ class DetoxLock {
     // we need the table to be consistent between get_data and create_lock/update_lock
     $this->lock_table(true);
 
-    $existing_data = $this->get_data($request);
+    $existing_data = $this->get_data($request); // get data for this user, with item or lockid
     
     if (count($existing_data) == 0) {
       // this is a new lock
@@ -77,8 +81,10 @@ class DetoxLock {
 
       $lockid = $this->create_lock($request['item'], $sites, $groups, $request['expires'], $comment);
 
-      if ($lockid != 0)
-        $this->send_response(200, 'OK', 'Lock created', array_values($this->get_data(array('lockid' => $lockid))));
+      if ($lockid != 0) {
+        $new_lock = $this->get_data(array('lockid' => $lockid));
+        $this->send_response(200, 'OK', 'Lock created', array_values($new_lcok));
+      }
       else
         $this->send_response(400, 'InternalError', 'Failed to create lock');
     }
@@ -108,7 +114,7 @@ class DetoxLock {
   {
     $this->lock_table(true);
 
-    $existing_data = $this->get_data($request);
+    $existing_data = $this->get_data($request); // get data for this user with item or lockid
 
     if (count($existing_data) == 0)
       $this->send_response(200, 'EmptyResult', 'No lock found');
@@ -117,14 +123,20 @@ class DetoxLock {
 
     $success = $this->disable_lock($lockids);
 
-    if ($success)
-      $this->send_response(200, 'OK', 'Lock disabled', array_values($this->get_data(array('lockid' => $lockids))));
+    if ($success) {
+      $disabled_lock = $this->get_data(array('lockid' => $lockids));
+      $this->send_response(200, 'OK', 'Lock disabled', array_values($disabled_lock));
+    }
     else
       $this->send_response(400, 'InternalError', 'Failed to update lock');
   }
 
   private function exec_list($request)
   {
+    // When using list, service=<service name> refers not to the service name of this user but to the
+    // services under which the existing locks are created.
+    // (Having $this->_sid set to this service id is somewhat confusing)
+
     $skip_disabled = true;
     if (isset($request['showall'])) {
       if ($request['showall'] == 'y')
@@ -135,11 +147,7 @@ class DetoxLock {
         $this->send_response(400, 'BadRequest', 'Only showall=y or showall=n allowed');
     }
 
-    $uname = isset($request['user']) ? $request['user'] : NULL;
-
-    $sname = isset($request['service']) ? $request['service'] : 'user';
-
-    $existing_data = $this->get_data($request, $skip_disabled, $uname, $sname);
+    $existing_data = $this->get_data($request, true, $skip_disabled); // get data with user and service names
 
     if (count($existing_data) == 0)
       $this->send_response(200, 'EmptyResult', 'No lock found');
@@ -220,7 +228,7 @@ class DetoxLock {
     $to_update = array();
     $to_unlock = array();
 
-    $existing_locks = $this->get_data(array(), true, NULL, NULL, true);
+    $existing_locks = $this->get_data(array(), false, true, true); // get all active locks of the user
 
     foreach ($data as $key => $entry) {
       $this->sanitize_request('lock', $entry);
@@ -313,14 +321,16 @@ class DetoxLock {
 
   private function sanitize_request($command, &$request)
   {
-    $allowed_fields = array('lockid', 'item', 'sites', 'groups', 'user', 'service');
+    $allowed_fields = array('lockid', 'item', 'sites', 'groups');
 
     if ($command == 'lock')
       $allowed_fields = array_merge($allowed_fields, array('expires', 'comment'));
     else if ($command == 'unlock')
       $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after'));
     else if ($command == 'list')
-      $allowed_fields = array_merge($allowed_fields, array('created_before', 'created_after', 'expires_before', 'expires_after', 'showall'));
+      $allowed_fields = array_merge($allowed_fields, array('user', 'service', 'created_before', 'created_after', 'expires_before', 'expires_after', 'showall'));
+    else if ($command != 'set')
+      $this->send_response(400, 'BadRequest', 'Invalid command (possible values: lock, unlock, list, set)');
 
     foreach (array_keys($request) as $key) {
       if (in_array($key, $allowed_fields)) {
@@ -341,7 +351,6 @@ class DetoxLock {
   private function identify_locks($lock1, $lock2)
   {
     return $lock1['item'] == $lock2['item'] &&
-      $lock1['user'] == $lock2['user'] &&
       (isset($lock1['sites']) ? $lock1['sites'] : NULL) === (isset($lock2['sites']) ? $lock2['sites'] : NULL) &&
       (isset($lock1['groups']) ? $lock1['groups'] : NULL) === (isset($lock2['groups']) ? $lock2['groups'] : NULL) &&
       ((!isset($lock1['service']) || $lock1['service'] == 'user') ? NULL : $lock1['service']) === ((!isset($lock2['service']) || $lock2['service'] == 'user') ? NULL : $lock2['service']);
@@ -360,9 +369,9 @@ class DetoxLock {
     return false;
   }
 
-  private function get_data($request = array(), $skip_disabled = true, $uname = NULL, $sname = NULL, $add_item_keys = false)
+  private function get_data($request = array(), $add_user_service = false, $skip_disabled = true, $add_item_keys = false)
   {
-    // return a big array of all locks belonging to uname and sname.
+    // return a big array of all locks belonging to uid and sid.
     // structure:
     // array(
     //   id => array('lockid' => id, 'item' => name, ...),
@@ -372,14 +381,33 @@ class DetoxLock {
     //   )
     // )
     // elements with item keys are added only if $add_item_keys is true.
+    //
+    // Note: cannot call with add_user_service = true if detox_locks table is locked
 
     $data = array();
 
-    $query = 'SELECT `detox_locks`.`id`, `detox_locks`.`item`, `detox_locks`.`sites`, `detox_locks`.`groups`,';
-    $query .= ' UNIX_TIMESTAMP(`detox_locks`.`lock_date`), UNIX_TIMESTAMP(`detox_locks`.`unlock_date`), UNIX_TIMESTAMP(`detox_locks`.`expiration_date`),';
-    $query .= ' `users`.`name`, `services`.`name`, `detox_locks`.`comment` FROM `detox_locks`';
-    $query .= ' INNER JOIN `users` ON `users`.`id` = `detox_locks`.`user_id`';
-    $query .= ' INNER JOIN `services` ON `services`.`id` = `detox_locks`.`service_id`';
+    $fields = array(
+      '`detox_locks`.`id`',
+      '`detox_locks`.`item`',
+      '`detox_locks`.`sites`',
+      '`detox_locks`.`groups`',
+      'UNIX_TIMESTAMP(`detox_locks`.`lock_date`)',
+      'UNIX_TIMESTAMP(`detox_locks`.`unlock_date`)',
+      'UNIX_TIMESTAMP(`detox_locks`.`expiration_date`)',
+      '`detox_locks`.`comment`'
+    );
+
+    if ($add_user_service) {
+      $fields[] = '`users`.`name`';
+      $fields[] = '`services`.`name`';
+    }
+
+    $query = 'SELECT ' . implode(',', $fields) . ' FROM `detox_locks`';
+    
+    if ($add_user_service) {
+      $query .= ' INNER JOIN `users` ON `users`.`id` = `detox_locks`.`user_id`';
+      $query .= ' INNER JOIN `services` ON `services`.`id` = `detox_locks`.`service_id`';
+    }
 
     $where_clause = array();
     $params = array('');
@@ -400,46 +428,49 @@ class DetoxLock {
         $this->send_response(400, 'BadRequest', 'Invalid lock id ' . $request['lockid']);
     }
     else {
-      if ($skip_disabled) {
-        $where_clause[] =  '`detox_locks`.`unlock_date` IS NULL';
+      if ($add_user_service && isset($request['user'])) {
+        if ($request['user'] != '*') { // * = match all users
+          $where_clause[] = '`users`.`name` = ?';
+          $params[0] .= 's';
+          $params[] = &$request['user'];
+        }
       }
-
-      if ($uname === NULL) {
-        $where_clause[] = '`users`.`id` = ?';
+      else {
+        $where_clause[] = '`detox_locks`.`user_id` = ?';
         $params[0] .= 'i';
         $params[] = &$this->_uid;
       }
-      else {
-        $where_clause[] = '`users`.`name` = ?';
-        $params[0] .= 's';
-        $params[] = &$uname;
+        
+      if ($add_user_service && isset($request['service'])) {
+        if ($request['service'] != '*') { // * = match all services
+          $where_clause[] = '`services`.`name` = ?';
+          $params[0] .= 's';
+          $params[] = &$request['service'];
+        }
       }
-
-      if ($sname === NULL) {
-        $where_clause[] = '`services`.`id` = ?';
+      else {
+        $where_clause[] = '`detox_locks`.`service_id` = ?';
         $params[0] .= 'i';
         $params[] = &$this->_sid;
       }
-      else {
-        $where_clause[] = '`services`.`name` = ?';
-        $params[0] .= 's';
-        $params[] = &$sname;
-      }
+
+      if ($skip_disabled)
+        $where_clause[] =  '`detox_locks`.`unlock_date` IS NULL';
 
       if (isset($request['item'])) {
-        $where_clause[] =  '`detox_locks`.`item` LIKE ?';
+        $where_clause[] =  '`detox_locks`.`item` = ?';
         $params[0] .= 's';
         $params[] = &$request['item'];
       }
 
       if (isset($request['sites'])) {
-        $where_clause[] =  '`detox_locks`.`sites` LIKE ?';
+        $where_clause[] =  '`detox_locks`.`sites` = ?';
         $params[0] .= 's';
         $params[] = &$request['sites'];
       }
 
       if (isset($request['groups'])) {
-        $where_clause[] =  '`detox_locks`.`groups` LIKE ?';
+        $where_clause[] =  '`detox_locks`.`groups` = ?';
         $params[0] .= 's';
         $params[] = &$request['groups'];
       }
@@ -477,28 +508,35 @@ class DetoxLock {
     if (count($params) > 1)
       call_user_func_array(array($stmt, "bind_param"), $params);
 
-    $stmt->bind_result($lid, $item, $sites, $groups, $created, $disabled, $expiration, $uname, $sname, $comment);
+    if ($add_user_service)
+      $stmt->bind_result($lid, $item, $sites, $groups, $created, $disabled, $expiration, $comment, $uname, $sname);
+    else
+      $stmt->bind_result($lid, $item, $sites, $groups, $created, $disabled, $expiration, $comment);
+
     $stmt->execute();
+
     while ($stmt->fetch()) {
       $datum =
         array(
               'lockid' => $lid,
-              'user' => $uname,
               'item' => $item,
-              'locked' => strftime('%Y-%m-%d %H:%M:%S', $created),
-              'expires' => strftime('%Y-%m-%d %H:%M:%S', $expiration),
+              'locked' => strftime('%Y-%m-%d %H:%M:%S UTC', $created),
+              'expires' => strftime('%Y-%m-%d %H:%M:%S UTC', $expiration),
               );
 
-      if ($sname != 'user')
-        $datum['service'] = $sname;
       if ($sites !== NULL)
         $datum['sites'] = $sites;
       if ($groups !== NULL)
         $datum['groups'] = $groups;
       if ($disabled !== NULL)
-        $datum['unlocked'] = strftime('%Y-%m-%d %H:%M:%S', $disabled);
+        $datum['unlocked'] = strftime('%Y-%m-%d %H:%M:%S UTC', $disabled);
       if ($comment !== NULL)
         $datum['comment'] = $comment;
+
+      if ($add_user_service) {
+        $datum['user'] = $uname;
+        $datum['service'] = $sname;
+      }
 
       $data[$lid] = $datum;
 
@@ -602,7 +640,7 @@ class DetoxLock {
   private function lock_table($updating)
   {
     if ($updating)
-      $query = 'LOCK TABLES `detox_locks` WRITE, `users` WRITE, `services` WRITE';
+      $query = 'LOCK TABLES `detox_locks` WRITE';
     else
       $query = 'UNLOCK TABLES';
 

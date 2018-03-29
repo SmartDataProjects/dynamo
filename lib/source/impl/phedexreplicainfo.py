@@ -2,6 +2,7 @@ import logging
 
 from dynamo.source.replicainfo import ReplicaInfoSource
 from dynamo.utils.interface.phedex import PhEDEx
+from dynamo.utils.parallel import Map
 from dynamo.dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)
@@ -28,7 +29,13 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         else:
             raise RuntimeError('Invalid input passed: ' + repr(item))
         
-        source = self._phedex.make_request('blockreplicas', options)
+        source = self._phedex.make_request('blockreplicas', options, timeout = 600)
+
+        if len(source) != 0:
+            return True
+
+        # blockreplicas has max ~20 minutes latency
+        source = self._phedex.make_request('subscriptions', options, timeout = 600)
 
         return len(source) != 0
 
@@ -46,21 +53,91 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         if len(options) == 0:
             return []
         
-        result = self._phedex.make_request('blockreplicas', ['show_dataset=y'] + options)
+        result = self._phedex.make_request('blockreplicas', ['show_dataset=y'] + options, timeout = 3600)
 
-        return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
+        block_replicas = PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
+        
+        # Also use subscriptions call which has a lower latency than blockreplicas
+        # For example, group change on a block replica at time T may not show up in blockreplicas until up to T + 15 minutes
+        # while in subscriptions it is visible within a few seconds
+        # But subscriptions call without a dataset or block takes too long
+        if dataset is None and block is None:
+            return block_replicas
+
+        result = self._phedex.make_request('subscriptions', options, timeout = 3600)
+
+        for dataset_entry in result:
+            dataset_name = dataset_entry['name']
+
+            try:
+                subscriptions = dataset_entry['subscription']
+            except KeyError:
+                pass
+            else:
+                for sub_entry in subscriptions:
+                    site_name = sub_entry['node']
+                    for replica in block_replicas:
+                        if replica.block.dataset.name == dataset_name and replica.site.name == site_name:
+                            replica.group = Group(sub_entry['group'])
+                            replica.is_custodial = (sub_entry['custodial'] == 'y')
+
+            try:
+                block_entries = dataset_entry['block']
+            except KeyError:
+                pass
+            else:
+                for block_entry in block_entries:
+                    _, block_name = Block.from_full_name(block_entry['name'])
+
+                    try:
+                        subscriptions = block_entry['subscription']
+                    except KeyError:
+                        pass
+                    else:
+                        for sub_entry in subscriptions:
+                            site_name = sub_entry['node']
+                            for replica in block_replicas:
+                                if replica.block.dataset.name == dataset_name and \
+                                        replica.block.name == block_name and \
+                                        replica.site.name == site_name:
+
+                                    replica.group = Group(sub_entry['group'])
+                                    replica.is_complete = (sub_entry['node_bytes'] == block_entry['bytes'])
+                                    replica.is_custodial = (sub_entry['custodial'] == 'y')
+                                    replica.size = sub_entry['node_bytes']
+                                    if sub_entry['time_update'] is not None:
+                                        replica.last_update = 0
+                                    else:
+                                        replica.last_update = int(sub_entry['time_update'])
+
+        return block_replicas
 
     def get_updated_replicas(self, updated_since): #override
         LOG.info('get_updated_replicas(%d)  Fetching the list of replicas from PhEDEx', updated_since)
 
-        result = self._phedex.make_request('blockreplicas', ['show_dataset=y', 'update_since=%d' % updated_since])
-        
-        return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
+        nodes = []
+        for entry in self._phedex.make_request('nodes', timeout = 600):
+            if entry['name'].endswith('_Export') or entry['name'].endswith('_Buffer'):
+                continue
+
+            nodes.append(entry['name'])
+
+        args = [('blockreplicas', ['show_dataset=y', 'update_since=%d' % updated_since, 'node=%s' % node]) for node in nodes]
+
+        parallelizer = Map()
+        parallelizer.timeout = 7200
+        results = parallelizer.execute(self._phedex.make_request, args)
+
+        all_replicas = []
+        for result in results:
+            all_replicas.extend(result)
+
+        return PhEDExReplicaInfoSource.make_block_replicas(all_replicas, PhEDExReplicaInfoSource.maker_blockreplicas)
 
     def get_deleted_replicas(self, deleted_since): #override
         LOG.info('get_deleted_replicas(%d)  Fetching the list of replicas from PhEDEx', deleted_since)
 
-        result = self._phedex.make_request('deletions', ['complete_since=%d' % deleted_since])
+        result = self._phedex.make_request('deletions', ['complete_since=%d' % deleted_since], timeout = 7200)
 
         return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_deletions)
 
@@ -76,9 +153,8 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
             )
             
             for block_entry in dataset_entry['block']:
-                name = block_entry['name']
                 try:
-                    block_name = Block.to_internal_name(name[name.find('#') + 1:])
+                    _, block_name = Block.from_full_name(block_entry['name'])
                 except ValueError: # invalid name
                     continue
 
@@ -97,6 +173,10 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         replicas = []
 
         for replica_entry in block_entry['replica']:
+            time_update = replica_entry['time_update']
+            if time_update is None:
+                time_update = 0
+
             block_replica = BlockReplica(
                 block,
                 Site(replica_entry['node']),
@@ -104,7 +184,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
                 is_complete = (replica_entry['bytes'] == block.size),
                 is_custodial = (replica_entry['custodial'] == 'y'),
                 size = replica_entry['bytes'],
-                last_update = int(replica_entry['time_update'])
+                last_update = int(time_update)
             )
 
             replicas.append(block_replica)

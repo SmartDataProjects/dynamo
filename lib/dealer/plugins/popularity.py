@@ -82,5 +82,5 @@ class PopularityHandler(BaseHandler):
         
         return datasets_to_request
 
-    def save_record(self, run_number, history, copy_list): # override
+    def postprocess(self, run_number, history, copy_list): # override
         history.save_dataset_popularity(run_number, self._datasets)

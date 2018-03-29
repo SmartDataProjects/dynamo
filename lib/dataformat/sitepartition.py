@@ -1,6 +1,6 @@
 import sys
 
-from exceptions import IntegrityError
+from exceptions import ObjectError, IntegrityError
 
 class SitePartition(object):
     """State of a partition at a site."""
@@ -40,7 +40,7 @@ class SitePartition(object):
         self.replicas = {}
 
     def __str__(self):
-        return 'SitePartition %s/%s (quota=%f TB, occupancy %s)' % (self._site.name, self._partition.name, \
+        return 'SitePartition %s/%s (quota=%f TB, occupancy %s)' % (self._site_name(), self._partition_name(), \
             self.quota * 1.e-12, ('%.2f' % self.occupancy_fraction()) if self.quota != 0. else 'inf')
 
     def __repr__(self):
@@ -48,45 +48,42 @@ class SitePartition(object):
 
     def __eq__(self, other):
         return self is other or \
-            (self._site.name == other._site.name and self._partition.name == other._partition.name and self._quota == other._quota)
+            (self._site_name() == other._site_name() and self._partition_name() == other._partition_name() and self._quota == other._quota)
 
     def __ne__(self, other):
         return not self.__eq__(other)
 
     def copy(self, other):
-        if self._site.name != other._site.name:
-            raise ObjectError('Cannot copy a partition at %s into a partition at %s', other._site.name, self._site.name)
-        if self._partition.name != other._partition.name:
-            raise ObjectError('Cannot copy a site partition of %s into a site partition of %s', other._partition.name, self._partition.name)
+        if self._site_name() != other._site_name():
+            raise ObjectError('Cannot copy a partition at %s into a partition at %s', other._site_name(), self._site_name())
+        if self._partition_name() != other._partition_name():
+            raise ObjectError('Cannot copy a site partition of %s into a site partition of %s', other._partition_name(), self._partition_name())
 
         self._quota = other._quota
 
-    def unlinked_clone(self):
-        site = self._site.unlinked_clone()
-        partition = self._partition.unlinked_clone()
-        return SitePartition(site, partition, self._quota)
+    def unlinked_clone(self, attrs = True):
+        if attrs:
+            return SitePartition(self._site_name(), self._partition_name(), self._quota)
+        else:
+            return SitePartition(self._site_name(), self._partition_name())
 
     def embed_into(self, inventory, check = False):
         try:
-            site = inventory.sites[self._site.name]
+            site = inventory.sites[self._site_name()]
         except KeyError:
-            raise ObjectError('Unknown site %s', self._site.name)
+            raise ObjectError('Unknown site %s', self._site_name())
 
         try:
-            partition = inventory.partitions[self._partition.name]
+            partition = inventory.partitions[self._partition_name()]
         except KeyError:
-            raise ObjectError('Unknown partition %s', self._partition.name)
+            raise ObjectError('Unknown partition %s', self._partition_name())
 
         updated = False
 
         try:
             site_partition = site.partitions[partition]
         except KeyError:
-            site_partition = SitePartition(site, partition)
-            site_partition.copy(self)
-            site.partitions[partition] = site_partition
-            updated = True
-
+            IntegrityError('SitePartition %s/%s must exist but does not.', site.name, partition.name)
         else:            
             if check and (site_partition is self or site_partition == self):
                 # identical object -> return False if check is requested
@@ -100,14 +97,14 @@ class SitePartition(object):
         else:
             return site_partition
 
-    def delete_from(self, inventory):
-        raise ObjectError('Deleting a single SitePartition is not allowed.')
+    def unlink_from(self, inventory):
+        raise ObjectError('Deletion of a single SitePartition is not allowed.')
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_sitepartition(self)
-        else:
-            store.save_sitepartition(self)
+    def write_into(self, store):
+        store.save_sitepartition(self)
+
+    def delete_from(self, store):
+        raise ObjectError('Deletion of a single SitePartition is not allowed.')
 
     def set_quota(self, quota):
         if self._partition.subpartitions is not None:
@@ -146,3 +143,14 @@ class SitePartition(object):
 
         return self.embed_into(inventory)
 
+    def _site_name(self):
+        if type(self._site) is str:
+            return self._site
+        else:
+            return self._site.name
+
+    def _partition_name(self):
+        if type(self._partition) is str:
+            return self._partition
+        else:
+            return self._partition.name

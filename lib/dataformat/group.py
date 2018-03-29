@@ -1,4 +1,3 @@
-from block import Block
 from exceptions import ObjectError
 
 class Group(object):
@@ -9,6 +8,9 @@ class Group(object):
 
     __slots__ = ['_name', '_olevel']
 
+    _ownership_levels = ['Dataset', 'Block']
+    OL_DATASET, OL_BLOCK = range(1, len(_ownership_levels) + 1)
+
     @property
     def name(self):
         return self._name
@@ -17,18 +19,32 @@ class Group(object):
     def olevel(self):
         return self._olevel
 
-    def __init__(self, name, olevel = Block):
+    @staticmethod
+    def olevel_val(arg):
+        if type(arg) is str:
+            return eval('Group.OL_' + arg.upper())
+        else:
+            return arg
+
+    @staticmethod
+    def olevel_name(arg):
+        if type(arg) is int:
+            return Group._ownership_levels[arg - 1]
+        else:
+            return arg
+
+    def __init__(self, name, olevel = OL_BLOCK):
         self._name = name
-        self._olevel = olevel
+        self._olevel = Group.olevel_val(olevel)
 
     def __str__(self):
-        return 'Group %s (olevel=%s)' % (self._name, self._olevel.__name__)
+        return 'Group %s (olevel=%s)' % (self._name, Group.olevel_name(self._olevel))
 
     def __repr__(self):
         return 'Group(\'%s\')' % (self._name)
 
     def __eq__(self, other):
-        return self is other or (self._name == other._name and self._olevel is other._olevel)
+        return self is other or (self._name == other._name and self._olevel == other._olevel)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -36,8 +52,11 @@ class Group(object):
     def copy(self, other):
         self._olevel = other._olevel
 
-    def unlinked_clone(self):
-        return Group(self._name, self._olevel)
+    def unlinked_clone(self, attrs = True):
+        if attrs:
+            return Group(self._name, self._olevel)
+        else:
+            return Group(self._name)
 
     def embed_into(self, inventory, check = False):
         updated = False
@@ -45,7 +64,7 @@ class Group(object):
         try:
             group = inventory.groups[self._name]
         except KeyError:
-            group = self.unlinked_clone()
+            group = Group(self._name, self._olevel)
             inventory.groups.add(group)
 
             updated = True
@@ -62,13 +81,19 @@ class Group(object):
         else:
             return group
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         if self._name is None:
             raise ObjectError('Deletion of null group not allowed')
 
         # Pop the group from the main list. All block replicas owned by the group
         # will be disowned.
-        group = inventory.groups.pop(self._name)
+        # Update to block replicas will be propagated at by calling Group.unlink_from
+        # at each inventory instance.
+        # Database update must be taken care of by persistency store delete_group().
+        try:
+            group = inventory.groups.pop(self._name)
+        except KeyError:
+            return None
 
         for dataset in inventory.datasets.itervalues():
             for replica in dataset.replicas:
@@ -76,13 +101,18 @@ class Group(object):
                     if block_replica.group == group:
                         block_replica.group = inventory.groups[None]
 
-    def write_into(self, store, delete = False):
+        return group
+
+    def write_into(self, store):
         if self._name is None:
             return
 
-        if delete:
-            store.delete_group(self)
-        else:
-            store.save_group(self)
+        store.save_group(self)
+
+    def delete_from(self, store):
+        if self._name is None:
+            raise ObjectError('Deletion of null group not allowed')
+
+        store.delete_group(self)
 
 Group.null_group = Group(None)

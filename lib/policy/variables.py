@@ -23,11 +23,13 @@ class DatasetName(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.TEXT_TYPE, attr = 'name')
 
-    def rhs_map(self, expr):
-        if not re.match('/[^/]+/[^/]+/[^/]+', expr):
+    def rhs_map(self, expr, is_re = False):
+        if not is_re and not re.match('/[^/]+/[^/]+/[^/]+', expr):
             raise InvalidExpression('Invalid dataset name ' + expr)
         
-        if '*' in expr or '?' in expr:
+        if is_re:
+            return re.compile(expr)
+        elif '*' in expr or '?' in expr:
             return re.compile(fnmatch.translate(expr))
         else:
             return expr
@@ -36,14 +38,14 @@ class DatasetStatus(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         return getattr(Dataset, 'STAT_' + expr)
 
 class DatasetOnTape(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.NUMERIC_TYPE)
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         # historic mapping
         if expr == 'NONE':
             return 0
@@ -115,32 +117,6 @@ class ReplicaIncomplete(DatasetReplicaAttr):
     
         return False
 
-class ReplicaLastUsed(DatasetReplicaAttr):
-    def __init__(self):
-        DatasetReplicaAttr.__init__(self, Attr.TIME_TYPE)
-
-        self.required_attrs = ['local_usage']
-
-    def _get(self, replica):
-        try:
-            last_used = replica.dataset.attr['local_usage'][replica.site].last_access
-        except KeyError:
-            last_used = 0
-    
-        return max(replica.last_block_created(), last_used)
-
-class ReplicaNumAccess(DatasetReplicaAttr):
-    def __init__(self):
-        DatasetReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
-
-        self.required_attrs = ['local_usage']
-
-    def _get(self, replica):
-        try:
-            return replica.dataset.attr['local_usage'][replica.site].num_access
-        except KeyError:
-            return 0
-
 class ReplicaNumFullDiskCopyCommonOwner(DatasetReplicaAttr):
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
@@ -157,25 +133,19 @@ class ReplicaNumFullDiskCopyCommonOwner(DatasetReplicaAttr):
     
         return num
 
-class ReplicaIsLastSource(DatasetReplicaAttr):
-    """True if this replica is the last full disk copy and there is an ongoing transfer."""
-
+class ReplicaEnforcerProtected(DatasetReplicaAttr):
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.BOOL_TYPE)
 
+        self.required_attrs = ['enforcer_protected_replicas']
+
     def _get(self, replica):
-        if not replica.is_full():
+        try:
+            protected_replicas = replica.dataset.attr['enforcer_protected_replicas']
+        except KeyError:
             return False
 
-        nfull = 0
-        nincomplete = 0
-        for rep in replica.dataset.replicas:
-            if rep.site.storage_type == Site.TYPE_DISK and rep.site.status == Site.STAT_READY and rep.is_full():
-                nfull += 1
-            elif not rep.is_complete():
-                nincomplete += 1
-
-        return nfull == 1 and nincomplete != 0
+        return replica in protected_replicas
 
 class ReplicaFirstBlockCreated(DatasetReplicaAttr):
     def __init__(self):
@@ -188,6 +158,31 @@ class ReplicaFirstBlockCreated(DatasetReplicaAttr):
                 value = block_replica.last_update
 
         return value
+
+class ReplicaIsLastSource(BlockReplicaAttr):
+    """True if there is an incomplete replica of the block somewhere and there is no block replica."""
+
+    def __init__(self):
+        BlockReplicaAttr.__init__(self, Attr.BOOL_TYPE)
+
+    def _get(self, replica):
+        if not replica.is_complete:
+            return False
+
+        transfer_ongoing = False
+        for other_replica in replica.block.replicas:
+            if other_replica is replica:
+                continue
+
+            if other_replica.is_complete:
+                site = other_replica.site
+                if site.storage_type == Site.TYPE_DISK and site.status == Site.STAT_READY:
+                    return False
+
+            else:
+                transfer_ongoing = True
+
+        return transfer_ongoing
 
 class ReplicaOwner(BlockReplicaAttr):
     def __init__(self):
@@ -213,18 +208,41 @@ class ReplicaIsLocked(BlockReplicaAttr):
 
         return replica.block in locked_blocks
 
+class BlockNumFullDiskCopy(BlockReplicaAttr):
+    def __init__(self):
+        BlockReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
+
+    def _get(self, replica):
+        num = 0
+        for rep in replica.block.replicas:
+            if rep.is_complete:
+                num += 1
+    
+        return num
+
+class BlockReplicaOnTape(BlockReplicaAttr):
+    def __init__(self):
+        BlockReplicaAttr.__init__(self, Attr.BOOL_TYPE)
+
+    def _get(self, replica):
+        for rep in replica.block.replicas:
+            if rep.site.storage_type == Site.TYPE_MSS and rep.is_complete:
+                return True
+
+        return False
+
 class ReplicaSiteStatus(ReplicaSiteAttr):
     def __init__(self):
         ReplicaSiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         return getattr(Site, 'STAT_' + expr)
 
 class ReplicaSiteStorageType(ReplicaSiteAttr):
     def __init__(self):
         ReplicaSiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'storage_type')
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         return getattr(Site, 'TYPE_' + expr)
 
 class SiteName(SiteAttr):
@@ -237,7 +255,7 @@ class SiteStatus(SiteAttr):
         SiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
         self.get_from_site = True
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         return getattr(Site, 'STAT_' + expr)
 
 class SiteStorageType(SiteAttr):
@@ -245,7 +263,7 @@ class SiteStorageType(SiteAttr):
         SiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'storage_type')
         self.get_from_site = True
 
-    def rhs_map(self, expr):
+    def rhs_map(self, expr, is_re = False):
         return getattr(Site, 'TYPE_' + expr)
 
 class SiteOccupancy(SiteAttr):
@@ -277,22 +295,26 @@ replica_variables = {
     'dataset.on_tape': DatasetOnTape(),
     'dataset.size': DatasetAttr(Attr.NUMERIC_TYPE, 'size'),
     'dataset.last_update': DatasetAttr(Attr.TIME_TYPE, 'last_update'),
+    'dataset.last_access': DatasetAttr(Attr.TIME_TYPE, dict_attr = 'last_access', dict_default = 0),
     'dataset.num_full_disk_copy': DatasetNumFullDiskCopy(),
     'dataset.usage_rank': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'global_usage_rank'),
     'dataset.demand_rank': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'global_demand_rank'),
     'dataset.release': DatasetRelease(),
+    'dataset.is_latest_production_release': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'latest_production_release', dict_default = False),
     'dataset.on_protected_site': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'on_protected_site', dict_default = False),
-    'replica.is_last_transfer_source': ReplicaIsLastSource(),
     'replica.size': ReplicaSize(),
     'replica.incomplete': ReplicaIncomplete(),
     'replica.last_block_created': DatasetReplicaAttr(Attr.TIME_TYPE, 'last_block_created', tuple()),
     'replica.first_block_created': ReplicaFirstBlockCreated(),
-    'replica.last_used': ReplicaLastUsed(),
-    'replica.num_access': ReplicaNumAccess(),
+    'replica.num_access': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'num_access'),
     'replica.num_full_disk_copy_common_owner': ReplicaNumFullDiskCopyCommonOwner(),
+    'replica.enforcer_protected': ReplicaEnforcerProtected(),
+    'blockreplica.is_last_transfer_source': ReplicaIsLastSource(),
     'blockreplica.last_update': BlockReplicaAttr(Attr.TIME_TYPE, 'last_update'),
     'blockreplica.owner': ReplicaOwner(),
     'blockreplica.is_locked': ReplicaIsLocked(),
+    'blockreplica.num_full_disk_copy': BlockNumFullDiskCopy(),
+    'blockreplica.on_tape': BlockReplicaOnTape(),
     'site.name': ReplicaSiteAttr(Attr.TEXT_TYPE, 'name'),
     'site.status': ReplicaSiteStatus(),
     'site.storage_type': ReplicaSiteStorageType()
