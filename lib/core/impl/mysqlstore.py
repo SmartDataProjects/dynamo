@@ -208,19 +208,17 @@ class MySQLInventoryStore(InventoryStore):
             id_group_map[group_id] = group
 
     def _load_sites(self, inventory, id_site_map, sites_tmp):
-        sql = 'SELECT s.`id`, s.`name`, s.`host`, s.`storage_type`+0, s.`backend`, s.`storage`, s.`cpu`, `status`+0 FROM `sites` AS s'
+        sql = 'SELECT s.`id`, s.`name`, s.`host`, s.`storage_type`+0, s.`backend`, `status`+0 FROM `sites` AS s'
 
         if sites_tmp is not None:
             sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = s.`id`' % sites_tmp
 
-        for site_id, name, host, storage_type, backend, storage, cpu, status in self._mysql.xquery(sql):
+        for site_id, name, host, storage_type, backend, status in self._mysql.xquery(sql):
             site = Site(
                 name,
                 host = host,
                 storage_type = storage_type,
                 backend = backend,
-                storage = storage,
-                cpu = cpu,
                 status = status
             )
 
@@ -568,8 +566,8 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query(sql, partition.name)
 
     def save_site(self, site): #override
-        fields = ('name', 'host', 'storage_type', 'backend', 'storage', 'cpu', 'status')
-        self._insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.storage, site.cpu, site.status)
+        fields = ('name', 'host', 'storage_type', 'backend', 'status')
+        self._insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.status)
 
         # For new sites, persistency requires saving site partition data with default parameters.
         # We handle missing site partition entries at load time - if a row is missing, SitePartition object with
