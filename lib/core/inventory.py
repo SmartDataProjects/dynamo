@@ -3,7 +3,7 @@ import re
 
 from dynamo.policy.condition import Condition
 from dynamo.policy.variables import replica_variables
-from dynamo.dataformat import Group, Partition, Block, ObjectError, ConfigurationError
+import dynamo.dataformat as df
 import dynamo.core.impl as persistency_impl
 
 LOG = logging.getLogger(__name__)
@@ -24,10 +24,13 @@ class ObjectRepository(object):
         self.partitions = NameKeyDict()
 
         # null group always exist
-        self.groups[None] = Group.null_group
+        self.groups[None] = df.Group.null_group
 
     def load(self):
         pass
+
+    def make_object(self, rstr):
+        return eval('df.' + rstr)
 
     def update(self, obj):
         return obj.embed_into(self)
@@ -38,7 +41,7 @@ class ObjectRepository(object):
     def delete(self, obj):
         try:
             return obj.unlink_from(self)
-        except (KeyError, ObjectError) as e:
+        except (KeyError, df.ObjectError) as e:
             # When delete is attempted on a nonexistent object or something linked to a nonexistent object
             # As this is less alarming, error message is suppressed to debug level.
             LOG.debug('%s in inventory.delete(%s)', type(e).__name__, str(obj))
@@ -78,7 +81,7 @@ class DynamoInventory(ObjectRepository):
         persistency_cls = getattr(persistency_impl, module)
         self._store = persistency_cls(config)
 
-        Block._inventory_store = self._store
+        df.Block._inventory_store = self._store
 
     def load(self, groups = (None, None), sites = (None, None), datasets = (None, None)):
         """
@@ -89,7 +92,7 @@ class DynamoInventory(ObjectRepository):
         """
         
         self.groups.clear()
-        self.groups[None] = Group.null_group
+        self.groups[None] = df.Group.null_group
         self.sites.clear()
         self.datasets.clear()
         self.partitions.clear()
@@ -143,16 +146,16 @@ class DynamoInventory(ObjectRepository):
                 
                 matches = re.match('\[(.+)\]$', condition_text)
                 if matches:
-                    partition = Partition(name)
+                    partition = df.Partition(name)
                     subpartitions[partition] = map(str.strip, matches.group(1).split(','))
                 else:
-                    partition = Partition(name, Condition(condition_text, replica_variables))
+                    partition = df.Partition(name, Condition(condition_text, replica_variables))
 
                 self.partitions.add(partition)
 
         if len(partition_names) != 0:
             LOG.error('No definition given for the following partitions: %s', partition_names)
-            raise ConfigurationError()
+            raise df.ConfigurationError()
 
         for partition, subp_names in subpartitions.iteritems():
             try:

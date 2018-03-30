@@ -10,11 +10,12 @@ class DynamoRegistry(object):
     """
 
     def __init__(self, config):
-        self.set_frontend(config.frontend.interface, config.frontend.config)
-        self.set_backend(config.backend.interface, config.backend.config)
+        self.host = config.host
 
-    def set_frontend(self, cls, config):
-        self.frontend = getattr(interface, cls)(config)
+        self.frontend = interface.RESTService(url_base = ('https://%s/registry' % self.host))
+        self.set_backend(config)
 
-    def set_backend(self, cls, config):
-        self.backend = getattr(interface, cls)(config)
+    def set_backend(self, config):
+        backend_config = config.config.clone()
+        backend_config['host'] = self.host
+        self.backend = getattr(config.interface, cls)(backend_config)

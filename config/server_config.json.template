@@ -23,24 +23,17 @@
     "partition_def_path": "$(DYNAMO_BASE)/policies/partitions.txt"
   },
   "registry": {
-    "backend": {
-      "interface": "MySQL",
-      "config": {
-        _SERVER_DB_WRITE_PARAMS_2_
-        "db": "dynamoregister",
-        "reuse_connection": false
-      },
-      "readonly_config": {
-        _SERVER_DB_READ_PARAMS_2_
-        "db": "dynamoregister",
-        "reuse_connection": false
-      }
+    "host": _REGISTRYHOST_,
+    "interface": "MySQL",
+    "config": {
+      _SERVER_DB_WRITE_PARAMS_2_
+      "db": "dynamoregister",
+      "reuse_connection": false
     },
-    "frontend": {
-      "interface": "RESTService",
-      "config": {
-        "url_base": "https://_REGISTRYHOST_/registry"
-      }
+    "readonly_config": {
+      _SERVER_DB_READ_PARAMS_2_
+      "db": "dynamoregister",
+      "reuse_connection": false
     }
   },
   "scheduler_path": "_SCHEDULERPATH_",

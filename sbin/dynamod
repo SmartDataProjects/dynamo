@@ -77,9 +77,14 @@ signal_converter.set(signal.SIGTERM)
 ## Start the server
 from dynamo.core.server import Dynamo
 
+daemon = Dynamo(config)
 try:
-    daemon = Dynamo(config)
-    daemon.run()
+    while True:
+        daemon.run()
+        if daemon.status == 'initial':
+            pass
+        else:
+            break
 
 except:
     log_exception(LOG)

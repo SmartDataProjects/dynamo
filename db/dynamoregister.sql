@@ -9,6 +9,7 @@ CREATE TABLE `action` (
   `path` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `args` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
   `status` enum('new','run','done','notfound','authfailed','failed','killed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
+  `server_id` int(10) unsigned NOT NULL DEFAULT 0,
   `exit_code` int(10) unsigned DEFAULT NULL,
   `user_id` int(10) unsigned NOT NULL,
   `type` enum('executable','deletion_policy') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
@@ -191,6 +192,24 @@ CREATE TABLE `invalidations` (
   `user_id` int(10) unsigned NOT NULL DEFAULT '0',
   `timestamp` datetime NOT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+
+
+DROP TABLE IF EXISTS `inventory_updates`;
+CREATE TABLE `invalidations` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `type` enum('update','delete') NOT NULL,
+  `object` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
+
+
+DROP TABLE IF EXISTS `servers`;
+CREATE TABLE `servers` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `hostname` varchar(32) COLLATE latin1_general_cs NOT NULL,
+  `last_heartbeat` datetime NOT NULL,
+  `status` enum('initial','starting','online','out-of-sync') NOT NULL DEFAULT 'initial',
+  PRIMARY KEY (`id`)
+) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
 
 DROP TABLE IF EXISTS `services`;
