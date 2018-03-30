@@ -57,8 +57,8 @@ class Dataset(object):
         self._name = name
         self.size = size # redundant with sum of block sizes when blocks are loaded
         self.num_files = num_files # redundant with sum of block num_files and len(files)
-        self.status = status
-        self.data_type = data_type
+        self.status = Dataset.status_val(status)
+        self.data_type = Dataset.data_type_val(data_type)
         self.software_version = software_version
         self.last_update = last_update # in UNIX time
         self.is_open = is_open
@@ -78,7 +78,9 @@ class Dataset(object):
             len(self.blocks), replica_sites)
 
     def __repr__(self):
-        return 'Dataset(\'%s\')' % self._name
+        return 'Dataset(\'%s\',%d,%d,\'%s\',\'%s\',%s,%d,%s)' % \
+            (self._name, self.size, self.num_files, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
+            repr(self.software_version), self.last_update, self.is_open)
 
     def __eq__(self, other):
         return self is other or \

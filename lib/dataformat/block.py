@@ -81,8 +81,11 @@ class Block(object):
 
         return full_name[:delim], Block.to_internal_name(full_name[delim + 1:])
 
-    def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False, last_update = 0):
-        self._name = name
+    def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False, last_update = 0, internal_name = True):
+        if internal_name:
+            self._name = name
+        else:
+            self._name = Block.to_internal_name(name)
         self._dataset = dataset
         self.size = size
         self.num_files = num_files
@@ -102,7 +105,9 @@ class Block(object):
                 replica_sites)
 
     def __repr__(self):
-        return 'Block(Block.to_internal_name(\'%s\', %s)' % (self.real_name(), repr(self._dataset))
+        # this representation cannot be directly eval'ed into a Block
+        return 'Block(\'%s\',\'%s\',%d,%d,%s,%d,False)' % \
+            (self.real_name(), self._dataset_name(), self.size, self.num_files, self.is_open, self.last_update)
 
     def __eq__(self, other):
         return self is other or \

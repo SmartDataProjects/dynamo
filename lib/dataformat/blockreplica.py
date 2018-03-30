@@ -39,7 +39,9 @@ class BlockReplica(object):
                 time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)))
 
     def __repr__(self):
-        return 'BlockReplica(block=%s, site=%s, group=%s)' % (repr(self._block), repr(self._site), repr(self.group))
+        return 'BlockReplica(\'%s\',\'%s\',\'%s\',%s,%s,%d,%d)' % \
+            (self._block_full_name(), self._site_name(), self._group_name(), \
+            self.is_complete, self.is_custodial, self.size, self.last_update)
 
     def __eq__(self, other):
         return self is other or \

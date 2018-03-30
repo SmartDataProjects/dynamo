@@ -4,8 +4,7 @@ from sitepartition import SitePartition
 class Site(object):
     """Represents a site. Owns lists of dataset and block replicas, which are organized into partitions."""
 
-    __slots__ = ['_name', 'host', 'storage_type', 'backend',
-        'storage', 'cpu', 'status',
+    __slots__ = ['_name', 'host', 'storage_type', 'backend', 'status',
         '_dataset_replicas', 'partitions']
 
     _storage_types = ['disk', 'mss', 'buffer', 'unknown']
@@ -45,33 +44,29 @@ class Site(object):
         else:
             return arg
 
-    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', storage = 0., cpu = 0., status = STAT_UNKNOWN):
+    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', status = STAT_UNKNOWN):
         self._name = name
         self.host = host
-        if type(storage_type) is str:
-            storage_type = Site.storage_type_val(storage_type)
-        self.storage_type = storage_type
+        self.storage_type = Site.storage_type_val(storage_type)
         self.backend = backend
-        self.storage = storage # in TB
-        self.cpu = cpu # in kHS06
-        self.status = status
+        self.status = Site.status_val(status)
 
         self._dataset_replicas = {} # {Dataset: DatasetReplica}
 
         self.partitions = {} # {Partition: SitePartition}
 
     def __str__(self):
-        return 'Site %s (host=%s, storage_type=%s, backend=%s, storage=%d, cpu=%f, status=%s)' % \
-            (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, self.storage, self.cpu, Site.status_name(self.status))
+        return 'Site %s (host=%s, storage_type=%s, backend=%s, status=%s)' % \
+            (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status))
 
     def __repr__(self):
-        return 'Site(\'%s\')' % self._name
+        return 'Site(\'%s\',\'%s\',\'%s\',\'%s\')' % \
+            (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status))
 
     def __eq__(self, other):
         return self is other or \
             (self._name == other._name and self.host == other.host and self.storage_type == other.storage_type and \
-            self.backend == other.backend and self.storage == other.storage and self.cpu == other.cpu and \
-            self.status == other.status)
+            self.backend == other.backend and self.status == other.status)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -83,13 +78,11 @@ class Site(object):
         self.storage_type = other.storage_type
         # Temporarily commenting out to not overwrite what Max collected
         # self.backend = other.backend
-        self.storage = other.storage
-        self.cpu = other.cpu
         self.status = other.status
 
     def unlinked_clone(self, attrs = True):
         if attrs:
-            return Site(self._name, self.host, self.storage_type, self.backend, self.storage, self.cpu, self.status)
+            return Site(self._name, self.host, self.storage_type, self.backend, self.status)
         else:
             return Site(self._name)
 

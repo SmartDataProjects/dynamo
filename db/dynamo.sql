@@ -135,7 +135,7 @@ DROP TABLE IF EXISTS `quotas`;
 CREATE TABLE `quotas` (
   `site_id` int(10) unsigned NOT NULL,
   `partition_id` int(10) unsigned NOT NULL,
-  `storage` float NOT NULL,
+  `storage` int(10) unsigned NOT NULL,
   PRIMARY KEY (`site_id`,`partition_id`),
   KEY `partitions` (`partition_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
@@ -148,8 +148,6 @@ CREATE TABLE `sites` (
   `host` varchar(256) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   `storage_type` enum('disk','mss','buffer','unknown') CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   `backend` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
-  `storage` float unsigned NOT NULL DEFAULT '0',
-  `cpu` float NOT NULL DEFAULT '0',
   `status` enum('ready','waitroom','morgue','unknown') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'ready',
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)

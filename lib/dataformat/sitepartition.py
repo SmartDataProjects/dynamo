@@ -31,7 +31,7 @@ class SitePartition(object):
         else:
             return self._quota
 
-    def __init__(self, site, partition, quota = 0.):
+    def __init__(self, site, partition, quota = 0):
         self._site = site
         self._partition = partition
         # partition quota in bytes
@@ -41,10 +41,10 @@ class SitePartition(object):
 
     def __str__(self):
         return 'SitePartition %s/%s (quota=%f TB, occupancy %s)' % (self._site_name(), self._partition_name(), \
-            self.quota * 1.e-12, ('%.2f' % self.occupancy_fraction()) if self.quota != 0. else 'inf')
+            self.quota * 1.e-12, ('%.2f' % self.occupancy_fraction()) if self.quota != 0 else 'inf')
 
     def __repr__(self):
-        return 'SitePartition(%s, %s)' % (repr(self._site), repr(self._partition))
+        return 'SitePartition(\'%s\',\'%s\',%d)' % (self._site_name(), self._partition_name(), self._quota)
 
     def __eq__(self, other):
         return self is other or \
@@ -120,9 +120,9 @@ class SitePartition(object):
     def occupancy_fraction(self, physical = True):
         quota = self.quota
 
-        if quota == 0.:
+        if quota == 0:
             return sys.float_info.max
-        elif quota < 0.:
+        elif quota < 0:
             return 0.
         else:
             total_size = 0.

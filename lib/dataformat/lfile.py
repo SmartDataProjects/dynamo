@@ -49,7 +49,7 @@ class File(object):
         return 'File %s (block=%s, size=%d)' % (self.lfn, self._block_full_name(), self.size)
 
     def __repr__(self):
-        return 'File(lfn=\'%s\', block=%s, size=%d)' % (self.lfn, repr(self._block), self.size)
+        return 'File(\'%s\',\'%s\',%d)' % (self.lfn, self._block_full_name(), self.size)
 
     def __eq__(self, other):
         return self is other or \

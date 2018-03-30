@@ -370,11 +370,13 @@ class Dynamo(object):
                 host_registry = self.other_servers[hostname] = DynamoRegistry(registry_config)
 
             try:
+                sql = 'INSERT INTO `inventory_updates` (`cmd`, `obj`) VALUES (%s, %s)'
+
                 for cmd, obj in update_commands:
                     if cmd == DynamoInventory.CMD_UPDATE:
-                        host_registry.backend.execute('INSERT INTO `inventory_updates` (`type`, `object`) VALUES (\'update\', %s)', repr(obj))
+                        host_registry.backend.execute(sql, 'update', repr(obj))
                     elif cmd == DynamoInventory.CMD_DELETE:
-                        host_registry.backend.execute('INSERT INTO `inventory_updates` (`type`, `object`) VALUES (\'delete\', %s)', repr(obj))
+                        host_registry.backend.execute(sql, 'delete', repr(obj))
             except:
                 # TODO print error
                 # Set server status to out-of-sync
@@ -387,9 +389,9 @@ class Dynamo(object):
     def read_updates(self):
         # Read updates written to the registry by other servers
         self.registry.backend.query('LOCK TABLES `inventory_updates` WRITE')
-        for cmd, objrep in self.registry.backend.xquery('SELECT `type`, `object` FROM `inventory_updates`'):
+        for cmd, objstr in self.registry.backend.xquery('SELECT `cmd`, `obj` FROM `inventory_updates` ORDER BY `id`'):
             # Create a python object from its representation string
-            obj = self.inventory.make_object(objrep)
+            obj = self.inventory.make_object(objstr)
 
             if cmd == 'update':
                 self.inventory.update(obj, write = True, changelog = CHANGELOG)

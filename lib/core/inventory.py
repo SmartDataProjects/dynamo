@@ -29,8 +29,8 @@ class ObjectRepository(object):
     def load(self):
         pass
 
-    def make_object(self, rstr):
-        return eval('df.' + rstr)
+    def make_object(self, repstr):
+        return eval('df.' + repstr)
 
     def update(self, obj):
         return obj.embed_into(self)

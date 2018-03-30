@@ -33,7 +33,7 @@ class Partition(object):
         return 'Partition %s' % self._name
 
     def __repr__(self):
-        return 'Partition(name=\'%s\')' % self._name
+        return 'Partition(\'%s\')' % self._name
 
     def __eq__(self, other):
         # only comparing names since the rest are set by configuration and are basically constants

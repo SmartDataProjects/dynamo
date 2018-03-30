@@ -197,8 +197,8 @@ CREATE TABLE `invalidations` (
 DROP TABLE IF EXISTS `inventory_updates`;
 CREATE TABLE `invalidations` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `type` enum('update','delete') NOT NULL,
-  `object` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL
+  `cmd` enum('update','delete') NOT NULL,
+  `obj` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL
 ) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
 
 
