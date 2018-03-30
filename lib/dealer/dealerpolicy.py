@@ -79,7 +79,7 @@ class DealerPolicy(object):
         site = site_partition.site
         quota = site_partition.quota
 
-        if quota <= 0.:
+        if quota <= 0:
             LOG.debug('%s has quota %f TB <= 0', site.name, quota * 1.e-12)
             return False
 
@@ -101,7 +101,7 @@ class DealerPolicy(object):
             return False
 
         occupancy_fraction = site_partition.occupancy_fraction(physical = False)
-        occupancy_fraction += additional_volume / quota
+        occupancy_fraction += float(additional_volume) / quota
 
         if occupancy_fraction > self.target_site_occupancy:
             LOG.debug('%s occupancy fraction %f > %f', site.name, occupancy_fraction, self.target_site_occupancy)
@@ -179,7 +179,7 @@ class DealerPolicy(object):
             site_partition = site.partitions[partition]
 
             projected_occupancy = site_partition.occupancy_fraction(physical = False)
-            projected_occupancy += item_size / site_partition.quota
+            projected_occupancy += float(item_size) / site_partition.quota
 
             # total projected volume must not exceed the quota
             if projected_occupancy > 1.:
@@ -230,8 +230,8 @@ class DealerPolicy(object):
 
         site_partition = destination.partitions[partition]
         occupancy_fraction = site_partition.occupancy_fraction(physical = False)
-        if site_partition.quota > 0.:
-            occupancy_fraction += item_size / site_partition.quota
+        if site_partition.quota > 0:
+            occupancy_fraction += float(item_size) / site_partition.quota
 
         if occupancy_fraction > 1.:
             LOG.debug('Cannot copy %s to %s because destination is full.', item_name, destination.name)

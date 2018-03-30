@@ -371,14 +371,14 @@ class Detox(object):
                     candidate_sites = set(r.site for r in delete_candidates.iterkeys())
 
                     # fraction of protected data at each candidate site
-                    protected_fraction = dict((s, 0. if quotas[s] > 0. else 1.) for s in candidate_sites)
+                    protected_fraction = dict((s, 0. if quotas[s] > 0 else 1.) for s in candidate_sites)
 
                     for replica, matches in protected.iteritems():
                         if replica.site not in protected_fraction:
                             continue
 
                         quota = quotas[replica.site]
-                        if quota <= 0.:
+                        if quota <= 0:
                             continue
 
                         for condition_id, block_replicas in matches.iteritems():
@@ -412,7 +412,7 @@ class Detox(object):
                         quota = quotas[site]
     
                         # have we deleted more than allowed in a single iteration?
-                        if quota > 0. and deleted_volume / quota > self.deletion_per_iteration:
+                        if quota > 0 and deleted_volume / quota > self.deletion_per_iteration:
                             break
 
                     LOG.debug('Deleting replica: %s', str(replica))

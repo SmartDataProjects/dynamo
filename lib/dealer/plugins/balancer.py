@@ -54,7 +54,7 @@ class BalancingHandler(BaseHandler):
                 continue
 
             protections = [(ds_name, size, reason) for ds_name, size, decision, reason in decisions if decision == 'protect']
-            protected_fraction = sum(size for _, size, _ in protections) / quota
+            protected_fraction = float(sum(size for _, size, _ in protections)) / quota
 
             LOG.debug('Site %s protected fraction %f', site.name, protected_fraction)
 
@@ -128,7 +128,7 @@ class BalancingHandler(BaseHandler):
             request.append(dataset)
 
             size = dataset.size
-            protected_fractions[maxsite] -= size / maxsite.partitions[partition].quota
+            protected_fractions[maxsite] -= float(size) / maxsite.partitions[partition].quota
             total_size += size
 
         return request

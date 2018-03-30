@@ -243,7 +243,7 @@ class MySQLInventoryStore(InventoryStore):
                 continue
 
             partition = inventory.partitions[partition_name]
-            site.partitions[partition].set_quota(storage * 1.e+12)
+            site.partitions[partition].set_quota(int(storage * 1.e+12))
 
     def _load_datasets(self, inventory, id_dataset_map, datasets_tmp):
         sql = 'SELECT d.`id`, d.`name`, d.`size`, d.`num_files`, d.`status`+0, d.`data_type`+0, s.`cycle`, s.`major`, s.`minor`, s.`suffix`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
