@@ -39,10 +39,10 @@
         "config": {
           "enforcer": {
             "max_dataset_size": 50.0,
-            "rules": "$(DYNAMO_BASE)/policies/common/enforcer_rules_relval.json"
+            "policy": "$(DYNAMO_BASE)/policies/common/enforcer_rules_relval.json"
           }
         }
-      },
+      }
     },
     "attrs": {},
     "target_sites": ["T1_*_Disk", "T2_*"],

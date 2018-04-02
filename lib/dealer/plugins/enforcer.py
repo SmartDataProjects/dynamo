@@ -18,8 +18,6 @@ class EnforcerHandler(BaseHandler):
         self.interface = EnforcerInterface(config.enforcer)
 
     def get_requests(self, inventory, history, policy): # override
-        partition = inventory.partitions[policy.partition_name]
-
-        requests = self.interface.report_back(inventory, partition)
+        requests = self.interface.report_back(inventory)
 
         return requests

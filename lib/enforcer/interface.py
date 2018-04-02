@@ -31,21 +31,29 @@ class EnforcerInterface(object):
     """
 
     def __init__(self, config):
-        # If True, report_back returns a list to be fed to RRD writing
-        self.write_rrds = config.get('write_rrds', False)
-        # Not considering datasets larger than this value.
-        self.max_dataset_size = config.max_dataset_size * 1.e+12
+        policy_conf = Configuration(config.policy)
+
+        # Partition to work in
+        self.partition_name = policy_conf.partition
+
         # Enforcer policies
         self.rules = {}
-        for rule_name, rule in Configuration(config.rules).iteritems():
+        for rule_name, rule in policy_conf.rules.iteritems():
             self.rules[rule_name] = EnforcerRule(rule)
 
-    def report_back(self, inventory, partition):
+        # If True, report_back returns a list to be fed to RRD writing
+        self.write_rrds = config.get('write_rrds', False)
+
+        # Not considering datasets larger than this value.
+        self.max_dataset_size = config.get('max_dataset_size', 0.) * 1.e+12
+
+    def report_back(self, inventory):
         """
         The main enforcer logic for the replication part.
         @param inventory        Current status of replica placement across system
-        @param partition        Which partition do we want to consider?
         """
+        
+        partition = inventory.partitions[self.partition_name]
         
         product = []
 
@@ -127,11 +135,11 @@ class EnforcerInterface(object):
 
     def get_destination_sites(self, rule_name, inventory, partition):
         rule = self.rules[rule_name]
-        return self._get_sites(self, rule.destination_sites, inventory, partition)
+        return self._get_sites(rule.destination_sites, inventory, partition)
 
     def get_source_sites(self, rule_name, inventory, partition):
         rule = self.rules[rule_name]
-        return self._get_sites(self, rule.source_sites, inventory, partition)
+        return self._get_sites(rule.source_sites, inventory, partition)
 
     def _get_sites(self, conditions, inventory, partition):
         sites = set()

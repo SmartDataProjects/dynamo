@@ -13,11 +13,10 @@ class EnforcedProtectionTagger(object):
     produces = ['enforcer_protected_replicas']
 
     def __init__(self, config):
-        self.partition_name = config.partition
         self.enforcer = EnforcerInterface(config.enforcer)
 
     def load(self, inventory):
-        partition = inventory.partitions[self.partition_name]
+        partition = inventory.partitions[self.enforcer.partition_name]
 
         for rule_name, rule in self.enforcer.rules.iteritems():
             target_replicas = collections.defaultdict(set) # {dataset: set(replicas)}
