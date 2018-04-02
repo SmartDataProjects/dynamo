@@ -4,8 +4,27 @@ import fnmatch
 import random
 
 from dynamo.dataformat import Configuration
+from dynamo.policy.condition import Condition
+from dynamo.policy.variables import replica_variables, site_variables
 
 LOG = logging.getLogger(__name__)
+
+class EnforcerRule(object):
+    def __init__(self, config):
+        self.num_copies = config.num_copies
+
+        self.destination_sites = [] # list of ORed conditions
+        for cond_text in config.destinations:
+            self.destination_sites.append(Condition(cond_text, site_variables))
+
+        self.source_sites = [] # list of ORed conditions
+        for cond_text in config.sources:
+            self.source_sites.append(Condition(cond_text, site_variables))
+        
+        self.target_replicas = [] # list of ORed conditions
+        for cond_text in config.replicas:
+            self.target_replicas.append(Condition(cond_text, replica_variables))
+
 
 class EnforcerInterface(object):
     """
@@ -19,7 +38,9 @@ class EnforcerInterface(object):
         # Not considering datasets larger than this value.
         self.max_dataset_size = config.max_dataset_size * 1.e+12
         # Enforcer policies
-        self.rules = Configuration(config.rules)
+        self.rules = {}
+        for rule_name, rule in Configuration(config.rules).iteritems():
+            self.rules[rule_name] = EnforcerRule(rule)
 
     def report_back(self, inventory, partition):
         """
@@ -36,34 +57,28 @@ class EnforcerInterface(object):
             sites_considered = set()
             sites_others = set()
 
-            target_num = rule['num_copies']
+            target_num = rule.num_copies
 
             already_there = 0
             still_missing = 0
 
-            site_patterns = []
-            for pattern in rule['sites']:
-                site_patterns.append(re.compile(fnmatch.translate(pattern)))
-
-            dataset_patterns = []
-            for pattern in rule['datasets']:
-                dataset_patterns.append(re.compile(fnmatch.translate(pattern)))
-
             for site in inventory.sites.values():
-                quota = site.partitions[partition].quota
+                site_partition = site.partitions[partition]
+                quota = site_partition.quota
 
                 LOG.debug('Site %s quota %f TB', site.name, quota * 1.e-12)
 
-                if quota <= 0:
-                    # if the site has 0 or infinite quota, don't consider in enforcer
-                    continue
-
-                for pattern in site_patterns:
-                    if pattern.match(site.name):
+                for condition in rule.destination_sites:
+                    if condition.match(site_partition):
+                        LOG.debug('Site %s matches the destination spec', site.name)
                         sites_considered.add(site)
                         break
-                else:
-                    sites_others.add(site)
+                    
+                for condition in rule.source_sites:
+                    if condition.match(site_partition):
+                        LOG.debug('Site %s matches the source spec', site.name)
+                        sites_others.add(site)
+                        break
 
             if target_num > len(sites_considered):
                 # This is never fulfilled - cap
@@ -86,10 +101,11 @@ class EnforcerInterface(object):
                     if dataset.size > self.max_dataset_size:
                         continue
 
-                    for pattern in dataset_patterns:
-                        if pattern.match(dataset.name):
+                    for condition in rule.target_replicas:
+                        if condition.match(replica):
                             break
                     else:
+                        # no condition matched
                         continue
 
                     num_considered = 0
