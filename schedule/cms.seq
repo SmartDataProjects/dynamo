@@ -53,6 +53,7 @@ WAIT 14400
 [SEQUENCE dealer]
 | <update_popularity> --config /etc/dynamo/popularity_update_config.json --globalqueue
 ^ <dealer> --config /etc/dynamo/dealer_config.json
+^ <dealer> --config /etc/dynamo/dealer_relval_config.json
 WAIT 1800
 
 [SEQUENCE dealermon]
