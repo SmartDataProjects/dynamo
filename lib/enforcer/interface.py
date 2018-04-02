@@ -1,6 +1,4 @@
 import logging
-import re
-import fnmatch
 import random
 
 from dynamo.dataformat import Configuration
@@ -54,42 +52,24 @@ class EnforcerInterface(object):
         for rule_name, rule in self.rules.iteritems():
             # split up sites into considered ones and others
 
-            sites_considered = set()
-            sites_others = set()
+            destination_sites = self.get_destination_sites(rule_name, inventory, partition)
+            source_sites = self.get_source_sites(rule_name, inventory, partition)
 
             target_num = rule.num_copies
 
             already_there = 0
             still_missing = 0
 
-            for site in inventory.sites.values():
-                site_partition = site.partitions[partition]
-                quota = site_partition.quota
-
-                LOG.debug('Site %s quota %f TB', site.name, quota * 1.e-12)
-
-                for condition in rule.destination_sites:
-                    if condition.match(site_partition):
-                        LOG.debug('Site %s matches the destination spec', site.name)
-                        sites_considered.add(site)
-                        break
-                    
-                for condition in rule.source_sites:
-                    if condition.match(site_partition):
-                        LOG.debug('Site %s matches the source spec', site.name)
-                        sites_others.add(site)
-                        break
-
-            if target_num > len(sites_considered):
+            if target_num > len(destination_sites):
                 # This is never fulfilled - cap
-                target_num = len(sites_considered)
+                target_num = len(destination_sites)
 
             checked_datasets = set()
 
-            # Create a request for datasets that has at least one copy in sites_others and less than
-            # [target_num] copy in sites_considered
+            # Create a request for datasets that has at least one copy in source_sites and less than
+            # [target_num] copy in destination_sites
 
-            for site in sites_others:
+            for site in source_sites:
                 for replica in site.partitions[partition].replicas.iterkeys():
                     dataset = replica.dataset
 
@@ -114,7 +94,7 @@ class EnforcerInterface(object):
                         if other_replica is replica:
                             continue
 
-                        if other_replica.site in sites_considered:
+                        if other_replica.site in destination_sites:
                             num_considered += 1
                             if num_considered == target_num:
                                 already_there += 1
@@ -124,7 +104,7 @@ class EnforcerInterface(object):
                         # num_considered did not hit target_num
                         # create a request
 
-                        site_candidates = sites_considered - set(r.site for r in dataset.replicas if r.is_full())
+                        site_candidates = destination_sites - set(r.site for r in dataset.replicas if r.is_full())
                         if len(site_candidates) != 0:
                             # can be 0 if the dataset has copies in other partitions
 
@@ -144,3 +124,24 @@ class EnforcerInterface(object):
             random.shuffle(product)
 
         return product
+
+    def get_destination_sites(self, rule_name, inventory, partition):
+        rule = self.rules[rule_name]
+        return self._get_sites(self, rule.destination_sites, inventory, partition)
+
+    def get_source_sites(self, rule_name, inventory, partition):
+        rule = self.rules[rule_name]
+        return self._get_sites(self, rule.source_sites, inventory, partition)
+
+    def _get_sites(self, conditions, inventory, partition):
+        sites = set()
+
+        for site in inventory.sites.values():
+            site_partition = site.partitions[partition]
+                
+            for condition in conditions:
+                if condition.match(site_partition):
+                    sites.add(site)
+                    break
+
+        return sites

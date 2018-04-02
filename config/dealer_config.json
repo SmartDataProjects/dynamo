@@ -52,7 +52,7 @@
         "config": {
           "enforcer": {
             "max_dataset_size": 50.0,
-            "rules": "$(DYNAMO_BASE)/policies/common/enforcer_rules.json"
+            "rules": "$(DYNAMO_BASE)/policies/common/enforcer_rules_physics.json"
           }
         }
       },

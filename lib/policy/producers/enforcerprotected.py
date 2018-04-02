@@ -1,7 +1,7 @@
-import re
-import fnmatch
+import collections
 
 from dynamo.dataformat import Configuration
+from dynamo.enforcer.interface import EnforcerInterface
 
 class EnforcedProtectionTagger(object):
     """
@@ -13,34 +13,32 @@ class EnforcedProtectionTagger(object):
     produces = ['enforcer_protected_replicas']
 
     def __init__(self, config):
-        self.policy = Configuration(config.policy)
+        self.partition_name = config.partition
+        self.enforcer = EnforcerInterface(config.enforcer)
 
     def load(self, inventory):
-        for rule_name, rule in self.policy.iteritems():
-            site_patterns = []
-            for pattern in rule['sites']:
-                site_patterns.append(re.compile(fnmatch.translate(pattern)))
+        partition = inventory.partitions[self.partition_name]
 
-            dataset_patterns = []
-            for pattern in rule['datasets']:
-                dataset_patterns.append(re.compile(fnmatch.translate(pattern)))
+        for rule_name, rule in self.enforcer.rules.iteritems():
+            target_replicas = collections.defaultdict(set) # {dataset: set(replicas)}
+            target_sites = self.enforcer.get_destination_sites(rule_name, inventory, partition)
 
-            for dataset in inventory.datasets.itervalues():
-                for pattern in dataset_patterns:
-                    if pattern.match(dataset.name):
-                        break
-                else:
-                    continue
+            for site in target_sites:
+                site_partition = site.partitions[partition]
 
-                replicas_in_question = set()
-                for replica in dataset.replicas:
-                    for pattern in site_patterns:
-                        if pattern.match(replica.site.name):
-                            replicas_in_question.add(replica)
+                for replica in site_partition.replicas.iterkeys():
+                    for condition in rule.target_replicas:
+                        if condition.match(replica):
                             break
+                    else:
+                        # no condition matched
+                        continue
 
-                if len(replicas_in_question) <= rule['num_copies']:
+                    target_replicas[replica.dataset].add(replica)
+
+            for dataset, replicas in target_replicas.iteritems():
+                if len(replicas) <= rule.num_copies:
                     try:
-                        dataset.attr['enforcer_protected_replicas'].update(replicas_in_question)
+                        dataset.attr['enforcer_protected_replicas'].update(replicas)
                     except KeyError:
-                        dataset.attr['enforcer_protected_replicas'] = replicas_in_question
+                        dataset.attr['enforcer_protected_replicas'] = replicas
