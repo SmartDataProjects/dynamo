@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `system`;
-
 CREATE TABLE `system` (
   `lock_host` varchar(256) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT '',
   `lock_process` int(11) NOT NULL DEFAULT '0',

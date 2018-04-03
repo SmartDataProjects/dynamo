@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `inventory_updates`;
-
 CREATE TABLE `invalidations` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `cmd` enum('update','delete') NOT NULL,

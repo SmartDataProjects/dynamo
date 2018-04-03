@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `dataset_accesses`;
-
 CREATE TABLE `dataset_accesses` (
   `dataset_id` int(10) unsigned NOT NULL,
   `site_id` int(10) unsigned NOT NULL,

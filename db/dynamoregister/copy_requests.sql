@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `copy_requests`;
-
 CREATE TABLE `copy_requests` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `group` varchar(32) NOT NULL,

@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `activity_lock`;
-
 CREATE TABLE `activity_lock` (
   `user_id` int(10) unsigned NOT NULL,
   `service_id` int(10) unsigned NOT NULL,

@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `quotas`;
-
 CREATE TABLE `quotas` (
   `site_id` int(10) unsigned NOT NULL,
   `partition_id` int(10) unsigned NOT NULL,

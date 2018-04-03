@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `dataset_requests`;
-
 CREATE TABLE `dataset_requests` (
   `id` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `dataset_id` int(10) unsigned NOT NULL,

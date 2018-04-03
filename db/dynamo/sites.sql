@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `sites`;
-
 CREATE TABLE `sites` (
   `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,

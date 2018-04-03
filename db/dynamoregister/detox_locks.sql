@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `detox_locks`;
-
 CREATE TABLE `detox_locks` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `item` varchar(512) COLLATE latin1_general_cs NOT NULL,

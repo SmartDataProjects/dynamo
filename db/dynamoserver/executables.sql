@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `executables`;
-
 CREATE TABLE `executables` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `write_request` tinyint(1) NOT NULL,

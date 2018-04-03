@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `stage_queue`;
-
 CREATE TABLE `stage_queue` (
   `file` varchar(512) COLLATE latin1_general_cs NOT NULL,
   `site` varchar(32) COLLATE latin1_general_cs NOT NULL,

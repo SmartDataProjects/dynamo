@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `sites`;
-
 CREATE TABLE `sites` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(32) NOT NULL,

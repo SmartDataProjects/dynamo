@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `blocks`;
-
 CREATE TABLE `blocks` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `dataset_id` int(10) unsigned NOT NULL DEFAULT '0',

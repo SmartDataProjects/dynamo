@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `sites`;
-
 CREATE TABLE `sites` (
   `site_id` int(10) unsigned NOT NULL,
   `status` enum('ready','waitroom','morgue','unknown') NOT NULL,

@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `deletion_requests`;
-
 CREATE TABLE `deletion_requests` (
   `id` int(10) NOT NULL,
   `run_id` int(10) NOT NULL,

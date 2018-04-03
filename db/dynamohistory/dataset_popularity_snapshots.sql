@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `dataset_popularity_snapshots`;
-
 CREATE TABLE `dataset_popularity_snapshots` (
   `run_id` int(10) unsigned NOT NULL,
   `dataset_id` int(10) unsigned NOT NULL,

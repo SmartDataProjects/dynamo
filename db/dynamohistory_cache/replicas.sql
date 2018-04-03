@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `replicas`;
-
 CREATE TABLE `replicas` (
   `site_id` int(10) unsigned NOT NULL,
   `dataset_id` int(10) unsigned NOT NULL,

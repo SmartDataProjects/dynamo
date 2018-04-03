@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `copy_requests`;
-
 CREATE TABLE `copy_requests` (
   `id` int(10) NOT NULL,
   `run_id` int(10) NOT NULL,

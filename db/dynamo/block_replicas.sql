@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `block_replicas`;
-
 CREATE TABLE `block_replicas` (
   `block_id` bigint(20) unsigned NOT NULL,
   `site_id` int(10) unsigned NOT NULL,

@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `servers`;
-
 CREATE TABLE `servers` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `hostname` varchar(32) COLLATE latin1_general_cs NOT NULL,

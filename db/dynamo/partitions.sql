@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `partitions`;
-
 CREATE TABLE `partitions` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(16) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,

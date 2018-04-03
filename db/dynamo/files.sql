@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `files`;
-
 CREATE TABLE `files` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `block_id` bigint(20) unsigned NOT NULL DEFAULT '0',

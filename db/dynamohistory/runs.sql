@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `runs`;
-
 CREATE TABLE `runs` (
   `id` int(10) NOT NULL AUTO_INCREMENT,
   `operation` enum('copy','deletion','copy_test','deletion_test') NOT NULL,

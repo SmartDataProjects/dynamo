@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `users`;
-
 CREATE TABLE `users` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(64) COLLATE latin1_general_cs NOT NULL,

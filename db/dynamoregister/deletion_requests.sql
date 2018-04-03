@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `deletion_requests`;
-
 CREATE TABLE `deletion_requests` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `user_id` int(10) unsigned NOT NULL,

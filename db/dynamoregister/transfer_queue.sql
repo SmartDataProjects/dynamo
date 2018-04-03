@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `transfer_queue`;
-
 CREATE TABLE `transfer_queue` (
   `reqid` int(10) unsigned NOT NULL,
   `file` varchar(512) COLLATE latin1_general_cs NOT NULL,

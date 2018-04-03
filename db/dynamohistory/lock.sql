@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `lock`;
-
 CREATE TABLE `lock` (
   `lock_host` varchar(256) NOT NULL DEFAULT '',
   `lock_process` int(11) NOT NULL DEFAULT '0',

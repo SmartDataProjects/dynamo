@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `deletion_queue`;
-
 CREATE TABLE `deletion_queue` (
   `reqid` int(10) unsigned NOT NULL DEFAULT '0',
   `file` varchar(512) COLLATE latin1_general_cs NOT NULL,

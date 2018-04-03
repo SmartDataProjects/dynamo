@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `replicas_snapshot_usage`;
-
 CREATE TABLE `replicas_snapshot_usage` (
   `run_id` int(11) unsigned NOT NULL,
   `timestamp` datetime NOT NULL,

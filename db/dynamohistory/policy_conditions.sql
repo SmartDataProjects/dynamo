@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `policy_conditions`;
-
 CREATE TABLE `policy_conditions` (
   `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `text` varchar(512) COLLATE latin1_general_cs NOT NULL,

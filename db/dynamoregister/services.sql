@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `services`;
-
 CREATE TABLE `services` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(32) COLLATE latin1_general_cs NOT NULL,

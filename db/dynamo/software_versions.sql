@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS `software_versions`;
-
 CREATE TABLE `software_versions` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `cycle` int(10) unsigned NOT NULL,
