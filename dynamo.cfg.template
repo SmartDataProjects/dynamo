@@ -29,8 +29,14 @@ email=
 # Server persistency store technology (leave blank if not running store)
 store=mysql
 
-# Store configuration to be passed to store_technology/generate_store_conf.py
+# Store configuration to be passed to $store/generate_store_conf.py
 store_conf={"server": "dynamosrv", "reader": "dynamoread"}
+
+# Server manager technology
+manager=mysql
+
+# Server manager configuration to be passed to $manager/generate_manager_conf.py
+manager_conf={"master_host": "localhost", "user": "dynamosrv"}
 
 # Whether to run a web interface
 webserver=true

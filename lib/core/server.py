@@ -12,11 +12,10 @@ import threading
 import Queue
 
 from dynamo.core.inventory import DynamoInventory
-from dynamo.core.manager.base import ServerManager
 from dynamo.utils.signaling import SignalBlocker
 import dynamo.utils.interface as interface
 import dynamo.core.manager.impl as manager_impl
-from dynamo.core.manager.base import OutOfSyncError
+from dynamo.core.manager.base import ServerManager
 from dynamo.dataformat.exceptions import log_exception
 
 LOG = logging.getLogger(__name__)
@@ -46,9 +45,9 @@ class Dynamo(object):
         self.inventory_config = config.inventory.clone()
 
         ## Create the server manager
-        manager_config = config.manager.clone()
+        manager_config = config.manager.config.clone()
         manager_config['has_store'] = ('persistency' in self.inventory_config)
-        self.manager = DynamoServerManager(manager_config)
+        self.manager = getattr(manager_impl, config.manager.module)(manager_config)
 
         if self.manager.has_store:
             self.manager.advertise_store(self.inventory_config.persistency)

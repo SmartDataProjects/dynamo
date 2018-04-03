@@ -19,6 +19,8 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Schedule routine sequences of Dynamo executables.')
 parser.add_argument('sequence', metavar = 'PATH', help = 'Sequence file.')
+parser.add_argument('work_dir', metavar = 'PATH', help = 'Work area.')
+parser.add_argument('auth_user', metavar = 'USER', help = 'Executable user name.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -61,16 +63,10 @@ try:
 except OSError:
     LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 
-## Create the registry
-from dynamo.core.registry import DynamoRegistry
-
-registry = DynamoRegistry(config.registry)
-
-result = registry.backend.query('SELECT `id` FROM `users` WHERE `name` = %s', config.scheduler_user)
-if len(result) == 0:
-    raise RuntimeError('User %s not found' % config.scheduler_user)
-
-user_id = result[0]
+## Create the server manager
+from dynamo.core.manager.base import ServerManager
+import dynamo.core.manager.impl as manager_impl
+manager = getattr(manager_impl, config.manager.module)(config.manager.config)
 
 ## Load the sequences
 # commands
@@ -109,22 +105,9 @@ with open(args.sequence) as source:
             for match in matches:
                 executable = executable.replace('$(%s)' % match, os.environ[match])
 
-            try:
-                with open(executable) as source:
-                    checksum = hashlib.md5(source.read()).hexdigest()
-            except:
-                LOG.error('Could not open executable %s (line %d).', executable, iline)
+            if write_enabled and not manager.check_write_auth(title, args.auth_user, executable):
+                LOG.error('Executable %s (%s) is not authorized for server write operation (line %d).', title, executable, iline)
                 sys.exit(1)
-
-            if write_enabled:
-                # Is it really write-enabled?
-                sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = UNHEX(%s)'
-                for auth_user_id in registry.backend.query(sql, title, checksum):
-                    if auth_user_id == 0 or auth_user_id == user_id:
-                        break
-                else:
-                    LOG.error('Executable %s (%s) is not authorized for server write operation (line %d).', title, executable, iline)
-                    sys.exit(1)
 
             LOG.debug('Define executable %s = %s (write enabled: %d) (line %d)', title, executable, write_enabled, iline)
 
@@ -196,7 +179,7 @@ if len(sequences) == 0:
 
 ## Create the executable directory and copy the scripts over
 for name, sequence in sequences.iteritems():
-    work_dir = config.scheduler_path + '/' + name
+    work_dir = args.work_dir + '/' + name
     try:
         shutil.rmtree(work_dir)
     except OSError:
@@ -232,9 +215,9 @@ for name, sequence in sequences.iteritems():
             os.symlink(work_dir + '/log.out', path + '/_stdout')
             os.symlink(work_dir + '/log.err', path + '/_stderr')
 
-LOG.info('Created working directories under %s.', config.scheduler_path)
+LOG.info('Created working directories under %s.', args.work_dir)
 
-def loop_sequence(sequence_name, sequence, user_id, config):
+def loop_sequence(sequence_name, sequence):
     ## Ignore SIGINT - see note above proc.terminate() at the end of the file
     ## We will react to SIGTERM by raising KeyboardInterrupt
     from dynamo.utils.signaling import SignalConverter
@@ -247,14 +230,8 @@ def loop_sequence(sequence_name, sequence, user_id, config):
     log_format = '%(asctime)s:%(levelname)s:{sequence} ({pid}): %(message)s'.format(sequence = sequence_name, pid = os.getpid())
     LOG.handlers[0].setFormatter(logging.Formatter(fmt = log_format))
 
-    ## Create a registry handle - we'll be submitting execution requests from the backend
-    registry = DynamoRegistry(config.registry)
-
-    ## SQL templates
-    insert_sql = 'INSERT INTO `action` (`user_id`, `write_request`, `title`, `path`, `args`)'
-    insert_sql += ' VALUES ({user_id}, %s, %s, %s, %s)'.format(user_id = user_id)
-
-    poll_sql = 'SELECT `status` FROM `action` WHERE `id` = %s'
+    ## Re-init the server manager (cannot share database connections among processes)
+    manager = getattr(manager_impl, config.manager.module)(config.manager.config)
 
     work_dir = config.scheduler_path + '/' + sequence_name
     title = ''
@@ -299,20 +276,15 @@ def loop_sequence(sequence_name, sequence, user_id, config):
     
                     # Submit the task. Actual executable is in work_dir/title
                     path = '%s/%s' % (work_dir, title)
-                    task_id = registry.backend.query(insert_sql, write_request, title, path, arguments)
+                    
+                    task_id = manager.schedule_executable(title, path, arguments, args.auth_user, write_request)
     
                     # Poll for task completion
                     while True:
                         time.sleep(1)
-                        result = registry.backend.query(poll_sql, task_id)
-                        if len(result) == 0:
-                            # len(result) == 0 -> entry disappeared!?
-                            status = 'unknown'
+                        status = manager.get_executable_status(task_id)
+                        if status not in [ServerManager.EXC_NEW, ServerManager.EXC_RUN]:
                             break
-                        else:
-                            status = result[0]
-                            if status not in ['new', 'run']:
-                                break
 
                     task_id = 0
     
@@ -328,9 +300,9 @@ def loop_sequence(sequence_name, sequence, user_id, config):
                     except:
                         pass
     
-                    LOG.info('Finished %s with (status: %s)', title, status)
+                    LOG.info('Finished %s with (status: %s)', title, ServerManager.executable_status_name(status))
 
-                    if criticality != PASS and status != 'done':
+                    if criticality != PASS and status != ServerManager.EXC_DONE:
                         msg = MIMEText('Message from dynamo-scheduled@%s:\nExecutable %s of sequence %s failed.' % \
                             (socket.gethostname(), title, sequence_name))
 
@@ -366,7 +338,7 @@ def loop_sequence(sequence_name, sequence, user_id, config):
     except KeyboardInterrupt:
         if task_id != 0:
             # Task aborted - update the status from the backend so Dynamo picks it up
-            registry.backend.query('UPDATE `action` SET `status` = \'killed\' WHERE `id` = %s', task_id)
+            manager.set_executable_status(task_id, ServerManager.EXC_KILLED)
             LOG.info('Process interrupted. aborting task %s.', title)
         else:
             LOG.info('Process interrupted.')
@@ -381,7 +353,7 @@ try:
     ## Create a process for each sequence and start as daemons
     processes = []
     for name, sequence in sequences.iteritems():
-        proc = multiprocessing.Process(target = loop_sequence, name = name, args = (name, sequence, user_id, config))
+        proc = multiprocessing.Process(target = loop_sequence, name = name, args = (name, sequence))
         proc.daemon = True
         proc.start()
         LOG.info('Started sequence %s.', name)

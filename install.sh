@@ -6,10 +6,10 @@ export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
 
 ### Read the config ###
 
-if ! [ -e $SOURCE/config.sh ]
+if ! [ -e $SOURCE/dynamo.cfg ]
 then
   echo
-  echo "$SOURCE/config.sh does not exist."
+  echo "$SOURCE/dynamo.cfg does not exist."
   exit 1
 fi
 
@@ -18,7 +18,7 @@ source $SOURCE/utilities/shellutils.sh
 READCONF="$SOURCE/utilities/readconf -I $SOURCE/dynamo.cfg"
 
 USER=$($READCONF server.user)
-INSTALL_PATH=$($READCONF paths.install_path)
+INSTALL_PATH=$($READCONF paths.dynamo_base)
 CONFIG_PATH=$($READCONF paths.config_path)
 ARCHIVE_PATH=$($READCONF paths.archive_path)
 SPOOL_PATH=$($READCONF paths.spool_path)

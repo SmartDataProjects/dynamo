@@ -13,15 +13,22 @@ server_user = source_conf.get('server', 'user')
 email = source_conf.get('server', 'email')
 persistency_mod = source_conf.get('server', 'store')
 persistency_conf_args = source_conf.get('server', 'store_conf')
+manager_mod = source_conf.get('server', 'manager')
+manager_conf_args = source_conf.get('server', 'manager_conf')
 logdir = source_conf.get('paths', 'log_path')
 
 class Namespace(object):
     pass
 
-conf_gen_script = persistency_mod + '/generate_store_conf.py'
 ns = Namespace()
+
+conf_gen_script = persistency_mod + '/generate_store_conf.py'
 execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
 persistency_conf = ns.generate_store_conf(persistency_conf_args)
+
+conf_gen_script = manager_mod + '/generate_manager_conf.py'
+execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
+manager_conf = ns.generate_manager_conf(manager_conf_args)
 
 conf_str = '''{
   "user": "''' + server_user + '''",
@@ -33,6 +40,11 @@ conf_str += persistency_conf
 conf_str += '''    },
     "partition_def_path": "$(DYNAMO_POLICIES)/partitions.txt"
   },
+  "manager": {'''
+
+conf_str += manager_conf
+
+conf_str += '''  },
   "notification_recipient": "''' + email + '''",
   "logging": {
     "level": "info",

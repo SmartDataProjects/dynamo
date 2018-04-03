@@ -16,10 +16,10 @@ class MySQLServerManager(ServerManager):
     def __init__(self, config):
         ServerManager.__init__(self, config)
 
-        self.master_server = MySQL(config.master_server.config)
+        self.master_server = MySQL(config.master_server)
         self.master_server.query('LOCK TABLES `servers` WRITE')
 
-        self.master_server_config = config.master_server.config.clone()
+        self.master_server_config = config.master_server.clone()
 
         try:
             self.master_server.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
@@ -30,7 +30,7 @@ class MySQLServerManager(ServerManager):
         finally:
             self.master_server.query('UNLOCK TABLES')
 
-        host_conf = config.master_server.config.clone()
+        host_conf = config.master_server.clone()
         host_conf.host = 'localhost'
         self.local_db = MySQL(host_conf)
 
@@ -70,6 +70,10 @@ class MySQLServerManager(ServerManager):
             return None
         else:
             return result[0]
+
+    def schedule_executable(self, title, path, args, user, write_request): #override
+        sql = 'INSERT INTO `executables` (`write_request`, `title`, `path`, `args`, `user`) VALUES (%s, %s, %s, %s, %s)'
+        return self.master_server.query(sql, write_request, title, path, args, user)
 
     def get_next_executable(self): #override
         self.master_server.query('LOCK TABLES `servers` READ, `executable` WRITE')

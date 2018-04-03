@@ -120,6 +120,19 @@ class ServerManager(object):
         """
         raise NotImplementedError('writing_process_id')
 
+    def schedule_executable(self, title, path, args, user, write_request):
+        """
+        Schedule an executable to the master server.
+        @param title          Executable title.
+        @param path           Executable path.
+        @param args           Arguments to the executable
+        @param user           User name of the requester
+        @param write_request  Boolean
+
+        @return executable id
+        """
+        raise NotImplementedError('schedule_executable')
+
     def get_next_executable(self):
         """
         Fetch the next executable to run.
@@ -150,6 +163,8 @@ class ServerManager(object):
         @param title   Title of the executable
         @param user    Requester user name
         @param path    Executable path
+
+        @return boolean
         """
         raise NotImplementedError('check_write_auth')
 
