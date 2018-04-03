@@ -3,8 +3,16 @@ import sys
 import json
 import getpass
 import MySQLdb
+from ConfigParser import ConfigParser, NoOptionError
 
-passwd = getpass.getpass('Enter password for MySQL root:')
+try:
+    parser = ConfigParser()
+    parser.read('/etc/my.cnf.d/root.cnf')
+
+    passwd = parser.get('mysql', 'password')
+
+except:
+    passwd = getpass.getpass('Enter password for MySQL root:')
 
 thisdir = os.path.dirname(os.path.realpath(__file__))
 
