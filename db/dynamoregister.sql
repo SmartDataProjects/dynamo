@@ -1,24 +1,6 @@
 
 
 
-DROP TABLE IF EXISTS `action`;
-CREATE TABLE `action` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `write_request` tinyint(1) NOT NULL,
-  `title` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
-  `path` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  `args` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
-  `status` enum('new','run','done','notfound','authfailed','failed','killed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  `server_id` int(10) unsigned NOT NULL DEFAULT 0,
-  `exit_code` int(10) unsigned DEFAULT NULL,
-  `user_id` int(10) unsigned NOT NULL,
-  `type` enum('executable','deletion_policy') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `email` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
-
-
 DROP TABLE IF EXISTS `active_copies`;
 CREATE TABLE `active_copies` (
   `request_id` int(10) unsigned NOT NULL,
@@ -57,15 +39,6 @@ CREATE TABLE `activity_lock` (
   `timestamp` datetime NOT NULL,
   `note` text COLLATE latin1_general_cs,
   KEY `lock` (`user_id`,`service_id`,`application`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
-
-
-DROP TABLE IF EXISTS `authorized_executables`;
-CREATE TABLE `authorized_executables` (
-  `user_id` int(10) unsigned NOT NULL,
-  `title` varchar(128) COLLATE latin1_general_cs NOT NULL,
-  `checksum` binary(16) NOT NULL,
-  PRIMARY KEY (`user_id`,`title`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
 
@@ -192,24 +165,6 @@ CREATE TABLE `invalidations` (
   `user_id` int(10) unsigned NOT NULL DEFAULT '0',
   `timestamp` datetime NOT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
-
-
-DROP TABLE IF EXISTS `inventory_updates`;
-CREATE TABLE `invalidations` (
-  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `cmd` enum('update','delete') NOT NULL,
-  `obj` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
-
-
-DROP TABLE IF EXISTS `servers`;
-CREATE TABLE `servers` (
-  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `hostname` varchar(32) COLLATE latin1_general_cs NOT NULL,
-  `last_heartbeat` datetime NOT NULL,
-  `status` enum('initial','starting','online','out-of-sync') NOT NULL DEFAULT 'initial',
-  PRIMARY KEY (`id`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
 
 
 DROP TABLE IF EXISTS `services`;

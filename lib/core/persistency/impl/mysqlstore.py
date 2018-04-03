@@ -2,7 +2,7 @@ import time
 import logging
 import fnmatch
 
-from dynamo.core.persistency import InventoryStore
+from dynamo.core.persistency.base import InventoryStore
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
 
@@ -23,6 +23,17 @@ class MySQLInventoryStore(InventoryStore):
         self._site_id_cache = ('', 0)
         self._group_id_cache = ('', 0)
         self._partition_id_cache = ('', 0)
+
+    def close(self):
+        self._mysql.close()
+
+    def check_connection(self): #override
+        try:
+            result = self._mysql.query('SELECT * FROM `partitions`')
+        except:
+            return False
+
+        return True
 
     def get_partition_names(self):
         return self._mysql.query('SELECT `name` FROM `partitions`')
@@ -391,6 +402,169 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.execute_many(sqlbase, 'name', names)
 
         return tmp_db, tmp_table
+
+    def save_data(self, inventory): #override
+        ## Save groups
+        LOG.info('Saving groups.')
+
+        group_id_map = {inventory.groups[None]: 0}
+        self._save_groups(inventory, group_id_map)
+
+        LOG.info('Saved %d groups.', len(inventory.groups))
+
+        ## Save sites
+        LOG.info('Saving sites.')
+
+        site_id_map = {}
+        self._save_sites(inventory, site_id_map)
+
+        LOG.info('Saved %d sites.', len(inventory.sites))
+
+        ## Save datasets
+        LOG.info('Saving datasets.')
+
+        dataset_id_map = {}
+        self._save_datasets(inventory, dataset_id_map)
+
+        LOG.info('Saved %d datasets.', len(inventory.datasets))
+
+        ## Save blocks
+        LOG.info('Saving blocks.')
+
+        block_id_maps = {} # {dataset: {block: block_id}}
+        self._save_blocks(inventory, dataset_id_map, block_id_maps)
+
+        num_blocks = sum(len(m) for m in block_id_maps.itervalues())
+
+        LOG.info('Saved %d blocks.', num_blocks)
+
+        ## Save replicas (dataset and block in one go)
+        LOG.info('Saving replicas.')
+        start = time.time()
+
+        self._save_replicas(inventory, group_id_map, site_id_map, dataset_id_map, block_id_maps)
+
+        num_dataset_replicas = 0
+        num_block_replicas = 0
+        for dataset in id_dataset_map.itervalues():
+            num_dataset_replicas += len(dataset.replicas)
+            num_block_replicas += sum(len(r.block_replicas) for r in dataset.replicas)
+
+        LOG.info('Saved %d dataset replicas and %d block replicas.', num_dataset_replicas, num_block_replicas)
+
+    def _save_groups(self, inventory, group_id_map):
+        self._mysql.query('CREATE TABLE `groups_tmp` LIKE `groups`')
+        fields = ('name', 'olevel')
+        mapping = lambda group: (group.name, Group.olevel_name(group.olevel))
+        self._mysql.insert_many('groups_tmp', fields, mapping, inventory.groups.itervalues(), do_update = False)
+
+        self._mysql.query('DROP TABLE `groups`')
+        self._mysql.query('RENAME TABLE `groups_tmp` TO `groups`')
+
+        for name, gid in self._mysql.xquery('SELECT `name`, `id` FROM `groups`'):
+            group_id_map[inventory.groups[name]] = gid
+
+    def _save_sites(self, inventory, site_id_map):
+        self._mysql.query('CREATE TABLE `sites_tmp` LIKE `sites`')
+        fields = ('name', 'host', 'storage_type', 'backend', 'status')
+        mapping = lambda site: (site.name, site.host, site.storage_type, site.backend, site.status)
+        self._mysql.insert_many('sites_tmp', fields, mapping, inventory.sites.itervalues(), do_update = False)
+
+        self._mysql.query('DROP TABLE `sites`')
+        self._mysql.query('RENAME TABLE `sites_tmp` TO `sites`')
+
+        for name, sid in self._mysql.xquery('SELECT `name`, `id` FROM `sites`'):
+            site_id_map[inventory.sites[name]] = sid
+
+    def _save_datasets(self, inventory, dataset_id_map):
+        software_versions = set()
+        for dataset in inventory.datasets.itervalues():
+            software_versions.add(dataset.software_version)
+
+        self._mysql.query('CREATE TABLE `software_versions_tmp` LIKE `software_versions`')
+        fields = ('cycle', 'major', 'minor', 'suffix')
+        self._mysql.insert_many('software_versions_tmp', fields, None, software_versions, do_update = False)
+
+        self._mysql.query('DROP TABLE `software_versions`')
+        self._mysql.query('RENAME TABLE `software_versions_tmp` TO `software_versions`')
+
+        version_id_map = {}
+        sql = 'SELECT `id`, `cycle`, `major`, `minor`, `suffix` FROM `software_versions`'
+        for vid, cycle, major, minor, suffix in self._mysql.xquery(sql):
+            version_id_map[(cycle, major, minor, suffix)] = vid
+
+        self._mysql.query('CREATE TABLE `datasets_tmp` LIKE `groups`')
+        fields = ('name', 'size', 'num_files', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
+        mapping = lambda dataset: (dataset.name, dataset.size, dataset.num_files, \
+            dataset.status, dataset.data_type, version_id_map[dataset.software_version],
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
+        self._mysql.insert_many('datasets_tmp', fields, mapping, inventory.datasets.itervalues(), do_update = False)
+
+        self._mysql.query('DROP TABLE `datasets`')
+        self._mysql.query('RENAME TABLE `datasets_tmp` TO `datasets`')
+
+        for name, did in self._mysql.xquery('SELECT `name`, `id` FROM `datasets`'):
+            dataset_id_map[inventory.datasets[name]] = did
+
+    def _save_blocks(self, inventory, dataset_id_map, block_id_maps):
+        self._mysql.query('CREATE TABLE `blocks_tmp` LIKE `blocks`')
+        fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open', 'last_update')
+
+        for dataset in inventory.datasets.itervalues():
+            dataset_id = dataset_id_map[dataset]
+            mapping = lambda block: (dataset_id, block.real_name(), \
+                block.size, block.num_files, block.is_open, \
+                time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
+
+            self._mysql.insert_many('blocks_tmp', fields, mapping, dataset.blocks, do_update = False)
+
+            for name, bid in self._mysql.xquery('SELECT `name`, `id` FROM `blocks_tmp`'):
+                block_name = Block.to_internal_name(name)
+                block_id_maps[dataset][dataset.find_block(block_name)] = bid
+
+        self._mysql.query('DROP TABLE `blocks`')
+        self._mysql.query('RENAME TABLE `blocks_tmp` TO `blocks`')
+
+    def _save_replicas(self, inventory, group_id_map, site_id_map, dataset_id_map, block_id_maps):
+        self._mysql.query('CREATE TABLE `dataset_replicas_tmp` LIKE `dataset_replicas`')
+
+        fields = ('dataset_id', 'site_id')
+        for site in inventory.sites.itervalues():
+            site_id = site_id_map[site]
+            mapping = lambda replica: (dataset_id_map[replica.dataset], site_id)
+
+            self._mysql.insert_many('dataset_replicas_tmp', fields, mapping, site.dataset_replicas(), do_update = False)
+
+        self._mysql.query('DROP TABLE `dataset_replicas`')
+        self._mysql.query('RENAME TABLE `dataset_replicas_tmp` TO `dataset_replicas`')
+
+        self._mysql.query('CREATE TABLE `block_replicas_tmp` LIKE `block_replicas`')
+        self._mysql.query('CREATE TABLE `block_replica_sizes_tmp` LIKE `block_replica_sizes`')
+
+        replica_fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
+        size_fields = ('block_id', 'site_id', 'size')
+
+        for site in inventory.sites.itervalues():
+            site_id = site_id_map[site]
+            for dataset_replica in site.dataset_replicas():
+                block_id_map = block_id_maps[dataset_replica.dataset]
+
+                mapping = lambda replica: (block_id_map[replica.block], site_id, \
+                    group_id_map[replica.group], replica.is_complete, replica.is_custodial, \
+                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)))
+
+                self._mysql.insert_many('block_replicas_tmp', replica_fields, mapping, dataset_replica.block_replicas, do_update = False)
+                
+                mapping = lambda replica: (block_id_map[replica.block], site_id, replica.size)
+
+                incomplete_replicas = [r for r in dataset_replica.block_replicas if r.size != r.block.size]
+                self._mysql.inert_many('block_replica_sizes_tmp', size_fields, mapping, incomplete_replicas, do_update = False)
+
+        self._mysql.query('DROP TABLE `block_replicas`')
+        self._mysql.query('RENAME TABLE `block_replicas_tmp` TO `block_replicas`')
+
+        self._mysql.query('DROP TABLE `block_replica_sizes`')
+        self._mysql.query('RENAME TABLE `block_replica_sizes_tmp` TO `block_replica_sizes`')
 
     def save_block(self, block): #override
         dataset_id = self._get_dataset_id(block.dataset)

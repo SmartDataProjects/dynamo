@@ -12,9 +12,12 @@ import threading
 import Queue
 
 from dynamo.core.inventory import DynamoInventory
-from dynamo.core.registry import DynamoRegistry
+from dynamo.core.manager.base import ServerManager
 from dynamo.utils.signaling import SignalBlocker
 import dynamo.utils.interface as interface
+import dynamo.core.manager.impl as manager_impl
+from dynamo.core.manager.base import OutOfSyncError
+from dynamo.dataformat.exceptions import log_exception
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
@@ -38,41 +41,64 @@ class Dynamo(object):
         # Restricted user
         self.read_user = config.read_user
 
-        ## Create the registry
-        self.registry = DynamoRegistry(config.registry)
-        self.registry_config = config.registry.clone()
-
         ## Create the inventory
         self.inventory = DynamoInventory(config.inventory, load = False)
         self.inventory_config = config.inventory.clone()
 
+        ## Create the server manager
+        manager_config = config.manager.clone()
+        manager_config['has_store'] = ('persistency' in self.inventory_config)
+        self.manager = DynamoServerManager(manager_config)
+
+        if self.manager.has_store:
+            self.manager.advertise_store(self.inventory_config.persistency)
+
         ## Load the inventory content (filter according to debug config)
-        load_opts = {}
+        self.inventory_load_opts = {}
         if 'debug' in config:
             for objs in ['groups', 'sites', 'datasets']:
                 included = config.debug.get('included_' + objs, None)
                 excluded = config.debug.get('excluded_' + objs, None)
     
-                load_opts[objs] = (included, excluded)
+                self.inventory_load_opts[objs] = (included, excluded)
 
-        ## Registry of other servers
-        self.other_servers = {}
+    def load_inventory(self):
+        self.manager.set_status(ServerManager.SRV_STARTING)
 
-        ## Register this server to the servers table
-        self.registry.backend.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
-        self.server_id = self.registry.backend.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
+        ## Wait until there is no write process
+        while True:
+            writing_process_id = self.manager.writing_process_id()
+            if write_process_id is not None:
+                LOG.debug('A write-enabled process is running. Checking again in 5 seconds.')
+                time.sleep(5)
+            else:
+                break
 
-        self.status = 'initial'
+        ## Write process is done.
+        ## Other servers will not start a new write process while there is a server with status 'starting'.
+        ## The only states the other running servers can be in are therefore 'updating' or 'online'
 
-        self.status_lock = threading.Lock()
-        self.heartbeat = threading.Thread(target = self.send_heartbeat)
-        self.heartbeat.daemon = True
-        self.heartbeat.start()
+        ## Now find a server I'll load inventory from (unless I am the only online host and I have a store)
+        if not (self.manager.has_store and self.manager.count_servers(ServerManager.SRV_ONLINE) == 0):
+            self.setup_remote_store()
 
-    def run(self):
+        LOG.info('Loading the inventory.')
+        self.inventory.load(**self.inventory_load_opts)
+
+        if self.manager.has_store:
+            # Revert to local store
+            persistency_config = self.inventory_config.persistency
+            self.inventory.init_store(persistency_config.module, persistency_config.config)
+            # Save all that's loaded to local
+            self.inventory.flush_to_store()
+
+        # We are ready to serve
+        self.manager.set_status(ServerManager.SRV_ONLINE)
+
+    def serve_executables(self):
         """
         Infinite-loop main body of the daemon.
-        Step 1: Poll the registry for one uploaded script.
+        Step 1: Poll the executables list for one uploaded script.
         Step 2: If a script is found, check the authorization of the script.
         Step 3: Spawn a child process for the script.
         Step 4: Apply updates sent by other servers.
@@ -80,21 +106,7 @@ class Dynamo(object):
         Step 6: Sleep for N seconds.
         """
 
-        ## Wait until there is no write process
-        while True:
-            write_process_exists = self.registry.backend.query('SELECT COUNT(*) FROM `action` WHERE `write_request` = 1 AND `status` = \'run\'')[0]
-            if write_process_exists:
-                LOG.debug('A write-enabled process is running. Checking again in 5 seconds.')
-                time.sleep(5)
-            else:
-                break
-
-        self.set_status('starting')
-
-        LOG.info('Loading the inventory.')
-        self.inventory.load(**load_opts)
-
-        self.set_status('online')
+        self.load_inventory()
 
         LOG.info('Started dynamo daemon.')
 
@@ -108,72 +120,50 @@ class Dynamo(object):
             LOG.info('Start polling for executables.')
 
             first_wait = True
-            sleep_time = 0
+            do_sleep = False
 
             while True:
-                # If another server decides this one has gone out of sync, we detect it in send_heartbeat
-                if self.status == 'out-of-sync':
-                    # We now stop this server and go back to the beggining
-                    raise KeyboardInterrupt('Server out of sync')
-
-                self.registry.backend.query('UNLOCK TABLES')
+                ## Check status and connection
+                self.manager.check_status()
+                if not self.manager.has_store and not self.inventory.check_store():
+                    # We lost connection to the remote persistency store. Try another server.
+                    # If there is no server to connect to, this method raises a RuntimeError
+                    self.setup_remote_store()
 
                 ## Step 4 (easier to do here because we use "continue"s)
                 self.read_updates()
 
                 ## Step 5 (easier to do here because we use "continue"s)
-                completed_processes = self.collect_processes(child_processes, writing_process)
-
-                if writing_process[0] in [exec_id for exec_id, status in completed_processes]:
-                    writing_process = (0, None)
+                writing_process = self.collect_processes(child_processes, writing_process)
 
                 ## Step 6 (easier to do here because we use "continue"s)
-                time.sleep(sleep_time)
+                if do_sleep:
+                    time.sleep(1)
 
                 ## Step 1: Poll
                 LOG.debug('Polling for executables.')
 
-                # UNLOCK statement at the top of the while loop
-                self.registry.backend.query('LOCK TABLES `action` WRITE, `servers` READ')
+                next_executable = self.manager.get_next_executable()
 
-                num_starting = self.registry.backend.query('SELECT COUNT(*) FROM `servers` WHERE `status` = \'starting\'')
-                if writing_process[0] == 0:
-                    # any other server running write process?
-                    try:
-                        writing_id = self.registry.backend.query('SELECT `id` FROM `action` WHERE `write_request` = 1 AND `status` = \'run\'')[0]
-                    except IndexError:
-                        pass
-                    else:
-                        writing_process = (writing_id, None)
-
-                sql = 'SELECT s.`id`, s.`write_request`, s.`title`, s.`path`, s.`args`, s.`user_id`, u.`name`'
-                sql += ' FROM `action` AS s INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
-                sql += ' WHERE s.`status` = \'new\''
-                if num_starting != 0 or writing_process[0] != 0:
-                    # we don't allow write_requesting executables while there is one running
-                    sql += ' AND s.`write_request` = 0'
-                sql += ' ORDER BY s.`timestamp` LIMIT 1'
-                result = self.registry.backend.query(sql)
-
-                if len(result) == 0:
+                if next_executable is None:
                     if len(child_processes) == 0 and first_wait:
                         LOG.info('Waiting for executables.')
                         first_wait = False
 
-                    sleep_time = 0.5
+                    do_sleep = True
 
-                    LOG.debug('No executable found, sleeping for %d seconds.', sleep_time)
+                    LOG.debug('No executable found, sleeping for 1 second.')
                     continue
 
                 ## Step 2: If a script is found, check the authorization of the script.
-                exec_id, write_request, title, path, args, user_id, user_name = result[0]
+                exec_id, write_request, title, path, args, user_name = next_executable
 
                 first_wait = True
-                sleep_time = 0
+                do_sleep = False
 
                 if not os.path.exists(path + '/exec.py'):
                     LOG.info('Executable %s from user %s (write request: %s) not found.', title, user_name, write_request)
-                    self.registry.backend.query('UPDATE `action` SET `status` = \'notfound\', `server_id` = %s WHERE `id` = %s', self.server_id, exec_id)
+                    self.manager.set_executable_status(exec_id, ServerManager.EXC_NOTFOUND)
                     continue
 
                 LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
@@ -181,11 +171,11 @@ class Dynamo(object):
                 proc_args = (path, args)
 
                 if write_request:
-                    if not self.check_write_auth(title, user_id, path):
+                    if not self.manager.check_write_auth(title, user_name, path):
                         LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
-                        # send a message
+                        # TODO send a message
 
-                        self.registry.backend.query('UPDATE `action` SET `status` = \'authfailed\', `server_id` = %s where `id` = %s', self.server_id, exec_id)
+                        self.manager.set_executable_status(exec_id, ServerManager.EXC_AUTHFAILED)
                         continue
 
                     queue = multiprocessing.Queue()
@@ -194,15 +184,15 @@ class Dynamo(object):
                     writing_process = (exec_id, queue)
 
                 ## Step 3: Spawn a child process for the script
-                self.registry.backend.query('UPDATE `action` SET `status` = \'run\', `server_id` = %s WHERE `id` = %s', self.server_id, exec_id)
+                self.manager.set_executable_status(exec_id, ServerManager.EXC_RUN)
 
                 proc = multiprocessing.Process(target = self._run_one, name = title, args = proc_args)
-                child_processes.append((exec_id, proc, user_name, path))
-
                 proc.daemon = True
                 proc.start()
 
                 LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
+
+                child_processes.append((exec_id, proc, user_name, path))
 
         except KeyboardInterrupt:
             LOG.info('Server process was interrupted.')
@@ -210,7 +200,11 @@ class Dynamo(object):
         except:
             # log the exception
             LOG.warning('Exception in server process. Terminating all child processes.')
-            self.set_status('error')
+
+            if self.manager.status != ServerManager.SRV_OUTOFSYNC:
+                self.manager.set_status(ServerManager.SRV_ERROR)
+
+            log_exception(LOG)
             raise
 
         finally:
@@ -220,8 +214,6 @@ class Dynamo(object):
             # in the child. Child processes have to always ignore SIGINT and be killed only from
             # SIGTERM sent by the line below.
 
-            self.registry.backend.query('UNLOCK TABLES')
-
             for exec_id, proc, user_name, path in child_processes:
                 LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)
 
@@ -230,87 +222,81 @@ class Dynamo(object):
                 if proc.is_alive():
                     LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
 
-                self.registry.backend.query('UPDATE `action` SET `status` = \'killed\' where `id` = %s', exec_id)
+                self.manager.set_executable_status(exec_id, ServerManager.EXC_KILLED)
 
-            if self.status == 'out-of-sync':
+            if self.manager.status == ServerManager.SRV_OUTOFSYNC:
                 # dynamod restarts this server
                 self.inventory = DynamoInventory(self.inventory_config, load = False)
-                self.set_status('initial')
+                self.manager.set_status(ServerManager.SRV_INITIAL)
             else:
                 # Server is shutting down either in online or error state
-                self.registry.backend.query('DELETE FROM `servers` WHERE `id` = %s', self.server_id)
+                self.manager.disconnect()
 
-    def check_write_auth(self, title, user_id, path):
-        # check authorization
-        with open(path + '/exec.py') as source:
-            checksum = hashlib.md5(source.read()).hexdigest()
+    def setup_remote_store(self, hostname = ''):
+        remote_store = self.manager.find_remote_store(hostname = hostname)
+        if remote_store is None:
+            self.manager.set_status(ServerManager.SRV_ERROR)
+            raise RuntimeError('Could not find a remote persistency store to connect to.')
 
-        sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = UNHEX(%s)'
-        for auth_user_id in self.registry.backend.query(sql, title, checksum):
-            if auth_user_id == 0 or auth_user_id == user_id:
-                return True
-
-        return False
+        module, config = remote_store
+        self.inventory.init_store(module, config)
 
     def collect_processes(self, child_processes, writing_process):
-        completed_processes = []
-
         ichild = 0
         while ichild != len(child_processes):
             exec_id, proc, user_name, path = child_processes[ichild]
 
-            status = ''
-
-            # Was the job aborted in the registry?
-            result = self.registry.backend.query('SELECT `status` FROM `action` WHERE `id` = %s', exec_id)
-            if len(result) == 0 or result[0] != 'run':
-                status = 'killed'
+            status = self.manamger.get_executable_status(exec_id)
+            if status == ServerManager.EXC_KILLED:
                 killproc(proc)
                 proc.join(60)
 
-            elif exec_id == writing_process[0]:
-                # If this is the writing process, read data from the queue
-                
-                # read_state: 0 -> nothing written yet, 1 -> read OK, 2 -> failure
-                read_state, update_commands = self.collect_updates(writing_process[1])
+            if exec_id == writing_process[0]:
+                if status == ServerManager.EXC_KILLED:
+                    read_state = -1
 
-                if read_state == 1:
-                    status = 'done'
-
-                    # Block system signals and get update done
-                    with SignalBlocker(logger = LOG):
-                        self.exec_updates(update_commands)
-
-                elif read_state == 2:
-                    status = 'failed'
-                    killproc(proc)
+                else: # i.e. status == RUN
+                    # If this is the writing process, read data from the queue
+                    # read_state: 0 -> nothing written yet (process is running), 1 -> read OK, 2 -> failure
+                    read_state, update_commands = self.collect_updates(writing_process[1])
+    
+                    if read_state == 1:
+                        status = ServerManager.EXC_DONE
+    
+                        # Block system signals and get update done
+                        with SignalBlocker(logger = LOG):
+                            self.exec_updates(update_commands)
+    
+                    elif read_state == 2:
+                        status = ServerManager.EXC_FAILED
+                        killproc(proc)
 
                 if read_state != 0:
                     proc.join(60)
+                    writing_process = (0, None)
     
             if proc.is_alive():
-                if not status:
+                if status == ServerManager.EXC_RUN:
                     ichild += 1
                     continue
                 else:
-                    # status set -> the process must be complete but did not join within 60 seconds
-                    LOG.error('Executable %s (%s) from user %s is stuck (Status %s).', proc.name, path, user_name, status)
+                    # The process must be complete but did not join within 60 seconds
+                    LOG.error('Executable %s (%s) from user %s is stuck (Status %s).', proc.name, path, user_name, ServerManager.executable_status_name(status))
             else:
-                if not status:
+                if status == ServerManager.EXC_RUN:
                     if proc.exitcode == 0:
-                        status = 'done'
+                        status = ServerManager.EXC_DONE
                     else:
-                        status = 'failed'
+                        status = ServerManager.EXC_FAILED
 
-                LOG.info('Executable %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, status)
+                LOG.info('Executable %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, ServerManager.executable_status_name(status))
 
             # process completed or is alive but stuck -> remove from the list and set status in the table
-            child_proc = child_processes.pop(ichild)
-            completed_processes.append((child_proc[0], status))
+            child_processes.pop(ichild)
 
-            self.registry.backend.query('UPDATE `action` SET `status` = %s, `exit_code` = %s where `id` = %s', status, proc.exitcode, exec_id)
+            self.manager.set_executable_status(exec_id, status, exit_code = proc.exitcode)
 
-        return completed_processes
+        return writing_process
 
     def collect_updates(self, queue):
         print_every = 1000
@@ -322,9 +308,9 @@ class Dynamo(object):
 
         while True:
             try:
-                # If drain is True, we are calling this function to wait to empty out the queue.
-                # In case the child process fails to put EOM at the end, we time out in 60 seconds.
-                cmd, obj = queue.get(block = reading, timeout = 60)
+                # Once we have an item sent, we'll read until the end (EOM).
+                # If the child dies in the middle of messaging, we get out of the while loop by timeout = 60
+                cmd, objstr = queue.get(block = reading, timeout = 60)
             except Queue.Empty:
                 if reading:
                     # The child process crashed or timed out
@@ -332,17 +318,17 @@ class Dynamo(object):
                 else:
                     return 0, update_commands
             else:
-                reading = True
+                reading = True # Now we have to read until the end - start blocking queue.get
 
                 if LOG.getEffectiveLevel() == logging.DEBUG:
-                    LOG.debug('From queue: %d %s', cmd, obj)
+                    LOG.debug('From queue: %d %s', cmd, objstr)
 
                 if cmd == DynamoInventory.CMD_UPDATE:
                     updates_received += 1
-                    update_commands.append((cmd, obj))
+                    update_commands.append((cmd, objstr))
                 elif cmd == DynamoInventory.CMD_DELETE:
                     deletes_received += 1
-                    update_commands.append((cmd, obj))
+                    update_commands.append((cmd, objstr))
 
                 if cmd == DynamoInventory.CMD_EOM or len(update_commands) % print_every == 0:
                     LOG.info('Received %d updates and %d deletes.', updates_received, deletes_received)
@@ -352,44 +338,28 @@ class Dynamo(object):
 
     def exec_updates(self, update_commands):
         # My updates
-        for cmd, obj in update_commands:
+        self.manager.set_status(ServerManager.SRV_UPDATING)
+
+        for cmd, objstr in update_commands:
+            # Create a python object from its representation string
+            obj = self.inventory.make_object(objstr)
+
             if cmd == DynamoInventory.CMD_UPDATE:
                 self.inventory.update(obj, write = True, changelog = CHANGELOG)
             elif cmd == DynamoInventory.CMD_DELETE:
                 CHANGELOG.info('Deleting %s', str(obj))
                 self.inventory.delete(obj, write = True)
 
+        self.manager.set_status(ServerManager.SRV_ONLINE)
+
         # Others
-        hostnames = self.registry.backend.query('SELECT `hostname` FROM `servers` WHERE `status` = \'online\' AND `id` != %s', self.server_id)
-        for hostname in hostnames:
-            try:
-                host_registry = self.other_servers[hostname]
-            except KeyError:
-                registry_config = self.registry_config.clone()
-                registry_config.host = hostname
-                host_registry = self.other_servers[hostname] = DynamoRegistry(registry_config)
-
-            try:
-                sql = 'INSERT INTO `inventory_updates` (`cmd`, `obj`) VALUES (%s, %s)'
-
-                for cmd, obj in update_commands:
-                    if cmd == DynamoInventory.CMD_UPDATE:
-                        host_registry.backend.execute(sql, 'update', repr(obj))
-                    elif cmd == DynamoInventory.CMD_DELETE:
-                        host_registry.backend.execute(sql, 'delete', repr(obj))
-            except:
-                # TODO print error
-                # Set server status to out-of-sync
-                self.registry.backend.query('UPDATE `servers` SET `status` = \'out-of-sync\' WHERE `hostname` = %s', hostname)
-
-        # Remove interfaces to servers that went offline
-        for hostname in set(self.other_servers.keys()) - set(hostnames):
-            self.other_servers.pop(hostname)
+        self.manager.send_updates(update_commands)
 
     def read_updates(self):
-        # Read updates written to the registry by other servers
-        self.registry.backend.query('LOCK TABLES `inventory_updates` WRITE')
-        for cmd, objstr in self.registry.backend.xquery('SELECT `cmd`, `obj` FROM `inventory_updates` ORDER BY `id`'):
+        has_updates = False
+        for cmd, objstr in self.manager.get_updates():
+            has_updates = True
+
             # Create a python object from its representation string
             obj = self.inventory.make_object(objstr)
 
@@ -399,23 +369,10 @@ class Dynamo(object):
                 CHANGELOG.info('Deleting %s', str(obj))
                 self.inventory.delete(obj, write = True)
 
-        self.registry.backend.query('ALTER TABLE `inventory_updates` AUTO_INCREMENT = 1')
-        self.registry.backend.query('UNLOCK TABLES')
-
-    def set_status(self, status):
-        with self.status_lock:
-            self.registry.backend.query('UPDATE `servers` SET `status` = %s WHERE `id` = %s', status, self.server_id)
-            self.status = status
-
-    def send_heartbeat(self):
-        if self.status != 'initial':
-            self.registry.backend.query('UPDATE `servers` SET `last_heartbeat` = NOW() WHERE `id` = %s', self.server_id)
-            time.sleep(60)
-
-        with self.status_lock:
-            # Check server status - other servers may decide this one has gone out of sync
-            self.status = self.registry.backend.query('SELECT `status` FROM `servers` WHERE `id` = %s', self.server_id)[0]
-       
+        if has_updates:
+            # The server which sent the updates has set this server's status to updating
+            self.manager.set_status(ServerManager.SRV_ONLINE)
+      
     def _run_one(self, path, args, queue = None):
         # Set the uid of the process
         os.seteuid(0)
@@ -471,19 +428,16 @@ class Dynamo(object):
                 handler.flush()
                 handler.close()
 
-        # Re-initialize
-        #  - inventory store with read-only connection
-        #  - registry backend with read-only connection
+        # Re-initialize inventory store with read-only connection
         # This is for security and simply for concurrency - multiple processes
         # should not share the same DB connection
-        self.registry.set_backend(self.registry_config)
-
-        persistency_config = self.inventory_config.persistency
-        self.inventory.init_store(persistency_config.module, persistency_config.readonly_config)
+        if self.manager.has_store:
+            self.inventory.disable_store_write()
+        else:
+            self.setup_remote_store(self.manager.store_host)
 
         # Pass my registry and inventory to the executable through core.executable
         import dynamo.core.executable as executable
-        executable.registry = self.registry
         executable.inventory = self.inventory
 
         if queue is not None:
@@ -504,16 +458,16 @@ class Dynamo(object):
             sys.stderr.write('Sending %d updated objects to the server process.\n' % nobj)
             sys.stderr.flush()
             wm = 0.
-            for iobj, (cmd, obj) in enumerate(self.inventory._update_commands):
+            for iobj, (cmd, objstr) in enumerate(self.inventory._update_commands):
                 if float(iobj) / nobj * 100. > wm:
                     sys.stderr.write(' %.0f%%..' % (float(iobj) / nobj * 100.))
                     sys.stderr.flush()
                     wm += 5.
 
                 try:
-                    queue.put((cmd, obj))
+                    queue.put((cmd, objstr))
                 except:
-                    sys.stderr.write('Exception while sending %s %s\n' % (DynamoInventory._cmd_str[cmd], str(obj)))
+                    sys.stderr.write('Exception while sending %s %s\n' % (DynamoInventory._cmd_str[cmd], objstr))
                     raise
 
             if nobj != 0:

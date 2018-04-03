@@ -47,6 +47,11 @@
       "db": "dynamoregister"
     }
   },
+  "weblock": {
+    "url_base": "https://localhost/registry/detoxlock",
+    "auth_handler": "HTTPSCertKeyHandler",
+    "auth_handler_conf": {}
+  },
   "replica_source": {
     "phedex": {
       "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",

@@ -10,6 +10,15 @@ class InventoryStore(object):
     def __init__(self, config):
         pass
 
+    def close(self):
+        pass
+
+    def check_connection(self):
+        """
+        Return true if the backend is connected.
+        """
+        return False
+
     def get_partition_names(self):
         """
         Return a list of partition names.
@@ -67,6 +76,15 @@ class InventoryStore(object):
         """
 
         raise NotImplementedError('load_data')
+
+    def save_data(self, inventory):
+        """
+        Save data from inventory.
+        
+        @param inventory      DynamoInventory object to read data from.
+        """
+
+        raise NotImplementedError('save_data')        
 
     def save_block(self, block):
         raise NotImplementedError('save_block')

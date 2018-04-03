@@ -4,7 +4,7 @@ import re
 from dynamo.policy.condition import Condition
 from dynamo.policy.variables import replica_variables
 import dynamo.dataformat as df
-import dynamo.core.impl as persistency_impl
+import dynamo.core.persistency.impl as persistency_impl
 
 LOG = logging.getLogger(__name__)
 
@@ -63,25 +63,53 @@ class DynamoInventory(ObjectRepository):
     CMD_UPDATE, CMD_DELETE, CMD_EOM = range(3)
     _cmd_str = ['UPDATE', 'DELETE', 'EOM']
 
-    def __init__(self, config, load = True):
+    def __init__(self, config):
         ObjectRepository.__init__(self)
 
-        self.init_store(config.persistency.module, config.persistency.config)
+        self._store = None
+        if 'persistency' in config:
+            pconf = config.persistency
+            self._store_module = pconf.module
+            self._store_readonly_config = pconf.readonly_config
+
+            self.init_store(self._store_module, pconf.config)
 
         self.partition_def_path = config.partition_def_path
         
-        if load:
-            self.load()
-
         # When the user application is authorized to change the inventory state, all updated
         # and deleted objects are kept in this list until the end of execution.
         self._update_commands = None
 
     def init_store(self, module, config):
+        if self._store:
+            self._store.close()
+
         persistency_cls = getattr(persistency_impl, module)
         self._store = persistency_cls(config)
 
         df.Block._inventory_store = self._store
+
+    def disable_store_write(self):
+        """
+        One-way operation to downgrade access privilege to the persistency store backend.
+        Called by the DynamoServer when a new subprocess is starting.
+        """
+
+        self.init_store(self._store_module, self._store_readonly_config)
+
+    def check_store(self):
+        """
+        Check the connection to store.
+        """
+
+        return self._store.check_connection()
+
+    def flush_to_store(self):
+        """
+        Save the full inventory content to store.
+        """
+
+        self._store.save_data(self)
 
     def load(self, groups = (None, None), sites = (None, None), datasets = (None, None)):
         """
@@ -271,10 +299,7 @@ class DynamoInventory(ObjectRepository):
                 changelog.info('Updating %s', str(obj))
 
             LOG.debug('%s has changed. Adding a clone to updated objects list.', str(obj))
-            # The content of update_commands gets pickled and shipped back to the server process.
-            # Pickling process follows all links between the objects. We create an unlinked clone
-            # here to avoid shipping the entire inventory.
-            self._update_commands.append((DynamoInventory.CMD_UPDATE, obj.unlinked_clone()))
+            self._update_commands.append((DynamoInventory.CMD_UPDATE, repr(obj)))
 
         if write:
             if changelog is not None:
@@ -301,7 +326,7 @@ class DynamoInventory(ObjectRepository):
             return
 
         if self._update_commands is not None:
-            self._update_commands.append((DynamoInventory.CMD_DELETE, deleted_object.unlinked_clone(attrs = False)))
+            self._update_commands.append((DynamoInventory.CMD_DELETE, repr(deleted_object)))
 
         if write:
             try:

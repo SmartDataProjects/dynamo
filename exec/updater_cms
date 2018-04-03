@@ -26,9 +26,9 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout & stderr)
-import dynamo.core.executable as executable
+from dynamo.core.executable import make_standard_logger, read_only, inventory
 
-LOG = executable.make_standard_logger(config.log_level)
+LOG = make_standard_logger(config.log_level)
 
 ## Option compatibilities
 if args.mode not in [None, 'ReplicaDelta', 'ReplicaFull']:
@@ -51,8 +51,6 @@ LOG.info('Starting inventory update.')
 
 ## Load and initialize sources
 import dynamo.source.impl as sources
-
-inventory = executable.inventory
 
 config.groups.config.phedex = config.phedex
 config.sites.config.phedex = config.phedex
@@ -547,7 +545,7 @@ if check_replicas:
 
 # 7. Save the execution state
 
-if not executable.read_only and args.mode is not None and os.path.exists(config.updater_state_file):
+if not read_only and args.mode is not None and os.path.exists(config.updater_state_file):
     # Regardless of update mode, clear the updated datasets from the table
     state_db = sqlite3.connect(config.updater_state_file)
     cursor = state_db.cursor()

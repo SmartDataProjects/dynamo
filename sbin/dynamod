@@ -5,11 +5,12 @@ import sys
 import pwd
 import signal
 import traceback
+import threading
 import logging
 import logging.handlers
 
 ## Read server config (should be readable only to root)
-from dynamo.dataformat import Configuration, log_exception
+from dynamo.dataformat import Configuration
 
 try:
     config_path = os.environ['DYNAMO_SERVER_CONFIG']
@@ -77,16 +78,25 @@ signal_converter.set(signal.SIGTERM)
 ## Start the server
 from dynamo.core.server import Dynamo
 
-daemon = Dynamo(config)
-try:
-    while True:
-        daemon.run()
-        if daemon.status == 'initial':
-            pass
-        else:
-            break
+server = Dynamo(config)
 
-except:
-    log_exception(LOG)
+while True:
+    exec_thread = None
+    if config.serve_executables:
+        exec_thread = threading.Thread(target = server.serve_executables, name = 'serve_executables')
+        exec_thread.start()
 
-    sys.exit(1)
+    web_thread = None
+    if config.serve_web:
+        web_thread = threading.Thread(target = server.serve_web, name = 'serve_web')
+        web_thread.start()
+
+    if exec_thread is not None:
+        exec_thread.join()
+    if web_thread is not None:
+        web_thread.join()
+    
+    if server.manager.status == 'initial':
+        pass
+    else:
+        break

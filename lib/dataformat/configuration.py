@@ -42,6 +42,9 @@ class Configuration(dict):
     def __setattr__(self, attr, value):
         self[attr] = value
 
+    def __repr__(self):
+        return self.dump_json()
+
     def get(self, attr, default):
         """Return the default value if attr is not found."""
         try:
@@ -51,3 +54,15 @@ class Configuration(dict):
 
     def clone(self):
         return Configuration(self)
+
+    def dump_json(self):
+        json = '{'
+        for key, value in self.iteritems():
+            if len(json) != 1:
+                json += ','
+
+            json += '"%s":%s' % (key, repr(value))
+
+        json += '}'
+
+        return json

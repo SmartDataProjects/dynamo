@@ -64,15 +64,16 @@ with open(config.process_lock, 'w') as process_lock:
 ## Start conversion
 from dynamo.policy.producers import WebReplicaLock
 from dynamo.policy.producers import MySQLReplicaLock
-from dynamo.utils.interface.webservice import POST
+from dynamo.utils.interface.webservice import RESTService, POST
 from dynamo.core.executable import inventory
-from dynamo.core.executable import registry
 from dynamo.operation.impl.mysqlapplock import MySQLApplicationLockInterface
 
 LOG.info('Translating web-based replica locks into DB-based locks.')
 
 expiry = '2018-04-30'
 comment = 'Auto-produced by dynamo'
+
+registry = RESTService(config.weblock)
 
 lock = MySQLApplicationLockInterface(config.applock)
 # we don't unlock within this application unless something fails - need to run detox immediately afterwards
@@ -187,8 +188,8 @@ try:
         if args.test_run:
             LOG.info('Not sending data to registry.')
         else:
-            request_url = 'detoxlock/set?asuser=%s&service=%s' % (source_conf.user, source_conf.service)
-            registry.frontend.make_request(request_url, method = POST, options = data, format = 'json')
+            request_url = 'set?asuser=%s&service=%s' % (source_conf.user, source_conf.service)
+            registry.make_request(request_url, method = POST, options = data, format = 'json')
     
     # Intentionally removing the file only when everything succeeds
     os.unlink(config.process_lock)
