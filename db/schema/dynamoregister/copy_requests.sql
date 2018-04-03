@@ -14,4 +14,4 @@ CREATE TABLE `copy_requests` (
   KEY `last_request_time` (`last_request_time`),
   KEY `request_count` (`request_count`),
   KEY `status` (`status`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;

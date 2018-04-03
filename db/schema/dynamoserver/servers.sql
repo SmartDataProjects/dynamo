@@ -7,4 +7,4 @@ CREATE TABLE `servers` (
   `store_module` varchar(32) COLLATE latin1_general_cs DEFAULT NULL,
   `store_config` varchar(1024) COLLATE latin1_general_cs DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

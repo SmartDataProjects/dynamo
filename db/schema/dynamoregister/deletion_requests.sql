@@ -8,4 +8,4 @@ CREATE TABLE `deletion_requests` (
   KEY `user` (`user_id`),
   KEY `timestamp` (`timestamp`),
   KEY `status` (`status`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;

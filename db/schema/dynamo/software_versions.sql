@@ -6,4 +6,4 @@ CREATE TABLE `software_versions` (
   `suffix` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL DEFAULT '',
   PRIMARY KEY (`id`),
   UNIQUE KEY `release` (`cycle`,`major`,`minor`,`suffix`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;

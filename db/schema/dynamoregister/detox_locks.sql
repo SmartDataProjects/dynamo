@@ -15,4 +15,4 @@ CREATE TABLE `detox_locks` (
   KEY `expires` (`expiration_date`),
   KEY `lock_data` (`item`,`sites`,`groups`),
   KEY `user_id` (`user_id`,`service_id`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

@@ -9,4 +9,4 @@ CREATE TABLE `runs` (
   PRIMARY KEY (`id`),
   KEY `operations` (`operation`),
   KEY `partitions` (`partition_id`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;

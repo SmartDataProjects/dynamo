@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import sys
 import re
 import getpass
@@ -26,23 +24,12 @@ if args.help:
 
 params = {}
 if args.defaults_file:
-    parser = ConfigParser()
-    parser.read(args.defaults_file)
-
-    section = 'mysql' + args.defaults_suffix
-
-    for key, option in [('user', 'user'), ('passwd', 'password'), ('host', 'host')]:
-        try:
-            params[key] = parser.get(section, option)
-        except NoOptionError:
-            pass
+    params['read_default_file'] = args.defaults_file
+    params['read_default_group'] = 'mysql' + args.defaults_suffix
 
 for key in ['user', 'passwd', 'host']:
     if getattr(args, key):
         params[key] = getattr(args, key)
-
-if 'passwd' not in params:
-    params['passwd'] = getpass.getpass('Enter password:')
 
 params['db'] = args.db
 
@@ -53,6 +40,6 @@ cursor = conn.cursor()
 for table in args.tables:
     cursor.execute('SHOW CREATE TABLE `%s`' % table)
     rows = cursor.fetchall()
-    print re.sub('AUTO_INCREMENT=[0-9]*', 'AUTO_INCREMENT=1', rows[0][1]) + ';'
+    print re.sub(' AUTO_INCREMENT=[0-9]*', '', rows[0][1]) + ';'
     if len(args.tables) > 1:
         print ''
