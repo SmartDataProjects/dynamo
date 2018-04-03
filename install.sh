@@ -1,37 +1,5 @@
 #!/bin/bash
 
-confirmed () {
-  while true
-  do
-    read RESPONSE
-    case $RESPONSE in
-      y)
-        return 0
-        ;;
-      n)
-        return 1
-        ;;
-      *)
-        echo "Please answer in y/n."
-        ;;
-    esac
-  done
-}
-
-require () {
-  "$@" >/dev/null 2>&1 && return 0
-  echo
-  echo "[Fatal] Failed: $@"
-  exit 1
-}
-
-warnifnot () {
-  "$@" >/dev/null 2>&1 && return 0
-  echo
-  echo "[Warning] Failed: $@"
-  echo "Some components may not work."
-}
-
 ### Where we are installing from (i.e. this directory) ###
 
 export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
@@ -45,18 +13,27 @@ then
   exit 1
 fi
 
-source $SOURCE/config.sh
+source $SOURCE/utilities/shellutils.sh
 
-if [ $DAEMONS -eq 1 ]
+READCONF="$SOURCE/utilities/readconf -I $SOURCE/dynamo.cfg"
+
+USER=$($READCONF server.user)
+INSTALL_PATH=$($READCONF paths.install_path)
+CONFIG_PATH=$($READCONF paths.config_path)
+ARCHIVE_PATH=$($READCONF paths.archive_path)
+SPOOL_PATH=$($READCONF paths.spool_path)
+LOG_PATH=$($READCONF paths.log_path)
+POLICY_PATH=$($READCONF paths.policy_path)
+WEBSERVER=$($READCONF server.webserver)
+SERVER_DB=$($READCONF server.store)
+
+### Stop the daemons first ###
+
+if [[ $(uname -r) =~ el7 ]]
 then
-  ### Stop the daemons first ###
-
-  if [[ $(uname -r) =~ el7 ]]
-  then
-    systemctl stop dynamod 2>/dev/null
-  else
-    service dynamod stop 2>/dev/null
-  fi
+  systemctl stop dynamod 2>/dev/null
+else
+  service dynamod stop 2>/dev/null
 fi
 
 echo
@@ -65,22 +42,44 @@ echo
 
 ### Verify required components ###
 
+echo '############################'
+echo '######  DEPENDENCIES  ######'
+echo '############################'
 echo
-echo "Checking dependencies.."
-echo
+
+echo "-> Checking dependencies.."
+
+WARNING=false
+
 require which python
-require python -c 'import MySQLdb'
 warnifnot python -c 'import htcondor'
 warnifnot python -c 'import rrdtool'
-require which mysql
 require which sqlite3
-[ $SERVER_DB_HOST = localhost ] && require pgrep -f mysqld
+if [ $SERVER_DB = "mysql" ]
+then
+  require python -c 'import MySQLdb'
+  require which mysql
+  require pgrep -f mysqld
+fi
+
+if $WARNING
+then
+  echo " Some components may not work."
+  echo
+else
+  echo " OK"
+  echo
+fi
+
+echo '#########################'
+echo '######  LIBRARIES  ######'
+echo '#########################'
+echo
 
 ### (Clear &) Make the directories ###
 
 if [ -d $INSTALL_PATH ]
 then
-  echo
   echo "Target directory $INSTALL_PATH exists. Overwrite [y/n]?"
   if confirmed
   then
@@ -106,9 +105,6 @@ require mkdir -p $CONFIG_PATH
 require mkdir -p $LOG_PATH
 chown $USER:$(id -gn $USER) $LOG_PATH
 
-require mkdir -p $SCHEDULER_PATH
-chown $USER:$(id -gn $USER) $SCHEDULER_PATH
-
 require mkdir -p $ARCHIVE_PATH
 chown $USER:$(id -gn $USER) $ARCHIVE_PATH
 
@@ -116,21 +112,9 @@ mkdir -p $SPOOL_PATH
 chown $USER:$(id -gn $USER) $SPOOL_PATH
 chmod 777 $SPOOL_PATH
 
-if [ $(ls -ldZ $SPOOL_PATH | awk '{print $4}' | cut -d: -f3) != "httpd_sys_rw_content_t" ]
-then
-  ### Set SELinux context to allow the web server to write to SPOOL
-  
-  echo "Updating SELinux contexts.."
-  
-  semanage fcontext -a -t httpd_sys_rw_content_t $SPOOL_PATH
-  restorecon $SPOOL_PATH
-  setsebool -P httpd_can_network_connect on
-  setsebool -P httpd_can_network_connect_db on
-fi
-
 ### Install python libraries ###
 
-echo "Installing.."
+echo "-> Installing.."
 
 cp -r $SOURCE/lib/* $INSTALL_PATH/python/site-packages/dynamo/
 python -m compileall $INSTALL_PATH/python/site-packages/dynamo > /dev/null
@@ -153,71 +137,64 @@ cp $SOURCE/sbin/* $INSTALL_PATH/sbin/
 chown root:$(id -gn $USER) $INSTALL_PATH/sbin/*
 chmod 754 $INSTALL_PATH/sbin/*
 
-### Set up the databases ###
+echo " Done."
+echo
 
-if [ "$SERVER_DB_HOST" = "localhost" ]
-then
-  export SERVER_DB_WRITE_USER
-  export SERVER_DB_WRITE_PASSWD
-
-  $SOURCE/db/install.sh
-  if [ $? -ne 0 ]
-  then
-    echo
-    echo "DB configuration failed."
-    exit 1
-  fi
-fi  
+echo '##############################'
+echo '######  CONFIGURATIONS  ######'
+echo '##############################'
+echo
 
 ### Install the configs ###
 
-echo
-echo "Writing configuration files."
-echo
+# Init script
 
 INITSCRIPT=$INSTALL_PATH/etc/profile.d/init.sh
+echo "-> Writing $INITSCRIPT.."
+
 echo "export DYNAMO_BASE=$INSTALL_PATH" > $INITSCRIPT
 echo "export DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> $INITSCRIPT
 echo "export DYNAMO_SPOOL=$SPOOL_PATH" >> $INITSCRIPT
+[ $POLICY_PATH ] && echo "export DYNAMO_POLICIES=$POLICY_PATH" >> $INITSCRIPT
 echo "export PYTHONPATH="'$DYNAMO_BASE/python/site-packages:$(echo $PYTHONPATH | sed "s|$DYNAMO_BASE/python/site-packages:||")' >> $INITSCRIPT
 echo "export PATH="'$DYNAMO_BASE/bin:$DYNAMO_BASE/sbin:$(echo $PATH | sed "s|$DYNAMO_BASE/bin:$DYNAMO_BASE/sbin:||")' >> $INITSCRIPT
 
+echo " Done."
+echo
+
+# Server conf
+
+echo "-> Writing $CONFIG_PATH/server_config.json.."
+
+TMP=/tmp/dynamo_server_confg.tmp.$$
+touch $TMP
+chmod 600 $TMP
+
+$SOURCE/sbin/dynamo-server-conf $SOURCE/dynamo.cfg >> $TMP
+
 if [ -e $CONFIG_PATH/server_config.json ]
 then
-  echo "$CONFIG_PATH/server_config.json exists. Not overwriting."
+  echo " File already exists."
+  if ! diff $TMP $CONFIG_PATH/server_config.json > /dev/null 2>&1
+  then
+    echo " Difference found (existing | installation):"
+    echo
+    diff -y $CONFIG_PATH/server_config.json $TMP
+    echo
+  fi
+  rm $TMP
 else
-  cp $SOURCE/config/server_config.json.template $CONFIG_PATH/server_config.json
-
-  sed -i "s|_USER_|$USER|" $CONFIG_PATH/server_config.json
-  sed -i "s|_READUSER_|$READ_USER|" $CONFIG_PATH/server_config.json
-  sed -i "s|_SCHEDULERUSER_|$SCHEDULER_USER|" $CONFIG_PATH/server_config.json
-  sed -i "s|_LOGPATH_|$LOG_PATH|" $CONFIG_PATH/server_config.json
-  sed -i "s|_SCHEDULERPATH_|$SCHEDULER_PATH|" $CONFIG_PATH/server_config.json
-  sed -i "s|_REGISTRYHOST_|$REGISTRY_HOST|" $CONFIG_PATH/server_config.json
-  sed -i "s|_EMAIL_|$EMAIL|" $CONFIG_PATH/server_config.json
-
-  sed -n '1,/_SERVER_DB_WRITE_PARAMS_/ p' $CONFIG_PATH/server_config.json | sed '$ d' > server_config.json.tmp
-
-  echo '          "user": "'$SERVER_DB_WRITE_USER'",' >> server_config.json.tmp
-  echo '          "passwd": "'$SERVER_DB_WRITE_PASSWD'",' >> server_config.json.tmp
-  echo '          "host": "'$SERVER_DB_HOST'",' >> server_config.json.tmp
-
-  sed '/_SERVER_DB_WRITE_PARAMS_/,/_SERVER_DB_READ_PARAMS_/ !d;//d' $CONFIG_PATH/server_config.json >> server_config.json.tmp
-
-  [ $SERVER_DB_READ_CNF ] && echo '          "config_file": "'$SERVER_DB_READ_CNF'",' >> server_config.json.tmp
-  [ $SERVER_DB_READ_CNFGROUP ] && echo '          "config_group": "'$SERVER_DB_READ_CNFGROUP'",' >> server_config.json.tmp
-  [ $SERVER_DB_READ_USER ] && echo '          "user": "'$SERVER_DB_READ_USER'",' >> server_config.json.tmp
-  [ $SERVER_DB_READ_PASSWD ] && echo '          "passwd": "'$SERVER_DB_READ_PASSWD'",' >> server_config.json.tmp
-  echo '          "host": "'$SERVER_DB_HOST'",' >> server_config.json.tmp
-
-  sed '/_SERVER_DB_READ_PARAMS_/,$ !d;//d' $CONFIG_PATH/server_config.json >> server_config.json.tmp
-  
-  mv server_config.json.tmp $CONFIG_PATH/server_config.json
+  touch $CONFIG_PATH/server_config.json
+  chmod 600
+  cat $TMP >> $CONFIG_PATH/server_config.json
+  echo " Done."
+  echo
 fi
 
-chmod 600 $CONFIG_PATH/server_config.json
-
 # The rest of the config files are copied directly - edit as necessary
+
+echo "-> Copying other configuration files.."
+
 for CONF in $(ls $SOURCE/config/*.json)
 do
   FILE=$(basename $CONF)
@@ -226,35 +203,36 @@ do
     cp $CONF $CONFIG_PATH/$FILE
   elif ! diff $SOURCE/config/$FILE $CONFIG_PATH/$FILE > /dev/null 2>&1
   then
-    echo "Config $FILE has changed. Saving the new file to $CONFIG_PATH/$FILE.new."
-    echo
+    echo " Config $FILE has changed. Saving the new file to $CONFIG_PATH/$FILE.new."
     cp $CONF $CONFIG_PATH/$FILE.new
+    echo " Difference (old | new):"
+    echo
+    diff -y $CONFIG_PATH/$FILE{,.new}
+    echo
   fi
 done
 
-### Install the policies ###
-
+echo " Done."
 echo
-echo "Installing the policies."
-echo "Enter tag:"
-read POLICYTAG
 
-git clone https://github.com/SmartDataProjects/dynamo-policies.git $INSTALL_PATH/policies
-cd $INSTALL_PATH/policies
-git checkout $POLICYTAG >/dev/null 2>&1
-echo "Policy commit:"
-git log -1
-cd - > /dev/null
+### Set up the databases ###
 
-# Temporary - will not need this once we publish the policy itself in the web interface
-echo $POLICYTAG > $INSTALL_PATH/etc/policies.tag
+if [ $SERVER_DB ]
+then
+  $SOURCE/$SERVER_DB/install.sh
+  if [ $? -ne 0 ]
+  then
+    echo
+    echo "DB installation failed."
+    exit 1
+  fi
+fi
 
 ### Install the web scripts ###
 
-if [ $WEB_PATH ]
+if [ $WEBSERVER ]
 then
-  export WEBPATH
-  $SOURCE/web/install.sh
+#  $SOURCE/web/install.sh
   if [ $? -ne 0 ]
   then
     echo
@@ -265,44 +243,50 @@ fi
 
 ### Install the daemons ###
 
-if [ $DAEMONS -eq 1 ]
+echo '########################'
+echo '######  SERVICES  ######'
+echo '########################'
+echo
+echo "-> Installing dynamod.."
+
+if [[ $(uname -r) =~ el7 ]]
 then
-  echo
-  echo "Installing the daemon."
+  # systemd daemon
+  cp $SOURCE/daemon/dynamod.systemd /usr/lib/systemd/system/dynamod.service
+  sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /usr/lib/systemd/system/dynamod.service
 
-  if [[ $(uname -r) =~ el7 ]]
-  then
-    # systemd daemon
-    cp $SOURCE/daemon/dynamod.systemd /usr/lib/systemd/system/dynamod.service
-    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /usr/lib/systemd/system/dynamod.service
+  # environment file for the daemon
+  echo "DYNAMO_BASE=$INSTALL_PATH" > /etc/sysconfig/dynamod
+  echo "DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> /etc/sysconfig/dynamod
+  echo "DYNAMO_SPOOL=$SPOOL_PATH" >> /etc/sysconfig/dynamod
+  echo "PYTHONPATH=$INSTALL_PATH/python/site-packages" >> /etc/sysconfig/dynamod
 
-    # environment file for the daemon
-    echo "DYNAMO_BASE=$INSTALL_PATH" > /etc/sysconfig/dynamod
-    echo "DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> /etc/sysconfig/dynamod
-    echo "DYNAMO_SPOOL=$SPOOL_PATH" >> /etc/sysconfig/dynamod
-    echo "PYTHONPATH=$INSTALL_PATH/python/site-packages" >> /etc/sysconfig/dynamod
-
-    systemctl daemon-reload
-  else
-    cp $SOURCE/daemon/dynamod.sysv /etc/init.d/dynamod
-    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamod
-    chmod +x /etc/init.d/dynamod
-  fi
-
-  
-  # CRONTAB
-  #crontab -l -u $USER > /tmp/$USER.crontab
-  #sed "s|_INSTALLPATH_|$INSTALL_PATH|" $SOURCE/etc/crontab >> /tmp/$USER.crontab
-  #sort /tmp/$USER.crontab | uniq | crontab -u $USER -
-  #rm /tmp/$USER.crontab
-
-  # NRPE PLUGINS
-  if [ -d /usr/lib64/nagios/plugins ]
-  then
-    sed "s|_ARCHIVEPATH_|$ARCHIVE_PATH|" $SOURCE/etc/nrpe/check_dynamo.sh > /usr/lib64/nagios/plugins/check_dynamo.sh
-    chmod +x /usr/lib64/nagios/plugins/check_dynamo.sh
-  fi
+  systemctl daemon-reload
+else
+  cp $SOURCE/daemon/dynamod.sysv /etc/init.d/dynamod
+  sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamod
+  chmod +x /etc/init.d/dynamod
 fi
 
+echo " Done."
 echo
+
+# CRONTAB
+#crontab -l -u $USER > /tmp/$USER.crontab
+#sed "s|_INSTALLPATH_|$INSTALL_PATH|" $SOURCE/etc/crontab >> /tmp/$USER.crontab
+#sort /tmp/$USER.crontab | uniq | crontab -u $USER -
+#rm /tmp/$USER.crontab
+
+# NRPE PLUGINS
+if [ -d /usr/lib64/nagios/plugins ]
+then
+  echo "-> Installing nagios plugin.."
+
+  sed "s|_ARCHIVEPATH_|$ARCHIVE_PATH|" $SOURCE/etc/nrpe/check_dynamo.sh > /usr/lib64/nagios/plugins/check_dynamo.sh
+  chmod +x /usr/lib64/nagios/plugins/check_dynamo.sh
+
+  echo " Done."
+  echo
+fi
+
 echo "Dynamo installation completed."

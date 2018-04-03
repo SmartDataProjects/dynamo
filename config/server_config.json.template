@@ -18,7 +18,6 @@
           "db": "dynamo",
           "reuse_connection": true
         }
-      }
     },
     "partition_def_path": "$(DYNAMO_BASE)/policies/partitions.txt"
   },

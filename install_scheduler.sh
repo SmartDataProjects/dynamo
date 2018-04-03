@@ -26,6 +26,11 @@ echo
 echo "Installing dynamo scheduler from $SOURCE."
 echo
 
+require mkdir -p $SCHEDULER_PATH
+chown $USER:$(id -gn $USER) $SCHEDULER_PATH
+
+
+
 if [ $DAEMONS -eq 1 ]
 then
   ### Stop the daemons first ###

@@ -1,0 +1,48 @@
+[paths]
+
+# Install target directory
+install_path=/usr/local/dynamo
+
+# Configuration directory
+config_path=/etc/dynamo
+
+# Temporary working directory
+spool_path=/var/spool/dynamo
+
+# Server log directory
+log_path=/var/log/dynamo
+
+# Archival directory
+archive_path=/local/data/dynamo
+
+# Location of the policy package
+policy_path=/usr/local/dynamo-policies
+
+[server]
+
+# User under which dynamo runs
+user=dynamo
+
+# Email address to send server notifications to
+email=
+
+# Server persistency store technology (leave blank if not running store)
+store=mysql
+
+# Store configuration to be passed to store_technology/generate_store_conf.py
+store_conf={"server": "dynamosrv", "reader": "dynamoread"}
+
+# Whether to run a web interface
+webserver=true
+
+[scheduler]
+
+# Registry user name for scheduled executables
+user=dynamo
+
+# Scheduler work directory
+workdir=/var/spool/dynamo/scheduler
+
+# Sequence file for scheduler daemon
+sequence=cms.seq
+

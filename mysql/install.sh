@@ -10,7 +10,8 @@
 
 THISDIR=$(cd $(dirname $0); pwd)
 
-source $THISDIR/../utilities/shellutil.sh
+source $THISDIR/../config.sh
+source $THISDIR/../utilities/shellutils.sh
 
 ROOTCNF=/etc/my.cnf.d/root.cnf
 HAS_ROOTCNF=true
@@ -34,16 +35,18 @@ then
 fi
 
 # Set up grants
-echo '######################'
-echo '######  GRANTS  ######'
-echo '######################'
+echo '############################'
+echo '######  MYSQL GRANTS  ######'
+echo '############################'
+echo
 
-python $THISDIR/grants.py
+python $THISDIR/grants.py -q
 
 # Set up databases
-echo '####################################'
-echo '######  DATABASES AND TABLES  ######'
-echo '####################################'
+echo '##########################################'
+echo '######  MYSQL DATABASES AND TABLES  ######'
+echo '##########################################'
+echo
 
 MYSQL="mysql --defaults-file=$ROOTCNF"
 
@@ -95,7 +98,6 @@ done
 
 if $HAS_ROOTCNF
 then
-  echo
   echo "Set up DB backup cron job [y/n]?"
   if confirmed
   then
@@ -104,7 +106,7 @@ then
     if ! grep -q $INSTALL_PATH/sbin/backup /tmp/crontab.tmp.$$
     then
       echo "Setting up cron job"
-      echo "  00 01 * * * $INSTALL_PATH/sbin/mysql_backup > /var/log/dynamo/backup.log 2>&1"
+      echo "  00 01 * * * $INSTALL_PATH/sbin/mysql_backup > $LOG_PATH/backup.log 2>&1"
       echo
       echo "Note: It is advised to set up binary logging of dynamohistory and dynamoregister by adding"
       echo "the following lines to the [mysqld] section of /etc/my.cnf:"
@@ -113,20 +115,20 @@ then
       echo "  binlog-do-db=dynamoregister"
       echo
   
-      echo "00 01 * * * $INSTALL_PATH/sbin/mysql_backup > /var/log/dynamo/backup.log 2>&1" >> /tmp/crontab.tmp.$$
+      echo "00 01 * * * $INSTALL_PATH/sbin/mysql_backup > $LOG_PATH/backup.log 2>&1" >> /tmp/crontab.tmp.$$
       crontab -u root - < /tmp/crontab.tmp.$$
     fi
     rm /tmp/crontab.tmp.$$
   fi
 else
-  echo "MySQL root credentials were not found in /etc/my.cnf.d/root.cnf."
+  echo "MySQL root credentials were not found in $ROOTCNF."
   echo "No automatic DB backup is set up."
   echo
   rm -f $ROOTCNF
 fi
 
 echo "MySQL installation is complete."
-if $HAS_DIFFERENCE
-then
-  echo "Plase fix the schema differences before starting Dynamo."
-fi
+$HAS_DIFFERENCE && echo "Plase fix the schema differences before starting Dynamo."
+echo
+
+exit 0

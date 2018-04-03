@@ -4,6 +4,7 @@ import sys
 import os
 import re
 import fnmatch
+import subprocess
 
 from argparse import ArgumentParser
 
@@ -44,8 +45,11 @@ if args.snapshot_run or args.test_run:
     config.detox.deletion_op.config.dry_run = True
     config.detox.copy_op.config.dry_run = True
 
-with open(os.environ['DYNAMO_BASE'] + '/etc/policies.tag') as tag:
-    policy_version = tag.read().strip()
+os.environ['DYNAMO_BASE'] + '/etc/policies.tag'
+proc = subprocess.Popen(['git', 'tag', '-l', '--contains', 'HEAD'], cwd = os.environ['DYNAMO_POLICIES'], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+policy_version = proc.communicate()[0].strip()
+if not policy_version:
+    policy_version = 'unknown'
 
 config.detox.policy_file = args.policy
 config.detox.policy_version = policy_version

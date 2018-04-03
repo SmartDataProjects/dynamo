@@ -96,6 +96,7 @@ class MySQL(object):
                 for _ in range(num_attempts):
                     try:
                         cursor.execute(sql, args)
+                        self._connection.commit()
                         break
                     except MySQLdb.OperationalError as err:
                         if not (self.reuse_connection and err.args[0] == 2006):

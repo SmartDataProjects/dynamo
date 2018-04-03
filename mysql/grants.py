@@ -4,6 +4,8 @@ import json
 import getpass
 import MySQLdb
 
+quiet = ('-q' in sys.argv)
+
 try:
     open('/etc/my.cnf.d/root.cnf').close()
 except:
@@ -37,7 +39,7 @@ for user, host in (users - in_db):
 
 db.commit()
 
-print 'Updating table grants.'
+print '-> Updating table grants.'
 
 for user, host in users:
     cursor.execute('DELETE FROM `mysql`.`tables_priv` WHERE `User` = %s AND `Host` = %s', (user, host))
@@ -50,12 +52,13 @@ for user, host in users:
 
     db.commit()
 
-print 'Done.\n'
+print ' Done.\n'
 
-for user, host in sorted(users):
-    print 'Granted to %s@%s:' % (user, host)
-    cursor.execute('SHOW GRANTS FOR \'%s\'@\'%s\'' % (user, host))
-    for row in cursor.fetchall()[1:]:
-        print row[0].replace('GRANT ', '').replace(' TO \'%s\'@\'%s\'' % (user, host), '')
-
-    print ''
+if not quiet:
+    for user, host in sorted(users):
+        print 'Granted to %s@%s:' % (user, host)
+        cursor.execute('SHOW GRANTS FOR \'%s\'@\'%s\'' % (user, host))
+        for row in cursor.fetchall()[1:]:
+            print row[0].replace('GRANT ', '').replace(' TO \'%s\'@\'%s\'' % (user, host), '')
+    
+        print ''
