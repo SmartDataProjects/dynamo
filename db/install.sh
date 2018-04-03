@@ -8,92 +8,123 @@
 ## prints a warning but does not do anything.
 ###########################################################################################
 
-echo
-echo "Setting up MySQL databases."
-echo
+THISDIR=$(cd $(dirname $0); pwd)
 
-require () {
-  "$@" >/dev/null 2>&1 && return 0
-  echo
-  echo "[Fatal] Failed: $@"
-  exit 1
-}
+ROOTCNF=/etc/my.cnf.d/root.cnf
+HAS_ROOTCNF=true
 
-### Source the configuration parameters
-
-export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]})/..; pwd)
-
-if ! [ -e $SOURCE/config.sh ]
+# If ROOTCNF does not exist, make a temporary file
+if ! [ -r $ROOTCNF ]
 then
+  echo -n 'Enter password for MySQL root:'
+  read -s PASSWD
   echo
-  echo "$SOURCE/config.sh does not exist."
-  exit 1
+
+  touch $ROOTCNF
+  chmod 600 $ROOTCNF
+  echo "[mysql]" >> $ROOTCNF
+  echo "host=localhost"
+  echo "user=root"
+  echo "password='$PASSWD'" >> $ROOTCNF
+  unset PASSWD
+
+  HAS_ROOTCNF=false
 fi
 
-require source $SOURCE/config.sh
+# Set up grants
+echo '######################'
+echo '######  GRANTS  ######'
+echo '######################'
 
-MYSQLOPT="-u $SERVER_DB_WRITE_USER -p$SERVER_DB_WRITE_PASSWD -h localhost"
+python $THISDIR/grants.py
 
-# Check user validity
-echo "SELECT 1;" | mysql $MYSQLOPT >/dev/null 2>&1
-if [ $? -ne 0 ]
-then
-  echo
-  echo "MySQL user permission is not set. Run db/grants.sh first."
-  exit 1
-fi
+# Set up databases
+echo '####################################'
+echo '######  DATABASES AND TABLES  ######'
+echo '####################################'
 
-require mkdir .tmp
-cd .tmp
+MYSQL="mysql --defaults-file=$ROOTCNF"
 
-for SCHEMA in $(ls $SOURCE/db | grep '\.sql$')
+HAS_DIFFERENCE=false
+
+for DB in $(ls $THISDIR/schema) dynamo_tmp
 do
-  DB=$(echo $SCHEMA | sed 's/\.sql$//')
-  $SOURCE/db/mysqldump.sh $MYSQLOPT $DB
+  # Does the database exist?
+  echo 'SELECT 1;' | $MYSQL -D $DB > /dev/null 2>&1
 
-  # mysqldump.sh does not create a file if the DB does not exist
-  if [ -e $DB.sql ]
+  # If not, create it
+  if [ $? -ne 0 ]
   then
-    diff $DB.sql $SOURCE/db/$SCHEMA > /dev/null 2>&1
+    echo 'CREATE DATABASE `'$DB'`;'
+    echo 'CREATE DATABASE `'$DB'`;' | $MYSQL > /dev/null 2>&1
     if [ $? -ne 0 ]
     then
-      echo
-      echo "Differences were found in schema for database $DB."
-      echo "Please manually update the schema."
-      echo
+      echo "Database creation failed."
+      exit 1
     fi
-  else
-    echo "CREATE DATABASE $DB;" | mysql $MYSQLOPT
-    mysql $MYSQLOPT -D $DB < $SOURCE/db/$SCHEMA
   fi
+
+  [ -d $THISDIR/schema/$DB ] || continue
+
+  for SQL in $(ls $THISDIR/schema/$DB)
+  do
+    TABLE=$(echo $SQL | sed 's/.sql//')
+
+    # Get the CREATE TABLE command. If the table does not exist, return code is nonzero
+    python $THISDIR/get_schema.py --defaults-file=$ROOTCNF $DB $TABLE > /tmp/.schema.$$ 2>&1
+
+    if [ $? -ne 0 ]
+    then
+      echo 'Creating new table '$DB'.'$TABLE
+      $MYSQL -D $DB < $THISDIR/schema/$DB/$SQL
+      echo
+    elif ! diff /tmp/.schema.$$ $THISDIR/schema/$DB/$SQL > /dev/null
+    then
+      echo 'Difference found in '$DB'.'$TABLE' (existing | installation):'
+      echo
+      diff -y /tmp/.schema.$$ $THISDIR/schema/$DB/$SQL
+      echo
+      HAS_DIFFERENCE=true
+    fi
+
+    rm /tmp/.schema.$$
+  done
 done
 
-echo "DROP DATABASE IF EXISTS dynamo_tmp;" | mysql $MYSQLOPT
-echo "CREATE DATABASE dynamo_tmp;" | mysql $MYSQLOPT
-
-cd ..
-rm -rf .tmp
-
-if [ -r /etc/my.cnf.d/root.cnf ]
+if $HAS_ROOTCNF
 then
-  echo "Setting up a cron job (root) for DB backup."
-  echo "Note: It is advised to set up binary logging of dynamohistory and dynamoregister by adding"
-  echo "the following lines to the [mysqld] section of /etc/my.cnf:"
-  echo "log-bin=/var/log/mysql/mysqld.log"
-  echo "binlog-do-db=dynamohistory"
-  echo "binlog-do-db=dynamoregister"
   echo
-
-  crontab -l -u root > /tmp/crontab.tmp.$$
-  chmod 600 /tmp/crontab.tmp.$$
-  if ! grep -q $INSTALL_PATH/sbin/backup /tmp/crontab.tmp.$$
+  echo "Set up DB backup cron job [y/n]?"
+  if confirmed
   then
-    echo "00 01 * * * $INSTALL_PATH/sbin/backup > /var/log/dynamo/backup.log 2>&1" >> /tmp/crontab.tmp.$$
-    crontab -u root - < /tmp/crontab.tmp.$$
+    crontab -l -u root > /tmp/crontab.tmp.$$
+    chmod 600 /tmp/crontab.tmp.$$
+    if ! grep -q $INSTALL_PATH/sbin/backup /tmp/crontab.tmp.$$
+    then
+      echo "Setting up cron job"
+      echo "  00 01 * * * $INSTALL_PATH/sbin/mysql_backup > /var/log/dynamo/backup.log 2>&1"
+      echo
+      echo "Note: It is advised to set up binary logging of dynamohistory and dynamoregister by adding"
+      echo "the following lines to the [mysqld] section of /etc/my.cnf:"
+      echo "  log-bin=/var/log/mysql/mysqld.log"
+      echo "  binlog-do-db=dynamohistory"
+      echo "  binlog-do-db=dynamoregister"
+      echo
+  
+      echo "00 01 * * * $INSTALL_PATH/sbin/mysql_backup > /var/log/dynamo/backup.log 2>&1" >> /tmp/crontab.tmp.$$
+      crontab -u root - < /tmp/crontab.tmp.$$
+    fi
+    rm /tmp/crontab.tmp.$$
   fi
-  rm /tmp/crontab.tmp.$$
 else
   echo "MySQL root credentials were not found in /etc/my.cnf.d/root.cnf."
   echo "No automatic DB backup is set up."
   echo
+  rm -f $ROOTCNF
+fi
+
+echo "MySQL installation is complete."
+if $HAS_DIFFERENCE
+then
+  echo "Plase fix the schema differences before starting Dynamo."
 fi

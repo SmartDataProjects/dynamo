@@ -3,23 +3,23 @@ import sys
 import json
 import getpass
 import MySQLdb
-from ConfigParser import ConfigParser, NoOptionError
 
 try:
-    parser = ConfigParser()
-    parser.read('/etc/my.cnf.d/root.cnf')
-
-    passwd = parser.get('mysql', 'password')
-
+    open('/etc/my.cnf.d/root.cnf').close()
 except:
-    passwd = getpass.getpass('Enter password for MySQL root:')
+    params = {'user': 'root', 'host': 'localhost'}
+    params['passwd'] = getpass.getpass('Enter password for MySQL root:')
+else:
+    params = {'read_default_file': '/etc/my.cnf.d/root.cnf', 'read_default_group': 'mysql'}
+
+params['db'] = 'mysql'
 
 thisdir = os.path.dirname(os.path.realpath(__file__))
 
 with open(thisdir + '/grants.json') as source:
     config = json.load(source)
 
-db = MySQLdb.connect(user = 'root', passwd = passwd, host = 'localhost', db = 'mysql')
+db = MySQLdb.connect(**params)
 
 cursor = db.cursor()
 
@@ -27,8 +27,6 @@ users = set()
 for user, userconf in config.items():
     for host in userconf['hosts']:
         users.add((user, host))
-
-print users
 
 cursor.execute('SELECT `User`, `Host` FROM `mysql`.`user`')
 in_db = set(cursor.fetchall())

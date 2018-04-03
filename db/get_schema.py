@@ -3,7 +3,6 @@ import re
 import getpass
 import MySQLdb
 from argparse import ArgumentParser
-from ConfigParser import ConfigParser, NoOptionError
 
 parser = ArgumentParser(description = 'Write CREATE TABLE statements to stdout.', add_help = False)
 parser.add_argument('db', metavar = 'DB', help = 'DB name.')
