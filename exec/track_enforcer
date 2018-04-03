@@ -86,11 +86,9 @@ def create_rrd(path):
 
 ## Get all enforcer rules' statuses
 
-partition = inventory.partitions[dealer_config.partition_name]
-
 write_rrds = True 
 
-rrd_info = enforcer.report_back(inventory, partition)
+rrd_info = enforcer.report_back(inventory)
 
 for rule_name, already_there, still_missing in rrd_info:
     
