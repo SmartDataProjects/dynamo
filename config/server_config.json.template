@@ -7,14 +7,14 @@
       "module": "MySQLInventoryStore",
       "config": {
         "db_params": {
-          _SERVER_DB_WRITE_PARAMS_1_
+          _SERVER_DB_WRITE_PARAMS_
           "db": "dynamo",
           "reuse_connection": true
         }
       },
       "readonly_config": {
         "db_params": {
-          _SERVER_DB_READ_PARAMS_1_
+          _SERVER_DB_READ_PARAMS_
           "db": "dynamo",
           "reuse_connection": true
         }

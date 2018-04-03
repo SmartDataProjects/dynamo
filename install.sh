@@ -196,13 +196,13 @@ else
   sed -i "s|_REGISTRYHOST_|$REGISTRY_HOST|" $CONFIG_PATH/server_config.json
   sed -i "s|_EMAIL_|$EMAIL|" $CONFIG_PATH/server_config.json
 
-  sed -n '1,/_SERVER_DB_WRITE_PARAMS_1_/ p' $CONFIG_PATH/server_config.json | sed '$ d' > server_config.json.tmp
+  sed -n '1,/_SERVER_DB_WRITE_PARAMS_/ p' $CONFIG_PATH/server_config.json | sed '$ d' > server_config.json.tmp
 
   echo '          "user": "'$SERVER_DB_WRITE_USER'",' >> server_config.json.tmp
   echo '          "passwd": "'$SERVER_DB_WRITE_PASSWD'",' >> server_config.json.tmp
   echo '          "host": "'$SERVER_DB_HOST'",' >> server_config.json.tmp
 
-  sed '/_SERVER_DB_WRITE_PARAMS_1_/,/_SERVER_DB_READ_PARAMS_1_/ !d;//d' $CONFIG_PATH/server_config.json >> server_config.json.tmp
+  sed '/_SERVER_DB_WRITE_PARAMS_/,/_SERVER_DB_READ_PARAMS_/ !d;//d' $CONFIG_PATH/server_config.json >> server_config.json.tmp
 
   [ $SERVER_DB_READ_CNF ] && echo '          "config_file": "'$SERVER_DB_READ_CNF'",' >> server_config.json.tmp
   [ $SERVER_DB_READ_CNFGROUP ] && echo '          "config_group": "'$SERVER_DB_READ_CNFGROUP'",' >> server_config.json.tmp
@@ -210,21 +210,7 @@ else
   [ $SERVER_DB_READ_PASSWD ] && echo '          "passwd": "'$SERVER_DB_READ_PASSWD'",' >> server_config.json.tmp
   echo '          "host": "'$SERVER_DB_HOST'",' >> server_config.json.tmp
 
-  sed '/_SERVER_DB_READ_PARAMS_1_/,/_SERVER_DB_WRITE_PARAMS_2_/ !d;//d' $CONFIG_PATH/server_config.json >> server_config.json.tmp
-
-  echo '        "user": "'$SERVER_DB_WRITE_USER'",' >> server_config.json.tmp
-  echo '        "passwd": "'$SERVER_DB_WRITE_PASSWD'",' >> server_config.json.tmp
-  echo '        "host": "'$SERVER_DB_HOST'",' >> server_config.json.tmp
-
-  sed '/_SERVER_DB_WRITE_PARAMS_2_/,/_SERVER_DB_READ_PARAMS_2_/ !d;//d' $CONFIG_PATH/server_config.json >> server_config.json.tmp
-
-  [ $SERVER_DB_READ_CNF ] && echo '        "config_file": "'$SERVER_DB_READ_CNF'",' >> server_config.json.tmp
-  [ $SERVER_DB_READ_CNFGROUP ] && echo '        "config_group": "'$SERVER_DB_READ_CNFGROUP'",' >> server_config.json.tmp
-  [ $SERVER_DB_READ_USER ] && echo '        "user": "'$SERVER_DB_READ_USER'",' >> server_config.json.tmp
-  [ $SERVER_DB_READ_PASSWD ] && echo '        "passwd": "'$SERVER_DB_READ_PASSWD'",' >> server_config.json.tmp
-  echo '        "host": "'$SERVER_DB_HOST'",' >> server_config.json.tmp
-
-  sed '/_SERVER_DB_READ_PARAMS_2_/,$ !d;//d' $CONFIG_PATH/server_config.json >> server_config.json.tmp
+  sed '/_SERVER_DB_READ_PARAMS_/,$ !d;//d' $CONFIG_PATH/server_config.json >> server_config.json.tmp
   
   mv server_config.json.tmp $CONFIG_PATH/server_config.json
 fi

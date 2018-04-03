@@ -46,5 +46,3 @@ SERVER_DB_READ_CNF=/etc/my.cnf.d/dynamo-read.cnf
 SERVER_DB_READ_CNFGROUP=mysql
 SERVER_DB_HOST=localhost
 
-# Registry host
-REGISTRY_HOST=
