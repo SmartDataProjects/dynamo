@@ -1,0 +1,46 @@
+{
+  "dynamosrv": {
+    "passwd": "",
+    "hosts": ["localhost"],
+    "grants": [
+      ["ALL PRIVILEGES", "dynamo%"]
+    ]
+  },
+  "dynamo": {
+    "passwd": "",
+    "hosts": ["localhost", "%"],
+    "grants": [
+      ["SELECT", "dynamo"],
+      ["ALL PRIVILEGES", "dynamo\\_tmp"],
+      ["SELECT, LOCK TABLES", "dynamoregister"],
+      ["SELECT, INSERT, UPDATE, DELETE, LOCK TABLES", "dynamohistory"],
+      ["SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE, DROP", "dynamohistory\\_cache"],
+      ["UPDATE", "dynamo", "system"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "dataset_requests"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "dataset_accesses"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "activity_lock"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "copy_requests"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "copy_request_items"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "active_copies"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_requests"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_request_items"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "active_deletions"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_queue"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "transfer_queue"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "stage_queue"]
+    ]
+  },
+  "dynamoread": {
+    "passwd": "",
+    "hosts": ["localhost", "%"],
+    "grants": [
+      ["SELECT", "dynamo"],
+      ["ALL PRIVILEGES", "dynamo\\_tmp"],
+      ["SELECT", "dynamoregister"],
+      ["SELECT, LOCK TABLES", "dynamohistory"],
+      ["SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE, DROP", "dynamohistory\\_cache"],
+      ["UPDATE", "dynamohistory", "lock"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "activity_lock"]
+    ]
+  }
+}

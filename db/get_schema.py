@@ -2,6 +2,7 @@
 
 import sys
 import re
+import getpass
 import MySQLdb
 from argparse import ArgumentParser
 from ConfigParser import ConfigParser, NoOptionError
@@ -39,6 +40,9 @@ if args.defaults_file:
 for key in ['user', 'passwd', 'host']:
     if getattr(args, key):
         params[key] = getattr(args, key)
+
+if 'passwd' not in params:
+    params['passwd'] = getpass.getpass('Enter password:')
 
 params['db'] = args.db
 
