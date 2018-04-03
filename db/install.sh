@@ -10,6 +10,8 @@
 
 THISDIR=$(cd $(dirname $0); pwd)
 
+source $THISDIR/../utilities/shellutil.sh
+
 ROOTCNF=/etc/my.cnf.d/root.cnf
 HAS_ROOTCNF=true
 
