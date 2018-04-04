@@ -81,7 +81,7 @@ if (isset($_GET['rule'])){
   $var=$_GET['rule'];
 }
 
-$jsondata = file_get_contents("https://raw.githubusercontent.com/SmartDataProjects/dynamo-policies/master/common/enforcer_rules.json");
+$jsondata = file_get_contents("https://raw.githubusercontent.com/SmartDataProjects/dynamo-policies/master/common/enforcer_rules_physics.json");
 $lines = explode("\n", $jsondata);
 
 $array = json_decode($jsondata,true);
@@ -91,24 +91,27 @@ $considered_backends = array();
 $considered_lat = array();
 $considered_long = array();
 
-foreach($array as $key => $value) {
+foreach($array['rules'] as $key => $value) {
   if ($key != $var){
     continue;
   }
-  foreach($value['sites'] as $pattern => $val) {
-    if ($handle = fopen(__DIR__ . "/geodata/lat_long_sites.csv", "r")) {
-      $count = 0;
-      while (($line = fgets($handle, 4096)) !== FALSE) {
-	$line_array = explode(",",$line);
-	if (fnmatch($val,$line_array[0])){
-	  $considered_sites[] = $line_array[0];
-	  $considered_backends[] = $line_array[1];
-	  $considered_lat[] = $line_array[2];
-	  $considered_long[] = $line_array[3];
-	}
-	$count++;
+  foreach($value['destinations'] as $pattern => $val) {
+    $site_patterns=explode(' ',str_replace(']','',str_replace('[','',strstr($val,'['))));
+    foreach($site_patterns as &$value){ 
+      if ($handle = fopen(__DIR__ . "/geodata/lat_long_sites.csv", "r")) {
+        $count = 0;
+        while (($line = fgets($handle, 4096)) !== FALSE) {
+	  $line_array = explode(",",$line);
+	  if (fnmatch($value,$line_array[0])){
+	    $considered_sites[] = $line_array[0];
+	    $considered_backends[] = $line_array[1];
+	    $considered_lat[] = $line_array[2];
+	    $considered_long[] = $line_array[3];
+	  }
+	  $count++;
+        }
+        fclose($handle);
       }
-      fclose($handle);
     }
   }
 }
@@ -148,7 +151,7 @@ if ( (isset($_REQUEST['getStatus']) && $_REQUEST['getStatus'])){
 
       $siteinfo = array('rule' => str_replace('.rrd','',$file)."_".$line_number, 'data' => array());
             
-      $rrd_info = single_rrd_to_array("usa_miniaod.rrd",__DIR__ . "/monitoring_enforcer/");
+      $rrd_info = single_rrd_to_array($file,__DIR__ . "/monitoring_enforcer/");
       $siteinfo['data'][] = array('date' => $rrd_info[0], 'missing' => $rrd_info[1], 'there' => $rrd_info[2], 'sites' => $considered_sites, 'backends' => $considered_backends, 'lat' => $considered_lat, 'long' => $considered_long);
       $status_array[] = $siteinfo;
 	
