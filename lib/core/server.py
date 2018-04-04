@@ -16,6 +16,7 @@ from dynamo.utils.signaling import SignalBlocker
 import dynamo.utils.interface as interface
 import dynamo.core.manager.impl as manager_impl
 from dynamo.core.manager.base import ServerManager
+from dynamo.web.server import WebServer
 from dynamo.dataformat.exceptions import log_exception
 
 LOG = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ def killproc(proc):
     os.seteuid(uid)
     proc.join(5)
 
-class Dynamo(object):
+class DynamoServer(object):
     """Main daemon class."""
 
     def __init__(self, config):

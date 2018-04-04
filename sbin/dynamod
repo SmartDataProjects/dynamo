@@ -76,16 +76,19 @@ signal_converter = SignalConverter(logger = LOG)
 signal_converter.set(signal.SIGTERM)
 
 ## Start the server
-from dynamo.core.server import Dynamo
+from dynamo.core.server import DynamoServer
 from dynamo.core.manager.base import ServerManager
 
 server = Dynamo(config)
 server.load_inventory()
 
 if config.serve_web:
-    web_thread = threading.Thread(target = server.serve_web, name = 'serve_web')
-    web_thread.daemon = True
-    web_thread.start()
+    from dynamo.web.server import WebServer
+    from flup.server.fcgi import WSGIServer
+
+    web = WebServer(config.web, server)
+    # Thread-based WSGI server
+    WSGIServer(web.main, bindAddress = config.web.socket, umask = 0).run()
 
 # Start the loop of loops
 # If the server dies out of error, status will not be INITIAL and we get ouf of
