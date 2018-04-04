@@ -92,10 +92,10 @@ class Dynamo(object):
         # We are ready to serve
         self.manager.set_status(ServerManager.SRV_ONLINE)
 
-    def serve_executables(self):
+    def serve_applications(self):
         """
         Infinite-loop main body of the daemon.
-        Step 1: Poll the executables list for one uploaded script.
+        Step 1: Poll the applications list for one uploaded script.
         Step 2: If a script is found, check the authorization of the script.
         Step 3: Spawn a child process for the script.
         Step 4: Apply updates sent by other servers.
@@ -114,7 +114,7 @@ class Dynamo(object):
         writing_process = (0, None)
 
         try:
-            LOG.info('Start polling for executables.')
+            LOG.info('Start polling for applications.')
 
             first_wait = True
             do_sleep = False
@@ -138,41 +138,41 @@ class Dynamo(object):
                     time.sleep(1)
 
                 ## Step 1: Poll
-                LOG.debug('Polling for executables.')
+                LOG.debug('Polling for applications.')
 
-                next_executable = self.manager.get_next_executable()
+                next_application = self.manager.get_next_application()
 
-                if next_executable is None:
+                if next_application is None:
                     if len(child_processes) == 0 and first_wait:
-                        LOG.info('Waiting for executables.')
+                        LOG.info('Waiting for applications.')
                         first_wait = False
 
                     do_sleep = True
 
-                    LOG.debug('No executable found, sleeping for 1 second.')
+                    LOG.debug('No application found, sleeping for 1 second.')
                     continue
 
                 ## Step 2: If a script is found, check the authorization of the script.
-                exec_id, write_request, title, path, args, user_name = next_executable
+                exec_id, write_request, title, path, args, user_name = next_application
 
                 first_wait = True
                 do_sleep = False
 
                 if not os.path.exists(path + '/exec.py'):
-                    LOG.info('Executable %s from user %s (write request: %s) not found.', title, user_name, write_request)
-                    self.manager.set_executable_status(exec_id, ServerManager.EXC_NOTFOUND)
+                    LOG.info('Application %s from user %s (write request: %s) not found.', title, user_name, write_request)
+                    self.manager.set_application_status(exec_id, ServerManager.EXC_NOTFOUND)
                     continue
 
-                LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
+                LOG.info('Found application %s from user %s (write request: %s)', title, user_name, write_request)
 
                 proc_args = (path, args)
 
                 if write_request:
                     if not self.manager.check_write_auth(title, user_name, path):
-                        LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
+                        LOG.warning('Application %s from user %s is not authorized for write access.', title, user_name)
                         # TODO send a message
 
-                        self.manager.set_executable_status(exec_id, ServerManager.EXC_AUTHFAILED)
+                        self.manager.set_application_status(exec_id, ServerManager.EXC_AUTHFAILED)
                         continue
 
                     queue = multiprocessing.Queue()
@@ -181,13 +181,13 @@ class Dynamo(object):
                     writing_process = (exec_id, queue)
 
                 ## Step 3: Spawn a child process for the script
-                self.manager.set_executable_status(exec_id, ServerManager.EXC_RUN)
+                self.manager.set_application_status(exec_id, ServerManager.EXC_RUN)
 
                 proc = multiprocessing.Process(target = self._run_one, name = title, args = proc_args)
                 proc.daemon = True
                 proc.start()
 
-                LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
+                LOG.info('Started application %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
 
                 child_processes.append((exec_id, proc, user_name, path))
 
@@ -219,7 +219,7 @@ class Dynamo(object):
                 if proc.is_alive():
                     LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
 
-                self.manager.set_executable_status(exec_id, ServerManager.EXC_KILLED)
+                self.manager.set_application_status(exec_id, ServerManager.EXC_KILLED)
 
             if self.manager.status == ServerManager.SRV_OUTOFSYNC:
                 # dynamod restarts this server
@@ -243,7 +243,7 @@ class Dynamo(object):
         while ichild != len(child_processes):
             exec_id, proc, user_name, path = child_processes[ichild]
 
-            status = self.manamger.get_executable_status(exec_id)
+            status = self.manamger.get_application_status(exec_id)
             if status == ServerManager.EXC_KILLED:
                 killproc(proc)
                 proc.join(60)
@@ -278,7 +278,7 @@ class Dynamo(object):
                     continue
                 else:
                     # The process must be complete but did not join within 60 seconds
-                    LOG.error('Executable %s (%s) from user %s is stuck (Status %s).', proc.name, path, user_name, ServerManager.executable_status_name(status))
+                    LOG.error('Application %s (%s) from user %s is stuck (Status %s).', proc.name, path, user_name, ServerManager.application_status_name(status))
             else:
                 if status == ServerManager.EXC_RUN:
                     if proc.exitcode == 0:
@@ -286,12 +286,12 @@ class Dynamo(object):
                     else:
                         status = ServerManager.EXC_FAILED
 
-                LOG.info('Executable %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, ServerManager.executable_status_name(status))
+                LOG.info('Application %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, ServerManager.application_status_name(status))
 
             # process completed or is alive but stuck -> remove from the list and set status in the table
             child_processes.pop(ichild)
 
-            self.manager.set_executable_status(exec_id, status, exit_code = proc.exitcode)
+            self.manager.set_application_status(exec_id, status, exit_code = proc.exitcode)
 
         return writing_process
 

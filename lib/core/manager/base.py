@@ -14,12 +14,12 @@ class ServerHost(object):
 
 class ServerManager(object):
     """
-    Manager for the executable and updates table and the connections to other servers.
+    Manager for the application and updates table and the connections to other servers.
     """
 
     _server_statuses = ['initial', 'starting', 'online', 'updating', 'outofsync']
     SRV_INITIAL, SRV_STARTING, SRV_ONLINE, SRV_UPDATING, SRV_ERROR, SRV_OUTOFSYNC = range(1, 7)
-    _executable_statuses = ['new', 'assigned', 'run', 'done', 'notfound', 'authfailed', 'failed', 'killed']
+    _application_statuses = ['new', 'assigned', 'run', 'done', 'notfound', 'authfailed', 'failed', 'killed']
     EXC_NEW, EXC_ASSIGNED, EXC_RUN, EXC_DONE, EXC_NOTFOUND, EXC_AUTHFAILED, EXC_FAILED, EXC_KILLED = range(1, 9)
 
     @staticmethod
@@ -37,14 +37,14 @@ class ServerManager(object):
             return arg
 
     @staticmethod
-    def executable_status_name(arg):
+    def application_status_name(arg):
         if type(arg) is int:
-            return ServerManager._executable_statuses[arg - 1]
+            return ServerManager._application_statuses[arg - 1]
         else:
             return arg
 
     @staticmethod
-    def executable_status_val(arg):
+    def application_status_val(arg):
         if type(arg) is str:
             return eval('ServerManager.EXC_' + arg.upper())
         else:
@@ -117,53 +117,53 @@ class ServerManager(object):
 
     def writing_process_id(self):
         """
-        Get the id of the writing executable.
+        Get the id of the writing application.
         """
         raise NotImplementedError('writing_process_id')
 
-    def schedule_executable(self, title, path, args, user, write_request):
+    def schedule_application(self, title, path, args, user, write_request):
         """
-        Schedule an executable to the master server.
-        @param title          Executable title.
-        @param path           Executable path.
-        @param args           Arguments to the executable
+        Schedule an application to the master server.
+        @param title          Application title.
+        @param path           Application path.
+        @param args           Arguments to the application
         @param user           User name of the requester
         @param write_request  Boolean
 
-        @return executable id
+        @return application id
         """
-        raise NotImplementedError('schedule_executable')
+        raise NotImplementedError('schedule_application')
 
-    def get_next_executable(self):
+    def get_next_application(self):
         """
-        Fetch the next executable to run.
+        Fetch the next application to run.
         """
-        raise NotImplementedError('get_next_executable')
+        raise NotImplementedError('get_next_application')
 
-    def get_executable_status(self, excec_id):
+    def get_application_status(self, excec_id):
         """
-        Get the executable status.
+        Get the application status.
         """
-        raise NotImplementedError('get_executable_status')
+        raise NotImplementedError('get_application_status')
 
-    def set_executable_status(self, exec_id, status, exit_code = None):
+    def set_application_status(self, exec_id, status, exit_code = None):
         """
-        Set the executable status.
+        Set the application status.
         
-        @param exec_id   Executable id
+        @param exec_id   Application id
         @param status    New status
         @param exit_code Exit code (optional)
         """
-        raise NotImplementedError('set_executable_status')
+        raise NotImplementedError('set_application_status')
 
     def check_write_auth(self, title, user, path):
         """
-        Check the authorization of write-requesting executable. The title, user_id, and the md5 hash of the executable
+        Check the authorization of write-requesting application. The title, user_id, and the md5 hash of the application
         script must match the registration.
 
-        @param title   Title of the executable
+        @param title   Title of the application
         @param user    Requester user name
-        @param path    Executable path
+        @param path    Application path
 
         @return boolean
         """

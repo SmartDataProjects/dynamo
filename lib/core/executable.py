@@ -1,6 +1,6 @@
 """
-A module used for communication between the server and the executables.
-Also can be used to set up an environment for the executables to run
+A module used for communication between the server and the applications.
+Also can be used to set up an environment for the applications to run
 as standalone python scripts.
 """
 

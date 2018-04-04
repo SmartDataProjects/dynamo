@@ -65,18 +65,18 @@ class MySQLServerManager(ServerManager):
         return
 
     def writing_process_id(self): #override
-        result = self.master_server.query('SELECT `id` FROM `executables` WHERE `write_request` = 1 AND `status` = \'run\'')
+        result = self.master_server.query('SELECT `id` FROM `applications` WHERE `write_request` = 1 AND `status` = \'run\'')
         if len(result) == 0:
             return None
         else:
             return result[0]
 
-    def schedule_executable(self, title, path, args, user, write_request): #override
-        sql = 'INSERT INTO `executables` (`write_request`, `title`, `path`, `args`, `user`) VALUES (%s, %s, %s, %s, %s)'
+    def schedule_application(self, title, path, args, user, write_request): #override
+        sql = 'INSERT INTO `applications` (`write_request`, `title`, `path`, `args`, `user`) VALUES (%s, %s, %s, %s, %s)'
         return self.master_server.query(sql, write_request, title, path, args, user)
 
-    def get_next_executable(self): #override
-        self.master_server.query('LOCK TABLES `servers` READ, `executables` WRITE')
+    def get_next_application(self): #override
+        self.master_server.query('LOCK TABLES `servers` READ, `applications` WRITE')
         
         try:
             # Cannot run a write process if
@@ -87,10 +87,10 @@ class MySQLServerManager(ServerManager):
             if not skip_writer:
                 skip_writer = (self.count_servers(ServerManager.SRV_STARTING) != 0)
                 if not skip_writer:
-                    num_running_writes = self.master_server.query('SELECT COUNT(*) FROM `executables` WHERE `write_request` = 1 AND `status` = \'run\'')[0]
+                    num_running_writes = self.master_server.query('SELECT COUNT(*) FROM `applications` WHERE `write_request` = 1 AND `status` = \'run\'')[0]
                     skip_writer = (num_running_writes != 0)
     
-            sql = 'SELECT `id`, `write_request`, `title`, `path`, `args`, `user` FROM `executables`'
+            sql = 'SELECT `id`, `write_request`, `title`, `path`, `args`, `user` FROM `applications`'
             sql += ' WHERE `status` = \'new\''
             if skip_writer:
                 sql += ' AND `write_request` = 0'
@@ -100,30 +100,30 @@ class MySQLServerManager(ServerManager):
             if len(result) == 0:
                 return None
             else:
-                sql = 'UPDATE `executables` SET `status` = \'assigned\', `server_id` = %s WHERE `id` = %s'
-                self.master_server.query(sql, self.server_id, result[0][0])
+                sql = 'UPDATE `applications` SET `status` = \'assigned\', `server` = %s WHERE `id` = %s'
+                self.master_server.query(sql, socket.gethostname(), result[0][0])
                 return result[0]
 
         finally:
             self.master_server.query('UNLOCK TABLES')
 
-    def get_executable_status(self, excec_id): #override
+    def get_application_status(self, excec_id): #override
         result = self.master_server.query('SELECT `status` FROM `action` WHERE `id` = %s', exec_id)
         if len(result) == 0:
-            # don't know what happened but the executable is gone
+            # don't know what happened but the application is gone
             return ServerManager.EXC_KILLED
         else:
-            return ServerManager.executable_status_val(result[0])
+            return ServerManager.application_status_val(result[0])
 
-    def set_executable_status(self, exec_id, status, exit_code = None): #override
-        self.master_server.query('UPDATE `executables` SET `status` = %s, `exit_code` = %s WHERE `id` = %s', ServerManager.executable_status_name(status), exit_code, exec_id)
+    def set_application_status(self, exec_id, status, exit_code = None): #override
+        self.master_server.query('UPDATE `applications` SET `status` = %s, `exit_code` = %s WHERE `id` = %s', ServerManager.application_status_name(status), exit_code, exec_id)
 
     def check_write_auth(self, title, user, path): #override
         # check authorization
         with open(path + '/exec.py') as source:
             checksum = hashlib.md5(source.read()).hexdigest()
 
-        sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = UNHEX(%s)'
+        sql = 'SELECT `user_id` FROM `authorized_applications` WHERE `title` = %s AND `checksum` = UNHEX(%s)'
         for auth_user_id in self.registry.backend.query(sql, title, checksum):
             if auth_user_id == 0 or auth_user_id == user_id:
                 return True
