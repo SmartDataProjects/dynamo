@@ -1,4 +1,4 @@
-CREATE TABLE `authorized_executables` (
+CREATE TABLE `authorized_applications` (
   `user_id` int(10) unsigned NOT NULL,
   `title` varchar(128) COLLATE latin1_general_cs NOT NULL,
   `checksum` binary(16) NOT NULL,
