@@ -81,7 +81,9 @@
       "undertaker": {
         "priority": 2,
         "module": "Undertaker",
-        "config": {}
+        "config": {
+          "additional_sites": []
+        }
       }
     },
     "attrs": {
