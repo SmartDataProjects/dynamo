@@ -79,7 +79,7 @@ signal_converter.set(signal.SIGTERM)
 from dynamo.core.server import DynamoServer
 from dynamo.core.manager.base import ServerManager
 
-server = Dynamo(config)
+server = DynamoServer(config)
 server.load_inventory()
 
 if config.serve_web:
@@ -101,7 +101,7 @@ while True:
     if config.serve_applications:
         server.serve_applications()
     else:
-        server.wait_for_signal()
+        server.sleep()
 
     if server.manager.status == ServerManager.SRV_INITIAL:
         server.load_inventory()

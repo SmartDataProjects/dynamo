@@ -15,7 +15,7 @@ from dynamo.core.inventory import DynamoInventory
 from dynamo.utils.signaling import SignalBlocker
 import dynamo.utils.interface as interface
 import dynamo.core.manager.impl as manager_impl
-from dynamo.core.manager.base import ServerManager
+from dynamo.core.manager.base import ServerManager, OutOfSyncError
 from dynamo.web.server import WebServer
 from dynamo.dataformat.exceptions import log_exception
 
@@ -99,7 +99,7 @@ class DynamoServer(object):
 
         LOG.info('Inventory is ready.')
 
-    def wait_for_signal(self):
+    def sleep(self):
         """
         If the server is not serving applications, this function works in an infinite loop checking the server status.
         """
@@ -116,20 +116,21 @@ class DynamoServer(object):
         except KeyboardInterrupt:
             LOG.info('Server process was interrupted.')
 
+        except OutOfSyncError:
+            log_exception(LOG)
+
+            # dynamod restarts this server
+            self.manager.reset_status()
+
         except:
             # log the exception
             LOG.warning('Exception in server process. Terminating all child processes.')
 
-            if self.manager.status != ServerManager.SRV_OUTOFSYNC:
+            if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
                 self.manager.set_status(ServerManager.SRV_ERROR)
 
             log_exception(LOG)
             raise
-
-        finally:
-            if self.manager.status == ServerManager.SRV_OUTOFSYNC:
-                # dynamod restarts this server
-                self.manager.set_status(ServerManager.SRV_INITIAL)
 
     def serve_applications(self):
         """
@@ -224,11 +225,17 @@ class DynamoServer(object):
         except KeyboardInterrupt:
             LOG.info('Server process was interrupted.')
 
+        except OutOfSyncError:
+            log_exception(LOG)
+
+            # dynamod restarts this server
+            self.manager.reset_status()
+
         except:
             # log the exception
             LOG.warning('Exception in server process. Terminating all child processes.')
 
-            if self.manager.status != ServerManager.SRV_OUTOFSYNC:
+            if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
                 self.manager.set_status(ServerManager.SRV_ERROR)
 
             log_exception(LOG)
@@ -251,15 +258,11 @@ class DynamoServer(object):
 
                 self.manager.set_application_status(exec_id, ServerManager.EXC_KILLED)
 
-            if self.manager.status == ServerManager.SRV_OUTOFSYNC:
-                # dynamod restarts this server
-                self.manager.set_status(ServerManager.SRV_INITIAL)
-
     def check_status_and_connection(self):
         ## Check status (raises exception if error)
         self.manager.check_status()
     
-        if self.inventory.check_store():
+        if not self.inventory.check_store():
             # We lost connection to the remote persistency store. Try another server.
             # If there is no server to connect to, this method raises a RuntimeError
             self.setup_remote_store()

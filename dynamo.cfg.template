@@ -38,8 +38,13 @@ manager=mysql
 # Server manager configuration to be passed to $manager/generate_manager_conf.py
 manager_conf={"master_host": "localhost", "user": "dynamosrv"}
 
+[web]
+
 # Whether to run a web interface
-webserver=true
+run_server=true
+
+# Path to the UNIX socket used to communicate with the http fronend
+socket=/var/spool/dynamo/dynamoweb.sock
 
 [scheduler]
 

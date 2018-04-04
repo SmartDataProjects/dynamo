@@ -180,12 +180,15 @@ then
     echo " Difference found (existing | installation):"
     echo
     diff -y $CONFIG_PATH/server_config.json $TMP
+    echo " New file saved as $CONFIG_PATH/server_config.json.new"
     echo
+    mv $TMP $CONFIG_PATH/server_config.json.new
+  else
+    rm $TMP
   fi
-  rm $TMP
 else
   touch $CONFIG_PATH/server_config.json
-  chmod 600
+  chmod 600 $CONFIG_PATH/server_config.json
   cat $TMP >> $CONFIG_PATH/server_config.json
   echo " Done."
   echo
@@ -203,12 +206,12 @@ do
     cp $CONF $CONFIG_PATH/$FILE
   elif ! diff $SOURCE/config/$FILE $CONFIG_PATH/$FILE > /dev/null 2>&1
   then
-    echo " Config $FILE has changed. Saving the new file to $CONFIG_PATH/$FILE.new."
-    cp $CONF $CONFIG_PATH/$FILE.new
-    echo " Difference (old | new):"
+    echo " Config $FILE has changed. Difference (old | new):"
     echo
     diff -y $CONFIG_PATH/$FILE{,.new}
+    echo " New file saved as $CONFIG_PATH/$FILE.new"
     echo
+    cp $CONF $CONFIG_PATH/$FILE.new
   fi
 done
 

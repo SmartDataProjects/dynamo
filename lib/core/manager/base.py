@@ -74,6 +74,13 @@ class ServerManager(object):
         self._send_status_to_master(status, hostname)
         self.status = status
 
+    def reset_status(self):
+        """
+        Reset server status to initial when it is out of sync.
+        """
+        self._reset_status_in_master()
+        self.status = ServerManager.SRV_INITIAL
+
     def check_status(self):
         """
         Check server status - other servers may decide this one has gone out of sync

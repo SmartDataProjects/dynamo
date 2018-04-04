@@ -25,8 +25,8 @@ then
   touch $ROOTCNF
   chmod 600 $ROOTCNF
   echo "[mysql]" >> $ROOTCNF
-  echo "host=localhost"
-  echo "user=root"
+  echo "host=localhost" >> $ROOTCNF
+  echo "user=root" >> $ROOTCNF
   echo "password='$PASSWD'" >> $ROOTCNF
   unset PASSWD
 

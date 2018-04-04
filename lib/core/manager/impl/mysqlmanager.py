@@ -177,6 +177,20 @@ class MySQLServerManager(ServerManager):
         else:
             self.master_server.query('UPDATE `servers` SET `status` = %s WHERE `hostname` = %s', ServerManager.server_status_name(status), hostname)
 
+    def _reset_status_in_master(self): #override
+        self.master_server.query('LOCK TABLES `servers` WRITE')
+
+        try:
+            # first check that we are out of sync
+            if self.get_status() != ServerManager.SRV_OUTOFSYNC:
+                raise RuntimeError('reset_status called when status is not outofsync')
+
+            # then reset
+            self.master_server.query('UPDATE `servers` SET `status` = \'initial\' WHERE `id` = %s', self.server_id)
+
+        finally:
+            self.master_server.query('UNLOCK TABLES')
+
     def _send_heartbeat_to_master(self): #override
         self.master_server.query('UPDATE `servers` SET `last_heartbeat` = NOW() WHERE `id` = %s', self.server_id)
 
