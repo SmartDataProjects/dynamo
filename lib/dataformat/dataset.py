@@ -6,7 +6,7 @@ from exceptions import ObjectError
 class Dataset(object):
     """Represents a dataset."""
 
-    __slots__ = ['_name', 'size', 'num_files', 'status', 'data_type',
+    __slots__ = ['_name', 'id', 'size', 'num_files', 'status', 'data_type',
         'software_version', 'last_update', 'is_open',
         'blocks', 'replicas', 'attr']
 
@@ -53,7 +53,7 @@ class Dataset(object):
         else:
             return arg
 
-    def __init__(self, name, size = 0, num_files = 0, status = STAT_UNKNOWN, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True):
+    def __init__(self, name, size = 0, num_files = 0, status = STAT_UNKNOWN, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True, did = 0):
         self._name = name
         self.size = size # redundant with sum of block sizes when blocks are loaded
         self.num_files = num_files # redundant with sum of block num_files and len(files)
@@ -62,6 +62,8 @@ class Dataset(object):
         self.software_version = software_version
         self.last_update = last_update # in UNIX time
         self.is_open = is_open
+
+        self.id = did
 
         self.blocks = set()
         self.replicas = set()
@@ -72,15 +74,15 @@ class Dataset(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset %s (size=%d, num_files=%d, status=%s, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
+        return 'Dataset %s (size=%d, num_files=%d, status=%s, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s, id=%d)' % \
             (self._name, self.size, self.num_files, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
             str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)), str(self.is_open), \
-            len(self.blocks), replica_sites)
+            len(self.blocks), replica_sites, self.id)
 
     def __repr__(self):
-        return 'Dataset(\'%s\',%d,%d,\'%s\',\'%s\',%s,%d,%s)' % \
+        return 'Dataset(\'%s\',%d,%d,\'%s\',\'%s\',%s,%d,%s,%d)' % \
             (self._name, self.size, self.num_files, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
-            repr(self.software_version), self.last_update, self.is_open)
+            repr(self.software_version), self.last_update, self.is_open, self.id)
 
     def __eq__(self, other):
         return self is other or \
@@ -102,6 +104,7 @@ class Dataset(object):
             setattr(self, key, value)
 
     def copy(self, other):
+        self.id = other.id
         self.size = other.size
         self.num_files = other.num_files
         self.status = other.status
@@ -111,13 +114,6 @@ class Dataset(object):
         self.is_open = other.is_open
 
         self.attr = copy.deepcopy(other.attr)
-
-    def unlinked_clone(self, attrs = True):
-        if attrs:
-            return Dataset(self._name, self.size, self.num_files, self.status, self.data_type,
-                self.software_version, self.last_update, self.is_open)
-        else:
-            return Dataset(self._name)
 
     def embed_into(self, inventory, check = False):
         updated = False

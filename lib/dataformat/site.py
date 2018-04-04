@@ -4,7 +4,7 @@ from sitepartition import SitePartition
 class Site(object):
     """Represents a site. Owns lists of dataset and block replicas, which are organized into partitions."""
 
-    __slots__ = ['_name', 'host', 'storage_type', 'backend', 'status',
+    __slots__ = ['_name', 'id', 'host', 'storage_type', 'backend', 'status',
         '_dataset_replicas', 'partitions']
 
     _storage_types = ['disk', 'mss', 'buffer', 'unknown']
@@ -44,24 +44,26 @@ class Site(object):
         else:
             return arg
 
-    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', status = STAT_UNKNOWN):
+    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', status = STAT_UNKNOWN, sid = 0):
         self._name = name
         self.host = host
         self.storage_type = Site.storage_type_val(storage_type)
         self.backend = backend
         self.status = Site.status_val(status)
 
+        self.id = sid
+
         self._dataset_replicas = {} # {Dataset: DatasetReplica}
 
         self.partitions = {} # {Partition: SitePartition}
 
     def __str__(self):
-        return 'Site %s (host=%s, storage_type=%s, backend=%s, status=%s)' % \
-            (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status))
+        return 'Site %s (host=%s, storage_type=%s, backend=%s, status=%s, id=%d)' % \
+            (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status), self.id)
 
     def __repr__(self):
-        return 'Site(\'%s\',\'%s\',\'%s\',\'%s\')' % \
-            (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status))
+        return 'Site(\'%s\',\'%s\',\'%s\',\'%s\',%d)' % \
+            (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status), self.id)
 
     def __eq__(self, other):
         return self is other or \
@@ -74,17 +76,12 @@ class Site(object):
     def copy(self, other):
         """Only copy simple member variables."""
 
+        self.id = other.id
         self.host = other.host
         self.storage_type = other.storage_type
         # Temporarily commenting out to not overwrite what Max collected
         # self.backend = other.backend
         self.status = other.status
-
-    def unlinked_clone(self, attrs = True):
-        if attrs:
-            return Site(self._name, self.host, self.storage_type, self.backend, self.status)
-        else:
-            return Site(self._name)
 
     def embed_into(self, inventory, check = False):
         updated = False

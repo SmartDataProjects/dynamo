@@ -108,15 +108,14 @@ class MySQLInventoryStore(InventoryStore):
 
         files = set()
 
-        block_id = self._get_block_id(block)
-        if block_id == -1:
+        if block.id == 0:
             return files
 
         # assuming unique block names
-        sql = 'SELECT `size`, `name` FROM `files` WHERE `block_id` = %s'
+        sql = 'SELECT `id`, `size`, `name` FROM `files` WHERE `block_id` = %s'
 
-        for size, name in self._mysql.xquery(sql, block_id):
-            files.add(File(name, block, size))
+        for fid, size, name in self._mysql.xquery(sql, block.id):
+            files.add(File(name, block, size, fid))
 
         return files
 
@@ -213,9 +212,13 @@ class MySQLInventoryStore(InventoryStore):
             sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = g.`id`' % groups_tmp
 
         for group_id, name, olname in self._mysql.xquery(sql):
-            group = Group(name, Group.olevel_val(olname))
+            group = Group(
+                name,
+                olevel = Group.olevel_val(olname),
+                gid = group_id
+            )
 
-            inventory.groups[name] = group
+            inventory.groups.add(group)
             id_group_map[group_id] = group
 
     def _load_sites(self, inventory, id_site_map, sites_tmp):
@@ -230,10 +233,11 @@ class MySQLInventoryStore(InventoryStore):
                 host = host,
                 storage_type = storage_type,
                 backend = backend,
-                status = status
+                status = status,
+                sid = site_id
             )
 
-            inventory.sites[name] = site
+            inventory.sites.add(site)
             id_site_map[site_id] = site
 
             for partition in inventory.partitions.itervalues():
@@ -271,7 +275,8 @@ class MySQLInventoryStore(InventoryStore):
                 status = int(status),
                 data_type = int(data_type),
                 last_update = last_update,
-                is_open = (is_open == 1)
+                is_open = (is_open == 1),
+                did = dataset_id
             )
             if sw_cycle is None:
                 dataset.software_version = None
@@ -305,10 +310,11 @@ class MySQLInventoryStore(InventoryStore):
             block = Block(
                 Block.to_internal_name(name),
                 dataset,
-                size,
-                num_files,
-                (is_open == 1),
-                last_update
+                size = size,
+                num_files = num_files,
+                is_open = (is_open == 1),
+                last_update = last_update,
+                bid = block_id
             )
 
             dataset.blocks.add(block)
@@ -407,77 +413,68 @@ class MySQLInventoryStore(InventoryStore):
         ## Save groups
         LOG.info('Saving groups.')
 
-        group_id_map = {inventory.groups[None]: 0}
-        self._save_groups(inventory, group_id_map)
+        self._save_groups(inventory)
 
         LOG.info('Saved %d groups.', len(inventory.groups))
 
         ## Save sites
         LOG.info('Saving sites.')
 
-        site_id_map = {}
-        self._save_sites(inventory, site_id_map)
+        self._save_sites(inventory)
 
         LOG.info('Saved %d sites.', len(inventory.sites))
 
         ## Save datasets
         LOG.info('Saving datasets.')
 
-        dataset_id_map = {}
-        self._save_datasets(inventory, dataset_id_map)
+        self._save_datasets(inventory)
 
         LOG.info('Saved %d datasets.', len(inventory.datasets))
 
         ## Save blocks
         LOG.info('Saving blocks.')
 
-        block_id_maps = {} # {dataset: {block: block_id}}
-        self._save_blocks(inventory, dataset_id_map, block_id_maps)
+        self._save_blocks(inventory)
 
-        num_blocks = sum(len(m) for m in block_id_maps.itervalues())
+        num_blocks = sum(len(d.blocks) for d in inventory.datasets.itervalues())
 
         LOG.info('Saved %d blocks.', num_blocks)
 
         ## Save replicas (dataset and block in one go)
         LOG.info('Saving replicas.')
-        start = time.time()
 
-        self._save_replicas(inventory, group_id_map, site_id_map, dataset_id_map, block_id_maps)
+        self._save_replicas(inventory)
 
         num_dataset_replicas = 0
         num_block_replicas = 0
-        for dataset in id_dataset_map.itervalues():
+        for dataset in inventory.datasets.itervalues():
             num_dataset_replicas += len(dataset.replicas)
             num_block_replicas += sum(len(r.block_replicas) for r in dataset.replicas)
 
         LOG.info('Saved %d dataset replicas and %d block replicas.', num_dataset_replicas, num_block_replicas)
 
-    def _save_groups(self, inventory, group_id_map):
+    def _save_groups(self, inventory):
         self._mysql.query('CREATE TABLE `groups_tmp` LIKE `groups`')
-        fields = ('name', 'olevel')
-        mapping = lambda group: (group.name, Group.olevel_name(group.olevel))
-        nonnull_groups = [g for g in inventory.groups.itervalues() if g.name is not None]
-        self._mysql.insert_many('groups_tmp', fields, mapping, nonnull_groups, do_update = False)
+
+        sql = 'INSERT INTO `groups_tmp` (`name`, `olevel`) VALUES (%s, %s)'
+        for group in inventory.groups.itervalues():
+            group.id = self._mysql.query(sql, group.name, Group.olevel_name(group.olevel))
 
         self._mysql.query('DROP TABLE `groups`')
         self._mysql.query('RENAME TABLE `groups_tmp` TO `groups`')
 
-        for name, gid in self._mysql.xquery('SELECT `name`, `id` FROM `groups`'):
-            group_id_map[inventory.groups[name]] = gid
-
-    def _save_sites(self, inventory, site_id_map):
+    def _save_sites(self, inventory):
         self._mysql.query('CREATE TABLE `sites_tmp` LIKE `sites`')
-        fields = ('name', 'host', 'storage_type', 'backend', 'status')
-        mapping = lambda site: (site.name, site.host, site.storage_type, site.backend, site.status)
-        self._mysql.insert_many('sites_tmp', fields, mapping, inventory.sites.itervalues(), do_update = False)
+
+        sql = 'INSERT INTO `sites_tmp` (`name`, `host`, `storage_type`, `backend`, `status`) VALUES (%s, %s, %s, %s, %s)'
+        for site in inventory.sites.itervalues():
+            site.id = self._mysql.query(sql, site.name, site.host, Site.storage_type_name(site.storage_type), \
+                site.backend, Site.status_name(site.status))
 
         self._mysql.query('DROP TABLE `sites`')
         self._mysql.query('RENAME TABLE `sites_tmp` TO `sites`')
 
-        for name, sid in self._mysql.xquery('SELECT `name`, `id` FROM `sites`'):
-            site_id_map[inventory.sites[name]] = sid
-
-    def _save_datasets(self, inventory, dataset_id_map):
+    def _save_datasets(self, inventory):
         software_versions = set()
         for dataset in inventory.datasets.itervalues():
             software_versions.add(dataset.software_version)
@@ -495,44 +492,38 @@ class MySQLInventoryStore(InventoryStore):
             version_id_map[(cycle, major, minor, suffix)] = vid
 
         self._mysql.query('CREATE TABLE `datasets_tmp` LIKE `groups`')
-        fields = ('name', 'size', 'num_files', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        mapping = lambda dataset: (dataset.name, dataset.size, dataset.num_files, \
-            dataset.status, dataset.data_type, version_id_map[dataset.software_version],
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
-        self._mysql.insert_many('datasets_tmp', fields, mapping, inventory.datasets.itervalues(), do_update = False)
+
+        sql = 'INSERT INTO `datasets` (`name`, `size`, `num_files`, `status`, `data_type`, `software_version_id`, `last_update`, `is_open`)'
+        sql += ' VALUES (%s, %s, %s, %s, %s, %s, %s, %s)'
+        for dataset in inventory.datasets.itervalues():
+            dataset.id = self._mysql.query(sql, dataset.name, dataset.size, dataset.num_files, \
+                dataset.status, dataset.data_type, version_id_map[dataset.software_version],
+                time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
         self._mysql.query('DROP TABLE `datasets`')
         self._mysql.query('RENAME TABLE `datasets_tmp` TO `datasets`')
 
-        for name, did in self._mysql.xquery('SELECT `name`, `id` FROM `datasets`'):
-            dataset_id_map[inventory.datasets[name]] = did
-
-    def _save_blocks(self, inventory, dataset_id_map, block_id_maps):
+    def _save_blocks(self, inventory):
         self._mysql.query('CREATE TABLE `blocks_tmp` LIKE `blocks`')
-        fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open', 'last_update')
+
+        sql = 'INSERT INTO `blocks` (`dataset_id`, `name`, `size`, `num_files`, `is_open`, `last_update`)'
+        sql += ' VALUES (%s, %s, %s, %s, %s, %s)'
 
         for dataset in inventory.datasets.itervalues():
-            dataset_id = dataset_id_map[dataset]
-            mapping = lambda block: (dataset_id, block.real_name(), \
-                block.size, block.num_files, block.is_open, \
-                time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
-
-            self._mysql.insert_many('blocks_tmp', fields, mapping, dataset.blocks, do_update = False)
-
-            for name, bid in self._mysql.xquery('SELECT `name`, `id` FROM `blocks_tmp`'):
-                block_name = Block.to_internal_name(name)
-                block_id_maps[dataset][dataset.find_block(block_name)] = bid
+            for block in dataset.blocks:
+                self._mysql.query(sql, dataset.id, block.real_name(), \
+                    block.size, block.num_files, block.is_open, \
+                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
 
         self._mysql.query('DROP TABLE `blocks`')
         self._mysql.query('RENAME TABLE `blocks_tmp` TO `blocks`')
 
-    def _save_replicas(self, inventory, group_id_map, site_id_map, dataset_id_map, block_id_maps):
+    def _save_replicas(self, inventory):
         self._mysql.query('CREATE TABLE `dataset_replicas_tmp` LIKE `dataset_replicas`')
 
         fields = ('dataset_id', 'site_id')
         for site in inventory.sites.itervalues():
-            site_id = site_id_map[site]
-            mapping = lambda replica: (dataset_id_map[replica.dataset], site_id)
+            mapping = lambda replica: (replica.dataset.id, site.id)
 
             self._mysql.insert_many('dataset_replicas_tmp', fields, mapping, site.dataset_replicas(), do_update = False)
 
@@ -546,17 +537,14 @@ class MySQLInventoryStore(InventoryStore):
         size_fields = ('block_id', 'site_id', 'size')
 
         for site in inventory.sites.itervalues():
-            site_id = site_id_map[site]
             for dataset_replica in site.dataset_replicas():
-                block_id_map = block_id_maps[dataset_replica.dataset]
-
-                mapping = lambda replica: (block_id_map[replica.block], site_id, \
-                    group_id_map[replica.group], replica.is_complete, replica.is_custodial, \
+                mapping = lambda replica: (replica.block.id, site.id, \
+                    replica.group.id, replica.is_complete, replica.is_custodial, \
                     time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)))
 
                 self._mysql.insert_many('block_replicas_tmp', replica_fields, mapping, dataset_replica.block_replicas, do_update = False)
                 
-                mapping = lambda replica: (block_id_map[replica.block], site_id, replica.size)
+                mapping = lambda replica: (replica.block.id, site.id, replica.size)
 
                 incomplete_replicas = [r for r in dataset_replica.block_replicas if r.size != r.block.size]
                 self._mysql.inert_many('block_replica_sizes_tmp', size_fields, mapping, incomplete_replicas, do_update = False)
@@ -568,17 +556,20 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('RENAME TABLE `block_replica_sizes_tmp` TO `block_replica_sizes`')
 
     def save_block(self, block): #override
-        dataset_id = self._get_dataset_id(block.dataset)
-        if dataset_id == -1:
+        dataset_id = block.dataset.id
+        if dataset_id == 0:
             return
 
         fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open', 'last_update')
-        self._insert_update('blocks', fields, dataset_id, block.real_name(), block.size, block.num_files, block.is_open, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
+        block_id = self._insert_update('blocks', fields, dataset_id, block.real_name(), block.size, block.num_files, block.is_open, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
+
+        if block_id != 0:
+            # new insert
+            block.id = block_id
 
     def delete_block(self, block): #override
-        # Here we don't assume block name is unique..
-        dataset_id = self._get_dataset_id(block.dataset)
-        if dataset_id == -1:
+        dataset_id = block.dataset.id
+        if dataset_id == 0:
             return
 
         sql = 'DELETE FROM b, f, r USING `blocks` AS b'
@@ -589,36 +580,38 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query(sql, dataset_id, block.real_name())
 
     def save_file(self, lfile): #override
-        dataset_id = self._get_dataset_id(lfile.block.dataset)
-        if dataset_id == -1:
+        dataset_id = lfile.block.dataset.id
+        if dataset_id == 0:
             return
 
-        block_id = self._get_block_id(lfile.block)
-        if block_id == -1:
+        block_id = lfile.block.id
+        if block_id == 0:
             return
 
         fields = ('block_id', 'dataset_id', 'size', 'name')
-        self._insert_update('files', fields, block_id, dataset_id, lfile.size, lfile.lfn)
+        file_id = self._insert_update('files', fields, block_id, dataset_id, lfile.size, lfile.lfn)
+
+        if file_id != 0:
+            # new insert
+            lfile.id = file_id
 
     def delete_file(self, lfile): #override
         sql = 'DELETE FROM `files` WHERE `name` = %s'
         self._mysql.query(sql, lfile.lfn)
 
     def save_blockreplica(self, block_replica): #override
-        block_id = self._get_block_id(block_replica.block)
-        if block_id == -1:
+        block_id = block_replica.block.id
+        if block_id == 0:
             return
 
-        site_id = self._get_site_id(block_replica.site)
-        if site_id == -1:
-            return
-
-        group_id = self._get_group_id(block_replica.group)
-        if group_id == -1:
+        site_id = block_replica.site.id
+        if site_id == 0:
             return
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
-        self._insert_update('block_replicas', fields, block_id, site_id, group_id, block_replica.is_complete, block_replica.is_custodial, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update)))
+        self._insert_update('block_replicas', fields, block_id, site_id, \
+            block_replica.group.id, block_replica.is_complete, block_replica.is_custodial, \
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update)))
 
         if block_replica.size != block_replica.block.size:
             fields = ('block_id', 'site_id', 'size')
@@ -628,16 +621,16 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query(sql, block_id, site_id)
 
     def delete_blockreplica(self, block_replica): #override
-        dataset_id = self._get_dataset_id(block_replica.block.dataset)
-        if dataset_id == -1:
+        dataset_id = block_replica.block.dataset.id
+        if dataset_id == 0:
             return
 
-        block_id = self._get_block_id(block_replica.block)
-        if block_id == -1:
+        block_id = block_replica.block.id
+        if block_id == 0:
             return
 
-        site_id = self._get_site_id(block_replica.site)
-        if site_id == -1:
+        site_id = block_replica.site.id
+        if site_id == 0:
             return
 
         sql = 'DELETE FROM `block_replicas` WHERE `block_id` = %s AND `site_id` = %s'
@@ -667,9 +660,13 @@ class MySQLInventoryStore(InventoryStore):
                 software_version_id = result[0]
             
         fields = ('name', 'size', 'num_files', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        self._insert_update('datasets', fields, dataset.name, dataset.size, dataset.num_files, \
+        dataset_id = self._insert_update('datasets', fields, dataset.name, dataset.size, dataset.num_files, \
             dataset.status, dataset.data_type, software_version_id,
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
+
+        if dataset_id != 0:
+            # new insert
+            dataset.id = dataset_id
 
     def delete_dataset(self, dataset): #override
         sql = 'DELETE FROM d, b, f, dr, br, brs USING `datasets` AS d'
@@ -683,24 +680,24 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query(sql, dataset.name)
 
     def save_datasetreplica(self, dataset_replica): #override
-        dataset_id = self._get_dataset_id(dataset_replica.dataset)
-        if dataset_id == -1:
+        dataset_id = dataset_replica.dataset.id
+        if dataset_id == 0:
             return
 
-        site_id = self._get_site_id(dataset_replica.site)
-        if site_id == -1:
+        site_id = dataset_replica.site.id
+        if site_id == 0:
             return
 
         fields = ('dataset_id', 'site_id')
         self._insert_update('dataset_replicas', fields, dataset_id, site_id)
 
     def delete_datasetreplica(self, dataset_replica): #override
-        dataset_id = self._get_dataset_id(dataset_replica.dataset)
-        if dataset_id == -1:
+        dataset_id = dataset_replica.dataset.id
+        if dataset_id == 0:
             return
 
-        site_id = self._get_site_id(dataset_replica.site)
-        if site_id == -1:
+        site_id = dataset_replica.site.id
+        if site_id == 0:
             return
 
         sql = 'DELETE FROM br, brs USING `blocks` AS b'
@@ -715,16 +712,17 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_group(self, group): #override
         fields = ('name', 'olevel')
-        self._insert_update('groups', fields, group.name, Group.olevel_name(group.olevel))
+        group_id = self._insert_update('groups', fields, group.name, Group.olevel_name(group.olevel))
+
+        if group_id != 0:
+            group.id = group_id
 
     def delete_group(self, group): #override
-        group_id = self._get_group_id(group)
-
         sql = 'DELETE FROM `groups` WHERE `id` = %s'
-        self._mysql.query(sql, group_id)
+        self._mysql.query(sql, group.id)
 
         sql = 'UPDATE `block_replicas` SET `group_id` = 0 WHERE `group_id` = %s'
-        self._mysql.query(sql, group_id)
+        self._mysql.query(sql, group.id)
 
     def save_partition(self, partition): #override
         fields = ('name',)
@@ -742,7 +740,10 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_site(self, site): #override
         fields = ('name', 'host', 'storage_type', 'backend', 'status')
-        self._insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.status)
+        site_id = self._insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.status)
+
+        if site_id != 0:
+            site.id = site_id
 
         # For new sites, persistency requires saving site partition data with default parameters.
         # We handle missing site partition entries at load time - if a row is missing, SitePartition object with
@@ -762,13 +763,16 @@ class MySQLInventoryStore(InventoryStore):
         if site_partition.partition.subpartitions is not None:
             return
 
-        site_id = self._get_site_id(site_partition.site)
-        if site_id == -1:
+        site_id = site_partition.site.id
+        if site_id == 0:
             return
 
-        partition_id = self._get_partition_id(site_partition.partition)
-        if partition_id == -1:
+        sql = 'SELECT `id` FROM `partitions` WHERE `name` = %s'
+        result = self._mysql.query(sql, site_partition.partition.name)
+        if len(result) == 0:
             return
+
+        partition_id = result[0]
 
         fields = ('site_id', 'partition_id', 'storage')
         self._insert_update('quotas', fields, site_id, partition_id, site_partition.quota * 1.e-12)
@@ -782,83 +786,4 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' ON DUPLICATE KEY UPDATE '
         sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
 
-        self._mysql.query(sql, *values)
-
-    def _get_dataset_id(self, dataset):
-        if dataset.name == self._dataset_id_cache[0]:
-            return self._dataset_id_cache[1]
-
-        sql = 'SELECT `id` FROM `datasets` WHERE `name` = %s'
-
-        result = self._mysql.query(sql, dataset.name)
-        if len(result) == 0:
-            # should I raise?
-            return -1
-
-        self._dataset_id_cache = (dataset.name, result[0])
-
-        return result[0]
-
-    def _get_block_id(self, block):
-        if block.name == self._block_id_cache[1] and block.dataset.name == self._block_id_cache[0]:
-            return self._block_id_cache[2]
-
-        dataset_id = self._get_dataset_id(block.dataset)
-
-        if dataset_id == -1:
-            return -1
-
-        sql = 'SELECT `id` FROM `blocks` WHERE `dataset_id` = %s AND `name` = %s'
-
-        result = self._mysql.query(sql, dataset_id, block.real_name())
-        if len(result) == 0:
-            return -1
-
-        self._block_id_cache = (block.dataset.name, block.name, result[0])
-
-        return result[0]
-
-    def _get_site_id(self, site):
-        if site.name == self._site_id_cache[0]:
-            return self._site_id_cache[1]
-
-        sql = 'SELECT `id` FROM `sites` WHERE `name` = %s'
-        
-        result = self._mysql.query(sql, site.name)
-        if len(result) == 0:
-            return -1
-
-        self._site_id_cache = (site.name, result[0])
-
-        return result[0]
-
-    def _get_group_id(self, group):
-        if group.name is None:
-            return 0
-
-        if group.name == self._group_id_cache[0]:
-            return self._group_id_cache[1]
-
-        sql = 'SELECT `id` FROM `groups` WHERE `name` = %s'
-        
-        result = self._mysql.query(sql, group.name)
-        if len(result) == 0:
-            return -1
-
-        self._group_id_cache = (group.name, result[0])
-
-        return result[0]
-
-    def _get_partition_id(self, partition):
-        if partition.name == self._partition_id_cache[0]:
-            return self._partition_id_cache[1]
-
-        sql = 'SELECT `id` FROM `partitions` WHERE `name` = %s'
-        
-        result = self._mysql.query(sql, partition.name)
-        if len(result) == 0:
-            return -1
-
-        self._partition_id_cache = (partition.name, result[0])
-
-        return result[0]
+        return self._mysql.query(sql, *values)

@@ -39,9 +39,6 @@ class DatasetReplica(object):
 
         # not doing anything, actually
 
-    def unlinked_clone(self, attrs = True):
-        return DatasetReplica(self._dataset_name(), self._site_name())
-
     def embed_into(self, inventory, check = False):
         try:
             dataset = inventory.datasets[self._dataset_name()]

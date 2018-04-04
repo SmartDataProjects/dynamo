@@ -65,12 +65,6 @@ class BlockReplica(object):
         self.size = other.size
         self.last_update = other.last_update
 
-    def unlinked_clone(self, attrs = True):
-        if attrs:
-            return BlockReplica(self._block_full_name(), self._site_name(), self._group_name(), self.is_complete, self.is_custodial, self.size, self.last_update)
-        else:
-            return BlockReplica(self._block_full_name(), self._site_name(), self._group_name())
-
     def embed_into(self, inventory, check = False):
         try:
             dataset = inventory.datasets[self._dataset_name()]

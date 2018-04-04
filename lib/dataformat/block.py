@@ -12,7 +12,7 @@ from exceptions import ObjectError
 class Block(object):
     """Smallest data unit for data management."""
 
-    __slots__ = ['_name', '_dataset', 'size', 'num_files', 'is_open', 'replicas', 'last_update', '_files']
+    __slots__ = ['_name', '_dataset', 'id', 'size', 'num_files', 'is_open', 'replicas', 'last_update', '_files']
 
     @property
     def name(self):
@@ -81,7 +81,7 @@ class Block(object):
 
         return full_name[:delim], Block.to_internal_name(full_name[delim + 1:])
 
-    def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False, last_update = 0, internal_name = True):
+    def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False, last_update = 0, bid = 0, internal_name = True):
         if internal_name:
             self._name = name
         else:
@@ -91,6 +91,8 @@ class Block(object):
         self.num_files = num_files
         self.is_open = is_open
         self.last_update = last_update
+        
+        self.id = bid
 
         self.replicas = set()
 
@@ -99,15 +101,15 @@ class Block(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Block %s (size=%d, num_files=%d, is_open=%s, last_update=%s, replicas=%s)' % \
+        return 'Block %s (size=%d, num_files=%d, is_open=%s, last_update=%s, replicas=%s, id=%d)' % \
             (self.full_name(), self.size, self.num_files, self.is_open,
                 time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)),
-                replica_sites)
+                replica_sites, self.id)
 
     def __repr__(self):
         # this representation cannot be directly eval'ed into a Block
-        return 'Block(\'%s\',\'%s\',%d,%d,%s,%d,False)' % \
-            (self.real_name(), self._dataset_name(), self.size, self.num_files, self.is_open, self.last_update)
+        return 'Block(\'%s\',\'%s\',%d,%d,%s,%d,%d,False)' % \
+            (self.real_name(), self._dataset_name(), self.size, self.num_files, self.is_open, self.id, self.last_update)
 
     def __eq__(self, other):
         return self is other or \
@@ -122,16 +124,11 @@ class Block(object):
         if self._dataset_name() != other._dataset_name():
             raise ObjectError('Cannot copy a block of %s into a block of %s', other._dataset_name(), self._dataset_name())
 
+        self.id = other.id
         self.size = other.size
         self.num_files = other.num_files
         self.is_open = other.is_open
         self.last_update = other.last_update
-
-    def unlinked_clone(self, attrs = True):
-        if attrs:
-            return Block(self._name, self._dataset_name(), self.size, self.num_files, self.is_open, self.last_update)
-        else:
-            return Block(self._name, self._dataset_name())
 
     def embed_into(self, inventory, check = False):
         try:
@@ -142,7 +139,7 @@ class Block(object):
         block = dataset.find_block(self._name)
         updated = False
         if block is None:
-            block = Block(self._name, dataset, self.size, self.num_files, self.is_open, self.last_update)
+            block = Block(self._name, dataset, self.size, self.num_files, self.is_open, self.last_update, self.id)
             dataset.blocks.add(block)
             updated = True
         elif check and (block is self or block == self):

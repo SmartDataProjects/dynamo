@@ -6,7 +6,7 @@ class Group(object):
     olevel: ownership level: Dataset or Block
     """
 
-    __slots__ = ['_name', '_olevel']
+    __slots__ = ['_name', 'id', '_olevel']
 
     _ownership_levels = ['Dataset', 'Block']
     OL_DATASET, OL_BLOCK = range(1, len(_ownership_levels) + 1)
@@ -33,15 +33,17 @@ class Group(object):
         else:
             return arg
 
-    def __init__(self, name, olevel = OL_BLOCK):
+    def __init__(self, name, olevel = OL_BLOCK, gid = 0):
         self._name = name
         self._olevel = Group.olevel_val(olevel)
 
+        self.id = gid
+
     def __str__(self):
-        return 'Group %s (olevel=%s)' % (self._name, Group.olevel_name(self._olevel))
+        return 'Group %s (olevel=%s, id=%d)' % (self._name, Group.olevel_name(self._olevel), self.id)
 
     def __repr__(self):
-        return 'Group(\'%s\',\'%s\')' % (self._name,Group.olevel_name(self._olevel))
+        return 'Group(\'%s\',\'%s\',%d)' % (self._name,Group.olevel_name(self._olevel), self.id)
 
     def __eq__(self, other):
         return self is other or (self._name == other._name and self._olevel == other._olevel)
@@ -50,13 +52,8 @@ class Group(object):
         return not self.__eq__(other)
 
     def copy(self, other):
+        self.id = other.id
         self._olevel = other._olevel
-
-    def unlinked_clone(self, attrs = True):
-        if attrs:
-            return Group(self._name, self._olevel)
-        else:
-            return Group(self._name)
 
     def embed_into(self, inventory, check = False):
         updated = False
@@ -64,7 +61,7 @@ class Group(object):
         try:
             group = inventory.groups[self._name]
         except KeyError:
-            group = Group(self._name, self._olevel)
+            group = Group(self._name, self._olevel, self.id)
             inventory.groups.add(group)
 
             updated = True
