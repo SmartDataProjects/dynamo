@@ -17,10 +17,10 @@ from email.mime.text import MIMEText
 
 from argparse import ArgumentParser
 
-parser = ArgumentParser(description = 'Schedule routine sequences of Dynamo executables.')
+parser = ArgumentParser(description = 'Schedule routine sequences of Dynamo applications.')
 parser.add_argument('sequence', metavar = 'PATH', help = 'Sequence file.')
 parser.add_argument('work_dir', metavar = 'PATH', help = 'Work area.')
-parser.add_argument('auth_user', metavar = 'USER', help = 'Executable user name.')
+parser.add_argument('auth_user', metavar = 'USER', help = 'Application user name.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -74,8 +74,8 @@ EXECUTE, WAIT, TERMINATE = range(3)
 # criticality
 REPEAT_SEQ, REPEAT_LINE, PASS = range(3)
 
-executables = {} # {title: exec path}
-authorized_executables = set() # set of titles
+applications = {} # {title: exec path}
+authorized_applications = set() # set of titles
 sequences = {} # {name: sequence}
 sequence = []
 
@@ -90,30 +90,30 @@ with open(args.sequence) as source:
 
         LOG.debug(line)
 
-        # Executable definitions
-        # {title} = path  ...  This executable cannot write
-        # <title> = path  ...  This executable can be used to write
+        # Application definitions
+        # {title} = path  ...  This application cannot write
+        # <title> = path  ...  This application can be used to write
         matches = re.match('({\S+}|<\S+>)\s*=\s*(\S+)', line)
         if matches:
             enclosed_title = matches.group(1)
             title = enclosed_title[1:-1]
             write_enabled = (enclosed_title[0] == '<')
-            executable = matches.group(2)
+            application = matches.group(2)
 
             # Replace environment variables
-            matches = re.findall('\$\(([^\)]+)\)', executable)
+            matches = re.findall('\$\(([^\)]+)\)', application)
             for match in matches:
-                executable = executable.replace('$(%s)' % match, os.environ[match])
+                application = application.replace('$(%s)' % match, os.environ[match])
 
-            if write_enabled and not manager.check_write_auth(title, args.auth_user, executable):
-                LOG.error('Executable %s (%s) is not authorized for server write operation (line %d).', title, executable, iline)
+            if write_enabled and not manager.check_write_auth(title, args.auth_user, application):
+                LOG.error('Application %s (%s) is not authorized for server write operation (line %d).', title, application, iline)
                 sys.exit(1)
 
-            LOG.debug('Define executable %s = %s (write enabled: %d) (line %d)', title, executable, write_enabled, iline)
+            LOG.debug('Define application %s = %s (write enabled: %d) (line %d)', title, application, write_enabled, iline)
 
-            executables[title] = executable
+            applications[title] = application
             if write_enabled:
-                authorized_executables.add(title)
+                authorized_applications.add(title)
             
             continue
 
@@ -126,7 +126,7 @@ with open(args.sequence) as source:
             sequence = sequences[matches.group(1)] = []
             continue
 
-        # Sequence executable step definitions
+        # Sequence application step definitions
         # {title} options  ...  Read-only execution
         # <title> options  ...  Write-request execution
         matches = re.match('(\^|\&|\|) +({\S+}|<\S+>)\s*(.*)', line)
@@ -143,8 +143,8 @@ with open(args.sequence) as source:
             write_request = (enclosed_title[0] == '<')
             arguments = matches.group(3)
 
-            if write_request and title not in authorized_executables:
-                LOG.error('Executable %s is not write-enabled (line %d).', iline)
+            if write_request and title not in authorized_applications:
+                LOG.error('Application %s is not write-enabled (line %d).', iline)
 
             # Replace environment variables
             matches = re.findall('\$\(([^\)]+)\)', arguments)
@@ -177,7 +177,7 @@ if len(sequences) == 0:
     LOG.error('No sequence was loaded.')
     sys.exit(1)
 
-## Create the executable directory and copy the scripts over
+## Create the application directory and copy the scripts over
 for name, sequence in sequences.iteritems():
     work_dir = args.work_dir + '/' + name
     try:
@@ -203,13 +203,13 @@ for name, sequence in sequences.iteritems():
 
             path = '%s/%s' % (work_dir, title)
             if os.path.exists(path):
-                # This executable is used multiple times in the sequence
+                # This application is used multiple times in the sequence
                 continue
 
-            executable = executables[title]
+            application = applications[title]
 
             os.makedirs(path)
-            shutil.copy(executable, path + '/exec.py')
+            shutil.copy(application, path + '/exec.py')
 
             # Make symlinks from subdir/_std(out|err) to log.(out|err)
             os.symlink(work_dir + '/log.out', path + '/_stdout')
@@ -262,27 +262,27 @@ def loop_sequence(sequence_name, sequence):
 
                 if action[0] == EXECUTE:
                     title, arguments, criticality, write_request = action[1:]
-                    executable = executables[title]
+                    application = applications[title]
     
                     LOG.info('Starting %s', title)
-                    LOG.info('Command: %s %s', executable, arguments)
+                    LOG.info('Command: %s %s', application, arguments)
     
                     with open(work_dir + '/log.out', 'a') as out:
                         out.write('------------------------ ' + title + ' ------------------------\n')
-                        out.write('%s %s\n\n' % (executable, arguments))
+                        out.write('%s %s\n\n' % (application, arguments))
     
                     with open(work_dir + '/log.err', 'a') as out:
                         out.write('------------------------ ' + title + ' ------------------------\n\n')
     
-                    # Submit the task. Actual executable is in work_dir/title
+                    # Submit the task. Actual application is in work_dir/title
                     path = '%s/%s' % (work_dir, title)
                     
-                    task_id = manager.schedule_executable(title, path, arguments, args.auth_user, write_request)
+                    task_id = manager.schedule_application(title, path, arguments, args.auth_user, write_request)
     
                     # Poll for task completion
                     while True:
                         time.sleep(1)
-                        status = manager.get_executable_status(task_id)
+                        status = manager.get_application_status(task_id)
                         if status not in [ServerManager.EXC_NEW, ServerManager.EXC_RUN]:
                             break
 
@@ -300,10 +300,10 @@ def loop_sequence(sequence_name, sequence):
                     except:
                         pass
     
-                    LOG.info('Finished %s with (status: %s)', title, ServerManager.executable_status_name(status))
+                    LOG.info('Finished %s with (status: %s)', title, ServerManager.application_status_name(status))
 
                     if criticality != PASS and status != ServerManager.EXC_DONE:
-                        msg = MIMEText('Message from dynamo-scheduled@%s:\nExecutable %s of sequence %s failed.' % \
+                        msg = MIMEText('Message from dynamo-scheduled@%s:\nApplication %s of sequence %s failed.' % \
                             (socket.gethostname(), title, sequence_name))
 
                         msg['Subject'] = '[Dynamo Scheduler] failure notice'
@@ -315,10 +315,10 @@ def loop_sequence(sequence_name, sequence):
                         mailserv.quit()
 
                         if criticality == REPEAT_SEQ:
-                            LOG.error('Critical executable %s failed. Restarting sequence %s.', title, sequence_name)
+                            LOG.error('Critical application %s failed. Restarting sequence %s.', title, sequence_name)
                             break
                         elif criticality == REPEAT_LINE:
-                            LOG.error('Critical executable %s failed. Restarting executable %s.', title, title)
+                            LOG.error('Critical application %s failed. Restarting application %s.', title, title)
                             continue
 
                 elif action[0] == WAIT:
@@ -338,7 +338,7 @@ def loop_sequence(sequence_name, sequence):
     except KeyboardInterrupt:
         if task_id != 0:
             # Task aborted - update the status from the backend so Dynamo picks it up
-            manager.set_executable_status(task_id, ServerManager.EXC_KILLED)
+            manager.set_application_status(task_id, ServerManager.EXC_KILLED)
             LOG.info('Process interrupted. aborting task %s.', title)
         else:
             LOG.info('Process interrupted.')

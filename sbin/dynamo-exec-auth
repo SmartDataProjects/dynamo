@@ -56,7 +56,7 @@ else:
     user_id = 0
 
 if args.list:
-    sql = 'SELECT u.`name`, a.`title` FROM `authorized_executables` AS a LEFT JOIN `users` AS u ON u.`id` = a.`user_id`'
+    sql = 'SELECT u.`name`, a.`title` FROM `authorized_applications` AS a LEFT JOIN `users` AS u ON u.`id` = a.`user_id`'
     constraints = []
     params = []
     if user_id != 0:
@@ -86,7 +86,7 @@ if not args.title:
 
 ## Check for existing entry
 
-existing = registry.backend.query('SELECT COUNT(*) FROM `authorized_executables` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)[0]
+existing = registry.backend.query('SELECT COUNT(*) FROM `authorized_applications` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)[0]
 
 if args.update and not existing:
     sys.stdout.write('Executable %s for user %s not previously authorized.' % (args.title, args.user))
@@ -96,7 +96,7 @@ if args.update and not existing:
 
 if args.delete:
     if existing:
-        registry.backend.query('DELETE FROM `authorized_executables` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)
+        registry.backend.query('DELETE FROM `authorized_applications` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)
         sys.stdout.write('Deleted executable %s' % args.title)
         if user_id != 0:
             sys.stdout.write(' (user %s).\n' % args.user)
@@ -121,7 +121,7 @@ if not args.executable:
 with open(args.executable) as source:
     checksum = hashlib.md5(source.read()).hexdigest()
 
-sql = 'INSERT INTO `authorized_executables` (`user_id`, `title`, `checksum`) VALUES (%s, %s, UNHEX(%s))'
+sql = 'INSERT INTO `authorized_applications` (`user_id`, `title`, `checksum`) VALUES (%s, %s, UNHEX(%s))'
 sql += ' ON DUPLICATE KEY UPDATE `checksum` = VALUES(`checksum`)'
 registry.backend.query(sql, user_id, args.title, checksum)
 

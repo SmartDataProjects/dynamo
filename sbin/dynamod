@@ -81,20 +81,16 @@ from dynamo.core.server import Dynamo
 server = Dynamo(config)
 
 while True:
-    exec_thread = None
-    if config.serve_executables:
-        exec_thread = threading.Thread(target = server.serve_executables, name = 'serve_executables')
-        exec_thread.start()
-
     web_thread = None
     if config.serve_web:
         web_thread = threading.Thread(target = server.serve_web, name = 'serve_web')
+        web_thread.daemon = True
         web_thread.start()
 
-    if exec_thread is not None:
-        exec_thread.join()
-    if web_thread is not None:
-        web_thread.join()
+    if config.serve_applications:
+        server.serve_applications()
+    else:
+        signal.pause()
 
     if server.manager.status == 'initial':
         pass
