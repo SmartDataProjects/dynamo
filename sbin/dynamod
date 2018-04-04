@@ -77,22 +77,32 @@ signal_converter.set(signal.SIGTERM)
 
 ## Start the server
 from dynamo.core.server import Dynamo
+from dynamo.core.manager.base import ServerManager
 
 server = Dynamo(config)
+server.load_inventory()
+
+if config.serve_web:
+    web_thread = threading.Thread(target = server.serve_web, name = 'serve_web')
+    web_thread.daemon = True
+    web_thread.start()
+
+# Start the loop of loops
+# If the server dies out of error, status will not be INITIAL and we get ouf of
+# the loop.
+# If the server on the other hand goes out of sync with the rest of servers,
+# it will try to reset itself by setting the status to INITIAL. In this case
+# we reload the inventory and restart.
 
 while True:
-    web_thread = None
-    if config.serve_web:
-        web_thread = threading.Thread(target = server.serve_web, name = 'serve_web')
-        web_thread.daemon = True
-        web_thread.start()
-
     if config.serve_applications:
         server.serve_applications()
     else:
-        signal.pause()
+        server.wait_for_signal()
 
-    if server.manager.status == 'initial':
-        pass
+    if server.manager.status == ServerManager.SRV_INITIAL:
+        server.load_inventory()
     else:
+        # Server is shutting down either in online or error state
+        server.manager.disconnect()
         break

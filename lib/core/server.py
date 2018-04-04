@@ -38,8 +38,8 @@ class Dynamo(object):
         self.user = config.user
 
         ## Create the inventory
-        self.inventory = DynamoInventory(config.inventory)
         self.inventory_config = config.inventory.clone()
+        self.inventory = None
 
         ## Create the server manager
         manager_config = config.manager.config.clone()
@@ -58,8 +58,12 @@ class Dynamo(object):
     
                 self.inventory_load_opts[objs] = (included, excluded)
 
+        self.poll_interval = config.status_poll_interval
+
     def load_inventory(self):
         self.manager.set_status(ServerManager.SRV_STARTING)
+
+        self.inventory = DynamoInventory(self.inventory_config)
 
         ## Wait until there is no write process
         while True:
@@ -92,6 +96,40 @@ class Dynamo(object):
         # We are ready to serve
         self.manager.set_status(ServerManager.SRV_ONLINE)
 
+        LOG.info('Inventory is ready.')
+
+    def wait_for_signal(self):
+        """
+        If the server is not serving applications, this function works in an infinite loop checking the server status.
+        """
+
+        try:
+            LOG.info('Sleeping with server status check.')
+
+            while True:
+                self.check_status_and_connection()
+                time.sleep(self.poll_interval)
+                
+                # we only get out of this loop by a signal
+
+        except KeyboardInterrupt:
+            LOG.info('Server process was interrupted.')
+
+        except:
+            # log the exception
+            LOG.warning('Exception in server process. Terminating all child processes.')
+
+            if self.manager.status != ServerManager.SRV_OUTOFSYNC:
+                self.manager.set_status(ServerManager.SRV_ERROR)
+
+            log_exception(LOG)
+            raise
+
+        finally:
+            if self.manager.status == ServerManager.SRV_OUTOFSYNC:
+                # dynamod restarts this server
+                self.manager.set_status(ServerManager.SRV_INITIAL)
+
     def serve_applications(self):
         """
         Infinite-loop main body of the daemon.
@@ -102,10 +140,6 @@ class Dynamo(object):
         Step 5: Collect completed child processes. Get updates from the write-enabled child process if there is one.
         Step 6: Sleep for N seconds.
         """
-
-        self.load_inventory()
-
-        LOG.info('Started dynamo daemon.')
 
         child_processes = []
 
@@ -120,12 +154,7 @@ class Dynamo(object):
             do_sleep = False
 
             while True:
-                ## Check status and connection
-                self.manager.check_status()
-                if not self.manager.has_store and not self.inventory.check_store():
-                    # We lost connection to the remote persistency store. Try another server.
-                    # If there is no server to connect to, this method raises a RuntimeError
-                    self.setup_remote_store()
+                self.check_status_and_connection()
 
                 ## Step 4 (easier to do here because we use "continue"s)
                 self.read_updates()
@@ -135,7 +164,7 @@ class Dynamo(object):
 
                 ## Step 6 (easier to do here because we use "continue"s)
                 if do_sleep:
-                    time.sleep(1)
+                    time.sleep(self.poll_interval)
 
                 ## Step 1: Poll
                 LOG.debug('Polling for applications.')
@@ -149,7 +178,7 @@ class Dynamo(object):
 
                     do_sleep = True
 
-                    LOG.debug('No application found, sleeping for 1 second.')
+                    LOG.debug('No application found, sleeping for %.1f second(s).' % self.poll_interval)
                     continue
 
                 ## Step 2: If a script is found, check the authorization of the script.
@@ -223,11 +252,16 @@ class Dynamo(object):
 
             if self.manager.status == ServerManager.SRV_OUTOFSYNC:
                 # dynamod restarts this server
-                self.inventory = DynamoInventory(self.inventory_config)
                 self.manager.set_status(ServerManager.SRV_INITIAL)
-            else:
-                # Server is shutting down either in online or error state
-                self.manager.disconnect()
+
+    def check_status_and_connection(self):
+        ## Check status (raises exception if error)
+        self.manager.check_status()
+    
+        if self.inventory.check_store():
+            # We lost connection to the remote persistency store. Try another server.
+            # If there is no server to connect to, this method raises a RuntimeError
+            self.setup_remote_store()
 
     def setup_remote_store(self, hostname = ''):
         remote_store = self.manager.find_remote_store(hostname = hostname)
