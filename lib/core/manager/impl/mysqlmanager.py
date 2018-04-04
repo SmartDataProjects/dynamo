@@ -76,7 +76,7 @@ class MySQLServerManager(ServerManager):
         return self.master_server.query(sql, write_request, title, path, args, user)
 
     def get_next_executable(self): #override
-        self.master_server.query('LOCK TABLES `servers` READ, `executable` WRITE')
+        self.master_server.query('LOCK TABLES `servers` READ, `executables` WRITE')
         
         try:
             # Cannot run a write process if

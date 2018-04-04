@@ -95,7 +95,7 @@ while True:
         exec_thread.join()
     if web_thread is not None:
         web_thread.join()
-    
+
     if server.manager.status == 'initial':
         pass
     else:
