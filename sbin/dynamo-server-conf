@@ -33,7 +33,7 @@ manager_conf = ns.generate_manager_conf(manager_conf_args)
 conf_str = '''{
   "user": "''' + server_user + '''",
   "inventory": {
-    "persistency": {'''
+  "persistency": {'''
 
 conf_str += persistency_conf
 
@@ -46,6 +46,8 @@ conf_str += manager_conf
 
 conf_str += '''  },
   "notification_recipient": "''' + email + '''",
+  "serve_executables": true,
+  "serve_web": false,
   "logging": {
     "level": "info",
     "path": "''' + logdir + '''",

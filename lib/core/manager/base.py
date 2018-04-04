@@ -1,3 +1,4 @@
+import time
 import threading
 
 class OutOfSyncError(Exception):
@@ -24,7 +25,7 @@ class ServerManager(object):
     @staticmethod
     def server_status_name(arg):
         if type(arg) is int:
-            return _server_statuses[arg - 1]
+            return ServerManager._server_statuses[arg - 1]
         else:
             return arg
 
@@ -38,7 +39,7 @@ class ServerManager(object):
     @staticmethod
     def executable_status_name(arg):
         if type(arg) is int:
-            return _executable_statuses[arg - 1]
+            return ServerManager._executable_statuses[arg - 1]
         else:
             return arg
 

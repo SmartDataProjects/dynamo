@@ -20,8 +20,8 @@ def generate_store_conf(conf_str):
           "host": "localhost",
           "db": "dynamo",
           "reuse_connection": true,
-          "user": ''' + conf['server'] + ''',
-          "passwd": ''' + server_conf['passwd'] + '''
+          "user": "''' + conf['server'] + '''",
+          "passwd": "''' + server_conf['passwd'] + '''"
         }
       },
       "readonly_config": {
@@ -29,8 +29,8 @@ def generate_store_conf(conf_str):
           "host": "localhost",
           "db": "dynamo",
           "reuse_connection": true,
-          "user": ''' + conf['reader'] + ''',
-          "passwd": ''' + reader_conf['passwd'] + '''
+          "user": "''' + conf['reader'] + '''",
+          "passwd": "''' + reader_conf['passwd'] + '''"
         }
       }
 '''

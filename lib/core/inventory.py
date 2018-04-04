@@ -68,11 +68,7 @@ class DynamoInventory(ObjectRepository):
 
         self._store = None
         if 'persistency' in config:
-            pconf = config.persistency
-            self._store_module = pconf.module
-            self._store_readonly_config = pconf.readonly_config
-
-            self.init_store(self._store_module, pconf.config)
+            self.init_store(config.persistency.module, config.persistency.config)
 
         self.partition_def_path = config.partition_def_path
         
@@ -88,14 +84,6 @@ class DynamoInventory(ObjectRepository):
         self._store = persistency_cls(config)
 
         df.Block._inventory_store = self._store
-
-    def disable_store_write(self):
-        """
-        One-way operation to downgrade access privilege to the persistency store backend.
-        Called by the DynamoServer when a new subprocess is starting.
-        """
-
-        self.init_store(self._store_module, self._store_readonly_config)
 
     def check_store(self):
         """

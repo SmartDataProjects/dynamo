@@ -456,7 +456,8 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('CREATE TABLE `groups_tmp` LIKE `groups`')
         fields = ('name', 'olevel')
         mapping = lambda group: (group.name, Group.olevel_name(group.olevel))
-        self._mysql.insert_many('groups_tmp', fields, mapping, inventory.groups.itervalues(), do_update = False)
+        nonnull_groups = [g for g in inventory.groups.itervalues() if g.name is not None]
+        self._mysql.insert_many('groups_tmp', fields, mapping, nonnull_groups, do_update = False)
 
         self._mysql.query('DROP TABLE `groups`')
         self._mysql.query('RENAME TABLE `groups_tmp` TO `groups`')

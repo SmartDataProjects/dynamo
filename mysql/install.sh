@@ -10,7 +10,6 @@
 
 THISDIR=$(cd $(dirname $0); pwd)
 
-source $THISDIR/../config.sh
 source $THISDIR/../utilities/shellutils.sh
 
 ROOTCNF=/etc/my.cnf.d/root.cnf
@@ -101,6 +100,9 @@ then
   echo "Set up DB backup cron job [y/n]?"
   if confirmed
   then
+    READCONF="$SOURCE/utilities/readconf -I $SOURCE/dynamo.cfg"
+    INSTALL_PATH=$($READCONF paths.dynamo_base)
+
     crontab -l -u root > /tmp/crontab.tmp.$$
     chmod 600 /tmp/crontab.tmp.$$
     if ! grep -q $INSTALL_PATH/sbin/backup /tmp/crontab.tmp.$$

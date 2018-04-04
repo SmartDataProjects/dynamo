@@ -25,7 +25,8 @@ def generate_manager_conf(conf_str):
       "master_server": {
         "host": "''' + host + '''",
         "user": "''' + user + '''",
-        "passwd": "''' + passwd + '''"
+        "passwd": "''' + passwd + '''",
+        "db": "dynamoserver"
       }
     }
 '''

@@ -47,7 +47,7 @@ class MySQLServerManager(ServerManager):
         return ServerManager.server_status_val(status)
 
     def count_servers(self, status): #override
-        return self.master_server.query('COUNT (*) FROM `servers` WHERE `status` = %s', ServerManager.server_status_name(status))[0]
+        return self.master_server.query('SELECT COUNT(*) FROM `servers` WHERE `status` = %s', ServerManager.server_status_name(status))[0]
 
     def get_updates(self): #override
         # Read updates written to the registry by other servers
@@ -87,7 +87,7 @@ class MySQLServerManager(ServerManager):
             if not skip_writer:
                 skip_writer = (self.count_servers(ServerManager.SRV_STARTING) != 0)
                 if not skip_writer:
-                    num_running_writes = self.master_server.query('COUNT (*) FROM `executables` WHERE `write_request` = 1 AND `status` = \'run\'')[0]
+                    num_running_writes = self.master_server.query('SELECT COUNT(*) FROM `executables` WHERE `write_request` = 1 AND `status` = \'run\'')[0]
                     skip_writer = (num_running_writes != 0)
     
             sql = 'SELECT `id`, `write_request`, `title`, `path`, `args`, `user` FROM `executables`'
@@ -169,13 +169,13 @@ class MySQLServerManager(ServerManager):
                     self.status = ServerManager.SRV_OUTOFSYNC
                     raise OutOfSyncError('Server out of sync')
     
-                self.master_server.query('UPDATE `servers` SET `status` = %s WHERE `id` = %s', ServerManager.executable_status_name(status), self.server_id)
+                self.master_server.query('UPDATE `servers` SET `status` = %s WHERE `id` = %s', ServerManager.server_status_name(status), self.server_id)
 
             finally:
                 self.master_server.query('UNLOCK TABLES')
 
         else:
-            self.master_server.query('UPDATE `servers` SET `status` = %s WHERE `hostname` = %s', ServerManager.executable_status_name(status), hostname)
+            self.master_server.query('UPDATE `servers` SET `status` = %s WHERE `hostname` = %s', ServerManager.server_status_name(status), hostname)
 
     def _send_heartbeat_to_master(self): #override
         self.master_server.query('UPDATE `servers` SET `last_heartbeat` = NOW() WHERE `id` = %s', self.server_id)

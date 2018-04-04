@@ -34,14 +34,11 @@ class Dynamo(object):
     def __init__(self, config):
         LOG.info('Initializing Dynamo server %s.', __file__)
 
-        ## User names
-        # User with full privilege (still not allowed to write to inventory store)
-        self.full_user = config.user
-        # Restricted user
-        self.read_user = config.read_user
+        ## User name
+        self.user = config.user
 
         ## Create the inventory
-        self.inventory = DynamoInventory(config.inventory, load = False)
+        self.inventory = DynamoInventory(config.inventory)
         self.inventory_config = config.inventory.clone()
 
         ## Create the server manager
@@ -66,8 +63,7 @@ class Dynamo(object):
 
         ## Wait until there is no write process
         while True:
-            writing_process_id = self.manager.writing_process_id()
-            if write_process_id is not None:
+            if self.manager.writing_process_id() is not None:
                 LOG.debug('A write-enabled process is running. Checking again in 5 seconds.')
                 time.sleep(5)
             else:
@@ -78,13 +74,15 @@ class Dynamo(object):
         ## The only states the other running servers can be in are therefore 'updating' or 'online'
 
         ## Now find a server I'll load inventory from (unless I am the only online host and I have a store)
+        remote_source = False
         if not (self.manager.has_store and self.manager.count_servers(ServerManager.SRV_ONLINE) == 0):
             self.setup_remote_store()
+            remote_source = True
 
         LOG.info('Loading the inventory.')
         self.inventory.load(**self.inventory_load_opts)
 
-        if self.manager.has_store:
+        if self.manager.has_store and remote_source:
             # Revert to local store
             persistency_config = self.inventory_config.persistency
             self.inventory.init_store(persistency_config.module, persistency_config.config)
@@ -225,7 +223,7 @@ class Dynamo(object):
 
             if self.manager.status == ServerManager.SRV_OUTOFSYNC:
                 # dynamod restarts this server
-                self.inventory = DynamoInventory(self.inventory_config, load = False)
+                self.inventory = DynamoInventory(self.inventory_config)
                 self.manager.set_status(ServerManager.SRV_INITIAL)
             else:
                 # Server is shutting down either in online or error state
@@ -377,10 +375,7 @@ class Dynamo(object):
         os.seteuid(0)
         os.setegid(0)
 
-        if queue is None:
-            pwnam = pwd.getpwnam(self.read_user)
-        else:
-            pwnam = pwd.getpwnam(self.full_user)
+        pwnam = pwd.getpwnam(self.user)
 
         os.setgid(pwnam.pw_gid)
         os.setuid(pwnam.pw_uid)
@@ -431,7 +426,8 @@ class Dynamo(object):
         # This is for security and simply for concurrency - multiple processes
         # should not share the same DB connection
         if self.manager.has_store:
-            self.inventory.disable_store_write()
+            persistency_config = self.inventory_config.persistency
+            self.inventory.init_store(persistency_config.module, persistency_config.readonly_config)
         else:
             self.setup_remote_store(self.manager.store_host)
 
