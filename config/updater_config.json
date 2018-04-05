@@ -20,7 +20,7 @@
     "module": "PhEDExSiteInfoSource",
     "config": {
       "include": ["T0_*", "T1_*", "T2_*"],
-      "exclude": ["T2_CH_CERNBOX", "T2_MY_UPM_BIRUNI"],
+      "exclude": ["T0_CH_CERN_Export", "T1_*_Buffer", "T2_CH_CERNBOX", "T2_MY_UPM_BIRUNI"],
       "ssb": {
         "url_base": "http://dashb-ssb.cern.ch/dashboard/request.py",
         "auth_handler": "HTTPSCertKeyHandler",
@@ -46,6 +46,8 @@
   "replicas": {
     "module": "PhEDExReplicaInfoSource",
     "config": {
+      "include_sites": ["T0_*", "T1_*", "T2_*"],
+      "exclude_sites": ["T0_CH_CERN_Export", "T1_*_Buffer", "T2_CH_CERNBOX", "T2_MY_UPM_BIRUNI"],
       "phedex": {}
     }
   },
