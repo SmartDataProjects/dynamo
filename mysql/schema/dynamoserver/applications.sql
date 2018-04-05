@@ -7,7 +7,7 @@ CREATE TABLE `applications` (
   `status` enum('new','assigned','run','done','notfound','authfailed','failed','killed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `server` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
   `exit_code` int(10) unsigned DEFAULT NULL,
-  `user` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `user_id` int(10) unsigned NOT NULL,
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `email` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   PRIMARY KEY (`id`)
