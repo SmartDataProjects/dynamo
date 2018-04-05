@@ -40,6 +40,9 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         return len(source) != 0
 
     def get_replicas(self, site = None, dataset = None, block = None): #override
+        if not self.check_allowed_site(site) or not self.check_allowed_dataset(dataset):
+            return []
+
         options = []
         if site is not None:
             options.append('node=' + site)
@@ -55,7 +58,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         
         result = self._phedex.make_request('blockreplicas', ['show_dataset=y'] + options, timeout = 3600)
 
-        block_replicas = PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas)
+        block_replicas = PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas, site_check = False, dataset_check = False)
         
         # Also use subscriptions call which has a lower latency than blockreplicas
         # For example, group change on a block replica at time T may not show up in blockreplicas until up to T + 15 minutes
@@ -69,6 +72,9 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         for dataset_entry in result:
             dataset_name = dataset_entry['name']
 
+            if not self.check_allowed_dataset(dataset_name):
+                continue
+
             try:
                 subscriptions = dataset_entry['subscription']
             except KeyError:
@@ -76,6 +82,10 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
             else:
                 for sub_entry in subscriptions:
                     site_name = sub_entry['node']
+
+                    if not self.check_allowed_site(site_name):
+                        continue
+
                     for replica in block_replicas:
                         if replica.block.dataset.name == dataset_name and replica.site.name == site_name:
                             replica.group = Group(sub_entry['group'])
@@ -96,6 +106,10 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
                     else:
                         for sub_entry in subscriptions:
                             site_name = sub_entry['node']
+
+                            if not self.check_allowed_site(site_name):
+                                continue
+
                             for replica in block_replicas:
                                 if replica.block.dataset.name == dataset_name and \
                                         replica.block.name == block_name and \
@@ -117,7 +131,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
 
         nodes = []
         for entry in self._phedex.make_request('nodes', timeout = 600):
-            if entry['name'].endswith('_Export') or entry['name'].endswith('_Buffer'):
+            if not self.check_allowed_site(entry['name']):
                 continue
 
             nodes.append(entry['name'])
@@ -132,7 +146,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         for result in results:
             all_replicas.extend(result)
 
-        return PhEDExReplicaInfoSource.make_block_replicas(all_replicas, PhEDExReplicaInfoSource.maker_blockreplicas)
+        return PhEDExReplicaInfoSource.make_block_replicas(all_replicas, PhEDExReplicaInfoSource.maker_blockreplicas, site_check = False)
 
     def get_deleted_replicas(self, deleted_since): #override
         LOG.info('get_deleted_replicas(%d)  Fetching the list of replicas from PhEDEx', deleted_since)
@@ -142,12 +156,15 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_deletions)
 
     @staticmethod
-    def make_block_replicas(dataset_entries, replica_maker):
+    def make_block_replicas(dataset_entries, replica_maker, site_check = True, dataset_check = True):
         """Return a list of block replicas linked to Dataset, Block, Site, and Group"""
 
         block_replicas = []
 
         for dataset_entry in dataset_entries:
+            if dataset_check and not self.check_allowed_dataset(dataset_entry['name']):
+                continue
+
             dataset = Dataset(
                 dataset_entry['name']
             )
@@ -164,15 +181,18 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
                     block_entry['bytes']
                 )
 
-                block_replicas.extend(replica_maker(block, block_entry))
+                block_replicas.extend(replica_maker(block, block_entry, site_check = site_check))
 
         return block_replicas
 
     @staticmethod
-    def maker_blockreplicas(block, block_entry):
+    def maker_blockreplicas(block, block_entry, site_check = True):
         replicas = []
 
         for replica_entry in block_entry['replica']:
+            if site_check and not self.check_allowed_site(replica_entry['node']):
+                continue
+
             time_update = replica_entry['time_update']
             if time_update is None:
                 time_update = 0
@@ -192,10 +212,13 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         return replicas
 
     @staticmethod
-    def maker_deletions(block, block_entry):
+    def maker_deletions(block, block_entry, site_check = True):
         replicas = []
 
         for deletion_entry in block_entry['deletion']:
+            if site_check and not self.check_allowed_site(deletion_entry['node']):
+                continue
+
             block_replica = BlockReplica(block, Site(deletion_entry['node']), Group.null_group)
 
             replicas.append(block_replica)

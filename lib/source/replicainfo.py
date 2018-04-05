@@ -1,10 +1,46 @@
+import logging
+import fnmatch
+import re
+
+LOG = logging.getLogger(__name__ )
+
 class ReplicaInfoSource(object):
     """
     Interface specs for probe to the replica information source.
     """
 
     def __init__(self, config):
-        pass
+        if 'include_datasets' in config:
+            if type(config.include_datasets) is list:
+                self.include_datasets = map(lambda pattern: re.compile(fnmatch.translate(pattern)), config.include_datasets)
+            else:
+                self.include_datasets = [re.compile(fnmatch.translate(config.include_datasets))]
+        else:
+            self.include_datasets = None
+
+        if 'exclude_datasets' in config:
+            if type(config.exclude_datasets) is list:
+                self.exclude_datasets = map(lambda pattern: re.compile(fnmatch.translate(pattern)), config.exclude_datasets)
+            else:
+                self.exclude_datasets = [re.compile(fnmatch.translate(config.exclude_datasets))]
+        else:
+            self.exclude_datasets = None
+
+        if 'include_sites' in config:
+            if type(config.include_sites) is list:
+                self.include_sites = map(lambda pattern: re.compile(fnmatch.translate(pattern)), config.include_sites)
+            else:
+                self.include_sites = [re.compile(fnmatch.translate(config.include_sites))]
+        else:
+            self.include_sites = None
+
+        if 'exclude_sites' in config:
+            if type(config.exclude_sites) is list:
+                self.exclude_sites = map(lambda pattern: re.compile(fnmatch.translate(pattern)), config.exclude_sites)
+            else:
+                self.exclude_sites = [re.compile(fnmatch.translate(config.exclude_sites))]
+        else:
+            self.exclude_sites = None
 
     def replica_exists_at_site(self, site, item):
         """
@@ -35,3 +71,47 @@ class ReplicaInfoSource(object):
         Return a list of unlinked BlockReplicas deleted since the given timestamp.
         """
         raise NotImplementedError('get_deleted_replicas')
+
+    def check_allowed_dataset(self, dataset_name):
+        """
+        Check a dataset name against include and exclude lists.
+        """
+
+        if self.include_datasets is not None:
+            for pattern in self.include_datasets:
+                if pattern.match(dataset_name):
+                    break
+            else:
+                # no pattern matched
+                LOG.debug('Dataset %s is not in include list.', dataset_name)
+                return False
+
+        if self.exclude_datasets is not None:
+            for pattern in self.exclude_datasets:
+                if pattern.match(dataset_name):
+                    LOG.debug('Dataset %s is in exclude list.', dataset_name)
+                    return False
+
+        return True
+
+    def check_allowed_site(self, site_name):
+        """
+        Check a site name against include and exclude lists.
+        """
+
+        if self.include_sites is not None:
+            for pattern in self.include_sites:
+                if pattern.match(site_name):
+                    break
+            else:
+                # no pattern matched
+                LOG.debug('Site %s is not in include list.', site_name)
+                return False
+
+        if self.exclude_sites is not None:
+            for pattern in self.exclude_sites:
+                if pattern.match(site_name):
+                    LOG.debug('Site %s is in exclude list.', site_name)
+                    return False
+
+        return True
