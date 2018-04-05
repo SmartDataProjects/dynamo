@@ -40,8 +40,23 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         return len(source) != 0
 
     def get_replicas(self, site = None, dataset = None, block = None): #override
-        if not self.check_allowed_site(site) or not self.check_allowed_dataset(dataset):
-            return []
+        if site is None:
+            site_check = self.check_allowed_site
+        else:
+            site_check = None
+            if not self.check_allowed_site(site):
+                return []
+
+        if dataset is None and block is None:
+            dataset_check = self.check_allowed_dataset
+        else:
+            dataset_check = None
+            if dataset is not None:
+                if not self.check_allowed_dataset(dataset):
+                    return []
+            if block is not None:
+                if not self.check_allowed_dataset(block[:block.find('#')]):
+                    return []
 
         options = []
         if site is not None:
@@ -58,7 +73,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         
         result = self._phedex.make_request('blockreplicas', ['show_dataset=y'] + options, timeout = 3600)
 
-        block_replicas = PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas, site_check = False, dataset_check = False)
+        block_replicas = PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_blockreplicas, site_check = site_check, dataset_check = dataset_check)
         
         # Also use subscriptions call which has a lower latency than blockreplicas
         # For example, group change on a block replica at time T may not show up in blockreplicas until up to T + 15 minutes
@@ -146,7 +161,7 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         for result in results:
             all_replicas.extend(result)
 
-        return PhEDExReplicaInfoSource.make_block_replicas(all_replicas, PhEDExReplicaInfoSource.maker_blockreplicas, site_check = False)
+        return PhEDExReplicaInfoSource.make_block_replicas(all_replicas, PhEDExReplicaInfoSource.maker_blockreplicas, dataset_check = self.check_allowed_dataset)
 
     def get_deleted_replicas(self, deleted_since): #override
         LOG.info('get_deleted_replicas(%d)  Fetching the list of replicas from PhEDEx', deleted_since)
@@ -156,13 +171,13 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         return PhEDExReplicaInfoSource.make_block_replicas(result, PhEDExReplicaInfoSource.maker_deletions)
 
     @staticmethod
-    def make_block_replicas(dataset_entries, replica_maker, site_check = True, dataset_check = True):
+    def make_block_replicas(dataset_entries, replica_maker, site_check = None, dataset_check = None):
         """Return a list of block replicas linked to Dataset, Block, Site, and Group"""
 
         block_replicas = []
 
         for dataset_entry in dataset_entries:
-            if dataset_check and not self.check_allowed_dataset(dataset_entry['name']):
+            if dataset_check and not dataset_check(dataset_entry['name']):
                 continue
 
             dataset = Dataset(
@@ -186,11 +201,11 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         return block_replicas
 
     @staticmethod
-    def maker_blockreplicas(block, block_entry, site_check = True):
+    def maker_blockreplicas(block, block_entry, site_check = None):
         replicas = []
 
         for replica_entry in block_entry['replica']:
-            if site_check and not self.check_allowed_site(replica_entry['node']):
+            if site_check and not site_check(replica_entry['node']):
                 continue
 
             time_update = replica_entry['time_update']
@@ -212,11 +227,11 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
         return replicas
 
     @staticmethod
-    def maker_deletions(block, block_entry, site_check = True):
+    def maker_deletions(block, block_entry, site_check = None):
         replicas = []
 
         for deletion_entry in block_entry['deletion']:
-            if site_check and not self.check_allowed_site(deletion_entry['node']):
+            if site_check and not site_check(deletion_entry['node']):
                 continue
 
             block_replica = BlockReplica(block, Site(deletion_entry['node']), Group.null_group)
