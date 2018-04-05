@@ -1,0 +1,38 @@
+import os
+import sys
+import json
+
+thisdir = os.path.dirname(os.path.realpath(__file__))
+
+def generate_local_board_conf(conf_str):
+    conf = json.loads(conf_str)
+
+    with open(thisdir + '/grants.json') as source:
+        grants_conf = json.load(source)
+
+    if 'local_board_host' not in conf:
+        host = 'localhost'
+    else:
+        host = conf['local_board_host']
+
+    user = conf['user']
+    if 'passwd' not in conf:
+        passwd = grants_conf[user]['passwd']
+        
+    conf_str = '''
+      "module": "MySQLUpdateBoard",
+      "config": {
+        "db_params": {
+          "host": "''' + host + '''",
+          "user": "''' + user + '''",
+          "passwd": "''' + passwd + '''",
+          "db": "dynamoserver"
+        }
+      }'''
+
+    return conf_str
+
+try:
+    __namespace__.generate_local_board_conf = generate_local_board_conf
+except NameError:
+    pass

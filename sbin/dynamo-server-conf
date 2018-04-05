@@ -13,8 +13,10 @@ server_user = source_conf.get('server', 'user')
 email = source_conf.get('server', 'email')
 persistency_mod = source_conf.get('server', 'store')
 persistency_conf_args = source_conf.get('server', 'store_conf')
-manager_mod = source_conf.get('server', 'manager')
-manager_conf_args = source_conf.get('server', 'manager_conf')
+master_mod = source_conf.get('server', 'master')
+master_conf_args = source_conf.get('server', 'master_conf')
+local_board_mod = source_conf.get('server', 'local_board')
+local_board_conf_args = source_conf.get('server', 'local_board_conf')
 logdir = source_conf.get('paths', 'log_path')
 
 serve_applications = source_conf.get('applications', 'enabled').lower()
@@ -27,27 +29,39 @@ ns = Namespace()
 
 conf_gen_script = persistency_mod + '/generate_store_conf.py'
 execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
-persistency_conf = ns.generate_store_conf(persistency_conf_args)
 
-conf_gen_script = manager_mod + '/generate_manager_conf.py'
+conf_gen_script = master_mod + '/generate_master_conf.py'
 execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
-manager_conf = ns.generate_manager_conf(manager_conf_args)
+
+conf_gen_script = local_board_mod + '/generate_local_board_conf.py'
+execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
+local_board_conf = 
 
 conf_str = '''{
   "user": "''' + server_user + '''",
   "inventory": {
   "persistency": {'''
 
-conf_str += persistency_conf
+conf_str += ns.generate_store_conf(persistency_conf_args)
 
-conf_str += '''    },
+conf_str += '''
+    },
     "partition_def_path": "$(DYNAMO_POLICIES)/partitions.txt"
   },
-  "manager": {'''
+  "manager": {
+    "master": {'''
 
-conf_str += manager_conf
+conf_str += ns.generate_master_conf(master_conf_args)
 
-conf_str += '''  },
+conf_str += '''
+    },
+    "board": {'''
+
+conf_str += ns.generate_local_board_conf(local_board_conf_args)
+
+conf_str += '''
+    }
+  },
   "notification_recipient": "''' + email + '''",
   "status_poll_interval": 1.0,
   "applications": {
@@ -55,23 +69,23 @@ conf_str += '''  },
 
 if serve_applications == 'true':
     conf_str += ''',
-      "certfile": ''' + source_conf.get('applications', 'certfile') + ''',
-      "keyfile": ''' + source_conf.get('applications', 'keyfile') + ','
+    "certfile": "''' + source_conf.get('applications', 'certfile') + '''",
+    "keyfile": "''' + source_conf.get('applications', 'keyfile') + '",'
 
-      capath = source_conf.get('applications', 'capath')
-      if os.path.isdir(capath):
-          import ssl
-          if not hasattr(ssl, 'SSLContext'):
-              # This python version is old and cannot use capath directory
-              sys.stderr.write('SSL module in this python version cannot handle a capath directory.\n')
-              sys.stderr.write('Please provide a single file with all CA certificates concatenated.\n')
-              raise RuntimeError('Invalid capath')
+    capath = source_conf.get('applications', 'capath')
+    if os.path.isdir(capath):
+        import ssl
+        if not hasattr(ssl, 'SSLContext'):
+            # This python version is old and cannot use capath directory
+            sys.stderr.write('SSL module in this python version cannot handle a capath directory.\n')
+            sys.stderr.write('Please provide a single file with all CA certificates concatenated.\n')
+            raise RuntimeError('Invalid capath')
 
-          conf_str += '''
-      "capath": ''' + capath
-      else:
-          conf_str += '''
-      "cafile": ''' + capath
+        conf_str += '''
+    "capath": "''' + capath + '"'
+    else:
+        conf_str += '''
+    "cafile": "''' + capath + '"'
 
 conf_str += '''
   },
@@ -80,7 +94,7 @@ conf_str += '''
 
 if serve_web == 'true':
     conf_str += ''',
-    "socket": ''' + source_conf.get('web', 'socket')
+    "socket": "''' + source_conf.get('web', 'socket') + '"'
 
 conf_str += '''
   },

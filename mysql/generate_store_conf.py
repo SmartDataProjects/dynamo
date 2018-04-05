@@ -32,8 +32,7 @@ def generate_store_conf(conf_str):
           "user": "''' + conf['reader'] + '''",
           "passwd": "''' + reader_conf['passwd'] + '''"
         }
-      }
-'''
+      }'''
 
     return conf_str
 

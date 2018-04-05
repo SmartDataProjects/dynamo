@@ -4,7 +4,7 @@ import json
 
 thisdir = os.path.dirname(os.path.realpath(__file__))
 
-def generate_manager_conf(conf_str):
+def generate_master_conf(conf_str):
     conf = json.loads(conf_str)
 
     with open(thisdir + '/grants.json') as source:
@@ -20,20 +20,19 @@ def generate_manager_conf(conf_str):
         passwd = grants_conf[user]['passwd']
         
     conf_str = '''
-    "module": "MySQLServerManager",
-    "config": {
-      "master": {
-        "host": "''' + host + '''",
-        "user": "''' + user + '''",
-        "passwd": "''' + passwd + '''",
-        "db": "dynamoserver"
-      }
-    }
-'''
+      "module": "MySQLMasterServer",
+      "config": {
+        "db_params": {
+          "host": "''' + host + '''",
+          "user": "''' + user + '''",
+          "passwd": "''' + passwd + '''",
+          "db": "dynamoserver"
+        }
+      }'''
 
     return conf_str
 
 try:
-    __namespace__.generate_manager_conf = generate_manager_conf
+    __namespace__.generate_master_conf = generate_master_conf
 except NameError:
     pass
