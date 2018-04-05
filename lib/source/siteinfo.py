@@ -14,7 +14,7 @@ class SiteInfoSource(object):
             if type(config.include) is list:
                 self.include = map(lambda pattern: re.compile(fnmatch.translate(pattern)), config.include)
             else:
-                self.include = [re.compile(fnmatch.translate(config.include)]
+                self.include = [re.compile(fnmatch.translate(config.include))]
         else:
             self.include = None
 
