@@ -24,7 +24,7 @@ ARCHIVE_PATH=$($READCONF paths.archive_path)
 SPOOL_PATH=$($READCONF paths.spool_path)
 LOG_PATH=$($READCONF paths.log_path)
 POLICY_PATH=$($READCONF paths.policy_path)
-WEBSERVER=$($READCONF server.webserver)
+WEBSERVER=$($READCONF web.enabled)
 SERVER_DB=$($READCONF server.store)
 
 ### Stop the daemons first ###
@@ -51,15 +51,13 @@ echo "-> Checking dependencies.."
 
 WARNING=false
 
-require which python
-warnifnot python -c 'import htcondor'
-warnifnot python -c 'import rrdtool'
-require which sqlite3
+require rpm -q python
+warnifnot rpm -q condor-python
+warnifnot rpm -q rrdtool-python
+require rpm -q sqlite
 if [ $SERVER_DB = "mysql" ]
 then
-  require python -c 'import MySQLdb'
-  require which mysql
-  require pgrep -f mysqld
+  require rpm -q MySQL-python
 fi
 
 if $WARNING

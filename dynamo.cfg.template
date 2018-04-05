@@ -38,10 +38,24 @@ manager=mysql
 # Server manager configuration to be passed to $manager/generate_manager_conf.py
 manager_conf={"master_host": "localhost", "user": "dynamosrv"}
 
+[applications]
+
+# Whether to run an application server
+enabled=true
+
+# Application server uses an OpenSSL socket to receive requests
+#  Server certificate (can be self-signed)
+certfile=/etc/pki/tls/certs/localhost.crt
+#  Server certificate (can be self-signed)
+keyfile=/etc/pki/tls/private/localhost.key
+#  CA path for client authentication (can be a directory in python 2.7;
+#  otherwise a single file with all CA certs concatenated)
+capath=/etc/pki/tls/certs/ca-bundle.crt
+
 [web]
 
 # Whether to run a web interface
-run_server=true
+enabled=true
 
 # Path to the UNIX socket used to communicate with the http fronend
 socket=/var/spool/dynamo/dynamoweb.sock

@@ -107,5 +107,5 @@ while True:
         server.load_inventory()
     else:
         # Server is shutting down either in online or error state
-        server.manager.disconnect()
+        server.shutdown()
         break

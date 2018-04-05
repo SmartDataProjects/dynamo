@@ -22,7 +22,7 @@ def generate_manager_conf(conf_str):
     conf_str = '''
     "module": "MySQLServerManager",
     "config": {
-      "master_server": {
+      "master": {
         "host": "''' + host + '''",
         "user": "''' + user + '''",
         "passwd": "''' + passwd + '''",

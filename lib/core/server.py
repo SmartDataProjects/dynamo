@@ -48,7 +48,8 @@ class DynamoServer(object):
         self.manager = getattr(manager_impl, config.manager.module)(manager_config)
 
         if self.manager.has_store:
-            self.manager.advertise_store(self.inventory_config.persistency)
+            pconf = self.inventory_config.persistency
+            self.manager.master.advertise_store(pconf.module, pconf.readonly_config)
 
         ## Load the inventory content (filter according to debug config)
         self.inventory_load_opts = {}
@@ -89,8 +90,8 @@ class DynamoServer(object):
 
         if self.manager.has_store and remote_source:
             # Revert to local store
-            persistency_config = self.inventory_config.persistency
-            self.inventory.init_store(persistency_config.module, persistency_config.config)
+            pconf = self.inventory_config.persistency
+            self.inventory.init_store(pconf.module, pconf.config)
             # Save all that's loaded to local
             self.inventory.flush_to_store()
 
@@ -464,8 +465,8 @@ class DynamoServer(object):
         # This is for security and simply for concurrency - multiple processes
         # should not share the same DB connection
         if self.manager.has_store:
-            persistency_config = self.inventory_config.persistency
-            self.inventory.init_store(persistency_config.module, persistency_config.readonly_config)
+            pconf = self.inventory_config.persistency
+            self.inventory.init_store(pconf.module, pconf.readonly_config)
         else:
             self.setup_remote_store(self.manager.store_host)
 
@@ -518,3 +519,10 @@ class DynamoServer(object):
         sys.stderr = stderr
 
         return 0
+
+    def receive_applications(self):
+        """To be run in a separate thread"""
+        pass
+
+    def shutdown(self):
+        self.manager.disconnect()

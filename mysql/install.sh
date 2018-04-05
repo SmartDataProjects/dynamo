@@ -12,6 +12,16 @@ THISDIR=$(cd $(dirname $0); pwd)
 
 source $THISDIR/../utilities/shellutils.sh
 
+echo '##################################'
+echo '######  MYSQL DEPENDENCIES  ######'
+echo '##################################'
+echo
+
+echo "-> Checking dependencies.."
+
+# Need the server running
+require pgrep -f mysqld
+
 ROOTCNF=/etc/my.cnf.d/root.cnf
 HAS_ROOTCNF=true
 

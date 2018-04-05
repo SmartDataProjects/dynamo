@@ -17,6 +17,9 @@ manager_mod = source_conf.get('server', 'manager')
 manager_conf_args = source_conf.get('server', 'manager_conf')
 logdir = source_conf.get('paths', 'log_path')
 
+serve_applications = source_conf.get('applications', 'enabled').lower()
+serve_web = source_conf.get('web', 'enabled').lower()
+
 class Namespace(object):
     pass
 
@@ -47,8 +50,40 @@ conf_str += manager_conf
 conf_str += '''  },
   "notification_recipient": "''' + email + '''",
   "status_poll_interval": 1.0,
-  "serve_applications": true,
-  "serve_web": false,
+  "applications": {
+    "enabled": ''' + serve_applications
+
+if serve_applications == 'true':
+    conf_str += ''',
+      "certfile": ''' + source_conf.get('applications', 'certfile') + ''',
+      "keyfile": ''' + source_conf.get('applications', 'keyfile') + ','
+
+      capath = source_conf.get('applications', 'capath')
+      if os.path.isdir(capath):
+          import ssl
+          if not hasattr(ssl, 'SSLContext'):
+              # This python version is old and cannot use capath directory
+              sys.stderr.write('SSL module in this python version cannot handle a capath directory.\n')
+              sys.stderr.write('Please provide a single file with all CA certificates concatenated.\n')
+              raise RuntimeError('Invalid capath')
+
+          conf_str += '''
+      "capath": ''' + capath
+      else:
+          conf_str += '''
+      "cafile": ''' + capath
+
+conf_str += '''
+  },
+  "web": {
+    "enabled": ''' + serve_web
+
+if serve_web == 'true':
+    conf_str += ''',
+    "socket": ''' + source_conf.get('web', 'socket')
+
+conf_str += '''
+  },
   "logging": {
     "level": "info",
     "path": "''' + logdir + '''",
