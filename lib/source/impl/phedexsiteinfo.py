@@ -80,15 +80,12 @@ class PhEDExSiteInfoSource(SiteInfoSource):
         return Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = backend)
 
     def get_site_list(self): #override
-        options = []
-
         LOG.info('get_site_list  Fetching the list of nodes from PhEDEx')
 
         site_list = []
 
-        for entry in self._phedex.make_request('nodes', options):
+        for entry in self._phedex.make_request('nodes'):
             if not self.check_allowed_site(name):
-                LOG.info('get_site(%s)  %s is excluded by configuration.', name, name)
                 continue
 
             site_list.append(Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology']))
