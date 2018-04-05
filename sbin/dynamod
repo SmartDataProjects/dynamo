@@ -82,13 +82,21 @@ from dynamo.core.manager.base import ServerManager
 server = DynamoServer(config)
 server.load_inventory()
 
-if config.serve_web:
+if config.web.enabled:
     from dynamo.web.server import WebServer
     from flup.server.fcgi import WSGIServer
 
     web = WebServer(config.web, server)
     # Thread-based WSGI server
-    WSGIServer(web.main, bindAddress = config.web.socket, umask = 0).run()
+    wsgi = WSGIServer(web.main, bindAddress = config.web.socket, umask = 0)
+    thread = threading.Thread(target = wsgi.run)
+    thread.daemon = True
+    thread.start()
+
+if config.applications.enabled:
+    thread = threading.Thread(target = server.accept_applications, args = (config.applications,))
+    thread.daemon = True
+    thread.start()
 
 # Start the loop of loops
 # If the server dies out of error, status will not be INITIAL and we get ouf of
@@ -98,7 +106,7 @@ if config.serve_web:
 # we reload the inventory and restart.
 
 while True:
-    if config.serve_applications:
+    if config.applications.enabled:
         server.serve_applications()
     else:
         server.sleep()

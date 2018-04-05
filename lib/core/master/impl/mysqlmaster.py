@@ -3,12 +3,16 @@ import socket
 from dynamo.core.master.base import MasterServer
 from dynamo.core.manager import ServerManager
 from dynamo.utils.interface import MySQL
+from dynamo.dataformat import Configuration
 
 class MySQLMasterServer(MasterServer):
     def __init__(self, config):
         MasterServer.__init__(self, config)
 
-        self._mysql = MySQL(config.db_params)
+        db_params = Configuration(config.db_params)
+        db_params.reuse_connection = True # we use locks
+
+        self._mysql = MySQL(db_params)
 
         self.server_id = self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW)', socket.gethostname())
 
@@ -138,3 +142,4 @@ class MySQLMasterServer(MasterServer):
 
     def disconnect(self): #override
         self._mysql.query('DELETE FROM `servers` WHERE `id` = %s', self.server_id)
+        self._mysql.close()

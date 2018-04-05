@@ -179,25 +179,6 @@ class ServerManager(object):
 
         time.sleep(60)
 
-    def writing_process_id(self):
-        """
-        Get the id of the writing application.
-        """
-        return self.master.get_writing_process_id()
-
-    def schedule_application(self, title, path, args, user, write_request):
-        """
-        Schedule an application to the master server.
-        @param title          Application title.
-        @param path           Application path.
-        @param args           Arguments to the application
-        @param user           User name of the requester
-        @param write_request  Boolean
-
-        @return application id
-        """
-        return self.master.schedule_application(title, path, args, user, write_request)
-
     def get_next_application(self):
         """
         Fetch the next application to run.
@@ -234,16 +215,6 @@ class ServerManager(object):
             return ServerManager.EXC_KILLED
         else:
             return status
-
-    def set_application_status(self, app_id, status, exit_code = None):
-        """
-        Set the application status.
-        
-        @param app_id    Application id
-        @param status    New status
-        @param exit_code Exit code (optional)
-        """
-        self.master.set_application_status(status, app_id, exit_code = exit_code)
 
     def check_write_auth(self, title, user, path):
         """
@@ -381,3 +352,6 @@ class ServerManager(object):
         Go offline and delete the entry from the master server list.
         """
         self.master.disconnect()
+        for server in self.other_servers.itervalues():
+            if server.board:
+                server.board.disconnect()

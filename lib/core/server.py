@@ -8,7 +8,7 @@ import shlex
 import signal
 import socket
 import multiprocessing
-import threading
+import thread
 import Queue
 
 from dynamo.core.inventory import DynamoInventory
@@ -69,7 +69,7 @@ class DynamoServer(object):
 
         ## Wait until there is no write process
         while True:
-            if self.manager.writing_process_id() is not None:
+            if self.manager.master.get_writing_process_id() is not None:
                 LOG.debug('A write-enabled process is running. Checking again in 5 seconds.')
                 time.sleep(5)
             else:
@@ -330,7 +330,7 @@ class DynamoServer(object):
             # process completed or is alive but stuck -> remove from the list and set status in the table
             child_processes.pop(ichild)
 
-            self.manager.set_application_status(exec_id, status, exit_code = proc.exitcode)
+            self.manager.master.set_application_status(status, exec_id, exit_code = proc.exitcode)
 
         return writing_process
 
@@ -520,9 +520,84 @@ class DynamoServer(object):
 
         return 0
 
-    def receive_applications(self):
-        """To be run in a separate thread"""
-        pass
+    def accept_applications(self, config):
+        """Listen to an SSL-secured port. Application data will be sent in JSON. To be run in a separate thread."""
+        import ssl
+
+        os.environ['OPENSSL_ALLOW_PROXY_CERTS'] = '1'
+
+        if 'capath' in config:
+            # capath only supported in SSLContext (pythonn 2.7)
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+            context.load_cert_chain(config.certfile, keyfile = config.keyfile)
+            context.load_verify_locations(capath = config.capath)
+            context.verify_mode = ssl.CERT_REQUIRED
+            socket = context.wrap_socket(socket.socket(), server_side = True)
+        else:
+            socket = ssl.wrap_socket(socket.socket(), server_side = True,
+                certfile = config.certfile, keyfile = config.keyfile,
+                cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.cafile)
+
+        socket.bind(('localhost', 39626))
+        socket.listen(1)
+        
+        while True:
+            conn, addr = socket.accept()
+            thread.start_new_thread(self._process_application, (conn,))
+
+        socket.close()
+
+    def _process_application(self, conn):
+        try:
+            # authorize the user
+            user_cert_data = conn.getpeercert()
+            subject = ''
+            for rdn in user_cert_data['subject']:
+                subject += '/' + '+'.join('%s=%s' % keyvalue for keyvalue in rdn)
+            issuer = ''
+            for rdn in user_cert_data['issuer']:
+                issuer += '/' + '+'.join('%s=%s' % keyvalue for keyvalue in rdn)
+    
+            user = self.manager.master.identify_user(subject)
+            if user is None:
+                user = self.manager.master.identify_user(issuer)
+    
+            if user is None:
+                LOG.error('Unidentified user DN %s', subject)
+                conn.send('Failed to identify user')
+                return
+    
+            if not self.manager.master.authorize_user(user, 'user'):
+                LOG.error('Unauthorized user %s', user)
+                conn.send('Unauthorized user %s', user)
+                return
+
+            data = ''
+            while True:
+                bytes = conn.recv(2048)
+                if not bytes:
+                    break
+                data += bytes
+
+            try:
+                app_data = json.loads(data)
+            except:
+                LOG.error('Ill-formatted application data')
+                conn.send('Invalid application data')
+                return
+
+            for key in ['title', 'path', 'args', 'write_request']:
+                if key not in app_data:
+                    LOG.error('Missing ' + key)
+                    conn.send('Missing ' + key)
+                    return
+
+            app_data['user'] = user
+
+            self.manager.master.schedule_application(**app_data)
+
+        finally:
+            conn.close()
 
     def shutdown(self):
         self.manager.disconnect()

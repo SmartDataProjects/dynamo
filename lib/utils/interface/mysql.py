@@ -3,6 +3,7 @@ import sys
 import logging
 import time
 import re
+import threading
 
 import MySQLdb
 import MySQLdb.converters
@@ -41,6 +42,9 @@ class MySQL(object):
             self._connection_parameters['db'] = config['db']
 
         self._connection = None
+
+        # Avoid interference in case the module is used from multiple threads
+        self._connection_lock = threading.Lock()
         
         # Use with care! A deadlock can occur when another session tries to lock a table used by a session with
         # reuse_connection = True
@@ -78,14 +82,16 @@ class MySQL(object):
         except KeyError:
             silent = False
 
-        if self._connection is None:
-            self._connection = MySQLdb.connect(**self._connection_parameters)
-
-        cursor = self._connection.cursor()
-
-        self.last_insert_id = 0
+        self._connection_lock.acquire()
 
         try:
+            if self._connection is None:
+                self._connection = MySQLdb.connect(**self._connection_parameters)
+    
+            cursor = self._connection.cursor()
+    
+            self.last_insert_id = 0
+
             if LOG.getEffectiveLevel() == logging.DEBUG:
                 if len(args) == 0:
                     LOG.debug(sql)
@@ -147,9 +153,11 @@ class MySQL(object):
         finally:
             cursor.close()
     
-            if not self.reuse_connection:
+            if not self.reuse_connection and self._connection is not None:
                 self._connection.close()
                 self._connection = None
+
+            self._connection_lock.release()
 
     def xquery(self, sql, *args):
         """
@@ -159,14 +167,16 @@ class MySQL(object):
          - values if one column is called
         """
 
-        if self._connection is None:
-            self._connection = MySQLdb.connect(**self._connection_parameters)
-
-        cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
-
-        self.last_insert_id = 0
-
         try:
+            self._connection_lock.acquire()
+
+            if self._connection is None:
+                self._connection = MySQLdb.connect(**self._connection_parameters)
+    
+            cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
+    
+            self.last_insert_id = 0
+
             if LOG.getEffectiveLevel() == logging.DEBUG:
                 if len(args) == 0:
                     LOG.debug(sql)
@@ -220,9 +230,11 @@ class MySQL(object):
             # only called on exception or return
             cursor.close()
     
-            if not self.reuse_connection:
+            if not self.reuse_connection and self._connection is not None:
                 self._connection.close()
                 self._connection = None
+
+            self._connection_lock.release()
 
     def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = ''):
         result = []

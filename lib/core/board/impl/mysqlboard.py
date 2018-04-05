@@ -1,12 +1,16 @@
 from dynamo.core.board.base import UpdateBoard
 from dynamo.core.inventory import DynamoInventory
 from dynamo.utils.interface import MySQL
+from dynamo.dataformat import Configuration
 
 class MySQLUpdateBoard(UpdateBoard):
     def __init__(self, config):
         UpdateBoard.__init__(self, config)
 
-        self._mysql = MySQL(config.db_params)
+        db_params = Configuration(config.db_params)
+        db_params.reuse_connection = True # we use locks
+
+        self._mysql = MySQL(db_params)
 
     def lock(self): #override
         self._mysql.query('LOCK TABLES `inventory_updates` WRITE')
@@ -35,3 +39,6 @@ class MySQLUpdateBoard(UpdateBoard):
 
         finally:
             self._mysql.query('UNLOCK TABLES')
+
+    def disconnect(self):
+        self._mysql.close()

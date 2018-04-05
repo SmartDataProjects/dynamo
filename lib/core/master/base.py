@@ -25,12 +25,29 @@ class MasterServer(object):
         raise NotImplementedError('get_writing_process_id')
 
     def schedule_application(self, title, path, args, user, write_request):
+        """
+        Schedule an application to the master server.
+        @param title          Application title.
+        @param path           Application path.
+        @param args           Arguments to the application
+        @param user           User name of the requester
+        @param write_request  Boolean
+
+        @return application id
+        """
         raise NotImplementedError('schedule_application')
 
     def get_next_application(self, read_only):
         raise NotImplementedError('get_next_application')
 
     def set_application_status(self, status, app_id, hostname = None, exit_code = None):
+        """
+        Set the application status.
+
+        @param status    New status        
+        @param app_id    Application id
+        @param exit_code Exit code (optional)
+        """
         raise NotImplementedError('set_application_status')
 
     def get_application_status(self, app_id):
@@ -53,6 +70,24 @@ class MasterServer(object):
 
     def declare_remote_store(self, hostname):
         raise NotImplementedError('declare_remote_store')
+
+    def identify_user(self, dn):
+        """
+        Translate the DN to user account name.
+        @param dn   Certificate Distinguished Name.
+
+        @return  User name (string) or None (if not identified)
+        """
+        raise NotImplementedError('identify_user')
+
+    def authorize_user(self, user, service):
+        """
+        @param user     User name.
+        @param service  Service (role) name user is acting in.
+        
+        @return boolean
+        """
+        raise NotImplementedError('authorize_user')
 
     def send_heartbeat(self):
         raise NotImplementedError('send_heartbeat')
