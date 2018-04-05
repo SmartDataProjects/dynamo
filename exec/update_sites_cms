@@ -24,8 +24,10 @@ from dynamo.core.executable import inventory
 import dynamo.source.impl as sources
 
 config.sites.config.phedex = config.phedex
-config.sites.config.include = config.get('include_sites', None)
-config.sites.config.exclude = config.get('exclude_sites', None)
+if 'include_sites' in config:
+    config.sites.config.include = config.include_sites
+if 'exclude_sites' in config:
+    config.sites.config.exclude = config.exclude_sites
 
 site_source = sources.PhEDExSiteInfoSource(config.sites.config)
 

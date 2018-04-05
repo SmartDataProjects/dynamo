@@ -59,14 +59,18 @@ config.sites.config.phedex = config.phedex
 config.datasets.config.phedex = config.phedex
 config.replicas.config.phedex = config.phedex
 
-config.sites.config.include = config.get('include_sites', None)
-config.sites.config.exclude = config.get('exclude_sites', None)
-config.datasets.config.include = config.get('include_datasets', None)
-config.datasets.config.exclude = config.get('exclude_datasets', None)
-config.replicas.config.include_sites = config.get('include_sites', None)
-config.replicas.config.exclude_sites = config.get('exclude_sites', None)
-config.replicas.config.include_datasets = config.get('include_datasets', None)
-config.replicas.config.exclude_datasets = config.get('exclude_datasets', None)
+if 'include_sites' in config:
+    config.sites.config.include = config.include_sites
+    config.replicas.config.include_sites = config.include_sites
+if 'exclude_sites' in config:
+    config.sites.config.exclude = config.exclude_sites
+    config.replicas.config.exclude_sites = config.exclude_sites
+if 'include_datasets' in config:
+    config.datasets.config.include = config.include_datasets
+    config.replicas.config.include_datasets = config.include_datasets
+if 'exclude_datasets' in config:
+    config.datasets.config.exclude = config.exclude_datasets
+    config.replicas.config.exclude_datasets = config.exclude_datasets
 
 group_source = sources.PhEDExGroupInfoSource(config.groups.config)
 site_source = sources.PhEDExSiteInfoSource(config.sites.config)
