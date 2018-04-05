@@ -38,11 +38,11 @@ class DummyHistory(TransactionHistoryInterface):
 
     def _do_update_copy_entry(self, copy_record): #override
         LOG.info('Update copy entry: operation_id=%d approved=%d size=%d completed=%d',
-            copy_record.operation_id, copy_record.approved, copy_record.size, copy_record.completed)
+            copy_record.operation_id, copy_record.approved, copy_record.size, copy_record.status)
 
     def _do_update_deletion_entry(self, deletion_record): #override
         LOG.info('Update deletion entry: operation_id=%d approved=%d size=%d completed=%d',
-            copy_record.operation_id, copy_record.approved, copy_record.size, copy_record.completed)
+            copy_record.operation_id, copy_record.approved, copy_record.size, copy_record.status)
 
     def _do_save_sites(self, sites): #override
         LOG.info('Saving %d sites', len(sites))
