@@ -59,6 +59,15 @@ config.sites.config.phedex = config.phedex
 config.datasets.config.phedex = config.phedex
 config.replicas.config.phedex = config.phedex
 
+config.sites.config.include = config.get('include_sites', None)
+config.sites.config.exclude = config.get('exclude_sites', None)
+config.datasets.config.include = config.get('include_datasets', None)
+config.datasets.config.exclude = config.get('exclude_datasets', None)
+config.replicas.config.include_sites = config.get('include_sites', None)
+config.replicas.config.exclude_sites = config.get('exclude_sites', None)
+config.replicas.config.include_datasets = config.get('include_datasets', None)
+config.replicas.config.exclude_datasets = config.get('exclude_datasets', None)
+
 group_source = sources.PhEDExGroupInfoSource(config.groups.config)
 site_source = sources.PhEDExSiteInfoSource(config.sites.config)
 dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)

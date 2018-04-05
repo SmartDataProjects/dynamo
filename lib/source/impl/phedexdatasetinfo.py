@@ -34,8 +34,9 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
                     if ex_exp.match(name):
                         break
                 else:
-                    # not excluded
-                    dataset_names.append(name)
+                    # not excluded by args, now check my include/exclude list
+                    if self.check_allowed_dataset(name):
+                        dataset_names.append(name)
 
         if len(include) == 1 and include[0] == '/*/*/*':
             # all datasets requested - will do this efficiently
@@ -60,16 +61,27 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
         result = self._phedex.make_request('data', ['dataset=' + name, 'level=block', 'create_since=%d' % updated_since])
 
-        if len(result) == 0 or 'dataset' not in result[0]:
+        try:
+            dataset_entries = result[0]['dataset']
+        except:
             return []
 
-        updated_datasets = []
+        if self.include is not None or self.exclude is not None:
+            ientry = 0
+            while ientry != len(dataset_entries):
+                if self.check_allowed_dataset(dataset_entries[ientry]['name']):
+                    ientry += 1
+                else:
+                    dataset_entries.pop(ientry)
 
-        return Map().execute(self._create_dataset, result[0]['dataset'])
+        return Map().execute(self._create_dataset, dataset_entries)
 
     def get_dataset(self, name, with_files = False): #override
         ## Get the full dataset-block-file data from PhEDEx
         if not name.startswith('/') or name.count('/') != 3:
+            return None
+
+        if not self.check_allowed_dataset(name):
             return None
 
         def get_dbs_datasets(name, dbs_data):
@@ -125,6 +137,9 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         if not name.startswith('/') or name.count('/') != 3 or '#' in name:
             return None
 
+        if not self.check_allowed_dataset(name[:name.find('#')]):
+            return None
+
         if with_files:
             level = 'file'
         else:
@@ -177,9 +192,13 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         result = self._phedex.make_request('data', ['file=' + name, 'level=file'])
 
         try:
-            block_entry = result[0]['dataset'][0]['block'][0]
+            dataset_entry = result[0]['dataset'][0]
+            block_entry = dataset_entry['block'][0]
             file_entry = block_entry['file'][0]
         except:
+            return None
+
+        if not self.check_allowed_deataset(dataset_entry['name']):
             return None
 
         bname = block_entry['name']
