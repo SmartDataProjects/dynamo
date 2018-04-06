@@ -27,7 +27,7 @@ parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', requi
 args = parser.parse_args()
 sys.argv = []
 
-from dynamo.dataformat import Configuration
+from dynamo.dataformat import Configuration, HistoryRecord
 from dynamo.utils.parallel import Map
 from dynamo.core.executable import read_only, make_standard_logger
 
@@ -173,13 +173,23 @@ for site, site_records in records.iteritems():
     
         if len(status) == 0:
             # old transfer. seems to not exist anymore. Just update the history DB.
-            record.completed = 1
+            record.status = HistoryRecord.ST_COMPLETE
             if not read_only:
                 history.update_copy_entry(record)
 
             continue
     
-        for (sitename, dataset), (total, copied, last_update) in status.iteritems():
+        for (sitename, dataset), status_data in status.iteritems():
+            if status_data is None:
+                # the copy request was cancelled
+                record.status = HistoryRecord.ST_CANCELLED
+                if not read_only:
+                    history.update_copy_entry(record)
+
+                continue
+
+            total, copied, last_update = status_data
+
             LOG.debug('%s %s %s %s %s', sitename, dataset, total, copied, last_update)
 
             if sitename != site:
@@ -246,7 +256,9 @@ for site, site_records in records.iteritems():
         if request_total != record.size or request_copied == request_total:
             LOG.info('Updating record %d: size %d => %d, copied %d', record.operation_id, record.size, request_total, request_copied)
             record.size = request_total
-            record.completed = (request_copied == request_total)
+            if request_copied == request_total:
+                record.status = HistoryRecord.ST_COMPLETE
+
             if not read_only:
                 history.update_copy_entry(record)
 

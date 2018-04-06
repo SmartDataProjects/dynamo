@@ -9,6 +9,8 @@ class Undertaker(BaseHandler):
     def __init__(self, config):
         BaseHandler.__init__(self, 'Undertaker')
 
+        self.manual_evacuation_sites = list(config.get('additional_sites', []))
+
     def get_requests(self, inventory, history, policy): # override
         latest_runs = history.get_deletion_runs(policy.partition_name)
         if len(latest_runs) == 0:
@@ -17,13 +19,16 @@ class Undertaker(BaseHandler):
         latest_run = latest_runs[0]
 
         LOG.info('Offloading sites that were not in READY state at latest cycle %d', latest_run)
+        if len(self.manual_evacuation_sites) != 0:
+            LOG.info('Additionally evacuating %s as requested by configuration', ' '.join(self.manual_evacuation_sites))
 
         deletion_decisions = history.get_deletion_decisions(latest_run, size_only = False)
 
         protected_fractions = {} # {site: fraction}
         last_copies = {} # {site: [datasets]}
 
-        bad_sites = [site for site in inventory.sites.values() if site.status != Site.STAT_READY]
+        bad_sites = set(site for site in inventory.sites.values() if site.status != Site.STAT_READY)
+        bad_sites.update(inventory.sites[s] for s in self.manual_evacuation_sites)
 
         requests = []
 
@@ -77,6 +82,6 @@ class Undertaker(BaseHandler):
                         requests.append(list(blocks_only_at_site))
                         total_size += sum(b.size for b in blocks_only_at_site)
     
-        LOG.info('Offloading protected datasets from non-ready sites %s (total size %.1f TB)', str([s.name for s in bad_sites]), total_size * 1.e-12)
+        LOG.info('Offloading protected datasets from sites [%s] (total size %.1f TB)', ' '.join(s.name for s in bad_sites), total_size * 1.e-12)
 
         return requests
