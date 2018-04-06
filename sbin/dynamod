@@ -68,19 +68,20 @@ try:
 except OSError:
     LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 
-## Catch SIGTERM and raise a KeyboardInterrupt (so kill to the server process
-## raises the exception)
-from dynamo.utils.signaling import SignalConverter
-
-signal_converter = SignalConverter(logger = LOG)
-signal_converter.set(signal.SIGTERM)
-
 ## Start the server
 from dynamo.core.server import DynamoServer
-from dynamo.core.manager.base import ServerManager
 
 server = DynamoServer(config)
-server.load_inventory()
+
+if config.applications.enabled:
+    # Open an SSL socket to accept applications
+    app_thread = threading.Thread(target = server.accept_applications)
+    app_thread.daemon = True
+    app_thread.start()
+
+# Loop with server status check, update, and application execution (if enabled)
+srv_thread = threading.Thread(target = server.run)
+srv_thread.start()
 
 if config.web.enabled:
     from dynamo.web.server import WebServer
@@ -88,32 +89,20 @@ if config.web.enabled:
 
     web = WebServer(config.web, server)
     # Thread-based WSGI server
-    wsgi = WSGIServer(web.main, bindAddress = config.web.socket, umask = 0)
-    thread = threading.Thread(target = wsgi.run)
-    thread.daemon = True
-    thread.start()
+    WSGIServer(web.main, bindAddress = config.web.socket, umask = 0).run()
 
-if config.applications.enabled:
-    thread = threading.Thread(target = server.accept_applications, args = (config.applications,))
-    thread.daemon = True
-    thread.start()
+else:
+    # WSGIServer intercepts INT, TERM, and HUP so we do the same here
+    # Convert SIGTERM and SIGHUP into KeyboardInterrupt (SIGINT already is)
+    from dynamo.utils.signaling import SignalConverter
+    signal_converter = SignalConverter(logger = LOG)
+    signal_converter.set(signal.SIGTERM)
+    signal_converter.set(signal.SIGHUP)
 
-# Start the loop of loops
-# If the server dies out of error, status will not be INITIAL and we get ouf of
-# the loop.
-# If the server on the other hand goes out of sync with the rest of servers,
-# it will try to reset itself by setting the status to INITIAL. In this case
-# we reload the inventory and restart.
+    # Now just wait for the signal
+    try:
+        signal.pause()
+    except:
+        pass
 
-while True:
-    if config.applications.enabled:
-        server.serve_applications()
-    else:
-        server.sleep()
-
-    if server.manager.status == ServerManager.SRV_INITIAL:
-        server.load_inventory()
-    else:
-        # Server is shutting down either in online or error state
-        server.shutdown()
-        break
+server.shutdown()

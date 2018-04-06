@@ -14,10 +14,10 @@ class MySQLMasterServer(MasterServer):
 
         self._mysql = MySQL(db_params)
 
-        self.server_id = self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW)', socket.gethostname())
+        self.server_id = self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
 
     def lock(self): #override
-        self._mysql.query('LOCK TABLES `servers` WRITE, `applications` WRITE')
+        self._mysql.query('LOCK TABLES `servers` WRITE, `applications` WRITE, `users` READ')
 
     def unlock(self): #override
         self._mysql.query('UNLOCK TABLES')
@@ -34,26 +34,33 @@ class MySQLMasterServer(MasterServer):
 
     def get_host_list(self, status = None): #override
         sql = 'SELECT `hostname`, `status`, `store_module` IS NOT NULL FROM `servers`'
-        args = (,)
+        args = tuple()
         if status != None:
             sql += ' WHERE `status` = %s'
-            args += (ServerManager.server_status_name(status))
+            args += (ServerManager.server_status_name(status),)
 
         return self._mysql.query(sql, *args)
 
     def get_writing_process_id(self): #override
-        result = self_mysql.query('SELECT `id` FROM `applications` WHERE `write_request` = 1 AND `status` = \'run\'')
+        result = self._mysql.query('SELECT `id` FROM `applications` WHERE `write_request` = 1 AND `status` = \'run\'')
         if len(result) == 0:
             return None
         else:
             return result[0]
 
     def schedule_application(self, title, path, args, user, write_request): #override
-        sql = 'INSERT INTO `applications` (`write_request`, `title`, `path`, `args`, `user`) VALUES (%s, %s, %s, %s, %s)'
-        return self._mysql.query(sql, write_request, title, path, args, user)
+        result = self._mysql.query('SELECT `id` FROM `users` WHERE `name` = %s', user)
+        if len(result) == 0:
+            return 0
+        else:
+            user_id = result[0]
+
+        sql = 'INSERT INTO `applications` (`write_request`, `title`, `path`, `args`, `user_id`) VALUES (%s, %s, %s, %s, %s)'
+        return self._mysql.query(sql, write_request, title, path, args, user_id)
 
     def get_next_application(self, read_only): #override
-        sql = 'SELECT `id`, `write_request`, `title`, `path`, `args`, `user` FROM `applications`'
+        sql = 'SELECT `applications`.`id`, `write_request`, `title`, `path`, `args`, `users`.`name` FROM `applications`'
+        sql += ' INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
         sql += ' WHERE `status` = \'new\''
         if read_only:
             sql += ' AND `write_request` = 0'

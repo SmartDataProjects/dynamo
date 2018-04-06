@@ -16,7 +16,9 @@ def generate_master_conf(conf_str):
         host = conf['master_host']
 
     user = conf['user']
-    if 'passwd' not in conf:
+    if 'passwd' in conf:
+        passwd = conf['passwd']
+    else:
         passwd = grants_conf[user]['passwd']
         
     conf_str = '''

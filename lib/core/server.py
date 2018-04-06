@@ -8,14 +8,14 @@ import shlex
 import signal
 import socket
 import multiprocessing
+import threading
 import thread
 import Queue
 
 from dynamo.core.inventory import DynamoInventory
 from dynamo.utils.signaling import SignalBlocker
 import dynamo.utils.interface as interface
-import dynamo.core.manager.impl as manager_impl
-from dynamo.core.manager.base import ServerManager, OutOfSyncError
+from dynamo.core.manager import ServerManager, OutOfSyncError
 from dynamo.web.server import WebServer
 from dynamo.dataformat.exceptions import log_exception
 
@@ -43,13 +43,20 @@ class DynamoServer(object):
         self.inventory = None
 
         ## Create the server manager
-        manager_config = config.manager.config.clone()
+        manager_config = config.manager.clone()
         manager_config['has_store'] = ('persistency' in self.inventory_config)
-        self.manager = getattr(manager_impl, config.manager.module)(manager_config)
+        self.manager = ServerManager(manager_config)
 
         if self.manager.has_store:
             pconf = self.inventory_config.persistency
             self.manager.master.advertise_store(pconf.module, pconf.readonly_config)
+
+        ## Other config
+
+        self.applications_config = config.applications.clone()
+
+        # Server status (and application) poll interval
+        self.poll_interval = config.status_poll_interval
 
         ## Load the inventory content (filter according to debug config)
         self.inventory_load_opts = {}
@@ -60,7 +67,8 @@ class DynamoServer(object):
     
                 self.inventory_load_opts[objs] = (included, excluded)
 
-        self.poll_interval = config.status_poll_interval
+        # Shutdown flag - if the flag is set, raise KeyboardInterrupt
+        self.shutdown_flag = threading.Event()
 
     def load_inventory(self):
         self.manager.set_status(ServerManager.SRV_STARTING)
@@ -100,40 +108,41 @@ class DynamoServer(object):
 
         LOG.info('Inventory is ready.')
 
-    def sleep(self):
+    def run(self):
         """
-        If the server is not serving applications, this function works in an infinite loop checking the server status.
+        Main body of the server, but mostly focuses on exception handling.
         """
 
-        try:
-            LOG.info('Sleeping with server status check.')
+        # Outer loop: restart the application server when error occurs
+        while True:
+            try:
+                self.load_inventory()
 
-            while True:
-                self.check_status_and_connection()
-                time.sleep(self.poll_interval)
-                
-                # we only get out of this loop by a signal
+                # Actual stuff happens here
+                if self.applications_config.enabled:
+                    self._run_application_cycles()
+                else:
+                    self._run_update_cycles()
 
-        except KeyboardInterrupt:
-            LOG.info('Server process was interrupted.')
+            except KeyboardInterrupt:
+                LOG.info('Server process was interrupted.')
+                break
+    
+            except OutOfSyncError:
+                LOG.error('Server has gone out of sync with its peers. Terminating all child processes.')
+                log_exception(LOG)
+   
+            except:
+                LOG.error('Exception in server process. Terminating all child processes.')
+                log_exception(LOG)
+    
+            # set server status to initial
+            try:
+                self.manager.reset_status()
+            except:
+                self.manager.status = ServerManager.SRV_INITIAL
 
-        except OutOfSyncError:
-            log_exception(LOG)
-
-            # dynamod restarts this server
-            self.manager.reset_status()
-
-        except:
-            # log the exception
-            LOG.warning('Exception in server process. Terminating all child processes.')
-
-            if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
-                self.manager.set_status(ServerManager.SRV_ERROR)
-
-            log_exception(LOG)
-            raise
-
-    def serve_applications(self):
+    def _run_application_cycles(self):
         """
         Infinite-loop main body of the daemon.
         Step 1: Poll the applications list for one uploaded script.
@@ -144,102 +153,92 @@ class DynamoServer(object):
         Step 6: Sleep for N seconds.
         """
 
+        LOG.info('Start polling for applications.')
+
         child_processes = []
 
         # There can only be one child process with write access at a time. We pass it a Queue to communicate back.
         # writing_process is a tuple (proc, queue) when some process is writing
         writing_process = (0, None)
 
+        first_wait = True
+        do_sleep = False
+
         try:
-            LOG.info('Start polling for applications.')
-
-            first_wait = True
-            do_sleep = False
-
             while True:
                 self.check_status_and_connection()
-
+    
                 ## Step 4 (easier to do here because we use "continue"s)
                 self.read_updates()
-
+    
                 ## Step 5 (easier to do here because we use "continue"s)
                 writing_process = self.collect_processes(child_processes, writing_process)
-
+    
                 ## Step 6 (easier to do here because we use "continue"s)
                 if do_sleep:
                     time.sleep(self.poll_interval)
-
+    
                 ## Step 1: Poll
                 LOG.debug('Polling for applications.')
-
+    
                 next_application = self.manager.get_next_application()
-
+    
                 if next_application is None:
                     if len(child_processes) == 0 and first_wait:
                         LOG.info('Waiting for applications.')
                         first_wait = False
-
+    
                     do_sleep = True
-
+    
                     LOG.debug('No application found, sleeping for %.1f second(s).' % self.poll_interval)
                     continue
-
+    
                 ## Step 2: If a script is found, check the authorization of the script.
                 exec_id, write_request, title, path, args, user_name = next_application
-
+    
                 first_wait = True
                 do_sleep = False
-
+    
                 if not os.path.exists(path + '/exec.py'):
                     LOG.info('Application %s from user %s (write request: %s) not found.', title, user_name, write_request)
                     self.manager.set_application_status(exec_id, ServerManager.EXC_NOTFOUND)
                     continue
-
+    
                 LOG.info('Found application %s from user %s (write request: %s)', title, user_name, write_request)
-
+    
                 proc_args = (path, args)
-
+    
                 if write_request:
                     if not self.manager.check_write_auth(title, user_name, path):
                         LOG.warning('Application %s from user %s is not authorized for write access.', title, user_name)
                         # TODO send a message
-
+    
                         self.manager.set_application_status(exec_id, ServerManager.EXC_AUTHFAILED)
                         continue
-
+    
                     queue = multiprocessing.Queue()
                     proc_args += (queue,)
-
+    
                     writing_process = (exec_id, queue)
-
+    
                 ## Step 3: Spawn a child process for the script
                 self.manager.set_application_status(exec_id, ServerManager.EXC_RUN)
-
+    
                 proc = multiprocessing.Process(target = self._run_one, name = title, args = proc_args)
                 proc.daemon = True
                 proc.start()
-
+    
                 LOG.info('Started application %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
-
+    
                 child_processes.append((exec_id, proc, user_name, path))
 
-        except KeyboardInterrupt:
-            LOG.info('Server process was interrupted.')
-
-        except OutOfSyncError:
-            log_exception(LOG)
-
-            # dynamod restarts this server
-            self.manager.reset_status()
-
         except:
-            # log the exception
-            LOG.warning('Exception in server process. Terminating all child processes.')
-
             if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
-                self.manager.set_status(ServerManager.SRV_ERROR)
+                try:
+                    self.manager.set_status(ServerManager.SRV_ERROR)
+                except:
+                    pass
 
-            log_exception(LOG)
             raise
 
         finally:
@@ -257,9 +256,41 @@ class DynamoServer(object):
                 if proc.is_alive():
                     LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
 
-                self.manager.set_application_status(exec_id, ServerManager.EXC_KILLED)
+                try:
+                    self.manager.set_application_status(exec_id, ServerManager.EXC_KILLED)
+                except:
+                    pass
+
+    def _run_update_cycles(self):
+        """
+        Infinite-loop main body of the daemon.
+        Step 1: Apply updates sent by other servers.
+        Step 2: Sleep for N seconds.
+        """
+
+        LOG.info('Start checking for updates.')
+
+        try:
+            while True:
+                self.check_status_and_connection()
+    
+                ## Step 1
+                self.read_updates()
+    
+                ## Step 2
+                time.sleep(self.poll_interval)
+
+        except:
+            if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
+                try:
+                    self.manager.set_status(ServerManager.SRV_ERROR)
+                except:
+                    pass
 
     def check_status_and_connection(self):
+        if self.shutdown_flag.is_set():
+            raise KeyboardInterrupt('Shutdown')
+
         ## Check status (raises exception if error)
         self.manager.check_status()
     
@@ -520,11 +551,23 @@ class DynamoServer(object):
 
         return 0
 
-    def accept_applications(self, config):
+    def accept_applications(self):
         """Listen to an SSL-secured port. Application data will be sent in JSON. To be run in a separate thread."""
         import ssl
 
+        # OpenSSL cannot authenticate with certificate proxies without this environment variable
         os.environ['OPENSSL_ALLOW_PROXY_CERTS'] = '1'
+
+        config = self.applications_config.collector
+
+        # Return to root to read host keyfile
+        uid = os.geteuid()
+        gid = os.getegid()
+        try:
+            os.seteuid(0)
+            os.setegid(0)
+        except OSError:
+            pass
 
         if 'capath' in config:
             # capath only supported in SSLContext (pythonn 2.7)
@@ -532,20 +575,26 @@ class DynamoServer(object):
             context.load_cert_chain(config.certfile, keyfile = config.keyfile)
             context.load_verify_locations(capath = config.capath)
             context.verify_mode = ssl.CERT_REQUIRED
-            socket = context.wrap_socket(socket.socket(), server_side = True)
+            sock = context.wrap_socket(socket.socket(), server_side = True)
         else:
-            socket = ssl.wrap_socket(socket.socket(), server_side = True,
+            sock = ssl.wrap_socket(socket.socket(), server_side = True,
                 certfile = config.certfile, keyfile = config.keyfile,
                 cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.cafile)
 
-        socket.bind(('localhost', 39626))
-        socket.listen(1)
+        try:
+            os.seteuid(uid)
+            os.setegid(gid)
+        except OSError:
+            pass
+
+        sock.bind(('localhost', 39626))
+        sock.listen(1)
         
         while True:
-            conn, addr = socket.accept()
+            conn, addr = sock.accept()
             thread.start_new_thread(self._process_application, (conn,))
 
-        socket.close()
+        sock.close()
 
     def _process_application(self, conn):
         try:
@@ -560,6 +609,7 @@ class DynamoServer(object):
     
             user = self.manager.master.identify_user(subject)
             if user is None:
+                # if the client used a X509 proxy, issuer is the real user DN
                 user = self.manager.master.identify_user(issuer)
     
             if user is None:
@@ -601,3 +651,4 @@ class DynamoServer(object):
 
     def shutdown(self):
         self.manager.disconnect()
+        self.shutdown_flag.set()

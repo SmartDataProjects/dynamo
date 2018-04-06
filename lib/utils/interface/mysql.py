@@ -17,7 +17,7 @@ MySQLdb.converters.conversions[ListType] = MySQLdb.converters.escape_sequence
 LOG = logging.getLogger(__name__)
 
 class MySQL(object):
-    """Generic MySQL interface (for an interface)."""
+    """Generic thread-safe MySQL interface (for an interface)."""
 
     @staticmethod
     def escape_string(string):

@@ -2,9 +2,6 @@ import time
 import threading
 import socket
 
-import dynamo.core.master.impl as master_impl
-import dynamo.core.board.impl as board_impl
-
 class OutOfSyncError(Exception):
     pass
 
@@ -55,6 +52,9 @@ class ServerManager(object):
             return arg
 
     def __init__(self, config):
+        import dynamo.core.master.impl as master_impl
+        import dynamo.core.board.impl as board_impl
+
         # Interface to the master server
         self.master = getattr(master_impl, config.master.module)(config.master.config)
         # Interface to the local update board
@@ -130,7 +130,7 @@ class ServerManager(object):
             self.status = ServerManager.SRV_OUTOFSYNC
             raise OutOfSyncError('Server out of sync')
 
-    def get_status(self):
+    def get_status(self, hostname = None):
         """
         Read the server status from the master list.
         """
@@ -148,7 +148,7 @@ class ServerManager(object):
         """
         Count the number of servers (including self) in the given status.
         """
-        return len(self.master.get_hosts_in_status(status))
+        return len(self.master.get_host_list(status = status))
 
     def get_updates(self):
         """
@@ -192,7 +192,7 @@ class ServerManager(object):
             #  . There is already a write process
             read_only = (self.get_status() == ServerManager.SRV_UPDATING) or \
                 (len(self.master.get_host_list(status = ServerManager.SRV_STARTING)) != 0) or \
-                (self.master.writing_process_id() is not None)
+                (self.master.get_writing_process_id() is not None)
 
             next_app = self.master.get_next_application(read_only)
     

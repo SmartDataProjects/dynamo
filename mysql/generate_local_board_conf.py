@@ -16,7 +16,9 @@ def generate_local_board_conf(conf_str):
         host = conf['local_board_host']
 
     user = conf['user']
-    if 'passwd' not in conf:
+    if 'passwd' in conf:
+        passwd = conf['passwd']
+    else:
         passwd = grants_conf[user]['passwd']
         
     conf_str = '''

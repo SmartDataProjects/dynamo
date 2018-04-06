@@ -35,12 +35,11 @@ execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__nam
 
 conf_gen_script = local_board_mod + '/generate_local_board_conf.py'
 execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
-local_board_conf = 
 
 conf_str = '''{
   "user": "''' + server_user + '''",
   "inventory": {
-  "persistency": {'''
+    "persistency": {'''
 
 conf_str += ns.generate_store_conf(persistency_conf_args)
 
@@ -69,8 +68,9 @@ conf_str += '''
 
 if serve_applications == 'true':
     conf_str += ''',
-    "certfile": "''' + source_conf.get('applications', 'certfile') + '''",
-    "keyfile": "''' + source_conf.get('applications', 'keyfile') + '",'
+    "collector": {
+      "certfile": "''' + source_conf.get('applications', 'certfile') + '''",
+      "keyfile": "''' + source_conf.get('applications', 'keyfile') + '",'
 
     capath = source_conf.get('applications', 'capath')
     if os.path.isdir(capath):
@@ -82,12 +82,13 @@ if serve_applications == 'true':
             raise RuntimeError('Invalid capath')
 
         conf_str += '''
-    "capath": "''' + capath + '"'
+      "capath": "''' + capath + '"'
     else:
         conf_str += '''
-    "cafile": "''' + capath + '"'
+      "cafile": "''' + capath + '"'
 
 conf_str += '''
+    }
   },
   "web": {
     "enabled": ''' + serve_web

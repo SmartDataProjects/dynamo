@@ -32,11 +32,17 @@ store=mysql
 # Store configuration to be passed to $store/generate_store_conf.py
 store_conf={"server": "dynamosrv", "reader": "dynamoread"}
 
-# Server manager technology
-manager=mysql
+# Master server technology
+master=mysql
 
 # Server manager configuration to be passed to $manager/generate_manager_conf.py
-manager_conf={"master_host": "localhost", "user": "dynamosrv"}
+master_conf={"host": "localhost", "user": "dynamosrv"}
+
+# Server update board technology
+local_board=mysql
+
+# Server manager configuration to be passed to $manager/generate_manager_conf.py
+local_board_conf={"host": "localhost", "user": "dynamosrv"}
 
 [applications]
 
