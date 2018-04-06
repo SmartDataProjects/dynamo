@@ -1,7 +1,8 @@
 [paths]
+## Common paths
 
 # Install target directory
-install_path=/usr/local/dynamo
+dynamo_base=/usr/local/dynamo
 
 # Configuration directory
 config_path=/etc/dynamo
@@ -19,6 +20,7 @@ archive_path=/local/data/dynamo
 policy_path=/usr/local/dynamo-policies
 
 [server]
+## Dynamo server configuration
 
 # User under which dynamo runs
 user=dynamo
@@ -45,6 +47,7 @@ local_board=mysql
 local_board_conf={"host": "localhost", "user": "dynamosrv"}
 
 [applications]
+## Dynamo application server configuration
 
 # Whether to run an application server
 enabled=true
@@ -59,6 +62,7 @@ keyfile=/etc/pki/tls/private/localhost.key
 capath=/etc/pki/tls/certs/ca-bundle.crt
 
 [web]
+## Dynamo web server (backend) configuration
 
 # Whether to run a web interface
 enabled=true

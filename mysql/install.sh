@@ -20,6 +20,7 @@ echo
 echo "-> Checking dependencies.."
 
 # Need the server running
+require rpm -q MySQL-python
 require pgrep -f mysqld
 
 ROOTCNF=/etc/my.cnf.d/root.cnf

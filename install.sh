@@ -55,9 +55,9 @@ require rpm -q python
 warnifnot rpm -q condor-python
 warnifnot rpm -q rrdtool-python
 require rpm -q sqlite
-if [ $SERVER_DB = "mysql" ]
+if [ "$WEBSERVER" = "true" ]
 then
-  require rpm -q MySQL-python
+  require rpm -q python-flup
 fi
 
 if $WARNING
