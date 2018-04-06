@@ -25,7 +25,7 @@ SPOOL_PATH=$($READCONF paths.spool_path)
 LOG_PATH=$($READCONF paths.log_path)
 POLICY_PATH=$($READCONF paths.policy_path)
 WEBSERVER=$($READCONF web.enabled)
-#SERVER_DB=$($READCONF server.store)
+SERVER_DB=$($READCONF server.store)
 
 ### Stop the daemons first ###
 
