@@ -4,7 +4,7 @@ class MasterServer(object):
     """
 
     def __init__(self, config):
-        pass
+        self.connected = False
 
     def lock(self):
         raise NotImplementedError('lock')
@@ -88,6 +88,12 @@ class MasterServer(object):
         @return boolean
         """
         raise NotImplementedError('authorize_user')
+
+    def check_connection(self):
+        """
+        @return  True if connection is OK, False if not
+        """
+        raise NotImplementedError('check_connection')
 
     def send_heartbeat(self):
         raise NotImplementedError('send_heartbeat')

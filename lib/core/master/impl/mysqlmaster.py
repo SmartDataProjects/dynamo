@@ -14,7 +14,10 @@ class MySQLMasterServer(MasterServer):
 
         self._mysql = MySQL(db_params)
 
+        self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
         self.server_id = self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
+
+        self.connected = True
 
     def lock(self): #override
         self._mysql.query('LOCK TABLES `servers` WRITE, `applications` WRITE, `users` READ')
@@ -143,6 +146,16 @@ class MySQLMasterServer(MasterServer):
     def declare_remote_store(self, hostname): #override
         server_id = self._mysql.query('SELECT `id` FROM `servers` WHERE `hostname` = %s', hostname)
         self._mysql.query('UPDATE `servers` SET `store_host` = %s WHERE `id` = %s', server_id, self.server_id)
+
+    def check_connection(self): #override
+        try:
+            self._mysql.query('SELECT 1')
+        except:
+            self.connected = False
+            return False
+
+        self.connected = True
+        return True
 
     def send_heartbeat(self): #override
         self._mysql.query('UPDATE `servers` SET `last_heartbeat` = NOW() WHERE `id` = %s', self.server_id)

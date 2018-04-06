@@ -126,6 +126,9 @@ class ServerManager(object):
         if self.status == ServerManager.SRV_ERROR:
             raise RuntimeError('Server status is ERROR')
 
+        if not self.master.check_connection():
+            raise RuntimeError('Lost connection to master server')
+
         if self.get_status() == ServerManager.SRV_OUTOFSYNC:
             self.status = ServerManager.SRV_OUTOFSYNC
             raise OutOfSyncError('Server out of sync')

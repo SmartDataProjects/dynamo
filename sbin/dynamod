@@ -106,3 +106,4 @@ else:
         pass
 
 server.shutdown()
+srv_thread.join()

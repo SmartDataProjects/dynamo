@@ -69,6 +69,8 @@ class DynamoServer(object):
 
         # Shutdown flag - if the flag is set, raise KeyboardInterrupt
         self.shutdown_flag = threading.Event()
+        # Default is set. We shut down the server when flag is cleared
+        self.shutdown_flag.set()
 
     def load_inventory(self):
         self.manager.set_status(ServerManager.SRV_STARTING)
@@ -135,12 +137,20 @@ class DynamoServer(object):
             except:
                 LOG.error('Exception in server process. Terminating all child processes.')
                 log_exception(LOG)
+
+            if not self.manager.master.connected:
+                # We need to reconnect to another server
+                # For now we just die
+                LOG.error('Lost connection to the master server. Shutting down Dynamo..')
+                os.kill(os.getpid(), signal.SIGINT)
     
             # set server status to initial
             try:
                 self.manager.reset_status()
             except:
                 self.manager.status = ServerManager.SRV_INITIAL
+
+        self.shutdown_flag.set()
 
     def _run_application_cycles(self):
         """
@@ -157,14 +167,14 @@ class DynamoServer(object):
 
         child_processes = []
 
-        # There can only be one child process with write access at a time. We pass it a Queue to communicate back.
-        # writing_process is a tuple (proc, queue) when some process is writing
-        writing_process = (0, None)
-
-        first_wait = True
-        do_sleep = False
-
         try:
+            # There can only be one child process with write access at a time. We pass it a Queue to communicate back.
+            # writing_process is a tuple (proc, queue) when some process is writing
+            writing_process = (0, None)
+    
+            first_wait = True
+            do_sleep = False
+
             while True:
                 self.check_status_and_connection()
     
@@ -287,8 +297,10 @@ class DynamoServer(object):
                 except:
                     pass
 
+            raise
+
     def check_status_and_connection(self):
-        if self.shutdown_flag.is_set():
+        if not self.shutdown_flag.is_set():
             raise KeyboardInterrupt('Shutdown')
 
         ## Check status (raises exception if error)
@@ -650,5 +662,11 @@ class DynamoServer(object):
             conn.close()
 
     def shutdown(self):
+        self.shutdown_flag.clear()
+        LOG.info('Shutting down Dynamo server..')
+        state = self.shutdown_flag.wait(60)
+        if not state:
+            # timed out
+            LOG.warning('Shutdown timeout of 60 seconds have passed.')
+
         self.manager.disconnect()
-        self.shutdown_flag.set()
