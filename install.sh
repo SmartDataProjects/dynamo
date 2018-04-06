@@ -25,6 +25,7 @@ SPOOL_PATH=$($READCONF paths.spool_path)
 LOG_PATH=$($READCONF paths.log_path)
 POLICY_PATH=$($READCONF paths.policy_path)
 WEBSERVER=$($READCONF web.enabled)
+APPSERVER=$($READCONF applications.enabled)
 SERVER_DB=$($READCONF server.store)
 
 ### Stop the daemons first ###
@@ -55,6 +56,10 @@ require rpm -q python
 warnifnot rpm -q condor-python
 warnifnot rpm -q rrdtool-python
 require rpm -q sqlite
+if [ "$APPSERVER" = "true" ]
+then
+  require rpm -q openssl-libs
+fi
 if [ "$WEBSERVER" = "true" ]
 then
   require rpm -q python-flup

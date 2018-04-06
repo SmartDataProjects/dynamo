@@ -67,6 +67,11 @@ class DynamoServer(object):
     
                 self.inventory_load_opts[objs] = (included, excluded)
 
+        # Maximum number of consecutive unhandled errors before shutting down the server
+        self.max_num_errors = config.max_num_errors
+        # Error counter
+        self.num_errors = 0
+
         # Shutdown flag - if the flag is set, raise KeyboardInterrupt
         self.shutdown_flag = threading.Event()
         # Default is set. We shut down the server when flag is cleared
@@ -115,6 +120,9 @@ class DynamoServer(object):
         Main body of the server, but mostly focuses on exception handling.
         """
 
+        # Number of unhandled errors
+        self.num_errors = 0
+
         # Outer loop: restart the application server when error occurs
         while True:
             try:
@@ -138,11 +146,19 @@ class DynamoServer(object):
                 LOG.error('Exception in server process. Terminating all child processes.')
                 log_exception(LOG)
 
+                self.num_errors += 1
+
+            if self.num_errors >= self.max_num_errors:
+                LOG.error('Consecutive %d errors occurred. Shutting down Dynamo.' % self.num_errors)
+                os.kill(os.getpid(), signal.SIGINT)
+                break
+
             if not self.manager.master.connected:
                 # We need to reconnect to another server
                 # For now we just die
                 LOG.error('Lost connection to the master server. Shutting down Dynamo..')
                 os.kill(os.getpid(), signal.SIGINT)
+                break
     
             # set server status to initial
             try:
@@ -583,7 +599,7 @@ class DynamoServer(object):
 
         if 'capath' in config:
             # capath only supported in SSLContext (pythonn 2.7)
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+            context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
             context.load_cert_chain(config.certfile, keyfile = config.keyfile)
             context.load_verify_locations(capath = config.capath)
             context.verify_mode = ssl.CERT_REQUIRED
@@ -601,12 +617,13 @@ class DynamoServer(object):
 
         sock.bind(('localhost', 39626))
         sock.listen(1)
-        
-        while True:
-            conn, addr = sock.accept()
-            thread.start_new_thread(self._process_application, (conn,))
 
-        sock.close()
+        try:
+            while True:
+                conn, addr = sock.accept()
+                thread.start_new_thread(self._process_application, (conn,))
+        finally:
+            sock.close()
 
     def _process_application(self, conn):
         try:
