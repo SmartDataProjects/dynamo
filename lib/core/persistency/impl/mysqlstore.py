@@ -547,7 +547,7 @@ class MySQLInventoryStore(InventoryStore):
             version_id_map[(cycle, major, minor, suffix)] = vid
 
         if self._mysql.table_exists('datasets_tmp'):
-            self._mysql.query('CREATE TABLE `datasets_tmp` LIKE `groups`')
+            self._mysql.query('CREATE TABLE `datasets_tmp` LIKE `datasets`')
 
         sql = 'INSERT INTO `datasets` (`name`, `size`, `num_files`, `status`, `data_type`, `software_version_id`, `last_update`, `is_open`)'
         sql += ' VALUES (%s, %s, %s, %s, %s, %s, %s, %s)'
