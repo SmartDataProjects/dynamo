@@ -142,8 +142,7 @@ class DynamoInventory(ObjectRepository):
     def _load_partitions(self):
         """Load partition data from a text table."""
 
-        partition_names = self._store.get_partition_names()
-
+        conditions = {}
         with open(self.partition_def_path) as defsource:
             subpartitions = {}
             for line in defsource:
@@ -152,36 +151,20 @@ class DynamoInventory(ObjectRepository):
                     continue
         
                 name = matches.group(1)
-                try:
-                    partition_names.remove(name)
-                except ValueError:
-                    LOG.warning('Unknown partition %s appears in %s', name, self.partition_def_path)
-                    continue
-
                 condition_text = matches.group(2).strip()
-                
+
                 matches = re.match('\[(.+)\]$', condition_text)
                 if matches:
-                    partition = df.Partition(name)
-                    subpartitions[partition] = map(str.strip, matches.group(1).split(','))
+                    condition = map(str.strip, matches.group(1).split(','))
                 else:
-                    partition = df.Partition(name, Condition(condition_text, replica_variables))
+                    condition = Condition(condition_text, replica_variables)
 
-                self.partitions.add(partition)
+                conditions[name] = condition
 
-        if len(partition_names) != 0:
-            LOG.error('No definition given for the following partitions: %s', partition_names)
-            raise df.ConfigurationError()
+        partitions = self._store.get_partitions(conditions)
 
-        for partition, subp_names in subpartitions.iteritems():
-            try:
-                subparts = tuple(self.partitions[name] for name in subp_names)
-            except KeyError:
-                raise IntegrityError('Unknown partition ' + name + ' specified in subpartition list for ' + partition.name)
-
-            partition._subpartitions = subparts
-            for subp in subparts:
-                subp._parent = partition
+        for partition in partitions:
+            self.partitions.add(partition)
 
     def _get_group_names(self, included, excluded):
         """Return the list of group names or None according to the arguments."""

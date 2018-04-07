@@ -19,12 +19,14 @@ class InventoryStore(object):
         """
         return False
 
-    def get_partition_names(self):
+    def get_partitions(self, conditions):
         """
-        Return a list of partition names.
+        Return a list of partition objects.
+        @param conditions  {partition_name: condition} condition can be a Condition object
+                           or list of partition names
         """
 
-        raise NotImplementedError('get_partition_names')
+        raise NotImplementedError('get_partitions')
 
     def get_group_names(self, include = ['*'], exclude = []):
         """

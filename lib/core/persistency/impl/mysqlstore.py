@@ -4,7 +4,7 @@ import fnmatch
 
 from dynamo.core.persistency.base import InventoryStore
 from dynamo.utils.interface.mysql import MySQL
-from dynamo.dataformat import Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
+from dynamo.dataformat import Partition, Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)
 
@@ -29,14 +29,43 @@ class MySQLInventoryStore(InventoryStore):
 
     def check_connection(self): #override
         try:
-            result = self._mysql.query('SELECT * FROM `partitions`')
+            self._mysql.query('SELECT * FROM `partitions`')
         except:
             return False
 
         return True
 
-    def get_partition_names(self):
-        return self._mysql.query('SELECT `name` FROM `partitions`')
+    def get_partitions(self, conditions):
+        partitions = {}
+        for part_id, name in self._mysql.query('SELECT `id`, `name` FROM `partitions`'):
+            try:
+                condition = conditions[name]
+            except KeyError:
+                raise RuntimeError('Condition undefined for partition %s', name)
+
+            if type(condition) is list:
+                # this is a superpartition
+                partitions[name] = Partition(name, pid = part_id)
+            else:
+                partitions[name] = Partition(name, condition = condition, pid = part_id)
+
+        # set subpartitions for superpartitions
+        for partition in partitions:
+            if partition.condition is not None:
+                continue
+
+            subpartitions = []
+
+            subp_names = conditions[partition.name]
+            for name in subp_names:
+                subpartition = partitions[name]
+                subpartition._parent = partition
+                subpartitions.append(partition)
+                
+            partition._subpartitions = tuple(subpartitions)
+
+        # finally return as a list
+        return partitions.values()
 
     def get_group_names(self, include = ['*'], exclude = []): #override
         # Load groups
@@ -471,9 +500,9 @@ class MySQLInventoryStore(InventoryStore):
         if self._mysql.table_exists('partitions_tmp'):
             self._mysql.query('CREATE TABLE `partitions_tmp` LIKE `partitions`')
 
-        sql = 'INSERT INTO `partitions_tmp` (`name`) VALUES (%s)'
+        sql = 'INSERT INTO `partitions_tmp` (`id`, `name`) VALUES (%s)'
         for partition in inventory.partitions.itervalues():
-            self._mysql.query(sql, partition.name)
+            self._mysql.query(sql, partition.id, partition.name)
 
         self._mysql.query('DROP TABLE `partitions`')
         self._mysql.query('RENAME TABLE `partitions_tmp` TO `partitions`')
@@ -514,15 +543,8 @@ class MySQLInventoryStore(InventoryStore):
             if partition.subpartitions is not None:
                 continue
 
-            sql = 'SELECT `id` FROM `partitions` WHERE `name` = %s'
-            result = self._mysql.query(sql, partition.name)
-            if len(result) == 0:
-                continue
-
-            partition_id = result[0]
-
             for site in inventory.sites.itervalues():
-                self._mysql.query(sql, site.id, partition_id, site.partitions[partition].quota * 1.e-12)
+                self._mysql.query(sql, site.id, partition.id, site.partitions[partition].quota * 1.e-12)
 
         self._mysql.query('DROP TABLE `quotas`')
         self._mysql.query('RENAME TABLE `quotas_tmp` TO `quotas`')
@@ -785,8 +807,8 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query(sql, group.id)
 
     def save_partition(self, partition): #override
-        fields = ('name',)
-        self._insert_update('partitions', fields, partition.name)
+        fields = ('id', 'name',)
+        self._insert_update('partitions', fields, partition.id, partition.name)
 
         # For new partitions, persistency requires saving site partition data with default parameters.
         # We handle missing site partition entries at load time - if a row is missing, SitePartition object with
@@ -827,12 +849,9 @@ class MySQLInventoryStore(InventoryStore):
         if site_id == 0:
             return
 
-        sql = 'SELECT `id` FROM `partitions` WHERE `name` = %s'
-        result = self._mysql.query(sql, site_partition.partition.name)
-        if len(result) == 0:
+        partition_id = site_partition.partition.id
+        if partition_id == 0:
             return
-
-        partition_id = result[0]
 
         fields = ('site_id', 'partition_id', 'storage')
         self._insert_update('quotas', fields, site_id, partition_id, site_partition.quota * 1.e-12)
@@ -844,6 +863,6 @@ class MySQLInventoryStore(InventoryStore):
         sql += ', '.join('`%s`' % f for f in fields)
         sql += ') VALUES (' + placeholders + ')'
         sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join(['`%s`=VALUES(`%s`)' % (f, f) for f in fields])
+        sql += ', '.join('`%s`=VALUES(`%s`)' % (f, f) for f in fields)
 
         return self._mysql.query(sql, *values)
