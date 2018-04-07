@@ -27,22 +27,22 @@ ROOTCNF=/etc/my.cnf.d/root.cnf
 HAS_ROOTCNF=true
 
 # If ROOTCNF does not exist, make a temporary file
-if ! [ -r $ROOTCNF ]
+if [ -r $ROOTCNF ]
 then
+  MYSQLOPT="--defaults-file=$ROOTCNF"
+else
   echo -n 'Enter password for MySQL root:'
   read -s PASSWD
   echo
 
-  touch $ROOTCNF
-  chmod 600 $ROOTCNF
-  echo "[mysql]" >> $ROOTCNF
-  echo "host=localhost" >> $ROOTCNF
-  echo "user=root" >> $ROOTCNF
-  echo "password='$PASSWD'" >> $ROOTCNF
+  MYSQLOPT='-u root -p"'$PASSWD'" -h localhost'
+
   unset PASSWD
 
   HAS_ROOTCNF=false
 fi
+
+MYSQL="mysql $MYSQLOPT"
 
 # Set up grants
 echo '############################'
@@ -57,8 +57,6 @@ echo '##########################################'
 echo '######  MYSQL DATABASES AND TABLES  ######'
 echo '##########################################'
 echo
-
-MYSQL="mysql --defaults-file=$ROOTCNF"
 
 HAS_DIFFERENCE=false
 
@@ -86,7 +84,7 @@ do
     TABLE=$(echo $SQL | sed 's/.sql//')
 
     # Get the CREATE TABLE command. If the table does not exist, return code is nonzero
-    python $THISDIR/get_schema.py --defaults-file=$ROOTCNF $DB $TABLE > /tmp/.schema.$$ 2>&1
+    python $THISDIR/get_schema.py $MYSQLOPT $DB $TABLE > /tmp/.schema.$$ 2>&1
 
     if [ $? -ne 0 ]
     then
@@ -137,7 +135,6 @@ else
   echo "MySQL root credentials were not found in $ROOTCNF."
   echo "No automatic DB backup is set up."
   echo
-  rm -f $ROOTCNF
 fi
 
 echo "MySQL installation is complete."
