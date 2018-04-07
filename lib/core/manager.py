@@ -261,7 +261,7 @@ class ServerManager(object):
                     self.store_host = server.hostname
                     self.master.declare_remote_store(self.store_host)
 
-                    return (hostname,) + store_config
+                    return (server.hostname,) + store_config
                     
                 elif server.status == ServerManager.SRV_UPDATING:
                     is_updating = True
@@ -275,6 +275,8 @@ class ServerManager(object):
         """
         Keep the other host list up-to-date.
         """
+        import dynamo.core.board.impl as board_impl
+
         known_hosts = set()
 
         for hostname, status, has_store in self.master.get_host_list():

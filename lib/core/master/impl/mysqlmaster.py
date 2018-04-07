@@ -117,6 +117,9 @@ class MySQLMasterServer(MasterServer):
         return False
 
     def advertise_store(self, module, config): #override
+        config = config.clone()
+        config.host = socket.gethostname() # make sure it doesn't say "localhost"
+
         sql = 'UPDATE `servers` SET `store_module` = %s, `store_config` = %s WHERE `id` = %s'
         self._mysql.query(sql, module, config.dump_json(), self.server_id)
 
@@ -131,6 +134,9 @@ class MySQLMasterServer(MasterServer):
         return module, Configuration(json.loads(config_str))
 
     def advertise_board(self, module, config): #override
+        config = config.clone()
+        config.host = socket.gethostname() # make sure it doesn't say "localhost"
+
         sql = 'UPDATE `servers` SET `board_module` = %s, `board_config` = %s WHERE `id` = %s'
         self._mysql.query(sql, module, config.dump_json(), self.server_id)
 
@@ -145,7 +151,7 @@ class MySQLMasterServer(MasterServer):
         return module, Configuration(json.loads(config_str))
 
     def declare_remote_store(self, hostname): #override
-        server_id = self._mysql.query('SELECT `id` FROM `servers` WHERE `hostname` = %s', hostname)
+        server_id = self._mysql.query('SELECT `id` FROM `servers` WHERE `hostname` = %s', hostname)[0]
         self._mysql.query('UPDATE `servers` SET `store_host` = %s WHERE `id` = %s', server_id, self.server_id)
 
     def check_connection(self): #override
