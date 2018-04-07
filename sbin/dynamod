@@ -73,12 +73,6 @@ from dynamo.core.server import DynamoServer
 
 server = DynamoServer(config)
 
-if config.applications.enabled:
-    # Open an SSL socket to accept applications
-    app_thread = threading.Thread(target = server.accept_applications)
-    app_thread.daemon = True
-    app_thread.start()
-
 # Loop with server status check, update, and application execution (if enabled)
 srv_thread = threading.Thread(target = server.run)
 srv_thread.start()

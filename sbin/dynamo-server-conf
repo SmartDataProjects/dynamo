@@ -63,6 +63,7 @@ conf_str += '''
   },
   "notification_recipient": "''' + email + '''",
   "status_poll_interval": 1.0,
+  "max_num_errors": 3,
   "applications": {
     "enabled": ''' + serve_applications
 

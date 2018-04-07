@@ -7,6 +7,7 @@ import hashlib
 import shlex
 import signal
 import socket
+import select
 import multiprocessing
 import threading
 import thread
@@ -57,6 +58,9 @@ class DynamoServer(object):
 
         # Server status (and application) poll interval
         self.poll_interval = config.status_poll_interval
+
+        # Application collector socket
+        self.app_collector = None
 
         ## Load the inventory content (filter according to debug config)
         self.inventory_load_opts = {}
@@ -179,6 +183,9 @@ class DynamoServer(object):
         Step 6: Sleep for N seconds.
         """
 
+        # Start the application collector thread
+        self.start_application_collector()
+
         LOG.info('Start polling for applications.')
 
         child_processes = []
@@ -268,6 +275,9 @@ class DynamoServer(object):
             raise
 
         finally:
+            # Close the application collector. The collector thread will terminate
+            self.app_collector.shutdown(socket.SHUT_RDWR)
+
             # If the main process was interrupted by Ctrl+C:
             # Ctrl+C will pass SIGINT to all child processes (if this process is the head of the
             # foreground process group). In this case calling terminate() will duplicate signals
@@ -286,6 +296,10 @@ class DynamoServer(object):
                     self.manager.set_application_status(exec_id, ServerManager.EXC_KILLED)
                 except:
                     pass
+
+            # Make sure application collector is closed
+            while self.app_collector is not None:
+                time.sleep(0.5)
 
     def _run_update_cycles(self):
         """
@@ -579,23 +593,14 @@ class DynamoServer(object):
 
         return 0
 
-    def accept_applications(self):
-        """Listen to an SSL-secured port. Application data will be sent in JSON. To be run in a separate thread."""
+    def start_application_collector(self):
+        """Open an SSL socket and spawn a thread. Application data will be sent in JSON."""
         import ssl
 
         # OpenSSL cannot authenticate with certificate proxies without this environment variable
         os.environ['OPENSSL_ALLOW_PROXY_CERTS'] = '1'
 
         config = self.applications_config.collector
-
-        # Return to root to read host keyfile
-        uid = os.geteuid()
-        gid = os.getegid()
-        try:
-            os.seteuid(0)
-            os.setegid(0)
-        except OSError:
-            pass
 
         if 'capath' in config:
             # capath only supported in SSLContext (pythonn 2.7)
@@ -609,21 +614,40 @@ class DynamoServer(object):
                 certfile = config.certfile, keyfile = config.keyfile,
                 cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.cafile)
 
-        try:
-            os.seteuid(uid)
-            os.setegid(gid)
-        except OSError:
-            pass
+        self.app_collector = sock
+        
+        collector_thread = threading.Thread(target = self._accept_applications)
+        collector_thread.start()
+
+    def _accept_applications(self):
+        sock = self.app_collector
 
         sock.bind(('localhost', 39626))
         sock.listen(1)
 
         try:
             while True:
-                conn, addr = sock.accept()
-                thread.start_new_thread(self._process_application, (conn,))
+                # select.select will block until someone wrote to the other end of the socket or if
+                # the socket is shut down
+                rlist, wlist, xlist = select.select([sock], [], [sock])
+                if sock in rlist:
+                    try:
+                        conn, addr = sock.accept()
+                    except socket.error:
+                        # socket was shut down
+                        break
+    
+                    thread.start_new_thread(self._process_application, (conn,))
+                else:
+                    raise RuntimeError('Application collector error')
+
+        except:
+            log_exception(LOG)
+            
         finally:
             sock.close()
+
+        self.app_collector = None
 
     def _process_application(self, conn):
         try:

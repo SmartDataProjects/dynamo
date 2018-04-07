@@ -53,6 +53,7 @@ local_board_conf={"host": "localhost", "user": "dynamosrv"}
 enabled=true
 
 # Application server uses an OpenSSL socket to receive requests
+# Certificates and the key must be readable by the daemon user
 #  Server certificate (can be self-signed)
 certfile=/etc/pki/tls/certs/localhost.crt
 #  Server certificate (can be self-signed)
