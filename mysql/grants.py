@@ -5,6 +5,7 @@ import MySQLdb
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Write CREATE TABLE statements to stdout.', add_help = False)
+parser.add_argument('--host', '-h', metavar = 'HOST', dest = 'host', default = 'localhost', help = 'DB host.')
 parser.add_argument('--user', '-u', metavar = 'USER', dest = 'user', default = '', help = 'DB user.')
 parser.add_argument('--passwd', '-p', metavar = 'PASSWD', dest = 'passwd', default = '', help = 'DB password.')
 parser.add_argument('--defaults-group-suffix', metavar = 'SUFFIX', dest = 'defaults_suffix', default = '', help = 'Defaults file block suffix.')
@@ -28,7 +29,6 @@ for key in ['user', 'passwd']:
     if getattr(args, key):
         params[key] = getattr(args, key)
 
-params['host'] = 'localhost'
 params['db'] = 'mysql'
 
 db = MySQLdb.connect(**params)
