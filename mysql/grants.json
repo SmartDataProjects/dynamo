@@ -1,14 +1,14 @@
 {
   "dynamosrv": {
-    "passwd": "dyndata4c3m2s1",
-    "hosts": ["localhost"],
+    "passwd": "",
+    "hosts": ["localhost", "%"],
     "grants": [
       ["ALL PRIVILEGES", "dynamo%"]
     ]
   },
   "dynamo": {
-    "passwd": "data4c3m2s1",
-    "hosts": ["localhost", "18.77.2.%"],
+    "passwd": "",
+    "hosts": ["localhost", "%"],
     "grants": [
       ["SELECT", "dynamo"],
       ["ALL PRIVILEGES", "dynamo\\_tmp"],
@@ -31,8 +31,8 @@
     ]
   },
   "dynamoread": {
-    "passwd": "4c3m2s1",
-    "hosts": ["localhost", "18.77.2.%"],
+    "passwd": "",
+    "hosts": ["localhost", "%"],
     "grants": [
       ["SELECT", "dynamo"],
       ["ALL PRIVILEGES", "dynamo\\_tmp"],
