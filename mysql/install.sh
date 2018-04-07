@@ -35,7 +35,7 @@ else
   read -s PASSWD
   echo
 
-  MYSQLOPT='-u root -p"'$PASSWD'" -h localhost'
+  MYSQLOPT="-u root -p'"$PASSWD"' -h localhost"
 
   unset PASSWD
 

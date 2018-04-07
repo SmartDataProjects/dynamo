@@ -9,7 +9,7 @@ parser.add_argument('--user', '-u', metavar = 'USER', dest = 'user', default = '
 parser.add_argument('--passwd', '-p', metavar = 'PASSWD', dest = 'passwd', default = '', help = 'DB password.')
 parser.add_argument('--defaults-group-suffix', metavar = 'SUFFIX', dest = 'defaults_suffix', default = '', help = 'Defaults file block suffix.')
 parser.add_argument('--defaults-file', metavar = 'PATH', dest = 'defaults_file', default = '/etc/my.cnf', help = 'Defaults file.')
-parset.add_argument('--quiet', '-q', action = 'store_true', dest = 'quiet', help = "Don't print grant statements.")
+parser.add_argument('--quiet', '-q', action = 'store_true', dest = 'quiet', help = "Don't print grant statements.")
 parser.add_argument('--help', '-i', action = 'store_true', dest = 'help', help = 'Print this help.')
 
 args = parser.parse_args()
