@@ -1,34 +1,49 @@
 import os
 import sys
 import json
-import getpass
 import MySQLdb
+from argparse import ArgumentParser
 
-quiet = ('-q' in sys.argv)
+parser = ArgumentParser(description = 'Write CREATE TABLE statements to stdout.', add_help = False)
+parser.add_argument('--user', '-u', metavar = 'USER', dest = 'user', default = '', help = 'DB user.')
+parser.add_argument('--passwd', '-p', metavar = 'PASSWD', dest = 'passwd', default = '', help = 'DB password.')
+parser.add_argument('--defaults-group-suffix', metavar = 'SUFFIX', dest = 'defaults_suffix', default = '', help = 'Defaults file block suffix.')
+parser.add_argument('--defaults-file', metavar = 'PATH', dest = 'defaults_file', default = '/etc/my.cnf', help = 'Defaults file.')
+parset.add_argument('--quiet', '-q', action = 'store_true', dest = 'quiet', help = "Don't print grant statements.")
+parser.add_argument('--help', '-i', action = 'store_true', dest = 'help', help = 'Print this help.')
 
-try:
-    open('/etc/my.cnf.d/root.cnf').close()
-except:
-    params = {'user': 'root', 'host': 'localhost'}
-    params['passwd'] = getpass.getpass('Enter password for MySQL root:')
-else:
-    params = {'read_default_file': '/etc/my.cnf.d/root.cnf', 'read_default_group': 'mysql'}
+args = parser.parse_args()
+sys.argv = []
 
+if args.help:
+    args.print_help()
+    sys.exit(0)
+
+params = {}
+if args.defaults_file:
+    params['read_default_file'] = args.defaults_file
+    params['read_default_group'] = 'mysql' + args.defaults_suffix
+
+for key in ['user', 'passwd']:
+    if getattr(args, key):
+        params[key] = getattr(args, key)
+
+params['host'] = 'localhost'
 params['db'] = 'mysql'
+
+db = MySQLdb.connect(**params)
 
 thisdir = os.path.dirname(os.path.realpath(__file__))
 
 with open(thisdir + '/grants.json') as source:
     config = json.load(source)
 
-db = MySQLdb.connect(**params)
-
-cursor = db.cursor()
-
 users = set()
 for user, userconf in config.items():
     for host in userconf['hosts']:
         users.add((user, host))
+
+cursor = db.cursor()
 
 cursor.execute('SELECT `User`, `Host` FROM `mysql`.`user`')
 in_db = set(cursor.fetchall())
@@ -54,7 +69,7 @@ for user, host in users:
 
 print ' Done.\n'
 
-if not quiet:
+if not args.quiet:
     for user, host in sorted(users):
         print 'Granted to %s@%s:' % (user, host)
         cursor.execute('SHOW GRANTS FOR \'%s\'@\'%s\'' % (user, host))

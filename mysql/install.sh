@@ -50,7 +50,7 @@ echo '######  MYSQL GRANTS  ######'
 echo '############################'
 echo
 
-python $THISDIR/grants.py -q
+python $THISDIR/grants.py -q $MYSQLOPT
 
 # Set up databases
 echo '##########################################'
