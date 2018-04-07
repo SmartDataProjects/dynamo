@@ -347,7 +347,9 @@ class DynamoServer(object):
             self.manager.set_status(ServerManager.SRV_ERROR)
             raise RuntimeError('Could not find a remote persistency store to connect to.')
 
-        module, config = remote_store
+        hostname, module, config = remote_store
+
+        LOG.info('Using persistency store at %s', hostname)
         self.inventory.init_store(module, config)
 
     def collect_processes(self, child_processes, writing_process):

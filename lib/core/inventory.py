@@ -117,7 +117,7 @@ class DynamoInventory(ObjectRepository):
 
         self._load_partitions()
 
-        LOG.info('Loading data from local persistent storage.')
+        LOG.info('Loading data from persistent storage.')
 
         group_names = self._get_group_names(*groups)
         site_names = self._get_site_names(*sites)

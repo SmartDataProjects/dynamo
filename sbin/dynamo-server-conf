@@ -88,8 +88,10 @@ if serve_applications == 'true':
         conf_str += '''
       "cafile": "''' + capath + '"'
 
+    conf_str += '''
+    }'''
+
 conf_str += '''
-    }
   },
   "web": {
     "enabled": ''' + serve_web

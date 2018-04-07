@@ -10,10 +10,10 @@ def generate_master_conf(conf_str):
     with open(thisdir + '/grants.json') as source:
         grants_conf = json.load(source)
 
-    if 'master_host' not in conf:
+    if 'host' not in conf:
         host = 'localhost'
     else:
-        host = conf['master_host']
+        host = conf['host']
 
     user = conf['user']
     if 'passwd' in conf:

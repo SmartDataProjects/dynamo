@@ -84,6 +84,8 @@ class MySQL(object):
 
         self._connection_lock.acquire()
 
+        cursor = None
+
         try:
             if self._connection is None:
                 self._connection = MySQLdb.connect(**self._connection_parameters)
@@ -151,7 +153,8 @@ class MySQL(object):
                 return list(result)
 
         finally:
-            cursor.close()
+            if cursor is not None:
+                cursor.close()
     
             if not self.reuse_connection and self._connection is not None:
                 self._connection.close()
@@ -166,6 +169,8 @@ class MySQL(object):
          - tuples if multiple columns are called
          - values if one column is called
         """
+
+        cursor = None
 
         try:
             self._connection_lock.acquire()
@@ -228,7 +233,8 @@ class MySQL(object):
 
         finally:
             # only called on exception or return
-            cursor.close()
+            if cursor is not None:
+                cursor.close()
     
             if not self.reuse_connection and self._connection is not None:
                 self._connection.close()

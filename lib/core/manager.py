@@ -261,7 +261,7 @@ class ServerManager(object):
                     self.store_host = server.hostname
                     self.master.declare_remote_store(self.store_host)
 
-                    return store_config
+                    return (hostname, *store_config)
                     
                 elif server.status == ServerManager.SRV_UPDATING:
                     is_updating = True
