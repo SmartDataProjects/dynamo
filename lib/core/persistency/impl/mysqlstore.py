@@ -454,16 +454,22 @@ class MySQLInventoryStore(InventoryStore):
         LOG.info('Saved %d dataset replicas and %d block replicas.', num_dataset_replicas, num_block_replicas)
 
     def _save_groups(self, inventory):
+        self._mysql.query('DROP TABLE IF EXISTS `groups_tmp`')
         self._mysql.query('CREATE TABLE `groups_tmp` LIKE `groups`')
 
         sql = 'INSERT INTO `groups_tmp` (`name`, `olevel`) VALUES (%s, %s)'
         for group in inventory.groups.itervalues():
+            if group.name is None:
+                # skip the null group
+                continue
+
             group.id = self._mysql.query(sql, group.name, Group.olevel_name(group.olevel))
 
         self._mysql.query('DROP TABLE `groups`')
         self._mysql.query('RENAME TABLE `groups_tmp` TO `groups`')
 
     def _save_sites(self, inventory):
+        self._mysql.query('DROP TABLE IF EXISTS `sites_tmp`')
         self._mysql.query('CREATE TABLE `sites_tmp` LIKE `sites`')
 
         sql = 'INSERT INTO `sites_tmp` (`name`, `host`, `storage_type`, `backend`, `status`) VALUES (%s, %s, %s, %s, %s)'
@@ -479,6 +485,7 @@ class MySQLInventoryStore(InventoryStore):
         for dataset in inventory.datasets.itervalues():
             software_versions.add(dataset.software_version)
 
+        self._mysql.query('DROP TABLE IF EXISTS `software_versions_tmp`')
         self._mysql.query('CREATE TABLE `software_versions_tmp` LIKE `software_versions`')
         fields = ('cycle', 'major', 'minor', 'suffix')
         self._mysql.insert_many('software_versions_tmp', fields, None, software_versions, do_update = False)
@@ -491,6 +498,7 @@ class MySQLInventoryStore(InventoryStore):
         for vid, cycle, major, minor, suffix in self._mysql.xquery(sql):
             version_id_map[(cycle, major, minor, suffix)] = vid
 
+        self._mysql.query('DROP TABLE IF EXISTS `datasets_tmp`')
         self._mysql.query('CREATE TABLE `datasets_tmp` LIKE `groups`')
 
         sql = 'INSERT INTO `datasets` (`name`, `size`, `num_files`, `status`, `data_type`, `software_version_id`, `last_update`, `is_open`)'
@@ -504,6 +512,7 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('RENAME TABLE `datasets_tmp` TO `datasets`')
 
     def _save_blocks(self, inventory):
+        self._mysql.query('DROP TABLE IF EXISTS `blocks_tmp`')
         self._mysql.query('CREATE TABLE `blocks_tmp` LIKE `blocks`')
 
         sql = 'INSERT INTO `blocks` (`dataset_id`, `name`, `size`, `num_files`, `is_open`, `last_update`)'
@@ -519,6 +528,7 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('RENAME TABLE `blocks_tmp` TO `blocks`')
 
     def _save_replicas(self, inventory):
+        self._mysql.query('DROP TABLE IF EXISTS `dataset_replicas_tmp`')
         self._mysql.query('CREATE TABLE `dataset_replicas_tmp` LIKE `dataset_replicas`')
 
         fields = ('dataset_id', 'site_id')
@@ -530,7 +540,9 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('DROP TABLE `dataset_replicas`')
         self._mysql.query('RENAME TABLE `dataset_replicas_tmp` TO `dataset_replicas`')
 
+        self._mysql.query('DROP TABLE IF EXISTS `block_replicas_tmp`')
         self._mysql.query('CREATE TABLE `block_replicas_tmp` LIKE `block_replicas`')
+        self._mysql.query('DROP TABLE IF EXISTS `block_replica_sizes_tmp`')
         self._mysql.query('CREATE TABLE `block_replica_sizes_tmp` LIKE `block_replica_sizes`')
 
         replica_fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')

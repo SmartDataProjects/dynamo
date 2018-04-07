@@ -118,7 +118,7 @@ class MySQLMasterServer(MasterServer):
 
     def advertise_store(self, module, config): #override
         config = config.clone()
-        config.host = socket.gethostname() # make sure it doesn't say "localhost"
+        config.db_params.host = socket.gethostname() # make sure it doesn't say "localhost"
 
         sql = 'UPDATE `servers` SET `store_module` = %s, `store_config` = %s WHERE `id` = %s'
         self._mysql.query(sql, module, config.dump_json(), self.server_id)
@@ -135,7 +135,7 @@ class MySQLMasterServer(MasterServer):
 
     def advertise_board(self, module, config): #override
         config = config.clone()
-        config.host = socket.gethostname() # make sure it doesn't say "localhost"
+        config.db_params.host = socket.gethostname() # make sure it doesn't say "localhost"
 
         sql = 'UPDATE `servers` SET `board_module` = %s, `board_config` = %s WHERE `id` = %s'
         self._mysql.query(sql, module, config.dump_json(), self.server_id)
