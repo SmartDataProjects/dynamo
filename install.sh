@@ -211,10 +211,10 @@ do
   then
     echo " Config $FILE has changed. Difference (old | new):"
     echo
+    cp $CONF $CONFIG_PATH/$FILE.new
     diff -y $CONFIG_PATH/$FILE{,.new}
     echo " New file saved as $CONFIG_PATH/$FILE.new"
     echo
-    cp $CONF $CONFIG_PATH/$FILE.new
   fi
 done
 
