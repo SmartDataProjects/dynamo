@@ -50,17 +50,17 @@ class MySQLInventoryStore(InventoryStore):
                 partitions[name] = Partition(name, condition = condition, pid = part_id)
 
         # set subpartitions for superpartitions
-        for partition in partitions:
-            if partition.condition is not None:
+        for partition in partitions.itervalues():
+            if partition._condition is not None:
                 continue
 
             subpartitions = []
 
             subp_names = conditions[partition.name]
             for name in subp_names:
-                subpartition = partitions[name]
-                subpartition._parent = partition
-                subpartitions.append(partition)
+                subp = partitions[name]
+                subp._parent = partition
+                subpartitions.append(subp)
                 
             partition._subpartitions = tuple(subpartitions)
 
@@ -498,64 +498,77 @@ class MySQLInventoryStore(InventoryStore):
 
     def _save_partitions(self, inventory):
         if self._mysql.table_exists('partitions_tmp'):
-            self._mysql.query('CREATE TABLE `partitions_tmp` LIKE `partitions`')
+            self._mysql.query('DROP TABLE `partitions_tmp`')
 
-        sql = 'INSERT INTO `partitions_tmp` (`id`, `name`) VALUES (%s)'
-        for partition in inventory.partitions.itervalues():
-            self._mysql.query(sql, partition.id, partition.name)
+        self._mysql.query('CREATE TABLE `partitions_tmp` LIKE `partitions`')
+
+        fields = ('id', 'name')
+        mapping = lambda partition: (partition.id, partition.name)
+
+        self._mysql.insert_many('partitions_tmp', fields, mapping, inventory.partitions.itervalues(), do_update = False)
 
         self._mysql.query('DROP TABLE `partitions`')
         self._mysql.query('RENAME TABLE `partitions_tmp` TO `partitions`')
 
     def _save_groups(self, inventory):
         if self._mysql.table_exists('groups_tmp'):
-            self._mysql.query('CREATE TABLE `groups_tmp` LIKE `groups`')
+            self._mysql.query('DROP TABLE `groups_tmp``')
+            
+        self._mysql.query('CREATE TABLE `groups_tmp` LIKE `groups`')
 
-        sql = 'INSERT INTO `groups_tmp` (`name`, `olevel`) VALUES (%s, %s)'
-        for group in inventory.groups.itervalues():
-            if group.name is None:
-                # skip the null group
-                continue
+        fields = ('id', 'name', 'olevel')
+        mapping = lambda group: (group.id, group.name, Group.olevel_name(group.olevel))
 
-            group.id = self._mysql.query(sql, group.name, Group.olevel_name(group.olevel))
+        self._mysql.insert_many('groups_tmp', fields, mapping, inventory.groups.itervalues(), do_update = False)
 
         self._mysql.query('DROP TABLE `groups`')
         self._mysql.query('RENAME TABLE `groups_tmp` TO `groups`')
 
     def _save_sites(self, inventory):
         if self._mysql.table_exists('sites_tmp'):
-            self._mysql.query('CREATE TABLE `sites_tmp` LIKE `sites`')
+            self._mysql.query('DROP TABLE `sites_tmp`')
 
-        sql = 'INSERT INTO `sites_tmp` (`name`, `host`, `storage_type`, `backend`, `status`) VALUES (%s, %s, %s, %s, %s)'
-        for site in inventory.sites.itervalues():
-            site.id = self._mysql.query(sql, site.name, site.host, Site.storage_type_name(site.storage_type), \
-                site.backend, Site.status_name(site.status))
+        self._mysql.query('CREATE TABLE `sites_tmp` LIKE `sites`')
+
+        fields = ('id', 'name', 'host', 'storage_type', 'backend', 'status')
+        mapping = lambda site: (site.name, site.host, Site.storage_type_name(site.storage_type), \
+            site.backend, Site.status_name(site.status))
+
+        self._mysql.insert_many('sites_tmp', fields, mapping, inventory.sites.itervalues(), do_update = False)
 
         self._mysql.query('DROP TABLE `sites`')
         self._mysql.query('RENAME TABLE `sites_tmp` TO `sites`')
 
     def _save_sitepartitions(self, inventory):
         if self._mysql.table_exists('quotas_tmp'):
-            self._mysql.query('CREATE TABLE `quotas_tmp` LIKE `quotas`')
+            self._mysql.query('DROP TABLE `quotas_tmp`')
 
-        sql = 'INSERT INTO `quotas_tmp` (`site_id`, `partition_id`, `storage`) VALUES (%s, %s, %s)'
+        self._mysql.query('CREATE TABLE `quotas_tmp` LIKE `quotas`')
+
+        fields = ('site_id', 'partition_id', 'storage')
+        mapping = lambda sp: (sp.site.id, sp.partition.id, sp.quota * 1.e-12)
+
+        sps = []
         for partition in inventory.partitions.itervalues():
-            if partition.subpartitions is not None:
-                continue
+            if partition.subpartitions is None:
+                # only the base partitions
+                sps.extend(site.partitions[partition] for site in inventory.sites.itervalues())
 
-            for site in inventory.sites.itervalues():
-                self._mysql.query(sql, site.id, partition.id, site.partitions[partition].quota * 1.e-12)
+        self._mysql.insert_many('quotas_tmp', fields, mapping, sps, do_update = False)
 
         self._mysql.query('DROP TABLE `quotas`')
         self._mysql.query('RENAME TABLE `quotas_tmp` TO `quotas`')
 
     def _save_datasets(self, inventory):
+        if self._mysql.table_exists('software_versions_tmp'):
+            self._mysql.query('DROP TABLE `software_versions_tmp`')
+
+        self._mysql.query('CREATE TABLE `software_versions_tmp` LIKE `software_versions`')
+
         software_versions = set()
         for dataset in inventory.datasets.itervalues():
-            software_versions.add(dataset.software_version)
-
-        if self._mysql.table_exists('software_versions_tmp'):
-            self._mysql.query('CREATE TABLE `software_versions_tmp` LIKE `software_versions`')
+            if dataset.software_version is not None:
+                software_versions.add(dataset.software_version)
 
         fields = ('cycle', 'major', 'minor', 'suffix')
         self._mysql.insert_many('software_versions_tmp', fields, None, software_versions, do_update = False)
@@ -563,73 +576,106 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('DROP TABLE `software_versions`')
         self._mysql.query('RENAME TABLE `software_versions_tmp` TO `software_versions`')
 
-        version_id_map = {}
+        version_id_map = {None: 0}
         sql = 'SELECT `id`, `cycle`, `major`, `minor`, `suffix` FROM `software_versions`'
         for vid, cycle, major, minor, suffix in self._mysql.xquery(sql):
             version_id_map[(cycle, major, minor, suffix)] = vid
 
         if self._mysql.table_exists('datasets_tmp'):
-            self._mysql.query('CREATE TABLE `datasets_tmp` LIKE `datasets`')
+            self._mysql.query('DROP TABLE `datasets_tmp`')
 
-        sql = 'INSERT INTO `datasets` (`name`, `size`, `num_files`, `status`, `data_type`, `software_version_id`, `last_update`, `is_open`)'
-        sql += ' VALUES (%s, %s, %s, %s, %s, %s, %s, %s)'
-        for dataset in inventory.datasets.itervalues():
-            dataset.id = self._mysql.query(sql, dataset.name, dataset.size, dataset.num_files, \
-                dataset.status, dataset.data_type, version_id_map[dataset.software_version],
-                time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
+        self._mysql.query('CREATE TABLE `datasets_tmp` LIKE `datasets`')
+
+        fields = ('id', 'name', 'size', 'num_files', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
+        mapping = lambda dataset: (dataset.id, dataset.name, dataset.size, dataset.num_files, dataset.status, dataset.data_type, \
+            version_id_map[dataset.software_version], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
+
+        self._mysql.insert_many('datasets_tmp', fields, mapping, inventory.datasets.itervalues(), do_update = False)
 
         self._mysql.query('DROP TABLE `datasets`')
         self._mysql.query('RENAME TABLE `datasets_tmp` TO `datasets`')
 
     def _save_blocks(self, inventory):
         if self._mysql.table_exists('blocks_tmp'):
-            self._mysql.query('CREATE TABLE `blocks_tmp` LIKE `blocks`')
+            self._mysql.query('DROP TABLE `blocks_tmp`')
 
-        sql = 'INSERT INTO `blocks` (`dataset_id`, `name`, `size`, `num_files`, `is_open`, `last_update`)'
-        sql += ' VALUES (%s, %s, %s, %s, %s, %s)'
+        self._mysql.query('CREATE TABLE `blocks_tmp` LIKE `blocks`')
 
-        for dataset in inventory.datasets.itervalues():
-            for block in dataset.blocks:
-                self._mysql.query(sql, dataset.id, block.real_name(), \
-                    block.size, block.num_files, block.is_open, \
-                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
+        fields = ('id', 'dataset_id', 'name', 'size', 'num_files', 'is_open', 'last_update')
+        mapping = lambda block: (block.id, block.dataset.id, block.real_name(), \
+            block.size, block.num_files, block.is_open, \
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
+
+        def all_blocks():
+            for dataset in inventory.dataset.itervalues():
+                for block in dataset.blocks:
+                    yield block
+
+        self._mysql.insert_many('blocks_tmp', fields, mapping, all_blocks(), do_update = False)
 
         self._mysql.query('DROP TABLE `blocks`')
         self._mysql.query('RENAME TABLE `blocks_tmp` TO `blocks`')
 
     def _save_replicas(self, inventory):
+        ## dataset_replicas
+
         if self._mysql.table_exists('dataset_replicas_tmp'):
-            self._mysql.query('CREATE TABLE `dataset_replicas_tmp` LIKE `dataset_replicas`')
+            self._mysql.query('DROP TABLE `dataset_replicas_tmp`')
+
+        self._mysql.query('CREATE TABLE `dataset_replicas_tmp` LIKE `dataset_replicas`')
 
         fields = ('dataset_id', 'site_id')
-        for site in inventory.sites.itervalues():
-            mapping = lambda replica: (replica.dataset.id, site.id)
+        mapping = lambda replica: (replica.dataset.id, site.id)
 
-            self._mysql.insert_many('dataset_replicas_tmp', fields, mapping, site.dataset_replicas(), do_update = False)
+        def all_replicas():
+            for site in inventory.sites.itervalues():
+                for replica in site.dataset_replicas():
+                    yield replica
+
+        self._mysql.insert_many('dataset_replicas_tmp', fields, mapping, all_replicas(), do_update = False)
+
+        ## block_replicas
+
+        if self._mysql.table_exists('block_replicas_tmp'):
+            self._mysql.query('DROP TABLE `block_replicas_tmp`')
+
+        self._mysql.query('CREATE TABLE `block_replicas_tmp` LIKE `block_replicas`')
+
+        fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
+
+        mapping = lambda replica: (replica.block.id, site.id, \
+            replica.group.id, replica.is_complete, replica.is_custodial, \
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)))
+
+        def all_block_replicas():
+            for site in inventory.sites.itervalues():
+                for dataset_replica in site.dataset_replicas():
+                    for block_replica in dataset_replica.block_replicas:
+                        yield block_replica
+
+        self._mysql.insert_many('block_replicas_tmp', fields, mapping, all_block_replicas(), do_update = False)
+
+        ## block_replica_sizes
+
+        if self._mysql.table_exists('block_replica_sizes_tmp'):
+            self._mysql.query('DROP TABLE `block_replica_sizes_tmp`')
+
+        self._mysql.query('CREATE TABLE `block_replica_sizes_tmp` LIKE `block_replica_sizes`')
+
+        fields = ('block_id', 'site_id', 'size')
+        mapping = lambda replica: (replica.block.id, site.id, replica.size)
+
+        def all_block_replica_sizes():
+            for site in inventory.sites.itervalues():
+                for dataset_replica in site.dataset_replicas():
+                    for block_replica in dataset_replica.block_replicas:
+                        if block_replica.size != block_replica.block.size:
+                            yield block_replica
+
+        self._mysql.insert_many('block_replica_sizes_tmp', fields, mapping, all_block_replica_sizes(), do_update = False)
 
         self._mysql.query('DROP TABLE `dataset_replicas`')
         self._mysql.query('RENAME TABLE `dataset_replicas_tmp` TO `dataset_replicas`')
-
-        if self._mysql.table_exists('block_replicas_tmp'):
-            self._mysql.query('CREATE TABLE `block_replicas_tmp` LIKE `block_replicas`')
-        if self._mysql.table_exists('block_replica_sizes_tmp'):
-            self._mysql.query('CREATE TABLE `block_replica_sizes_tmp` LIKE `block_replica_sizes`')
-
-        replica_fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
-        size_fields = ('block_id', 'site_id', 'size')
-
-        for site in inventory.sites.itervalues():
-            for dataset_replica in site.dataset_replicas():
-                mapping = lambda replica: (replica.block.id, site.id, \
-                    replica.group.id, replica.is_complete, replica.is_custodial, \
-                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)))
-
-                self._mysql.insert_many('block_replicas_tmp', replica_fields, mapping, dataset_replica.block_replicas, do_update = False)
-                
-                mapping = lambda replica: (replica.block.id, site.id, replica.size)
-
-                incomplete_replicas = [r for r in dataset_replica.block_replicas if r.size != r.block.size]
-                self._mysql.inert_many('block_replica_sizes_tmp', size_fields, mapping, incomplete_replicas, do_update = False)
 
         self._mysql.query('DROP TABLE `block_replicas`')
         self._mysql.query('RENAME TABLE `block_replicas_tmp` TO `block_replicas`')
@@ -807,8 +853,11 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query(sql, group.id)
 
     def save_partition(self, partition): #override
-        fields = ('id', 'name',)
-        self._insert_update('partitions', fields, partition.id, partition.name)
+        fields = ('name',)
+        partition_id = self._insert_update('partitions', fields, partition.name)
+
+        if partition_id != 0:
+            partition.id = partition_id
 
         # For new partitions, persistency requires saving site partition data with default parameters.
         # We handle missing site partition entries at load time - if a row is missing, SitePartition object with

@@ -140,7 +140,10 @@ class DynamoServer(object):
 
             except KeyboardInterrupt:
                 LOG.info('Server process was interrupted.')
-                break
+                # KeyboardInterrupt is raised when shutdown_flag is set
+                # Notify shutdown ready
+                self.shutdown_flag.set()
+                return
     
             except OutOfSyncError:
                 LOG.error('Server has gone out of sync with its peers. Terminating all child processes.')
@@ -155,22 +158,22 @@ class DynamoServer(object):
             if self.num_errors >= self.max_num_errors:
                 LOG.error('Consecutive %d errors occurred. Shutting down Dynamo.' % self.num_errors)
                 os.kill(os.getpid(), signal.SIGINT)
-                break
+                self.shutdown_flag.clear()
+                return
 
             if not self.manager.master.connected:
                 # We need to reconnect to another server
                 # For now we just die
                 LOG.error('Lost connection to the master server. Shutting down Dynamo..')
                 os.kill(os.getpid(), signal.SIGINT)
-                break
+                self.shutdown_flag.clear()
+                return
     
             # set server status to initial
             try:
                 self.manager.reset_status()
             except:
                 self.manager.status = ServerManager.SRV_INITIAL
-
-        self.shutdown_flag.set()
 
     def _run_application_cycles(self):
         """
@@ -705,11 +708,13 @@ class DynamoServer(object):
             conn.close()
 
     def shutdown(self):
-        self.shutdown_flag.clear()
         LOG.info('Shutting down Dynamo server..')
-        state = self.shutdown_flag.wait(60)
-        if not state:
-            # timed out
-            LOG.warning('Shutdown timeout of 60 seconds have passed.')
+
+        if self.shutdown_flag.is_set():
+            self.shutdown_flag.clear()
+            state = self.shutdown_flag.wait(60)
+            if not state:
+                # timed out
+                LOG.warning('Shutdown timeout of 60 seconds have passed.')
 
         self.manager.disconnect()

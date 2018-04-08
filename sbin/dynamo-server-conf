@@ -107,7 +107,6 @@ conf_str += '''
     "path": "''' + logdir + '''",
     "changelog": true
   }
-}
-'''
+}'''
 
 print conf_str

@@ -25,7 +25,7 @@ if args.defaults_file:
     params['read_default_file'] = args.defaults_file
     params['read_default_group'] = 'mysql' + args.defaults_suffix
 
-for key in ['user', 'passwd']:
+for key in ['user', 'passwd', 'host']:
     if getattr(args, key):
         params[key] = getattr(args, key)
 
