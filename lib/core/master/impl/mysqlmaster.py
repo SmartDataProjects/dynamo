@@ -17,9 +17,18 @@ class MySQLMasterServer(MasterServer):
 
         self._mysql = MySQL(db_params)
 
+        self._mysql.query('LOCK TABLES `servers` WRITE')
+
         self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
+
+        # reset server id if this is the first server
+        if self._mysql.query('SELECT COUNT(*) FROM `servers`')[0] == 0:
+            self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
+
         # id of this server
         self.server_id = self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
+
+        self._mysql.query('UNLOCK TABLES')
 
         self.connected = True
 

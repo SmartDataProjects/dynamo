@@ -10,7 +10,7 @@ class MySQLMasterShadow(MasterShadow):
 
     def copy(self, master_server):
         all_servers = master_server.get_host_list(detail = True)
-        fields = ('hostname', 'last_heartbeat', 'status', 'store_host', 'store_module', 'board_module', 'board_config')
+        fields = ('hostname', 'last_heartbeat', 'status', 'store_host', 'store_module', 'shadow_module', 'shadow_config', 'board_module', 'board_config')
         self._mysql.insert_many('servers', fields, None, all_servers, do_update = True)
 
         all_users = master_server.get_user_list()
