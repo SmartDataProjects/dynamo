@@ -76,11 +76,11 @@ class MySQLMasterServer(MasterServer):
         fields = ('name', 'email', 'dn')
         self._mysql.insert_many('users', fields, None, all_users, do_update = True)
 
-    def get_next_master(self, current):
+    def get_next_master(self, current): #override
         self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', current)
         
         # shadow config must be the same as master
-        result = self._mysql.query('SELECT `hostname`, `shadow_module`, `shadow_config` FROM `servers` ORDER BY `id` LIMIT 1')
+        result = self._mysql.query('SELECT `shadow_module`, `shadow_config` FROM `servers` ORDER BY `id` LIMIT 1')
         if len(result) == 0:
             raise RuntimeError('No servers can become master at this moment')
 

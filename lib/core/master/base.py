@@ -10,14 +10,16 @@ class MasterServer(object):
     def __init__(self, config):
         self.connected = False
 
-    def connect(self, hostname):
+    def connect(self):
         """
         Connect to the master server.
         """
-        LOG.info('Connecting to master server %s', hostname)
+        LOG.info('Connecting to master server')
 
         self._connect()
         self.connected = True
+
+        LOG.info('Master host: %s', self.get_master_host())
 
     def lock(self):
         raise NotImplementedError('lock')
@@ -60,6 +62,13 @@ class MasterServer(object):
         @param remote_master  MasterServer instance of the remote server.
         """
         raise NotImplementedError('copy')
+
+    def get_next_master(self, current):
+        """
+        Return the shadow module name and configuration of the server next-in-line from the current master.
+        @return  (shadow module, shadow config)
+        """
+        raise NotImplementedError('get_next_master')
 
     def get_writing_process_id(self):
         raise NotImplementedError('get_writing_process_id')

@@ -57,9 +57,10 @@ class ServerManager(object):
 
         # Interface to the master server
         self.master = getattr(master_impl, config.master.module)(config.master.config)
+        self.master.connect()
         self.master_host = self.master.get_master_host()
 
-        if config.master.host != 'localhost' and config.master.host != socket.gethostname():
+        if self.master_host != 'localhost' and self.master_host != socket.gethostname():
             # Interface to the master server local shadow
             self.shadow = getattr(master_impl, config.shadow.module)(config.shadow.config)
         else:
@@ -211,6 +212,7 @@ class ServerManager(object):
         module, config = self.shadow.get_next_master(self.master_host)
 
         self.master = getattr(master_impl, module)(config)
+        self.master.connect()
         self.master_host = self.master.get_master_host()
 
     def get_next_application(self):
