@@ -123,7 +123,7 @@ class DynamoServer(object):
                 self.load_inventory()
 
                 bconf = self.manager_config.board
-                self.master.advertise_board(bconf.module, bconf.config)
+                self.manager.master.advertise_board(bconf.module, bconf.config)
 
                 if self.manager.has_store:
                     pconf = self.inventory_config.persistency
@@ -131,7 +131,7 @@ class DynamoServer(object):
 
                 if self.manager.shadow is not None:
                     sconf = self.manager_config.shadow
-                    self.master.master.advertise_shadow(sconf.module, sconf.config)
+                    self.manager.master.advertise_shadow(sconf.module, sconf.config)
 
                 # We are ready to work
                 self.manager.set_status(ServerManager.SRV_ONLINE)

@@ -1,9 +1,15 @@
+import logging
+
+LOG = logging.getLogger(__name__)
+
 class MasterServer(object):
     """
     An interface to the master server that coordinates server activities.
     """
 
     def __init__(self, hostname, config):
+        LOG.info('Connecting to master server %s', hostname)
+
         self.master_host = hostname
         self.connected = False
 

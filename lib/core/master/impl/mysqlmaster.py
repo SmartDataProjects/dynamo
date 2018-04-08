@@ -44,8 +44,9 @@ class MySQLMasterServer(MasterServer):
             sql = 'SELECT `hostname`, `last_heartbeat`, `status`, `store_host`, `store_module`,'
             sql += ' `shadow_module`, `shadow_config`, `board_module`, `board_config`'
         else:
-            sql = 'SELECT `hostname`, `status`, `store_module` IS NOT NULL FROM `servers`'
+            sql = 'SELECT `hostname`, `status`, `store_module` IS NOT NULL'
 
+        sql += ' FROM `servers`'
         if status != None:
             sql += ' WHERE `status` = \'%s\'' % ServerManager.server_status_name(status)
 
