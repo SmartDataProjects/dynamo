@@ -52,13 +52,8 @@ class ServerManager(object):
             return arg
 
     def __init__(self, config):
-        import dynamo.core.master.impl as master_impl
-        import dynamo.core.board.impl as board_impl
-
-        # Interface to the master server
-        self.master = getattr(master_impl, config.master.module)(config.master.config)
-        self.master.connect()
-        self.master_host = self.master.get_master_host()
+        # Create a master server interface, shadow if master is remote, and set self.master_host
+        self._new_master(config.master.module, config.master.config)
 
         if self.master_host != 'localhost' and self.master_host != socket.gethostname():
             # Interface to the master server local shadow
@@ -67,6 +62,7 @@ class ServerManager(object):
             self.shadow = None
 
         # Interface to the local update board
+        import dynamo.core.board.impl as board_impl
         self.board = getattr(board_impl, config.board.module)(config.board.config)
 
         # Interface to other servers {hostname: ServerHost}
@@ -203,17 +199,16 @@ class ServerManager(object):
         """
         Find and connect to the new master server.
         """
-        import dynamo.core.master.impl as master_impl
-
         if not self.shadow:
             # Master server was local
             raise RuntimeError('Cannot reconnect to local master server.')
 
         module, config = self.shadow.get_next_master(self.master_host)
+        
+        self._new_master(module, config)
 
-        self.master = getattr(master_impl, module)(config)
-        self.master.connect()
-        self.master_host = self.master.get_master_host()
+        if self.master_host == 'localhost' or self.master_host == socket.gethostname():
+            self.shadow = None
 
     def get_next_application(self):
         """
@@ -393,3 +388,11 @@ class ServerManager(object):
         for server in self.other_servers.itervalues():
             if server.board:
                 server.board.disconnect()
+
+    def _new_master(self, module, config):
+        import dynamo.core.master.impl as master_impl
+
+        # Interface to the master server
+        self.master = getattr(master_impl, module)(config)
+        self.master.connect()
+        self.master_host = self.master.get_master_host()

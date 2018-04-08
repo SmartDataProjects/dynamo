@@ -35,9 +35,6 @@ execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__nam
 conf_gen_script = master_mod + '/generate_master_conf.py'
 execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
 
-conf_gen_script = master_mod + '/generate_shadow_conf.py'
-execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
-
 conf_gen_script = local_board_mod + '/generate_local_board_conf.py'
 execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
 
@@ -61,7 +58,7 @@ conf_str += '''
     },
     "shadow": {'''
 
-conf_str += ns.generate_shadow_conf(shadow_conf_args)
+conf_str += ns.generate_master_conf(shadow_conf_args)
 
 conf_str += '''
     },
