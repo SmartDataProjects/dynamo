@@ -85,6 +85,9 @@ class DynamoInventory(ObjectRepository):
 
         df.Block._inventory_store = self._store
 
+    def has_store(self):
+        return (self._store is not None)
+
     def check_store(self):
         """
         Check the connection to store.
@@ -98,6 +101,8 @@ class DynamoInventory(ObjectRepository):
         """
 
         self._store.save_data(self)
+
+        LOG.info('Data is saved locally. %d groups, %d sites, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.groups), len(self.sites), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
     def load(self, groups = (None, None), sites = (None, None), datasets = (None, None)):
         """

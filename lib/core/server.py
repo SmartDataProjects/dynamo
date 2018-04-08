@@ -45,7 +45,6 @@ class DynamoServer(object):
 
         ## Create the server manager
         self.manager_config = config.manager.clone()
-        self.manager_config['has_store'] = ('persistency' in self.inventory_config)
         self.manager = ServerManager(self.manager_config)
 
         ## Application collection
@@ -90,14 +89,14 @@ class DynamoServer(object):
 
         ## Now find a server I'll load inventory from (unless I am the only online host and I have a store)
         remote_source = False
-        if not (self.manager.has_store and self.manager.count_servers(ServerManager.SRV_ONLINE) == 0):
+        if not (self.inventory.has_store() and self.manager.count_servers(ServerManager.SRV_ONLINE) == 0):
             self.setup_remote_store()
             remote_source = True
 
         LOG.info('Loading the inventory.')
         self.inventory.load(**self.inventory_load_opts)
 
-        if self.manager.has_store and remote_source:
+        if self.inventory.has_store() and remote_source:
             # Revert to local store
             pconf = self.inventory_config.persistency
             self.inventory.init_store(pconf.module, pconf.config)
@@ -125,7 +124,7 @@ class DynamoServer(object):
                 bconf = self.manager_config.board
                 self.manager.master.advertise_board(bconf.module, bconf.config)
 
-                if self.manager.has_store:
+                if self.inventory.has_store():
                     pconf = self.inventory_config.persistency
                     self.manager.master.advertise_store(pconf.module, pconf.readonly_config)
 
@@ -271,7 +270,7 @@ class DynamoServer(object):
                 child_processes.append((exec_id, proc, user_name, path))
 
         except KeyboardInterrupt:
-            LOG.error('Terminating all child processes..')
+            LOG.info('Terminating all child processes..')
             raise
 
         except:
@@ -558,7 +557,7 @@ class DynamoServer(object):
         # Re-initialize inventory store with read-only connection
         # This is for security and simply for concurrency - multiple processes
         # should not share the same DB connection
-        if self.manager.has_store:
+        if self.inventory.has_store():
             pconf = self.inventory_config.persistency
             self.inventory.init_store(pconf.module, pconf.readonly_config)
         else:

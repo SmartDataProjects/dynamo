@@ -19,11 +19,12 @@ class MySQLMasterServer(MasterServer):
     def _connect(self): #override
         self._mysql.query('LOCK TABLES `servers` WRITE')
 
-        self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
-
-        # reset server id if this is the first server
-        if self._mysql.query('SELECT COUNT(*) FROM `servers`')[0] == 0:
+        if self.get_master_host() == 'localhost' or self.get_master_host() == socket.gethostname():
+            # This is the master server; wipe the table clean
+            self._mysql.query('DELETE FROM `servers`')
             self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
+        else:
+            self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
 
         # id of this server
         self._server_id = self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
@@ -68,9 +69,15 @@ class MySQLMasterServer(MasterServer):
         return self._mysql.query('SELECT `name`, `email`, `dn` FROM `users` ORDER BY `id`')
 
     def copy(self, remote_master):
+        self._mysql.query('DELETE FROM `servers`')
+        self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
+
         all_servers = remote_master.get_host_list(detail = True)
         fields = ('hostname', 'last_heartbeat', 'status', 'store_host', 'store_module', 'shadow_module', 'shadow_config', 'board_module', 'board_config')
         self._mysql.insert_many('servers', fields, None, all_servers, do_update = True)
+
+        self._mysql.query('DELETE FROM `users`')
+        self._mysql.query('ALTER TABLE `users` AUTO_INCREMENT = 1')
 
         all_users = remote_master.get_user_list()
         fields = ('name', 'email', 'dn')
@@ -84,7 +91,8 @@ class MySQLMasterServer(MasterServer):
         if len(result) == 0:
             raise RuntimeError('No servers can become master at this moment')
 
-        return result[0]
+        module, config_str = result[0]
+        return module, Configuration(json.loads(config_str))
 
     def get_writing_process_id(self): #override
         result = self._mysql.query('SELECT `id` FROM `applications` WHERE `write_request` = 1 AND `status` = \'run\'')

@@ -52,8 +52,11 @@ class ServerManager(object):
             return arg
 
     def __init__(self, config):
-        # Create a master server interface, shadow if master is remote, and set self.master_host
-        self._new_master(config.master.module, config.master.config)
+        # Create a master server interface
+        import dynamo.core.master.impl as master_impl
+        self.master = getattr(master_impl, config.master.module)(config.master.config)
+        self.master.connect()
+        self.master_host = self.master.get_master_host()
 
         if self.master_host != 'localhost' and self.master_host != socket.gethostname():
             # Interface to the master server local shadow
@@ -67,9 +70,6 @@ class ServerManager(object):
 
         # Interface to other servers {hostname: ServerHost}
         self.other_servers = {}
-
-        # Is this server backed up by a local persistency store?
-        self.has_store = config.has_store
 
         # If using a remote store, name of the host
         self.store_host = ''
@@ -193,7 +193,7 @@ class ServerManager(object):
                 if self.shadow is not None:
                     self.shadow.copy(self.master)
     
-            time.sleep(60)
+            time.sleep(30)
 
     def reconnect_master(self):
         """
@@ -205,7 +205,10 @@ class ServerManager(object):
 
         module, config = self.shadow.get_next_master(self.master_host)
         
-        self._new_master(module, config)
+        import dynamo.core.master.impl as master_impl
+        self.master = getattr(master_impl, module)(config)
+        self.master.connect()
+        self.master_host = self.master.get_master_host()
 
         if self.master_host == 'localhost' or self.master_host == socket.gethostname():
             self.shadow = None
@@ -388,11 +391,3 @@ class ServerManager(object):
         for server in self.other_servers.itervalues():
             if server.board:
                 server.board.disconnect()
-
-    def _new_master(self, module, config):
-        import dynamo.core.master.impl as master_impl
-
-        # Interface to the master server
-        self.master = getattr(master_impl, module)(config)
-        self.master.connect()
-        self.master_host = self.master.get_master_host()
