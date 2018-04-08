@@ -57,9 +57,9 @@ class ServerManager(object):
         import dynamo.core.board.impl as board_impl
 
         # Interface to the master server
-        self.master = getattr(master_impl, config.master.module)(config.master.config)
+        self.master = getattr(master_impl, config.master.module)(config.master.host, config.master.config)
 
-        if self.master.master_host != 'localhost' and self.master.master_host != socket.gethostname():
+        if config.master.host != 'localhost' and config.master.host != socket.gethostname():
             # Interface to the master server local shadow
             self.shadow = getattr(shadow_impl, config.shadow.module)(config.shadow.config)
         else:
@@ -209,9 +209,8 @@ class ServerManager(object):
             raise RuntimeError('Cannot reconnect to local master server.')
 
         next_host, module, config = self.shadow.get_next_master(self.master.master_host)
-        config.host = next_host
 
-        self.master = getattr(master_impl, module)(config)
+        self.master = getattr(master_impl, module)(next_host, config)
 
     def get_next_application(self):
         """

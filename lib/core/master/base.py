@@ -3,8 +3,8 @@ class MasterServer(object):
     An interface to the master server that coordinates server activities.
     """
 
-    def __init__(self, config):
-        self.master_host = config.host
+    def __init__(self, hostname, config):
+        self.master_host = hostname
         self.connected = False
 
     def lock(self):

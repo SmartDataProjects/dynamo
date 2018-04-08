@@ -7,8 +7,8 @@ from dynamo.utils.interface import MySQL
 from dynamo.dataformat import Configuration
 
 class MySQLMasterServer(MasterServer):
-    def __init__(self, config):
-        MasterServer.__init__(self, config)
+    def __init__(self, hostname, config):
+        MasterServer.__init__(self, hostname, config)
 
         db_params = Configuration(config.db_params)
         if 'host' not in db_params:
