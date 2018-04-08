@@ -1,4 +1,4 @@
-CREATE TABLE `runs` (
+CREATE TABLE `cycles` (
   `id` int(10) NOT NULL AUTO_INCREMENT,
   `operation` enum('copy','deletion','copy_test','deletion_test') NOT NULL,
   `partition_id` int(10) unsigned NOT NULL,
