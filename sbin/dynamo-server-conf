@@ -15,6 +15,8 @@ persistency_mod = source_conf.get('server', 'store')
 persistency_conf_args = source_conf.get('server', 'store_conf')
 master_mod = source_conf.get('server', 'master')
 master_conf_args = source_conf.get('server', 'master_conf')
+shadow_mod = source_conf.get('server', 'shadow')
+shadow_conf_args = source_conf.get('server', 'shadow_conf')
 local_board_mod = source_conf.get('server', 'local_board')
 local_board_conf_args = source_conf.get('server', 'local_board_conf')
 logdir = source_conf.get('paths', 'log_path')
@@ -31,6 +33,9 @@ conf_gen_script = persistency_mod + '/generate_store_conf.py'
 execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
 
 conf_gen_script = master_mod + '/generate_master_conf.py'
+execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
+
+conf_gen_script = master_mod + '/generate_shadow_conf.py'
 execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
 
 conf_gen_script = local_board_mod + '/generate_local_board_conf.py'
@@ -51,6 +56,12 @@ conf_str += '''
     "master": {'''
 
 conf_str += ns.generate_master_conf(master_conf_args)
+
+conf_str += '''
+    },
+    "shadow": {'''
+
+conf_str += ns.generate_shadow_conf(shadow_conf_args)
 
 conf_str += '''
     },

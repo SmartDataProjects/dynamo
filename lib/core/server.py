@@ -146,13 +146,11 @@ class DynamoServer(object):
                 return
     
             except OutOfSyncError:
-                LOG.error('Server has gone out of sync with its peers. Terminating all child processes.')
+                LOG.error('Server has gone out of sync with its peers.')
                 log_exception(LOG)
    
             except:
-                LOG.error('Exception in server process. Terminating all child processes.')
                 log_exception(LOG)
-
                 self.num_errors += 1
 
             if self.num_errors >= self.max_num_errors:
@@ -163,11 +161,8 @@ class DynamoServer(object):
 
             if not self.manager.master.connected:
                 # We need to reconnect to another server
-                # For now we just die
-                LOG.error('Lost connection to the master server. Shutting down Dynamo..')
-                os.kill(os.getpid(), signal.SIGINT)
-                self.shutdown_flag.clear()
-                return
+                LOG.error('Lost connection to the master server.')
+                self.manager.reconnect_master()
     
             # set server status to initial
             try:
@@ -269,6 +264,8 @@ class DynamoServer(object):
                 child_processes.append((exec_id, proc, user_name, path))
 
         except:
+            LOG.error('Exception in server process. Terminating all child processes..')
+
             if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
                 try:
                     self.manager.set_status(ServerManager.SRV_ERROR)
@@ -324,6 +321,8 @@ class DynamoServer(object):
                 time.sleep(self.poll_interval)
 
         except:
+            LOG.error('Exception in server process.')
+
             if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
                 try:
                     self.manager.set_status(ServerManager.SRV_ERROR)

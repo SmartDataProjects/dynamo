@@ -37,13 +37,19 @@ store_conf={"server": "dynamosrv", "reader": "dynamoread"}
 # Master server technology
 master=mysql
 
-# Server manager configuration to be passed to $manager/generate_manager_conf.py
+# Configuration to be passed to $master/generate_master_conf.py
 master_conf={"host": "localhost", "user": "dynamosrv"}
+
+# Master server shadow technology
+shadow=mysql
+
+# Configuration to be passed to $shadow/generate_shadow_conf.py
+shadow_conf={"host": "localhost", "user": "dynamosrv"}
 
 # Server update board technology
 local_board=mysql
 
-# Server manager configuration to be passed to $manager/generate_manager_conf.py
+# Configuration to be passed to $local_board/generate_local_board_conf.py
 local_board_conf={"host": "localhost", "user": "dynamosrv"}
 
 [applications]

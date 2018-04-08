@@ -53,24 +53,35 @@ class ServerManager(object):
 
     def __init__(self, config):
         import dynamo.core.master.impl as master_impl
+        import dynamo.core.shadow.impl as shadow_impl
         import dynamo.core.board.impl as board_impl
 
         # Interface to the master server
         self.master = getattr(master_impl, config.master.module)(config.master.config)
+
+        if self.master.master_host != 'localhost' and self.master.master_host != socket.gethostname():
+            # Interface to the master server local shadow
+            self.shadow = getattr(shadow_impl, config.shadow.module)(config.shadow.config)
+            self.master.advertise_shadow(config.shadow.module, config.shadow.config)
+        else:
+            self.shadow = None
+
         # Interface to the local update board
         self.board = getattr(board_impl, config.board.module)(config.board.config)
+        self.master.advertise_board(config.board.module, config.board.config)
+
         # Interface to other servers {hostname: ServerHost}
         self.other_servers = {}
+
         # Is this server backed up by a local persistency store?
         self.has_store = config.has_store
+
         # If using a remote store, name of the host
         self.store_host = ''
 
         self.hostname = socket.gethostname()
         
         self.status = ServerManager.SRV_INITIAL
-
-        self.master.advertise_board(config.board.module, config.board.config)
 
         # Heartbeat is sent in a separate thread
         self.heartbeat = threading.Thread(target = self.send_heartbeat)
@@ -121,7 +132,10 @@ class ServerManager(object):
 
     def check_status(self):
         """
-        Check server status - other servers may decide this one has gone out of sync
+        1. Check status as given by the local variable
+        2. Check connection to the master server
+        3. Check status as given in the master server list
+        (4. Back up the master server and user list to the local shadow)
         """
         if self.status == ServerManager.SRV_ERROR:
             raise RuntimeError('Server status is ERROR')
@@ -132,6 +146,9 @@ class ServerManager(object):
         if self.get_status() == ServerManager.SRV_OUTOFSYNC:
             self.status = ServerManager.SRV_OUTOFSYNC
             raise OutOfSyncError('Server out of sync')
+
+        if self.shadow is not None:
+            self.shadow.copy(self.master)
 
     def get_status(self, hostname = None):
         """
@@ -182,6 +199,21 @@ class ServerManager(object):
                 self.master.send_heartbeat()
     
             time.sleep(60)
+
+    def reconnect_master(self):
+        """
+        Find and connect to the new master server.
+        """
+        import dynamo.core.master.impl as master_impl
+
+        if not self.shadow:
+            # Master server was local
+            raise RuntimeError('Cannot reconnect to local master server.')
+
+        next_host, module, config = self.shadow.get_next_master(self.master.master_host)
+        config.host = next_host
+
+        self.master = getattr(master_impl, module)(config)
 
     def get_next_application(self):
         """

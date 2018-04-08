@@ -699,7 +699,7 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open', 'last_update')
-        block_id = self._insert_update('blocks', fields, dataset_id, block.real_name(), block.size, block.num_files, block.is_open, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
+        block_id = self._mysql.insert_update('blocks', fields, dataset_id, block.real_name(), block.size, block.num_files, block.is_open, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
 
         if block_id != 0:
             # new insert
@@ -727,7 +727,7 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('block_id', 'dataset_id', 'size', 'name')
-        file_id = self._insert_update('files', fields, block_id, dataset_id, lfile.size, lfile.lfn)
+        file_id = self._mysql.insert_update('files', fields, block_id, dataset_id, lfile.size, lfile.lfn)
 
         if file_id != 0:
             # new insert
@@ -747,13 +747,13 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
-        self._insert_update('block_replicas', fields, block_id, site_id, \
+        self._mysql.insert_update('block_replicas', fields, block_id, site_id, \
             block_replica.group.id, block_replica.is_complete, block_replica.is_custodial, \
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update)))
 
         if block_replica.size != block_replica.block.size:
             fields = ('block_id', 'site_id', 'size')
-            self._insert_update('block_replica_sizes', fields, block_id, site_id, block_replica.size)
+            self._mysql.insert_update('block_replica_sizes', fields, block_id, site_id, block_replica.size)
         else:
             sql = 'DELETE FROM `block_replica_sizes` WHERE `block_id` = %s AND `site_id` = %s'
             self._mysql.query(sql, block_id, site_id)
@@ -793,7 +793,7 @@ class MySQLInventoryStore(InventoryStore):
                 software_version_id = self._mysql.query(sql, dataset._software_version_id, *dataset.software_version)
             
         fields = ('name', 'size', 'num_files', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        dataset_id = self._insert_update('datasets', fields, dataset.name, dataset.size, dataset.num_files, \
+        dataset_id = self._mysql.insert_update('datasets', fields, dataset.name, dataset.size, dataset.num_files, \
             dataset.status, dataset.data_type, dataset._software_version_id,
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
@@ -822,7 +822,7 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('dataset_id', 'site_id')
-        self._insert_update('dataset_replicas', fields, dataset_id, site_id)
+        self._mysql.insert_update('dataset_replicas', fields, dataset_id, site_id)
 
     def delete_datasetreplica(self, dataset_replica): #override
         dataset_id = dataset_replica.dataset.id
@@ -845,7 +845,7 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_group(self, group): #override
         fields = ('name', 'olevel')
-        group_id = self._insert_update('groups', fields, group.name, Group.olevel_name(group.olevel))
+        group_id = self._mysql.insert_update('groups', fields, group.name, Group.olevel_name(group.olevel))
 
         if group_id != 0:
             group.id = group_id
@@ -859,7 +859,7 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_partition(self, partition): #override
         fields = ('name',)
-        partition_id = self._insert_update('partitions', fields, partition.name)
+        partition_id = self._mysql.insert_update('partitions', fields, partition.name)
 
         if partition_id != 0:
             partition.id = partition_id
@@ -876,7 +876,7 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_site(self, site): #override
         fields = ('name', 'host', 'storage_type', 'backend', 'status')
-        site_id = self._insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.status)
+        site_id = self._mysql.insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.status)
 
         if site_id != 0:
             site.id = site_id
@@ -908,15 +908,4 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         fields = ('site_id', 'partition_id', 'storage')
-        self._insert_update('quotas', fields, site_id, partition_id, site_partition.quota * 1.e-12)
-
-    def _insert_update(self, table, fields, *values):
-        placeholders = ', '.join(['%s'] * len(fields))
-
-        sql = 'INSERT INTO `%s` (' % table
-        sql += ', '.join('`%s`' % f for f in fields)
-        sql += ') VALUES (' + placeholders + ')'
-        sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join('`%s`=VALUES(`%s`)' % (f, f) for f in fields)
-
-        return self._mysql.query(sql, *values)
+        self._mysql.insert_update('quotas', fields, site_id, partition_id, site_partition.quota * 1.e-12)

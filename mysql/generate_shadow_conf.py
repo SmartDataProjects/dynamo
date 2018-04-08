@@ -4,7 +4,7 @@ import json
 
 thisdir = os.path.dirname(os.path.realpath(__file__))
 
-def generate_local_board_conf(conf_str):
+def generate_shadow_conf(conf_str):
     conf = json.loads(conf_str)
 
     with open(thisdir + '/grants.json') as source:
@@ -22,7 +22,7 @@ def generate_local_board_conf(conf_str):
         passwd = grants_conf[user]['passwd']
         
     conf_str = '''
-      "module": "MySQLUpdateBoard",
+      "module": "MySQLMasterShadow",
       "config": {
         "db_params": {
           "host": "''' + host + '''",
@@ -35,6 +35,6 @@ def generate_local_board_conf(conf_str):
     return conf_str
 
 try:
-    __namespace__.generate_local_board_conf = generate_local_board_conf
+    __namespace__.generate_shadow_conf = generate_shadow_conf
 except NameError:
     pass

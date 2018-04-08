@@ -355,6 +355,17 @@ class MySQL(object):
 
             self.query(sqlbase % values)
 
+    def insert_update(self, table, fields, *values):
+        placeholders = ', '.join(['%s'] * len(fields))
+
+        sql = 'INSERT INTO `%s` (' % table
+        sql += ', '.join('`%s`' % f for f in fields)
+        sql += ') VALUES (' + placeholders + ')'
+        sql += ' ON DUPLICATE KEY UPDATE '
+        sql += ', '.join('`%s`=VALUES(`%s`)' % (f, f) for f in fields)
+
+        return self.query(sql, *values)
+
     def make_snapshot(self, tag):
         snapshot_db = self.db_name() + '_' + tag
 

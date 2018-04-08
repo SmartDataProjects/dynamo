@@ -4,6 +4,7 @@ class MasterServer(object):
     """
 
     def __init__(self, config):
+        self.master_host = config.host
         self.connected = False
 
     def lock(self):
@@ -18,8 +19,22 @@ class MasterServer(object):
     def get_status(self, hostname):
         raise NotImplementedError('get_status')
 
-    def get_host_list(self, status = None):
+    def get_host_list(self, status = None, detail = False):
+        """
+        Get data for all servers connected to this master server.
+        @param status   Limit to servers in the given status
+        @param detail   boolean
+        
+        @return If detail = True, list of full info. If detail = False, [(hostname, status, has_store)]
+        """
         raise NotImplementedError('get_host_list')
+
+    def get_user_list(self):
+        """
+        Get data for all users.
+        @return [(username, email, dn)]
+        """
+        raise NotImplementedError('get_user_list')
 
     def get_writing_process_id(self):
         raise NotImplementedError('get_writing_process_id')

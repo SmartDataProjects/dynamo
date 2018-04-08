@@ -11,11 +11,14 @@ class MySQLMasterServer(MasterServer):
         MasterServer.__init__(self, config)
 
         db_params = Configuration(config.db_params)
+        if 'host' not in db_params:
+            db_params.host = self.master_host
         db_params.reuse_connection = True # we use locks
 
         self._mysql = MySQL(db_params)
 
         self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
+        # id of this server
         self.server_id = self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
 
         self.connected = True
@@ -36,14 +39,22 @@ class MySQLMasterServer(MasterServer):
         else:
             return ServerManager.server_status_val(result[0])
 
-    def get_host_list(self, status = None): #override
-        sql = 'SELECT `hostname`, `status`, `store_module` IS NOT NULL FROM `servers`'
-        args = tuple()
-        if status != None:
-            sql += ' WHERE `status` = %s'
-            args += (ServerManager.server_status_name(status),)
+    def get_host_list(self, status = None, detail = False): #override
+        if detail:
+            sql = 'SELECT `hostname`, `last_heartbeat`, `status`, `store_host`, `store_module`,'
+            sql += ' `shadow_module`, `shadow_config`, `board_module`, `board_config`'
+        else:
+            sql = 'SELECT `hostname`, `status`, `store_module` IS NOT NULL FROM `servers`'
 
-        return self._mysql.query(sql, *args)
+        if status != None:
+            sql += ' WHERE `status` = \'%s\'' % ServerManager.server_status_name(status)
+
+        sql += ' ORDER BY `id`'
+
+        return self._mysql.query(sql)
+
+    def get_user_list(self): #override
+        return self._mysql.query('SELECT `name`, `email`, `dn` FROM `users` ORDER BY `id`')
 
     def get_writing_process_id(self): #override
         result = self._mysql.query('SELECT `id` FROM `applications` WHERE `write_request` = 1 AND `status` = \'run\'')
@@ -118,7 +129,8 @@ class MySQLMasterServer(MasterServer):
 
     def advertise_store(self, module, config): #override
         config = config.clone()
-        config.db_params.host = socket.gethostname() # make sure it doesn't say "localhost"
+        if config.db_params.host == 'localhost':
+            config.db_params.host = socket.gethostname()
 
         sql = 'UPDATE `servers` SET `store_module` = %s, `store_config` = %s WHERE `id` = %s'
         self._mysql.query(sql, module, config.dump_json(), self.server_id)
@@ -133,9 +145,18 @@ class MySQLMasterServer(MasterServer):
 
         return module, Configuration(json.loads(config_str))
 
+    def advertise_shadow(self, module, config): #override
+        config = config.clone()
+        if config.db_params.host == 'localhost':
+            config.db_params.host = socket.gethostname()
+
+        sql = 'UPDATE `servers` SET `shadow_module` = %s, `shadow_config` = %s WHERE `id` = %s'
+        self._mysql.query(sql, module, config.dump_json(), self.server_id)
+
     def advertise_board(self, module, config): #override
         config = config.clone()
-        config.db_params.host = socket.gethostname() # make sure it doesn't say "localhost"
+        if config.db_params.host == 'localhost':
+            config.db_params.host = socket.gethostname()
 
         sql = 'UPDATE `servers` SET `board_module` = %s, `board_config` = %s WHERE `id` = %s'
         self._mysql.query(sql, module, config.dump_json(), self.server_id)
