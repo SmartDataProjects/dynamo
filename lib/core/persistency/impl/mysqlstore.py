@@ -288,14 +288,30 @@ class MySQLInventoryStore(InventoryStore):
             site.partitions[partition].set_quota(int(storage * 1.e+12))
 
     def _load_datasets(self, inventory, id_dataset_map, datasets_tmp):
-        sql = 'SELECT d.`id`, d.`name`, d.`size`, d.`num_files`, d.`status`+0, d.`data_type`+0, s.`cycle`, s.`major`, s.`minor`, s.`suffix`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
+        # not COUNT(*) - list can have holes
+        maxid = self._mysql.query('SELECT MAX(`id`) FROM `software_versions`')[0]
+        if maxid is None: # None: no entries in the table
+            Dataset._software_versions = []
+        else:
+            Dataset._softawre_versions = [None] * (maxid + 1)
+
+        Dataset._software_version_ids = {}
+
+        sql = 'SELECT `id`, `cycle`, `major`, `minor`, `suffix` FROM `software_versions`'
+
+        for version_id, cycle, major, minor, suffix in self._mysql.xquery(sql):
+            version = (cycle, major, minor, suffix)
+            Dataset._software_versions[version_id] = version
+            Dataset._software_version_ids[version] = version_id
+
+        sql = 'SELECT d.`id`, d.`name`, d.`size`, d.`num_files`, d.`status`+0, d.`data_type`+0,'
+        sql += ' d.`software_version_id`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
         sql += ' FROM `datasets` AS d'
-        sql += ' LEFT JOIN `software_versions` AS s ON s.`id` = d.`software_version_id`'
 
         if datasets_tmp is not None:
             sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = d.`id`' % datasets_tmp
 
-        for dataset_id, name, size, num_files, status, data_type, sw_cycle, sw_major, sw_minor, sw_suffix, last_update, is_open in self._mysql.xquery(sql):
+        for dataset_id, name, size, num_files, status, data_type, sw_version_id, last_update, is_open in self._mysql.xquery(sql):
             # size and num_files are reset when loading blocks
             dataset = Dataset(
                 name,
@@ -307,10 +323,7 @@ class MySQLInventoryStore(InventoryStore):
                 is_open = (is_open == 1),
                 did = dataset_id
             )
-            if sw_cycle is None:
-                dataset.software_version = None
-            else:
-                dataset.software_version = (sw_cycle, sw_major, sw_minor, sw_suffix)
+            dataset._software_version_id = sw_version_id
 
             inventory.datasets[name] = dataset
             id_dataset_map[dataset_id] = dataset
@@ -570,18 +583,13 @@ class MySQLInventoryStore(InventoryStore):
         software_versions = set()
         for dataset in inventory.datasets.itervalues():
             if dataset.software_version is not None:
-                software_versions.add(dataset.software_version)
+                software_versions.add((dataset._software_version_id,) + dataset.software_version)
 
-        fields = ('cycle', 'major', 'minor', 'suffix')
+        fields = ('id', 'cycle', 'major', 'minor', 'suffix')
         self._mysql.insert_many('software_versions_tmp', fields, None, software_versions, do_update = False)
 
         self._mysql.query('DROP TABLE `software_versions`')
         self._mysql.query('RENAME TABLE `software_versions_tmp` TO `software_versions`')
-
-        version_id_map = {None: 0}
-        sql = 'SELECT `id`, `cycle`, `major`, `minor`, `suffix` FROM `software_versions`'
-        for vid, cycle, major, minor, suffix in self._mysql.xquery(sql):
-            version_id_map[(cycle, major, minor, suffix)] = vid
 
         if self._mysql.table_exists('datasets_tmp'):
             self._mysql.query('DROP TABLE `datasets_tmp`')
@@ -590,7 +598,7 @@ class MySQLInventoryStore(InventoryStore):
 
         fields = ('id', 'name', 'size', 'num_files', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
         mapping = lambda dataset: (dataset.id, dataset.name, dataset.size, dataset.num_files, dataset.status, dataset.data_type, \
-            version_id_map[dataset.software_version], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
+            dataset._software_version_id, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
         self._mysql.insert_many('datasets_tmp', fields, mapping, inventory.datasets.itervalues(), do_update = False)
 
@@ -777,21 +785,16 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query(sql, dataset_id, site_id)
 
     def save_dataset(self, dataset): #override
-        if dataset.software_version is None:
-            software_version_id = 0
-        else:
-            sql = 'SELECT `id` FROM `software_versions` WHERE (`cycle`, `major`, `minor`, `suffix`) = (%s, %s, %s, %s)'
-            
-            result = self._mysql.query(sql, *dataset.software_version)
-            if len(result) == 0:
-                sql = 'INSERT INTO `software_versions` (`cycle`, `major`, `minor`, `suffix`) VALUES (%s, %s, %s, %s)'
-                software_version_id = self._mysql.query(sql, *dataset.software_version)
-            else:
-                software_version_id = result[0]
+        if dataset._software_version_id != 0:
+            sql = 'SELECT COUNT(*) FROM `software_versions` WHERE `id` = %s'
+            known_id = (self._mysql.query(sql, dataset._software_version_id)[0] == 1)
+            if not known_id:
+                sql = 'INSERT INTO `software_versions` (`id`, `cycle`, `major`, `minor`, `suffix`) VALUES (%s, %s, %s, %s, %s)'
+                software_version_id = self._mysql.query(sql, dataset._software_version_id, *dataset.software_version)
             
         fields = ('name', 'size', 'num_files', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
         dataset_id = self._insert_update('datasets', fields, dataset.name, dataset.size, dataset.num_files, \
-            dataset.status, dataset.data_type, software_version_id,
+            dataset.status, dataset.data_type, dataset._software_version_id,
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
         if dataset_id != 0:

@@ -1,5 +1,6 @@
 import time
 import copy
+import threading
 
 from exceptions import ObjectError
 
@@ -7,7 +8,7 @@ class Dataset(object):
     """Represents a dataset."""
 
     __slots__ = ['_name', 'id', 'size', 'num_files', 'status', 'data_type',
-        'software_version', 'last_update', 'is_open',
+        '_software_version_id', 'last_update', 'is_open',
         'blocks', 'replicas', 'attr']
 
     # Enumerator for dataset type.
@@ -17,6 +18,10 @@ class Dataset(object):
     _statuses = ['unknown', 'deleted', 'deprecated', 'invalid', 'production', 'valid', 'ignored']
     STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, len(_statuses) + 1)
 
+    _software_versions = []
+    _software_version_ids = {}
+    _software_version_lock = threading.Lock()
+
     @property
     def name(self):
         return self._name
@@ -24,6 +29,22 @@ class Dataset(object):
     @property
     def files(self):
         return set.union(*tuple(b.files for b in self.blocks))
+
+    @property
+    def software_version(self):
+        return Dataset._software_versions[self._software_version_id]
+
+    @software_versions.setter
+    def software_version(self, value):
+        with Dataset._software_version_lock:
+            try:
+                sid = Dataset._software_version_ids[value]
+            except KeyError:
+                sid = len(Dataset._software_versions)
+                Dataset._software_versions.append(value)
+                Dataset._software_version_ids[value] = sid
+    
+        self._software_version_id = sid
 
     @staticmethod
     def data_type_name(arg):
@@ -88,7 +109,7 @@ class Dataset(object):
         return self is other or \
             (self._name == other._name and self.size == other.size and self.num_files == other.num_files and \
             self.status == other.status and self.data_type == other.data_type and \
-            self.software_version == other.software_version and self.last_update == other.last_update and self.is_open == other.is_open)
+            self._software_version_id == other._software_version_id and self.last_update == other.last_update and self.is_open == other.is_open)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -109,7 +130,7 @@ class Dataset(object):
         self.num_files = other.num_files
         self.status = other.status
         self.data_type = other.data_type
-        self.software_version = other.software_version
+        self._software_version_id = other._software_version_id
         self.last_update = other.last_update
         self.is_open = other.is_open
 

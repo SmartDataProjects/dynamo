@@ -14,6 +14,11 @@ class Block(object):
 
     __slots__ = ['_name', '_dataset', 'id', 'size', 'num_files', 'is_open', 'replicas', 'last_update', '_files']
 
+    _files_cache = collections.OrderedDict()
+    _files_cache_lock = threading.Lock()
+    _MAX_FILES_CACHE_DEPTH = 100
+    _inventory_store = None
+
     @property
     def name(self):
         return self._name
@@ -38,11 +43,6 @@ class Block(object):
                 self._files = weakref.proxy(Block._fill_files_cache(self))
 
             return self._files
-
-    _files_cache = collections.OrderedDict()
-    _files_cache_lock = threading.Lock()
-    _MAX_FILES_CACHE_DEPTH = 100
-    _inventory_store = None
 
     @staticmethod
     def _fill_files_cache(block):
