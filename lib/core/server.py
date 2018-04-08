@@ -44,23 +44,16 @@ class DynamoServer(object):
         self.inventory = None
 
         ## Create the server manager
-        manager_config = config.manager.clone()
-        manager_config['has_store'] = ('persistency' in self.inventory_config)
-        self.manager = ServerManager(manager_config)
+        self.manager_config = config.manager.clone()
+        self.manager_config['has_store'] = ('persistency' in self.inventory_config)
+        self.manager = ServerManager(self.manager_config)
 
-        if self.manager.has_store:
-            pconf = self.inventory_config.persistency
-            self.manager.master.advertise_store(pconf.module, pconf.readonly_config)
-
-        ## Other config
-
+        ## Application collection
         self.applications_config = config.applications.clone()
-
-        # Server status (and application) poll interval
-        self.poll_interval = config.status_poll_interval
-
-        # Application collector socket
         self.app_collector = None
+
+        ## Server status (and application) poll interval
+        self.poll_interval = config.status_poll_interval
 
         ## Load the inventory content (filter according to debug config)
         self.inventory_load_opts = {}
@@ -71,9 +64,8 @@ class DynamoServer(object):
     
                 self.inventory_load_opts[objs] = (included, excluded)
 
-        # Maximum number of consecutive unhandled errors before shutting down the server
+        ## Maximum number of consecutive unhandled errors before shutting down the server
         self.max_num_errors = config.max_num_errors
-        # Error counter
         self.num_errors = 0
 
         # Shutdown flag - if the flag is set, raise KeyboardInterrupt
@@ -82,8 +74,6 @@ class DynamoServer(object):
         self.shutdown_flag.set()
 
     def load_inventory(self):
-        self.manager.set_status(ServerManager.SRV_STARTING)
-
         self.inventory = DynamoInventory(self.inventory_config)
 
         ## Wait until there is no write process
@@ -114,9 +104,6 @@ class DynamoServer(object):
             # Save all that's loaded to local
             self.inventory.flush_to_store()
 
-        # We are ready to serve
-        self.manager.set_status(ServerManager.SRV_ONLINE)
-
         LOG.info('Inventory is ready.')
 
     def run(self):
@@ -130,7 +117,24 @@ class DynamoServer(object):
         # Outer loop: restart the application server when error occurs
         while True:
             try:
+                # Lock write activities by other servers
+                self.manager.set_status(ServerManager.SRV_STARTING)
+
                 self.load_inventory()
+
+                bconf = self.manager_config.board
+                self.master.advertise_board(bconf.module, bconf.config)
+
+                if self.manager.has_store:
+                    pconf = self.inventory_config.persistency
+                    self.manager.master.advertise_store(pconf.module, pconf.readonly_config)
+
+                if self.manager.shadow is not None:
+                    sconf = self.manager_config.shadow
+                    self.master.master.advertise_shadow(sconf.module, sconf.config)
+
+                # We are ready to work
+                self.manager.set_status(ServerManager.SRV_ONLINE)
 
                 # Actual stuff happens here
                 if self.applications_config.enabled:
@@ -207,6 +211,9 @@ class DynamoServer(object):
     
                 ## Step 6 (easier to do here because we use "continue"s)
                 if do_sleep:
+                    # one successful cycle - reset the error counter
+                    self.num_errors = 0
+
                     time.sleep(self.poll_interval)
     
                 ## Step 1: Poll
@@ -316,6 +323,9 @@ class DynamoServer(object):
     
                 ## Step 1
                 self.read_updates()
+
+                # one successful cycle - reset the error counter
+                self.num_errors = 0
     
                 ## Step 2
                 time.sleep(self.poll_interval)

@@ -62,13 +62,11 @@ class ServerManager(object):
         if self.master.master_host != 'localhost' and self.master.master_host != socket.gethostname():
             # Interface to the master server local shadow
             self.shadow = getattr(shadow_impl, config.shadow.module)(config.shadow.config)
-            self.master.advertise_shadow(config.shadow.module, config.shadow.config)
         else:
             self.shadow = None
 
         # Interface to the local update board
         self.board = getattr(board_impl, config.board.module)(config.board.config)
-        self.master.advertise_board(config.board.module, config.board.config)
 
         # Interface to other servers {hostname: ServerHost}
         self.other_servers = {}
