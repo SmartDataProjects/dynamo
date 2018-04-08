@@ -8,6 +8,7 @@ import threading
 import MySQLdb
 import MySQLdb.converters
 import MySQLdb.cursors
+import MySQLdb.connections
 
 # Fix for some (newer) versions of MySQLdb
 from types import TupleType, ListType

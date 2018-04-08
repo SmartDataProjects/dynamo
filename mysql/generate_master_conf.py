@@ -25,7 +25,7 @@ def generate_master_conf(conf_str):
       "module": "MySQLMasterServer",
       "config": {
         "db_params": {
-          "host": "''' + host '''",
+          "host": "''' + host + '''",
           "user": "''' + user + '''",
           "passwd": "''' + passwd + '''",
           "db": "dynamoserver"
