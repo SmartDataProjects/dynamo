@@ -270,6 +270,10 @@ class DynamoServer(object):
     
                 child_processes.append((exec_id, proc, user_name, path))
 
+        except KeyboardInterrupt:
+            LOG.error('Terminating all child processes..')
+            raise
+
         except:
             LOG.error('Exception in server process. Terminating all child processes..')
 
@@ -329,6 +333,9 @@ class DynamoServer(object):
     
                 ## Step 2
                 time.sleep(self.poll_interval)
+
+        except KeyboardInterrupt:
+            raise
 
         except:
             LOG.error('Exception in server process.')
