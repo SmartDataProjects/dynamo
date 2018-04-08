@@ -177,10 +177,11 @@ class ServerManager(object):
         server status is forced to be out-of-sync.
         """
 
-        if self.status != ServerManager.SRV_INITIAL:
-            self.master.send_heartbeat()
-
-        time.sleep(60)
+        while True:
+            if self.status != ServerManager.SRV_INITIAL:
+                self.master.send_heartbeat()
+    
+            time.sleep(60)
 
     def get_next_application(self):
         """

@@ -34,7 +34,7 @@ class Dataset(object):
     def software_version(self):
         return Dataset._software_versions[self._software_version_id]
 
-    @software_versions.setter
+    @software_version.setter
     def software_version(self, value):
         with Dataset._software_version_lock:
             try:

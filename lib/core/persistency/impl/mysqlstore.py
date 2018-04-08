@@ -293,7 +293,7 @@ class MySQLInventoryStore(InventoryStore):
         if maxid is None: # None: no entries in the table
             Dataset._software_versions = []
         else:
-            Dataset._softawre_versions = [None] * (maxid + 1)
+            Dataset._software_versions = [None] * (maxid + 1)
 
         Dataset._software_version_ids = {}
 
