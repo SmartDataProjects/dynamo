@@ -47,9 +47,9 @@ for partition in config.partitions:
     # SitesInfo
 
     if args.cycle == 0:
-        runs = history.get_deletion_runs(partition = partition, first = -1)
-        if len(runs) != 0:
-            cycle = runs[0]
+        cycles = history.get_deletion_cycles(partition = partition, first = -1)
+        if len(cycles) != 0:
+            cycle = cycles[0]
         else:
             cycle = 0
     else:
@@ -58,7 +58,7 @@ for partition in config.partitions:
     if cycle == 0:
         timestamp = 0
     else:
-        timestamp = history.get_run_timestamp(cycle)
+        timestamp = history.get_cycle_timestamp(cycle)
 
     sitesinfo.write('#- %s\n' % time.strftime('%Y-%m-%d %H:%M', time.localtime(timestamp)))
     sitesinfo.write('#\n')
@@ -157,9 +157,9 @@ for partition in config.partitions:
             dscount_now[dataset] += 1
             dataset_lists[site][partition].append((dataset, size))
 
-    runs = history.get_deletion_runs(partition = partition, first = -1, last = cycle - 1)
-    if len(runs) != 0:
-        prev_cycle = runs[0]
+    cycles = history.get_deletion_cycles(partition = partition, first = -1, last = cycle - 1)
+    if len(cycles) != 0:
+        prev_cycle = cycles[0]
         results = history.get_deletion_decisions(prev_cycle, size_only = False)
         for site, datasets in results.items():
             for (dataset, size, decision, reason) in datasets:

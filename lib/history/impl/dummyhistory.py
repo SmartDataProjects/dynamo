@@ -21,19 +21,19 @@ class DummyHistory(TransactionHistoryInterface):
     def _do_release_lock(self, force): #override
         pass
 
-    def _do_new_run(self, operation, partition, policy_version, comment): #override
+    def _do_new_cycle(self, operation, partition, policy_version, comment): #override
         try:
-            return self.config['new_run']
+            return self.config['new_cycle']
         except KeyError:
             return 1
 
-    def _do_close_run(self, operation, run_number): #override
-        LOG.info('Cycle %d closed.', run_number)
+    def _do_close_cycle(self, operation, cycle_number): #override
+        LOG.info('Cycle %d closed.', cycle_number)
 
-    def _do_make_copy_entry(self, run_number, site, operation_id, approved, dataset_list, size): #override
+    def _do_make_copy_entry(self, cycle_number, site, operation_id, approved, dataset_list, size): #override
         LOG.info('New copy entry: operation_id=%d approved=%d site=%s size=%d', operation_id, approved, site.name, size)
 
-    def _do_make_deletion_entry(self, run_number, site, operation_id, approved, datasets, size): #override
+    def _do_make_deletion_entry(self, cycle_number, site, operation_id, approved, datasets, size): #override
         LOG.info('New deletion entry: operation_id=%d approved=%d site=%s size=%d', operation_id, approved, site.name, size)
 
     def _do_update_copy_entry(self, copy_record): #override
@@ -47,7 +47,7 @@ class DummyHistory(TransactionHistoryInterface):
     def _do_save_sites(self, sites): #override
         LOG.info('Saving %d sites', len(sites))
 
-    def _do_get_sites(self, run_number): #override
+    def _do_get_sites(self, cycle_number): #override
         try:
             return self.config['sites']
         except KeyError:
@@ -59,16 +59,16 @@ class DummyHistory(TransactionHistoryInterface):
     def _do_save_conditions(self, policy_lines): #ovrride
         LOG.info('Saving %d policy lines', len(policy_lines))
 
-    def _do_save_copy_decisions(self, run_number, copies): #override
+    def _do_save_copy_decisions(self, cycle_number, copies): #override
         LOG.info('Saving %d copy decisions', len(copies))
 
-    def _do_save_deletion_decisions(self, run_number, deleted_list, kept_list, protected_list): #override
+    def _do_save_deletion_decisions(self, cycle_number, deleted_list, kept_list, protected_list): #override
         LOG.info('Saving deletion decisions: %d delete, %d keep, %d protect', len(deleted_list), len(kept_list), len(protected_list))
 
-    def _do_save_quotas(self, run_number, quotas): #override
+    def _do_save_quotas(self, cycle_number, quotas): #override
         LOG.info('Saving quotas for %d sites', len(quotas))
 
-    def _do_get_deletion_decisions(self, run_number, size_only): #override
+    def _do_get_deletion_decisions(self, cycle_number, size_only): #override
         if 'deletion_decisions' in self.config:
             return self.config['deletion_decisions']
 
@@ -76,7 +76,7 @@ class DummyHistory(TransactionHistoryInterface):
             db_name = self.config.db_params.db
             cache_db = MySQL(self.config.cache_db_params)
 
-            table_name = 'replicas_%d' % run_number
+            table_name = 'replicas_%d' % cycle_number
     
             query = 'SELECT s.`name`, d.`name`, r.`size`, r.`decision`, p.`text` FROM `%s`.`%s` AS r' % (cache_db.db_name(), table_name)
             query += ' INNER JOIN `%s`.`sites` AS s ON s.`id` = r.`site_id`' % db_name
@@ -101,7 +101,7 @@ class DummyHistory(TransactionHistoryInterface):
         else:
             return {}
 
-    def _do_save_dataset_popularity(self, run_number, datasets): #override
+    def _do_save_dataset_popularity(self, cycle_number, datasets): #override
         LOG.info('Saving popularity for %d datasets', len(datasets))
 
     def _do_get_incomplete_copies(self, partition): #override
@@ -110,9 +110,9 @@ class DummyHistory(TransactionHistoryInterface):
         except KeyError:
             return []            
 
-    def _do_get_copied_replicas(self, run_number): #override
+    def _do_get_copied_replicas(self, cycle_number): #override
         try:
-            return self.config['copied_replicas'][run_number]
+            return self.config['copied_replicas'][cycle_number]
         except KeyError:
             return []
 
@@ -122,33 +122,33 @@ class DummyHistory(TransactionHistoryInterface):
         except KeyError:
             return ''
 
-    def _do_get_deletion_runs(self, partition, first, last): #override
+    def _do_get_deletion_cycles(self, partition, first, last): #override
         try:
-            runs = self.config['deletion_runs'][partition]
+            cycles = self.config['deletion_cycles'][partition]
         except KeyError:
             return []
         else:
             if first != -1:
-                runs = filter(lambda r: r >= first, runs)
+                cycles = filter(lambda r: r >= first, cycles)
             if last != -1:
-                runs = filter(lambda r: r <= last, runs)
+                cycles = filter(lambda r: r <= last, cycles)
                 
-            return runs
+            return cycles
 
-    def _do_get_copy_runs(self, partition, first, last): #override
+    def _do_get_copy_cycles(self, partition, first, last): #override
         try:
-            runs = self.config['copy_runs'][partition]
+            cycles = self.config['copy_cycles'][partition]
         except KeyError:
             return []
         else:
             if first != -1:
-                runs = filter(lambda r: r >= first, runs)
+                cycles = filter(lambda r: r >= first, cycles)
             if last != -1:
-                runs = filter(lambda r: r <= last, runs)
+                cycles = filter(lambda r: r <= last, cycles)
 
-    def _do_get_run_timestamp(self, run_number): #override
+    def _do_get_cycle_timestamp(self, cycle_number): #override
         try:
-            return self.config['run_timestamp'][run_number]
+            return self.config['cycle_timestamp'][cycle_number]
         except KeyError:
             return 0
 

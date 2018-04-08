@@ -444,7 +444,7 @@ class CopyRequestsHandler(BaseHandler):
 
         return dealer_requests
 
-    def postprocess(self, run_number, history, copy_list): # override
+    def postprocess(self, cycle_number, history, copy_list): # override
         """
         Create active copy entries for accepted copies.
         """

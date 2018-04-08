@@ -1,6 +1,6 @@
 CREATE TABLE `replicas_snapshot_usage` (
-  `run_id` int(11) unsigned NOT NULL,
+  `cycle_id` int(11) unsigned NOT NULL,
   `timestamp` datetime NOT NULL,
-  KEY `runs` (`run_id`),
+  KEY `cycles` (`cycle_id`),
   KEY `timestamps` (`timestamp`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;

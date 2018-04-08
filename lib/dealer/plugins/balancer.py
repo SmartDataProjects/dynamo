@@ -19,18 +19,18 @@ class BalancingHandler(BaseHandler):
         self.target_reasons = dict(config.target_reasons)
 
     def get_requests(self, inventory, history, policy):
-        latest_runs = history.get_deletion_runs(policy.partition_name)
-        if len(latest_runs) == 0:
+        latest_cycles = history.get_deletion_cycles(policy.partition_name)
+        if len(latest_cycles) == 0:
             return []
 
-        latest_run = latest_runs[0]
+        latest_cycle = latest_cycles[0]
 
-        LOG.info('Balancing site occupancy based on the protected fractions in the latest cycle %d', latest_run)
+        LOG.info('Balancing site occupancy based on the protected fractions in the latest cycle %d', latest_cycle)
         LOG.debug('Protection reason considered as "last copy":')
         for reason in self.target_reasons.keys():
             LOG.debug(reason)
 
-        deletion_decisions = history.get_deletion_decisions(latest_run, size_only = False)
+        deletion_decisions = history.get_deletion_decisions(latest_cycle, size_only = False)
 
         partition = inventory.partitions[policy.partition_name]
 

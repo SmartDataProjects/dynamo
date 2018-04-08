@@ -63,7 +63,7 @@ class Dealer(object):
         """
 
         # fetch the deletion cycle number
-        cycle_number = self.history.new_copy_run(self.policy.partition_name, self.policy.version, comment = comment)
+        cycle_number = self.history.new_copy_cycle(self.policy.partition_name, self.policy.version, comment = comment)
 
         LOG.info('Dealer cycle %d for %s starting', cycle_number, self.policy.partition_name)
 
@@ -111,7 +111,7 @@ class Dealer(object):
         comment = 'Dynamo -- Automatic replication request for %s partition.' % partition.name
         self._commit_copies(cycle_number, inventory, all_copies, comment)
 
-        self.history.close_copy_run(cycle_number)
+        self.history.close_copy_cycle(cycle_number)
 
         LOG.info('Dealer cycle completed')
 

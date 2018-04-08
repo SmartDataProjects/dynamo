@@ -12,17 +12,17 @@ class Undertaker(BaseHandler):
         self.manual_evacuation_sites = list(config.get('additional_sites', []))
 
     def get_requests(self, inventory, history, policy): # override
-        latest_runs = history.get_deletion_runs(policy.partition_name)
-        if len(latest_runs) == 0:
+        latest_cycles = history.get_deletion_cycles(policy.partition_name)
+        if len(latest_cycles) == 0:
             return []
 
-        latest_run = latest_runs[0]
+        latest_cycle = latest_cycles[0]
 
-        LOG.info('Offloading sites that were not in READY state at latest cycle %d', latest_run)
+        LOG.info('Offloading sites that were not in READY state at latest cycle %d', latest_cycle)
         if len(self.manual_evacuation_sites) != 0:
             LOG.info('Additionally evacuating %s as requested by configuration', ' '.join(self.manual_evacuation_sites))
 
-        deletion_decisions = history.get_deletion_decisions(latest_run, size_only = False)
+        deletion_decisions = history.get_deletion_decisions(latest_cycle, size_only = False)
 
         protected_fractions = {} # {site: fraction}
         last_copies = {} # {site: [datasets]}

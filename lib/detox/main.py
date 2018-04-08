@@ -38,7 +38,7 @@ class Detox(object):
 
         if create_cycle:
             # fetch the deletion cycle number
-            cycle_tag = self.history.new_deletion_run(self.policy.partition_name, self.policy.version, comment = comment)
+            cycle_tag = self.history.new_deletion_cycle(self.policy.partition_name, self.policy.version, comment = comment)
             LOG.info('Detox cycle %d for %s starting', cycle_tag, self.policy.partition_name)
         else:
             cycle_tag = self.policy.partition_name
@@ -78,7 +78,7 @@ class Detox(object):
             comment = 'Dynamo -- Automatic group reassignment for %s partition.' % self.policy.partition_name
             self._commit_reassignments(cycle_tag, inventory, reowned, comment)
 
-            self.history.close_deletion_run(cycle_tag)
+            self.history.close_deletion_cycle(cycle_tag)
 
         LOG.info('Detox cycle completed')
 
