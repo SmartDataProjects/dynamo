@@ -519,7 +519,9 @@ class MySQLInventoryStore(InventoryStore):
         fields = ('id', 'name', 'olevel')
         mapping = lambda group: (group.id, group.name, Group.olevel_name(group.olevel))
 
-        self._mysql.insert_many('groups_tmp', fields, mapping, inventory.groups.itervalues(), do_update = False)
+        groups = [g for g in inventory.groups.itervalues() if g.name is not None]
+
+        self._mysql.insert_many('groups_tmp', fields, mapping, groups, do_update = False)
 
         self._mysql.query('DROP TABLE `groups`')
         self._mysql.query('RENAME TABLE `groups_tmp` TO `groups`')
@@ -531,7 +533,7 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('CREATE TABLE `sites_tmp` LIKE `sites`')
 
         fields = ('id', 'name', 'host', 'storage_type', 'backend', 'status')
-        mapping = lambda site: (site.name, site.host, Site.storage_type_name(site.storage_type), \
+        mapping = lambda site: (site.id, site.name, site.host, Site.storage_type_name(site.storage_type), \
             site.backend, Site.status_name(site.status))
 
         self._mysql.insert_many('sites_tmp', fields, mapping, inventory.sites.itervalues(), do_update = False)
@@ -607,7 +609,7 @@ class MySQLInventoryStore(InventoryStore):
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
 
         def all_blocks():
-            for dataset in inventory.dataset.itervalues():
+            for dataset in inventory.datasets.itervalues():
                 for block in dataset.blocks:
                     yield block
 
@@ -625,7 +627,7 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('CREATE TABLE `dataset_replicas_tmp` LIKE `dataset_replicas`')
 
         fields = ('dataset_id', 'site_id')
-        mapping = lambda replica: (replica.dataset.id, site.id)
+        mapping = lambda replica: (replica.dataset.id, replica.site.id)
 
         def all_replicas():
             for site in inventory.sites.itervalues():
@@ -643,7 +645,7 @@ class MySQLInventoryStore(InventoryStore):
 
         fields = ('block_id', 'site_id', 'group_id', 'is_complete', 'is_custodial', 'last_update')
 
-        mapping = lambda replica: (replica.block.id, site.id, \
+        mapping = lambda replica: (replica.block.id, replica.site.id, \
             replica.group.id, replica.is_complete, replica.is_custodial, \
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)))
 
@@ -663,7 +665,7 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('CREATE TABLE `block_replica_sizes_tmp` LIKE `block_replica_sizes`')
 
         fields = ('block_id', 'site_id', 'size')
-        mapping = lambda replica: (replica.block.id, site.id, replica.size)
+        mapping = lambda replica: (replica.block.id, replica.site.id, replica.size)
 
         def all_block_replica_sizes():
             for site in inventory.sites.itervalues():
