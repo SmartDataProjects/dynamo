@@ -59,6 +59,10 @@ class MySQL(object):
     def db_name(self):
         return self._connection_parameters['db']
 
+    def use_db(self, db):
+        self.close()
+        self._connection_parameters['db'] = db
+
     def hostname(self):
         cursor = self.get_cursor()
         cursor.execute('SELECT @@hostname')
@@ -265,10 +269,10 @@ class MySQL(object):
         for add in additional_conditions:
             sqlbase += '(%s) AND ' % add
 
-        sqlbase += key_str + ' IN '
+        sqlbase += key_str + ' IN {pool}'
 
         def execute(pool_expr):
-            sql = sqlbase + pool_expr
+            sql = sqlbase.format(pool = pool_expr)
             if order_by:
                 sql += ' ORDER BY ' + order_by
 
@@ -507,7 +511,7 @@ class MySQL(object):
         if not db:
             db = self.db_name()
 
-        return len(self.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s LIMIT 1', db, table)) != 0
+        return self.query('SELECT COUNT(*) FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s', db, table)[0] != 0
 
     def create_tmp_table(self, table, columns, db = ''):
         if not db:

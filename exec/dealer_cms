@@ -35,6 +35,12 @@ if args.test_run:
     config.dealer.history.config.test = True
     config.dealer.copy_op.config.dry_run = True
 
+dealer_config = config.dealer
+if 'balancer' in dealer_config.plugins:
+    dealer_config.plugins.balancer.config.detox_history = config.detox_history
+if 'undertaker' in dealer_config.plugins:
+    dealer_config.plugins.undertaker.config.detox_history = config.detox_history
+
 dealer = Dealer(config.dealer)
 dealer.run(inventory, comment = args.comment)
 

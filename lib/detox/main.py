@@ -7,6 +7,7 @@ from dynamo.core.inventory import ObjectRepository
 from dynamo.dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
 from dynamo.detox.detoxpolicy import DetoxPolicy
 from dynamo.detox.detoxpolicy import Ignore, Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
+from dynamo.detox.history import DetoxHistory
 import dynamo.operation.impl as operation_impl
 import dynamo.history.impl as history_impl
 from dynamo.utils.signaling import SignalBlocker
@@ -23,6 +24,7 @@ class Detox(object):
         self.deletion_op = getattr(operation_impl, config.deletion_op.module)(config.deletion_op.config)
         self.copy_op = getattr(operation_impl, config.copy_op.module)(config.copy_op.config)
         self.history = getattr(history_impl, config.history.module)(config.history.config)
+        self.detoxhistory = DetoxHistory(config.history.detox_config)
 
         self.policy = DetoxPolicy(config)
 
@@ -58,18 +60,18 @@ class Detox(object):
 
         LOG.info('Saving policy conditions.')
         # Sets policy IDs for each lines from the history DB; need to run this before execute_policy
-        self.history.save_conditions(self.policy.policy_lines)
+        self.detoxhistory.save_conditions(self.policy.policy_lines)
 
         LOG.info('Applying policy to replicas.')
         deleted, kept, protected, reowned = self._execute_policy(partition_repository)
 
         LOG.info('Saving deletion decisions.')
-        self.history.save_deletion_decisions(cycle_tag, deleted, kept, protected)
+        self.detoxhistory.save_decisions(cycle_tag, deleted, kept, protected)
 
-        LOG.info('Saving quotas.')
+        LOG.info('Saving quotas and site statuses.')
         partition = partition_repository.partitions[self.policy.partition_name]
         quotas = dict((s, s.partitions[partition].quota * 1.e-12) for s in partition_repository.sites.itervalues())
-        self.history.save_quotas(cycle_tag, quotas)
+        self.detoxhistory.save_siteinfo(cycle_tag, quotas)
 
         if create_cycle:
             LOG.info('Committing deletion.')

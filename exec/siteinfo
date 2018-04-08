@@ -17,6 +17,7 @@ from dynamo.dataformat import Configuration, Site
 import dynamo.history.impl as history_impl
 from dynamo.policy.producers import CRABAccessHistory
 from dynamo.core.executable import inventory, make_standard_logger
+from dynamo.detox.history import DetoxHistory
 
 config = Configuration(args.config)
 
@@ -24,6 +25,9 @@ LOG = make_standard_logger(config.log_level)
 
 # History
 history = getattr(history_impl, config.history.module)(config.history.config)
+
+# Detox-specific history
+detoxhistory = DetoxHistory(config.detox_history)
 
 # CRAB access
 crabaccess = CRABAccessHistory(config.crabaccess)
@@ -71,8 +75,8 @@ for partition in config.partitions:
         sitesinfo.write('# N/A\n')
         continue
 
-    sites_info = history.get_sites(cycle)
-    sites_usage = history.get_deletion_decisions(cycle)
+    sites_info = detoxhistory.get_sites(cycle)
+    sites_usage = detoxhistory.get_deletion_decisions(cycle)
 
     quota_total = 0
     used_total = 0.
@@ -150,7 +154,7 @@ for partition in config.partitions:
 
     # RemainingDatasets
 
-    results = history.get_deletion_decisions(cycle, size_only = False)
+    results = detoxhistory.get_deletion_decisions(cycle, size_only = False)
     for site, datasets in results.items():
         dataset_lists[site][partition] = []
         for (dataset, size, decision, reason) in datasets:
@@ -160,7 +164,7 @@ for partition in config.partitions:
     cycles = history.get_deletion_cycles(partition = partition, first = -1, last = cycle - 1)
     if len(cycles) != 0:
         prev_cycle = cycles[0]
-        results = history.get_deletion_decisions(prev_cycle, size_only = False)
+        results = detoxhistory.get_deletion_decisions(prev_cycle, size_only = False)
         for site, datasets in results.items():
             for (dataset, size, decision, reason) in datasets:
                 dscount_prev[dataset] += 1

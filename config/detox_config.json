@@ -26,11 +26,14 @@
           "config_group": "mysql",
           "db": "dynamohistory"
         },
-        "cache_db_params": {
+      },
+      "detox_config": {
+        "db_params": {
           "config_file": "/etc/my.cnf.d/dynamo.cnf",
-          "config_group": "mysql",
-          "db": "dynamohistory_cache"
+          "config_group": "mysql"
         },
+        "history_db": "dynamohistory",
+        "cache_db": "dynamohistory_cache",
         "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
         "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
       }

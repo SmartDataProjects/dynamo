@@ -22,14 +22,7 @@
           "config_file": "/etc/my.cnf.d/dynamo.cnf",
           "config_group": "mysql",
           "db": "dynamohistory"
-        },
-        "cache_db_params": {
-          "config_file": "/etc/my.cnf.d/dynamo.cnf",
-          "config_group": "mysql",
-          "db": "dynamohistory_cache"
-        },
-        "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
-        "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
+        }
       }
     },
     "plugins": {
@@ -75,14 +68,16 @@
           "target_reasons": {
             "dataset.name == /*/*/MINIAOD* and replica.num_full_disk_copy_common_owner < 3": 3,
             "replica.num_full_disk_copy_common_owner < 2": 2
-          }
+          },
+          "detox_history": {}
         }
       },
       "undertaker": {
         "priority": 2,
         "module": "Undertaker",
         "config": {
-          "additional_sites": []
+          "additional_sites": [],
+          "detox_history": {}
         }
       }
     },
@@ -102,6 +97,16 @@
     "target_site_occupancy": 0.93,
     "max_site_pending_fraction": 0.03,
     "max_total_cycle_volume": 200
+  },
+  "detox_history": {
+    "db_params": {
+      "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
+      "config_group": "mysql"
+    },
+    "history_db": "dynamohistory",
+    "cache_db": "dynamohistory_cache",
+    "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
+    "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
   },
   "log_level": "info"
 }
