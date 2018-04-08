@@ -22,10 +22,10 @@ def generate_master_conf(conf_str):
         passwd = grants_conf[user]['passwd']
         
     conf_str = '''
-      "host": "''' + host + '''",
       "module": "MySQLMasterServer",
       "config": {
         "db_params": {
+          "host": "''' + host '''",
           "user": "''' + user + '''",
           "passwd": "''' + passwd + '''",
           "db": "dynamoserver"

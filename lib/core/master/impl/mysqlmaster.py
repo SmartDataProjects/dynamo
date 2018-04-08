@@ -7,16 +7,16 @@ from dynamo.utils.interface import MySQL
 from dynamo.dataformat import Configuration
 
 class MySQLMasterServer(MasterServer):
-    def __init__(self, hostname, config):
-        MasterServer.__init__(self, hostname, config)
+    def __init__(self, config):
+        MasterServer.__init__(self, config)
 
         db_params = Configuration(config.db_params)
-        if 'host' not in db_params:
-            db_params.host = self.master_host
         db_params.reuse_connection = True # we use locks
 
         self._mysql = MySQL(db_params)
+        self._server_id = 0
 
+    def _connect(self): #override
         self._mysql.query('LOCK TABLES `servers` WRITE')
 
         self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
@@ -26,17 +26,18 @@ class MySQLMasterServer(MasterServer):
             self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
 
         # id of this server
-        self.server_id = self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
+        self._server_id = self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
 
         self._mysql.query('UNLOCK TABLES')
-
-        self.connected = True
 
     def lock(self): #override
         self._mysql.query('LOCK TABLES `servers` WRITE, `applications` WRITE, `users` READ')
 
     def unlock(self): #override
         self._mysql.query('UNLOCK TABLES')
+
+    def get_master_host(self): #override
+        return self._mysql.hostname()
 
     def set_status(self, status, hostname): #override
         self._mysql.query('UPDATE `servers` SET `status` = %s WHERE `hostname` = %s', ServerManager.server_status_name(status), hostname)
@@ -65,6 +66,25 @@ class MySQLMasterServer(MasterServer):
 
     def get_user_list(self): #override
         return self._mysql.query('SELECT `name`, `email`, `dn` FROM `users` ORDER BY `id`')
+
+    def copy(self, remote_master):
+        all_servers = remote_master.get_host_list(detail = True)
+        fields = ('hostname', 'last_heartbeat', 'status', 'store_host', 'store_module', 'shadow_module', 'shadow_config', 'board_module', 'board_config')
+        self._mysql.insert_many('servers', fields, None, all_servers, do_update = True)
+
+        all_users = remote_master.get_user_list()
+        fields = ('name', 'email', 'dn')
+        self._mysql.insert_many('users', fields, None, all_users, do_update = True)
+
+    def get_next_master(self, current):
+        self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', current)
+        
+        # shadow config must be the same as master
+        result = self._mysql.query('SELECT `hostname`, `shadow_module`, `shadow_config` FROM `servers` ORDER BY `id` LIMIT 1')
+        if len(result) == 0:
+            raise RuntimeError('No servers can become master at this moment')
+
+        return result[0]
 
     def get_writing_process_id(self): #override
         result = self._mysql.query('SELECT `id` FROM `applications` WHERE `write_request` = 1 AND `status` = \'run\'')
@@ -143,7 +163,7 @@ class MySQLMasterServer(MasterServer):
             config.db_params.host = socket.gethostname()
 
         sql = 'UPDATE `servers` SET `store_module` = %s, `store_config` = %s WHERE `id` = %s'
-        self._mysql.query(sql, module, config.dump_json(), self.server_id)
+        self._mysql.query(sql, module, config.dump_json(), self._server_id)
 
     def get_store_config(self, hostname): #override
         sql = 'SELECT `store_module`, `store_config` FROM `servers` WHERE `hostname` = %s'
@@ -161,7 +181,7 @@ class MySQLMasterServer(MasterServer):
             config.db_params.host = socket.gethostname()
 
         sql = 'UPDATE `servers` SET `shadow_module` = %s, `shadow_config` = %s WHERE `id` = %s'
-        self._mysql.query(sql, module, config.dump_json(), self.server_id)
+        self._mysql.query(sql, module, config.dump_json(), self._server_id)
 
     def advertise_board(self, module, config): #override
         config = config.clone()
@@ -169,7 +189,7 @@ class MySQLMasterServer(MasterServer):
             config.db_params.host = socket.gethostname()
 
         sql = 'UPDATE `servers` SET `board_module` = %s, `board_config` = %s WHERE `id` = %s'
-        self._mysql.query(sql, module, config.dump_json(), self.server_id)
+        self._mysql.query(sql, module, config.dump_json(), self._server_id)
 
     def get_board_config(self, hostname): #override
         sql = 'SELECT `board_module`, `board_config` FROM `servers` WHERE `hostname` = %s'
@@ -183,7 +203,7 @@ class MySQLMasterServer(MasterServer):
 
     def declare_remote_store(self, hostname): #override
         server_id = self._mysql.query('SELECT `id` FROM `servers` WHERE `hostname` = %s', hostname)[0]
-        self._mysql.query('UPDATE `servers` SET `store_host` = %s WHERE `id` = %s', server_id, self.server_id)
+        self._mysql.query('UPDATE `servers` SET `store_host` = %s WHERE `id` = %s', server_id, self._server_id)
 
     def check_connection(self): #override
         try:
@@ -196,8 +216,8 @@ class MySQLMasterServer(MasterServer):
         return True
 
     def send_heartbeat(self): #override
-        self._mysql.query('UPDATE `servers` SET `last_heartbeat` = NOW() WHERE `id` = %s', self.server_id)
+        self._mysql.query('UPDATE `servers` SET `last_heartbeat` = NOW() WHERE `id` = %s', self._server_id)
 
     def disconnect(self): #override
-        self._mysql.query('DELETE FROM `servers` WHERE `id` = %s', self.server_id)
+        self._mysql.query('DELETE FROM `servers` WHERE `id` = %s', self._server_id)
         self._mysql.close()

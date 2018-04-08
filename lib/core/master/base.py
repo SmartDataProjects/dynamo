@@ -7,17 +7,29 @@ class MasterServer(object):
     An interface to the master server that coordinates server activities.
     """
 
-    def __init__(self, hostname, config):
+    def __init__(self, config):
+        self.connected = False
+
+    def connect(self, hostname):
+        """
+        Connect to the master server.
+        """
         LOG.info('Connecting to master server %s', hostname)
 
-        self.master_host = hostname
-        self.connected = False
+        self._connect()
+        self.connected = True
 
     def lock(self):
         raise NotImplementedError('lock')
 
     def unlock(self):
         raise NotImplementedError('unlock')
+
+    def get_master_host(self):
+        """
+        @return  Current master server host name.
+        """
+        raise NotImplementedError('get_master_host')
 
     def set_status(self, status, hostname):
         raise NotImplementedError('set_status')
@@ -41,6 +53,13 @@ class MasterServer(object):
         @return [(username, email, dn)]
         """
         raise NotImplementedError('get_user_list')
+
+    def copy(self, remote_master):
+        """
+        When acting as a local shadow of a remote master server, copy the remote content to local.
+        @param remote_master  MasterServer instance of the remote server.
+        """
+        raise NotImplementedError('copy')
 
     def get_writing_process_id(self):
         raise NotImplementedError('get_writing_process_id')

@@ -58,9 +58,22 @@ class MySQL(object):
     def db_name(self):
         return self._connection_parameters['db']
 
+    def hostname(self):
+        cursor = self.get_cursor()
+        cursor.execute('SELECT @@hostname')
+        result = cursor.fetchall()
+        cursor.close()
+        return result[0][0]
+
     def close(self):
         if self._connection is not None:
             self._connection.close()
+
+    def get_cursor(self, cursor_cls = MySQLdb.connections.Connection.default_cursor):
+        if self._connection is None:
+            self._connection = MySQLdb.connect(**self._connection_parameters)
+
+        return self._connection.cursor(cursor_cls)
 
     def query(self, sql, *args, **kwd):
         """
@@ -87,10 +100,7 @@ class MySQL(object):
         cursor = None
 
         try:
-            if self._connection is None:
-                self._connection = MySQLdb.connect(**self._connection_parameters)
-    
-            cursor = self._connection.cursor()
+            cursor = self.get_cursor()
     
             self.last_insert_id = 0
 
@@ -117,8 +127,8 @@ class MySQL(object):
 
                         # reconnect to server
                         cursor.close()
-                        self._connection = MySQLdb.connect(**self._connection_parameters)
-                        cursor = self._connection.cursor()
+                        self._connection = None
+                        cursor = self.get_cursor()
         
                 else: # 10 failures
                     if not silent:
@@ -175,10 +185,7 @@ class MySQL(object):
         try:
             self._connection_lock.acquire()
 
-            if self._connection is None:
-                self._connection = MySQLdb.connect(**self._connection_parameters)
-    
-            cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
+            cursor = self.get_cursor(MySQLdb.cursors.SSCursor)
     
             self.last_insert_id = 0
 
@@ -198,8 +205,8 @@ class MySQL(object):
                         last_except = sys.exc_info()[1]
                         # reconnect to server
                         cursor.close()
-                        self._connection = MySQLdb.connect(**self._connection_parameters)
-                        cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
+                        self._connection = None
+                        cursor = self.get_cursor(MySQLdb.cursors.SSCursor)
         
                 else: # 10 failures
                     LOG.error('Too many OperationalErrors. Last exception:')

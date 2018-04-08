@@ -53,15 +53,15 @@ class ServerManager(object):
 
     def __init__(self, config):
         import dynamo.core.master.impl as master_impl
-        import dynamo.core.shadow.impl as shadow_impl
         import dynamo.core.board.impl as board_impl
 
         # Interface to the master server
         self.master = getattr(master_impl, config.master.module)(config.master.host, config.master.config)
+        self.master_host = self.master.get_master_host()
 
         if config.master.host != 'localhost' and config.master.host != socket.gethostname():
             # Interface to the master server local shadow
-            self.shadow = getattr(shadow_impl, config.shadow.module)(config.shadow.config)
+            self.shadow = getattr(master_impl, config.shadow.module)('localhost', config.shadow.config)
         else:
             self.shadow = None
 
@@ -145,9 +145,6 @@ class ServerManager(object):
             self.status = ServerManager.SRV_OUTOFSYNC
             raise OutOfSyncError('Server out of sync')
 
-        if self.shadow is not None:
-            self.shadow.copy(self.master)
-
     def get_status(self, hostname = None):
         """
         Read the server status from the master list.
@@ -195,6 +192,9 @@ class ServerManager(object):
         while True:
             if self.status != ServerManager.SRV_INITIAL:
                 self.master.send_heartbeat()
+
+                if self.shadow is not None:
+                    self.shadow.copy(self.master)
     
             time.sleep(60)
 
@@ -208,7 +208,7 @@ class ServerManager(object):
             # Master server was local
             raise RuntimeError('Cannot reconnect to local master server.')
 
-        next_host, module, config = self.shadow.get_next_master(self.master.master_host)
+        next_host, module, config = self.shadow.get_next_master(self.master_host)
 
         self.master = getattr(master_impl, module)(next_host, config)
 
