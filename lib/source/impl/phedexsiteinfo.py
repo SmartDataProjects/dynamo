@@ -85,7 +85,7 @@ class PhEDExSiteInfoSource(SiteInfoSource):
         site_list = []
 
         for entry in self._phedex.make_request('nodes'):
-            if not self.check_allowed_site(name):
+            if not self.check_allowed_site(entry['name']):
                 continue
 
             site_list.append(Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology']))
