@@ -233,7 +233,7 @@ class ServerManager(object):
             if next_app is None:
                 return None
             else:
-                self.master.set_application_status(ServerManager.APP_ASSIGNED, next_app[0], hostname = self.hostname)
+                self.master.update_application(next_app[0], status = ServerManager.APP_ASSIGNED, hostname = self.hostname)
                 return next_app
 
         finally:

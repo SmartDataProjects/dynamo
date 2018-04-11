@@ -94,6 +94,21 @@ class MySQLMasterServer(MasterServer):
         module, config_str = result[0]
         return module, Configuration(json.loads(config_str))
 
+    def get_applications(self, older_than = 0, has_path = True): #override
+        sql = 'SELECT a.`id`, a.`write_request`, a.`title`, a.`path`, a.`args`, u.`name` FROM `applications` AS a'
+        sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
+
+        constraints = []
+        if older_than > 0:
+            constraints.append('UNIX_TIMESTAMP(a.`timestamp`) < UNIX_TIMESTAMP() - %d' % older_than)
+        if has_path:
+            constraints.append('a.`path` IS NOT NULL')
+
+        if len(constraints) != 0:
+            sql += ' WHERE ' + ' AND '.join(constraints)
+
+        return self._mysql.query(sql)
+
     def get_writing_process_id(self): #override
         result = self._mysql.query('SELECT `id` FROM `applications` WHERE `write_request` = 1 AND `status` = \'run\'')
         if len(result) == 0:
@@ -125,23 +140,34 @@ class MySQLMasterServer(MasterServer):
         else:
             return result[0]
 
-    def set_application_status(self, status, app_id, hostname = None, exit_code = None): #override
-        args = (ServerManager.application_status_name(status),)
+    def update_application(self, app_id, **kwd): #override
+        sql = 'UPDATE `applications` SET'
 
-        sql = 'UPDATE `applications` SET `status` = %s'
+        args = []
+        updates = []
 
-        if hostname is not None:
-            sql += ', `server` = %s'
-            args += (hostname,)
+        if 'status' in kwd:
+            updates.append('`status` = %s')
+            args.append(ServerManager.application_status_name(kwd['status']))
 
-        if exit_code is not None:
-            sql += ', `exit_code` = %s'
-            args += (exit_code,)
+        if 'hostname' in kwd:
+            updates.append('`server` = %s')
+            args.append(kwd['hostname'])
+
+        if 'exit_code' in kwd:
+            updates.append('`exit_code` = %s')
+            args.append(kwd['exit_code'])
+
+        if 'path' in kwd:
+            updates.append('`path` = %s')
+            args.append(kwd['path'])
+
+        sql += ', '.join(updates)
 
         sql += ' WHERE `id` = %s'
-        args += (app_id,)
+        args.append(app_id)
 
-        self._mysql.query(sql, *args)
+        self._mysql.query(sql, *tuple(args))
 
     def get_application_status(self, app_id): #override
         result = self._mysql.query('SELECT `status` FROM `applications` WHERE `id` = %s', app_id)

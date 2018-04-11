@@ -17,18 +17,12 @@ from dynamo.core.inventory import DynamoInventory
 from dynamo.utils.signaling import SignalBlocker
 import dynamo.utils.interface as interface
 from dynamo.core.manager import ServerManager, OutOfSyncError
+import dynamo.core.serverutils as serverutils
 from dynamo.web.server import WebServer
 from dynamo.dataformat.exceptions import log_exception
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
-
-def killproc(proc):
-    uid = os.geteuid()
-    os.seteuid(0)
-    proc.terminate()
-    os.seteuid(uid)
-    proc.join(5)
 
 class DynamoServer(object):
     """Main daemon class."""
@@ -66,6 +60,9 @@ class DynamoServer(object):
         ## Maximum number of consecutive unhandled errors before shutting down the server
         self.max_num_errors = config.max_num_errors
         self.num_errors = 0
+
+        ## How long application workspaces are retained (days)
+        self.applications_keep = config.applications_keep * 3600 * 24
 
         # Shutdown flag - if the flag is set, raise KeyboardInterrupt
         self.shutdown_flag = threading.Event()
@@ -181,7 +178,8 @@ class DynamoServer(object):
         Step 3: Spawn a child process for the script.
         Step 4: Apply updates sent by other servers.
         Step 5: Collect completed child processes. Get updates from the write-enabled child process if there is one.
-        Step 6: Sleep for N seconds.
+        Step 6: Clean up old application work areas.
+        Step 7: Sleep for N seconds.
         """
 
         # Start the application collector thread
@@ -207,8 +205,11 @@ class DynamoServer(object):
     
                 ## Step 5 (easier to do here because we use "continue"s)
                 writing_process = self.collect_processes(child_processes, writing_process)
-    
+
                 ## Step 6 (easier to do here because we use "continue"s)
+                self.clean_old_workareas()
+    
+                ## Step 7 (easier to do here because we use "continue"s)
                 if do_sleep:
                     # one successful cycle - reset the error counter
                     self.num_errors = 0
@@ -238,7 +239,7 @@ class DynamoServer(object):
     
                 if not os.path.exists(path + '/exec.py'):
                     LOG.info('Application %s from user %s (write request: %s) not found.', title, user_name, write_request)
-                    self.manager.set_application_status(exec_id, ServerManager.EXC_NOTFOUND)
+                    self.manager.master.update_application(exec_id, status = ServerManager.EXC_NOTFOUND)
                     continue
     
                 LOG.info('Found application %s from user %s (write request: %s)', title, user_name, write_request)
@@ -250,7 +251,7 @@ class DynamoServer(object):
                         LOG.warning('Application %s from user %s is not authorized for write access.', title, user_name)
                         # TODO send a message
     
-                        self.manager.set_application_status(exec_id, ServerManager.EXC_AUTHFAILED)
+                        self.manager.master.update_application(exec_id, status = ServerManager.EXC_AUTHFAILED)
                         continue
     
                     queue = multiprocessing.Queue()
@@ -259,7 +260,7 @@ class DynamoServer(object):
                     writing_process = (exec_id, queue)
     
                 ## Step 3: Spawn a child process for the script
-                self.manager.set_application_status(exec_id, ServerManager.EXC_RUN)
+                self.manager.master.update_application(exec_id, status = ServerManager.EXC_RUN)
     
                 proc = multiprocessing.Process(target = self._run_one, name = title, args = proc_args)
                 proc.daemon = True
@@ -297,13 +298,13 @@ class DynamoServer(object):
             for exec_id, proc, user_name, path in child_processes:
                 LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)
 
-                killproc(proc)
+                serverutils.killproc(proc)
 
                 if proc.is_alive():
                     LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
 
                 try:
-                    self.manager.set_application_status(exec_id, ServerManager.EXC_KILLED)
+                    self.manager.master.update_application(exec_id, status = ServerManager.EXC_KILLED)
                 except:
                     pass
 
@@ -377,7 +378,7 @@ class DynamoServer(object):
 
             status = self.manamger.get_application_status(exec_id)
             if status == ServerManager.EXC_KILLED:
-                killproc(proc)
+                serverutils.killproc(proc)
                 proc.join(60)
 
             if exec_id == writing_process[0]:
@@ -398,7 +399,7 @@ class DynamoServer(object):
     
                     elif read_state == 2:
                         status = ServerManager.EXC_FAILED
-                        killproc(proc)
+                        serverutils.killproc(proc)
 
                 if read_state != 0:
                     proc.join(60)
@@ -421,9 +422,12 @@ class DynamoServer(object):
                 LOG.info('Application %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, ServerManager.application_status_name(status))
 
             # process completed or is alive but stuck -> remove from the list and set status in the table
+            for mount in serverutils.mountpoints:
+                serverutils.umount(path + mount)
+                
             child_processes.pop(ichild)
 
-            self.manager.master.set_application_status(status, exec_id, exit_code = proc.exitcode)
+            self.manager.master.update_application(exec_id, status = status, exit_code = proc.exitcode)
 
         return writing_process
 
@@ -464,6 +468,21 @@ class DynamoServer(object):
 
                 if cmd == DynamoInventory.CMD_EOM:
                     return 1, update_commands
+
+    def clean_old_workareas(self):
+        applications = self.manager.master.get_applications(older_than = self.applications_keep)
+        for exec_id, write_request, title, path, args, user_name in applications:
+            if not os.path.isdir(path):
+                continue
+
+            if not write_request:
+                # make sure all mounts are removed
+                for mount in serverutils.mountpoints:
+                    serverutils.umount(path + mount)
+
+            shutil.rmtree(path)
+            
+            self.manager.master.update_application(exec_id = exec_id, path = None)
 
     def exec_updates(self, update_commands):
         # My updates
@@ -506,6 +525,29 @@ class DynamoServer(object):
         # Set the uid of the process
         os.seteuid(0)
         os.setegid(0)
+
+        if queue is None:
+            # Read-only process - confine in a chroot jail
+            # Allow access to directories in PYTHONPATH with bind mounts
+            pythonpaths = list(sys.path)
+            try:
+                pythonpaths.remove('')
+            except ValueError:
+                pass
+
+            for base in DynamoServer.mountpoints:
+                try:
+                    os.makedirs(path + base)
+                except OSError:
+                    # shouldn't happen but who knows
+                    continue
+
+                serverutils.bindmount(base, path + base)
+
+            os.chroot(path)
+            # now we are in root
+            path = ''
+            os.setcwd('/')
 
         pwnam = pwd.getpwnam(self.user)
 
