@@ -2,9 +2,9 @@
 
 import sys
 import os
+from collections import OrderedDict as OD
+import json
 from ConfigParser import ConfigParser
-
-sys.dont_write_bytecode = True
 
 source_conf = ConfigParser()
 source_conf.read(sys.argv[1])
@@ -27,59 +27,57 @@ serve_web = source_conf.get('web', 'enabled').lower()
 class Namespace(object):
     pass
 
-ns = Namespace()
+generators = {}
 
-conf_gen_script = persistency_mod + '/generate_store_conf.py'
-execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
+for mod in [persistency_mod, master_mod, shadow_mod, local_board_mod]:
+    if mod not in generators:
+        generators[mod] = Namespace()
+        conf_gen_script = mod + '/generate_conf.py'
+        execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': generators[mod]})
 
-conf_gen_script = master_mod + '/generate_master_conf.py'
-execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
+# Write JSON from a dictionary with indentation. From dataformat.configuration.
+def dump_with_indent(cont, idt):
+    try:
+        keys = cont.keys()
+    except AttributeError:
+        return json.dumps(cont)
+    else:
+        if len(keys) == 0:
+            return '{}'
+        else:
+            js = '{\n'
 
-conf_gen_script = local_board_mod + '/generate_local_board_conf.py'
-execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': ns})
+            cont_lines = []
+            for key in keys:
+                line = ' ' * (idt + 2)
+                line += '"%s": %s' % (key, dump_with_indent(cont[key], idt + 2))
+                cont_lines.append(line)
 
-conf_str = '''{
-  "user": "''' + server_user + '''",
-  "inventory": {
-    "persistency": {'''
+            js += ',\n'.join(cont_lines)
+            js += '\n' + (' ' * idt) + '}'
+            return js
 
-conf_str += ns.generate_store_conf(persistency_conf_args)
+server_conf = OD()
 
-conf_str += '''
-    },
-    "partition_def_path": "$(DYNAMO_POLICIES)/partitions.txt"
-  },
-  "manager": {
-    "master": {'''
+server_conf['user'] = server_user
 
-conf_str += ns.generate_master_conf(master_conf_args)
+server_conf['inventory'] = OD()
+server_conf['inventory']['persistency'] = generators[persistency_mod].generate_store_conf(persistency_conf_args)
+server_conf['inventory']['partition_def_path'] = '$(DYNAMO_POLICIES)/partitions.txt'
 
-conf_str += '''
-    },
-    "shadow": {'''
+server_conf['manager'] = OD()
+server_conf['manager']['master'] = generators[master_mod].generate_master_conf(master_conf_args)
+server_conf['manager']['shadow'] = generators[shadow_mod].generate_master_conf(shadow_conf_args)
+server_conf['manager']['board'] = generators[local_board_mod].generate_local_board_conf(local_board_conf_args)
 
-conf_str += ns.generate_master_conf(shadow_conf_args)
-
-conf_str += '''
-    },
-    "board": {'''
-
-conf_str += ns.generate_local_board_conf(local_board_conf_args)
-
-conf_str += '''
-    }
-  },
-  "notification_recipient": "''' + email + '''",
-  "status_poll_interval": 1.0,
-  "max_num_errors": 3,
-  "applications": {
-    "enabled": ''' + serve_applications
+server_conf['applications'] = OD()
+server_conf['applications']['enabled'] = (serve_applications == 'true')
 
 if serve_applications == 'true':
-    conf_str += ''',
-    "collector": {
-      "certfile": "''' + source_conf.get('applications', 'certfile') + '''",
-      "keyfile": "''' + source_conf.get('applications', 'keyfile') + '",'
+    app_conf = server_conf['applications']
+    app_conf['collector'] = OD()
+    app_conf['collector']['certfile'] = source_conf.get('applications', 'certfile')
+    app_conf['collector']['keyfile'] = source_conf.get('applications', 'keyfile')
 
     capath = source_conf.get('applications', 'capath')
     if os.path.isdir(capath):
@@ -90,31 +88,25 @@ if serve_applications == 'true':
             sys.stderr.write('Please provide a single file with all CA certificates concatenated.\n')
             raise RuntimeError('Invalid capath')
 
-        conf_str += '''
-      "capath": "''' + capath + '"'
+        app_conf['collector']['capath'] = capath
     else:
-        conf_str += '''
-      "cafile": "''' + capath + '"'
+        app_conf['collector']['cafile'] = capath
 
-    conf_str += '''
-    }'''
-
-conf_str += '''
-  },
-  "web": {
-    "enabled": ''' + serve_web
+server_conf['web'] = OD()
+server_conf['web']['enabled'] = (serve_web == 'true')
 
 if serve_web == 'true':
-    conf_str += ''',
-    "socket": "''' + source_conf.get('web', 'socket') + '"'
+    web_conf = server_conf['web']
+    web_conf['socket'] = source_conf.get('web', 'socket')
 
-conf_str += '''
-  },
-  "logging": {
-    "level": "info",
-    "path": "''' + logdir + '''",
-    "changelog": true
-  }
-}'''
+server_conf['notification_recipient'] = email
+server_conf['status_poll_interval'] = 1.0
+server_conf['max_num_errors'] = 3
 
-print conf_str
+server_conf['logging'] = OD({
+    'level': 'info',
+    'path': logdir,
+    'changelog': True
+})
+
+print dump_with_indent(server_conf, 0)
