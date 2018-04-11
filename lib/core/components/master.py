@@ -7,6 +7,15 @@ class MasterServer(object):
     An interface to the master server that coordinates server activities.
     """
 
+    @staticmethod
+    def get_instance(module, config):
+        import dynamo.core.components.impl as impl
+        cls = getattr(impl, module)
+        if not issubclass(cls, MasterServer):
+            raise RuntimeError('%s is not a subclass of MasterServer' % module)
+
+        return cls(config)
+
     def __init__(self, config):
         self.connected = False
 

@@ -7,6 +7,15 @@ class InventoryStore(object):
     Implementation of delete_* functions must mirror what is in unlink_from() of the object.
     """
 
+    @staticmethod
+    def get_instance(module, config):
+        import dynamo.core.components.impl as impl
+        cls = getattr(impl, module)
+        if not issubclass(cls, InventoryStore):
+            raise RuntimeError('%s is not a subclass of InventoryStore' % module)
+
+        return cls(config)
+
     def __init__(self, config):
         pass
 

@@ -4,7 +4,7 @@ import re
 from dynamo.policy.condition import Condition
 from dynamo.policy.variables import replica_variables
 import dynamo.dataformat as df
-import dynamo.core.persistency.impl as persistency_impl
+from dynamo.core.components.persistency import InventoryStore
 
 LOG = logging.getLogger(__name__)
 
@@ -80,8 +80,7 @@ class DynamoInventory(ObjectRepository):
         if self._store:
             self._store.close()
 
-        persistency_cls = getattr(persistency_impl, module)
-        self._store = persistency_cls(config)
+        self._store = InventoryStore.get_instance(module, config)
 
         df.Block._inventory_store = self._store
 

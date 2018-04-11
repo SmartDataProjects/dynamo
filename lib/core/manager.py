@@ -2,6 +2,9 @@ import time
 import threading
 import socket
 
+from dynamo.core.components.master import MasterServer
+from dynamo.core.components.board import UpdateBoard
+
 class OutOfSyncError(Exception):
     pass
 
@@ -53,20 +56,18 @@ class ServerManager(object):
 
     def __init__(self, config):
         # Create a master server interface
-        import dynamo.core.master.impl as master_impl
-        self.master = getattr(master_impl, config.master.module)(config.master.config)
+        self.master = MasterServer.get_instance(config.master.module, config.master.config)
         self.master.connect()
         self.master_host = self.master.get_master_host()
 
         if self.master_host != 'localhost' and self.master_host != socket.gethostname():
             # Interface to the master server local shadow
-            self.shadow = getattr(master_impl, config.shadow.module)(config.shadow.config)
+            self.shadow = MasterServer.get_instance(config.shadow.module, config.shadow.config)
         else:
             self.shadow = None
 
         # Interface to the local update board
-        import dynamo.core.board.impl as board_impl
-        self.board = getattr(board_impl, config.board.module)(config.board.config)
+        self.board = UpdateBoard.get_instance(config.board.module, config.board.config)
 
         # Interface to other servers {hostname: ServerHost}
         self.other_servers = {}
@@ -205,8 +206,7 @@ class ServerManager(object):
 
         module, config = self.shadow.get_next_master(self.master_host)
         
-        import dynamo.core.master.impl as master_impl
-        self.master = getattr(master_impl, module)(config)
+        self.master = MasterServer.get_instance(module, config)
         self.master.connect()
         self.master_host = self.master.get_master_host()
 
@@ -306,8 +306,6 @@ class ServerManager(object):
         """
         Keep the other host list up-to-date.
         """
-        import dynamo.core.board.impl as board_impl
-
         known_hosts = set()
 
         for hostname, status, has_store in self.master.get_host_list():
@@ -323,7 +321,7 @@ class ServerManager(object):
                     continue
 
                 server = ServerHost(hostname)
-                server.board = getattr(board_impl, board_conf[0])(board_conf[1])
+                server.board = UpdateBoard.get_instance(board_conf[0], board_conf[1])
 
                 self.other_servers[hostname] = server
 
