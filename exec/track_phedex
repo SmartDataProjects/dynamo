@@ -42,13 +42,13 @@ LOG = make_standard_logger(config.log_level)
 
 ## Data source
 
-import dynamo.history.impl as history_impl
-import dynamo.operation.impl as operation_impl
+from dynamo.history.history import TransactionHistoryInterface
+from dynamo.operation.copy import CopyInterface
 from dynamo.utils.interface.phedex import PhEDEx
 
-history = getattr(history_impl, dealer_config.history.module)(dealer_config.history.config)
-copy = getattr(operation_impl, dealer_config.copy_op.module)(dealer_config.copy_op.config)
-phedex = PhEDEx(dealer_config.copy_op.config.phedex)
+history = TransactionHistoryInterface.get_instance()
+copy = CopyInterface.get_instance(dealer_config.copy_op.module, dealer_config.copy_op.config)
+phedex = PhEDEx()
 
 ## Paths 
 

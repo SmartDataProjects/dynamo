@@ -64,9 +64,8 @@ except OSError:
     LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 
 ## Create the server manager
-from dynamo.core.manager.base import ServerManager
-import dynamo.core.manager.impl as manager_impl
-manager = getattr(manager_impl, config.manager.module)(config.manager.config)
+from dynamo.core.components.manager import ServerManager
+manager = ServerManager.get_instance(config.manager.module, config.manager.config)
 
 ## Load the sequences
 # commands
@@ -231,7 +230,7 @@ def loop_sequence(sequence_name, sequence):
     LOG.handlers[0].setFormatter(logging.Formatter(fmt = log_format))
 
     ## Re-init the server manager (cannot share database connections among processes)
-    manager = getattr(manager_impl, config.manager.module)(config.manager.config)
+    manager = ServerManager.get_instance(config.manager.module, config.manager.config)
 
     work_dir = config.scheduler_path + '/' + sequence_name
     title = ''
