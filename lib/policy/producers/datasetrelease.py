@@ -2,7 +2,7 @@ import re
 import collections
 import logging
 
-from dynamo.utils.interface import RESTService
+from dynamo.utils.interface.dbs import DBS
 
 LOG = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ class DatasetRelease(object):
     produces = ['latest_production_release']
 
     def __init__(self, config):
-        self._dbs = RESTService(config.dbs.config)
+        self._dbs = DBS(config.get('dbs', None))
 
     def load(self, inventory):
         latest_minor = collections.defaultdict(int)

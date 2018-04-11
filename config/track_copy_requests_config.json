@@ -1,7 +1,5 @@
 {
   "registry": {
-    "config_file": "/etc/my.cnf.d/dynamo.cnf",
-    "config_group": "mysql",
     "db": "dynamoregister"
   },
   "log_level": "info"

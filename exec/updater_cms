@@ -52,11 +52,6 @@ LOG.info('Starting inventory update.')
 ## Load and initialize sources
 import dynamo.source.impl as sources
 
-config.groups.config.phedex = config.phedex
-config.sites.config.phedex = config.phedex
-config.datasets.config.phedex = config.phedex
-config.replicas.config.phedex = config.phedex
-
 if 'include_sites' in config:
     config.sites.config.include = config.include_sites
     config.replicas.config.include_sites = config.include_sites

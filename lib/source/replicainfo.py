@@ -2,6 +2,8 @@ import logging
 import fnmatch
 import re
 
+from dynamo.dataformat import Configuration
+
 LOG = logging.getLogger(__name__ )
 
 class ReplicaInfoSource(object):
@@ -9,7 +11,20 @@ class ReplicaInfoSource(object):
     Interface specs for probe to the replica information source.
     """
 
-    def __init__(self, config):
+    @staticmethod
+    def get_instance(module, config):
+        import dynamo.source.impl as impl
+        cls = getattr(impl, module)
+
+        if not issubclass(cls, ReplicaInfoSource):
+            raise RuntimeError('%s is not a subclass of ReplicaInfoSource' % module)
+
+        return cls(config)
+
+
+    def __init__(self, config = None):
+        config = Configuration(config)
+
         if 'include_datasets' in config:
             if type(config.include_datasets) is list:
                 self.include_datasets = map(lambda pattern: re.compile(fnmatch.translate(pattern)), config.include_datasets)

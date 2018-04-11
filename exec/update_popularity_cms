@@ -21,9 +21,6 @@ from dynamo.dataformat import Configuration
 
 config = Configuration(args.config)
 
-config.crabaccess.store = config.mysql
-config.globalqueue.store = config.mysql
-
 ## Set up logging (write to stdout)
 from dynamo.core.executable import make_standard_logger
 

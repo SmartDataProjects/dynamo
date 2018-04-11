@@ -20,12 +20,21 @@ LOG = logging.getLogger(__name__)
 class MySQL(object):
     """Generic thread-safe MySQL interface (for an interface)."""
 
+    _default_parameters = {}
+
+    @staticmethod
+    def set_default(config):
+        MySQL._default_parameters = dict(config)
+
     @staticmethod
     def escape_string(string):
         return MySQLdb.escape_string(string)
     
     def __init__(self, config):
-        self._connection_parameters = {}
+        config = Configuration(config)
+
+        self._connection_parameters = dict(MySQL._default_parameters)
+
         if 'config_file' in config and 'config_group' in config:
             # Check file exists and readable
             with open(config['config_file']):

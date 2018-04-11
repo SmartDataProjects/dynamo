@@ -17,7 +17,7 @@ class MySQLReplicaLock(object):
     produces = ['locked_blocks']
 
     def __init__(self, config):
-        self._mysql = MySQL(config.db_params)
+        self._mysql = MySQL(config.get('db_params', None))
 
         self.users = []
         for user, service in config.users:

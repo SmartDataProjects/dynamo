@@ -9,7 +9,7 @@ class SiteDBUserInfoSource(UserInfoSource):
     def __init__(self, config):
         UserInfoSource.__init__(self, config)
         
-        self._sitedb = SiteDB(config.sitedb)
+        self._sitedb = SiteDB(config.get('sitedb', None))
 
     def get_user(self, name): #override
         result = self._sitedb.make_request('people', ['match=%s' % name])

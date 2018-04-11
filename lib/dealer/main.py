@@ -7,11 +7,11 @@ import random
 
 from dynamo.dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site, ConfigurationError
 from dynamo.dealer.dealerpolicy import DealerPolicy
-import dynamo.dealer.plugins as dealer_plugins
-import dynamo.operation.impl as operation_impl
-import dynamo.history.impl as history_impl
-import dynamo.policy.producers as producers
+from dynamo.operation.copy import CopyInterface
+from dynamo.history.history import TransactionHistoryInterface
 from dynamo.utils.signaling import SignalBlocker
+import dynamo.dealer.plugins as dealer_plugins
+import dynamo.policy.producers as producers
 
 LOG = logging.getLogger(__name__)
 
@@ -42,9 +42,13 @@ class Dealer(object):
         """
         @param config      Configuration
         """
-        
-        self.copy_op = getattr(operation_impl, config.copy_op.module)(config.copy_op.config)
-        self.history = getattr(history_impl, config.history.module)(config.history.config)
+
+        self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
+        self.history = TransactionHistoryInterface(config.history.module, config.history.config)
+
+        if config.test_run:
+            self.copy_op.dry_run = True
+            self.history.test = True
 
         self._attr_producers = []
 

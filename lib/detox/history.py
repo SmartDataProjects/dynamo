@@ -13,7 +13,7 @@ class DetoxHistory(object):
     """
 
     def __init__(self, config):
-        self._mysql = MySQL(config.db_params)
+        self._mysql = MySQL(config.get('db_params', None))
         self.history_db = config.history_db
         self.cache_db = config.cache_db
         self.snapshots_spool_dir = config.snapshots_spool_dir

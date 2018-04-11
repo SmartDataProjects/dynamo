@@ -11,7 +11,7 @@ class MySQLApplicationLockInterface(ApplicationLockInterface):
     def __init__(self, config):
         ApplicationLockInterface.__init__(self, config)
 
-        self._registry = MySQL(config.db_config)
+        self._registry = MySQL(config.get('db_config', None))
 
         query = 'SELECT `id` FROM `users` WHERE `name` = %s'
         result = self._registry.query(query, self.user)

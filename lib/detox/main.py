@@ -8,8 +8,9 @@ from dynamo.dataformat import Group, Site, Dataset, Block, DatasetReplica, Block
 from dynamo.detox.detoxpolicy import DetoxPolicy
 from dynamo.detox.detoxpolicy import Ignore, Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
 from dynamo.detox.history import DetoxHistory
-import dynamo.operation.impl as operation_impl
-import dynamo.history.impl as history_impl
+from dynamo.operation.deletion import DeletionInterface
+from dynamo.operation.copy import CopyInterface
+from dynamo.history.history import TransactionHistoryInterface
 from dynamo.utils.signaling import SignalBlocker
 
 LOG = logging.getLogger(__name__)
@@ -21,10 +22,15 @@ class Detox(object):
         @param config      Configuration
         """
 
-        self.deletion_op = getattr(operation_impl, config.deletion_op.module)(config.deletion_op.config)
-        self.copy_op = getattr(operation_impl, config.copy_op.module)(config.copy_op.config)
-        self.history = getattr(history_impl, config.history.module)(config.history.config)
-        self.detoxhistory = DetoxHistory(config.history.detox_config)
+        self.deletion_op = DeletionInterface.get_instance(config.deletion_op.module, config.deletion_op.config)
+        self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
+        self.history = TransactionHistoryInterface.get_instance()
+        self.detoxhistory = DetoxHistory(config.detox_history)
+
+        if config.test_run:
+            self.history.test = True
+            self.deletion_op.dry_run = True
+            self.copy_op.dry_run = True
 
         self.policy = DetoxPolicy(config)
 

@@ -68,6 +68,9 @@ keyfile=/etc/pki/tls/private/localhost.key
 #  otherwise a single file with all CA certs concatenated)
 capath=/etc/pki/tls/certs/ca-bundle.crt
 
+# Path to the configuration file for common tools (relative to this file)
+tools_conf=tools.json
+
 [web]
 ## Dynamo web server (backend) configuration
 

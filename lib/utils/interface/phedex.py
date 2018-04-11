@@ -1,17 +1,36 @@
 import logging
 import pprint
 
-from webservice import RESTService, GET, POST
+from dynamo.utils.interface.webservice import RESTService, GET, POST
+from dynamo.utils.interface.dbs import DBS
+from dynamo.dataformat.import Configuration
 
 LOG = logging.getLogger(__name__)
 
 class PhEDEx(RESTService):
     """A RESTService interface speicific to CMS data management service PhEDEx."""
 
-    def __init__(self, config):
+    _url_base = ''
+    _dbs_url = ''
+    _num_attempts = 1
+
+    @staticmethod
+    def set_default(config):
+        PhEDEx._url_base = config.url_base
+        PhEDEx._num_attempts = config.num_attempts
+
+    def __init__(self, config = None):
+        config = Configuration(config)
+
+        config.auth_handler = 'HTTPSCertKeyHandler'
+        if 'url_base' not in config:
+            config.url_base = PhEDEx._url_base
+        if 'num_attempts' not in config:
+            config.num_attempts = PhEDEx._num_attempts
+
         RESTService.__init__(self, config)
 
-        self.dbs_url = config.dbs_url
+        self.dbs_url = config.get('dbs_url', DBS._url_base)
 
     def make_request(self, resource = '', options = [], method = GET, format = 'url', retry_on_error = True, timeout = 0): #override
         LOG.debug('%s %s', resource, options)

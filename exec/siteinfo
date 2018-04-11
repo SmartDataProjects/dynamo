@@ -14,7 +14,7 @@ args = parser.parse_args()
 sys.argv = []
 
 from dynamo.dataformat import Configuration, Site
-import dynamo.history.impl as history_impl
+from dynamo.history.history import TransactionHistoryInterface
 from dynamo.policy.producers import CRABAccessHistory
 from dynamo.core.executable import inventory, make_standard_logger
 from dynamo.detox.history import DetoxHistory
@@ -24,7 +24,7 @@ config = Configuration(args.config)
 LOG = make_standard_logger(config.log_level)
 
 # History
-history = getattr(history_impl, config.history.module)(config.history.config)
+history = TransactionHistoryInterface.get_instance()
 
 # Detox-specific history
 detoxhistory = DetoxHistory(config.detox_history)

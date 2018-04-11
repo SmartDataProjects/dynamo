@@ -3,17 +3,20 @@ import logging
 from dynamo.source.replicainfo import ReplicaInfoSource
 from dynamo.utils.interface.phedex import PhEDEx
 from dynamo.utils.parallel import Map
-from dynamo.dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
+from dynamo.dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica, Configuration
 
 LOG = logging.getLogger(__name__)
 
 class PhEDExReplicaInfoSource(ReplicaInfoSource):
     """ReplicaInfoSource using PhEDEx."""
 
-    def __init__(self, config):
+    def __init__(self, config = None):
+        if config is None:
+            config = Configuration()
+
         ReplicaInfoSource.__init__(self, config)
 
-        self._phedex = PhEDEx(config.phedex)
+        self._phedex = PhEDEx(config.get('phedex', None))
 
     def replica_exists_at_site(self, site, item): #override
         options = ['node=' + site.name]

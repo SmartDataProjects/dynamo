@@ -4,17 +4,19 @@ import collections
 from dynamo.operation.copy import CopyInterface
 from dynamo.utils.interface.webservice import POST
 from dynamo.utils.interface.phedex import PhEDEx
-from dynamo.dataformat import Block, DatasetReplica, BlockReplica
+from dynamo.dataformat import Block, DatasetReplica, BlockReplica, Configuration
 
 LOG = logging.getLogger(__name__)
 
 class PhEDExCopyInterface(CopyInterface):
     """Copy using PhEDEx."""
 
-    def __init__(self, config):
+    def __init__(self, config = None):
+        config = Configuration(config)
+
         CopyInterface.__init__(self, config)
 
-        self._phedex = PhEDEx(config.phedex)
+        self._phedex = PhEDEx(config.get('phedex', None))
 
         self.subscription_chunk_size = config.get('chunk_size', 50.) * 1.e+12
 

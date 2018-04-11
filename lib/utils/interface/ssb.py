@@ -1,11 +1,29 @@
 import logging
 
-from webservice import RESTService, GET
+from dynamo.utils.interface.webservice import RESTService, GET
+from dynamo.dataformat import Configuration
 
 LOG = logging.getLogger(__name__)
 
 class SiteStatusBoard(RESTService):
-    def __init__(self, config):
+
+    _url_base = ''
+    _num_attempts = 1
+    
+    @staticmethod
+    def set_default(config):
+        SiteStatusBoard._url = config.url_base
+        SiteStatusBoard._num_attempts = config.num_attempts
+
+    def __init__(self, config = None):
+        config = Configuration(config)
+
+        config.auth_handler = 'HTTPSCertKeyHandler'
+        if 'url_base' not in config:
+            config.url_base = SiteStatusBoard._url_base
+        if 'num_attempts' not in config:
+            config.num_attempts = SiteStatusBoard._num_attempts
+
         RESTService.__init__(self, config)
 
     def make_request(self, resource = '', options = [], method = GET, format = 'url', retry_on_error = True, timeout = 0): #override

@@ -5,11 +5,18 @@ as standalone python scripts.
 """
 
 from dynamo.core.inventory import ObjectRepository
+from dynamo.dataformat import Configuration
 
+## Whether this is a read-only process
 read_only = True
-registry = None
+
+## Handle to the inventory
 inventory = ObjectRepository()
 
+## Set of configurations for common tools
+tools_conf = Configuration()
+
+## Make a standard logger that outputs to sys.stdout and sys.stderr
 import sys
 import logging
 

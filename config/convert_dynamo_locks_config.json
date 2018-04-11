@@ -33,41 +33,20 @@
   },
   "auth": {
     "cert": {
-      "auth_handler": "HTTPSCertKeyHandler",
-      "auth_handler_conf": {}
+      "auth_handler": "HTTPSCertKeyHandler"
     },
     "cookie": {
       "auth_handler": "CERNSSOCookieAuthHandler"
     }
   },
-  "mysqllock": {
-    "db_params": {
-      "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
-      "config_group": "mysql",
-      "db": "dynamoregister"
-    }
-  },
   "weblock": {
     "url_base": "https://localhost/registry/detoxlock",
-    "auth_handler": "HTTPSCertKeyHandler",
-    "auth_handler_conf": {}
-  },
-  "replica_source": {
-    "phedex": {
-      "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
-      "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
-      "auth_handler": "HTTPSCertKeyHandler",
-      "auth_handler_conf": {},
-      "num_attempts": 5
-    }
   },
   "applock": {
     "user": "dynamo",
     "service": "dynamo",
     "app": "detox",
-    "db_config": {
-      "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
-      "config_group": "mysql",
+    "db_params": {
       "db": "dynamoregister"
     }
   },

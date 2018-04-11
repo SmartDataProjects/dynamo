@@ -9,6 +9,17 @@ class SiteInfoSource(object):
     Interface specs for probe to the site information source.
     """
 
+    @staticmethod
+    def get_instance(module, config):
+        import dynamo.source.impl as impl
+        cls = getattr(impl, module)
+
+        if not issubclass(cls, SiteInfoSource):
+            raise RuntimeError('%s is not a subclass of SiteInfoSource' % module)
+
+        return cls(config)
+
+
     def __init__(self, config):
         if hasattr(config, 'include'):
             if type(config.include) is list:

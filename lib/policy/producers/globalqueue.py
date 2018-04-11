@@ -20,7 +20,7 @@ class GlobalQueueRequestHistory(object):
     produces = ['request_weight']
 
     def __init__(self, config):
-        self._store = MySQL(config.store.db_params)
+        self._store = MySQL(config.store)
 
         # Weight computation halflife constant (given in days in config)
         self.weight_halflife = config.weight_halflife * 3600. * 24.
@@ -104,8 +104,8 @@ class GlobalQueueRequestHistory(object):
 
     @staticmethod
     def update(config, inventory):
-        htcondor = HTCondor(config.htcondor.config)
-        store = MySQL(config.store.db_params)
+        htcondor = HTCondor(config.htcondor)
+        store = MySQL(config.store)
 
         last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
         try:

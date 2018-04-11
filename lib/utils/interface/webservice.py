@@ -49,30 +49,72 @@ class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
     HTTPS handler authenticating by x509 user key and certificate.
     """
 
+    _certfile = ''
+    _keyfile = ''
+    _loaded = False
+
+    @staticmethod
+    def set_default(config):
+        if config.get('load_content', False):
+            HTTPSCertKeyHandler._loaded = True
+
+            with open(config.certfile) as source:
+                HTTPSCertKeyHandler._certfile = source.read()
+
+            if 'keyfile' in config:
+                with open(config.keyfile) as source:
+                    HTTPSCertKeyHandler._keyfile = source.read()
+
+        else:
+            HTTPSCertKeyHandler._certfile = config.certfile
+            if 'keyfile' in config:
+                HTTPSCertKeyHandler._keyfile = config.keyfile
+            else:
+                HTTPSCertKeyHandler._keyfile = config.certfile
+
     def __init__(self, config):
+        if HTTPSCertKeyHandler._loaded:
+            # First time instantiating the class when certificates are loaded in memory
+            # Write contents to files
+            with open('/tmp/x509cert', 'w') as out:
+                out.write(HTTPSCertKeyHandler._certfile)
+
+            HTTPSCertKeyHandler._certfile = '/tmp/x509cert'
+
+            if HTTPSCertKeyHandler._keyfile:
+                with open('/tmp/x509key', 'w') as out:
+                    out.write(HTTPSCertKeyHandler._keyfile)
+
+                HTTPSCertKeyHandler._keyfile = '/tmp/x509key'
+
+            else:
+                HTTPSCertKeyHandler._keyfile = '/tmp/x509cert'
+
+            HTTPSCertKeyHandler._loaded = False
+
         urllib2.HTTPSHandler.__init__(self)
         try:
-            self.key = config['x509_key']
+            self.certfile = config['certfile']
         except KeyError:
-            try:
-                self.key = os.environ['X509_USER_PROXY']
-            except KeyError:
-                self.key = '/tmp/x509up_u%d' % os.geteuid()
-
-        if not os.path.exists(self.key):
-            LOG.error('HTTPSCertKeyHandler requires an X509 proxy in either')
-            LOG.error('1. Path specified by x509_key in the configuration')
-            LOG.error('2. Environment variable X509_USER_PROXY')
-            LOG.error('3. /tmp/x509up_u(uid)')
-            raise ConfigurationError('X509 proxy missing')
-
-        self.cert = self.key
+            self.certfile = HTTPSCertKeyHandler._certfile
+        try:
+            self.keyfile = config['keyfile']
+        except KeyError:
+            self.keyfile = HTTPSCertKeyHandler._keyfile
 
     def https_open(self, req):
         return self.do_open(self.create_connection, req)
 
     def create_connection(self, host, timeout = 300):
-        return httplib.HTTPSConnection(host, key_file = self.key, cert_file = self.cert)
+        try:
+            context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        except AttributeError:
+            # python 2.6
+            return httplib.HTTPSConnection(host, key_file = self.keyfile, cert_file = self.certfile)
+        else:
+            # python 2.7
+            context.load_cert_chain(self.certfile, self.keyfile)
+            return httplib.HTTPSConnection(host, context = context)
 
 
 class CERNSSOCookieAuthHandler(urllib2.HTTPSHandler):

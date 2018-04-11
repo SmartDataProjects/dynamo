@@ -14,11 +14,9 @@ import thread
 import Queue
 
 from dynamo.core.inventory import DynamoInventory
-from dynamo.utils.signaling import SignalBlocker
-import dynamo.utils.interface as interface
 from dynamo.core.manager import ServerManager, OutOfSyncError
 import dynamo.core.serverutils as serverutils
-from dynamo.web.server import WebServer
+from dynamo.utils.signaling import SignalBlocker
 from dynamo.dataformat.exceptions import log_exception
 
 LOG = logging.getLogger(__name__)
@@ -60,6 +58,9 @@ class DynamoServer(object):
         ## Maximum number of consecutive unhandled errors before shutting down the server
         self.max_num_errors = config.max_num_errors
         self.num_errors = 0
+
+        ## Configurations for standard tools to be passed to applications
+        self.tools_conf = config.tools_conf
 
         ## How long application workspaces are retained (days)
         self.applications_keep = config.applications_keep * 3600 * 24
@@ -544,6 +545,8 @@ class DynamoServer(object):
 
                 serverutils.bindmount(base, path + base)
 
+            os.mkdir(path + '/tmp')
+            os.chmod(path + '/tmp', 0777)
             os.chroot(path)
             # now we are in root
             path = ''
@@ -609,7 +612,16 @@ class DynamoServer(object):
         import dynamo.core.executable as executable
         executable.inventory = self.inventory
 
-        if queue is not None:
+        if queue is None:
+            # read-only
+            for name, conf in self.tools_conf.read_only.items():
+                executable.tools_conf[name] = Configuration(conf)
+
+        else:
+            # write-enabled
+            for name, conf in self.tools_conf.full_auth.items():
+                executable.tools_conf[name] = Configuration(conf)
+
             executable.read_only = False
             # create a list of updated and deleted objects the executable can fill
             executable.inventory._update_commands = []

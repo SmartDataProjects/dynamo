@@ -23,7 +23,7 @@ class CRABAccessHistory(object):
     produces = ['global_usage_rank', 'num_access', 'last_access']
 
     def __init__(self, config):
-        self._store = MySQL(config.store.db_params)
+        self._store = MySQL(config.store)
 
     def load(self, inventory):
         records = self._get_stored_records(inventory)
@@ -117,8 +117,8 @@ class CRABAccessHistory(object):
 
     @staticmethod
     def update(config, inventory):
-        popdb = PopDB(config.popdb.config)
-        store = MySQL(config.store.db_params)
+        popdb = PopDB(config.get('popdb', None))
+        store = MySQL(config.store)
 
         last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
         try:

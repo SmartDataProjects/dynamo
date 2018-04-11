@@ -5,7 +5,7 @@ import threading
 
 from dynamo.source.datasetinfo import DatasetInfoSource
 from dynamo.utils.interface.phedex import PhEDEx
-from dynamo.utils.interface.webservice import RESTService
+from dynamo.utils.interface.dbs import DBS
 from dynamo.utils.parallel import Map
 from dynamo.dataformat import Dataset, Block, File, IntegrityError
 
@@ -14,11 +14,11 @@ LOG = logging.getLogger(__name__)
 class PhEDExDatasetInfoSource(DatasetInfoSource):
     """DatasetInfoSource using PhEDEx and DBS."""
 
-    def __init__(self, config):
+    def __init__(self, config = None):
         DatasetInfoSource.__init__(self, config)
 
-        self._phedex = PhEDEx(config.phedex)
-        self._dbs = RESTService(config.dbs)
+        self._phedex = PhEDEx(config.get('phedex', None))
+        self._dbs = DBS(config.get('dbs', None))
 
     def get_dataset_names(self, include = ['*'], exclude = []):
         dataset_names = []

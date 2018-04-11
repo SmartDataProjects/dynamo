@@ -9,6 +9,31 @@ class TransactionHistoryInterface(object):
     Interface for transaction history.
     """
 
+    @staticmethod
+    def get_instance(module = None, config = None):
+        import dynamo.history.impl as impl
+        if module is None:
+            cls = getattr(impl, TransactionHistoryInterface._module)
+        else:            
+            cls = getattr(impl, module)
+
+        if not issubclass(cls, TransactionHistoryInterface):
+            raise RuntimeError('%s is not a subclass of TransactionHistoryInterface' % module)
+
+        if config is None:
+            config = TransactionHistoryInterface._config
+
+        return cls(config)
+
+    # defaults
+    _module = ''
+    _config = Configuration()
+
+    @staticmethod
+    def set_default(config):
+        TransactionHistoryInterface._module = config.module
+        TransactionHistoryInterface._config = config.config
+
     def __init__(self, config):
         self.test = config.get('test', False)
 

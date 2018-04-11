@@ -1,9 +1,24 @@
+from dynamo.dataformat import Configuration
+
 class DeletionInterface(object):
     """
     Interface to data deletion application.
     """
 
-    def __init__(self, config):
+    @staticmethod
+    def get_instance(module, config):
+        import dynamo.operation.impl as impl
+        cls = getattr(impl, module)
+
+        if not issubclass(cls, DeletionInterface):
+            raise RuntimeError('%s is not a subclass of DeletionInterface' % module)
+
+        return cls(config)
+
+
+    def __init__(self, config = None):
+        config = Configuration(config)
+
         self.dry_run = config.get('dry_run', False)
 
     def schedule_deletion(self, replica, comments = ''):

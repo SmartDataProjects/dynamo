@@ -1,21 +1,7 @@
 {
   "out_path": "/home/cmsprod/public_html/IntelROCCS/Detox",
   "partitions": ["Physics", "DataOps", "caf-comm", "caf-alca", "local", "IB RelVal"],
-  "history": {
-    "module": "MySQLHistory",
-    "config": {
-      "db_params": {
-        "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
-        "config_group": "mysql",
-        "db": "dynamohistory"
-      },
-    }
-  },
   "detox_history": {
-    "db_params": {
-      "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
-      "config_group": "mysql"
-    },
     "history_db": "dynamohistory",
     "cache_db": "dynamohistory_cache",
     "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
@@ -24,8 +10,6 @@
   "crabaccess": {
     "store": {
       "db_params": {
-        "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
-        "config_group": "mysql",
         "db": "dynamo"
       }
     }
