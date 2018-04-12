@@ -13,9 +13,6 @@ read_only = True
 ## Handle to the inventory
 inventory = ObjectRepository()
 
-## Set of configurations for common tools
-tools_conf = Configuration()
-
 ## Make a standard logger that outputs to sys.stdout and sys.stderr
 import sys
 import logging

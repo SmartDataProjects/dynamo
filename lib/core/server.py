@@ -60,7 +60,7 @@ class DynamoServer(object):
         self.num_errors = 0
 
         ## Configurations for standard tools to be passed to applications
-        self.tools_conf = config.tools_conf
+        self.defaults = config.defaults
 
         ## How long application workspaces are retained (days)
         self.applications_keep = config.applications_keep * 3600 * 24
@@ -263,7 +263,7 @@ class DynamoServer(object):
                 ## Step 3: Spawn a child process for the script
                 self.manager.master.update_application(exec_id, status = ServerManager.EXC_RUN)
     
-                proc = multiprocessing.Process(target = self._run_one, name = title, args = proc_args)
+                proc = multiprocessing.Process(target = self._run_script, name = title, args = proc_args)
                 proc.daemon = True
                 proc.start()
     
@@ -522,13 +522,51 @@ class DynamoServer(object):
             # The server which sent the updates has set this server's status to updating
             self.manager.set_status(ServerManager.SRV_ONLINE)
       
-    def _run_one(self, path, args, queue = None):
+    def _run_script(self, path, args, queue = None):
+
+        path = self._pre_execution(path, queue is None)
+
+        # Set argv
+        sys.argv = [path + '/exec.py']
+        if args:
+            sys.argv += shlex.split(args) # split using shell-like syntax
+
+        # Execute the script
+        try:
+            execfile(path + '/exec.py', {'__name__': '__main__'})
+        except SystemExit as exc:
+            if exc.code == 0:
+                pass
+            else:
+                raise
+
+        self._post_execution(queue)
+
+        return 0
+
+    def _pre_execution(self, path, read_only):
         # Set the uid of the process
         os.seteuid(0)
         os.setegid(0)
 
-        if queue is None:
-            # Read-only process - confine in a chroot jail
+        if read_only:
+            # Set defaults
+            for key, config in self.defaults.items():
+                try:
+                    myconf = config['readonly']
+                except KeyError:
+                    myconf = config['all']
+                else:
+                    # security measure
+                    del config['fullauth']
+
+                modname, clsname = key.split(':')
+                module = __import__(modname, globals(), locals())
+                cls = getattr(module, clsname)
+
+                cls.set_default(myconf)
+
+            # Confine in a chroot jail
             # Allow access to directories in PYTHONPATH with bind mounts
             pythonpaths = list(sys.path)
             try:
@@ -552,8 +590,22 @@ class DynamoServer(object):
             path = ''
             os.setcwd('/')
 
-        pwnam = pwd.getpwnam(self.user)
+        else:
+            # Set defaults
+            for key, config in self.defaults.items():
+                try:
+                    myconf = config['fullauth']
+                except KeyError:
+                    myconf = config['all']
 
+                modname, clsname = key.split(':')
+                module = __import__(modname, globals(), locals())
+                cls = getattr(module, clsname)
+
+                cls.set_default(myconf)
+
+        # De-escalate privileges permanently
+        pwnam = pwd.getpwnam(self.user)
         os.setgid(pwnam.pw_gid)
         os.setuid(pwnam.pw_uid)
 
@@ -564,19 +616,15 @@ class DynamoServer(object):
         sys.stderr = open(path + '/_stderr', 'a')
         sys.stdin.close()
 
-        ## Ignore SIGINT - see note above proc.terminate()
-        ## We will react to SIGTERM by raising KeyboardInterrupt
+        # Ignore SIGINT - see note above proc.terminate()
+        # We will react to SIGTERM by raising KeyboardInterrupt
         from dynamo.utils.signaling import SignalConverter
         
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
         signal_converter = SignalConverter()
         signal_converter.set(signal.SIGTERM)
-
-        # Set argv
-        sys.argv = [path + '/exec.py']
-        if args:
-            sys.argv += shlex.split(args) # split using shell-like syntax
+        # we won't call unset()
 
         # Reset logging
         # This is a rather hacky solution relying perhaps on the implementation internals of
@@ -612,29 +660,17 @@ class DynamoServer(object):
         import dynamo.core.executable as executable
         executable.inventory = self.inventory
 
-        if queue is None:
-            # read-only
-            for name, conf in self.tools_conf.read_only.items():
-                executable.tools_conf[name] = Configuration(conf)
-
-        else:
-            # write-enabled
-            for name, conf in self.tools_conf.full_auth.items():
-                executable.tools_conf[name] = Configuration(conf)
-
+        if not read_only:
             executable.read_only = False
             # create a list of updated and deleted objects the executable can fill
             executable.inventory._update_commands = []
 
-        try:
-            execfile(path + '/exec.py', {'__name__': '__main__'})
-        except SystemExit as exc:
-            if exc.code == 0:
-                pass
-            else:
-                raise
+        return path
 
+    def _post_execution(self, queue):
         if queue is not None:
+            # Collect updates if write-enabled
+
             nobj = len(self.inventory._update_commands)
             sys.stderr.write('Sending %d updated objects to the server process.\n' % nobj)
             sys.stderr.flush()
@@ -664,8 +700,6 @@ class DynamoServer(object):
         sys.stderr.close()
         sys.stdout = stdout
         sys.stderr = stderr
-
-        return 0
 
     def start_application_collector(self):
         """Open an SSL socket and spawn a thread. Application data will be sent in JSON."""

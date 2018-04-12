@@ -92,12 +92,12 @@ if serve_applications == 'true':
     else:
         app_conf['collector']['cafile'] = capath
 
-    tools_path = source_conf.get('applications', 'tools_conf')
-    if not tools_path.startswith('/'):
-        tools_path = os.path.dirname(os.path.realpath(sys.argv[1])) + '/' + tools_path
+    defaults_path = source_conf.get('applications', 'defaults_conf')
+    if not defaults_path.startswith('/'):
+        defaults_path = os.path.dirname(os.path.realpath(sys.argv[1])) + '/' + defaults_path
 
-    with open(tools_path) as source:
-        app_conf['tools'] = OD(json.loads(source.read()))
+    with open(defaults_path) as source:
+        app_conf['defaults'] = OD(json.loads(source.read()))
 
 server_conf['web'] = OD()
 server_conf['web']['enabled'] = (serve_web == 'true')
