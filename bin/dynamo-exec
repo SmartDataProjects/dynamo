@@ -2,9 +2,6 @@
 
 import os
 import sys
-import httplib
-import urllib
-import urllib2
 import ssl
 import mimetools
 import socket
@@ -15,6 +12,8 @@ import json
 
 from argparse import ArgumentParser
 
+DYNAMO_PORT = 39626
+
 parser = ArgumentParser(description = 'Submit one dynamo executable task.')
 parser.add_argument('cmd', metavar = 'CMD', help = 'Executable command')
 parser.add_argument('--asynchronous', '-A', action = 'store_true', dest = 'asynch', help = 'Do not wait for the executable to complete.')
@@ -22,9 +21,16 @@ parser.add_argument('--server', '-s', metavar = 'HOST', dest = 'server', help = 
 parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', help = 'Executable title.')
 parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request write access.')
 parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
+parser.add_argument('--interactive', '-I', action = 'store_true', dest = 'interactive', help = 'Open a python interactive session.')
+parser.add_argument('--cert', '-c', metavar = 'PATH', dest = 'certfile', help = 'Non-standard certificate file location.')
+parser.add_argument('--key', '-k', metavar = 'PATH', dest = 'keyfile', help = 'Non-standard key file location.')
 
 args = parser.parse_args()
 sys.argv = []
+
+if args.asynch and args.interactive:
+    sys.stderr.write('Incompatible options: --asynchronous and --interactive')
+    sys.exit(2)
 
 ## Server host
 if args.server:
@@ -36,159 +42,192 @@ else:
         server_host = 'localhost'
 
 if server_host != 'localhost' and server_host != socket.gethostname() and not args.asynch:
-    sys.stderr.write('Synchronous execution is not allowed when using a remote server.\n')
+    sys.stderr.write('Synchronous execution is not available when using a remote server.\n')
     args.asynch = True
 
-## Tools to communicate with the registry frontend.
-
-class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
-    """
-    HTTPS handler authenticating by x509 user key and certificate.
-    """
-
-    def __init__(self):
-        urllib2.HTTPSHandler.__init__(self)
-        try:
-            self.key = os.environ['X509_USER_PROXY']
-        except KeyError:
-            self.key = '/tmp/x509up_u%d' % os.geteuid()
-
-        if not os.path.exists(self.key):
-            LOG.error('HTTPSCertKeyHandler requires an X509 proxy in either')
-            LOG.error('1. Environment variable X509_USER_PROXY')
-            LOG.error('2. /tmp/x509up_u(uid)')
-            raise ConfigurationError('X509 proxy missing')
-
-        self.cert = self.key
-
-        # Switch off server cert verification if the switch is available
-        try:
-            ssl._https_verify_certificates(False)
-        except AttributeError:
-            # If the switch does not exist, hope urllib2 doesn't verify the server by default
-            pass
-
-    def https_open(self, req):
-        return self.do_open(self.create_connection, req)
-
-    def create_connection(self, host, timeout = 300):
-        return httplib.HTTPSConnection(host, key_file = self.key, cert_file = self.cert)
-
-
-def submit_request(query = [], headers = [], data = None):
-    url = 'https://%s/registry/application' % server_host
-    
-    if len(query) != 0:
-        url += '?' + urllib.urlencode(query)
-    request = urllib2.Request(url)
-    request.add_header('Accept', 'application/json')
-    for key, value in headers:
-        request.add_header(key, value)
-    if data:
-        request.add_data(data)
-    
-    # Now submit
+## Open a connection to the server
+if args.certfile:
+    certfile = args.certfile
+else:
     try:
-        opener = urllib2.build_opener(HTTPSCertKeyHandler())
-        response = opener.open(request)
-        content = response.read()
-    
-    except urllib2.HTTPError as err:
-        sys.stderr.write('Server responded: Error %d\n' % err.code)
-        sys.stderr.write(str(err) + '\n')
-        sys.stderr.write(err.read())
-        sys.exit(1)
+        certfile = os.environ['X509_USER_PROXY']
+    except KeyError:
+        certfile = '/tmp/x509up_u%d' % os.getuid()
 
-    except:
-        sys.stderr.write('Unknown error occurred.')
-        sys.exit(1)
+if args.keyfile:
+    keyfile = args.keyfile
+else:
+    keyfile = certfile
 
-    try:
-        result = json.loads(content)
+try:
+    context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+except AttributeError:
+    # python 2.6
+    sock = ssl.wrap_socket(socket.create_connection((server_host, DYNAMO_PORT)), certfile = certfile, keyfile = keyfile)
+else:
+    context.load_cert_chain(certfile, keyfile = keyfile)
+    context.verify_mode = ssl.CERT_NONE
+    sock = context.wrap_socket(socket.create_connection((server_host, DYNAMO_PORT)))
 
-    except ValueError:
-        sys.stderr.write('Invalid string received from server (bug!): \n%s\n' % content)
-        sys.exit(1)
+def communicate(data):
+    sock.send(json.dumps(data))
 
-    return result['data'][0]
+    response = ''
+    while True:
+        chunk = sock.recv(1024)
+        if not chunk:
+            break
+        response += chunk
 
+    return json.loads(response)
 
 ## If synchronous execution + work directory provided, wipe out the logs
-if not args.asynch:
-    # TODO: check server running?
-
-    if args.workdir:
+if not args.asynch and args.workdir:
+    try:
+        os.makedirs(args.workdir)
+    except OSError:
+        pass
+    os.chmod(args.workdir, 0777)
+    for name in ['_stdin', '_stdout', '_stderr']:
         try:
-            os.makedirs(args.workdir)
+            os.unlink(args.workdir + '/' + name)
         except OSError:
             pass
-        os.chmod(args.workdir, 0777)
-        with open(args.workdir + '/_stdout', 'w'):
-            pass
-        with open(args.workdir + '/_stderr', 'w'):
-            pass
 
-## Find the executable and submit
-cmds = args.cmd.split()
-executable = cmds[0]
-with open(executable) as source:
-    file_content = source.read()
+## Data to send to the server
+data = {}
 
-boundary = mimetools.choose_boundary()
-
-# The executable file
-data = [
-    '--' + boundary,
-    'Content-Disposition: file; name="file"; filename="exec.py"',
-    'Content-Type: text/plain',
-    '',
-    file_content
-]
-
-# Options
-def add_field(name, field_data):
-    global data
-
-    data += [
-        '--' + boundary,
-        'Content-Disposition: form-data; name="%s"' % name,
-        '',
-        field_data
-    ]
-
-if args.title:
-    add_field('title', args.title)
-
-if len(cmds) > 1:
-    add_field('args', ' '.join(cmds[1:]))
-
-if args.write_request:
-    add_field('write', '1')
-
+# Path if specified
 if args.workdir:
-    add_field('workdir', args.workdir)
+    data['workdir'] = args.workdir
 
-data += [
-    '--' + boundary + '--'
-]
+# Write-requesting 
+data['write_request'] = args.write_request
 
-body = '\r\n'.join(data)
+if args.interactive:
+    data['interactive'] = True
 
-headers = [
-    ('Content-type', 'multipart/form-data; boundary=%s' % boundary),
-    ('Content-length', len(body))
-]
+    response = communicate(data)
 
-task_info = submit_request(headers = headers, data = body)
+    if response['status'] != 'OK':
+        sys.stderr.write('\nServer responded: [%s]: %s\n' % (response['status'], response['message']))
+        sys.exit(1)
 
-## Print out the response
-task_id = task_info['taskid']
-path = task_info['path']
+    workarea = response['message']['path']
 
-print 'task id:', task_id
-print 'path:', path
+    def read_sock(sock, stream, tty_lock, stdin_event):
+        data = ''
+        while True:
+            try:
+                bytes = sock.recv(1024)
+            except socket.error:
+                # socket closed; we are done
+                if stdin_event:
+                    # communicate the end of messaging to the stdin thread
+                    sys.stdin.close()
+                    stdin_event.set()
 
-if not args.asynch:
+                return
+
+            if not bytes:
+                with tty_lock:
+                    # using lock to avoid stdout and stderr collide on tty
+                    stream.write(data)
+                    stream.flush()
+
+                data = ''
+            else:
+                data += bytes
+
+    def watch_stdin(read_ready, next_cycle):
+        while True:
+            try:
+                # blocks until something is entered in stdin
+                # hangs forever if stdin is closed while blocking - run as a daemon thread
+                rlist, _, _ = select.select([sys.stdin], [], [])
+            except ValueError:
+                return
+
+            read_ready.set()
+            next_cycle.wait()
+            next_cycle.reset()
+
+    # server has created UNIX domain sockets for stdin, stdout, and stderr
+    sockets = tuple(socket.socket(sock.AF_UNIX) for _ in xrange(3))
+    for sock, name in zip(sockets, ('_stdin', '_stdout', '_stderr')):
+        sock.connect(workarea + '/' + name)
+
+    try:
+        read_ready = threading.Event()
+        next_cycle = threading.Event()
+        tty_lock = threading.Lock()
+        stdout_thread = threading.Thread(target = read_sock, name = 'stdout', args = (sockets[1], sys.stdout, tty_lock, read_ready))
+        stderr_thread = threading.Thread(target = read_sock, name = 'stderr', args = (sockets[2], sys.stderr, tty_lock))
+        stdout_thread.start()
+        stderr_thread.start()
+    
+        stdin_thread = threading.Thread(target = watch_stdin, name = 'stdin', args = (read_ready, next_cycle))
+        stdin_thread.daemon = True
+        stdin_thread.start()
+    
+        response = communicate({'status': 'connected'})
+    
+        while True:
+            read_ready.wait()
+            try:
+                line = sys.stdin.readline()
+            except ValueError:
+                # stdin is closed
+                break
+    
+            read_ready.reset()
+            next_cycle.set()
+    
+            sockets[0].send(line)
+
+        stdout_thread.join()
+        stderr_thread.join()
+
+    finally:
+        for sock in sockets:
+            sock.close()
+
+else:
+    # Executable and arguments
+    cmds = args.cmd.split()
+    executable = cmds[0]
+    
+    if server_host == 'localhost' or server_host == '127.0.0.1' or server_host == socket.gethostname():
+        data['exec_path'] = executable
+    else:
+        with open(executable) as source:
+            data['exec'] = source.read()
+    
+    if len(cmds) > 1:
+        data['args'] = ' '.join(cmds[1:])
+    
+    # Title
+    if args.title:
+        data['title'] = args.title
+    else:
+        data['title'] = 'DynamoExecutable'
+
+    response = communicate(data)
+
+    if response['status'] != 'OK':
+        sys.stderr.write('\nServer responded: [%s]: %s\n' % (response['status'], response['message']))
+        sys.exit(1)
+
+    ## Print out the response
+    app_id = response['message']['appid']
+    path = response['message']['path']
+    
+    print 'application id:', app_id
+    print 'path:', path
+    
+    if args.asynch:
+        sys.exit(0)
+
     ## Synchronous execution: dynamo_exec will wait until process completion
 
     def tail_follow(source_path, stream, lock, stop_reading):
@@ -231,19 +270,24 @@ if not args.asynch:
 
     try:
         while True:
-            task_info = submit_request(query = [('taskid', task_id)])
+            response = communicate({'appid', app_id})
+            if response['status'] != 'OK':
+                sys.stderr.write('Failed to fetch application status from server.')
+                break
+
+            app_info = response['message']
 
             try:
-                status = task_info['status']
+                status = app_info['status']
             except KeyError:
-                sys.stderr.write('Failed to fetch task status from server.')
+                sys.stderr.write('Failed to fetch application status from server.')
                 break
 
             if status not in ('new', 'run'):
-                if task_info['exit_code'] is None:
+                if app_info['exit_code'] is None:
                     return_code = 1
                 else:
-                    return_code = task_info['exit_code']
+                    return_code = app_info['exit_code']
 
                 stop_reading.set()
                 stdout_thread.join()
@@ -260,18 +304,15 @@ if not args.asynch:
         while True:
             sys.stdout.write('Kill task? [y/n]: ')
             sys.stdout.flush()
-            response = sys.stdin.readline().strip()
-            if response == 'y':
-                task_info = submit_request(query = [('action', 'kill'), ('taskid', task_id)])
+            kill = sys.stdin.readline().strip()
+            if kill == 'y':
+                response = communicate({'appid', app_id, 'action', 'kill'})
+                if response['status'] == 'OK':
+                    sys.stdout.write('\n' + response['message'] + '\n')
+                else:
+                    sys.stderr.write('\nServer responded: [%s]: %s\n' % (response['status'], response['message']))
 
-                try:
-                    message = task_info['message']
-                except KeyError:
-                    message = '-- Server message unavailable --'
-
-                sys.stdout.write('\n' + message + '\n')
-
-            elif response != 'n':
+            elif kill != 'n':
                 sys.stdout.write('Please answer in y/n.\n')
                 continue
 

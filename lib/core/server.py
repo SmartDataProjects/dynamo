@@ -24,6 +24,8 @@ from dynamo.dataformat.exceptions import log_exception
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
 
+DYNAMO_PORT = 39626
+
 class DynamoServer(object):
     """Main daemon class."""
 
@@ -529,17 +531,18 @@ class DynamoServer(object):
             # The server which sent the updates has set this server's status to updating
             self.manager.set_status(ServerManager.SRV_ONLINE)
       
-    def _run_script(self, path, args, stdout = None, stderr = None, queue = None):
+    def _run_script(self, path, args, queue = None):
         """
         Subprocess main function for script execution.
         @param path   Path to the work area of the script. Will be the root directory in read-only processes.
         @param args   Script command-line arguments.
-        @param stdout File-like object for stdout. If None, {path}/_stdout will be opened.
-        @param stderr File-like object for stderr. If None, {path}/_stderr will be opened.
         @param queue  Queue if write-enabled.
         """
 
-        path = self._pre_execution(path, queue is None, stdout, stderr, None)
+        stdout = open(path + '/_stdout', 'a')
+        stderr = open(path + '/_stderr', 'a')
+
+        path = self._pre_execution(path, queue is None, None, stdout, stderr)
 
         # Set argv
         sys.argv = [path + '/exec.py']
@@ -559,29 +562,25 @@ class DynamoServer(object):
 
         return 0
 
-    def _run_interactive(self, path, stdout, stderr, stdin):
+    def _run_interactive(self, path, stdin, stdout, stderr):
         """
         Subprocess main function for interactive sessions.
         For now we limit interactive sessions to read-only.
         @param path   Path to the work area.
+        @param stdin  File-like object for stdin.
         @param stdout File-like object for stdout.
         @param stderr File-like object for stderr.
-        @param stdin  File-like object for stdin.
         @param queue  Queue if write-enabled.
         """
 
-        self._pre_execution(path, True, stdout, stderr, stdin)
+        self._pre_execution(path, True, stdin, stdout, stderr)
 
         mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': self.inventory}
         code.interact(local = mylocals)
 
         self._post_execution(None)
 
-    def _pre_execution(self, path, read_only, stdout, stderr, stdin):
-        # Set the uid of the process
-        os.seteuid(0)
-        os.setegid(0)
-
+    def _pre_execution(self, path, read_only, stdin, stdout, stderr):
         if read_only:
             # Set defaults
             for key, config in self.defaults.items():
@@ -618,8 +617,11 @@ class DynamoServer(object):
 
             os.mkdir(path + '/tmp')
             os.chmod(path + '/tmp', 0777)
+
+            os.seteuid(0)
+            os.setegid(0)
             os.chroot(path)
-            # now we are in root
+
             path = ''
             os.setcwd('/')
 
@@ -641,22 +643,18 @@ class DynamoServer(object):
 
         # De-escalate privileges permanently
         pwnam = pwd.getpwnam(self.user)
+        os.seteuid(0)
+        os.setegid(0)
         os.setgid(pwnam.pw_gid)
         os.setuid(pwnam.pw_uid)
 
-        # Redirect STDOUT and STDERR to file, close STDIN
-        if stdout is None:
-            sys.stdout = open(path + '/_stdout', 'a')
-        else:
-            sys.stdout = stdout
-        if stderr is None:
-            sys.stderr = open(path + '/_stderr', 'a')
-        else:
-            sys.stderr = stderr
+        # Redirect STDIN, STDOUT, and STDERR
         if stdin is None:
             sys.stdin.close()
         else:
             sys.stdin = stdin
+        sys.stdout = stdout
+        sys.stderr = stderr
 
         # Ignore SIGINT - see note above proc.terminate()
         # We will react to SIGTERM by raising KeyboardInterrupt
@@ -738,6 +736,7 @@ class DynamoServer(object):
 
         # Queue stays available on the other end even if we terminate the process
 
+        sys.stdin.close()
         sys.stdout.close()
         sys.stderr.close()
 
@@ -770,7 +769,7 @@ class DynamoServer(object):
     def _accept_applications(self):
         sock = self.app_collector
 
-        sock.bind(('localhost', 39626))
+        sock.bind(('localhost', DYNAMO_PORT))
         sock.listen(1)
 
         try:
@@ -785,7 +784,7 @@ class DynamoServer(object):
                         # socket was shut down
                         break
     
-                    thread.start_new_thread(self._process_application, (conn,))
+                    thread.start_new_thread(self._process_application, (conn, addr))
                 else:
                     raise RuntimeError('Application collector error')
 
@@ -797,7 +796,27 @@ class DynamoServer(object):
 
         self.app_collector = None
 
-    def _process_application(self, conn):
+    def _process_application(self, conn, addr):
+        def recv():
+            data = ''
+            while True:
+                bytes = conn.recv(2048)
+                if not bytes:
+                    break
+                data += bytes
+
+            try:
+                return json.loads(data)
+            except:
+                respond('failed', 'Ill-formatted data')
+                return None
+
+        def respond(status, message):
+            if status != 'OK':
+                LOG.error('Response to %s:%d: %s', addr[0], addr[1], message)
+
+            conn.send(json.dumps({'status': status, 'message': message}))
+
         try:
             # authorize the user
             user_cert_data = conn.getpeercert()
@@ -814,27 +833,15 @@ class DynamoServer(object):
                 user = self.manager.master.identify_user(issuer)
     
             if user is None:
-                LOG.error('Unidentified user DN %s', subject)
-                conn.send('Failed to identify user')
+                respond('failed', 'Unidentified user DN %s', subject)
                 return
     
             if not self.manager.master.authorize_user(user, 'user'):
-                LOG.error('Unauthorized user %s', user)
-                conn.send('Unauthorized user %s', user)
+                respond('failed', 'Unauthorized user %s', user)
                 return
 
-            data = ''
-            while True:
-                bytes = conn.recv(2048)
-                if not bytes:
-                    break
-                data += bytes
-
-            try:
-                app_data = json.loads(data)
-            except:
-                LOG.error('Ill-formatted application data')
-                conn.send('Invalid application data')
+            app_data = recv()
+            if app_data is None:
                 return
 
             if 'appid' in app_data:
@@ -842,7 +849,7 @@ class DynamoServer(object):
                 # query or operation on existing application
                 apps = self.manager.master.get_applications(app_id = app_id)
                 if len(apps) == 0:
-                    conn.send('Unknown app_id %d' % app_id)
+                    respond('failed', 'Unknown appid %d' % app_id)
                     return
 
                 app = apps[0]
@@ -850,16 +857,18 @@ class DynamoServer(object):
                 if 'action' in app_data and app_data['action'] == 'kill':
                     if app['status'] == ServerManager.APP_NEW or app['status'] == ServerManager.APP_RUN:
                         self.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
-                        conn.send('Task aborted.')
+                        respond('OK', 'Task aborted.')
                     else:
-                        conn.send('Task already completed with status %s (exit code %s).', ServerManager.application_status_name(app['status']), app['exit_code'])
+                        respond('OK', 'Task already completed with status %s (exit code %s).' % \
+                            (ServerManager.application_status_name(app['status']), app['exit_code']))
                     return
 
-                conn.send(json.dumps(app))
+                respond('OK', json.dumps(app))
                 return
 
             # new application
             if 'path' in app_data:
+                # work area specified
                 workarea = app_data['path']
             else:
                 workarea = os.environ['DYNAMO_SPOOL'] + '/work/'
@@ -869,61 +878,61 @@ class DynamoServer(object):
                         os.makedirs(workarea)
                     except OSError:
                         if not os.path.exists(workarea + d):
-                            LOG.error('Failed to create work area %s', workarea)
-                            conn.send('Failed to create work area %s', workarea)
+                            respond('failed', 'Failed to create work area %s' % workarea)
                             return
                         else:
-                            # remarkably the directory existed
+                            # remarkably, the directory existed
                             continue
     
                     workarea += d
                     break
 
             if 'interactive' in app_data and app_data['interactive']:
-                # open sockets for 
-                stdout_sock = socket.socket(socket.AF_UNIX)
-                stderr_sock = socket.socket(socket.AF_UNIX)
-                stdin_sock = socket.socket(socket.AF_UNIX)
-                stdout_sock.bind(workarea + '/_stdout')
-                stdout_sock.listen(1)
-                stderr_sock.bind(workarea + '/_stderr')
-                stderr_sock.listen(1)
-                stdin_sock.bind(workarea + '/_stdin')
-                stdin_sock.listen(1)
+                # open sockets for I/O (stdin, stdout, stderr)
+                sockets = tuple(socket.socket(socket.AF_UNIX) for _ in xrange(3))
+                for sock, name in zip(sockets, ('_stdin', '_stdout', '_stderr')):
+                    sock.bind(workarea + '/' + name)
+                    sock.listen(1)
 
-                # now tell the location of the work area to the client
-                conn.send(workarea)
-                # we can close this channel now
-                conn.close()
+                connections = tuple()
 
-                # client should connect to the sockets
-                stdout_conn, _ = stdout_sock.accept()
-                stderr_conn, _ = stderr_sock.accept()
-                stdin_conn, _ = stdin_sock.accept()
+                try:
+                    # now tell the location of the work area to the client
+                    conn.send('{"path": "%s"}' % workarea)
+    
+                    # client should connect to the sockets
+                    connections = tuple(sock.accept()[0] for sock in sockets)
+    
+                    # close the listening sockets
+                    for sock in sockets:
+                        sock.close()
 
-                stdout = stdout_conn.makefile()
-                stderr = stderr_conn.makefile()
-                stdin = stdin_conn.makefile()
+                    response = recv()
+                    if response is None:
+                        return
+    
+                    # make a file-like wrapper for each connection
+                    iofiles = tuple(connection.makefile() for connection in connections)
+                    respond('OK', 'Session ready')
+    
+                    proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', args = (workarea,) + iofiles)
+                    proc.daemon = True
+                    proc.start()
 
-                args = (workarea, stdout, stderr, stdin)
-                proc = multiprocessing.Process(target = self._run_interactive, name = title, args = args)
-                proc.daemon = True
-                proc.start()
+                    LOG.info('Started interactive session (%s) for user %s (PID %d).', path, user_name, proc.pid)
+    
+                    proc.join()
 
-                proc.join()
+                    LOG.info('Interactive session (%s) for user %s completed (Exit code %d).', path, user_name, proc.exitcode)
 
-                stdout.close()
-                stderr.close()
-                stdin.close()
-                stdout_conn.close()
-                stderr_conn.close()
-                stdin_conn.close()
-                stdout_sock.close()
-                stderr_sock.close()
-                stdin_sock.close()
-                os.unlink(workarea + '/_stdout')
-                os.unlink(workarea + '/_stderr')
-                os.unlink(workarea + '/_stdin')
+                finally:
+                    for sock in sockets:
+                        sock.close()
+                    for connection in connections:
+                        connection.close()
+
+                    if 'path' not in app_data:
+                        shutil.rmtree(workarea)
 
             else:
                 for key in ['title', 'args', 'write_request']:
@@ -932,11 +941,30 @@ class DynamoServer(object):
                         conn.send('Missing ' + key)
                         return
 
+                if 'exec_path' in app_data:
+                    try:
+                        shutil.copyfile(app_data['exec_path'], workarea + '/exec.py')
+                    except:
+                        respond('failed', 'Could not copy %s' % workarea)
+                        return
+
+                    app_data.pop('exec_path')
+
+                elif 'exec' in app_data:
+                    with open(workarea + '/exec.py', 'w') as out:
+                        out.write(app_data['exec'])
+                        
+                    app_data.pop('exec')
+
                 app_data['path'] = workarea
                 app_data['user'] = user
     
-                self.manager.master.schedule_application(**app_data)
+                app_id = self.manager.master.schedule_application(**app_data)
 
+                respond('OK', '{"appid": %d, "path": %s}' % (app_id, workarea))
+
+        except:
+            respond('failed', 'Exception: ' + str(sys.exc_info()[1]))
         finally:
             conn.close()
 
