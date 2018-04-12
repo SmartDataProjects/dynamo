@@ -5,6 +5,7 @@ import time
 import logging
 import hashlib
 import shlex
+import code
 import signal
 import socket
 import select
@@ -522,9 +523,17 @@ class DynamoServer(object):
             # The server which sent the updates has set this server's status to updating
             self.manager.set_status(ServerManager.SRV_ONLINE)
       
-    def _run_script(self, path, args, queue = None):
+    def _run_script(self, path, args, stdout = None, stderr = None, queue = None):
+        """
+        Subprocess main function for script execution.
+        @param path   Path to the work area of the script. Will be the root directory in read-only processes.
+        @param args   Script command-line arguments.
+        @param stdout File-like object for stdout. If None, {path}/_stdout will be opened.
+        @param stderr File-like object for stderr. If None, {path}/_stderr will be opened.
+        @param queue  Queue if write-enabled.
+        """
 
-        path = self._pre_execution(path, queue is None)
+        path = self._pre_execution(path, queue is None, stdout, stderr, True)
 
         # Set argv
         sys.argv = [path + '/exec.py']
@@ -544,7 +553,23 @@ class DynamoServer(object):
 
         return 0
 
-    def _pre_execution(self, path, read_only):
+    def _run_interactive(self, path, stdout, stderr, queue = None):
+        """
+        Subprocess main function for interactive sessions.
+        @param path   Path to the work area.
+        @param stdout File-like object for stdout.
+        @param stderr File-like object for stderr.
+        @param queue  Queue if write-enabled.
+        """
+
+        self._pre_execution(path, queue is None, stdout, stderr, False)
+
+        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None}
+        code.interact(local = mylocals)
+
+        self._post_execution(queue)
+
+    def _pre_execution(self, path, read_only, stdout, stderr, close_stdin):
         # Set the uid of the process
         os.seteuid(0)
         os.setegid(0)
@@ -604,17 +629,24 @@ class DynamoServer(object):
 
                 cls.set_default(myconf)
 
+            os.setcwd(path)
+
         # De-escalate privileges permanently
         pwnam = pwd.getpwnam(self.user)
         os.setgid(pwnam.pw_gid)
         os.setuid(pwnam.pw_uid)
 
         # Redirect STDOUT and STDERR to file, close STDIN
-        stdout = sys.stdout
-        stderr = sys.stderr
-        sys.stdout = open(path + '/_stdout', 'a')
-        sys.stderr = open(path + '/_stderr', 'a')
-        sys.stdin.close()
+        if stdout is None:
+            sys.stdout = open(path + '/_stdout', 'a')
+        else:
+            sys.stdout = stdout
+        if stderr is None:
+            sys.stderr = open(path + '/_stderr', 'a')
+        else:
+            sys.stderr = stderr
+        if close_stdin:
+            sys.stdin.close()
 
         # Ignore SIGINT - see note above proc.terminate()
         # We will react to SIGTERM by raising KeyboardInterrupt
@@ -698,8 +730,6 @@ class DynamoServer(object):
 
         sys.stdout.close()
         sys.stderr.close()
-        sys.stdout = stdout
-        sys.stderr = stderr
 
     def start_application_collector(self):
         """Open an SSL socket and spawn a thread. Application data will be sent in JSON."""
