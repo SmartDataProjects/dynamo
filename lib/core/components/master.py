@@ -98,11 +98,12 @@ class MasterServer(object):
     def get_next_application(self, read_only):
         raise NotImplementedError('get_next_application')
 
-    def get_applications(self, older_than = 0, has_path = True):
+    def get_applications(self, older_than = 0, has_path = True, app_id = None):
         """
         Get the list of application entries.
         @param older_than   Return only applications older than N seconds
         @param has_path     Return applications whose path is not NULL
+        @param app_id       Return application with matching id.
 
         @return [(exec_id, write_request, title, path, args, user_name)]
         """
@@ -116,9 +117,6 @@ class MasterServer(object):
         @param kwd       Keyword argument can be status, hostname, exit_code, or path.
         """
         raise NotImplementedError('update_application')
-
-    def get_application_status(self, app_id):
-        raise NotImplementedError('get_application_status')
 
     def check_application_auth(self, title, user, checksum):
         raise NotImplementedError('check_application_auth')

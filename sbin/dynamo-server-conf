@@ -20,6 +20,7 @@ shadow_conf_args = source_conf.get('server', 'shadow_conf')
 local_board_mod = source_conf.get('server', 'local_board')
 local_board_conf_args = source_conf.get('server', 'local_board_conf')
 logdir = source_conf.get('paths', 'log_path')
+spooldir = source_conf.get('paths', 'spool_path')
 
 serve_applications = source_conf.get('applications', 'enabled').lower()
 serve_web = source_conf.get('web', 'enabled').lower()
@@ -109,6 +110,7 @@ if serve_web == 'true':
 server_conf['notification_recipient'] = email
 server_conf['status_poll_interval'] = 1.0
 server_conf['max_num_errors'] = 3
+server_conf['applications_keep'] = 7
 
 server_conf['logging'] = OD({
     'level': 'info',

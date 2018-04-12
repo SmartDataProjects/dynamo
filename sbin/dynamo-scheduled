@@ -276,7 +276,7 @@ def loop_sequence(sequence_name, sequence):
                     # Submit the task. Actual application is in work_dir/title
                     path = '%s/%s' % (work_dir, title)
                     
-                    task_id = manager.schedule_application(title, path, arguments, args.auth_user, write_request)
+                    task_id = manager.master.schedule_application(title, path, arguments, args.auth_user, write_request)
     
                     # Poll for task completion
                     while True:

@@ -94,8 +94,8 @@ class MySQLMasterServer(MasterServer):
         module, config_str = result[0]
         return module, Configuration(json.loads(config_str))
 
-    def get_applications(self, older_than = 0, has_path = True): #override
-        sql = 'SELECT a.`id`, a.`write_request`, a.`title`, a.`path`, a.`args`, u.`name` FROM `applications` AS a'
+    def get_applications(self, older_than = 0, has_path = True, app_id = None): #override
+        sql = 'SELECT a.`id`, a.`write_request`, a.`title`, a.`path`, a.`args`, 0+a.`status`, a.`server`, a.`exit_code`, u.`name` FROM `applications` AS a'
         sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
 
         constraints = []
@@ -103,11 +103,18 @@ class MySQLMasterServer(MasterServer):
             constraints.append('UNIX_TIMESTAMP(a.`timestamp`) < UNIX_TIMESTAMP() - %d' % older_than)
         if has_path:
             constraints.append('a.`path` IS NOT NULL')
+        if app_id is not None:
+            constraints.append('a.`id` = %d' % app_id)
 
         if len(constraints) != 0:
             sql += ' WHERE ' + ' AND '.join(constraints)
 
-        return self._mysql.query(sql)
+        applications = []
+        for aid, write, title, path, args, status, server, exit_code, uname from self._mysql.xquery(sql):
+            applications.append({'appid': aid, 'write_request': write, 'title': title, 'path': path,
+                'args': args, 'status': status, 'server': server, 'exit_code': exit_code})
+
+        return applications
 
     def get_writing_process_id(self): #override
         result = self._mysql.query('SELECT `id` FROM `applications` WHERE `write_request` = 1 AND `status` = \'run\'')
@@ -168,14 +175,6 @@ class MySQLMasterServer(MasterServer):
         args.append(app_id)
 
         self._mysql.query(sql, *tuple(args))
-
-    def get_application_status(self, app_id): #override
-        result = self._mysql.query('SELECT `status` FROM `applications` WHERE `id` = %s', app_id)
-        if len(result) == 0:
-            # don't know what happened but the application is gone
-            return None
-        else:
-            return ServerManager.application_status_val(result[0])
 
     def check_application_auth(self, title, user, checksum): #override
         result = self._mysql.query('SELECT `id` FROM `users` WHERE `name` = %s', user)
@@ -238,6 +237,20 @@ class MySQLMasterServer(MasterServer):
     def declare_remote_store(self, hostname): #override
         server_id = self._mysql.query('SELECT `id` FROM `servers` WHERE `hostname` = %s', hostname)[0]
         self._mysql.query('UPDATE `servers` SET `store_host` = %s WHERE `id` = %s', server_id, self._server_id)
+
+    def identify_user(self, dn): #override
+        result = self._mysql.query('SELECT `name` FROM `users` WHERE `dn` = %s', dn)
+        if len(result) == 0:
+            return None
+        else:
+            return result[0]
+
+    def authorize_user(self, user, service): #override
+        sql = 'SELECT COUNT(*) FROM `authorized_users` AS a'
+        sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
+        sql += ' INNER JOIN `services` AS s ON s.`id` = a.`service_id`'
+        sql += ' WHERE u.`name` = %s AND s.`name` = %s'
+        return (self._mysql.query(sql, user, service)[0] != 0)
 
     def check_connection(self): #override
         try:

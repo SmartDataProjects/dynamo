@@ -4,6 +4,7 @@ import pwd
 import time
 import logging
 import hashlib
+import random
 import shlex
 import code
 import signal
@@ -234,14 +235,14 @@ class DynamoServer(object):
                     continue
     
                 ## Step 2: If a script is found, check the authorization of the script.
-                exec_id, write_request, title, path, args, user_name = next_application
+                app_id, write_request, title, path, args, user_name = next_application
     
                 first_wait = True
                 do_sleep = False
     
                 if not os.path.exists(path + '/exec.py'):
                     LOG.info('Application %s from user %s (write request: %s) not found.', title, user_name, write_request)
-                    self.manager.master.update_application(exec_id, status = ServerManager.EXC_NOTFOUND)
+                    self.manager.master.update_application(app_id, status = ServerManager.APP_NOTFOUND)
                     continue
     
                 LOG.info('Found application %s from user %s (write request: %s)', title, user_name, write_request)
@@ -253,16 +254,16 @@ class DynamoServer(object):
                         LOG.warning('Application %s from user %s is not authorized for write access.', title, user_name)
                         # TODO send a message
     
-                        self.manager.master.update_application(exec_id, status = ServerManager.EXC_AUTHFAILED)
+                        self.manager.master.update_application(app_id, status = ServerManager.APP_AUTHFAILED)
                         continue
     
                     queue = multiprocessing.Queue()
                     proc_args += (queue,)
     
-                    writing_process = (exec_id, queue)
+                    writing_process = (app_id, queue)
     
                 ## Step 3: Spawn a child process for the script
-                self.manager.master.update_application(exec_id, status = ServerManager.EXC_RUN)
+                self.manager.master.update_application(app_id, status = ServerManager.APP_RUN)
     
                 proc = multiprocessing.Process(target = self._run_script, name = title, args = proc_args)
                 proc.daemon = True
@@ -270,7 +271,7 @@ class DynamoServer(object):
     
                 LOG.info('Started application %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
     
-                child_processes.append((exec_id, proc, user_name, path))
+                child_processes.append((app_id, proc, user_name, path))
 
         except KeyboardInterrupt:
             LOG.info('Terminating all child processes..')
@@ -297,7 +298,7 @@ class DynamoServer(object):
             # in the child. Child processes have to always ignore SIGINT and be killed only from
             # SIGTERM sent by the line below.
 
-            for exec_id, proc, user_name, path in child_processes:
+            for app_id, proc, user_name, path in child_processes:
                 LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)
 
                 serverutils.killproc(proc)
@@ -306,7 +307,7 @@ class DynamoServer(object):
                     LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
 
                 try:
-                    self.manager.master.update_application(exec_id, status = ServerManager.EXC_KILLED)
+                    self.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
                 except:
                     pass
 
@@ -376,15 +377,20 @@ class DynamoServer(object):
     def collect_processes(self, child_processes, writing_process):
         ichild = 0
         while ichild != len(child_processes):
-            exec_id, proc, user_name, path = child_processes[ichild]
+            app_id, proc, user_name, path = child_processes[ichild]
 
-            status = self.manamger.get_application_status(exec_id)
-            if status == ServerManager.EXC_KILLED:
+            apps = self.manamger.get_applications(app_id = app_id)
+            if len(apps) == 0:
+                status = ServerManager.APP_KILLED
+            else:
+                status = apps[0]['status']
+            
+            if status == ServerManager.APP_KILLED:
                 serverutils.killproc(proc)
                 proc.join(60)
 
-            if exec_id == writing_process[0]:
-                if status == ServerManager.EXC_KILLED:
+            if app_id == writing_process[0]:
+                if status == ServerManager.APP_KILLED:
                     read_state = -1
 
                 else: # i.e. status == RUN
@@ -393,14 +399,14 @@ class DynamoServer(object):
                     read_state, update_commands = self.collect_updates(writing_process[1])
     
                     if read_state == 1:
-                        status = ServerManager.EXC_DONE
+                        status = ServerManager.APP_DONE
     
                         # Block system signals and get update done
                         with SignalBlocker(logger = LOG):
                             self.exec_updates(update_commands)
     
                     elif read_state == 2:
-                        status = ServerManager.EXC_FAILED
+                        status = ServerManager.APP_FAILED
                         serverutils.killproc(proc)
 
                 if read_state != 0:
@@ -408,18 +414,18 @@ class DynamoServer(object):
                     writing_process = (0, None)
     
             if proc.is_alive():
-                if status == ServerManager.EXC_RUN:
+                if status == ServerManager.APP_RUN:
                     ichild += 1
                     continue
                 else:
                     # The process must be complete but did not join within 60 seconds
                     LOG.error('Application %s (%s) from user %s is stuck (Status %s).', proc.name, path, user_name, ServerManager.application_status_name(status))
             else:
-                if status == ServerManager.EXC_RUN:
+                if status == ServerManager.APP_RUN:
                     if proc.exitcode == 0:
-                        status = ServerManager.EXC_DONE
+                        status = ServerManager.APP_DONE
                     else:
-                        status = ServerManager.EXC_FAILED
+                        status = ServerManager.APP_FAILED
 
                 LOG.info('Application %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, ServerManager.application_status_name(status))
 
@@ -429,7 +435,7 @@ class DynamoServer(object):
                 
             child_processes.pop(ichild)
 
-            self.manager.master.update_application(exec_id, status = status, exit_code = proc.exitcode)
+            self.manager.master.update_application(app_id, status = status, exit_code = proc.exitcode)
 
         return writing_process
 
@@ -473,7 +479,7 @@ class DynamoServer(object):
 
     def clean_old_workareas(self):
         applications = self.manager.master.get_applications(older_than = self.applications_keep)
-        for exec_id, write_request, title, path, args, user_name in applications:
+        for app_id, write_request, title, path, args, user_name in applications:
             if not os.path.isdir(path):
                 continue
 
@@ -484,7 +490,7 @@ class DynamoServer(object):
 
             shutil.rmtree(path)
             
-            self.manager.master.update_application(exec_id = exec_id, path = None)
+            self.manager.master.update_application(app_id = app_id, path = None)
 
     def exec_updates(self, update_commands):
         # My updates
@@ -533,7 +539,7 @@ class DynamoServer(object):
         @param queue  Queue if write-enabled.
         """
 
-        path = self._pre_execution(path, queue is None, stdout, stderr, True)
+        path = self._pre_execution(path, queue is None, stdout, stderr, None)
 
         # Set argv
         sys.argv = [path + '/exec.py']
@@ -553,23 +559,25 @@ class DynamoServer(object):
 
         return 0
 
-    def _run_interactive(self, path, stdout, stderr, queue = None):
+    def _run_interactive(self, path, stdout, stderr, stdin):
         """
         Subprocess main function for interactive sessions.
+        For now we limit interactive sessions to read-only.
         @param path   Path to the work area.
         @param stdout File-like object for stdout.
         @param stderr File-like object for stderr.
+        @param stdin  File-like object for stdin.
         @param queue  Queue if write-enabled.
         """
 
-        self._pre_execution(path, queue is None, stdout, stderr, False)
+        self._pre_execution(path, True, stdout, stderr, stdin)
 
-        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None}
+        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': self.inventory}
         code.interact(local = mylocals)
 
-        self._post_execution(queue)
+        self._post_execution(None)
 
-    def _pre_execution(self, path, read_only, stdout, stderr, close_stdin):
+    def _pre_execution(self, path, read_only, stdout, stderr, stdin):
         # Set the uid of the process
         os.seteuid(0)
         os.setegid(0)
@@ -645,8 +653,10 @@ class DynamoServer(object):
             sys.stderr = open(path + '/_stderr', 'a')
         else:
             sys.stderr = stderr
-        if close_stdin:
+        if stdin is None:
             sys.stdin.close()
+        else:
+            sys.stdin = stdin
 
         # Ignore SIGINT - see note above proc.terminate()
         # We will react to SIGTERM by raising KeyboardInterrupt
@@ -827,15 +837,105 @@ class DynamoServer(object):
                 conn.send('Invalid application data')
                 return
 
-            for key in ['title', 'path', 'args', 'write_request']:
-                if key not in app_data:
-                    LOG.error('Missing ' + key)
-                    conn.send('Missing ' + key)
+            if 'appid' in app_data:
+                app_id = app_data['appid']
+                # query or operation on existing application
+                apps = self.manager.master.get_applications(app_id = app_id)
+                if len(apps) == 0:
+                    conn.send('Unknown app_id %d' % app_id)
                     return
 
-            app_data['user'] = user
+                app = apps[0]
 
-            self.manager.master.schedule_application(**app_data)
+                if 'action' in app_data and app_data['action'] == 'kill':
+                    if app['status'] == ServerManager.APP_NEW or app['status'] == ServerManager.APP_RUN:
+                        self.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
+                        conn.send('Task aborted.')
+                    else:
+                        conn.send('Task already completed with status %s (exit code %s).', ServerManager.application_status_name(app['status']), app['exit_code'])
+                    return
+
+                conn.send(json.dumps(app))
+                return
+
+            # new application
+            if 'path' in app_data:
+                workarea = app_data['path']
+            else:
+                workarea = os.environ['DYNAMO_SPOOL'] + '/work/'
+                while True:
+                    d = hex(random.randint(0, 0xffffffffffffffff))[2:-1]
+                    try:
+                        os.makedirs(workarea)
+                    except OSError:
+                        if not os.path.exists(workarea + d):
+                            LOG.error('Failed to create work area %s', workarea)
+                            conn.send('Failed to create work area %s', workarea)
+                            return
+                        else:
+                            # remarkably the directory existed
+                            continue
+    
+                    workarea += d
+                    break
+
+            if 'interactive' in app_data and app_data['interactive']:
+                # open sockets for 
+                stdout_sock = socket.socket(socket.AF_UNIX)
+                stderr_sock = socket.socket(socket.AF_UNIX)
+                stdin_sock = socket.socket(socket.AF_UNIX)
+                stdout_sock.bind(workarea + '/_stdout')
+                stdout_sock.listen(1)
+                stderr_sock.bind(workarea + '/_stderr')
+                stderr_sock.listen(1)
+                stdin_sock.bind(workarea + '/_stdin')
+                stdin_sock.listen(1)
+
+                # now tell the location of the work area to the client
+                conn.send(workarea)
+                # we can close this channel now
+                conn.close()
+
+                # client should connect to the sockets
+                stdout_conn, _ = stdout_sock.accept()
+                stderr_conn, _ = stderr_sock.accept()
+                stdin_conn, _ = stdin_sock.accept()
+
+                stdout = stdout_conn.makefile()
+                stderr = stderr_conn.makefile()
+                stdin = stdin_conn.makefile()
+
+                args = (workarea, stdout, stderr, stdin)
+                proc = multiprocessing.Process(target = self._run_interactive, name = title, args = args)
+                proc.daemon = True
+                proc.start()
+
+                proc.join()
+
+                stdout.close()
+                stderr.close()
+                stdin.close()
+                stdout_conn.close()
+                stderr_conn.close()
+                stdin_conn.close()
+                stdout_sock.close()
+                stderr_sock.close()
+                stdin_sock.close()
+                os.unlink(workarea + '/_stdout')
+                os.unlink(workarea + '/_stderr')
+                os.unlink(workarea + '/_stdin')
+
+            else:
+                for key in ['title', 'args', 'write_request']:
+                    if key not in app_data:
+                        LOG.error('Missing ' + key)
+                        conn.send('Missing ' + key)
+                        return
+
+                app_data['path'] = workarea
+                app_data['user'] = user
+    
+                self.manager.master.schedule_application(**app_data)
 
         finally:
             conn.close()
