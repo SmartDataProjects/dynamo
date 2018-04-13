@@ -1,7 +1,7 @@
 import json
 import socket
 
-from dynamo.core.master.base import MasterServer
+from dynamo.core.components.master import MasterServer
 from dynamo.core.manager import ServerManager
 from dynamo.utils.interface import MySQL
 from dynamo.dataformat import Configuration
@@ -110,7 +110,7 @@ class MySQLMasterServer(MasterServer):
             sql += ' WHERE ' + ' AND '.join(constraints)
 
         applications = []
-        for aid, write, title, path, args, status, server, exit_code, uname from self._mysql.xquery(sql):
+        for aid, write, title, path, args, status, server, exit_code, uname in self._mysql.xquery(sql):
             applications.append({'appid': aid, 'write_request': write, 'title': title, 'path': path,
                 'args': args, 'status': status, 'server': server, 'exit_code': exit_code})
 

@@ -3,7 +3,7 @@ import pprint
 
 from dynamo.utils.interface.webservice import RESTService, GET, POST
 from dynamo.utils.interface.dbs import DBS
-from dynamo.dataformat.import Configuration
+from dynamo.dataformat import Configuration
 
 LOG = logging.getLogger(__name__)
 

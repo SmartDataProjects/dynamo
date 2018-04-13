@@ -7,6 +7,7 @@ import mimetools
 import socket
 import threading
 import traceback
+import select
 import time
 import json
 
@@ -15,20 +16,21 @@ from argparse import ArgumentParser
 DYNAMO_PORT = 39626
 
 parser = ArgumentParser(description = 'Submit one dynamo executable task.')
-parser.add_argument('cmd', metavar = 'CMD', help = 'Executable command')
+parser.add_argument('cmd', metavar = 'CMD', nargs = '?', help = 'Executable command')
 parser.add_argument('--asynchronous', '-A', action = 'store_true', dest = 'asynch', help = 'Do not wait for the executable to complete.')
 parser.add_argument('--server', '-s', metavar = 'HOST', dest = 'server', help = 'Server host.')
 parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', help = 'Executable title.')
 parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request write access.')
 parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
-parser.add_argument('--interactive', '-I', action = 'store_true', dest = 'interactive', help = 'Open a python interactive session.')
 parser.add_argument('--cert', '-c', metavar = 'PATH', dest = 'certfile', help = 'Non-standard certificate file location.')
 parser.add_argument('--key', '-k', metavar = 'PATH', dest = 'keyfile', help = 'Non-standard key file location.')
 
 args = parser.parse_args()
 sys.argv = []
 
-if args.asynch and args.interactive:
+interactive = (args.cmd is None)
+
+if args.asynch and interactive:
     sys.stderr.write('Incompatible options: --asynchronous and --interactive')
     sys.exit(2)
 
@@ -63,274 +65,303 @@ try:
     context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
 except AttributeError:
     # python 2.6
-    sock = ssl.wrap_socket(socket.create_connection((server_host, DYNAMO_PORT)), certfile = certfile, keyfile = keyfile)
+    server = ssl.wrap_socket(socket.create_connection((server_host, DYNAMO_PORT)), certfile = certfile, keyfile = keyfile)
 else:
     context.load_cert_chain(certfile, keyfile = keyfile)
     context.verify_mode = ssl.CERT_NONE
-    sock = context.wrap_socket(socket.create_connection((server_host, DYNAMO_PORT)))
+    server = context.wrap_socket(socket.create_connection((server_host, DYNAMO_PORT)))
 
 def communicate(data):
-    sock.send(json.dumps(data))
+    bytes = json.dumps(data)
+    server.send('%d %s' % (len(bytes), bytes))
 
     response = ''
     while True:
-        chunk = sock.recv(1024)
-        if not chunk:
-            break
-        response += chunk
-
-    return json.loads(response)
-
-## If synchronous execution + work directory provided, wipe out the logs
-if not args.asynch and args.workdir:
-    try:
-        os.makedirs(args.workdir)
-    except OSError:
-        pass
-    os.chmod(args.workdir, 0777)
-    for name in ['_stdin', '_stdout', '_stderr']:
         try:
-            os.unlink(args.workdir + '/' + name)
-        except OSError:
-            pass
+            bytes = server.recv(1024)
+        except socket.error:
+            # socket closed
+            break
+        if not bytes:
+            break
 
-## Data to send to the server
-data = {}
+        if not response:
+            # first communication
+            length, _, bytes = bytes.partition(' ')
+            length = int(length)
 
-# Path if specified
-if args.workdir:
-    data['workdir'] = args.workdir
+        response += bytes
+            
+        if len(response) == length:
+            break
 
-# Write-requesting 
-data['write_request'] = args.write_request
-
-if args.interactive:
-    data['interactive'] = True
-
-    response = communicate(data)
-
-    if response['status'] != 'OK':
-        sys.stderr.write('\nServer responded: [%s]: %s\n' % (response['status'], response['message']))
+    try:
+        return json.loads(response)
+    except:
+        sys.stderr.write('Communication to server failed.')
         sys.exit(1)
 
-    workarea = response['message']['path']
-
-    def read_sock(sock, stream, tty_lock, stdin_event):
-        data = ''
-        while True:
+try:
+    ## If synchronous execution + work directory provided, wipe out the logs
+    if not args.asynch and args.workdir:
+        try:
+            os.makedirs(args.workdir)
+        except OSError:
+            pass
+        os.chmod(args.workdir, 0777)
+        for name in ['_stdin', '_stdout', '_stderr']:
             try:
-                bytes = sock.recv(1024)
-            except socket.error:
-                # socket closed; we are done
-                if stdin_event:
-                    # communicate the end of messaging to the stdin thread
-                    sys.stdin.close()
-                    stdin_event.set()
+                os.unlink(args.workdir + '/' + name)
+            except OSError:
+                pass
+    
+    ## Data to send to the server
+    data = {}
+    
+    # Path if specified
+    if args.workdir:
+        data['workdir'] = args.workdir
+    
+    # Write-requesting 
+    data['write_request'] = args.write_request
+    
+    if interactive:
+        data['interactive'] = True
+    
+        response = communicate(data)
+    
+        if response['status'] != 'OK':
+            sys.stderr.write('Server responded: [%s]: %s\n' % (response['status'], response['message']))
+            sys.exit(1)
+    
+        workarea = response['message']['path']
+    
+        def socket_to_stream(sock, stream, tty_lock, stdin_event = None):
+            data = ''
+            while True:
+                try:
+                    bytes = sock.recv(1024)
+                except socket.error:
+                    # socket closed; we are done
+                    if stdin_event:
+                        # communicate the end of messaging to the stdin thread
+                        sys.stdin.close()
+                        stdin_event.set()
+    
+                    return
+    
+                if not bytes:
+                    with tty_lock:
+                        # using lock to avoid stdout and stderr collide on tty
+                        stream.write(data)
+                        stream.flush()
+    
+                    data = ''
+                else:
+                    data += bytes
+    
+        def watch_stdin(read_ready, next_cycle):
+            while True:
+                try:
+                    # blocks until something is entered in stdin
+                    # hangs forever if stdin is closed while blocking - run as a daemon thread
+                    rlist, _, _ = select.select([sys.stdin], [], [])
+                except ValueError:
+                    return
+    
+                read_ready.set()
+                next_cycle.wait()
+                next_cycle.clear()
+    
+        # server has created UNIX domain sockets for stdin, stdout, and stderr
+        sockets = tuple(socket.socket(socket.AF_UNIX) for _ in xrange(3))
+        for sock, name in zip(sockets, ('_stdin', '_stdout', '_stderr')):
+            sock.connect(workarea + '/' + name)
+    
+        try:
+            read_ready = threading.Event()
+            next_cycle = threading.Event()
+            tty_lock = threading.Lock()
+            stdout_thread = threading.Thread(target = socket_to_stream, name = 'stdout', args = (sockets[1], sys.stdout, tty_lock, read_ready))
+            stderr_thread = threading.Thread(target = socket_to_stream, name = 'stderr', args = (sockets[2], sys.stderr, tty_lock))
+            stdout_thread.start()
+            stderr_thread.start()
+        
+            stdin_thread = threading.Thread(target = watch_stdin, name = 'stdin', args = (read_ready, next_cycle))
+            stdin_thread.daemon = True
+            stdin_thread.start()
+        
+            response = communicate({'status': 'connected'})
+        
+            while True:
+                read_ready.wait()
+                try:
+                    line = sys.stdin.readline()
+                except ValueError:
+                    # stdin is closed
+                    break
+                if not line:
+                    # Ctrl+D pressed
+                    sockets[0].close()
+                    break
+        
+                read_ready.clear()
+                next_cycle.set()
 
-                return
-
-            if not bytes:
-                with tty_lock:
-                    # using lock to avoid stdout and stderr collide on tty
-                    stream.write(data)
-                    stream.flush()
-
-                data = ''
-            else:
-                data += bytes
-
-    def watch_stdin(read_ready, next_cycle):
-        while True:
-            try:
-                # blocks until something is entered in stdin
-                # hangs forever if stdin is closed while blocking - run as a daemon thread
-                rlist, _, _ = select.select([sys.stdin], [], [])
-            except ValueError:
-                return
-
-            read_ready.set()
-            next_cycle.wait()
-            next_cycle.reset()
-
-    # server has created UNIX domain sockets for stdin, stdout, and stderr
-    sockets = tuple(socket.socket(sock.AF_UNIX) for _ in xrange(3))
-    for sock, name in zip(sockets, ('_stdin', '_stdout', '_stderr')):
-        sock.connect(workarea + '/' + name)
-
-    try:
-        read_ready = threading.Event()
-        next_cycle = threading.Event()
-        tty_lock = threading.Lock()
-        stdout_thread = threading.Thread(target = read_sock, name = 'stdout', args = (sockets[1], sys.stdout, tty_lock, read_ready))
-        stderr_thread = threading.Thread(target = read_sock, name = 'stderr', args = (sockets[2], sys.stderr, tty_lock))
+                try:
+                    sockets[0].send(line)
+                except socket.error:
+                    break
+    
+            stdout_thread.join()
+            stderr_thread.join()
+    
+        finally:
+            for sock in sockets:
+                sock.close()
+    
+    else:
+        # Executable and arguments
+        cmds = args.cmd.split()
+        executable = cmds[0]
+        
+        if server_host == 'localhost' or server_host == '127.0.0.1' or server_host == socket.gethostname():
+            data['exec_path'] = executable
+        else:
+            with open(executable) as source:
+                data['exec'] = source.read()
+        
+        if len(cmds) > 1:
+            data['args'] = ' '.join(cmds[1:])
+        
+        # Title
+        if args.title:
+            data['title'] = args.title
+        else:
+            data['title'] = 'DynamoExecutable'
+    
+        response = communicate(data)
+    
+        if response['status'] != 'OK':
+            sys.stderr.write('Server responded: [%s]: %s\n' % (response['status'], response['message']))
+            sys.exit(1)
+    
+        ## Print out the response
+        app_id = response['message']['appid']
+        path = response['message']['path']
+        
+        print 'application id:', app_id
+        print 'path:', path
+        
+        if args.asynch:
+            sys.exit(0)
+    
+        ## Synchronous execution: dynamo_exec will wait until process completion
+    
+        def tail_follow(source_path, stream, lock, stop_reading):
+            ## tail -f emulation
+            while True:
+                if os.path.exists(source_path):
+                    break
+    
+                if stop_reading.is_set():
+                    return
+    
+                time.sleep(0.5)
+    
+            with open(source_path) as source:
+                lock.acquire()
+                while True:
+                    if stop_reading.is_set():
+                        lock.release()
+                        return
+    
+                    pos = source.tell()
+                    line = source.readline()
+                    if not line:
+                        source.seek(pos)
+                        lock.release()
+                        time.sleep(0.5)
+                        lock.acquire()
+                    else:
+                        stream.write(line)
+    
+        stop_reading = threading.Event()
+        lock = threading.Lock()
+        stdout_thread = threading.Thread(target = tail_follow, name = 'stdout', args = (path + '/_stdout', sys.stdout, lock, stop_reading))
+        stderr_thread = threading.Thread(target = tail_follow, name = 'stderr', args = (path + '/_stderr', sys.stderr, lock, stop_reading))
         stdout_thread.start()
         stderr_thread.start()
     
-        stdin_thread = threading.Thread(target = watch_stdin, name = 'stdin', args = (read_ready, next_cycle))
-        stdin_thread.daemon = True
-        stdin_thread.start()
+        status = 'unknown'
+        return_code = 0
     
-        response = communicate({'status': 'connected'})
-    
-        while True:
-            read_ready.wait()
-            try:
-                line = sys.stdin.readline()
-            except ValueError:
-                # stdin is closed
-                break
-    
-            read_ready.reset()
-            next_cycle.set()
-    
-            sockets[0].send(line)
-
-        stdout_thread.join()
-        stderr_thread.join()
-
-    finally:
-        for sock in sockets:
-            sock.close()
-
-else:
-    # Executable and arguments
-    cmds = args.cmd.split()
-    executable = cmds[0]
-    
-    if server_host == 'localhost' or server_host == '127.0.0.1' or server_host == socket.gethostname():
-        data['exec_path'] = executable
-    else:
-        with open(executable) as source:
-            data['exec'] = source.read()
-    
-    if len(cmds) > 1:
-        data['args'] = ' '.join(cmds[1:])
-    
-    # Title
-    if args.title:
-        data['title'] = args.title
-    else:
-        data['title'] = 'DynamoExecutable'
-
-    response = communicate(data)
-
-    if response['status'] != 'OK':
-        sys.stderr.write('\nServer responded: [%s]: %s\n' % (response['status'], response['message']))
-        sys.exit(1)
-
-    ## Print out the response
-    app_id = response['message']['appid']
-    path = response['message']['path']
-    
-    print 'application id:', app_id
-    print 'path:', path
-    
-    if args.asynch:
-        sys.exit(0)
-
-    ## Synchronous execution: dynamo_exec will wait until process completion
-
-    def tail_follow(source_path, stream, lock, stop_reading):
-        ## tail -f emulation
-        while True:
-            if os.path.exists(source_path):
-                break
-
-            if stop_reading.is_set():
-                return
-
-            time.sleep(0.5)
-
-        with open(source_path) as source:
-            lock.acquire()
+        try:
             while True:
-                if stop_reading.is_set():
-                    lock.release()
-                    return
-
-                pos = source.tell()
-                line = source.readline()
-                if not line:
-                    source.seek(pos)
-                    lock.release()
-                    time.sleep(0.5)
-                    lock.acquire()
-                else:
-                    stream.write(line)
-
-    stop_reading = threading.Event()
-    lock = threading.Lock()
-    stdout_thread = threading.Thread(target = tail_follow, name = 'stdout', args = (path + '/_stdout', sys.stdout, lock, stop_reading))
-    stderr_thread = threading.Thread(target = tail_follow, name = 'stderr', args = (path + '/_stderr', sys.stderr, lock, stop_reading))
-    stdout_thread.start()
-    stderr_thread.start()
-
-    status = 'unknown'
-    return_code = 0
-
-    try:
-        while True:
-            response = communicate({'appid', app_id})
-            if response['status'] != 'OK':
-                sys.stderr.write('Failed to fetch application status from server.')
+                response = communicate({'appid', app_id})
+                if response['status'] != 'OK':
+                    sys.stderr.write('Failed to fetch application status from server.')
+                    break
+    
+                app_info = response['message']
+    
+                try:
+                    status = app_info['status']
+                except KeyError:
+                    sys.stderr.write('Failed to fetch application status from server.')
+                    break
+    
+                if status not in ('new', 'run'):
+                    if app_info['exit_code'] is None:
+                        return_code = 1
+                    else:
+                        return_code = app_info['exit_code']
+    
+                    stop_reading.set()
+                    stdout_thread.join()
+                    stderr_thread.join()
+                    break
+    
+                time.sleep(3)
+    
+        except KeyboardInterrupt:
+            stop_reading.set()
+            stdout_thread.join()
+            stderr_thread.join()
+    
+            while True:
+                sys.stdout.write('Kill task? [y/n]: ')
+                sys.stdout.flush()
+                kill = sys.stdin.readline().strip()
+                if kill == 'y':
+                    response = communicate({'appid', app_id, 'action', 'kill'})
+                    if response['status'] == 'OK':
+                        sys.stdout.write(response['message'] + '\n')
+                    else:
+                        sys.stderr.write('Server responded: [%s]: %s\n' % (response['status'], response['message']))
+    
+                elif kill != 'n':
+                    sys.stdout.write('Please answer in y/n.\n')
+                    continue
+    
                 break
+    
+        except:
+            stop_reading.set()
+            stdout_thread.join()
+            stderr_thread.join()
+    
+            exc_type, exc, tb = sys.exc_info()
+            sys.stderr.write('Caught exception %s while waiting for task to complete.\n' % exc_type.__name__)
+    
+            sys.stderr.write('Traceback (most recent call last):\n')
+            sys.stderr.write(''.join(traceback.format_tb(tb)) + '\n')
+            sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
+            
+            return_code = 2
+    
+        sys.stderr.write('Dynamo executable completed with status %s (code %s).\n' % (status, return_code))
+        sys.exit(return_code)
 
-            app_info = response['message']
-
-            try:
-                status = app_info['status']
-            except KeyError:
-                sys.stderr.write('Failed to fetch application status from server.')
-                break
-
-            if status not in ('new', 'run'):
-                if app_info['exit_code'] is None:
-                    return_code = 1
-                else:
-                    return_code = app_info['exit_code']
-
-                stop_reading.set()
-                stdout_thread.join()
-                stderr_thread.join()
-                break
-
-            time.sleep(3)
-
-    except KeyboardInterrupt:
-        stop_reading.set()
-        stdout_thread.join()
-        stderr_thread.join()
-
-        while True:
-            sys.stdout.write('Kill task? [y/n]: ')
-            sys.stdout.flush()
-            kill = sys.stdin.readline().strip()
-            if kill == 'y':
-                response = communicate({'appid', app_id, 'action', 'kill'})
-                if response['status'] == 'OK':
-                    sys.stdout.write('\n' + response['message'] + '\n')
-                else:
-                    sys.stderr.write('\nServer responded: [%s]: %s\n' % (response['status'], response['message']))
-
-            elif kill != 'n':
-                sys.stdout.write('Please answer in y/n.\n')
-                continue
-
-            break
-
-    except:
-        stop_reading.set()
-        stdout_thread.join()
-        stderr_thread.join()
-
-        exc_type, exc, tb = sys.exc_info()
-        sys.stderr.write('Caught exception %s while waiting for task to complete.\n' % exc_type.__name__)
-
-        sys.stderr.write('Traceback (most recent call last):\n')
-        sys.stderr.write(''.join(traceback.format_tb(tb)) + '\n')
-        sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
-        
-        return_code = 2
-
-    sys.stderr.write('Dynamo executable completed with status %s (code %s).\n' % (status, return_code))
-    sys.exit(return_code)
+finally:
+    server.close()

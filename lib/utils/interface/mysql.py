@@ -15,6 +15,8 @@ from types import TupleType, ListType
 MySQLdb.converters.conversions[TupleType] = MySQLdb.converters.escape_sequence
 MySQLdb.converters.conversions[ListType] = MySQLdb.converters.escape_sequence
 
+from dynamo.dataformat import Configuration
+
 LOG = logging.getLogger(__name__)
 
 class MySQL(object):

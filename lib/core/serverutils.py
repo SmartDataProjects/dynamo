@@ -68,4 +68,4 @@ def find_common_base(paths):
     return base_directories
 
 # Directories to bind-mount for read-only processes
-mountpoints = algo.find_common_base(pythonpaths)
+mountpoints = find_common_base(sys.path)

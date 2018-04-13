@@ -1,11 +1,12 @@
 import os
 import sys
 import pwd
+import shutil
 import time
 import logging
-import hashlib
 import random
 import shlex
+import json
 import code
 import signal
 import socket
@@ -62,9 +63,6 @@ class DynamoServer(object):
         ## Maximum number of consecutive unhandled errors before shutting down the server
         self.max_num_errors = config.max_num_errors
         self.num_errors = 0
-
-        ## Configurations for standard tools to be passed to applications
-        self.defaults = config.defaults
 
         ## How long application workspaces are retained (days)
         self.applications_keep = config.applications_keep * 3600 * 24
@@ -573,17 +571,26 @@ class DynamoServer(object):
         @param queue  Queue if write-enabled.
         """
 
+        LOG.info('interacting')
+        oldstdout = sys.stdout
+
         self._pre_execution(path, True, stdin, stdout, stderr)
 
         mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': self.inventory}
         code.interact(local = mylocals)
 
+        oldstdout.write('interacted\n')
+        oldstdout.flush()
+
         self._post_execution(None)
 
     def _pre_execution(self, path, read_only, stdin, stdout, stderr):
+        uid = os.geteuid()
+        gid = os.getegid()
+
         if read_only:
             # Set defaults
-            for key, config in self.defaults.items():
+            for key, config in self.applications_config.defaults.items():
                 try:
                     myconf = config['readonly']
                 except KeyError:
@@ -593,7 +600,7 @@ class DynamoServer(object):
                     del config['fullauth']
 
                 modname, clsname = key.split(':')
-                module = __import__(modname, globals(), locals())
+                module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
                 cls = getattr(module, clsname)
 
                 cls.set_default(myconf)
@@ -606,7 +613,7 @@ class DynamoServer(object):
             except ValueError:
                 pass
 
-            for base in DynamoServer.mountpoints:
+            for base in serverutils.mountpoints:
                 try:
                     os.makedirs(path + base)
                 except OSError:
@@ -623,11 +630,11 @@ class DynamoServer(object):
             os.chroot(path)
 
             path = ''
-            os.setcwd('/')
+            os.chdir('/')
 
         else:
             # Set defaults
-            for key, config in self.defaults.items():
+            for key, config in self.applications_config.defaults.items():
                 try:
                     myconf = config['fullauth']
                 except KeyError:
@@ -639,14 +646,13 @@ class DynamoServer(object):
 
                 cls.set_default(myconf)
 
-            os.setcwd(path)
+            os.chdir(path)
 
         # De-escalate privileges permanently
-        pwnam = pwd.getpwnam(self.user)
         os.seteuid(0)
         os.setegid(0)
-        os.setgid(pwnam.pw_gid)
-        os.setuid(pwnam.pw_uid)
+        os.setgid(uid)
+        os.setuid(gid)
 
         # Redirect STDIN, STDOUT, and STDERR
         if stdin is None:
@@ -797,13 +803,33 @@ class DynamoServer(object):
         self.app_collector = None
 
     def _process_application(self, conn, addr):
+        def respond(status, message):
+            if status != 'OK':
+                LOG.error('Response to %s:%d: %s', addr[0], addr[1], message)
+
+            bytes = json.dumps({'status': status, 'message': message})
+            conn.send('%d %s' % (len(bytes), bytes))
+
         def recv():
             data = ''
             while True:
-                bytes = conn.recv(2048)
+                try:
+                    bytes = conn.recv(2048)
+                except socket.error:
+                    # client should not close the socket first
+                    return None
                 if not bytes:
                     break
+
+                if not data:
+                    # first communication
+                    length, _, bytes = bytes.partition(' ')
+                    length = int(length)
+
                 data += bytes
+
+                if len(data) == length:
+                    break
 
             try:
                 return json.loads(data)
@@ -811,33 +837,30 @@ class DynamoServer(object):
                 respond('failed', 'Ill-formatted data')
                 return None
 
-        def respond(status, message):
-            if status != 'OK':
-                LOG.error('Response to %s:%d: %s', addr[0], addr[1], message)
-
-            conn.send(json.dumps({'status': status, 'message': message}))
-
         try:
             # authorize the user
             user_cert_data = conn.getpeercert()
+            translation = {'domainComponent': 'DC', 'organizationalUnitName': 'OU', 'commonName': 'CN'}
+
             subject = ''
             for rdn in user_cert_data['subject']:
-                subject += '/' + '+'.join('%s=%s' % keyvalue for keyvalue in rdn)
-            issuer = ''
-            for rdn in user_cert_data['issuer']:
-                issuer += '/' + '+'.join('%s=%s' % keyvalue for keyvalue in rdn)
-    
-            user = self.manager.master.identify_user(subject)
-            if user is None:
+                subject += '/' + '+'.join('%s=%s' % (translation[key], value) for key, value in rdn)
+   
+            user_name = self.manager.master.identify_user(subject)
+            if user_name is None:
                 # if the client used a X509 proxy, issuer is the real user DN
-                user = self.manager.master.identify_user(issuer)
+                issuer = ''
+                for rdn in user_cert_data['issuer']:
+                    issuer += '/' + '+'.join('%s=%s' % (translation[key], value) for key, value in rdn)
+
+                user_name = self.manager.master.identify_user(issuer)
     
-            if user is None:
-                respond('failed', 'Unidentified user DN %s', subject)
+            if user_name is None:
+                respond('failed', 'Unidentified user DN %s' % subject)
                 return
     
-            if not self.manager.master.authorize_user(user, 'user'):
-                respond('failed', 'Unauthorized user %s', user)
+            if not self.manager.master.authorize_user(user_name, 'user'):
+                respond('failed', 'Unauthorized user %s' % user_name)
                 return
 
             app_data = recv()
@@ -863,7 +886,7 @@ class DynamoServer(object):
                             (ServerManager.application_status_name(app['status']), app['exit_code']))
                     return
 
-                respond('OK', json.dumps(app))
+                respond('OK', app)
                 return
 
             # new application
@@ -875,7 +898,7 @@ class DynamoServer(object):
                 while True:
                     d = hex(random.randint(0, 0xffffffffffffffff))[2:-1]
                     try:
-                        os.makedirs(workarea)
+                        os.makedirs(workarea + d)
                     except OSError:
                         if not os.path.exists(workarea + d):
                             respond('failed', 'Failed to create work area %s' % workarea)
@@ -892,13 +915,14 @@ class DynamoServer(object):
                 sockets = tuple(socket.socket(socket.AF_UNIX) for _ in xrange(3))
                 for sock, name in zip(sockets, ('_stdin', '_stdout', '_stderr')):
                     sock.bind(workarea + '/' + name)
+                    os.chmod(workarea + '/' + name, 0777)
                     sock.listen(1)
 
                 connections = tuple()
 
                 try:
                     # now tell the location of the work area to the client
-                    conn.send('{"path": "%s"}' % workarea)
+                    respond('OK', {'path': workarea})
     
                     # client should connect to the sockets
                     connections = tuple(sock.accept()[0] for sock in sockets)
@@ -912,18 +936,19 @@ class DynamoServer(object):
                         return
     
                     # make a file-like wrapper for each connection
-                    iofiles = tuple(connection.makefile() for connection in connections)
+                    proc_args = (workarea, sockets[0].makefile('r'), sockets[1].makefile('w'), sockets[2].makefile('w'))
+
                     respond('OK', 'Session ready')
     
-                    proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', args = (workarea,) + iofiles)
+                    proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', args = proc_args)
                     proc.daemon = True
                     proc.start()
 
-                    LOG.info('Started interactive session (%s) for user %s (PID %d).', path, user_name, proc.pid)
+                    LOG.info('Started interactive session (%s) for user %s (PID %d).', workarea, user_name, proc.pid)
     
                     proc.join()
 
-                    LOG.info('Interactive session (%s) for user %s completed (Exit code %d).', path, user_name, proc.exitcode)
+                    LOG.info('Interactive session (%s) for user %s completed (Exit code %d).', workarea, user_name, proc.exitcode)
 
                 finally:
                     for sock in sockets:
@@ -937,8 +962,7 @@ class DynamoServer(object):
             else:
                 for key in ['title', 'args', 'write_request']:
                     if key not in app_data:
-                        LOG.error('Missing ' + key)
-                        conn.send('Missing ' + key)
+                        respond('failed', 'Missing ' + key)
                         return
 
                 if 'exec_path' in app_data:
@@ -961,7 +985,7 @@ class DynamoServer(object):
     
                 app_id = self.manager.master.schedule_application(**app_data)
 
-                respond('OK', '{"appid": %d, "path": %s}' % (app_id, workarea))
+                respond('OK', {'appid': app_id, 'path': workarea})
 
         except:
             respond('failed', 'Exception: ' + str(sys.exc_info()[1]))

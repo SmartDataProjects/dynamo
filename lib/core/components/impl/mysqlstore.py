@@ -2,7 +2,7 @@ import time
 import logging
 import fnmatch
 
-from dynamo.core.persistency.base import InventoryStore
+from dynamo.core.components.persistency import InventoryStore
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Partition, Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
 

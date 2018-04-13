@@ -8,7 +8,7 @@
           "passwd": "",
           "host": "localhost",
           "db": "dynamohistory"
-        },
+        }
       }
     },
     "readonly": {
