@@ -5,6 +5,7 @@ import time
 import logging
 import shlex
 import signal
+import code
 import multiprocessing
 import threading
 import Queue
@@ -13,7 +14,6 @@ from dynamo.core.inventory import DynamoInventory
 from dynamo.core.manager import ServerManager, OutOfSyncError
 import dynamo.core.serverutils as serverutils
 from dynamo.core.components.appserver import AppServer
-from dynamo.core.components.console import DynamoConsole
 from dynamo.utils.signaling import SignalBlocker
 from dynamo.dataformat.exceptions import log_exception
 
@@ -563,7 +563,7 @@ class DynamoServer(object):
 
         return 0
 
-    def run_interactive(self, path, stdout = sys.stdout, stderr = sys.stderr, make_console = DynamoConsole):
+    def run_interactive(self, path, stdout = sys.stdout, stderr = sys.stderr, make_console = code.InteractiveConsole):
         """
         Main function for interactive sessions.
         For now we limit interactive sessions to read-only.
@@ -576,7 +576,7 @@ class DynamoServer(object):
         self._pre_execution(path, True, stdout, stderr)
 
         # use receive of oconn as input
-        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None}
+        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': self.inventory}
         console = make_console(mylocals)
         try:
             console.interact(BANNER)
