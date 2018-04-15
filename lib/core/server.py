@@ -63,6 +63,9 @@ class DynamoServer(object):
         self.max_num_errors = config.max_num_errors
         self.num_errors = 0
 
+        ## Queue to send child pids to be killed
+        self.kill_queue = None
+
         ## How long application workspaces are retained (days)
         self.applications_keep = config.applications_keep * 3600 * 24
 
@@ -186,7 +189,7 @@ class DynamoServer(object):
         """
 
         # Start the application collector thread
-        aconf = self.applications_config.collector
+        aconf = self.applications_config.server
         appserver = AppServer.get_instance(aconf.module, self, aconf.config)
         appserver.start()
 
@@ -295,6 +298,7 @@ class DynamoServer(object):
             raise
 
         finally:
+            LOG.info('Stopping application server.')
             # Close the application collector. The collector thread will terminate
             appserver.stop()
 
@@ -307,10 +311,7 @@ class DynamoServer(object):
             for app_id, proc, user_name, path in child_processes:
                 LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)
 
-                serverutils.killproc(proc)
-
-                if proc.is_alive():
-                    LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
+                self.kill_queue.put(proc.pid, 5)
 
                 try:
                     self.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
@@ -381,15 +382,14 @@ class DynamoServer(object):
         while ichild != len(child_processes):
             app_id, proc, user_name, path = child_processes[ichild]
 
-            apps = self.manamger.get_applications(app_id = app_id)
+            apps = self.manager.master.get_applications(app_id = app_id)
             if len(apps) == 0:
                 status = ServerManager.APP_KILLED
             else:
                 status = apps[0]['status']
             
             if status == ServerManager.APP_KILLED:
-                serverutils.killproc(proc)
-                proc.join(60)
+                self._kill_proc(proc, 60)
 
             if app_id == writing_process[0]:
                 if status == ServerManager.APP_KILLED:
@@ -409,7 +409,7 @@ class DynamoServer(object):
     
                     elif read_state == 2:
                         status = ServerManager.APP_FAILED
-                        serverutils.killproc(proc)
+                        self._kill_proc(proc)
 
                 if read_state != 0:
                     proc.join(60)
@@ -551,7 +551,8 @@ class DynamoServer(object):
 
         # Execute the script
         try:
-            myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
+#            myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
+            myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None}
             execfile(path + '/exec.py', globals = myglobals)
         except SystemExit as exc:
             if exc.code == 0:
@@ -576,7 +577,8 @@ class DynamoServer(object):
         self._pre_execution(path, True, stdout, stderr)
 
         # use receive of oconn as input
-        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': self.inventory}
+#        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': self.inventory}
+        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, 'inventory': self.inventory}
         console = make_console(mylocals)
         try:
             console.interact(BANNER)
@@ -742,6 +744,11 @@ class DynamoServer(object):
 
         sys.stdout.close()
         sys.stderr.close()
+
+    def _kill_proc(self, proc, timeout = 5):
+        self.kill_queue.put(proc.pid)
+        # main thread takes care of killing the process
+        proc.join(timeout)
 
     def shutdown(self):
         LOG.info('Shutting down Dynamo server..')

@@ -4,13 +4,6 @@ from ctypes import cdll
 
 libc = cdll.LoadLibrary("/lib64/libc.so.6") # will use glibc mount()
 
-def killproc(proc):
-    uid = os.geteuid()
-    os.seteuid(0)
-    proc.terminate()
-    os.seteuid(uid)
-    proc.join(5)
-
 def bindmount(source, target):
     # Enums defined in sys/mount.h - not named variables in libc.so
     RDONLY = 1

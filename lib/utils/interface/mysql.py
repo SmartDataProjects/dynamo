@@ -134,6 +134,7 @@ class MySQL(object):
                         break
                     except MySQLdb.OperationalError as err:
                         if not (self.reuse_connection and err.args[0] == 2006):
+                            raise
                             #2006 = MySQL server has gone away
                             #If we are reusing connections, this type of error is to be ignored
                             if not silent:

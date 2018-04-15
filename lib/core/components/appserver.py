@@ -1,6 +1,7 @@
 import os
 import random
 import threading
+import Queue
 
 class AppServer(object):
     """Base class for application server."""
@@ -17,7 +18,7 @@ class AppServer(object):
     def __init__(self, dynamo_server, config):
         self.dynamo_server = dynamo_server
 
-X        ## Queues synchronous applications will wait on. {app_id: Queue}
+        ## Queues synchronous applications will wait on. {app_id: Queue}
         self.synch_app_queues = {}
         ## notify_synch_lock can be called from the DynamoServer immediately
         ## after the application is scheduled. Need a lock to make sure we
@@ -85,3 +86,5 @@ X        ## Queues synchronous applications will wait on. {app_id: Queue}
             app_id = self.dynamo_server.manager.master.schedule_application(**app_data)
             if mode == 'synch':
                 self.synch_app_queues[app_id] = Queue.Queue()
+
+        return app_id

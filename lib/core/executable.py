@@ -5,7 +5,6 @@ as standalone python scripts.
 """
 
 from dynamo.core.inventory import ObjectRepository
-from dynamo.dataformat import Configuration
 
 ## Whether this is a read-only process
 read_only = True

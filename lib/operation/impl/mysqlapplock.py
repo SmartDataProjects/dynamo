@@ -2,7 +2,7 @@ import logging
 import time
 
 from dynamo.operation.applock import ApplicationLockInterface
-from dynamo.utils.interface import MySQL
+from dynamo.utils.interface.mysql import MySQL
 
 LOG = logging.getLogger(__name__)
 

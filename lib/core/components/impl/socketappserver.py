@@ -1,4 +1,5 @@
 import os
+import sys
 import socket
 import time
 import thread
@@ -7,13 +8,16 @@ import multiprocessing
 import shutil
 import code
 import ssl
-import Queue
+import json
+import logging
 
 from dynamo.core.components.appserver import AppServer
 from dynamo.core.manager import ServerManager
 
-DYNAMO_PORT = 39626
+SERVER_PORT = 39626
 DN_TRANSLATION = {'domainComponent': 'DC', 'organizationalUnitName': 'OU', 'commonName': 'CN'}
+
+LOG = logging.getLogger(__name__)
 
 class SocketIO(object):
     def __init__(self, conn, addr):
@@ -116,8 +120,27 @@ class SocketAppServer(AppServer):
                 certfile = config.certfile, keyfile = config.keyfile,
                 cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.cafile)
 
-        self._sock.bind(('', DYNAMO_PORT))
+        try:
+            port = int(os.environ['DYNAMO_SERVER_PORT'])
+        except:
+            port = SERVER_PORT
+
+        for _ in xrange(5):
+            try:
+                self._sock.bind(('', port))
+                break
+            except socket.error as err:
+                if err.errno == 98: # address already in use
+                    LOG.warning('Cannot bind to port %d. Retrying..', port)
+                    time.sleep(5)
+        else:
+            # exhausted attempts
+            LOG.error('Failed to bind to port %d.', port)
+            raise
+
         self._sock.listen(5)
+
+        self._running = False
 
     def start(self):
         """Start a daemon thread that runs the accept loop and return."""
@@ -126,8 +149,12 @@ class SocketAppServer(AppServer):
         th.daemon = True
         th.start()
 
+        self._running = True
+
     def stop(self):
         """Shut down the socket."""
+
+        self._running = False
 
         self._sock.shutdown(socket.SHUT_RDWR)
         self._sock.close()
@@ -138,8 +165,13 @@ class SocketAppServer(AppServer):
         while True:
             # blocks until there is a connection
             # keeps blocking when socket is closed
-            select.select([self._sock], [], [])
-            conn, addr = self._sock.accept()
+            try:
+                conn, addr = self._sock.accept()
+            except:
+                if self._running:
+                    LOG.error('Application server socket failed. Cannot accept applications any more.')
+                return
+
             thread.start_new_thread(self._process_application, (conn, addr))
 
     def _process_application(self, conn, addr):
@@ -160,7 +192,7 @@ class SocketAppServer(AppServer):
 
             for dkey in ['subject', 'issuer']:
                 dn = ''
-                for rdn in user_cert_data['subject']:
+                for rdn in user_cert_data[dkey]:
                     dn += '/' + '+'.join('%s=%s' % (DN_TRANSLATION[key], value) for key, value in rdn)
    
                 user_name = master.identify_user(dn)
@@ -173,12 +205,14 @@ class SocketAppServer(AppServer):
             io.send('OK', 'Connected')
 
             app_data = io.recv()
+
+            service = app_data.pop('service')
     
-            if not master.authorize_user(user_name, app_data['service']):
-                io.send('failed', 'Unauthorized user/service %s/%s' % (user_name, app_data['service']))
+            if not master.authorize_user(user_name, service):
+                io.send('failed', 'Unauthorized user/service %s/%s' % (user_name, service))
                 return
 
-            command = app_data['command']
+            command = app_data.pop('command')
 
             if command == 'poll' or command == 'kill':
                 self._act_on_app(command, app_data['appid'], io)
@@ -241,8 +275,8 @@ class SocketAppServer(AppServer):
         if 'exec_path' in app_data:
             try:
                 shutil.copyfile(app_data['exec_path'], workarea + '/exec.py')
-            except:
-                io.send('failed', 'Could not copy %s' % workarea)
+            except Exception as exc:
+                io.send('failed', 'Could not copy executable %s to %s (%s)' % (app_data['exec_path'], workarea, str(exc)))
                 return
 
             app_data.pop('exec_path')
@@ -258,7 +292,7 @@ class SocketAppServer(AppServer):
 
         mode = app_data.pop('mode')
 
-        self._schedule_app(mode, **app_data)
+        app_id = self._schedule_app(mode, **app_data)
 
         if mode == 'synch':
             msg = self.wait_synch_app_queue(app_id)
@@ -275,7 +309,7 @@ class SocketAppServer(AppServer):
             addr_data = io.recv()
             addr = (addr_data['host'], addr_data['port'])
 
-            result = self._serve_synch_app(app_id, msg['pid'], addr)
+            result = self._serve_synch_app(app_id, msg['path'], msg['pid'], addr)
 
             io.send('OK', result)
 
@@ -287,7 +321,7 @@ class SocketAppServer(AppServer):
         addr_data = io.recv()
         addr = (addr_data['host'], addr_data['port'])
 
-        proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', (workarea, addr))
+        proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', args = (workarea, addr))
         proc.start()
         proc.join()
 
@@ -308,7 +342,7 @@ class SocketAppServer(AppServer):
                 pass
             conn.close()
 
-    def _serve_synch_app(self, app_id, pid, addr):
+    def _serve_synch_app(self, app_id, path, pid, addr):
         conns = (socket.create_connection(addr), socket.create_connection(addr))
 
         stop_reading = threading.Event()

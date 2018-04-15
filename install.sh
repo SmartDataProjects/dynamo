@@ -225,7 +225,7 @@ echo
 
 if [ $SERVER_DB ]
 then
-  $SOURCE/$SERVER_DB/install.sh
+#  $SOURCE/$SERVER_DB/install.sh
   if [ $? -ne 0 ]
   then
     echo

@@ -4,8 +4,10 @@ import os
 import sys
 import pwd
 import signal
+import time
 import traceback
 import threading
+import Queue
 import logging
 import logging.handlers
 
@@ -62,6 +64,10 @@ except OSError:
 ## Start the server
 server = main.DynamoServer(config)
 
+if config.applications.enabled:
+    # Only the main thread can issue kill signals. We need the server to report back processes that need to be killed.
+    server.kill_queue = Queue.Queue()
+
 # Loop with server status check, update, and application execution (if enabled)
 srv_thread = threading.Thread(target = server.run)
 srv_thread.start()
@@ -84,9 +90,33 @@ else:
 
     # Now just wait for the signal
     try:
-        signal.pause()
-    except:
+        if server.kill_queue:
+            while True:
+                time.sleep(1)
+                while True:
+                    try:
+                        pid, timeout = server.kill_queue.get_nowait()
+                    except Queue.Empty:
+                        break
+                    else:
+                        try:
+                            os.kill(pid, signal.SIGTERM)
+                        except OSError:
+                            continue
+
+                        os.waitpid(pid, timeout)
+
+        else:
+            # there's nothing to monitor - we just wait
+            signal.pause()
+
+    except KeyboardInterrupt:
         pass
+    except:
+        exc_type, exc, tb = sys.exc_info()
+        sys.stderr.write('Traceback (most recent call last):\n')
+        sys.stderr.write(''.join(traceback.format_tb(tb)) + '\n')
+        sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
 
 server.shutdown()
 srv_thread.join()

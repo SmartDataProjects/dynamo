@@ -3,7 +3,7 @@ import socket
 
 from dynamo.core.components.master import MasterServer
 from dynamo.core.manager import ServerManager
-from dynamo.utils.interface import MySQL
+from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration
 
 class MySQLMasterServer(MasterServer):

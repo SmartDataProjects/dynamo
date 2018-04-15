@@ -29,7 +29,7 @@ class MySQLInventoryStore(InventoryStore):
 
     def check_connection(self): #override
         try:
-            self._mysql.query('SELECT * FROM `partitions`')
+            self._mysql.query('SELECT COUNT(*) FROM `partitions`')
         except:
             return False
 

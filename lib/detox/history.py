@@ -3,7 +3,7 @@ import sqlite3
 import lzma
 import logging
 
-from dynamo.utils.interface import MySQL
+from dynamo.utils.interface.mysql import MySQL
 
 LOG = logging.getLogger(__name__)
 

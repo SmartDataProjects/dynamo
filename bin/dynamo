@@ -10,9 +10,9 @@ import Queue
 import traceback
 import select
 import time
-import shlex
 import json
 
+SERVER_HOST = 'localhost'
 SERVER_PORT = 39626
 CLIENT_PORT_RANGE = (39627, 39637)
 
@@ -94,7 +94,7 @@ class DynamoServer(object):
             raise ReceiveError()
         
         if response_data['status'] != 'OK':
-            sys.stderr.write('Server responded: [%s] %s' % (response['status'], response['content']))
+            sys.stderr.write('Server responded: [%s] %s\n' % (response_data['status'], response_data['content']))
             raise RuntimeError()
 
         return response_data['content']
@@ -118,13 +118,9 @@ class DynamoServer(object):
         print self.communicate(in_data)
 
     def submit(self, cmd, title, write_request, workdir, asynch):
-        ## Executable and arguments
-        # parse args.cmd as a POSIX command-line
-        lexer = shlex.shlex(cmd)
-        executable = lexer.get_token() # first token
-        cmdargs = ' '.join(t for t in lexer) # concatenate remaining tokens
+        executable, _, args = cmd.partition(' ') # yes this will fail if our executable name contains a space..
 
-        in_data = {'command': 'submit', 'title': title, 'args': cmdargs, 'write_request': write_request, 'service': self._service}
+        in_data = {'command': 'submit', 'title': title, 'args': args, 'write_request': write_request, 'service': self._service}
 
         if self._addr[0] in ('localhost', '127.0.0.1', socket.gethostname()):
             in_data['exec_path'] = executable
@@ -200,6 +196,8 @@ class DynamoServer(object):
         sys.exit(return_code)
 
     def interact(self, write_request, workdir):
+        import readline
+
         in_data = {'command': 'interact', 'write_request': write_request, 'service': self._service}
 
         if workdir is not None:
@@ -367,26 +365,19 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     sys.argv = []
-    
-    interactive = (args.cmd is None)
-    
-    if args.asynch and interactive:
-        sys.stderr.write('Incompatible options: --asynchronous and --interactive')
-        sys.exit(2)
-    
+
     ## Server host
     server_port = SERVER_PORT
     if args.server:
-        if ':' in args.server:
-            server_host, _, port = args.server.partition(':')
-            server_port = int(port)
-        else:
-            server_host = args.server
+        server_host = args.server
+    elif 'DYNAMO_SERVER_HOST' in os.environ:
+        server_host = os.environ['DYNAMO_SERVER_HOST']
     else:
-        try:
-            server_host = os.environ['DYNAMO_SERVER_HOST']
-        except KeyError:
-            server_host = 'localhost'
+        server_host = SERVER_HOST
+
+    if ':' in server_host:
+        server_host, _, port = args.server.partition(':')
+        server_port = int(port)
 
     server_addr = (server_host, server_port)
     
@@ -404,6 +395,7 @@ if __name__ == '__main__':
     else:
         keyfile = certfile
 
+    server = None
     try:
         server = DynamoServer(server_addr, certfile, keyfile, args.service)
 
@@ -411,7 +403,7 @@ if __name__ == '__main__':
             server.poll(args.poll_appid)
         elif args.kill_appid is not None:
             server.kill(args.kill_appid)
-        elif interactive:
+        elif args.cmd is None:
             server.interact(args.write_request, args.workdir)
         else:
             server.submit(args.cmd, args.title, args.write_request, args.workdir, args.asynch)
@@ -426,4 +418,5 @@ if __name__ == '__main__':
         pass
 
     finally:
-        server.close()
+        if server:
+            server.close()

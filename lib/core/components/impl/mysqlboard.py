@@ -1,6 +1,6 @@
 from dynamo.core.components.board import UpdateBoard
 from dynamo.core.inventory import DynamoInventory
-from dynamo.utils.interface import MySQL
+from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration
 
 class MySQLUpdateBoard(UpdateBoard):
