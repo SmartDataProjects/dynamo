@@ -63,15 +63,13 @@ class DynamoServer(object):
         self.max_num_errors = config.max_num_errors
         self.num_errors = 0
 
-        ## Queue to send child pids to be killed
-        self.kill_queue = None
 
         ## How long application workspaces are retained (days)
         self.applications_keep = config.applications_keep * 3600 * 24
 
-        ## Shutdown flag - if the flag is set, raise KeyboardInterrupt
+        ## Shutdown flag
+        # Default is set. KeyboardInterrupt is raised when flag is cleared
         self.shutdown_flag = threading.Event()
-        # Default is set. We shut down the server when flag is cleared
         self.shutdown_flag.set()
 
     def load_inventory(self):
@@ -206,15 +204,19 @@ class DynamoServer(object):
             do_sleep = False
 
             while True:
+                LOG.debug('Check status and connection')
                 self.check_status_and_connection()
     
                 ## Step 4 (easier to do here because we use "continue"s)
+                LOG.debug('Read updates')
                 self.read_updates()
     
                 ## Step 5 (easier to do here because we use "continue"s)
+                LOG.debug('Collect processes')
                 writing_process = self.collect_processes(child_processes, writing_process)
 
                 ## Step 6 (easier to do here because we use "continue"s)
+                LOG.debug('Clean old workareas')
                 self.clean_old_workareas()
     
                 ## Step 7 (easier to do here because we use "continue"s)
@@ -222,6 +224,7 @@ class DynamoServer(object):
                     # one successful cycle - reset the error counter
                     self.num_errors = 0
 
+                    LOG.debug('Sleep %d', self.poll_interval)
                     time.sleep(self.poll_interval)
     
                 ## Step 1: Poll
@@ -311,7 +314,7 @@ class DynamoServer(object):
             for app_id, proc, user_name, path in child_processes:
                 LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)
 
-                self.kill_queue.put(proc.pid, 5)
+                serverutils.killproc(proc)
 
                 try:
                     self.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
@@ -389,7 +392,9 @@ class DynamoServer(object):
                 status = apps[0]['status']
             
             if status == ServerManager.APP_KILLED:
-                self._kill_proc(proc, 60)
+                LOG.warning('killing proc %d', proc.pid)
+                serverutils.killproc(proc)
+                LOG.warning('killed proc %d', proc.pid)
 
             if app_id == writing_process[0]:
                 if status == ServerManager.APP_KILLED:
@@ -409,7 +414,7 @@ class DynamoServer(object):
     
                     elif read_state == 2:
                         status = ServerManager.APP_FAILED
-                        self._kill_proc(proc)
+                        serverutils.killproc(proc)
 
                 if read_state != 0:
                     proc.join(60)
@@ -744,11 +749,6 @@ class DynamoServer(object):
 
         sys.stdout.close()
         sys.stderr.close()
-
-    def _kill_proc(self, proc, timeout = 5):
-        self.kill_queue.put(proc.pid)
-        # main thread takes care of killing the process
-        proc.join(timeout)
 
     def shutdown(self):
         LOG.info('Shutting down Dynamo server..')

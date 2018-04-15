@@ -28,30 +28,30 @@ class ServerManager(object):
 
     @staticmethod
     def server_status_name(arg):
-        if type(arg) is int:
+        try:
             return ServerManager._server_statuses[arg - 1]
-        else:
+        except:
             return arg
 
     @staticmethod
     def server_status_val(arg):
-        if type(arg) is str:
+        try:
             return eval('ServerManager.SRV_' + arg.upper())
-        else:
+        except:
             return arg
 
     @staticmethod
     def application_status_name(arg):
-        if type(arg) is int:
+        try:
             return ServerManager._application_statuses[arg - 1]
-        else:
+        except:
             return arg
 
     @staticmethod
     def application_status_val(arg):
-        if type(arg) is str:
+        try:
             return eval('ServerManager.APP_' + arg.upper())
-        else:
+        except:
             return arg
 
     def __init__(self, config):
