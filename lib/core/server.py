@@ -4,7 +4,6 @@ import shutil
 import time
 import logging
 import shlex
-import code
 import signal
 import multiprocessing
 import threading
@@ -14,11 +13,19 @@ from dynamo.core.inventory import DynamoInventory
 from dynamo.core.manager import ServerManager, OutOfSyncError
 import dynamo.core.serverutils as serverutils
 from dynamo.core.components.appserver import AppServer
+from dynamo.core.components.console import DynamoConsole
 from dynamo.utils.signaling import SignalBlocker
 from dynamo.dataformat.exceptions import log_exception
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
+
+BANNER = '''
++++++++++++++++++++++++++++++++++++++
+++++++++++++++ DYNAMO +++++++++++++++
+++++++++++++++  v2.1  +++++++++++++++
++++++++++++++++++++++++++++++++++++++
+'''
 
 class DynamoServer(object):
     """Main daemon class."""
@@ -238,7 +245,7 @@ class DynamoServer(object):
                 if not os.path.exists(path + '/exec.py'):
                     LOG.info('Application %s from user %s (write request: %s) not found.', title, user_name, write_request)
                     self.manager.master.update_application(app_id, status = ServerManager.APP_NOTFOUND)
-                    appserver.notify_synch_app(app_id, status = 'notfound')
+                    appserver.notify_synch_app(app_id, {'status': ServerManager.APP_NOTFOUND})
                     continue
     
                 LOG.info('Found application %s from user %s (write request: %s)', title, user_name, write_request)
@@ -251,7 +258,7 @@ class DynamoServer(object):
                         # TODO send a message
     
                         self.manager.master.update_application(app_id, status = ServerManager.APP_AUTHFAILED)
-                        appserver.notify_synch_app(app_id, status = 'authfailed')
+                        appserver.notify_synch_app(app_id, {'status': ServerManager.APP_AUTHFAILED})
                         continue
     
                     queue = multiprocessing.Queue()
@@ -261,11 +268,12 @@ class DynamoServer(object):
     
                 ## Step 3: Spawn a child process for the script
                 self.manager.master.update_application(app_id, status = ServerManager.APP_RUN)
-                appserver.notify_synch_app(app_id, path = path)
     
                 proc = multiprocessing.Process(target = self.run_script, name = title, args = proc_args)
                 proc.daemon = True
                 proc.start()
+
+                appserver.notify_synch_app(app_id, {'status': ServerManager.APP_RUN, 'path': path, 'pid': proc.pid})
     
                 LOG.info('Started application %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
     
@@ -543,7 +551,8 @@ class DynamoServer(object):
 
         # Execute the script
         try:
-            execfile(path + '/exec.py', {'__name__': '__main__'})
+            myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
+            execfile(path + '/exec.py', globals = myglobals)
         except SystemExit as exc:
             if exc.code == 0:
                 pass
@@ -554,7 +563,7 @@ class DynamoServer(object):
 
         return 0
 
-    def run_interactive(self, path, stdout = sys.stdout, stderr = sys.stderr, make_console = code.InteractiveConsole):
+    def run_interactive(self, path, stdout = sys.stdout, stderr = sys.stderr, make_console = DynamoConsole):
         """
         Main function for interactive sessions.
         For now we limit interactive sessions to read-only.
@@ -567,9 +576,10 @@ class DynamoServer(object):
         self._pre_execution(path, True, stdout, stderr)
 
         # use receive of oconn as input
-        console = make_console({'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None})
+        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None}
+        console = make_console(mylocals)
         try:
-            console.interact()
+            console.interact(BANNER)
         except:
             pass
 

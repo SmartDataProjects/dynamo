@@ -119,13 +119,6 @@ class SocketAppServer(AppServer):
         self._sock.bind(('', DYNAMO_PORT))
         self._sock.listen(5)
 
-        ## Queues synchronous applications will wait on. {app_id: Queue}
-        self.synch_app_queues = {}
-        ## notify_synch_lock can be called from the DynamoServer immediately
-        ## after the application is scheduled. Need a lock to make sure we
-        ## register them first.
-        self.notify_lock = threading.Lock()
-
     def start(self):
         """Start a daemon thread that runs the accept loop and return."""
 
@@ -194,7 +187,7 @@ class SocketAppServer(AppServer):
                 # work area specified
                 workarea = app_data['path']
             else:
-                workarea = self.make_workarea()
+                workarea = self._make_workarea()
                 if not workarea:
                     io.send('failed', 'Failed to create work area')
 
@@ -238,9 +231,6 @@ class SocketAppServer(AppServer):
 
     def _submit_app(self, app_data, workarea, io):
         # schedule the app on master
-
-        master = self.dynamo_server.manager.master
-
         for key in ['title', 'args', 'write_request']:
             if key not in app_data:
                 io.send('failed', 'Missing ' + key)
@@ -266,29 +256,28 @@ class SocketAppServer(AppServer):
 
         mode = app_data.pop('mode')
 
-        with self.notify_lock:
-            app_id = master.schedule_application(**app_data)
-            if mode == 'synch':
-                self.synch_app_queues[app_id] = Queue.Queue()
-
-        io.send('OK', {'appid': app_id, 'path': workarea})
+        self._schedule_app(mode, **app_data)
 
         if mode == 'synch':
+            msg = self.wait_synch_app_queue(app_id)
+
+            if msg['status'] != ServerManager.APP_RUN:
+                # this app is not going to run
+                io.send('failed', {'status': ServerManager.application_status_name(msg['status'])})
+                return
+
+            io.send('OK', {'appid': app_id, 'path': msg['path']}) # msg['path'] should be == workarea
+
             # synchronous execution = client watches the app run
-            # client sends the socket address to connec stderr to
+            # client sends the socket address to connect stdout/err to
             addr = io.recv()
-            oconn = socket.socket(socket.AF_INET)
-            oconn.connect((addr['host'], addr['port']))
-            econn = socket.socket(socket.AF_INET)
-            econn.connect((addr['host'], addr['port']))
 
-            # then sends tail -f of stdout and stderr over the sockets
-            self.serve_synch_app(app_id, io, oconn, econn)
+            result = self._serve_synch_app(app_id, msg['pid'], addr)
 
-            oconn.shutdown(socket.SHUT_RDWR)
-            oconn.close()
-            econn.shutdown(socket.SHUT_RDWR)
-            econn.close()
+            io.send('OK', result)
+
+        else:
+            io.send('OK', {'appid': app_id, 'path': workarea})
 
     def _interact(self, workarea, io):
         io.send('OK')
@@ -320,64 +309,37 @@ class SocketAppServer(AppServer):
         econn.shutdown(socket.SHUT_RDWR)
         econn.close()
 
-    def notify_synch_app(self, app_id, status = None, path = None):
-        with self.notify_lock:
-            try:
-                queue = self.synch_app_queues.pop(app_id)
-            except KeyError:
-                return
-
-        if status is not None:
-            queue.put('status')
-            queue.put(status)
-        else:
-            queue.put('path')
-            queue.put(path)
-
-    def serve_synch_app(self, app_id, io, oconn, econn):
-        msg = queue.get()
-
-        if msg == 'status':
-            status = queue.get()
-            # this app is not going to run
-            io.send('failed', 'Application status: %s' % status)
-
-            return
-
-        path = queue.get()
+    def _serve_synch_app(self, app_id, pid, addr):
+        conns = (socket.socket(socket.AF_INET), socket.socket(socket.AF_INET))
 
         stop_reading = threading.Event()
-        stdout_thread = threading.Thread(target = tail_follow, name = 'stdout', args = (path + '/_stdout', oconn, stop_reading))
-        stderr_thread = threading.Thread(target = tail_follow, name = 'stderr', args = (path + '/_stderr', econn, stop_reading))
-        stdout_thread.daemon = True
-        stderr_thread.daemon = True
-        stdout_thread.start()
-        stderr_thread.start()
-            
-        master = self.dynamo_server.manager.master
 
-        return_code = 0
+        for conn, name in zip(conns, ('stdout', 'stderr')):
+            conn.connect((addr['host'], addr['port']))
+            args = (path + '/_' + name, conn, stop_reading)
+            th = threading.Thread(target = tail_follow, name = name, args = args)
+            th.daemon = True
+            th.start()
+
+        os.waitpid(pid, 0)
+
+        stop_reading.set()
+
+        for conn in conns:
+            conn.shutdown(socket.SHUT_RDWR)
+            conn.close()
 
         active_status = (ServerManager.APP_NEW, ServerManager.APP_ASSIGNED, ServerManager.APP_RUN)
-    
+
         while True:
-            apps = master.get_applications(app_id = app_id)
+            apps = self.dynamo_server.manager.master.get_applications(app_id = app_id)
             if len(apps) == 0:
                 # application disappeared from master DB!?
-                stop_reading.set()
-                break
-    
-            app = apps[0]
-
-            if app['status'] not in active_status:
-                stop_reading.set()
-
-                data = {
-                    'status': ServerManager.application_status_name(app['status']),
-                    'exit_code': app['exit_code']
-                }
-                io.send('OK', data)
-
-                break
-
-            time.sleep(3)
+                return {'status': 'unknown', 'exit_code': None}
+            else:
+                app = apps[0]
+                if app['status'] in active_status:
+                    # master server hasn't been updated yet
+                    time.sleep(1)
+                else:
+                    return {'status': ServerManager.application_status_name(app['status']), 'exit_code': app['exit_code']}

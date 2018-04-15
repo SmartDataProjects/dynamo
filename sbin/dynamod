@@ -11,6 +11,7 @@ import logging.handlers
 
 ## Read server config (should be readable only to root)
 from dynamo.dataformat import Configuration
+import dynamo.core.server as main
 
 try:
     config_path = os.environ['DYNAMO_SERVER_CONFIG']
@@ -32,12 +33,7 @@ else:
 LOG.addHandler(log_handler)
 
 # Print some nice logo before we start logging with the timestamp format
-LOG.critical('''
-+++++++++++++++++++++++++++++++++++++
-++++++++++++++ DYNAMO +++++++++++++++
-++++++++++++++  v2.0  +++++++++++++++
-+++++++++++++++++++++++++++++++++++++
-''')
+LOG.critical(main.BANNER)
 
 log_handler.setFormatter(logging.Formatter(fmt = log_format))
 
@@ -51,12 +47,7 @@ else:
     log_handler = logging.StreamHandler()
 changelog.addHandler(log_handler)
 
-changelog.critical('''
-+++++++++++++++++++++++++++++++++++++
-++++++++++++++ DYNAMO +++++++++++++++
-++++++++++++++  v2.0  +++++++++++++++
-+++++++++++++++++++++++++++++++++++++
-''')
+changelog.critical(main.BANNER)
 
 log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
 
@@ -69,9 +60,7 @@ except OSError:
     LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 
 ## Start the server
-from dynamo.core.server import DynamoServer
-
-server = DynamoServer(config)
+server = main.DynamoServer(config)
 
 # Loop with server status check, update, and application execution (if enabled)
 srv_thread = threading.Thread(target = server.run)
