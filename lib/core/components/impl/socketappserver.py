@@ -6,9 +6,10 @@ import threading
 import multiprocessing
 import shutil
 import ssl
-import random
 import Queue
 
+from dynamo.core.components.appserver import AppServer
+from dynamo.core.components.impl.socketconsole import SocketDynamoConsole
 from dynamo.core.manager import ServerManager
 
 DYNAMO_PORT = 39626
@@ -92,13 +93,13 @@ def tail_follow(source_path, stream, stop_reading):
                 stream.sendall(line)
 
 
-class ApplicationServer(object):
+class SocketAppServer(AppServer):
     """
     Sub-server owned by the main Dynamo server to serve application requests.
     """
 
     def __init__(self, dynamo_server, config):
-        self.dynamo_server = dynamo_server
+        AppServer.__init__(self, dynamo_server, config)
 
         # OpenSSL cannot authenticate with certificate proxies without this environment variable
         os.environ['OPENSSL_ALLOW_PROXY_CERTS'] = '1'
@@ -128,9 +129,9 @@ class ApplicationServer(object):
     def start(self):
         """Start a daemon thread that runs the accept loop and return."""
 
-        thread = threading.Thread(target = self._accept_applications)
-        thread.daemon = True
-        thread.start()
+        th = threading.Thread(target = self._accept_applications)
+        th.daemon = True
+        th.start()
 
     def stop(self):
         """Shut down the socket."""
@@ -193,21 +194,9 @@ class ApplicationServer(object):
                 # work area specified
                 workarea = app_data['path']
             else:
-                workarea = os.environ['DYNAMO_SPOOL'] + '/work/'
-                while True:
-                    d = hex(random.randint(0, 0xffffffffffffffff))[2:-1]
-                    try:
-                        os.makedirs(workarea + d)
-                    except OSError:
-                        if not os.path.exists(workarea + d):
-                            io.send('failed', 'Failed to create work area %s' % workarea)
-                            return
-                        else:
-                            # remarkably, the directory existed
-                            continue
-    
-                    workarea += d
-                    break
+                workarea = self.make_workarea()
+                if not workarea:
+                    io.send('failed', 'Failed to create work area')
 
             if command == 'submit':
                 self._submit_app(workarea, app_data, io)
@@ -310,13 +299,26 @@ class ApplicationServer(object):
         econn = socket.socket(socket.AF_INET)
         econn.connect((addr['host'], addr['port']))
 
-        proc = multiprocessing.Process(target = self.dynamo_server.run_interactive, name = 'interactive', (workarea, oconn, econn))
+        proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', (workarea, oconn, econn))
         proc.start()
         # oconn and econn file descriptors are duplicated in the subprocess. Close mine.
         oconn.close()
         econn.close()
 
         proc.join()
+
+    def _run_interactive(self, workarea, oconn, econn):
+        stdout = oconn.makefile('w')
+        stderr = econn.makefile('w')
+
+        make_console = lambda l: SocketDynamoConsole(oconn, l)
+
+        self.dynamo_server.run_interactive(workarea, stdout, stderr, make_console)
+
+        oconn.shutdown(socket.SHUT_RDWR)
+        oconn.close()
+        econn.shutdown(socket.SHUT_RDWR)
+        econn.close()
 
     def notify_synch_app(self, app_id, status = None, path = None):
         with self.notify_lock:

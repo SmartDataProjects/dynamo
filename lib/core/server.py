@@ -1,16 +1,11 @@
 import os
 import sys
-import pwd
 import shutil
 import time
 import logging
-import random
 import shlex
-import json
 import code
 import signal
-import socket
-import select
 import multiprocessing
 import threading
 import Queue
@@ -18,7 +13,7 @@ import Queue
 from dynamo.core.inventory import DynamoInventory
 from dynamo.core.manager import ServerManager, OutOfSyncError
 import dynamo.core.serverutils as serverutils
-from dynamo.core.console import SocketDynamoConsole
+from dynamo.core.components.appserver import AppServer
 from dynamo.utils.signaling import SignalBlocker
 from dynamo.dataformat.exceptions import log_exception
 
@@ -104,7 +99,8 @@ class DynamoServer(object):
 
     def run(self):
         """
-        Main body of the server, but mostly focuses on exception handling.
+        Main body of the server, but mostly focuses on exception handling. dynamod runs this function
+        in a non-main thread.
         """
 
         # Number of unhandled errors
@@ -183,7 +179,8 @@ class DynamoServer(object):
         """
 
         # Start the application collector thread
-        appserver = ApplicationServer(self, self.applications_config.collector)
+        aconf = self.applications_config.collector
+        appserver = AppServer.get_instance(aconf.module, self, aconf.config)
         appserver.start()
 
         LOG.info('Start polling for applications.')
@@ -266,7 +263,7 @@ class DynamoServer(object):
                 self.manager.master.update_application(app_id, status = ServerManager.APP_RUN)
                 appserver.notify_synch_app(app_id, path = path)
     
-                proc = multiprocessing.Process(target = self._run_script, name = title, args = proc_args)
+                proc = multiprocessing.Process(target = self.run_script, name = title, args = proc_args)
                 proc.daemon = True
                 proc.start()
     
@@ -526,9 +523,9 @@ class DynamoServer(object):
             # The server which sent the updates has set this server's status to updating
             self.manager.set_status(ServerManager.SRV_ONLINE)
 
-    def _run_script(self, path, args, queue = None):
+    def run_script(self, path, args, queue = None):
         """
-        Subprocess main function for script execution.
+        Main function for script execution.
         @param path   Path to the work area of the script. Will be the root directory in read-only processes.
         @param args   Script command-line arguments.
         @param queue  Queue if write-enabled.
@@ -557,22 +554,20 @@ class DynamoServer(object):
 
         return 0
 
-    def run_interactive(self, path, oconn, econn):
+    def run_interactive(self, path, stdout = sys.stdout, stderr = sys.stderr, make_console = code.InteractiveConsole):
         """
-        Subprocess main function for interactive sessions.
+        Main function for interactive sessions.
         For now we limit interactive sessions to read-only.
-        @param path   Path to the work area.
-        @param oconn  Socket connection for stdout
-        @param econn  Socket connection for stderr
+        @param path         Path to the work area.
+        @param stdout       File-like object for stdout
+        @param stderr       File-like object for stderr
+        @param make_console Callable which takes a dictionary of locals as an argument and returns a console
         """
-
-        stdout = oconn.makefile('w')
-        stderr = econn.makefile('w')
 
         self._pre_execution(path, True, stdout, stderr)
 
         # use receive of oconn as input
-        console = SocketDynamoConsole(oconn)
+        console = make_console({'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None})
         try:
             console.interact()
         except:
@@ -580,10 +575,7 @@ class DynamoServer(object):
 
         self._post_execution(None)
 
-        oconn.shutdown(socket.SHUT_RDWR)
-        oconn.close()
-        econn.shutdown(socket.SHUT_RDWR)
-        econn.close()
+        return 0
 
     def _pre_execution(self, path, read_only, stdout, stderr):
         uid = os.geteuid()
