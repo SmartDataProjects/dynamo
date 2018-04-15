@@ -9,6 +9,7 @@ import threading
 import traceback
 import select
 import time
+import shlex
 import json
 
 from argparse import ArgumentParser
@@ -221,9 +222,11 @@ try:
                 sock.close()
     
     else:
-        # Executable and arguments
-        cmds = args.cmd.split()
-        executable = cmds[0]
+        ## Executable and arguments
+        # parse args.cmd as a POSIX command-line
+        lexer = shlex.shlex(args.cmd)
+        executable = lexer.get_token() # first token
+        cmdargs = ' '.join(t for t in lexer) # concatenate remaining tokens
         
         if server_host == 'localhost' or server_host == '127.0.0.1' or server_host == socket.gethostname():
             data['exec_path'] = executable
@@ -231,8 +234,7 @@ try:
             with open(executable) as source:
                 data['exec'] = source.read()
         
-        if len(cmds) > 1:
-            data['args'] = ' '.join(cmds[1:])
+        data['args'] = cmdargs
         
         # Title
         if args.title:
