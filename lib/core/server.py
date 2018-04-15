@@ -13,19 +13,17 @@ import socket
 import select
 import multiprocessing
 import threading
-import thread
 import Queue
 
 from dynamo.core.inventory import DynamoInventory
 from dynamo.core.manager import ServerManager, OutOfSyncError
 import dynamo.core.serverutils as serverutils
+from dynamo.core.console import SocketDynamoConsole
 from dynamo.utils.signaling import SignalBlocker
 from dynamo.dataformat.exceptions import log_exception
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
-
-DYNAMO_PORT = 39626
 
 class DynamoServer(object):
     """Main daemon class."""
@@ -46,7 +44,6 @@ class DynamoServer(object):
 
         ## Application collection
         self.applications_config = config.applications.clone()
-        self.app_collector = None
 
         ## Server status (and application) poll interval
         self.poll_interval = config.status_poll_interval
@@ -67,7 +64,7 @@ class DynamoServer(object):
         ## How long application workspaces are retained (days)
         self.applications_keep = config.applications_keep * 3600 * 24
 
-        # Shutdown flag - if the flag is set, raise KeyboardInterrupt
+        ## Shutdown flag - if the flag is set, raise KeyboardInterrupt
         self.shutdown_flag = threading.Event()
         # Default is set. We shut down the server when flag is cleared
         self.shutdown_flag.set()
@@ -186,7 +183,8 @@ class DynamoServer(object):
         """
 
         # Start the application collector thread
-        self.start_application_collector()
+        appserver = ApplicationServer(self, self.applications_config.collector)
+        appserver.start()
 
         LOG.info('Start polling for applications.')
 
@@ -239,10 +237,11 @@ class DynamoServer(object):
     
                 first_wait = True
                 do_sleep = False
-    
+
                 if not os.path.exists(path + '/exec.py'):
                     LOG.info('Application %s from user %s (write request: %s) not found.', title, user_name, write_request)
                     self.manager.master.update_application(app_id, status = ServerManager.APP_NOTFOUND)
+                    appserver.notify_synch_app(app_id, status = 'notfound')
                     continue
     
                 LOG.info('Found application %s from user %s (write request: %s)', title, user_name, write_request)
@@ -255,6 +254,7 @@ class DynamoServer(object):
                         # TODO send a message
     
                         self.manager.master.update_application(app_id, status = ServerManager.APP_AUTHFAILED)
+                        appserver.notify_synch_app(app_id, status = 'authfailed')
                         continue
     
                     queue = multiprocessing.Queue()
@@ -264,6 +264,7 @@ class DynamoServer(object):
     
                 ## Step 3: Spawn a child process for the script
                 self.manager.master.update_application(app_id, status = ServerManager.APP_RUN)
+                appserver.notify_synch_app(app_id, path = path)
     
                 proc = multiprocessing.Process(target = self._run_script, name = title, args = proc_args)
                 proc.daemon = True
@@ -290,7 +291,7 @@ class DynamoServer(object):
 
         finally:
             # Close the application collector. The collector thread will terminate
-            self.app_collector.shutdown(socket.SHUT_RDWR)
+            appserver.stop()
 
             # If the main process was interrupted by Ctrl+C:
             # Ctrl+C will pass SIGINT to all child processes (if this process is the head of the
@@ -310,10 +311,6 @@ class DynamoServer(object):
                     self.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
                 except:
                     pass
-
-            # Make sure application collector is closed
-            while self.app_collector is not None:
-                time.sleep(0.5)
 
     def _run_update_cycles(self):
         """
@@ -528,7 +525,7 @@ class DynamoServer(object):
         if has_updates:
             # The server which sent the updates has set this server's status to updating
             self.manager.set_status(ServerManager.SRV_ONLINE)
-      
+
     def _run_script(self, path, args, queue = None):
         """
         Subprocess main function for script execution.
@@ -540,7 +537,7 @@ class DynamoServer(object):
         stdout = open(path + '/_stdout', 'a')
         stderr = open(path + '/_stderr', 'a')
 
-        path = self._pre_execution(path, queue is None, None, stdout, stderr)
+        path = self._pre_execution(path, queue is None, stdout, stderr)
 
         # Set argv
         sys.argv = [path + '/exec.py']
@@ -560,31 +557,35 @@ class DynamoServer(object):
 
         return 0
 
-    def _run_interactive(self, path, stdin, stdout, stderr):
+    def run_interactive(self, path, oconn, econn):
         """
         Subprocess main function for interactive sessions.
         For now we limit interactive sessions to read-only.
         @param path   Path to the work area.
-        @param stdin  File-like object for stdin.
-        @param stdout File-like object for stdout.
-        @param stderr File-like object for stderr.
-        @param queue  Queue if write-enabled.
+        @param oconn  Socket connection for stdout
+        @param econn  Socket connection for stderr
         """
 
-        LOG.info('interacting')
-        oldstdout = sys.stdout
+        stdout = oconn.makefile('w')
+        stderr = econn.makefile('w')
 
-        self._pre_execution(path, True, stdin, stdout, stderr)
+        self._pre_execution(path, True, stdout, stderr)
 
-        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': self.inventory}
-        code.interact(local = mylocals)
-
-        oldstdout.write('interacted\n')
-        oldstdout.flush()
+        # use receive of oconn as input
+        console = SocketDynamoConsole(oconn)
+        try:
+            console.interact()
+        except:
+            pass
 
         self._post_execution(None)
 
-    def _pre_execution(self, path, read_only, stdin, stdout, stderr):
+        oconn.shutdown(socket.SHUT_RDWR)
+        oconn.close()
+        econn.shutdown(socket.SHUT_RDWR)
+        econn.close()
+
+    def _pre_execution(self, path, read_only, stdout, stderr):
         uid = os.geteuid()
         gid = os.getegid()
 
@@ -654,11 +655,6 @@ class DynamoServer(object):
         os.setgid(uid)
         os.setuid(gid)
 
-        # Redirect STDIN, STDOUT, and STDERR
-        if stdin is None:
-            sys.stdin.close()
-        else:
-            sys.stdin = stdin
         sys.stdout = stdout
         sys.stderr = stderr
 
@@ -742,255 +738,8 @@ class DynamoServer(object):
 
         # Queue stays available on the other end even if we terminate the process
 
-        sys.stdin.close()
         sys.stdout.close()
         sys.stderr.close()
-
-    def start_application_collector(self):
-        """Open an SSL socket and spawn a thread. Application data will be sent in JSON."""
-        import ssl
-
-        # OpenSSL cannot authenticate with certificate proxies without this environment variable
-        os.environ['OPENSSL_ALLOW_PROXY_CERTS'] = '1'
-
-        config = self.applications_config.collector
-
-        if 'capath' in config:
-            # capath only supported in SSLContext (pythonn 2.7)
-            context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-            context.load_cert_chain(config.certfile, keyfile = config.keyfile)
-            context.load_verify_locations(capath = config.capath)
-            context.verify_mode = ssl.CERT_REQUIRED
-            sock = context.wrap_socket(socket.socket(), server_side = True)
-        else:
-            sock = ssl.wrap_socket(socket.socket(), server_side = True,
-                certfile = config.certfile, keyfile = config.keyfile,
-                cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.cafile)
-
-        self.app_collector = sock
-        
-        collector_thread = threading.Thread(target = self._accept_applications)
-        collector_thread.start()
-
-    def _accept_applications(self):
-        sock = self.app_collector
-
-        sock.bind(('localhost', DYNAMO_PORT))
-        sock.listen(1)
-
-        try:
-            while True:
-                # select.select will block until someone wrote to the other end of the socket or if
-                # the socket is shut down
-                rlist, wlist, xlist = select.select([sock], [], [sock])
-                if sock in rlist:
-                    try:
-                        conn, addr = sock.accept()
-                    except socket.error:
-                        # socket was shut down
-                        break
-    
-                    thread.start_new_thread(self._process_application, (conn, addr))
-                else:
-                    raise RuntimeError('Application collector error')
-
-        except:
-            log_exception(LOG)
-            
-        finally:
-            sock.close()
-
-        self.app_collector = None
-
-    def _process_application(self, conn, addr):
-        def respond(status, message):
-            if status != 'OK':
-                LOG.error('Response to %s:%d: %s', addr[0], addr[1], message)
-
-            bytes = json.dumps({'status': status, 'message': message})
-            conn.send('%d %s' % (len(bytes), bytes))
-
-        def recv():
-            data = ''
-            while True:
-                try:
-                    bytes = conn.recv(2048)
-                except socket.error:
-                    # client should not close the socket first
-                    return None
-                if not bytes:
-                    break
-
-                if not data:
-                    # first communication
-                    length, _, bytes = bytes.partition(' ')
-                    length = int(length)
-
-                data += bytes
-
-                if len(data) == length:
-                    break
-
-            try:
-                return json.loads(data)
-            except:
-                respond('failed', 'Ill-formatted data')
-                return None
-
-        try:
-            # authorize the user
-            user_cert_data = conn.getpeercert()
-            translation = {'domainComponent': 'DC', 'organizationalUnitName': 'OU', 'commonName': 'CN'}
-
-            subject = ''
-            for rdn in user_cert_data['subject']:
-                subject += '/' + '+'.join('%s=%s' % (translation[key], value) for key, value in rdn)
-   
-            user_name = self.manager.master.identify_user(subject)
-            if user_name is None:
-                # if the client used a X509 proxy, issuer is the real user DN
-                issuer = ''
-                for rdn in user_cert_data['issuer']:
-                    issuer += '/' + '+'.join('%s=%s' % (translation[key], value) for key, value in rdn)
-
-                user_name = self.manager.master.identify_user(issuer)
-    
-            if user_name is None:
-                respond('failed', 'Unidentified user DN %s' % subject)
-                return
-    
-            if not self.manager.master.authorize_user(user_name, 'user'):
-                respond('failed', 'Unauthorized user %s' % user_name)
-                return
-
-            app_data = recv()
-            if app_data is None:
-                return
-
-            if 'appid' in app_data:
-                app_id = app_data['appid']
-                # query or operation on existing application
-                apps = self.manager.master.get_applications(app_id = app_id)
-                if len(apps) == 0:
-                    respond('failed', 'Unknown appid %d' % app_id)
-                    return
-
-                app = apps[0]
-
-                if 'action' in app_data and app_data['action'] == 'kill':
-                    if app['status'] == ServerManager.APP_NEW or app['status'] == ServerManager.APP_RUN:
-                        self.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
-                        respond('OK', 'Task aborted.')
-                    else:
-                        respond('OK', 'Task already completed with status %s (exit code %s).' % \
-                            (ServerManager.application_status_name(app['status']), app['exit_code']))
-                    return
-
-                respond('OK', app)
-                return
-
-            # new application
-            if 'path' in app_data:
-                # work area specified
-                workarea = app_data['path']
-            else:
-                workarea = os.environ['DYNAMO_SPOOL'] + '/work/'
-                while True:
-                    d = hex(random.randint(0, 0xffffffffffffffff))[2:-1]
-                    try:
-                        os.makedirs(workarea + d)
-                    except OSError:
-                        if not os.path.exists(workarea + d):
-                            respond('failed', 'Failed to create work area %s' % workarea)
-                            return
-                        else:
-                            # remarkably, the directory existed
-                            continue
-    
-                    workarea += d
-                    break
-
-            if 'interactive' in app_data and app_data['interactive']:
-                # open sockets for I/O (stdin, stdout, stderr)
-                sockets = tuple(socket.socket(socket.AF_UNIX) for _ in xrange(3))
-                for sock, name in zip(sockets, ('_stdin', '_stdout', '_stderr')):
-                    sock.bind(workarea + '/' + name)
-                    os.chmod(workarea + '/' + name, 0777)
-                    sock.listen(1)
-
-                connections = tuple()
-
-                try:
-                    # now tell the location of the work area to the client
-                    respond('OK', {'path': workarea})
-    
-                    # client should connect to the sockets
-                    connections = tuple(sock.accept()[0] for sock in sockets)
-    
-                    # close the listening sockets
-                    for sock in sockets:
-                        sock.close()
-
-                    response = recv()
-                    if response is None:
-                        return
-    
-                    # make a file-like wrapper for each connection
-                    proc_args = (workarea, sockets[0].makefile('r'), sockets[1].makefile('w'), sockets[2].makefile('w'))
-
-                    respond('OK', 'Session ready')
-    
-                    proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', args = proc_args)
-                    proc.daemon = True
-                    proc.start()
-
-                    LOG.info('Started interactive session (%s) for user %s (PID %d).', workarea, user_name, proc.pid)
-    
-                    proc.join()
-
-                    LOG.info('Interactive session (%s) for user %s completed (Exit code %d).', workarea, user_name, proc.exitcode)
-
-                finally:
-                    for sock in sockets:
-                        sock.close()
-                    for connection in connections:
-                        connection.close()
-
-                    if 'path' not in app_data:
-                        shutil.rmtree(workarea)
-
-            else:
-                for key in ['title', 'args', 'write_request']:
-                    if key not in app_data:
-                        respond('failed', 'Missing ' + key)
-                        return
-
-                if 'exec_path' in app_data:
-                    try:
-                        shutil.copyfile(app_data['exec_path'], workarea + '/exec.py')
-                    except:
-                        respond('failed', 'Could not copy %s' % workarea)
-                        return
-
-                    app_data.pop('exec_path')
-
-                elif 'exec' in app_data:
-                    with open(workarea + '/exec.py', 'w') as out:
-                        out.write(app_data['exec'])
-                        
-                    app_data.pop('exec')
-
-                app_data['path'] = workarea
-                app_data['user'] = user
-    
-                app_id = self.manager.master.schedule_application(**app_data)
-
-                respond('OK', {'appid': app_id, 'path': workarea})
-
-        except:
-            respond('failed', 'Exception: ' + str(sys.exc_info()[1]))
-        finally:
-            conn.close()
 
     def shutdown(self):
         LOG.info('Shutting down Dynamo server..')
