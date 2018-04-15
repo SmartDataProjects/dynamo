@@ -21,16 +21,16 @@ class SocketIO(object):
         self.host = addr[0]
         self.port = addr[1]
 
-    def send(self, status, message = ''):
+    def send(self, status, content = ''):
         """
-        Send a JSON with format {'status': status, 'message': message}. If status is not OK, log
-        the message.
+        Send a JSON with format {'status': status, 'content': content}. If status is not OK, log
+        the content.
         """
 
         if status != 'OK':
-            LOG.error('Response to %s:%d: %s', self.host, self.port, message)
+            LOG.error('Response to %s:%d: %s', self.host, self.port, content)
 
-        bytes = json.dumps({'status': status, 'message': message})
+        bytes = json.dumps({'status': status, 'content': content})
         try:
             self.conn.sendall('%d %s' % (len(bytes), bytes))
         except:
@@ -170,6 +170,8 @@ class SocketAppServer(AppServer):
                 io.send('failed', 'Unidentified user DN %s' % dn)
                 return
 
+            io.send('OK', 'Connected')
+
             app_data = io.recv()
     
             if not master.authorize_user(user_name, app_data['service']):
@@ -192,7 +194,7 @@ class SocketAppServer(AppServer):
                     io.send('failed', 'Failed to create work area')
 
             if command == 'submit':
-                self._submit_app(workarea, app_data, io)
+                self._submit_app(app_data, user_name, workarea, io)
 
             elif command == 'interact':
                 self._interact(workarea, io)
@@ -229,7 +231,7 @@ class SocketAppServer(AppServer):
             app['status'] = ServerManager.application_status_name(app['status'])
             io.send('OK', app)
 
-    def _submit_app(self, app_data, workarea, io):
+    def _submit_app(self, app_data, user, workarea, io):
         # schedule the app on master
         for key in ['title', 'args', 'write_request']:
             if key not in app_data:
@@ -270,7 +272,8 @@ class SocketAppServer(AppServer):
 
             # synchronous execution = client watches the app run
             # client sends the socket address to connect stdout/err to
-            addr = io.recv()
+            addr_data = io.recv()
+            addr = (addr_data['host'], addr_data['port'])
 
             result = self._serve_synch_app(app_id, msg['pid'], addr)
 
@@ -281,42 +284,36 @@ class SocketAppServer(AppServer):
 
     def _interact(self, workarea, io):
         io.send('OK')
-        
-        addr = io.recv()
-        oconn = socket.socket(socket.AF_INET)
-        oconn.connect((addr['host'], addr['port']))
-        econn = socket.socket(socket.AF_INET)
-        econn.connect((addr['host'], addr['port']))
+        addr_data = io.recv()
+        addr = (addr_data['host'], addr_data['port'])
 
-        proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', (workarea, oconn, econn))
+        proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', (workarea, addr))
         proc.start()
-        # oconn and econn file descriptors are duplicated in the subprocess. Close mine.
-        oconn.close()
-        econn.close()
-
         proc.join()
 
-    def _run_interactive(self, workarea, oconn, econn):
-        stdout = oconn.makefile('w')
-        stderr = econn.makefile('w')
+    def _run_interactive(self, workarea, addr):
+        conns = (socket.create_connection(addr), socket.create_connection(addr))
+        stdout = conns[0].makefile('w')
+        stderr = conns[1].makefile('w')
 
-        # use the receive side of oconn for stdin
-        make_console = lambda l: SocketConsole(oconn, l)
+        # use the receive side of conns[0] for stdin
+        make_console = lambda l: SocketConsole(conns[0], l)
 
         self.dynamo_server.run_interactive(workarea, stdout, stderr, make_console)
 
-        oconn.shutdown(socket.SHUT_RDWR)
-        oconn.close()
-        econn.shutdown(socket.SHUT_RDWR)
-        econn.close()
+        for conn in conns:
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
+            conn.close()
 
     def _serve_synch_app(self, app_id, pid, addr):
-        conns = (socket.socket(socket.AF_INET), socket.socket(socket.AF_INET))
+        conns = (socket.create_connection(addr), socket.create_connection(addr))
 
         stop_reading = threading.Event()
 
         for conn, name in zip(conns, ('stdout', 'stderr')):
-            conn.connect((addr['host'], addr['port']))
             args = (path + '/_' + name, conn, stop_reading)
             th = threading.Thread(target = tail_follow, name = name, args = args)
             th.daemon = True
@@ -327,7 +324,10 @@ class SocketAppServer(AppServer):
         stop_reading.set()
 
         for conn in conns:
-            conn.shutdown(socket.SHUT_RDWR)
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
             conn.close()
 
         active_status = (ServerManager.APP_NEW, ServerManager.APP_ASSIGNED, ServerManager.APP_RUN)

@@ -105,7 +105,7 @@ class MasterServer(object):
         @param has_path     Return applications whose path is not NULL
         @param app_id       Return application with matching id.
 
-        @return [(exec_id, write_request, title, path, args, user_name)]
+        @return {appid, write_request, user_name, title, path, args, status, server, exit_code}
         """
         raise NotImplementedError('get_applications')
 

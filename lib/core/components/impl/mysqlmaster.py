@@ -111,8 +111,8 @@ class MySQLMasterServer(MasterServer):
 
         applications = []
         for aid, write, title, path, args, status, server, exit_code, uname in self._mysql.xquery(sql):
-            applications.append({'appid': aid, 'write_request': write, 'title': title, 'path': path,
-                'args': args, 'status': status, 'server': server, 'exit_code': exit_code})
+            applications.append({'appid': aid, 'write_request': (write == 1), 'user_name': uname, 'title': title,
+                'path': path, 'args': args, 'status': status, 'server': server, 'exit_code': exit_code})
 
         return applications
 
