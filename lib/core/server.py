@@ -286,11 +286,15 @@ class DynamoServer(object):
                 child_processes.append((app_id, proc, user_name, path))
 
         except KeyboardInterrupt:
-            LOG.info('Terminating all child processes..')
+            if len(child_processes) != 0:
+                LOG.info('Terminating all child processes..')
             raise
 
         except:
-            LOG.error('Exception in server process. Terminating all child processes..')
+            if len(child_processes) != 0:
+                LOG.error('Exception in server process. Terminating all child processes..')
+            else:
+                LOG.error('Exception in server process.')
 
             if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
                 try:
@@ -301,10 +305,6 @@ class DynamoServer(object):
             raise
 
         finally:
-            LOG.info('Stopping application server.')
-            # Close the application collector. The collector thread will terminate
-            appserver.stop()
-
             # If the main process was interrupted by Ctrl+C:
             # Ctrl+C will pass SIGINT to all child processes (if this process is the head of the
             # foreground process group). In this case calling terminate() will duplicate signals
@@ -320,6 +320,10 @@ class DynamoServer(object):
                     self.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
                 except:
                     pass
+
+            LOG.info('Stopping application server.')
+            # Close the application collector. The collector thread will terminate
+            appserver.stop()
 
     def _run_update_cycles(self):
         """
@@ -394,7 +398,11 @@ class DynamoServer(object):
             if status == ServerManager.APP_KILLED:
                 serverutils.killproc(proc)
 
+            read_only = True
+
             if app_id == writing_process[0]:
+                read_only = False
+
                 if status == ServerManager.APP_KILLED:
                     read_state = -1
 
@@ -434,15 +442,15 @@ class DynamoServer(object):
 
                 LOG.info('Application %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, ServerManager.application_status_name(status))
 
-            # process completed or is alive but stuck -> remove from the list and set status in the table
-            for mount in serverutils.mountpoints:
-                serverutils.umount(path + mount)
-                
+               
             child_processes.pop(ichild)
 
             appserver.notify_synch_app(app_id, {'status': status, 'exit_code': proc.exitcode})
 
             self.manager.master.update_application(app_id, status = status, exit_code = proc.exitcode)
+
+            if read_only:
+                self.clean_readonly(path)
 
         return writing_process
 
@@ -486,18 +494,29 @@ class DynamoServer(object):
 
     def cleanup(self):
         applications = self.manager.master.get_applications(older_than = self.applications_keep)
+
+        read_only_paths = []
         for app_id, write_request, title, path, args, user_name in applications:
             if not os.path.isdir(path):
                 continue
 
             if not write_request:
-                # make sure all mounts are removed
-                for mount in serverutils.mountpoints:
-                    serverutils.umount(path + mount)
+                read_only_paths.append(path)
 
+        # First make sure all mounts are removed.
+        for path in read_only_paths:
+            self.clean_readonly(path)
+
+        for app_id, write_request, title, path, args, user_name in applications:
             shutil.rmtree(path)
-            
             self.manager.master.update_application(app_id = app_id, path = None)
+
+    def clean_readonly(self, path):
+        # Since threads cannot change the uid, we launch a subprocess.
+        # (Mounts are made read-only, so there is no risk of accidents even if the subprocess fails)
+        proc = multiprocessing.Process(target = serverutils.umountall, args = (path,))
+        proc.start()
+        proc.join()
 
     def exec_updates(self, update_commands):
         # My updates
@@ -632,24 +651,24 @@ class DynamoServer(object):
 
             # Confine in a chroot jail
             # Allow access to directories in PYTHONPATH with bind mounts
-#            for base in serverutils.mountpoints:
-#                try:
-#                    os.makedirs(path + base)
-#                except OSError:
-#                    # shouldn't happen but who knows
-#                    continue
-#
-#                serverutils.bindmount(base, path + base)
-#
-#            os.mkdir(path + '/tmp')
-#            os.chmod(path + '/tmp', 0777)
-#
-#            os.seteuid(0)
-#            os.setegid(0)
-#            os.chroot(path)
-#
-#            path = ''
-#            os.chdir('/')
+            for base in serverutils.mountpoints:
+                try:
+                    os.makedirs(path + base)
+                except OSError:
+                    # shouldn't happen but who knows
+                    continue
+
+                serverutils.bindmount(base, path + base)
+
+            os.mkdir(path + '/tmp')
+            os.chmod(path + '/tmp', 0777)
+
+            os.seteuid(0)
+            os.setegid(0)
+            os.chroot(path)
+
+            path = ''
+            os.chdir('/')
 
         else:
             # Set defaults

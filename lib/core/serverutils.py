@@ -17,12 +17,28 @@ def bindmount(source, target):
     REMOUNT = 32
     BIND = 4096
 
+    uid = os.geteuid()
+    gid = os.getegid()
+    os.seteuid(0)
+    os.setegid(0)
+
     # glibc mount() requires mount-remount to have a read-only bind mount
     libc.mount(source, target, None, BIND, None)
     libc.mount(source, target, None, RDONLY | REMOUNT | BIND, None)
 
+    os.setegid(gid)
+    os.seteuid(uid)
+
 def umount(path):
+    uid = os.geteuid()
+    gid = os.getegid()
+    os.seteuid(0)
+    os.setegid(0)
+
     libc.umount(path)
+
+    os.setegid(gid)
+    os.seteuid(uid)
 
 def find_common_base(paths):
     """
@@ -69,3 +85,7 @@ def find_common_base(paths):
 
 # Directories to bind-mount for read-only processes
 mountpoints = find_common_base(sys.path)
+
+def umountall(path):
+    for mount in mountpoints:
+        umount(path + mount)

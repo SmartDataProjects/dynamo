@@ -304,25 +304,25 @@ class OutputListener(object):
                 if data == '':
                     break
 
-                while True:
-                    newline = data.find('\n')
-                    if newline == -1:
-                        if len(data) == 2048:
-                            line += data
-                        elif prompt:
-                            prompt.put(data)
+                with self.term_lock:
+                    while True:
+                        newline = data.find('\n')
+                        if newline == -1:
+                            if len(data) == 2048:
+                                line += data
+                            elif prompt:
+                                prompt.put(data)
+                            else:
+                                line += data
+    
+                            break
                         else:
-                            line += data
-
-                        break
-                    else:
-                        line += data[:newline + 1]
-                        with self.term_lock:
+                            line += data[:newline + 1]
                             stream.write(line)
                             stream.flush()
 
-                        line = ''
-                        data = data[newline + 1:]
+                            line = ''
+                            data = data[newline + 1:]
     
             except EOFError:
                 break

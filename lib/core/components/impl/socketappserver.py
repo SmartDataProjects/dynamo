@@ -328,6 +328,8 @@ class SocketAppServer(AppServer):
         proc.start()
         proc.join()
 
+        self.dynamo_server.clean_readonly(workarea)
+
     def _run_interactive(self, workarea, addr):
         conns = (socket.create_connection(addr), socket.create_connection(addr))
         stdout = conns[0].makefile('w')
