@@ -54,6 +54,9 @@ class AppServer(object):
         """
         return self.synch_app_queues[app_id].get()
 
+    def remove_synch_app_queue(self, app_id):
+        self.synch_app_queues.pop(app_id)
+
     def _make_workarea(self):
         """
         Make a work area under spool with a random 64-bit hex as the name. This can be a static function.

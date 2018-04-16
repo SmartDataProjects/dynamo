@@ -79,23 +79,25 @@ def tail_follow(source_path, stream, stop_reading):
             break
 
         if stop_reading.is_set():
-            return
+            break
 
         time.sleep(0.5)
 
-    with open(source_path) as source:
-        while True:
-            if stop_reading.is_set():
-                return
+    try:
+        with open(source_path) as source:
+            while True:
+                pos = source.tell()
+                line = source.readline()
+                if not line:
+                    if stop_reading.is_set():
+                        return
 
-            pos = source.tell()
-            line = source.readline()
-            if not line:
-                source.seek(pos)
-                time.sleep(0.5)
-            else:
-                stream.sendall(line)
-
+                    source.seek(pos)
+                    time.sleep(0.5)
+                else:
+                    stream.sendall(line)
+    except:
+        pass
 
 class SocketAppServer(AppServer):
     """
@@ -125,7 +127,7 @@ class SocketAppServer(AppServer):
         except:
             port = SERVER_PORT
 
-        for _ in xrange(5):
+        for _ in xrange(10):
             try:
                 self._sock.bind(('', port))
                 break
@@ -307,6 +309,7 @@ class SocketAppServer(AppServer):
             # synchronous execution = client watches the app run
             # client sends the socket address to connect stdout/err to
             addr_data = io.recv()
+
             addr = (addr_data['host'], addr_data['port'])
 
             result = self._serve_synch_app(app_id, msg['path'], msg['pid'], addr)
@@ -335,6 +338,9 @@ class SocketAppServer(AppServer):
 
         self.dynamo_server.run_interactive(workarea, stdout, stderr, make_console)
 
+        stdout.close()
+        stderr.close()
+
         for conn in conns:
             try:
                 conn.shutdown(socket.SHUT_RDWR)
@@ -353,7 +359,11 @@ class SocketAppServer(AppServer):
             th.daemon = True
             th.start()
 
-        os.waitpid(pid, 0)
+        msg = self.wait_synch_app_queue(app_id) # {'status': status, 'exit_code': exit_code}
+        self.remove_synch_app_queue(app_id)
+
+        # not an elegant solution but we need to keep the reader threads alive for just a bit longer
+        time.sleep(1)
 
         stop_reading.set()
 
@@ -364,20 +374,7 @@ class SocketAppServer(AppServer):
                 pass
             conn.close()
 
-        active_status = (ServerManager.APP_NEW, ServerManager.APP_ASSIGNED, ServerManager.APP_RUN)
-
-        while True:
-            apps = self.dynamo_server.manager.master.get_applications(app_id = app_id)
-            if len(apps) == 0:
-                # application disappeared from master DB!?
-                return {'status': 'unknown', 'exit_code': None}
-            else:
-                app = apps[0]
-                if app['status'] in active_status:
-                    # master server hasn't been updated yet
-                    time.sleep(1)
-                else:
-                    return {'status': ServerManager.application_status_name(app['status']), 'exit_code': app['exit_code']}
+        return {'status': ServerManager.application_status_name(msg['status']), 'exit_code': msg['exit_code']}
 
 
 class SocketConsole(code.InteractiveConsole):

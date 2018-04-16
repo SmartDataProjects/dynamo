@@ -95,16 +95,17 @@ class MySQLMasterServer(MasterServer):
         return module, Configuration(json.loads(config_str))
 
     def get_applications(self, older_than = 0, has_path = True, app_id = None): #override
-        sql = 'SELECT a.`id`, a.`write_request`, a.`title`, a.`path`, a.`args`, 0+a.`status`, a.`server`, a.`exit_code`, u.`name` FROM `applications` AS a'
-        sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
+        sql = 'SELECT `applications`.`id`, `applications`.`write_request`, `applications`.`title`, `applications`.`path`,'
+        sql += ' `applications`.`args`, 0+`applications`.`status`, `applications`.`server`, `applications`.`exit_code`, `users`.`name`'
+        sql += ' FROM `applications` INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
 
         constraints = []
         if older_than > 0:
-            constraints.append('UNIX_TIMESTAMP(a.`timestamp`) < UNIX_TIMESTAMP() - %d' % older_than)
+            constraints.append('UNIX_TIMESTAMP(`applications`.`timestamp`) < UNIX_TIMESTAMP() - %d' % older_than)
         if has_path:
-            constraints.append('a.`path` IS NOT NULL')
+            constraints.append('`applications`.`path` IS NOT NULL')
         if app_id is not None:
-            constraints.append('a.`id` = %d' % app_id)
+            constraints.append('`applications`.`id` = %d' % app_id)
 
         if len(constraints) != 0:
             sql += ' WHERE ' + ' AND '.join(constraints)
@@ -112,7 +113,7 @@ class MySQLMasterServer(MasterServer):
         applications = []
         for aid, write, title, path, args, status, server, exit_code, uname in self._mysql.xquery(sql):
             applications.append({'appid': aid, 'write_request': (write == 1), 'user_name': uname, 'title': title,
-                'path': path, 'args': args, 'status': status, 'server': server, 'exit_code': exit_code})
+                'path': path, 'args': args, 'status': int(status), 'server': server, 'exit_code': exit_code})
 
         return applications
 
@@ -148,7 +149,7 @@ class MySQLMasterServer(MasterServer):
             return result[0]
 
     def update_application(self, app_id, **kwd): #override
-        sql = 'UPDATE `applications` SET'
+        sql = 'UPDATE `applications` SET '
 
         args = []
         updates = []

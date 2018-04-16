@@ -182,7 +182,7 @@ class DynamoServer(object):
         Step 3: Spawn a child process for the script.
         Step 4: Apply updates sent by other servers.
         Step 5: Collect completed child processes. Get updates from the write-enabled child process if there is one.
-        Step 6: Clean up old application work areas.
+        Step 6: Clean up.
         Step 7: Sleep for N seconds.
         """
 
@@ -213,11 +213,11 @@ class DynamoServer(object):
     
                 ## Step 5 (easier to do here because we use "continue"s)
                 LOG.debug('Collect processes')
-                writing_process = self.collect_processes(child_processes, writing_process)
+                writing_process = self.collect_processes(child_processes, writing_process, appserver)
 
                 ## Step 6 (easier to do here because we use "continue"s)
                 LOG.debug('Clean old workareas')
-                self.clean_old_workareas()
+                self.cleanup()
     
                 ## Step 7 (easier to do here because we use "continue"s)
                 if do_sleep:
@@ -380,7 +380,7 @@ class DynamoServer(object):
         LOG.info('Using persistency store at %s', hostname)
         self.inventory.init_store(module, config)
 
-    def collect_processes(self, child_processes, writing_process):
+    def collect_processes(self, child_processes, writing_process, appserver):
         ichild = 0
         while ichild != len(child_processes):
             app_id, proc, user_name, path = child_processes[ichild]
@@ -392,9 +392,7 @@ class DynamoServer(object):
                 status = apps[0]['status']
             
             if status == ServerManager.APP_KILLED:
-                LOG.warning('killing proc %d', proc.pid)
                 serverutils.killproc(proc)
-                LOG.warning('killed proc %d', proc.pid)
 
             if app_id == writing_process[0]:
                 if status == ServerManager.APP_KILLED:
@@ -442,6 +440,8 @@ class DynamoServer(object):
                 
             child_processes.pop(ichild)
 
+            appserver.notify_synch_app(app_id, {'status': status, 'exit_code': proc.exitcode})
+
             self.manager.master.update_application(app_id, status = status, exit_code = proc.exitcode)
 
         return writing_process
@@ -484,7 +484,7 @@ class DynamoServer(object):
                 if cmd == DynamoInventory.CMD_EOM:
                     return 1, update_commands
 
-    def clean_old_workareas(self):
+    def cleanup(self):
         applications = self.manager.master.get_applications(older_than = self.applications_keep)
         for app_id, write_request, title, path, args, user_name in applications:
             if not os.path.isdir(path):
@@ -544,10 +544,14 @@ class DynamoServer(object):
         @param queue  Queue if write-enabled.
         """
 
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
         stdout = open(path + '/_stdout', 'a')
         stderr = open(path + '/_stderr', 'a')
+        sys.stdout = stdout
+        sys.stderr = stderr
 
-        path = self._pre_execution(path, queue is None, stdout, stderr)
+        path = self._pre_execution(path, queue is None)
 
         # Set argv
         sys.argv = [path + '/exec.py']
@@ -556,16 +560,22 @@ class DynamoServer(object):
 
         # Execute the script
         try:
-#            myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
-            myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None}
-            execfile(path + '/exec.py', globals = myglobals)
+            myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
+            execfile(path + '/exec.py', myglobals)
         except SystemExit as exc:
             if exc.code == 0:
                 pass
             else:
                 raise
+        finally:
+            self._post_execution(queue)
 
-        self._post_execution(queue)
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        stdout.close()
+        stderr.close()
+
+        # Queue stays available on the other end even if we terminate the process
 
         return 0
 
@@ -579,22 +589,27 @@ class DynamoServer(object):
         @param make_console Callable which takes a dictionary of locals as an argument and returns a console
         """
 
-        self._pre_execution(path, True, stdout, stderr)
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        sys.stdout = stdout
+        sys.stderr = stderr
+
+        self._pre_execution(path, True)
 
         # use receive of oconn as input
-#        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': self.inventory}
-        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, 'inventory': self.inventory}
+        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': self.inventory}
         console = make_console(mylocals)
         try:
             console.interact(BANNER)
-        except:
-            pass
+        finally:
+            self._post_execution(None)
 
-        self._post_execution(None)
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
 
         return 0
 
-    def _pre_execution(self, path, read_only, stdout, stderr):
+    def _pre_execution(self, path, read_only):
         uid = os.geteuid()
         gid = os.getegid()
 
@@ -617,30 +632,24 @@ class DynamoServer(object):
 
             # Confine in a chroot jail
             # Allow access to directories in PYTHONPATH with bind mounts
-            pythonpaths = list(sys.path)
-            try:
-                pythonpaths.remove('')
-            except ValueError:
-                pass
-
-            for base in serverutils.mountpoints:
-                try:
-                    os.makedirs(path + base)
-                except OSError:
-                    # shouldn't happen but who knows
-                    continue
-
-                serverutils.bindmount(base, path + base)
-
-            os.mkdir(path + '/tmp')
-            os.chmod(path + '/tmp', 0777)
-
-            os.seteuid(0)
-            os.setegid(0)
-            os.chroot(path)
-
-            path = ''
-            os.chdir('/')
+#            for base in serverutils.mountpoints:
+#                try:
+#                    os.makedirs(path + base)
+#                except OSError:
+#                    # shouldn't happen but who knows
+#                    continue
+#
+#                serverutils.bindmount(base, path + base)
+#
+#            os.mkdir(path + '/tmp')
+#            os.chmod(path + '/tmp', 0777)
+#
+#            os.seteuid(0)
+#            os.setegid(0)
+#            os.chroot(path)
+#
+#            path = ''
+#            os.chdir('/')
 
         else:
             # Set defaults
@@ -663,9 +672,6 @@ class DynamoServer(object):
         os.setegid(0)
         os.setgid(uid)
         os.setuid(gid)
-
-        sys.stdout = stdout
-        sys.stderr = stderr
 
         # Ignore SIGINT - see note above proc.terminate()
         # We will react to SIGTERM by raising KeyboardInterrupt
@@ -744,11 +750,6 @@ class DynamoServer(object):
             
             # Put end-of-message
             queue.put((DynamoInventory.CMD_EOM, None))
-
-        # Queue stays available on the other end even if we terminate the process
-
-        sys.stdout.close()
-        sys.stderr.close()
 
     def shutdown(self):
         LOG.info('Shutting down Dynamo server..')

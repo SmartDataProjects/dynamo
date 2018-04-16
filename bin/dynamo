@@ -103,15 +103,15 @@ class DynamoServer(object):
         in_data = {'command': 'poll', 'appid': app_id, 'service': self._service}
         resp_data = self.communicate(in_data)
 
-        print 'Application id:', resp_data['appid']
-        print 'Write request:', resp_data['write_request']
-        print 'User:', resp_data['user_name']
-        print 'Title:', resp_data['title']
-        print 'Path:', resp_data['path']
-        print 'Arguments:', resp_data['args']
-        print 'Status:', resp_data['status']
-        print 'Exit code:', resp_data['exit_code']
-        print 'Execute host:', resp_data['server']
+        print ' Application id:', resp_data['appid']
+        print ' Write request:', resp_data['write_request']
+        print ' User:', resp_data['user_name']
+        print ' Title:', resp_data['title']
+        print ' Path:', resp_data['path']
+        print ' Arguments:', resp_data['args']
+        print ' Status:', resp_data['status']
+        print ' Exit code:', resp_data['exit_code']
+        print ' Execute host:', resp_data['server']
 
     def kill(self, app_id):
         in_data = {'command': 'kill', 'appid': app_id, 'service': self._service}
@@ -135,7 +135,7 @@ class DynamoServer(object):
             in_data['mode'] = 'asynch'
         else:
             in_data['mode'] = 'synch'
-            print 'Submitting application data and waiting for server response.'
+            sys.stderr.write('Submitting application data and waiting for server response.\n')
     
         resp_data = self.communicate(in_data)
 
@@ -143,19 +143,22 @@ class DynamoServer(object):
         path = resp_data['path']
 
         if asynch:
-            print 'Application accepted.'
+            sys.stderr.write('Application accepted.\n')
         else:
-            print 'Application started.'
+            sys.stderr.write('Application started.\n')
 
-        print ' application id:', app_id
-        print ' path:', path
-        
+        sys.stderr.write(' Application id: %d\n' % app_id)
+        sys.stderr.write(' Path: %s\n' % path)
+
         if asynch:
             return
+
+        sys.stderr.write('+++++++++++++++++++++++++++++++++++++++++++++++++++++\n')
 
         ## Synchronous execution: dynamo_exec will wait until process completion
 
         status = 'unknown'
+        listener = None
 
         try:
             listener = self.start_output_listener()
@@ -190,8 +193,10 @@ class DynamoServer(object):
             
             return_code = 2
 
-        listener.stop()
+        if listener:
+            listener.stop()
 
+        sys.stderr.write('+++++++++++++++++++++++++++++++++++++++++++++++++++++\n')
         sys.stderr.write('Dynamo executable completed with status %s (code %s).\n' % (status, return_code))
         sys.exit(return_code)
 
