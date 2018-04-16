@@ -303,11 +303,13 @@ class OutputListener(object):
                 data = conn.recv(2048)
                 if data == '':
                     break
-    
+
                 while True:
                     newline = data.find('\n')
                     if newline == -1:
-                        if prompt:
+                        if len(data) == 2048:
+                            line += data
+                        elif prompt:
                             prompt.put(data)
                         else:
                             line += data
@@ -325,12 +327,13 @@ class OutputListener(object):
             except EOFError:
                 break
 
-        if prompt:
-            self.prompt.put(None)
-        elif line != '':
+        if line != '':
             with self.term_lock:
                 stream.write(line + '\n')
                 stream.flush()
+
+        if prompt:
+            self.prompt.put(None)
 
     def read_stdin(self):
         while True:

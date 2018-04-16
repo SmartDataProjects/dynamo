@@ -62,7 +62,7 @@ class Site(object):
             (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status), self.id)
 
     def __repr__(self):
-        return 'Site(\'%s\',\'%s\',\'%s\',\'%s\',%d)' % \
+        return 'Site(\'%s\',\'%s\',\'%s\',\'%s\',\'%s\',%d)' % \
             (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status), self.id)
 
     def __eq__(self, other):
