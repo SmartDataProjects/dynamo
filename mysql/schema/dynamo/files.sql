@@ -5,6 +5,5 @@ CREATE TABLE `files` (
   `name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`),
-  KEY `datasets` (`dataset_id`),
   KEY `blocks` (`block_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;

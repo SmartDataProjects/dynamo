@@ -28,7 +28,11 @@ class Dataset(object):
 
     @property
     def files(self):
-        return set.union(*tuple(b.files for b in self.blocks))
+        all_files = set()
+        for block in self.blocks:
+            all_files.extend(block.files)
+
+        return all_files
 
     @property
     def software_version(self):
