@@ -344,7 +344,7 @@ class MySQL(object):
 
         try:
             if len(objects) == 0:
-                return
+                return 0
         except TypeError:
             pass
 
@@ -355,7 +355,7 @@ class MySQL(object):
             # we'll need to have the first element ready below anyway; do it here
             obj = itr.next()
         except StopIteration:
-            return
+            return 0
 
         if db == '':
             db = self.db_name()

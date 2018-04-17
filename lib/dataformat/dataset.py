@@ -30,7 +30,7 @@ class Dataset(object):
     def files(self):
         all_files = set()
         for block in self.blocks:
-            all_files.extend(block.files)
+            all_files.update(block.files)
 
         return all_files
 

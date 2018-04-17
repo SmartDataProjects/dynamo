@@ -591,7 +591,7 @@ class MySQLInventoryStore(InventoryStore):
 
         def all_files():
             for dataset in inventory.datasets.itervalues():
-                for block in dataset.files:
+                for block in dataset.blocks:
                     for lfile in block.files:
                         yield lfile
 

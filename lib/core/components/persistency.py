@@ -144,7 +144,7 @@ class InventoryStore(object):
 
         num = self._save_files(inventory)
 
-        LOG.info('Saved %d blocks.', num)
+        LOG.info('Saved %d files.', num)
 
         ## Save replicas (dataset and block in one go)
         LOG.info('Saving replicas.')
