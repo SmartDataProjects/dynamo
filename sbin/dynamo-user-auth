@@ -60,7 +60,8 @@ if args.user:
             print 'New user; DN is required'
             sys.exit(1)
     
-        user_id = registry.backend.query('INSERT INTO `users` (`name`, `domain_id`, `email`, `dn`) VALUES (%s, 0, %s, %s)', args.user, args.email, args.dn)
+        registry.backend.query('INSERT INTO `users` (`name`, `domain_id`, `email`, `dn`) VALUES (%s, 0, %s, %s)', args.user, args.email, args.dn)
+        user_id = registry.backend.last_insert_id
     else:
         user_id = uid_arr[0]
 else:
@@ -81,7 +82,8 @@ if args.service:
             else:
                 print 'Please answer in y/N.'
     
-        service_id = registry.backend.query('INSERT INTO `services` (`name`) VALUES (%s)', args.service)
+        registry.backend.query('INSERT INTO `services` (`name`) VALUES (%s)', args.service)
+        service_id = registry.backend.last_insert_id
     else:
         service_id = sid_arr[0]
 else:

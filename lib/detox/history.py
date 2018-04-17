@@ -52,7 +52,8 @@ class DetoxHistory(object):
             text = re.sub('\s+', ' ', line.condition.text)
             ids = self._mysql.query('SELECT `id` FROM `policy_conditions` WHERE `text` = %s', text)
             if len(ids) == 0:
-                line.condition_id = self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
+                self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
+                line.condition_id = self._mysql.last_insert_id
             else:
                 line.condition_id = ids[0]
 

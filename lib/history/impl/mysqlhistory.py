@@ -181,7 +181,8 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_new_cycle(self, operation, partition, policy_version, comment):
         part_ids = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
         if len(part_ids) == 0:
-            part_id = self._mysql.query('INSERT INTO `partitions` (`name`) VALUES (%s)', partition)
+            self._mysql.query('INSERT INTO `partitions` (`name`) VALUES (%s)', partition)
+            part_id = self._mysql.last_insert_id
         else:
             part_id = part_ids[0]
 
@@ -196,7 +197,9 @@ class MySQLHistory(TransactionHistoryInterface):
             else:
                 operation_str = 'deletion'
 
-        return self._mysql.query('INSERT INTO `cycles` (`operation`, `partition_id`, `policy_version`, `comment`, `time_start`) VALUES (%s, %s, %s, %s, NOW())', operation_str, part_id, policy_version, comment)
+        self._mysql.query('INSERT INTO `cycles` (`operation`, `partition_id`, `policy_version`, `comment`, `time_start`) VALUES (%s, %s, %s, %s, NOW())', operation_str, part_id, policy_version, comment)
+
+        return self._mysql.last_insert_id
 
     def _do_close_cycle(self, operation, cycle_number):
         self._mysql.query('UPDATE `cycles` SET `time_end` = FROM_UNIXTIME(%s) WHERE `id` = %s', time.time(), cycle_number)

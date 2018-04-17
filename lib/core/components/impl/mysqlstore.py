@@ -451,64 +451,6 @@ class MySQLInventoryStore(InventoryStore):
 
         return tmp_db, tmp_table
 
-    def save_data(self, inventory): #override
-        ## Save partitions
-        LOG.info('Saving partitions.')
-
-        self._save_partitions(inventory)
-
-        LOG.info('Saved %d partitions.', len(inventory.partitions))
-
-        ## Save groups
-        LOG.info('Saving groups.')
-
-        self._save_groups(inventory)
-
-        LOG.info('Saved %d groups.', len(inventory.groups))
-
-        ## Save sites
-        LOG.info('Saving sites.')
-
-        self._save_sites(inventory)
-
-        LOG.info('Saved %d sites.', len(inventory.sites))
-
-        ## Save sitepartitions
-        LOG.info('Saving sitepartitions.')
-
-        self._save_sitepartitions(inventory)
-
-        LOG.info('Saved %d sitepartitions.', len(inventory.sites) * len(inventory.partitions))
-
-        ## Save datasets
-        LOG.info('Saving datasets.')
-
-        self._save_datasets(inventory)
-
-        LOG.info('Saved %d datasets.', len(inventory.datasets))
-
-        ## Save blocks
-        LOG.info('Saving blocks.')
-
-        self._save_blocks(inventory)
-
-        num_blocks = sum(len(d.blocks) for d in inventory.datasets.itervalues())
-
-        LOG.info('Saved %d blocks.', num_blocks)
-
-        ## Save replicas (dataset and block in one go)
-        LOG.info('Saving replicas.')
-
-        self._save_replicas(inventory)
-
-        num_dataset_replicas = 0
-        num_block_replicas = 0
-        for dataset in inventory.datasets.itervalues():
-            num_dataset_replicas += len(dataset.replicas)
-            num_block_replicas += sum(len(r.block_replicas) for r in dataset.replicas)
-
-        LOG.info('Saved %d dataset replicas and %d block replicas.', num_dataset_replicas, num_block_replicas)
-
     def _save_partitions(self, inventory):
         if self._mysql.table_exists('partitions_tmp'):
             self._mysql.query('DROP TABLE `partitions_tmp`')

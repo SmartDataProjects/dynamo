@@ -56,15 +56,18 @@ class MySQL(object):
         self._connection = None
 
         # Avoid interference in case the module is used from multiple threads
-        self._connection_lock = threading.Lock()
+        self._connection_lock = threading.RLock()
         
         # Use with care! A deadlock can occur when another session tries to lock a table used by a session with
         # reuse_connection = True
         self.reuse_connection = config.get('reuse_connection', False)
 
-        # default 1M characters
+        # Default 1M characters
         self.max_query_len = config.get('max_query_len', 1000000)
 
+        # Row id of the last insertion. Will be nonzero if the table has an auto-increment primary key.
+        # **NOTE** While core execution of query() and xquery() are locked and thread-safe, last_insert_id is not.
+        # Use insert_and_get_id() in a threaded environment.
         self.last_insert_id = 0
 
     def db_name(self):
@@ -165,12 +168,10 @@ class MySQL(object):
     
             if cursor.description is None:
                 if cursor.lastrowid != 0:
-                    # insert query
+                    # insert query on an auto-increment column
                     self.last_insert_id = cursor.lastrowid
-                    return cursor.lastrowid
-                else:
-                    # update query
-                    return cursor.rowcount
+
+                return cursor.rowcount
     
             elif len(result) != 0 and len(result[0]) == 1:
                 # single column requested
@@ -265,6 +266,16 @@ class MySQL(object):
                 self._connection = None
 
             self._connection_lock.release()
+
+    def insert_and_get_id(self, sql, *args, **kwd):
+        """
+        Thread-safe call for an insertion query to a table with an auto-increment primary key.
+        @return (last_insert_id, rowcount)
+        """
+
+        with self._connection_lock:
+            rowcount = self.query(sql, *args, **kwd)
+            return self.last_insert_id, rowcount
 
     def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = ''):
         result = []

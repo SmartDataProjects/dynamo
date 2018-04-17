@@ -26,8 +26,9 @@ class MySQLMasterServer(MasterServer):
         else:
             self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
 
+        self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
         # id of this server
-        self._server_id = self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
+        self._server_id = self._mysql.last_insert_id
 
         self._mysql.query('UNLOCK TABLES')
 
@@ -130,7 +131,9 @@ class MySQLMasterServer(MasterServer):
             user_id = result[0]
 
         sql = 'INSERT INTO `applications` (`write_request`, `title`, `path`, `args`, `user_id`) VALUES (%s, %s, %s, %s, %s)'
-        return self._mysql.query(sql, write_request, title, path, args, user_id)
+        self._mysql.query(sql, write_request, title, path, args, user_id)
+
+        return self._mysql.last_insert_id
 
     def get_next_application(self, read_only): #override
         sql = 'SELECT `applications`.`id`, `write_request`, `title`, `path`, `args`, `users`.`name` FROM `applications`'
