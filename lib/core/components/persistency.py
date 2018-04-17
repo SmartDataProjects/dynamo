@@ -94,8 +94,61 @@ class InventoryStore(object):
         
         @param inventory      DynamoInventory object to read data from.
         """
+        ## Save partitions
+        LOG.info('Saving partitions.')
 
-        raise NotImplementedError('save_data')        
+        num = self._save_partitions(inventory)
+
+        LOG.info('Saved %d partitions.', num)
+
+        ## Save groups
+        LOG.info('Saving groups.')
+
+        num = self._save_groups(inventory)
+
+        LOG.info('Saved %d groups.', num)
+
+        ## Save sites
+        LOG.info('Saving sites.')
+
+        num = self._save_sites(inventory)
+
+        LOG.info('Saved %d sites.', num)
+
+        ## Save sitepartitions
+        LOG.info('Saving sitepartitions.')
+
+        num = self._save_sitepartitions(inventory)
+
+        LOG.info('Saved %d sitepartitions.', num)
+
+        ## Save datasets
+        LOG.info('Saving datasets.')
+
+        num = self._save_datasets(inventory)
+
+        LOG.info('Saved %d datasets.', num)
+
+        ## Save blocks
+        LOG.info('Saving blocks.')
+        
+        num = self._save_blocks(inventory)
+
+        LOG.info('Saved %d blocks.', num)
+
+        ## Save files
+        LOG.info('Saving files.')
+
+        num = self._save_files(inventory)
+
+        LOG.info('Saved %d blocks.', num)
+
+        ## Save replicas (dataset and block in one go)
+        LOG.info('Saving replicas.')
+
+        num_dr, num_br = self._save_replicas(inventory)
+
+        LOG.info('Saved %d dataset replicas and %d block replicas.', num_dr, num_br)
 
     def save_block(self, block):
         raise NotImplementedError('save_block')
