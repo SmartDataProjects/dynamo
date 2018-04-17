@@ -98,10 +98,7 @@ class DynamoInventory(ObjectRepository):
         """
         Save the full inventory content to store.
         """
-
         self._store.save_data(self)
-
-        LOG.info('Data is saved locally. %d groups, %d sites, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.groups), len(self.sites), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
     def load(self, groups = (None, None), sites = (None, None), datasets = (None, None)):
         """
