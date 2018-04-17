@@ -58,15 +58,16 @@ local_board_conf={"host": "localhost", "user": "dynamosrv"}
 # Whether to run an application server
 enabled=true
 
-# Application server uses an OpenSSL socket to receive requests
-# Certificates and the key must be readable by the daemon user
-#  Server certificate (can be self-signed)
-certfile=/etc/pki/tls/certs/localhost.crt
-#  Server certificate (can be self-signed)
-keyfile=/etc/pki/tls/private/localhost.key
-#  CA path for client authentication (can be a directory in python 2.7;
-#  otherwise a single file with all CA certs concatenated)
-capath=/etc/pki/tls/certs/ca-bundle.crt
+# AppServer class name
+server=SocketAppServer
+
+# SocketAppServer server uses an OpenSSL socket to receive requests
+#  certfile: Server certificate (can be self-signed)
+#  keyfile: Server private key (can be self-signed)
+#  capath: CA path for client authentication (can be a directory in python 2.7; otherwise a single file with all CA certs concatenated)
+server_conf={"certfile": "/etc/pki/tls/certs/localhost.crt",
+             "keyfile": "/etc/pki/tls/private/localhost.key",
+             "capath": "/etc/pki/tls/certs/ca-bundle.crt"}
 
 # Path to the default configuration file for common tools (relative to this file)
 defaults_conf=defaults.json
