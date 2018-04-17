@@ -247,6 +247,18 @@ class BlockReplicaOnTape(BlockReplicaAttr):
 
         return False
 
+class BlockReplicaRelativeAge(BlockReplicaAttr):
+    def __init__(self):
+        BlockReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
+
+        self.required_attrs = ['blockreplica_relative_age']
+
+    def _get(self, replica):
+        try:
+            return replica.block.dataset.attr['blockreplica_relative_age'][replica]
+        except KeyError:
+            return 0
+
 class ReplicaSiteStatus(ReplicaSiteAttr):
     def __init__(self):
         ReplicaSiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
@@ -332,6 +344,7 @@ replica_variables = {
     'blockreplica.is_locked': ReplicaIsLocked(),
     'blockreplica.num_full_disk_copy': BlockNumFullDiskCopy(),
     'blockreplica.on_tape': BlockReplicaOnTape(),
+    'blockreplica.age_relative_to_newest': BlockReplicaRelativeAge(),
     'site.name': ReplicaSiteAttr(Attr.TEXT_TYPE, 'name'),
     'site.status': ReplicaSiteStatus(),
     'site.storage_type': ReplicaSiteStorageType()

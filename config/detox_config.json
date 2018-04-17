@@ -69,6 +69,8 @@
         "enforcer": {
           "policy": "$(DYNAMO_BASE)/policies/common/enforcer_rules_physics.json"
         }
+      },
+      "BlockReplicaRelativeAge": {
       }
     }
   },

@@ -1,8 +1,10 @@
 """
 Classes in this package produce dataset attributes (Dataset.attr).
-The classes must provide three methods with the following signature:
+The classes must provide two methods with the following signature:
   __init__(self, config)
   load(self, inventory)
+and define a list cls.produces to indicate the names of the attributes
+the load() function adds to the datasets.
 """
 
 from crabaccess import CRABAccessHistory
@@ -10,8 +12,9 @@ from globalqueue import GlobalQueueRequestHistory
 from mysqllock import MySQLReplicaLock
 from weblock import WebReplicaLock
 from protectedsite import ProtectedSiteTagger
-from datasetrelease import DatasetRelease
 from enforcerprotected import EnforcedProtectionTagger
+from datasetrelease import DatasetRelease
+from relativeage import BlockReplicaRelativeAge
 
 __all__ = [
     'CRABAccessHistory',
@@ -20,7 +23,8 @@ __all__ = [
     'WebReplicaLock',
     'ProtectedSiteTagger',
     'EnforcedProtectionTagger',
-    'DatasetRelease'
+    'DatasetRelease',
+    'BlockReplicaRelativeAge'
 ]
 
 # Dictionary of registered producers
