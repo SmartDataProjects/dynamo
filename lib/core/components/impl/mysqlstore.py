@@ -460,10 +460,12 @@ class MySQLInventoryStore(InventoryStore):
         fields = ('id', 'name')
         mapping = lambda partition: (partition.id, partition.name)
 
-        self._mysql.insert_many('partitions_tmp', fields, mapping, inventory.partitions.itervalues(), do_update = False)
+        num = self._mysql.insert_many('partitions_tmp', fields, mapping, inventory.partitions.itervalues(), do_update = False)
 
         self._mysql.query('DROP TABLE `partitions`')
         self._mysql.query('RENAME TABLE `partitions_tmp` TO `partitions`')
+
+        return num
 
     def _save_groups(self, inventory):
         if self._mysql.table_exists('groups_tmp'):
@@ -476,10 +478,12 @@ class MySQLInventoryStore(InventoryStore):
 
         groups = [g for g in inventory.groups.itervalues() if g.name is not None]
 
-        self._mysql.insert_many('groups_tmp', fields, mapping, groups, do_update = False)
+        num = self._mysql.insert_many('groups_tmp', fields, mapping, groups, do_update = False)
 
         self._mysql.query('DROP TABLE `groups`')
         self._mysql.query('RENAME TABLE `groups_tmp` TO `groups`')
+
+        return num
 
     def _save_sites(self, inventory):
         if self._mysql.table_exists('sites_tmp'):
@@ -491,10 +495,12 @@ class MySQLInventoryStore(InventoryStore):
         mapping = lambda site: (site.id, site.name, site.host, Site.storage_type_name(site.storage_type), \
             site.backend, Site.status_name(site.status))
 
-        self._mysql.insert_many('sites_tmp', fields, mapping, inventory.sites.itervalues(), do_update = False)
+        num = self._mysql.insert_many('sites_tmp', fields, mapping, inventory.sites.itervalues(), do_update = False)
 
         self._mysql.query('DROP TABLE `sites`')
         self._mysql.query('RENAME TABLE `sites_tmp` TO `sites`')
+
+        return num
 
     def _save_sitepartitions(self, inventory):
         if self._mysql.table_exists('quotas_tmp'):
@@ -511,10 +517,12 @@ class MySQLInventoryStore(InventoryStore):
                 # only the base partitions
                 sps.extend(site.partitions[partition] for site in inventory.sites.itervalues())
 
-        self._mysql.insert_many('quotas_tmp', fields, mapping, sps, do_update = False)
+        num = self._mysql.insert_many('quotas_tmp', fields, mapping, sps, do_update = False)
 
         self._mysql.query('DROP TABLE `quotas`')
         self._mysql.query('RENAME TABLE `quotas_tmp` TO `quotas`')
+
+        return num
 
     def _save_datasets(self, inventory):
         if self._mysql.table_exists('software_versions_tmp'):
@@ -542,10 +550,12 @@ class MySQLInventoryStore(InventoryStore):
         mapping = lambda dataset: (dataset.id, dataset.name, dataset.size, dataset.num_files, dataset.status, dataset.data_type, \
             dataset._software_version_id, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
-        self._mysql.insert_many('datasets_tmp', fields, mapping, inventory.datasets.itervalues(), do_update = False)
+        num = self._mysql.insert_many('datasets_tmp', fields, mapping, inventory.datasets.itervalues(), do_update = False)
 
         self._mysql.query('DROP TABLE `datasets`')
         self._mysql.query('RENAME TABLE `datasets_tmp` TO `datasets`')
+
+        return num
 
     def _save_blocks(self, inventory):
         if self._mysql.table_exists('blocks_tmp'):
@@ -563,10 +573,34 @@ class MySQLInventoryStore(InventoryStore):
                 for block in dataset.blocks:
                     yield block
 
-        self._mysql.insert_many('blocks_tmp', fields, mapping, all_blocks(), do_update = False)
+        num = self._mysql.insert_many('blocks_tmp', fields, mapping, all_blocks(), do_update = False)
 
         self._mysql.query('DROP TABLE `blocks`')
         self._mysql.query('RENAME TABLE `blocks_tmp` TO `blocks`')
+
+        return num
+
+    def _save_files(self, inventory):
+        if self._mysql.table_exists('files_tmp'):
+            self._mysql.query('DROP TABLE `files_tmp`')
+
+        self._mysql.query('CREATE TABLE `files_tmp` LIKE `files`')
+
+        fields = ('id', 'block_id', 'size', 'name')
+        mapping = lambda lfile: (lfile.id, lfile.block.id, lfile.size, lfile.lfn)
+
+        def all_files():
+            for dataset in inventory.datasets.itervalues():
+                for block in dataset.files:
+                    for lfile in block.files:
+                        yield lfile
+
+        num = self._mysql.insert_many('files_tmp', fields, mapping, all_files(), do_update = False)
+
+        self._mysql.query('DROP TABLE `files`')
+        self._mysql.query('RENAME TABLE `files_tmp` TO `files`')
+
+        return num
 
     def _save_replicas(self, inventory):
         ## dataset_replicas
@@ -584,7 +618,7 @@ class MySQLInventoryStore(InventoryStore):
                 for replica in site.dataset_replicas():
                     yield replica
 
-        self._mysql.insert_many('dataset_replicas_tmp', fields, mapping, all_replicas(), do_update = False)
+        num_dr = self._mysql.insert_many('dataset_replicas_tmp', fields, mapping, all_replicas(), do_update = False)
 
         ## block_replicas
 
@@ -605,7 +639,7 @@ class MySQLInventoryStore(InventoryStore):
                     for block_replica in dataset_replica.block_replicas:
                         yield block_replica
 
-        self._mysql.insert_many('block_replicas_tmp', fields, mapping, all_block_replicas(), do_update = False)
+        num_br = self._mysql.insert_many('block_replicas_tmp', fields, mapping, all_block_replicas(), do_update = False)
 
         ## block_replica_sizes
 
@@ -635,13 +669,16 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('DROP TABLE `block_replica_sizes`')
         self._mysql.query('RENAME TABLE `block_replica_sizes_tmp` TO `block_replica_sizes`')
 
+        return num_dr, num_br
+
     def save_block(self, block): #override
         dataset_id = block.dataset.id
         if dataset_id == 0:
             return
 
         fields = ('dataset_id', 'name', 'size', 'num_files', 'is_open', 'last_update')
-        block_id = self._mysql.insert_update('blocks', fields, dataset_id, block.real_name(), block.size, block.num_files, block.is_open, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
+        self._mysql.insert_update('blocks', fields, dataset_id, block.real_name(), block.size, block.num_files, block.is_open, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
+        block_id = self._mysql.last_insert_id
 
         if block_id != 0:
             # new insert
@@ -668,8 +705,9 @@ class MySQLInventoryStore(InventoryStore):
         if block_id == 0:
             return
 
-        fields = ('block_id', 'dataset_id', 'size', 'name')
-        file_id = self._mysql.insert_update('files', fields, block_id, dataset_id, lfile.size, lfile.lfn)
+        fields = ('block_id', 'size', 'name')
+        self._mysql.insert_update('files', fields, block_id, lfile.size, lfile.lfn)
+        file_id = self._mysql.last_insert_id
 
         if file_id != 0:
             # new insert
@@ -735,9 +773,10 @@ class MySQLInventoryStore(InventoryStore):
                 software_version_id = self._mysql.query(sql, dataset._software_version_id, *dataset.software_version)
             
         fields = ('name', 'size', 'num_files', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        dataset_id = self._mysql.insert_update('datasets', fields, dataset.name, dataset.size, dataset.num_files, \
+        self._mysql.insert_update('datasets', fields, dataset.name, dataset.size, dataset.num_files, \
             dataset.status, dataset.data_type, dataset._software_version_id,
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
+        dataset_id = self._mysql.last_insert_id
 
         if dataset_id != 0:
             # new insert
@@ -746,7 +785,7 @@ class MySQLInventoryStore(InventoryStore):
     def delete_dataset(self, dataset): #override
         sql = 'DELETE FROM d, b, f, dr, br, brs USING `datasets` AS d'
         sql += ' LEFT JOIN `blocks` AS b ON b.`dataset_id` = d.`id`'
-        sql += ' LEFT JOIN `files` AS f ON f.`dataset_id` = d.`id`'
+        sql += ' LEFT JOIN `files` AS f ON f.`block_id` = b.`id`'
         sql += ' LEFT JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
         sql += ' LEFT JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
         sql += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id`'
@@ -787,7 +826,8 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_group(self, group): #override
         fields = ('name', 'olevel')
-        group_id = self._mysql.insert_update('groups', fields, group.name, Group.olevel_name(group.olevel))
+        self._mysql.insert_update('groups', fields, group.name, Group.olevel_name(group.olevel))
+        group_id = self._mysql.last_insert_id
 
         if group_id != 0:
             group.id = group_id
@@ -801,7 +841,8 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_partition(self, partition): #override
         fields = ('name',)
-        partition_id = self._mysql.insert_update('partitions', fields, partition.name)
+        self._mysql.insert_update('partitions', fields, partition.name)
+        partition_id = self._mysql.last_insert_id
 
         if partition_id != 0:
             partition.id = partition_id
@@ -818,7 +859,8 @@ class MySQLInventoryStore(InventoryStore):
 
     def save_site(self, site): #override
         fields = ('name', 'host', 'storage_type', 'backend', 'status')
-        site_id = self._mysql.insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.status)
+        self._mysql.insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.status)
+        site_id = self._mysql.last_insert_id
 
         if site_id != 0:
             site.id = site_id

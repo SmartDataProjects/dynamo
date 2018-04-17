@@ -332,11 +332,14 @@ class MySQL(object):
     def insert_many(self, table, fields, mapping, objects, do_update = True, db = ''):
         """
         INSERT INTO table (fields) VALUES (mapping(objects)).
-        Arguments:
-         table: table name.
-         fields: name of columns.
-         mapping: typically a lambda that takes an element in the objects list and return a tuple corresponding to a row to insert.
-         objects: list or iterator of objects to insert.
+        @param table         Table name.
+        @param fields        Name of columns.
+        @param mapping       Typically a lambda that takes an element in the objects list and return a tuple corresponding to a row to insert.
+        @param objects       List or iterator of objects to insert.
+        @param do_update     If True, use ON DUPLICATE KEY UPDATE which can be slower than a straight INSERT.
+        @param db            DB name.
+
+        @return  total number of inserted rows.
         """
 
         try:
@@ -364,6 +367,8 @@ class MySQL(object):
         template = '(' + ','.join(['%s'] * len(fields)) + ')'
         # template = (%s, %s, ...)
 
+        num_inserted = 0
+
         while True:
             values = ''
 
@@ -387,8 +392,10 @@ class MySQL(object):
 
             if values == '':
                 break
+            
+            num_inserted += self.query(sqlbase % values)
 
-            self.query(sqlbase % values)
+        return num_inserted
 
     def insert_update(self, table, fields, *values):
         placeholders = ', '.join(['%s'] * len(fields))
