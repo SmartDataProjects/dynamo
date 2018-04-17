@@ -94,7 +94,7 @@ class MySQLMasterServer(MasterServer):
         module, config_str = result[0]
         return module, Configuration(json.loads(config_str))
 
-    def get_applications(self, older_than = 0, has_path = True, app_id = None): #override
+    def get_applications(self, older_than = 0, app_id = None): #override
         sql = 'SELECT `applications`.`id`, `applications`.`write_request`, `applications`.`title`, `applications`.`path`,'
         sql += ' `applications`.`args`, 0+`applications`.`status`, `applications`.`server`, `applications`.`exit_code`, `users`.`name`'
         sql += ' FROM `applications` INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
@@ -102,8 +102,6 @@ class MySQLMasterServer(MasterServer):
         constraints = []
         if older_than > 0:
             constraints.append('UNIX_TIMESTAMP(`applications`.`timestamp`) < UNIX_TIMESTAMP() - %d' % older_than)
-        if has_path:
-            constraints.append('`applications`.`path` IS NOT NULL')
         if app_id is not None:
             constraints.append('`applications`.`id` = %d' % app_id)
 
