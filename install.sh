@@ -262,10 +262,12 @@ then
   sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /usr/lib/systemd/system/dynamod.service
 
   # environment file for the daemon
-  echo "DYNAMO_BASE=$INSTALL_PATH" > /etc/sysconfig/dynamod
-  echo "DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> /etc/sysconfig/dynamod
-  echo "DYNAMO_SPOOL=$SPOOL_PATH" >> /etc/sysconfig/dynamod
-  echo "PYTHONPATH=$INSTALL_PATH/python/site-packages" >> /etc/sysconfig/dynamod
+  ENV=/etc/sysconfig/dynamod
+  echo "DYNAMO_BASE=$INSTALL_PATH" > $ENV
+  echo "DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> $ENV
+  echo "DYNAMO_SPOOL=$SPOOL_PATH" >> $ENV
+  [ $POLICY_PATH ] && echo "DYNAMO_POLICIES=$POLICY_PATH" >> $ENV
+  echo "PYTHONPATH=$INSTALL_PATH/python/site-packages" >> $ENV
 
   systemctl daemon-reload
 else

@@ -235,21 +235,21 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.reuse_connection = reuse_connection_orig
 
     def _load_groups(self, inventory, id_group_map, groups_tmp):
-        for group in self._yield_groups(groups_tmp = groups_tmp)
+        for group in self._yield_groups(groups_tmp = groups_tmp):
             inventory.groups.add(group)
             id_group_map[group.id] = group
 
         return len(id_group_map)
 
     def _load_sites(self, inventory, id_site_map, sites_tmp):
-        for site in self._yield_sites(sites_tmp = sites_tmp)
+        for site in self._yield_sites(sites_tmp = sites_tmp):
             inventory.sites.add(site)
             id_site_map[site.id] = site
 
             for partition in inventory.partitions.itervalues():
                 site.partitions[partition] = SitePartition(site, partition)
 
-        for sitepartition in self._yield_sitepartitions(site_tmp = site_tmp):
+        for sitepartition in self._yield_sitepartitions(sites_tmp = sites_tmp):
             site = inventory.sites[sitepartition.site.name]
             partition = inventory.partitions[sitepartition.partition.name]
             site.partitions[partition].set_quota(sitepartition.quota)
@@ -258,26 +258,28 @@ class MySQLInventoryStore(InventoryStore):
 
     def _load_datasets(self, inventory, id_dataset_map, datasets_tmp):
         for dataset in self._yield_datasets(datasets_tmp = datasets_tmp):
-            inventory.datasets[name] = dataset
+            inventory.datasets.add(dataset)
             id_dataset_map[dataset.id] = dataset
 
         return len(id_dataset_map)
 
     def _load_blocks(self, inventory, id_dataset_map, id_block_maps, datasets_tmp):
+        _dataset_id = 0
         dataset = None
         for block in self._yield_blocks(id_dataset_map = id_dataset_map, datasets_tmp = datasets_tmp):
-            if block.dataset != dataset:
+            if block.dataset.id != _dataset_id:
                 dataset = block.dataset
+                _dataset_id = dataset.id
                 dataset.blocks.clear()
                 dataset.size = 0
                 dataset.num_files = 0
-                id_block_map = id_block_maps[dataset_id] = {}
+                id_block_map = id_block_maps[dataset.id] = {}
             
             dataset.blocks.add(block)
             dataset.size += block.size
             dataset.num_files += block.num_files
 
-            id_block_map[block_id] = block
+            id_block_map[block.id] = block
 
     def _load_replicas(self, inventory, id_group_map, id_site_map, id_dataset_map, id_block_maps, groups_tmp, sites_tmp, datasets_tmp):
         sql = 'SELECT dr.`dataset_id`, dr.`site_id`,'
@@ -665,9 +667,9 @@ class MySQLInventoryStore(InventoryStore):
 
         for vid, cycle, major, minor, suffix in self._mysql.xquery(sql):
             value = (cycle, major, minor, suffix)
-            version = Dataset.SoftwareVersion(version, vid)
+            version = Dataset.SoftwareVersion(value, vid)
             Dataset._software_versions_byid[vid] = version
-            Dataset._software_versions_byvalue[xovalue] = version
+            Dataset._software_versions_byvalue[value] = version
 
         sql = 'SELECT d.`id`, d.`name`, d.`size`, d.`num_files`, d.`status`+0, d.`data_type`+0,'
         sql += ' d.`software_version_id`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
@@ -715,7 +717,7 @@ class MySQLInventoryStore(InventoryStore):
 
             yield Block(
                 Block.to_internal_name(name),
-                dataset
+                dataset,
                 size = size,
                 num_files = num_files,
                 is_open = (is_open == 1),
@@ -769,7 +771,7 @@ class MySQLInventoryStore(InventoryStore):
     def _yield_block_replicas(self): #override
         sql = 'SELECT b.`id`, b.`name`, b.`size`, d.`id`, d.`name`, s.`id`, s.`name`, g.`name`, br.`group_id`,'
         sql += ' brs.`size`, br.`is_complete`, br.`is_custodial`, brs.`size`, UNIX_TIMESTAMP(br.`last_update`)'
-' FROM `block_replicas` AS br'
+        sql += ' FROM `block_replicas` AS br'
         sql += ' INNER JOIN `blocks` AS b ON b.`id` = br.`block_id`'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         sql += ' INNER JOIN `sites` AS s ON s.`id` = br.`site_id`'
@@ -813,7 +815,7 @@ class MySQLInventoryStore(InventoryStore):
                 group,
                 is_complete = (is_complete != 0),
                 is_custodial = (is_custodial != 0),
-                size = size
+                size = size,
                 last_update = last_update
             )
             

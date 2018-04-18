@@ -56,7 +56,7 @@ class Dataset(object):
                 Dataset._software_versions_byid.append(version)
                 Dataset._software_versions_byvalue[value] = version
     
-        self._software_version_id = vid
+        self._software_version_id = version.id
 
     @staticmethod
     def data_type_name(arg):

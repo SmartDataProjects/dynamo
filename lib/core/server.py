@@ -87,10 +87,18 @@ class DynamoServer(object):
         ## Other servers will not start a new write process while there is a server with status 'starting'.
         ## The only states the other running servers can be in are therefore 'updating' or 'online'
 
-        ## Now find a server I'll load inventory from (unless I am the only online host and I have a store)
-        if not (self.inventory.has_store() and self.manager.count_servers(ServerManager.SRV_ONLINE) == 0):
-            hostname, module, config = self.manager.find_remote_store(hostname = hostname)
-            self.inventory.clone_store(module, config)
+        if self.manager.count_servers(ServerManager.SRV_ONLINE) == 0:
+            # I am the first server to start the inventory - need to have a store.
+            if not self.inventory.has_store():
+                raise RuntimeError('No persistent inventory storage is available.')
+        else:
+            if self.inventory.has_store():
+                # Clone the content from a remote store
+                hostname, module, config = self.manager.find_remote_store()
+                LOG.info('Cloning inventory content from persistency store at %s', hostname)
+                self.inventory.clone_store(module, config)
+            else:
+                self.setup_remote_store()
 
         LOG.info('Loading the inventory.')
         self.inventory.load(**self.inventory_load_opts)
@@ -366,6 +374,7 @@ class DynamoServer(object):
             self.setup_remote_store()
 
     def setup_remote_store(self, hostname = ''):
+        # find_remote_store raises a RuntimeError if not source is found
         hostname, module, config = self.manager.find_remote_store(hostname = hostname)
         LOG.info('Using persistency store at %s', hostname)
         self.inventory.init_store(module, config)
