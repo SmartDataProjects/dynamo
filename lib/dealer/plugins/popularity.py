@@ -32,7 +32,8 @@ class PopularityHandler(BaseHandler):
             except KeyError:
                 continue
 
-            LOG.debug('Dataset %s request weight %f', dataset.name, request_weight)
+            if request_weight != 0.:
+                LOG.debug('Dataset %s request weight %f', dataset.name, request_weight)
 
             dataset_in_source_groups = False
             for dr in dataset.replicas:
