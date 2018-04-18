@@ -300,7 +300,8 @@ class ServerManager(object):
             if is_updating:
                 time.sleep(5)
             else:
-                return None
+                self.set_status(ServerManager.SRV_ERROR)
+                raise RuntimeError('Could not find a remote persistency store to connect to.')
 
     def collect_hosts(self):
         """

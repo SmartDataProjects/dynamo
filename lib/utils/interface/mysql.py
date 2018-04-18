@@ -333,7 +333,7 @@ class MySQL(object):
         """
         INSERT INTO table (fields) VALUES (mapping(objects)).
         @param table         Table name.
-        @param fields        Name of columns.
+        @param fields        Name of columns. If None, perform INSERT INTO table VALUES
         @param mapping       Typically a lambda that takes an element in the objects list and return a tuple corresponding to a row to insert.
         @param objects       List or iterator of objects to insert.
         @param do_update     If True, use ON DUPLICATE KEY UPDATE which can be slower than a straight INSERT.
@@ -360,12 +360,20 @@ class MySQL(object):
         if db == '':
             db = self.db_name()
 
-        sqlbase = 'INSERT INTO `{db}`.`{table}` ({fields}) VALUES %s'.format(db = db, table = table, fields = ','.join(['`%s`' % f for f in fields]))
-        if do_update:
-            sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join(['`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields])
+        sqlbase = 'INSERT INTO `%s`.`%s`' % (db, table)
+        if fields:
+            sqlbase += ' (%s)' % ','.join('`%s`' % f for f in fields)
+        sqlbase += ' VALUES %s'
+        if fields and do_update:
+            sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join('`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields)
 
-        template = '(' + ','.join(['%s'] * len(fields)) + ')'
+        if mapping is None:
+            ncol = len(obj)
+        else:
+            ncol = len(mapping(obj))
+
         # template = (%s, %s, ...)
+        template = '(' + ','.join(['%s'] * ncol) + ')'
 
         num_inserted = 0
 

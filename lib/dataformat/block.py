@@ -199,11 +199,7 @@ class Block(object):
         files = self.files
 
         try:
-            if type(lfn) is str:
-                return next(f for f in files if f.lfn == lfn)
-            else:
-                # can be a tuple (directory_id, basename)
-                return next(f for f in files if f.fid() == lfn)
+            return next(f for f in files if f._lfn == lfn)
 
         except StopIteration:
             if must_find:

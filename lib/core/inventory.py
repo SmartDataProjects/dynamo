@@ -84,6 +84,11 @@ class DynamoInventory(ObjectRepository):
 
         df.Block._inventory_store = self._store
 
+    def clone_store(self, module, config):
+        source = InventoryStore.get_instance(module, config)
+        self._store.clone_from(source)
+        source.close()
+
     def has_store(self):
         return (self._store is not None)
 

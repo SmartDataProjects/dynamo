@@ -1,6 +1,8 @@
 import time
 import logging
 
+from dynamo.dataformat import Dataset
+
 LOG = logging.getLogger(__name__)
 
 class InventoryStore(object):
@@ -93,65 +95,175 @@ class InventoryStore(object):
 
     def save_data(self, inventory):
         """
-        Save data from inventory.
-        
+        Save data from inventory. Subclass must implement all _save_X functions. Note that
+        the function should be able to accept both an iterable and a generator as their arguments.
         @param inventory      DynamoInventory object to read data from.
         """
         ## Save partitions
         LOG.info('Saving partitions.')
 
-        num = self._save_partitions(inventory)
+        num = self._save_partitions(inventory.partitions.itervalues())
 
         LOG.info('Saved %d partitions.', num)
 
         ## Save groups
         LOG.info('Saving groups.')
 
-        num = self._save_groups(inventory)
+        num = self._save_groups(inventory.groups.itervalues())
 
         LOG.info('Saved %d groups.', num)
 
         ## Save sites
         LOG.info('Saving sites.')
 
-        num = self._save_sites(inventory)
+        num = self._save_sites(inventory.sites.itervalues())
 
         LOG.info('Saved %d sites.', num)
 
         ## Save sitepartitions
         LOG.info('Saving sitepartitions.')
 
-        num = self._save_sitepartitions(inventory)
+        def all_sitepartitions():
+            for site in inventory.sites.itervalues():
+                for partition in inventory.partitions.itervalues():
+                    yield site.partitions[partition]
+
+        num = self._save_sitepartitions(all_sitepartitions())
 
         LOG.info('Saved %d sitepartitions.', num)
 
         ## Save datasets
         LOG.info('Saving datasets.')
 
-        num = self._save_datasets(inventory)
+        num = self._save_datasets(inventory.datasets.itervalues())
 
         LOG.info('Saved %d datasets.', num)
 
         ## Save blocks
         LOG.info('Saving blocks.')
+
+        def all_blocks():
+            for dataset in inventory.datasets.itervalues():
+                for block in dataset.blocks:
+                    yield block
         
-        num = self._save_blocks(inventory)
+        num = self._save_blocks(all_blocks())
 
         LOG.info('Saved %d blocks.', num)
 
         ## Save files
         LOG.info('Saving files.')
 
-        num = self._save_files(inventory)
+        def all_files():
+            for dataset in inventory.datasets.itervalues():
+                for block in dataset.blocks:
+                    for lfile in block.files:
+                        yield lfile
+
+        num = self._save_files(all_files())
 
         LOG.info('Saved %d files.', num)
 
-        ## Save replicas (dataset and block in one go)
-        LOG.info('Saving replicas.')
+        ## Save dataset replicas
+        LOG.info('Saving dataset replicas.')
 
-        num_dr, num_br = self._save_replicas(inventory)
+        def all_replicas():
+            for site in inventory.sites.itervalues():
+                for replica in site.dataset_replicas():
+                    yield replica
 
-        LOG.info('Saved %d dataset replicas and %d block replicas.', num_dr, num_br)
+        num = self._save_dataset_replicas(all_replicas())
+
+        LOG.info('Saved %d dataset replicas.', num)
+
+        ## Save block replicas
+        LOG.info('Saving block replicas.')
+
+        def all_replicas():
+            for site in inventory.sites.itervalues():
+                for dataset_replica in site.dataset_replicas():
+                    for block_replica in dataset_replica.block_replicas:
+                        yield block_replica
+
+        num = self._save_block_replicas(all_replicas())
+
+        LOG.info('Saved %d block replicas.', num)
+
+    def clone_from(self, source):
+        """
+        Clone the entire store content from another InventoryStore instance.
+        @param source  Source inventory to clone content from.
+        """
+
+        if type(source) is type(self):
+            # special case using class internals
+            self._clone_from_common_class(source)
+        else:
+            self._clone_from_general(source)
+
+    def _clone_from_general(self, source):
+        ## Save partitions
+        LOG.info('Saving partitions.')
+
+        num = self._save_partitions(source._yield_partitions())
+
+        LOG.info('Saved %d partitions.', num)
+
+        ## Save groups
+        LOG.info('Saving groups.')
+
+        num = self._save_groups(source._yield_groups())
+
+        LOG.info('Saved %d groups.', num)
+
+        ## Save sites
+        LOG.info('Saving sites.')
+
+        num = self._save_sites(source._yield_sites())
+
+        LOG.info('Saved %d sites.', num)
+
+        ## Save sitepartitions
+        LOG.info('Saving sitepartitions.')
+
+        num = self._save_sitepartitions(source._yield_sitepartitions())
+
+        LOG.info('Saved %d sitepartitions.', num)
+
+        ## Save datasets
+        LOG.info('Saving datasets.')
+
+        num = self._save_datasets(source._yield_datasets())
+
+        LOG.info('Saved %d datasets.', num)
+
+        ## Save blocks
+        LOG.info('Saving blocks.')
+        
+        num = self._save_blocks(source._yield_blocks())
+
+        LOG.info('Saved %d blocks.', num)
+
+        ## Save files
+        LOG.info('Saving files.')
+
+        num = self._save_files(source._yield_files())
+
+        LOG.info('Saved %d files.', num)
+
+        ## Save dataset replicas
+        LOG.info('Saving dataset replicas.')
+
+        num = self._save_dataset_replicas(source._yield_dataset_replicas())
+
+        LOG.info('Saved %d dataset replicas.', num)
+
+        ## Save block replicas
+        LOG.info('Saving block replicas.')
+
+        num = self._save_block_replicas(source._yield_block_replicas())
+
+        LOG.info('Saved %d block replicas.', num)
 
     def save_block(self, block):
         raise NotImplementedError('save_block')

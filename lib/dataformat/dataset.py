@@ -18,8 +18,15 @@ class Dataset(object):
     _statuses = ['unknown', 'deleted', 'deprecated', 'invalid', 'production', 'valid', 'ignored']
     STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, len(_statuses) + 1)
 
-    _software_versions = []
-    _software_version_ids = {}
+    class SoftwareVersion(object):
+        __slots__ = ['id', 'value']
+    
+        def __init__(self, value, vid = 0):
+            self.id = vid
+            self.value = value
+
+    _software_versions_byid = []
+    _software_versions_byvalue = {}
     _software_version_lock = threading.Lock()
 
     @property
@@ -36,19 +43,20 @@ class Dataset(object):
 
     @property
     def software_version(self):
-        return Dataset._software_versions[self._software_version_id]
+        return Dataset._software_versions_byid[self._software_version_id].value
 
     @software_version.setter
     def software_version(self, value):
         with Dataset._software_version_lock:
             try:
-                sid = Dataset._software_version_ids[value]
+                version = Dataset._software_versions_byvalue[value]
             except KeyError:
-                sid = len(Dataset._software_versions)
-                Dataset._software_versions.append(value)
-                Dataset._software_version_ids[value] = sid
+                vid = len(Dataset._software_versions_byid)
+                version = Dataset.SoftwareVersion(value, vid = vid)
+                Dataset._software_versions_byid.append(version)
+                Dataset._software_versions_byvalue[value] = version
     
-        self._software_version_id = sid
+        self._software_version_id = vid
 
     @staticmethod
     def data_type_name(arg):

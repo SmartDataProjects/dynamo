@@ -88,20 +88,12 @@ class DynamoServer(object):
         ## The only states the other running servers can be in are therefore 'updating' or 'online'
 
         ## Now find a server I'll load inventory from (unless I am the only online host and I have a store)
-        remote_source = False
         if not (self.inventory.has_store() and self.manager.count_servers(ServerManager.SRV_ONLINE) == 0):
-            self.setup_remote_store()
-            remote_source = True
+            hostname, module, config = self.manager.find_remote_store(hostname = hostname)
+            self.inventory.clone_store(module, config)
 
         LOG.info('Loading the inventory.')
         self.inventory.load(**self.inventory_load_opts)
-
-        if self.inventory.has_store() and remote_source:
-            # Revert to local store
-            pconf = self.inventory_config.persistency
-            self.inventory.init_store(pconf.module, pconf.config)
-            # Save all that's loaded to local
-            self.inventory.flush_to_store()
 
         LOG.info('Inventory is ready.')
 
@@ -374,13 +366,7 @@ class DynamoServer(object):
             self.setup_remote_store()
 
     def setup_remote_store(self, hostname = ''):
-        remote_store = self.manager.find_remote_store(hostname = hostname)
-        if remote_store is None:
-            self.manager.set_status(ServerManager.SRV_ERROR)
-            raise RuntimeError('Could not find a remote persistency store to connect to.')
-
-        hostname, module, config = remote_store
-
+        hostname, module, config = self.manager.find_remote_store(hostname = hostname)
         LOG.info('Using persistency store at %s', hostname)
         self.inventory.init_store(module, config)
 
