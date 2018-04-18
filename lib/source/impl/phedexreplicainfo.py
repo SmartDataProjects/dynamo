@@ -17,7 +17,6 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
 
     def replica_exists_at_site(self, site, item): #override
         options = ['node=' + site.name]
-
         if type(item) == Dataset:
             options += ['dataset=' + item.name, 'show_dataset=y']
         elif type(item) == DatasetReplica:
@@ -33,6 +32,17 @@ class PhEDExReplicaInfoSource(ReplicaInfoSource):
 
         if len(source) != 0:
             return True
+
+        options = ['node=' + site.name]
+        if type(item) == Dataset:
+            # check both dataset-level and block-level subscriptions
+            options += ['dataset=' + item.name, 'block=%s#*' % item.name]
+        elif type(item) == DatasetReplica:
+            options += ['dataset=' + item.dataset.name, 'block=%s#*' % item.dataset.name]
+        elif type(item) == Block:
+            options += ['block=' + item.full_name()]
+        elif type(item) == BlockReplica:
+            options += ['block=' + item.block.full_name()]
 
         # blockreplicas has max ~20 minutes latency
         source = self._phedex.make_request('subscriptions', options, timeout = 600)
