@@ -189,7 +189,7 @@ class SocketAppServer(AppServer):
         master = self.dynamo_server.manager.master
 
         try:
-            # authorize the user
+            # check user authorization
             user_cert_data = conn.getpeercert()
 
             for dkey in ['subject', 'issuer']:
@@ -210,7 +210,7 @@ class SocketAppServer(AppServer):
 
             service = app_data.pop('service')
     
-            if not master.authorize_user(user_name, service):
+            if not master.is_authorized_user(user_name, service):
                 io.send('failed', 'Unauthorized user/service %s/%s' % (user_name, service))
                 return
 

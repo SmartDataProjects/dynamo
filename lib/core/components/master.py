@@ -121,6 +121,29 @@ class MasterServer(object):
     def check_application_auth(self, title, user, checksum):
         raise NotImplementedError('check_application_auth')
 
+    def list_authorized_applications(self, titles = None, users = None, checksums = None):
+        """
+        Return the list of authorized applications.
+        @param title      If given as a list of strings, limit to applications with given titles.
+        @param users      If given as a list of strings, limit to applications authorized under given users.
+        @param checksums  If given as a list of strings, limit to applications with given checksums.
+        """
+        raise NotImplementedError('list_authorized_applications')
+
+    def authorize_application(self, title, checksum, user = None):
+        """
+        Authorize an application. If user = None, authorize for everyone.
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('authorize_application')
+
+    def revoke_application_authorization(self, title, user = None):
+        """
+        Revoke an app auth.
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('revoke_application_authorization')
+
     def advertise_store(self, module, config):
         raise NotImplementedError('advertise_store')
 
@@ -136,6 +159,15 @@ class MasterServer(object):
     def declare_remote_store(self, hostname):
         raise NotImplementedError('declare_remote_store')
 
+    def user_exists(self, name):
+        """
+        Check if a user exists.
+        @param name  User name
+        
+        @return boolean
+        """
+        raise NotImplementedError('user_exists')
+
     def identify_user(self, dn):
         """
         Translate the DN to user account name.
@@ -145,14 +177,60 @@ class MasterServer(object):
         """
         raise NotImplementedError('identify_user')
 
-    def authorize_user(self, user, service):
+    def add_user(self, name, dn, email = None):
+        """
+        Add a new user.
+        @param name  User name
+        @param dn    User DN
+        @param email User email
+
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('add_user')
+
+    def service_exists(self, name):
+        """
+        Check if a service exists.
+        @param name  Service name
+        
+        @return boolean
+        """
+        raise NotImplementedError('service_exists')
+
+    def add_service(self, name):
+        """
+        Add a new service.
+        @param name  Service name
+
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('add_service')
+
+    def is_authorized_user(self, user, service):
         """
         @param user     User name.
         @param service  Service (role) name user is acting in.
         
         @return boolean
         """
+        raise NotImplementedError('is_authorized_user')
+
+    def authorize_user(self, user, service):
+        """
+        Add (user, service) to authorization list.
+        @param user     User name.
+        @param service  Service (role) name user is acting in.
+
+        @return True if success, False if not.
+        """
         raise NotImplementedError('authorize_user')
+
+    def list_authorized_users(self):
+        """
+        Get the full authorization list.
+        @return [(user, service)]
+        """
+        raise NotImplementedError('list_authorized_users')
 
     def check_connection(self):
         """

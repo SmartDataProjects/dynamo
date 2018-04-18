@@ -192,6 +192,53 @@ class MySQLMasterServer(MasterServer):
 
         return False
 
+    def list_authorized_applications(self, titles = None, users = None, checksums = None): #override
+        sql = 'SELECT a.`title`, u.`name`, a.`checksum` FROM `authorized_applications` AS a'
+        sql += ' LEFT JOIN `users` AS u ON u.`id` = a.`user_id`'
+
+        constraints = []
+        args = []
+        if type(titles) is list:
+            constraints.append('a.`title` IN (%s)' % ','.join(['%s'] * len(titles)))
+            args.extend(titles)
+
+        if type(users) is list:
+            constraints.append('u.`name` IN (%s)' % ','.join(['%s'] * len(users)))
+            args.extend(users)
+
+        if type(checksums) is list:
+            constraints.append('a.`checksum` IN (%s)' % ','.join(['%s'] * len(checksums)))
+            args.extend(checksums)
+
+        if len(constraints) != 0:
+            sql += ' WHERE ' + ' AND '.join(constraints)
+
+        return self._mysql.query(sql, *tuple(args))
+
+    def authorize_application(self, title, checksum, user = None): #override
+        sql = 'INSERT INTO `authorized_applications` (`user_id`, `title`, `checksum`)'
+        if user is None:
+            sql += ' VALUES (0, %s, %s)'
+            args = (title, checksum)
+        else:
+            sql += ' SELECT u.`id`, %s, %s FROM `users` AS u WHERE u.`name` = %s'
+            args = (title, checksum, user)
+
+        inserted = self._mysql.query(sql, *args)
+        return inserted != 0
+
+    def revoke_application_authorization(self, title, user = None): #override
+        sql = 'DELETE FROM `authorized_applications` WHERE (`user_id`, `title`) ='
+        if user is None:
+            sql += ' (0, %s)'
+            args = (title,)
+        else:
+            sql += ' (SELECT u.`id`, %s, FROM `users` AS u WHERE u.`name` = %s)'
+            args = (title, user)
+
+        deleted = self._mysql.query(sql, *args)
+        return deleted != 0
+
     def advertise_store(self, module, config): #override
         config = config.clone()
         if config.db_params.host == 'localhost':
@@ -240,6 +287,10 @@ class MySQLMasterServer(MasterServer):
         server_id = self._mysql.query('SELECT `id` FROM `servers` WHERE `hostname` = %s', hostname)[0]
         self._mysql.query('UPDATE `servers` SET `store_host` = %s WHERE `id` = %s', server_id, self._server_id)
 
+    def user_exists(self, name):
+        result = self._mysql.query('SELECT COUNT(*) FROM `users` WHERE `name` = %s', name)[0]
+        return len(result) != 0
+
     def identify_user(self, dn): #override
         result = self._mysql.query('SELECT `name` FROM `users` WHERE `dn` = %s', dn)
         if len(result) == 0:
@@ -247,12 +298,50 @@ class MySQLMasterServer(MasterServer):
         else:
             return result[0]
 
-    def authorize_user(self, user, service): #override
+    def add_user(self, name, dn, email = None): #override
+        sql = 'INSERT INTO `users` (`name`, `email`, `dn`) VALUES (%s, %s, %s)'
+        try:
+            inserted = self._mysql.query(sql, name, email, dn)
+        except:
+            return False
+
+        return inserted != 0
+
+    def service_exists(self, name): #override
+        result = self._mysql.query('SELECT COUNT(*) FROM `services` WHERE `name` = %s', name)[0]
+        return len(result) != 0
+
+    def add_service(self, name): #override
+        sql = 'INSERT INTO `services` (`name`) VALUES (%s)'
+        try:
+            inserted = self._mysql.query(sql, name)
+        except:
+            return False
+
+        return inserted != 0
+
+    def is_authorized_user(self, user, service): #override
         sql = 'SELECT COUNT(*) FROM `authorized_users` AS a'
         sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
         sql += ' INNER JOIN `services` AS s ON s.`id` = a.`service_id`'
         sql += ' WHERE u.`name` = %s AND s.`name` = %s'
         return (self._mysql.query(sql, user, service)[0] != 0)
+
+    def authorize_user(self, user, service): #override
+        sql = 'INSERT INTO `authorized_users` (`user_id`, `service_id`)'
+        sql += ' SELECT u.`id`, s.`id` FROM `users` AS u, `services` AS s'
+        sql += ' WHERE u.`name` = %s AND s.`name` = %s'
+        sql += ' ON DUPLICATE KEY UPDATE `user_id` = `user_id`'
+
+        inserted = self._mysql.query(sql, user, service)
+        return inserted != 0
+
+    def list_authorized_users(self): #override
+        sql = 'SELECT u.`name`, s.`name` FROM `authorized_users` AS a'
+        sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
+        sql += ' INNER JOIN `services` AS s ON s.`id` = a.`service_id`'
+        
+        return self._mysql.query(sql)
 
     def check_connection(self): #override
         try:
