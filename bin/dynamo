@@ -37,6 +37,8 @@ class DynamoServer(object):
                 context.load_cert_chain(certfile, keyfile = keyfile)
                 context.verify_mode = ssl.CERT_NONE
                 self._conn = context.wrap_socket(socket.create_connection(addr))
+        except ssl.SSLError:
+            raise
         except:
             raise ConnectError()
 
@@ -415,6 +417,13 @@ if __name__ == '__main__':
             server.interact(args.write_request, args.workdir)
         else:
             server.submit(args.cmd, args.title, args.write_request, args.workdir, args.asynch)
+
+    except ssl.SSLError:
+        sys.stderr.write('Failed to open an SSL connection to Dynamo server at %s:%d.\n' % server_addr)
+        sys.stderr.write('Please check that you have a valid certificate and key or a certificate proxy at\n')
+        sys.stderr.write('1. Paths given in --cert and --key options\n')
+        sys.stderr.write('2. $X509_USER_PROXY\n')
+        sys.stderr.write('3. /tmp/x509up_u%d\n' % os.getuid())
 
     except ConnectError:
         sys.stderr.write('Failed to connect to Dynamo server at %s:%d.\n' % server_addr)

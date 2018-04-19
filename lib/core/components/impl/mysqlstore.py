@@ -455,7 +455,7 @@ class MySQLInventoryStore(InventoryStore):
         mapping = lambda dataset: (dataset.id, dataset.name, dataset.size, dataset.num_files, dataset.status, dataset.data_type, \
             dataset._software_version_id, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
-        softare_versions = set()
+        software_versions = set()
         def get_dataset():
             for dataset in datasets:
                 software_versions.add(dataset.software_version)
