@@ -205,12 +205,17 @@ for site, request_ids in records.iteritems():
 
         request_total = 0
         request_copied = 0
+
+        for (sitename, dataset), status_data in status.iteritems():
+            if status_data is None:
+                # the copy request was cancelled
+                continue
+
+            total, copied, last_update = status_data
     
-        for (sitename, dataset), (total, copied, last_update) in status.iteritems():
-            LOG.debug((sitename, dataset))
+            LOG.debug('%s %s %s %s %s', sitename, dataset, total, copied, last_update)
 
             if sitename != site:
-                # This happens when multiple sites were chosen as destinations for a single transfer request
                 continue
 
             if copied is None:
