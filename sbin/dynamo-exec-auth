@@ -56,16 +56,25 @@ if args.user:
             sys.exit(1)
 
 authorized_apps = {}
-for title, user, checksum in master.list_authorized_applications(titles = args.title, users = args.user, checksums = checksums):
+for title, user, checksum in master.list_authorized_applications(titles = args.title, users = args.user):
     authorized_apps[(title, user)] = checksum
 
 if args.list:
-    checksums = None
     if args.executable:
-        checksums = []
+        selected = []
         for ex in args.executable:
             with open(ex) as source:
-                checksums.append(hashlib.md5(source.read()).hexdigest())
+                checksum = hashlib.md5(source.read()).hexdigest()
+
+            for key, value in authorized_apps.items():
+                if value == checksum:
+                    selected.append(key)
+
+        new_apps = {}
+        for key in selected:
+            new_apps[key] = authorized_apps[key]
+
+        authorized_apps = new_apps
    
     print '%10s  %10s' % ('TITLE', 'USER')
     for title, user in sorted(authorized_apps.keys()):
@@ -106,19 +115,27 @@ if args.delete:
 
 ## If not deleting, executable must be passed
 
-if not args.executable:
+if args.executable is None:
     sys.stderr.write('Missing --executable\n')
     sys.exit(1)
 
-if args.title is None or len(args.title) != 1:
-    sys.stderr.write('A title is required.\n')
+if len(args.executable) != 1:
+    sys.stderr.write('Only one executable can be authorized at a time.\n')
+    sys.exit(1)
+
+if args.title is None:
+    sys.stderr.write('Missing --title\n')
+    sys.exit(1)
+
+if len(args.title) != 1:
+    sys.stderr.write('Only one title can be given.\n')
     sys.exit(1)
 
 title = args.title[0]
 
 ## Compute the checksum and insert/update.
     
-with open(args.executable) as source:
+with open(args.executable[0]) as source:
     checksum = hashlib.md5(source.read()).hexdigest()
 
 if args.user is None:

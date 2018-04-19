@@ -207,7 +207,7 @@ class MySQLMasterServer(MasterServer):
             args.extend(users)
 
         if type(checksums) is list:
-            constraints.append('a.`checksum` IN (%s)' % ','.join(['%s'] * len(checksums)))
+            constraints.append('a.`checksum` IN (%s)' % ','.join(['UNHEX(%s)'] * len(checksums)))
             args.extend(checksums)
 
         if len(constraints) != 0:
@@ -218,10 +218,10 @@ class MySQLMasterServer(MasterServer):
     def authorize_application(self, title, checksum, user = None): #override
         sql = 'INSERT INTO `authorized_applications` (`user_id`, `title`, `checksum`)'
         if user is None:
-            sql += ' VALUES (0, %s, %s)'
+            sql += ' VALUES (0, %s, UNHEX(%s))'
             args = (title, checksum)
         else:
-            sql += ' SELECT u.`id`, %s, %s FROM `users` AS u WHERE u.`name` = %s'
+            sql += ' SELECT u.`id`, %s, UNHEX(%s) FROM `users` AS u WHERE u.`name` = %s'
             args = (title, checksum, user)
 
         inserted = self._mysql.query(sql, *args)
