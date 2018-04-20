@@ -25,7 +25,7 @@ def dataset_already_exists(dataset, site, group):
     replica = site.find_dataset_replica(dataset)
     if replica is not None and replica.is_full():
         owners = set(brep.group for brep in replica.block_replicas)
-        if len(owners) == 1 or list(owners)[0] == group:
+        if len(owners) == 1 and list(owners)[0] == group:
             return True
 
     return False

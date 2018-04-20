@@ -270,7 +270,6 @@ class Dynamo(object):
 
         while True:
             try:
-                # If drain is True, we are calling this function to wait to empty out the queue.
                 # In case the child process fails to put EOM at the end, we time out in 60 seconds.
                 cmd, obj = queue.get(block = reading, timeout = 60)
             except Queue.Empty:

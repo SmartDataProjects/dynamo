@@ -133,6 +133,22 @@ class ReplicaNumFullDiskCopyCommonOwner(DatasetReplicaAttr):
     
         return num
 
+class ReplicaNumFullOtherCopyCommonOwner(DatasetReplicaAttr):
+    def __init__(self):
+        DatasetReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
+
+    def _get(self, replica):
+        owners = set(br.group for br in replica.block_replicas)
+        dataset = replica.dataset
+        num = 0
+        for rep in dataset.replicas:
+            if rep.site is not replica.site and rep.site.status == Site.STAT_READY and rep.is_full():
+                rep_owners = set(br.group for br in rep.block_replicas)
+                if len(owners & rep_owners) != 0:
+                    num += 1
+    
+        return num
+
 class ReplicaEnforcerProtected(DatasetReplicaAttr):
     def __init__(self):
         DatasetReplicaAttr.__init__(self, Attr.BOOL_TYPE)
@@ -231,6 +247,18 @@ class BlockReplicaOnTape(BlockReplicaAttr):
 
         return False
 
+class BlockReplicaRelativeAge(BlockReplicaAttr):
+    def __init__(self):
+        BlockReplicaAttr.__init__(self, Attr.NUMERIC_TYPE)
+
+        self.required_attrs = ['blockreplica_relative_age']
+
+    def _get(self, replica):
+        try:
+            return replica.block.dataset.attr['blockreplica_relative_age'][replica]
+        except KeyError:
+            return 0
+
 class ReplicaSiteStatus(ReplicaSiteAttr):
     def __init__(self):
         ReplicaSiteAttr.__init__(self, Attr.NUMERIC_TYPE, attr = 'status')
@@ -308,6 +336,7 @@ replica_variables = {
     'replica.first_block_created': ReplicaFirstBlockCreated(),
     'replica.num_access': DatasetAttr(Attr.NUMERIC_TYPE, dict_attr = 'num_access'),
     'replica.num_full_disk_copy_common_owner': ReplicaNumFullDiskCopyCommonOwner(),
+    'replica.num_full_other_copy_common_owner': ReplicaNumFullOtherCopyCommonOwner(),
     'replica.enforcer_protected': ReplicaEnforcerProtected(),
     'blockreplica.is_last_transfer_source': ReplicaIsLastSource(),
     'blockreplica.last_update': BlockReplicaAttr(Attr.TIME_TYPE, 'last_update'),
@@ -315,6 +344,7 @@ replica_variables = {
     'blockreplica.is_locked': ReplicaIsLocked(),
     'blockreplica.num_full_disk_copy': BlockNumFullDiskCopy(),
     'blockreplica.on_tape': BlockReplicaOnTape(),
+    'blockreplica.age_relative_to_newest': BlockReplicaRelativeAge(),
     'site.name': ReplicaSiteAttr(Attr.TEXT_TYPE, 'name'),
     'site.status': ReplicaSiteStatus(),
     'site.storage_type': ReplicaSiteStorageType()

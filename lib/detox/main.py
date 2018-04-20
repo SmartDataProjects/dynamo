@@ -317,17 +317,24 @@ class Detox(object):
                         ignored_replicas.add(replica)
 
                     elif isinstance(action, Protect):
+                        # protect a full dataset or a remainder after block-level operations
                         get_list(protected, replica, condition_id).update(block_replicas)
-                        ignored_replicas.add(replica)
+                        if block_replicas == replica.block_replicas:
+                            # if all block replicas are to be protected, we don't need to evaluate this dataset replica any more.
+                            # add to the ignore list to speed up processing
+                            ignored_replicas.add(replica)
     
                     elif isinstance(action, Delete):
+                        # delete a full dataset or a remainder after block-level operations
                         unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, block_replicas)
                         if len(unlinked_replicas) != 0:
                             get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
 
+                            # here we actually modify the partition repository
                             for block_replica in unlinked_replicas:
                                 block_replica.unlink_from(repository)
 
+                        # as a result of the modification, the dataset replica can become empty
                         if len(replica.block_replicas) == 0:
                             # if all blocks were deleted, take the replica off all_replicas for later iterations
                             # this is the only place where the replica can become empty
@@ -362,90 +369,89 @@ class Detox(object):
 
                 break
 
-            else:
-                # now figure out which of deletion candidates to actually delete
-                if self.policy.iterative_deletion:
-                    # we will delete from one site at a time
+            # now figure out which of deletion candidates to actually delete
+            if self.policy.iterative_deletion:
+                # we will delete from one site at a time
 
-                    # all sites where delete candidates are
-                    candidate_sites = set(r.site for r in delete_candidates.iterkeys())
+                # all sites where delete candidates are
+                candidate_sites = set(r.site for r in delete_candidates.iterkeys())
 
-                    # fraction of protected data at each candidate site
-                    protected_fraction = dict((s, 0. if quotas[s] > 0. else 1.) for s in candidate_sites)
+                # fraction of protected data at each candidate site
+                protected_fraction = dict((s, 0. if quotas[s] > 0. else 1.) for s in candidate_sites)
 
-                    for replica, matches in protected.iteritems():
-                        if replica.site not in protected_fraction:
-                            continue
-
-                        quota = quotas[replica.site]
-                        if quota <= 0.:
-                            continue
-
-                        for condition_id, block_replicas in matches.iteritems():
-                            protected_fraction[replica.site] += sum(r.size for r in block_replicas) / quota
-
-                    # find the site with the highest protected fraction                            
-                    selected_site = max(candidate_sites, key = lambda site: protected_fraction[site])
-
-                    # all delete candidates at the site
-                    candidates_at_site = [r for r in delete_candidates.iterkeys() if r.site == selected_site]
-
-                    # sorted list of replicas to delete
-                    replicas_to_delete = sorted(candidates_at_site, key = self.policy.candidate_sort_key)
-
-                    deleted_volume = 0.
-
-                else:
-                    replicas_to_delete = sorted(delete_candidates.iterkeys(), key = self.policy.candidate_sort_key)
-
-                for replica in replicas_to_delete:
-                    site = replica.site
-
-                    if site not in triggered_sites:
-                        # Site was de-triggered. Move this replica to keep_candidates.
-                        for condition_id, matches in delete_candidates[replica].iteritems():
-                            get_list(keep_candidates, replica, condition_id).update(matches)
-
+                for replica, matches in protected.iteritems():
+                    if replica.site not in protected_fraction:
                         continue
 
-                    if self.policy.iterative_deletion:
-                        quota = quotas[site]
-    
-                        # have we deleted more than allowed in a single iteration?
-                        if quota > 0. and deleted_volume / quota > self.deletion_per_iteration:
-                            break
+                    quota = quotas[replica.site]
+                    if quota <= 0.:
+                        continue
 
-                    LOG.debug('Deleting replica: %s', str(replica))
+                    for condition_id, block_replicas in matches.iteritems():
+                        protected_fraction[replica.site] += sum(r.size for r in block_replicas) / quota
 
+                # find the site with the highest protected fraction                            
+                selected_site = max(candidate_sites, key = lambda site: protected_fraction[site])
+
+                # all delete candidates at the site
+                candidates_at_site = [r for r in delete_candidates.iterkeys() if r.site == selected_site]
+
+                # sorted list of replicas to delete
+                replicas_to_delete = sorted(candidates_at_site, key = self.policy.candidate_sort_key)
+
+                deleted_volume = 0.
+
+            else:
+                replicas_to_delete = sorted(delete_candidates.iterkeys(), key = self.policy.candidate_sort_key)
+
+            for replica in replicas_to_delete:
+                site = replica.site
+
+                if site not in triggered_sites:
+                    # Site was de-triggered. Move this replica to keep_candidates.
                     for condition_id, matches in delete_candidates[replica].iteritems():
-                        unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, matches)
-                        if len(unlinked_replicas) != 0:
-                            to_delete = set(unlinked_replicas) - set(reowned_replicas)
+                        get_list(keep_candidates, replica, condition_id).update(matches)
 
-                            if self.policy.iterative_deletion:
-                                deleted_volume += sum(br.size for br in to_delete)
+                    continue
 
-                            get_list(deleted, replica, condition_id).update(to_delete)
-                            for block_replica in unlinked_replicas:
-                                block_replica.unlink_from(repository)
+                if self.policy.iterative_deletion:
+                    quota = quotas[site]
 
-                        if len(reowned_replicas) != 0:
-                            if replica in reowned:
-                                reowned[replica].extend(reowned_replicas)
-                            else:
-                                reowned[replica] = list(reowned_replicas)
+                    # have we deleted more than allowed in a single iteration?
+                    if quota > 0. and deleted_volume / quota > self.deletion_per_iteration:
+                        break
 
-                    if len(replica.block_replicas) == 0:
-                        replica.unlink_from(repository)
-                        all_replicas.remove(replica)
+                LOG.debug('Deleting replica: %s', str(replica))
 
-                    site_partition = site.partitions[partition]
+                for condition_id, matches in delete_candidates[replica].iteritems():
+                    unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, matches)
+                    if len(unlinked_replicas) != 0:
+                        to_delete = set(unlinked_replicas) - set(reowned_replicas)
 
-                    # has the site reached the stop-deletion threshold?
-                    for cond in self.policy.stop_condition:
-                        if cond.match(site_partition):
-                            triggered_sites.remove(site)
-                            break
+                        if self.policy.iterative_deletion:
+                            deleted_volume += sum(br.size for br in to_delete)
+
+                        get_list(deleted, replica, condition_id).update(to_delete)
+                        for block_replica in unlinked_replicas:
+                            block_replica.unlink_from(repository)
+
+                    if len(reowned_replicas) != 0:
+                        if replica in reowned:
+                            reowned[replica].extend(reowned_replicas)
+                        else:
+                            reowned[replica] = list(reowned_replicas)
+
+                if len(replica.block_replicas) == 0:
+                    replica.unlink_from(repository)
+                    all_replicas.remove(replica)
+
+                site_partition = site.partitions[partition]
+
+                # has the site reached the stop-deletion threshold?
+                for cond in self.policy.stop_condition:
+                    if cond.match(site_partition):
+                        triggered_sites.remove(site)
+                        break
 
         # done iterating
 

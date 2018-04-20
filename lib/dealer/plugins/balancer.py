@@ -96,7 +96,7 @@ class BalancingHandler(BaseHandler):
                     if replica in replica.site.partitions[partition].replicas:
                         num_nonpartial += 1
 
-                if num_nonpartial < num_rep:
+                if num_nonpartial <= num_rep:
                     LOG.debug('%s is a last copy at %s', ds_name, site.name)
                     last_copies[site].append(dataset)
 
