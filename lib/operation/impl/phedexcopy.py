@@ -119,7 +119,7 @@ class PhEDExCopyInterface(CopyInterface):
                 'node': site.name,
                 'data': self._phedex.form_catalog_xml(request_catalog),
                 'level': level,
-                'priority': 'normal',
+                'priority': 'low',
                 'move': 'n',
                 'static': 'n',
                 'custodial': 'n',

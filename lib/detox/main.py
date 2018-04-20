@@ -563,26 +563,25 @@ class Detox(object):
                     # Because replicas in partition_repository are modified already during the iterative
                     # deletion, we find the original replicas from the global inventory.
 
-                    size = 0
-                    datasets = set()
+                    dataset_sizes = collections.defaultdict(int)
                     for item in items:
                         if type(item) is Dataset:
                             dataset = item
-                            block_replicas = item.find_replica(site).block_replicas
+                            block_replicas = site.find_dataset_replica(dataset).block_replicas
+                            dataset_sizes[dataset] = dataset.size
                         else:
-                            dataset = item.dataset
-                            block_replicas = [item.find_replica(site)]
+                            block = item
+                            dataset = block.dataset
+                            block_replicas = [block.find_replica(site)]
+                            dataset_sizes[dataset] += block.size
 
                         for block_replica in block_replicas:
-                            size += block_replica.size
                             if approved:
                                 block_replica.group = inventory.groups[None]
                                 inventory.register_update(block_replica)
 
-                        datasets.add(dataset)
-    
-                    self.history.make_deletion_entry(cycle_number, site, deletion_id, approved, datasets, size)
-                    total_size += size
+                    self.history.make_deletion_entry(cycle_number, site, deletion_id, approved, dataset_sizes.items())
+                    total_size += sum(dataset_sizes.values())
 
             LOG.info('Done deleting %.1f TB from %s.', total_size * 1.e-12, site.name)
 

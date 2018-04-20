@@ -9,7 +9,8 @@ import lzma
 
 from dynamo.history.history import TransactionHistoryInterface
 from dynamo.utils.interface.mysql import MySQL
-from dynamo.dataformat import Site, HistoryRecord
+from dynamo.dataformat import Site
+from dynamo.dataformat.history import HistoryRecord, CopiedReplica, DeletedReplica
 
 LOG = logging.getLogger(__name__)
 
@@ -90,39 +91,49 @@ class MySQLHistory(TransactionHistoryInterface):
     def _do_close_run(self, operation, run_number): #override
         self._mysql.query('UPDATE `runs` SET `time_end` = FROM_UNIXTIME(%s) WHERE `id` = %s', time.time(), run_number)
 
-    def _do_make_copy_entry(self, run_number, site, operation_id, approved, dataset_list, size): #override
+    def _do_make_copy_entry(self, run_number, site, operation_id, approved, dataset_list): #override
         """
         Site and datasets are expected to be already in the database.
         """
 
-        if len(self._site_id_map) == 0:
-            self._make_site_id_map()
-        if len(self._dataset_id_map) == 0:
-            self._make_dataset_id_map()
+        site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        self._mysql.query('INSERT INTO `copy_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`, `size`) VALUES (%s, %s, NOW(), %s, %s, %s)', operation_id, run_number, approved, self._site_id_map[site.name], size)
+        dataset_ids = self._mysql.select_many('datasets', ('id',), 'name', (d.name for d, s in dataset_list))
+        id_sizes = zip(dataset_ids, [s for d, s in dataset_list])
 
-        self._mysql.insert_many('copied_replicas', ('copy_id', 'dataset_id'), lambda d: (operation_id, self._dataset_id_map[d.name]), dataset_list, do_update = False)
+        self._mysql.query('INSERT INTO `copy_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`) VALUES (%s, %s, NOW(), %s, %s)', operation_id, run_number, approved, site_id)
 
-    def _do_make_deletion_entry(self, run_number, site, operation_id, approved, datasets, size): #override
+        self._mysql.insert_many('copied_replicas', ('copy_id', 'dataset_id', 'size'), lambda (d, s): (operation_id, d, s), id_sizes, do_update = False)
+
+    def _do_make_deletion_entry(self, run_number, site, operation_id, approved, dataset_list): #override
         """
         site and dataset are expected to be already in the database (save_deletion_decisions should be called first).
         """
 
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        dataset_ids = self._mysql.select_many('datasets', ('id',), 'name', (d.name for d in datasets))
+        dataset_ids = self._mysql.select_many('datasets', ('id',), 'name', (d.name for d, s in dataset_list))
+        id_sizes = zip(dataset_ids, [s for d, s in dataset_list])
 
-        self._mysql.query('INSERT INTO `deletion_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`, `size`) VALUES (%s, %s, NOW(), %s, %s, %s)', operation_id, run_number, approved, site_id, size)
+        self._mysql.query('INSERT INTO `deletion_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`) VALUES (%s, %s, NOW(), %s, %s)', operation_id, run_number, approved, site_id)
 
-        self._mysql.insert_many('deleted_replicas', ('deletion_id', 'dataset_id'), lambda did: (operation_id, did), dataset_ids, do_update = False)
+        self._mysql.insert_many('deleted_replicas', ('deletion_id', 'dataset_id', 'size'), lambda (d, s): (operation_id, d, s), id_sizes, do_update = False)
 
     def _do_update_copy_entry(self, copy_record): #override
-        # copy_record status: INPROGRESS -> 0, COMPLETE -> 1, CANCELLED -> 2
-        self._mysql.query('UPDATE `copy_requests` SET `approved` = %s, `size` = %s, `completed` = %s WHERE `id` = %s', copy_record.approved, copy_record.size, copy_record.status, copy_record.operation_id)
+        self._mysql.query('UPDATE `copy_requests` SET `approved` = %s WHERE `id` = %s', copy_record.approved, copy_record.operation_id)
+
+        sql = 'UPDATE `copied_replicas` SET `size` = %s, `status` = %s'
+        sql += ' WHERE `copy_id` = %s AND `dataset_id` = (SELECT `id` FROM `datasets` WHERE `name` = %s)'
+        for replica in copy_record.replicas:
+            self._mysql.query(sql, replica.size, replica.status, copy_record.operation_id, replica.dataset_name)
         
     def _do_update_deletion_entry(self, deletion_record): #override
-        self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, `size` = %s WHERE `id` = %s', deletion_record.approved, deletion_record.size, deletion_record.operation_id)
+        self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, WHERE `id` = %s', deletion_record.approved, deletion_record.operation_id)
+
+        sql = 'UPDATE `deleted_replicas` SET `size` = %s'
+        sql += ' WHERE `deletion_id` = %s AND `dataset_id` = (SELECT `id` FROM `datasets` WHERE `name` = %s)'
+        for replica in deletion_record.replicas:
+            self._mysql.query(sql, replica.size, deletion_record.operation_id, replica.dataset_name)
 
     def _do_save_sites(self, sites): #override
         if len(self._site_id_map) == 0:
@@ -387,41 +398,29 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('dataset_popularity_snapshots', fields, mapping, datasets)
 
     def _do_get_incomplete_copies(self, partition): #override
-        query = 'SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, s.`name`, h.`size`'
-        query += ' FROM `copy_requests` AS h'
-        query += ' INNER JOIN `runs` AS r ON r.`id` = h.`run_id`'
-        query += ' INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id`'
-        query += ' INNER JOIN `sites` AS s ON s.`id` = h.`site_id`'
-        query += ' WHERE h.`id` > 0 AND p.`name` LIKE \'%s\' AND h.`completed` = 0 AND h.`run_id` > 0' % partition
-        history_entries = self._mysql.xquery(query)
-        
-        id_to_record = {}
-        for eid, timestamp, approved, site_name, size in history_entries:
-            id_to_record[eid] = HistoryRecord(HistoryRecord.OP_COPY, eid, site_name, timestamp = timestamp, approved = approved, size = size)
+        sql = 'SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, d.`name`, s.`name`, c.`size`'
+        sql += ' FROM `copied_replicas` AS c'
+        sql += ' INNER JOIN `copy_requests` AS h ON h.`id` = c.`copy_id`'
+        sql += ' INNER JOIN `runs` AS r ON r.`id` = h.`run_id`'
+        sql += ' INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id`'
+        sql += ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`'
+        sql += ' INNER JOIN `sites` AS s ON s.`id` = h.`site_id`'
+        sql += ' WHERE h.`id` > 0 AND p.`name` LIKE \'%s\' AND c.`status` = \'enroute\' AND h.`run_id` > 0' % partition
+        sql += ' ORDER BY h.`id`'
 
-        id_to_dataset = dict(self._mysql.xquery('SELECT `id`, `name` FROM `datasets`'))
-        id_to_site = dict(self._mysql.xquery('SELECT `id`, `name` FROM `sites`'))
+        records = []
 
-        replicas = self._mysql.select_many('copied_replicas', ('copy_id', 'dataset_id'), 'copy_id', id_to_record.iterkeys())
+        _copy_id = 0
+        record = None
+        for copy_id, timestamp, approved, dataset_name, site_name, size in self._mysql.xquery(sql):
+            if copy_id != _copy_id:
+                _copy_id = copy_id
+                record = HistoryRecord(HistoryRecord.OP_COPY, copy_id, site_name, timestamp = timestamp, approved = approved)
+                records.append(record)
 
-        current_copy_id = 0
-        for copy_id, dataset_id in replicas:
-            if copy_id != current_copy_id:
-                record = id_to_record[copy_id]
-                current_copy_id = copy_id
+            record.replicas.append(CopiedReplica(dataset_name = dataset_name, size = size, status = HistoryRecord.ST_ENROUTE))
 
-            record.replicas.append(HistoryRecord.CopiedReplica(dataset_name = id_to_dataset[dataset_id]))
-
-        return id_to_record.values()
-
-    def _do_get_copied_replicas(self, run_number): #override
-        query = 'SELECT s.`name`, d.`name` FROM `copied_replicas` AS p'
-        query += ' INNER JOIN `copy_requests` AS r ON r.`id` = p.`copy_id`'
-        query += ' INNER JOIN `datasets` AS d ON d.`id` = p.`dataset_id`'
-        query += ' INNER JOIN `sites` AS s ON s.`id` = r.`site_id`'
-        query += ' WHERE r.`run_id` = %d' % run_number
-        
-        return self._mysql.query(query)
+        return records
 
     def _do_get_site_name(self, operation_id): #override
         result = self._mysql.query('SELECT s.name FROM `sites` AS s INNER JOIN `copy_requests` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s', operation_id)

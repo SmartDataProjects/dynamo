@@ -1,4 +1,18 @@
-import collections
+class CopiedReplica(object):
+    __slots__ = ['dataset_name', 'size', 'status']
+
+    def __init__(self, dataset_name, size, status):
+        self.dataset_name = dataset_name
+        self.size = size
+        self.status = status
+
+class DeletedReplica(object):
+    __slots__ = ['dataset_name', 'size']
+    
+    def __init__(self, dataset_name, size):
+        self.dataset_name = dataset_name
+        self.size = size
+
 
 class HistoryRecord(object):
     """Represents a transaction history record."""
@@ -6,19 +20,14 @@ class HistoryRecord(object):
     # operation types
     OP_COPY, OP_DELETE = range(2)
     # operation status
-    ST_INPROGRESS, ST_COMPLETE, ST_CANCELLED = range(3)
+    ST_ENROUTE, ST_COMPLETE, ST_CANCELLED = range(1, 4)
 
-    CopiedReplica = collections.namedtuple('CopiedReplica', ['dataset_name'])
-    DeletedReplica = collections.namedtuple('DeletedReplica', ['dataset_name'])
-
-    def __init__(self, operation_type, operation_id, site_name, timestamp = 0, approved = False, size = 0, status = ST_INPROGRESS, last_update = 0):
+    def __init__(self, operation_type, operation_id, site_name, timestamp = 0, approved = False, last_update = 0):
         self.operation_type = operation_type
         self.operation_id = operation_id
         self.site_name = site_name
         self.timestamp = timestamp
         self.approved = bool(approved)
-        self.size = size
-        self.status = status
         self.replicas = []
 
     def __str__(self):
