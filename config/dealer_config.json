@@ -52,7 +52,7 @@
         "config": {
           "enforcer": {
             "max_dataset_size": 50.0,
-            "rules": "$(DYNAMO_BASE)/policies/common/enforcer_rules.json"
+            "policy": "$(DYNAMO_BASE)/policies/common/enforcer_rules_physics.json"
           }
         }
       },
@@ -73,15 +73,19 @@
           "max_dataset_size": 50.0,
           "max_cycle_volume": 5.0,
           "target_reasons": {
-            "dataset.name == /*/*/MINIAOD* and replica.num_full_disk_copy_common_owner < 3": 3,
-            "replica.num_full_disk_copy_common_owner < 2": 2
+            "dataset.name == /*/*/MINIAOD* and replica.num_full_disk_copy_common_owner < 3": 2,
+            "dataset.name == /*/*/MINIAOD* and replica.num_full_other_copy_common_owner < 2": 2,
+            "replica.num_full_disk_copy_common_owner < 2": 1,
+            "replica.num_full_other_copy_common_owner == 0": 1
           }
         }
       },
       "undertaker": {
         "priority": 2,
         "module": "Undertaker",
-        "config": {}
+        "config": {
+          "additional_sites": []
+        }
       }
     },
     "attrs": {

@@ -13,7 +13,7 @@ class PhEDEx(RESTService):
 
         self.dbs_url = config.dbs_url
 
-    def make_request(self, resource = '', options = [], method = GET, format = 'url', retry_on_error = True, timeout = 0): #override
+    def make_request(self, resource = '', options = [], method = GET, format = 'url', retry_on_error = True, timeout = 1800): #override
         LOG.debug('%s %s', resource, options)
         response = RESTService.make_request(self, resource, options = options, method = method, format = format, retry_on_error = retry_on_error, timeout = timeout)
 

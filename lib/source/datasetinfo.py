@@ -1,3 +1,9 @@
+import fnmatch
+import re
+import logging
+
+LOG = logging.getLogger(__name__)
+
 class DatasetInfoSource(object):
     """
     Interface specs for probe to the dataset information source.
@@ -6,17 +12,17 @@ class DatasetInfoSource(object):
     def __init__(self, config):
         if hasattr(config, 'include'):
             if type(config.include) is list:
-                self.include = list(config.include)
+                self.include = map(lambda pattern: re.compile(fnmatch.translate(pattern)), config.include)
             else:
-                self.include = [config.include]
+                self.include = [re.compile(fnmatch.translate(config.include))]
         else:
             self.include = None
 
         if hasattr(config, 'exclude'):
             if type(config.exclude) is list:
-                self.exclude = list(config.exclude)
+                self.exclude = map(lambda pattern: re.compile(fnmatch.translate(pattern)), config.exclude)
             else:
-                self.exclude = [config.exclude]
+                self.exclude = [re.compile(fnmatch.translate(config.exclude))]
         else:
             self.exclude = None
 
@@ -70,3 +76,21 @@ class DatasetInfoSource(object):
         @return set of Files
         """
         raise NotImplementedError('get_files')
+
+    def check_allowed_dataset(self, dataset_name):
+        if self.include is not None:
+            for pattern in self.include:
+                if pattern.match(dataset_name):
+                    break
+            else:
+                # no match
+                LOG.debug('Dataset %s is not in include list.', dataset_name)
+                return False
+
+        if self.exclude is not None:
+            for pattern in self.exclude:
+                if pattern.match(dataset_name):
+                    LOG.debug('Dataset %s is in exclude list.', dataset_name)
+                    return False
+
+        return True

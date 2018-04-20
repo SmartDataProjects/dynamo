@@ -59,6 +59,19 @@ config.sites.config.phedex = config.phedex
 config.datasets.config.phedex = config.phedex
 config.replicas.config.phedex = config.phedex
 
+if 'include_sites' in config:
+    config.sites.config.include = config.include_sites
+    config.replicas.config.include_sites = config.include_sites
+if 'exclude_sites' in config:
+    config.sites.config.exclude = config.exclude_sites
+    config.replicas.config.exclude_sites = config.exclude_sites
+if 'include_datasets' in config:
+    config.datasets.config.include = config.include_datasets
+    config.replicas.config.include_datasets = config.include_datasets
+if 'exclude_datasets' in config:
+    config.datasets.config.exclude = config.exclude_datasets
+    config.replicas.config.exclude_datasets = config.exclude_datasets
+
 group_source = sources.PhEDExGroupInfoSource(config.groups.config)
 site_source = sources.PhEDExSiteInfoSource(config.sites.config)
 dataset_source = sources.PhEDExDatasetInfoSource(config.datasets.config)
@@ -75,6 +88,9 @@ replica_source = sources.PhEDExReplicaInfoSource(config.replicas.config)
 
 from dynamo.dataformat import Dataset, Block, File, DatasetReplica, BlockReplica, ObjectError
 from dynamo.utils.parallel import Map
+
+parallelizer = Map()
+parallelizer.timeout = 7200
 
 ## 1. Refresh groups
 
@@ -121,17 +137,38 @@ if args.mode == 'ReplicaDelta':
     timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S %Z', time.localtime(last_update))
     LOG.info('Fetching the list of block replicas updated since %s.', timestamp_str)
 
-    def get_deleted_replicas(output_list):
-        output_list.extend(replica_source.get_deleted_replicas(last_update))
-
     deleted_replicas = []
-    thr = threading.Thread(target = get_deleted_replicas, args = (deleted_replicas,))
+
+    # Fetch deleted replicas in a separate thread
+    def get_deleted_replicas():
+        replicas = replica_source.get_deleted_replicas(last_update)
+        deleted_replicas.extend(replicas)
+
+    thr = threading.Thread(target = get_deleted_replicas)
     thr.start()
 
     updated_replicas = replica_source.get_updated_replicas(last_update)
 
     thr.join()
 
+    # Sometimes when a subscription is made but is removed before any transfer happens, PhEDEx "deletions" call
+    # returns nothing and the empty subscription stays in the inventory, inflating the projected volume at the site.
+    # We need to check all empty replicas with PhEDEx.
+    lock = threading.Lock()
+    def check_empty_replica(replica):
+        if not replica_source.replica_exists_at_site(replica.site, replica.dataset):
+            with lock:
+                deleted_replicas.extend(replica.block_replicas)
+
+    empty_replicas = []
+    for site in inventory.sites.itervalues():
+        for replica in site.dataset_replicas():
+            if replica.size(physical = True) == 0:
+                empty_replicas.append(replica)
+
+    parallelizer.execute(check_empty_replica, empty_replicas)
+        
+    # Names of all the datasets to update
     dataset_names = set(br.block.dataset.name for br in updated_replicas)
 
 elif args.mode == 'ReplicaFull':
@@ -233,8 +270,6 @@ def get_dataset(name):
         
     return dataset_tmp
 
-parallelizer = Map()
-parallelizer.timeout = 7200
 dataset_tmps = parallelizer.execute(get_dataset, dataset_names, async = True)
 
 def create_file(file_tmp, block):
@@ -537,7 +572,7 @@ if check_replicas:
     
         # blockreplica.unlink_from() raises a KeyError or ObjectError if
         # any of the group, site, dataset, ... is not found
-        # containing dataset replica will be deleted within blockreplica.unlink()
+        # Containing dataset replica will be deleted within blockreplica.unlink()
         # if it becomes empty
         try:
             inventory.delete(replica)

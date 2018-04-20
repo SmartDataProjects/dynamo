@@ -4,7 +4,7 @@ import collections
 from dynamo.operation.copy import CopyInterface
 from dynamo.utils.interface.webservice import POST
 from dynamo.utils.interface.phedex import PhEDEx
-from dynamo.dataformat import DatasetReplica, BlockReplica
+from dynamo.dataformat import Block, DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)
 
@@ -206,5 +206,18 @@ class PhEDExCopyInterface(CopyInterface):
                     site_name = cont['node']
 
             status[(site_name, dataset['name'])] = (bytes, node_bytes, time_update)
+
+        # now we pick up whatever did not appear in the subscriptions call
+        for site_name in site_names:
+            for dataset_name in dataset_names:
+                key = (site_name, dataset_name)
+                if key not in status:
+                    status[key] = None
+
+            for block_name in block_names:
+                dataset_name = Block.from_full_name(block_name)[0]
+                key = (site_name, dataset_name)
+                if key not in status:
+                    status[key] = None
 
         return status
