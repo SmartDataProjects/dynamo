@@ -1,7 +1,7 @@
 from datasets import list_datasets
 
 getters = {
-    ('datasets',): list_datasets
+    'datasets': list_datasets
 }
 
 __all__ = [
