@@ -40,6 +40,10 @@ dealer_config = Configuration(config.dealer_config).dealer
 
 LOG = make_standard_logger(config.log_level)
 
+## Parallelizer
+
+parallelizer = Map(config.parallel)
+
 ## Data source
 
 from dynamo.history.history import TransactionHistoryInterface
@@ -194,19 +198,24 @@ for site, request_ids in records.iteritems():
 
     dataset_details = []
 
-    status_list = Map(config.parallel).execute(get_copy_status, request_ids)
+    status_list = parallelizer.execute(get_copy_status, request_ids)
 
     for request_id, status in status_list:
         LOG.info('Transfer request ID: %d', request_id)
 
         request_total = 0
         request_copied = 0
+
+        for (sitename, dataset), status_data in status.iteritems():
+            if status_data is None:
+                # the copy request was cancelled
+                continue
+
+            total, copied, last_update = status_data
     
-        for (sitename, dataset), (total, copied, last_update) in status.iteritems():
-            LOG.debug((sitename, dataset))
+            LOG.debug('%s %s %s %s %s', sitename, dataset, total, copied, last_update)
 
             if sitename != site:
-                # This happens when multiple sites were chosen as destinations for a single transfer request
                 continue
 
             if copied is None:

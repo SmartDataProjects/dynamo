@@ -47,8 +47,8 @@
           "max_dataset_size": 50.0,
           "max_cycle_volume": 5.0,
           "target_reasons": {
-            "dataset.name == /*/*/MINIAOD* and replica.num_full_disk_copy_common_owner < 3": 3,
-            "replica.num_full_disk_copy_common_owner < 2": 2
+            "dataset.name == /*/*/MINIAOD* and replica.num_full_other_copy_common_owner < 2": 2,
+            "replica.num_full_other_copy_common_owner == 0": 1
           },
           "detox_history": {}
         }

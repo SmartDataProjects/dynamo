@@ -7,7 +7,7 @@ T2_CH_CSCS,storage01.lcg.cscs.ch,47.1449,8.1551
 T2_UA_KIPT,cms-se0.kipt.kharkov.ua,49,32
 T2_PK_NCP,pcncp22.ncp.edu.pk,33.6957,73.0113
 T2_RU_PNPI,cluster.pnpi.nw.ru,59.8944,30.2642
-T2_US_Purdue,cms-gridftp.rcac.purdue.edu,37.751,-97.822
+T2_US_Purdue,cms-gridftp.rcac.purdue.edu,40.428246,-86.914391
 T2_FI_HIP,madhatter.csc.fi,62,15
 T2_UK_SGrid_RALPP,heplnx204.pp.rl.ac.uk,51.7095,-1.3614
 T2_FR_GRIF_LLR,polgrid4.in2p3.fr,46,2
@@ -20,7 +20,7 @@ T2_KR_KNU,cluster142.knu.ac.kr,37.4989,126.7831
 T2_DE_DESY,dcache-se-cms.desy.de,53.5712,9.8745
 T2_RU_SINP,lcg58.sinp.msu.ru,55.7386,37.6068
 T2_IT_Legnaro,t2-srm-02.lnl.infn.it,43.1479,12.1097
-T2_US_Caltech,cit-se.ultralight.org,37.751,-97.822
+T2_US_Caltech,cit-se.ultralight.org,34.135667,-118.127240
 T1_DE_KIT_Disk,cmssrm-kit.gridka.de,49.0047,8.3858
 T2_RU_INR,grse001.inr.troitsk.ru,55.7386,37.6068
 T2_UK_London_Brunel,dc2-grid-64.brunel.ac.uk,54,-2

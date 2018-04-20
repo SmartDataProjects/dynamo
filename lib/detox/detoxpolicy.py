@@ -233,6 +233,11 @@ class DetoxPolicy(object):
 
                     producer_cls = cls
 
+            if producer_cls == '':
+                LOG.error('Attribute %s is not provided by any producer.', attr_name)
+                LOG.error('Please fix the configuration so that each dataset attribute is provided by a unique producer.')
+                raise ConfigurationError('Invalid attribute name')
+                
             producer_names.add(producer_cls)
 
         for producer_cls in producer_names:
