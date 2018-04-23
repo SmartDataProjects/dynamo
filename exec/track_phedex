@@ -40,6 +40,10 @@ dealer_config = Configuration(config.dealer_config).dealer
 
 LOG = make_standard_logger(config.log_level)
 
+## Parallelizer
+
+parallelizer = Map(config.parallel)
+
 ## Data source
 
 import dynamo.history.impl as history_impl
@@ -194,7 +198,7 @@ for site, request_ids in records.iteritems():
 
     dataset_details = []
 
-    status_list = Map(config.parallel).execute(get_copy_status, request_ids)
+    status_list = parallelizer.execute(get_copy_status, request_ids)
 
     for request_id, status in status_list:
         LOG.info('Transfer request ID: %d', request_id)

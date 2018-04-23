@@ -408,7 +408,11 @@ class MySQLInventoryStore(InventoryStore):
         if dataset_id == -1:
             return
 
-        sql = 'DELETE FROM `blocks` WHERE `dataset_id` = %s AND `name` = %s'
+        sql = 'DELETE FROM b, f, r USING `blocks` AS b'
+        sql += ' LEFT JOIN `block_replicas` AS r ON r.`block_id` = b.`id`'
+        sql += ' LEFT JOIN `files` AS f ON f.`block_id` = b.`id`'
+        sql += ' WHERE b.`dataset_id` = %s AND b.`name` = %s'
+
         self._mysql.query(sql, dataset_id, block.real_name())
 
     def save_file(self, lfile): #override
@@ -451,6 +455,10 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query(sql, block_id, site_id)
 
     def delete_blockreplica(self, block_replica): #override
+        dataset_id = self._get_dataset_id(block_replica.block.dataset)
+        if dataset_id == -1:
+            return
+
         block_id = self._get_block_id(block_replica.block)
         if block_id == -1:
             return
@@ -464,6 +472,13 @@ class MySQLInventoryStore(InventoryStore):
 
         sql = 'DELETE FROM `block_replica_sizes` WHERE `block_id` = %s AND `site_id` = %s'
         self._mysql.query(sql, block_id, site_id)
+
+        sql = 'SELECT COUNT(*) FROM `block_replicas` AS br'
+        sql += ' INNER JOIN `blocks` AS b ON b.`id` = br.`block_id`'
+        sql += ' WHERE b.`dataset_id` = %s AND br.`site_id` = %s'
+        if self._mysql.query(sql, dataset_id, site_id)[0] == 0:
+            sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
+            self._mysql.query(sql, dataset_id, site_id)
 
     def save_dataset(self, dataset): #override
         if dataset.software_version is None:
@@ -484,7 +499,14 @@ class MySQLInventoryStore(InventoryStore):
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
     def delete_dataset(self, dataset): #override
-        sql = 'DELETE FROM `datasets` WHERE `name` = %s'
+        sql = 'DELETE FROM d, b, f, dr, br, brs USING `datasets` AS d'
+        sql += ' LEFT JOIN `blocks` AS b ON b.`dataset_id` = d.`id`'
+        sql += ' LEFT JOIN `files` AS f ON f.`dataset_id` = d.`id`'
+        sql += ' LEFT JOIN `dataset_replicas` AS dr ON dr.`dataset_id` = d.`id`'
+        sql += ' LEFT JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
+        sql += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id`'
+        sql += ' WHERE d.`name` = %s'
+
         self._mysql.query(sql, dataset.name)
 
     def save_datasetreplica(self, dataset_replica): #override
@@ -508,6 +530,13 @@ class MySQLInventoryStore(InventoryStore):
         if site_id == -1:
             return
 
+        sql = 'DELETE FROM br, brs USING `blocks` AS b'
+        sql += ' INNER JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
+        sql += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id` AND brs.`site_id` = br.`site_id`'
+        sql += ' WHERE b.`dataset_id` = %s AND br.`site_id` = %s'
+
+        self._mysql.query(sql, dataset_id, site_id)
+
         sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
         self._mysql.query(sql, dataset_id, site_id)
 
@@ -528,16 +557,31 @@ class MySQLInventoryStore(InventoryStore):
         fields = ('name',)
         self._insert_update('partitions', fields, partition.name)
 
+        # For new partitions, persistency requires saving site partition data with default parameters.
+        # We handle missing site partition entries at load time - if a row is missing, SitePartition object with
+        # default parameters will be created.
+
     def delete_partition(self, partition): #override
-        sql = 'DELETE FROM `partitions` WHERE `name` = %s'
+        sql = 'DELETE FROM p, q USING `partitions` AS p'
+        sql += ' LEFT JOIN `quotas` AS q ON q.`partition_id` = p.`id`'
+        sql += ' WHERE p.`name` = %s'
         self._mysql.query(sql, partition.name)
 
     def save_site(self, site): #override
         fields = ('name', 'host', 'storage_type', 'backend', 'storage', 'cpu', 'status')
         self._insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.storage, site.cpu, site.status)
 
+        # For new sites, persistency requires saving site partition data with default parameters.
+        # We handle missing site partition entries at load time - if a row is missing, SitePartition object with
+        # default parameters will be created.
+
     def delete_site(self, site): #override
-        sql = 'DELETE FROM `sites` WHERE `name` = %s'
+        sql = 'DELETE FROM s, dr, br, brs, q USING `sites` AS s'
+        sql += ' LEFT JOIN `dataset_replicas` AS dr ON dr.`site_id` = s.`id`'
+        sql += ' LEFT JOIN `block_replicas` AS br ON br.`site_id` = s.`id`'
+        sql += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`site_id` = s.`id`'
+        sql += ' LEFT JOIN `quotas` AS q ON q.`site_id` = s.`id`'
+        sql += ' WHERE s.`name` = %s'
         self._mysql.query(sql, site.name)
 
     def save_sitepartition(self, site_partition): #override
@@ -555,22 +599,6 @@ class MySQLInventoryStore(InventoryStore):
 
         fields = ('site_id', 'partition_id', 'storage')
         self._insert_update('quotas', fields, site_id, partition_id, site_partition.quota * 1.e-12)
-
-    def delete_sitepartition(self, site_partition): #override
-        # We are only saving quotas. For superpartitions, there is nothing to do.
-        if site_partition.partition.subpartitions is not None:
-            return
-
-        site_id = self._get_site_id(site_partition.site)
-        if site_id == -1:
-            return
-
-        partition_id = self._get_partition_id(site_partition.partition)
-        if partition_id == -1:
-            return
-
-        sql = 'DELETE FROM `quotas` WHERE `site_id` = %s AND `partition_id` = %s'
-        self._mysql.query(sql, site_id, partition_id)
 
     def _insert_update(self, table, fields, *values):
         placeholders = ', '.join(['%s'] * len(fields))
@@ -602,11 +630,14 @@ class MySQLInventoryStore(InventoryStore):
         if block.name == self._block_id_cache[1] and block.dataset.name == self._block_id_cache[0]:
             return self._block_id_cache[2]
 
-        sql = 'SELECT b.`id` FROM `blocks` AS b'
-        sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
-        sql += ' WHERE d.`name` = %s AND b.`name` = %s'
+        dataset_id = self._get_dataset_id(block.dataset)
 
-        result = self._mysql.query(sql, block.dataset.name, block.real_name())
+        if dataset_id == -1:
+            return -1
+
+        sql = 'SELECT `id` FROM `blocks` WHERE `dataset_id` = %s AND `name` = %s'
+
+        result = self._mysql.query(sql, dataset_id, block.real_name())
         if len(result) == 0:
             return -1
 

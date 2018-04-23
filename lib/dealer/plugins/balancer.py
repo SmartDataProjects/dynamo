@@ -15,6 +15,7 @@ class BalancingHandler(BaseHandler):
         BaseHandler.__init__(self, 'Balancer')
 
         self.max_dataset_size = config.max_dataset_size * 1.e+12
+        self.max_cycle_volume = config.max_cycle_volume * 1.e+12
         self.target_reasons = dict(config.target_reasons)
 
     def get_requests(self, inventory, history, policy):
@@ -53,7 +54,7 @@ class BalancingHandler(BaseHandler):
                 continue
 
             protections = [(ds_name, size, reason) for ds_name, size, decision, reason in decisions if decision == 'protect']
-            protected_fraction = sum(size for ds_name, size, reason in protections) / quota
+            protected_fraction = sum(size for _, size, _ in protections) / quota
 
             LOG.debug('Site %s protected fraction %f', site.name, protected_fraction)
 
@@ -95,7 +96,7 @@ class BalancingHandler(BaseHandler):
                     if replica in replica.site.partitions[partition].replicas:
                         num_nonpartial += 1
 
-                if num_nonpartial < num_rep:
+                if num_nonpartial <= num_rep:
                     LOG.debug('%s is a last copy at %s', ds_name, site.name)
                     last_copies[site].append(dataset)
 
@@ -106,9 +107,8 @@ class BalancingHandler(BaseHandler):
 
         total_size = 0
         variation = 1.
-        # The actual cutoff will be imposed by Dealer later
-        # This cutoff is just to not make copy proposals that are never fulfilled
-        while len(protected_fractions) != 0 and total_size < policy.max_total_cycle_volume:
+
+        while len(protected_fractions) != 0 and total_size < self.max_cycle_volume:
             maxsite, maxfrac = max(protected_fractions.items(), key = lambda x: x[1])
             minsite, minfrac = min(protected_fractions.items(), key = lambda x: x[1])
 

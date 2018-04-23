@@ -1,3 +1,5 @@
+import time
+
 from exceptions import ObjectError
 from block import Block
 
@@ -31,9 +33,10 @@ class BlockReplica(object):
         self.files = None
 
     def __str__(self):
-        return 'BlockReplica %s:%s (group=%s, is_complete=%s, size=%d, last_update=%d)' % \
+        return 'BlockReplica %s:%s (group=%s, is_complete=%s, size=%d, last_update=%s)' % \
             (self._site_name(), self._block_full_name(),
-                self._group_name(), self.is_complete, self.size, self.last_update)
+                self._group_name(), self.is_complete, self.size,
+                time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)))
 
     def __repr__(self):
         return 'BlockReplica(block=%s, site=%s, group=%s)' % (repr(self._block), repr(self._site), repr(self.group))
@@ -112,7 +115,7 @@ class BlockReplica(object):
         else:
             return replica
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         try:
             dataset = inventory.datasets[self._dataset_name()]
             block = dataset.find_block(self._block_name(), must_find = True)
@@ -153,11 +156,11 @@ class BlockReplica(object):
 
         self._block.replicas.remove(self)
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_blockreplica(self)
-        else:
-            store.save_blockreplica(self)
+    def write_into(self, store):
+        store.save_blockreplica(self)
+
+    def delete_from(self, store):
+        store.delete_blockreplica(self)
 
     def _block_full_name(self):
         if type(self._block) is str:

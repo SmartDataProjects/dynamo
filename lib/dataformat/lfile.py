@@ -113,7 +113,7 @@ class File(object):
         else:
             return lfile
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         if self._block_name() is None:
             return None
 
@@ -136,11 +136,11 @@ class File(object):
         self._block.size -= self.size
         self._block.num_files -= 1
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_file(self)
-        else:
-            store.save_file(self)
+    def write_into(self, store):
+        store.save_file(self)
+
+    def delete_from(self, store):
+        store.delete_file(self)
 
     def fid(self):
         return (self._directory_id, self._basename)

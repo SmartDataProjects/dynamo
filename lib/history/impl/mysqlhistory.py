@@ -118,7 +118,8 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.insert_many('deleted_replicas', ('deletion_id', 'dataset_id'), lambda did: (operation_id, did), dataset_ids, do_update = False)
 
     def _do_update_copy_entry(self, copy_record): #override
-        self._mysql.query('UPDATE `copy_requests` SET `approved` = %s, `size` = %s, `completed` = %s WHERE `id` = %s', copy_record.approved, copy_record.size, copy_record.completed, copy_record.operation_id)
+        # copy_record status: INPROGRESS -> 0, COMPLETE -> 1, CANCELLED -> 2
+        self._mysql.query('UPDATE `copy_requests` SET `approved` = %s, `size` = %s, `completed` = %s WHERE `id` = %s', copy_record.approved, copy_record.size, copy_record.status, copy_record.operation_id)
         
     def _do_update_deletion_entry(self, deletion_record): #override
         self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, `size` = %s WHERE `id` = %s', deletion_record.approved, deletion_record.size, deletion_record.operation_id)
@@ -360,7 +361,7 @@ class MySQLHistory(TransactionHistoryInterface):
             query = 'SELECT s.`name`, d.`name`, r.`size`, r.`decision`, p.`text` FROM `%s`.`%s` AS r' % (self._cache_db.db_name(), table_name)
             query += ' INNER JOIN `%s`.`sites` AS s ON s.`id` = r.`site_id`' % self._mysql.db_name()
             query += ' INNER JOIN `%s`.`datasets` AS d ON d.`id` = r.`dataset_id`' % self._mysql.db_name()
-            query += ' INNER JOIN `%s`.`policy_conditions` AS p ON p.`id` = r.`condition`' % self._mysql.db_name()
+            query += ' LEFT JOIN `%s`.`policy_conditions` AS p ON p.`id` = r.`condition`' % self._mysql.db_name()
             query += ' ORDER BY s.`name` ASC, r.`size` DESC'
 
             product = {}

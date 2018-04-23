@@ -74,7 +74,7 @@ class Dataset(object):
 
         return 'Dataset %s (size=%d, num_files=%d, status=%s, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
             (self._name, self.size, self.num_files, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
-            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_update)), str(self.is_open), \
+            str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)), str(self.is_open), \
             len(self.blocks), replica_sites)
 
     def __repr__(self):
@@ -141,7 +141,7 @@ class Dataset(object):
         else:
             return dataset
 
-    def delete_from(self, inventory):
+    def unlink_from(self, inventory):
         try:
             dataset = inventory.datasets.pop(self._name)
         except KeyError:
@@ -155,11 +155,11 @@ class Dataset(object):
 
         return dataset
 
-    def write_into(self, store, delete = False):
-        if delete:
-            store.delete_dataset(self)
-        else:
-            store.save_dataset(self)
+    def write_into(self, store):
+        store.save_dataset(self)
+
+    def delete_from(self, store):
+        store.delete_dataset(self)
 
     def find_block(self, block_name, must_find = False):
         try:

@@ -38,6 +38,17 @@ class Requests {
     if ($command != 'pollcopy' && $command != 'polldeletion' && $this->_read_only)
       $this->send_response(400, 'BadRequest', 'User not authorized');
 
+    $input = file_get_contents('php://input');
+
+    if ($input) {
+      // json uploaded
+      $json_request = json_decode($input, true);
+      if (!is_array($json_request))
+        $this->send_response(400, 'BadRequest', 'Invalid data posted');
+
+      $request = array_replace($request, $json_request);
+    }
+
     $this->sanitize_request($command, $request);
 
     if ($command == 'copy') {
@@ -62,39 +73,27 @@ class Requests {
 
   private function exec_copy($request)
   {
-    $input = file_get_contents('php://input');
-
-    if ($input) {
-      // json uploaded
-      $request = json_decode($input, true);
-      if (!is_array($request))
-        $this->send_response(400, 'BadRequest', 'Invalid data posted');
-    }
-
+    // can update copy data using an existing request_id
     $request_id = isset($request['request_id']) ? $request['request_id'] : NULL;
 
-    if (isset($request['item'])) {
-      if (is_string($request['item']))
-        $items = explode(',', trim($request['item'], ','));
-      else
-        $items = $request['item'];
-    }
+    if (isset($request['item']))
+      $items = $request['item'];
     else if ($request_id === NULL)
       $this->send_response(400, 'BadRequest', 'Item not given');
     else
       $items = NULL;
 
     if (isset($request['site']))
-      $site = $request['site'];
+      $sites = $request['site'];
     else if ($request_id === NULL)
       $this->send_response(400, 'BadRequest', 'Site not given');
     else
-      $site = NULL;
+      $sites = NULL;
 
     // we need the table to be consistent between get_data and insert
     $this->lock_table('copy');
 
-    $existing_data = $this->get_copy_data($request_id, $items, $site);
+    $existing_data = $this->get_copy_data($request_id, $items, $sites);
 
     if ($request_id !== NULL && count($existing_data) == 0)
       $this->send_response(400, 'BadRequest', 'Request not found');
@@ -103,10 +102,8 @@ class Requests {
       // this is a new copy
 
       $ncopy = isset($request['n']) ? $request['n'] : 1;
-      if (strpos($site, '*') === false) // non-wildcard
-        $ncopy = 1;
 
-      $request_id = $this->create_copy_request($items, $site, 'AnalysisOps', $ncopy);
+      $request_id = $this->create_copy_request($items, $sites, 'AnalysisOps', $ncopy);
 
       // need to unlock before using get_copy_data with user arg
       $this->lock_table(false);
@@ -150,39 +147,26 @@ class Requests {
 
   private function exec_delete($request)
   {
-    if (isset($_SERVER['CONTENT_TYPE']) && strcasecmp(trim($_SERVER['CONTENT_TYPE']), 'application/json') == 0) {
-      // json uploaded
-      $input = file_get_contents('php://input');
-
-      $request = json_decode($input, true);
-      if (!is_array($request))
-        $this->send_response(400, 'BadRequest', 'Invalid data posted');
-    }
-
     $request_id = isset($request['request_id']) ? $request['request_id'] : NULL;
 
-    if (isset($request['item'])) {
-      if (is_string($request['item']))
-        $items = explode(',', trim($request['item'], ','));
-      else
-        $items = $request['item'];
-    }
+    if (isset($request['item']))
+      $items = $request['item']; // already made into an array by sanitize_request
     else if ($request_id === NULL)
       $this->send_response(400, 'BadRequest', 'Item not given');
     else
       $items = NULL;
 
     if (isset($request['site']))
-      $site = $request['site'];
+      $sites = $request['site']; // already made into an array by sanitize_request
     else if ($request_id === NULL)
       $this->send_response(400, 'BadRequest', 'Site not given');
     else
-      $site = NULL;
+      $sites = NULL;
 
     // we need the table to be consistent between get_deletion_data and insert
     $this->lock_table('deletion');
 
-    $existing_data = $this->get_deletion_data($request_id, $items, $site);
+    $existing_data = $this->get_deletion_data($request_id, $items, $sites);
 
     if ($request_id !== NULL && count($existing_data) == 0)
       $this->send_response(400, 'BadRequest', 'Request not found');
@@ -190,7 +174,7 @@ class Requests {
     if (count($existing_data) == 0) {
       // this is a new deletion
 
-      $request_id = $this->create_deletion_request($items, $site);
+      $request_id = $this->create_deletion_request($items, $sites);
 
       if ($request_id != 0) {
         $new_deletion = $this->get_deletion_data($request_id, NULL, NULL, $this->_uname);
@@ -210,31 +194,28 @@ class Requests {
     else
       $request_id = NULL;
 
-    if (isset($request['item'])) {
-      if (is_string($request['item']))
-        $items = explode(',', trim($request['item'], ','));
-      else
-        $items = $request['item'];
-    }
+    if (isset($request['item']))
+      $items = $request['item'];
     else
       $items = NULL;
 
     if (isset($request['site']))
-      $site = $request['site'];
+      $sites = $request['site'];
     else
-      $site = NULL;
+      $sites = NULL;
 
-    if (isset($request['user'])) {
-      if (is_string($request['user']))
-        $users = explode(',', trim($request['user'], ','));
-      else
-        $users = $request['user'];
-    }
+    if (isset($request['user']))
+      $users = $request['user'];
     else
       $users = NULL;
 
+    if (isset($request['status']))
+      $statuses = $request['status'];
+    else
+      $statuses = NULL;
+
     // don't allow an empty query
-    if ($request_id === NULL && $items === NULL && $site === NULL && $users === NULL)
+    if ($request_id === NULL && $items === NULL && $sites === NULL && $users === NULL)
       $this->send_response(400, 'BadRequest', 'Need request_id, item, site, or user');
 
     // but if other fields are given and users is empty, set it to all users
@@ -242,9 +223,9 @@ class Requests {
       $users = array('*');
 
     if ($type == 'copy')
-      $existing_data = $this->get_copy_data($request_id, $items, $site, $users);
+      $existing_data = $this->get_copy_data($request_id, $items, $sites, $users, $statuses);
     else
-      $existing_data = $this->get_deletion_data($request_id, $items, $site, $users);
+      $existing_data = $this->get_deletion_data($request_id, $items, $sites, $users, $statuses);
 
     if (count($existing_data) == 0)
       $this->send_response(200, 'EmptyResult', 'Request not found');
@@ -292,34 +273,54 @@ class Requests {
 
   private function sanitize_request($command, &$request)
   {
-    $allowed_fields = array('request_id', 'item', 'site');
+    $allowed_fields = array('request_id');
 
     if ($command == 'copy')
-      $allowed_fields = array_merge($allowed_fields, array('group', 'n'));
+      $allowed_fields = array_merge($allowed_fields, array('item', 'site', 'group', 'n'));
+    else if ($command == 'delete')
+      $allowed_fields = array_merge($allowed_fields, array('item', 'site'));
     else if ($command == 'pollcopy' || $command == 'polldeletion')
-      $allowed_fields = array_merge($allowed_fields, array('user'));
+      $allowed_fields = array_merge($allowed_fields, array('item', 'site', 'user', 'status'));
 
     foreach (array_keys($request) as $key) {
       if (in_array($key, $allowed_fields)) {
+        $value = $request[$key];
+
         if ($key == 'request_id' || $key == 'n') {
-          $request[$key] = 0 + $request[$key];
+          $request[$key] = 0 + $value;
+          if ($request[$key] < 0)
+            $this->send_response(400, 'BadRequest', 'Invalid value ' . $value . ' for ' . $key);
         }
-        else if (is_array($request[$key])) {
-          foreach (array_keys($request[$key]) as $k)
-            $request[$key][$k] = $this->_db->real_escape_string($request[$key][$k]);
+        else if (is_array($value)) {
+          foreach (array_keys($value) as $k)
+            $request[$key][$k] = $this->_db->real_escape_string($value[$k]);
         }
         else
-          $request[$key] = $this->_db->real_escape_string($request[$key]);
+          $request[$key] = $this->_db->real_escape_string($value);
 
         if ($key == 'item') {
-          if (is_array($request[$key])) {
-            foreach ($request[$key] as $item) {
-              if (!preg_match('/^\/[^\/]+\/[^\/]+\/[^\/]+(?:#.+|)$/', $item))
-                $this->send_response(400, 'BadRequest', 'Invalid item name ' . $item);
-            }
+          if (is_string($value))
+            $value = $request[$key] = explode(',', trim($value, ','));
+
+          foreach ($value as $item) {
+            if (!preg_match('/^\/[^\/]+\/[^\/]+\/[^\/]+(?:#.+|)$/', $item))
+              $this->send_response(400, 'BadRequest', 'Invalid item name ' . $item);
           }
-          else if (!preg_match('/^\/[^\/]+\/[^\/]+\/[^\/]+(?:#.+|)$/', $request[$key]))
-            $this->send_response(400, 'BadRequest', 'Invalid item name ' . $request[$key]);
+        }
+        else if ($key == 'status') {
+          if (is_string($value))
+            $value = $request[$key] = explode(',', trim($value, ','));
+
+          $statuses = array('new', 'activated', 'updated', 'completed', 'rejected', 'cancelled');
+
+          foreach ($value as $item) {
+            if (!in_array($item, $statuses))
+              $this->send_response(400, 'BadRequest', 'Invalid status ' . $item);
+          }
+        }
+        else if ($key == 'site' || $key == 'user') {
+          if (is_string($value))
+            $request[$key] = explode(',', trim($value, ','));
         }
       }
       else
@@ -327,13 +328,14 @@ class Requests {
     }
   }
 
-  private function get_copy_data($request_id, $items = NULL, $site = NULL, $users = NULL)
+  private function get_copy_data($request_id, $items = NULL, $sites = NULL, $users = NULL, $statuses = NULL)
   {
     // param
     //  request_id: integer
     //  items: array
-    //  site: string
+    //  sites: array
     //  users: array
+    //  statuses: array
     //
     // Structure of the returned data:
     // array(
@@ -345,17 +347,17 @@ class Requests {
 
     $fields = array(
       'r.`id`',
-      'r.`site`',
       'r.`group`',
       'r.`num_copies`',
       'r.`status`',
-      'r.`first_request_time`',
-      'r.`last_request_time`',
+      'UNIX_TIMESTAMP(r.`first_request_time`)',
+      'UNIX_TIMESTAMP(r.`last_request_time`)',
       'r.`request_count`',
       'r.`rejection_reason`',
+      'a.`item`',
       'a.`site`',
       'a.`status`',
-      'a.`updated`'
+      'UNIX_TIMESTAMP(a.`updated`)'
     );
     if ($users !== NULL) {
       $fields[] = 'u.`name`';
@@ -376,15 +378,24 @@ class Requests {
       $params[] = &$this->_uid;
     }
 
+    if ($statuses !== NULL) {
+      $n = count($statuses);
+      $where_clause[] = 'r.`status` IN (' . implode(',', array_fill(0, $n, '?')) . ')';
+      $params[0] .= str_repeat('s', $n);
+      for ($i = 0; $i != $n; ++$i)
+        $params[] = &$statuses[$i];
+    }
+    else if ($request_id === NULL) {
+      // limit to live requests
+      $where_clause[] = 'r.`status` IN (\'new\', \'activated\', \'updated\')';
+    }
+
     if ($request_id !== NULL) {
       $where_clause[] = 'r.`id` = ?';
       $params[0] .= 'i';
       $params[] = &$request_id;
     }
     else {
-      // limit to live requests
-      $where_clause[] = 'r.`status` IN (\'new\', \'activated\', \'updated\')';
-
       if ($users !== NULL && !in_array('*', $users)) {
         $quoted = array();
         foreach ($users as $u)
@@ -394,18 +405,9 @@ class Requests {
         $where_clause[] = '(u.`name` IN ' . $ulist . ' OR u.`dn` IN ' . $ulist . ')';
       }
 
-      if ($site !== NULL) {
-        $where_clause[] =  'r.`site` = ?';
-        $params[0] .= 's';
-        $params[] = &$site;
-      }
-
-      if ($items !== NULL) {
-        $request_ids = $this->get_ids_by_items('copy', $items, $params, $where_clause);
-        if (count($request_ids) == 0)
-          return $data;
-        else
-          $where_clause[] = 'r.`id` IN (' . implode(',', $request_ids) . ')';
+      if ($sites !== NULL || $items !== NULL) {
+        $this->get_ids_by_sites_items('copy', $sites, $items, $params, $where_clause);
+        $where_clause[] = 'r.`id` IN (SELECT `id` FROM `copy_ids_tmp`)';
       }
     }
 
@@ -420,9 +422,9 @@ class Requests {
       call_user_func_array(array($stmt, "bind_param"), $params);
 
     if ($users !== NULL)
-      $stmt->bind_result($rid, $st, $group, $ncopy, $status, $first_request, $last_request, $request_count, $reason, $asite, $astatus, $atimestamp, $uname, $udn);
+      $stmt->bind_result($rid, $group, $ncopy, $status, $first_request, $last_request, $request_count, $reason, $aitem, $asite, $astatus, $atimestamp, $uname, $udn);
     else
-      $stmt->bind_result($rid, $st, $group, $ncopy, $status, $first_request, $last_request, $request_count, $reason, $asite, $astatus, $atimestamp);
+      $stmt->bind_result($rid, $group, $ncopy, $status, $first_request, $last_request, $request_count, $reason, $aitem, $asite, $astatus, $atimestamp);
 
     $stmt->execute();
 
@@ -433,13 +435,13 @@ class Requests {
 
         $data[$rid] = array(
           'request_id' => $rid,
-          'site' => $st,
+          'site' => array(),
           'item' => array(),
           'group' => $group,
           'n' => $ncopy,
           'status' => $status,
-          'first_request' => $first_request,
-          'last_request' => $last_request,
+          'first_request' => strftime('%Y-%m-%d %H:%M:%S UTC', $first_request),
+          'last_request' => strftime('%Y-%m-%d %H:%M:%S UTC', $last_request),
           'request_count' => $request_count
         );
 
@@ -457,7 +459,7 @@ class Requests {
       }
 
       if ($astatus !== NULL)
-        $datum['copy'][] = array('site' => $asite, 'status' => $astatus, 'updated' => $atimestamp);
+        $datum['copy'][] = array('item' => $aitem, 'site' => $asite, 'status' => $astatus, 'updated' => strftime('%Y-%m-%d %H:%M:%S UTC', $atimestamp));
     }
 
     $stmt->close();
@@ -465,7 +467,21 @@ class Requests {
     if (count($data) == 0)
       return $data;
 
-    // now get the items for these requests
+    // get the sites for these requests
+    $query = 'SELECT s.`request_id`, s.`site` FROM `copy_request_sites` AS s WHERE s.`request_id` IN (';
+    $query .= implode(',', array_keys($data));
+    $query .= ')';
+
+    $stmt = $this->_db->prepare($query);
+    $stmt->bind_result($rid, $site);
+    $stmt->execute();
+
+    while ($stmt->fetch())
+      $data[$rid]['site'][] = $site;
+
+    $stmt->close();
+
+    // get the items for these requests
     $query = 'SELECT i.`request_id`, i.`item` FROM `copy_request_items` AS i WHERE i.`request_id` IN (';
     $query .= implode(',', array_keys($data));
     $query .= ')';
@@ -482,7 +498,7 @@ class Requests {
     return $data;
   }
 
-  private function create_copy_request($items, $site, $group, $ncopy)
+  private function create_copy_request($items, $sites, $group, $ncopy)
   {
     // param
     //  items: array
@@ -490,11 +506,20 @@ class Requests {
     //  group: string
     //  ncopy: integer
 
-    $query = 'INSERT INTO `copy_requests` (`site`, `group`, `num_copies`, `user_id`, `first_request_time`, `last_request_time`) VALUES (?, ?, ?, ?, NOW(), NOW())';
+    $query = 'INSERT INTO `copy_requests` (`group`, `num_copies`, `user_id`, `first_request_time`, `last_request_time`) VALUES (?, ?, ?, NOW(), NOW())';
     $stmt = $this->_db->prepare($query);
-    $stmt->bind_param('ssii', $site, $group, $ncopy, $this->_uid);
+    $stmt->bind_param('sii', $group, $ncopy, $this->_uid);
     $stmt->execute();
     $request_id = $stmt->insert_id;
+    $stmt->close();
+
+    $query = sprintf('INSERT INTO `copy_request_sites` (`request_id`, `site`) VALUES (%d, ?)', $request_id);
+    $stmt = $this->_db->prepare($query);
+    $stmt->bind_param('s', $site_name);
+    foreach ($sites as $nm) {
+      $site_name = $nm;
+      $stmt->execute();
+    }
     $stmt->close();
 
     $query = sprintf('INSERT INTO `copy_request_items` (`request_id`, `item`) VALUES (%d, ?)', $request_id);
@@ -554,13 +579,14 @@ class Requests {
       $this->_db->query(sprintf('DELETE FROM `active_copies` WHERE `request_id` = %d', $request_id));
   }
 
-  private function get_deletion_data($request_id, $items = NULL, $site = NULL, $users = NULL)
+  private function get_deletion_data($request_id, $items = NULL, $sites = NULL, $users = NULL, $statuses = NULL)
   {
     // param
     //  request_id: integer
     //  items: array
-    //  site: string
+    //  sites: array
     //  users: array
+    //  statuses: array
     //
     // Returned structure:
     // array(
@@ -572,12 +598,13 @@ class Requests {
 
     $fields = array(
       'r.`id`',
-      'r.`site`',
       'r.`status`',
-      'r.`timestamp`',
+      'UNIX_TIMESTAMP(r.`timestamp`)',
       'r.`rejection_reason`',
+      'a.`item`',
+      'a.`site`',
       'a.`status`',
-      'a.`updated`'
+      'UNIX_TIMESTAMP(a.`updated`)'
     );
     if ($users !== NULL) {
       $fields[] = 'u.`name`';
@@ -598,6 +625,18 @@ class Requests {
       $params[] = &$this->_uid;
     }
 
+    if ($statuses !== NULL) {
+      $n = count($statuses);
+      $where_clause[] = 'r.`status` IN (' . implode(',', array_fill(0, $n, '?')) . ')';
+      $params[0] .= str_repeat('s', $n);
+      for ($i = 0; $i != $n; ++$i)
+        $params[] = &$statuses[$i];
+    }
+    else if ($request_id === NULL) {
+      // limit to live requests
+      $where_clause[] = 'r.`status` IN (\'new\', \'activated\', \'updated\')';
+    }
+
     if ($request_id !== NULL) {
       $where_clause[] = 'r.`id` = ?';
       $params[0] .= 'i';
@@ -616,18 +655,9 @@ class Requests {
         $where_clause[] = '(u.`name` IN ' . $ulist . ' OR u.`dn` IN ' . $ulist . ')';
       }
 
-      if ($site !== NULL) {
-        $where_clause[] =  'r.`site` = ?';
-        $params[0] .= 's';
-        $params[] = &$site;
-      }
-
-      if ($items !== NULL) {
-        $request_ids = $this->get_ids_by_items('deletion', $items, $params, $where_clause);
-        if (count($request_ids) == 0)
-          return $data;
-        else
-          $where_clause[] = 'r.`id` IN (' . implode(',', $request_ids) . ')';
+      if ($sites !== NULL || $items !== NULL) {
+        $this->get_ids_by_sites_items('deletion', $sites, $items, $params, $where_clause);
+        $where_clause[] = 'r.`id` IN (SELECT `id` FROM `deletion_ids_tmp`)';
       }
     }
 
@@ -642,9 +672,9 @@ class Requests {
       call_user_func_array(array($stmt, "bind_param"), $params);
 
     if ($users !== NULL)
-      $stmt->bind_result($rid, $st, $status, $timestamp, $reason, $astatus, $atimestamp, $uname, $udn);
+      $stmt->bind_result($rid, $status, $timestamp, $reason, $aitem, $asite, $astatus, $atimestamp, $uname, $udn);
     else
-      $stmt->bind_result($rid, $st, $status, $timestamp, $reason, $astatus, $atimestamp);
+      $stmt->bind_result($rid, $status, $timestamp, $reason, $aitem, $asite, $astatus, $atimestamp);
 
     $stmt->execute();
 
@@ -655,10 +685,9 @@ class Requests {
 
         $data[$rid] = array(
           'request_id' => $rid,
-          'site' => $st,
           'item' => array(),
           'status' => $status,
-          'requested' => $timestamp
+          'requested' => strftime('%Y-%m-%d %H:%M:%S UTC', $timestamp)
         );
 
         $datum = &$data[$rid];
@@ -675,13 +704,27 @@ class Requests {
       }
 
       if ($astatus !== NULL)
-        $datum['deletion'][] = array('status' => $astatus, 'updated' => $atimestamp);
+        $datum['deletion'][] = array('item' => $aitem, 'site' => $asite, 'status' => $astatus, 'updated' => strftime('%Y-%m-%d %H:%M:%S UTC', $atimestamp));
     }
 
     $stmt->close();
 
-    // now get the items for these requests
-    $query = 'SELECT i.`request_id`, i.`item` FROM `deletion_request_items` WHERE i.`request_id` IN (';
+    // get the items for these requests
+    $query = 'SELECT s.`request_id`, s.`site` FROM `deletion_request_sites` AS s WHERE s.`request_id` IN (';
+    $query .= implode(',', array_keys($data));
+    $query .= ')';
+
+    $stmt = $this->_db->prepare($query);
+    $stmt->bind_result($rid, $site);
+    $stmt->execute();
+
+    while ($stmt->fetch())
+      $data[$rid]['site'][] = $site;
+
+    $stmt->close();
+
+    // get the items for these requests
+    $query = 'SELECT i.`request_id`, i.`item` FROM `deletion_request_items` AS i WHERE i.`request_id` IN (';
     $query .= implode(',', array_keys($data));
     $query .= ')';
 
@@ -697,17 +740,26 @@ class Requests {
     return $data;
   }
 
-  private function create_deletion_request($items, $site)
+  private function create_deletion_request($items, $sites)
   {
     // param
     //  items: array
     //  site: string
 
-    $query = 'INSERT INTO `deletion_requests` (`site`, `user_id`, `timestamp`) VALUES (?, ?, NOW())';
+    $query = 'INSERT INTO `deletion_requests` (`user_id`, `timestamp`) VALUES (?, NOW())';
     $stmt = $this->_db->prepare($query);
-    $stmt->bind_param('si', $site, $this->_uid);
+    $stmt->bind_param('i', $site, $this->_uid);
     $stmt->execute();
     $request_id = $stmt->insert_id;
+    $stmt->close();
+
+    $query = sprintf('INSERT INTO `deletion_request_sites` (`request_id`, `site`) VALUES (%d, ?)', $request_id);
+    $stmt = $this->_db->prepare($query);
+    $stmt->bind_param('s', $site_name);
+    foreach ($sites as $nm) {
+      $site_name = $nm;
+      $stmt->execute();
+    }
     $stmt->close();
 
     $query = sprintf('INSERT INTO `deletion_request_items` (`request_id`, `item`) VALUES (%d, ?)', $request_id);
@@ -731,87 +783,72 @@ class Requests {
     $this->_db->query($query);
   }
 
-  private function get_ids_by_items($table_type, $items, $params, $where_clause)
+  private function get_ids_by_sites_items($table_type, $sites, $items)
   {
-    // Get the ids of the requests containing all items and matching the other constraints given
-    // by the where clause and the params
+    // Make a temporary table with ids of requests that contain the given sites and items
 
     // param
     //  table_type: 'copy' or 'deletion'
-    //  items: array
-    //  params: associative array
-    //  where_clause: array
+    //  sites: array or NULL
+    //  items: array or NULL
 
-    // write the list to a temporary table first
+    // write the lists to temporary tables first
+
+    $query = sprintf('CREATE TEMPORARY TABLE `%s_sites_tmp` (', $table_type);
+    $query .= '`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,';
+    $query .= 'UNIQUE KEY `site` (`site`)';
+    $query .= ')';
+    $this->_db->query($query);
+
+    if ($sites !== NULL) {
+      $stmt = $this->_db->prepare(sprintf('INSERT INTO `%s_sites_tmp` VALUES (?)', $table_type));
+      $stmt->bind_param('s', $site_name);
+      foreach ($sites as $nm) {
+        $site_name = $nm;
+        $stmt->execute();
+      }
+      $stmt->close();
+    }
+
     $query = sprintf('CREATE TEMPORARY TABLE `%s_items_tmp` (', $table_type);
     $query .= '`item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,';
     $query .= 'UNIQUE KEY `item` (`item`)';
     $query .= ')';
-
     $this->_db->query($query);
-    $stmt = $this->_db->prepare(sprintf('INSERT INTO `%s_items_tmp` VALUES (?)', $table_type));
-    $stmt->bind_param('s', $item_name);
-    foreach ($items as $nm) {
-      $item_name = $nm;
-      $stmt->execute();
-    }
-    $stmt->close();
 
-    // (id, item) from request items where id is in the list of requests that satisfy other constraints
-    $query = sprintf('SELECT i.`request_id`, i.`item` FROM `%s_request_items` AS i', $table_type);
-    $query .= sprintf(' RIGHT JOIN `%s_items_tmp` as t ON t.`item` = i.`item`', $table_type);
-    $query .= ' WHERE i.`request_id` IS NULL'; // request_id can be NULL from the right join
-
-    if (count($where_clause) != 0) {
-      // use a subquery to constrain
-      $query .= ' OR i.`request_id` IN (';
-      $query .= sprintf('SELECT r.`id` FROM `%s_requests` AS r WHERE %s', $table_type, implode(' AND ', $where_clause));
-      $query .= ')';
-    }
-
-    $query .= ' ORDER BY i.`request_id`';
-
-    $stmt = $this->_db->prepare($query);
-
-    if (count($params) > 1)
-      call_user_func_array(array($stmt, "bind_param"), $params);
-
-    $stmt->bind_result($rid, $item);
-    $stmt->execute();
-
-    // loop through fetched items
-    // if all items under a request id is non-NULL, we have a matching id
-    $request_ids = array();
-    $_rid = 0;
-    $n_matched = 0;
-    while ($stmt->fetch()) {
-      if ($rid === NULL) // at least one item was not in any of the requests
-        break;
-
-      if ($rid != $_rid) {
-        if ($n_matched == count($items))
-          $request_ids[] = $_rid;
-
-        $_rid = $rid;
-        $n_matched = 0;
+    if ($items !== NULL) {
+      $stmt = $this->_db->prepare(sprintf('INSERT INTO `%s_items_tmp` VALUES (?)', $table_type));
+      $stmt->bind_param('s', $item_name);
+      foreach ($items as $nm) {
+        $item_name = $nm;
+        $stmt->execute();
       }
-
-      ++$n_matched;
+      $stmt->close();
     }
-    if ($n_matched == count($items))
-      $request_ids[] = $_rid;
 
+    $query = sprintf('CREATE TEMPORARY TABLE `%s_ids_tmp` (', $table_type);
+    $query .= '`id` INT(10) NOT NULL,';
+    $query .= 'UNIQUE KEY `id` (`id`)';
+    $query .= ')';
+    $this->_db->query($query);
+
+    $query = sprintf('INSERT INTO `%s_ids_tmp`', $table_type);
+    $query .= sprintf(' SELECT r.`id` FROM `%s_requests` AS r WHERE', $table_type);
+    $query .= sprintf(' 0 NOT IN (SELECT (`site` IN (SELECT `site` FROM `%s_request_sites` AS s WHERE s.`request_id` = r.`id`)) FROM `%s_sites_tmp`)', $table_type, $table_type);
+    $query .= ' AND ';
+    $query .= sprintf(' 0 NOT IN (SELECT (`item` IN (SELECT `item` FROM `%s_request_items` AS i WHERE i.`request_id` = r.`id`)) FROM `%s_items_tmp`)', $table_type, $table_type);
+    
+    $stmt = $this->_db->prepare($query);
+    $stmt->execute();
     $stmt->close();
-
-    return $request_ids;
   }
 
   private function lock_table($operation = '')
   {
     if ($operation == 'copy')
-      $query = 'LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `active_copies` AS a WRITE, `copy_request_items` WRITE, `copy_request_items` AS i WRITE';
+      $query = 'LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `active_copies` AS a WRITE, `copy_request_sites` WRITE, `copy_request_sites` AS s WRITE, `copy_request_items` WRITE, `copy_request_items` AS i WRITE';
     else if ($operation == 'deletion')
-      $query = 'LOCK TABLES `deletion_requests` WRITE, `deletion_requests` AS r WRITE, `active_deletions` AS a WRITE, `deletion_request_items` WRITE, `deletion_request_items` AS i WRITE';
+      $query = 'LOCK TABLES `deletion_requests` WRITE, `deletion_requests` AS r WRITE, `active_deletions` AS a WRITE, `deletion_request_sites` WRITE, `deletion_request_sites` AS s WRITE, `deletion_request_items` WRITE, `deletion_request_items` AS i WRITE';
     else
        $query = 'UNLOCK TABLES';
 

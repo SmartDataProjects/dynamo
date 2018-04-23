@@ -80,13 +80,13 @@ else if (isset($_REQUEST['getData']) && $_REQUEST['getData']) {
 
   $data = array('dataType' => $data_type, 'content' => array());
 
-  $stmt = $store_db->prepare('SELECT `last_update` FROM `system`');
+  $stmt = $store_db->prepare('SELECT UNIX_TIMESTAMP(`last_update`) FROM `system`');
   $stmt->bind_result($last_update);
   $stmt->execute();
   $stmt->fetch();
   $stmt->close();
 
-  $data['lastUpdate'] = $last_update;
+  $data['lastUpdate'] = strftime('%Y-%m-%d %H:%M:%S UTC', $last_update);
 
   $content = &$data['content'];
 

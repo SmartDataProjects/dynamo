@@ -37,7 +37,7 @@ class ObjectRepository(object):
 
     def delete(self, obj):
         try:
-            return obj.delete_from(self)
+            return obj.unlink_from(self)
         except (KeyError, ObjectError) as e:
             # When delete is attempted on a nonexistent object or something linked to a nonexistent object
             # As this is less alarming, error message is suppressed to debug level.
@@ -302,7 +302,7 @@ class DynamoInventory(ObjectRepository):
 
         if write:
             try:
-                deleted_object.write_into(self._store, delete = True)
+                deleted_object.delete_from(self._store)
             except:
                 LOG.error('Exception writing deletion of %s to inventory store', str(obj))
                 raise

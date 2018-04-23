@@ -1,6 +1,5 @@
 import time
 import logging
-import fnmatch
 import threading
 
 from dynamo.dataformat import Site
@@ -11,7 +10,6 @@ from dynamo.utils.interface.ssb import SiteStatusBoard
 LOG = logging.getLogger(__name__)
 
 def lfn_to_pfn(lfn, protocol, xml):
-
     if type(xml) is str:
         a = ET.parse(xml)
         root = a.getroot()
@@ -63,11 +61,9 @@ class PhEDExSiteInfoSource(SiteInfoSource):
         self._morgue_sites = set()
 
     def get_site(self, name): #override
-        if self.exclude is not None:
-            for pattern in self.exclude:
-                if fnmatch.fnmatch(entry['name'], pattern):
-                    LOG.info('get_site(%s)  %s is excluded by configuration.', name, name)
-                    return None
+        if not self.check_allowed_site(name):
+            LOG.info('get_site(%s)  %s is excluded by configuration.', name, name)
+            return None
 
         LOG.info('get_site(%s)  Fetching information of %s from PhEDEx', name, name)
 
@@ -84,28 +80,13 @@ class PhEDExSiteInfoSource(SiteInfoSource):
         return Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = backend)
 
     def get_site_list(self): #override
-        options = []
-
-        if self.include is not None:
-            options.extend('node=%s' % s for s in self.include)
-
         LOG.info('get_site_list  Fetching the list of nodes from PhEDEx')
 
         site_list = []
 
-        for entry in self._phedex.make_request('nodes', options):
-            if entry['name'].endswith('_Export') or entry['name'].endswith('_Buffer'):
+        for entry in self._phedex.make_request('nodes'):
+            if not self.check_allowed_site(entry['name']):
                 continue
-
-            if self.exclude is not None:
-                matched = False
-                for pattern in self.exclude:
-                    if fnmatch.fnmatch(entry['name'], pattern):
-                        matched = True
-                        break
-
-                if matched:
-                    continue
 
             site_list.append(Site(entry['name'], host = entry['se'], storage_type = Site.storage_type_val(entry['kind']), backend = entry['technology']))
 

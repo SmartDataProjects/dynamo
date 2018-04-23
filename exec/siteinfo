@@ -32,8 +32,6 @@ crabaccess.load(inventory)
 # Start
 LOG.info('Writing ASCII SiteInfo.')
 
-partitions = ['Physics', 'DataOps', 'caf-comm', 'caf-alca', 'local', 'IB RelVal']
-
 # Count datasets for RemainingDatasets
 dataset_lists = collections.defaultdict(dict)
 dscount_now = collections.defaultdict(int)
@@ -45,7 +43,7 @@ sitesinfo.write('#\n')
 sitesinfo.write('#- S I T E S  I N F O R M A T I O N ----\n')
 sitesinfo.write('#\n')
 
-for partition in partitions:
+for partition in config.partitions:
     # SitesInfo
 
     if args.cycle == 0:
@@ -187,7 +185,7 @@ for site in dataset_lists:
     remaining.write('#  N = (number of recorded accesses via CRAB)\n')
     remaining.write('#  S = (dataset size in TB)\n')
 
-    for partition in partitions:
+    for partition in config.partitions:
         remaining.write('#\n')
         remaining.write('#- DDM Partition: ' + partition + ' -\n')
         remaining.write('#\n')

@@ -520,8 +520,8 @@ class DetoxLock {
         array(
               'lockid' => $lid,
               'item' => $item,
-              'locked' => strftime('%Y-%m-%d %H:%M:%S', $created),
-              'expires' => strftime('%Y-%m-%d %H:%M:%S', $expiration),
+              'locked' => strftime('%Y-%m-%d %H:%M:%S UTC', $created),
+              'expires' => strftime('%Y-%m-%d %H:%M:%S UTC', $expiration),
               );
 
       if ($sites !== NULL)
@@ -529,7 +529,7 @@ class DetoxLock {
       if ($groups !== NULL)
         $datum['groups'] = $groups;
       if ($disabled !== NULL)
-        $datum['unlocked'] = strftime('%Y-%m-%d %H:%M:%S', $disabled);
+        $datum['unlocked'] = strftime('%Y-%m-%d %H:%M:%S UTC', $disabled);
       if ($comment !== NULL)
         $datum['comment'] = $comment;
 

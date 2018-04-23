@@ -21,18 +21,23 @@ class ReplicaPlacementRule(object):
         return True
 
 
-def dataset_already_exists(site, dataset):
+def dataset_already_exists(dataset, site, group):
     replica = site.find_dataset_replica(dataset)
-    return replica is not None and replica.is_full()
+    if replica is not None and replica.is_full():
+        owners = set(brep.group for brep in replica.block_replicas)
+        if len(owners) == 1 and list(owners)[0] == group:
+            return True
 
-def block_already_exists(site, block):
+    return False
+
+def block_already_exists(block, site, group):
     replica = site.find_block_replica(block)
-    return replica is not None and replica.is_complete
+    return replica is not None and replica.is_complete and replica.group == group
 
-def blocks_already_exist(site, blocks):
+def blocks_already_exist(blocks, site, group):
     for block in blocks:
         replica = site.find_block_replica(block)
-        if replica is None or not replica.is_complete:
+        if replica is None or not replica.is_complete or replica.group != group:
             return False
 
     return True
@@ -49,9 +54,8 @@ class DealerPolicy(object):
         self.target_site_names = list(config.target_sites)
         # Do not copy data to sites beyond target occupancy fraction (0-1)
         self.target_site_occupancy = config.target_site_occupancy
-        # Maximum volume that can be queued for transfer to a single site.
-        # The value is given in TB in the configuration file.
-        self.max_site_pending_volume = config.max_site_pending_volume * 1.e+12
+        # Maximum fraction of the quota that can be pending at a single site.
+        self.max_site_pending_fraction = config.max_site_pending_fraction
         # Maximum overall volume that can be queued in this cycle for transfer.
         # The value is given in TB in the configuration file.
         self.max_total_cycle_volume = config.max_total_cycle_volume * 1.e+12
@@ -104,11 +108,11 @@ class DealerPolicy(object):
             return False
 
         # Difference between projected and physical volumes
-        pending_volume = occupancy_fraction * quota
-        pending_volume -= site_partition.occupancy_fraction(physical = True) * quota
+        pending_fraction = occupancy_fraction
+        pending_fraction -= site_partition.occupancy_fraction(physical = True)
 
-        if pending_volume > self.max_site_pending_volume:
-            LOG.debug('%s pending volume %f > %f', site.name, pending_volume * 1.e-12, self.max_site_pending_volume * 1.e-12)
+        if pending_fraction > self.max_site_pending_fraction:
+            LOG.debug('%s pending fraction %f > %f', site.name, pending_fraction, self.max_site_pending_fraction)
             return False
 
         return True
@@ -160,33 +164,18 @@ class DealerPolicy(object):
 
         return item_name, item_size, already_exists
 
-    def find_destination_for(self, item, partition, match_patterns = None, exclude_patterns = None):
+    def find_destination_for(self, item, group, partition, candidates = None):
         item_name, item_size, already_exists = self.item_info(item)
 
         if item_name is None:
             LOG.warning('Invalid request found. Skipping.')
             return None, None, None, 'Invalid request'
 
+        if candidates is None:
+            candidates = self.target_sites
+
         site_array = []
-        for site in self.target_sites:
-            if match_patterns is not None:
-                for pattern in match_patterns:
-                    if fnmatch.fnmatch(site.name, pattern):
-                        break
-                else:
-                    # no match
-                    continue
-
-            if exclude_patterns is not None:
-                excluded = False
-                for pattern in exclude_patterns:
-                    if fnmatch.fnmatch(site.name, pattern):
-                        excluded = True
-                        break
-
-                if excluded:
-                    continue
-
+        for site in candidates:
             site_partition = site.partitions[partition]
 
             projected_occupancy = site_partition.occupancy_fraction(physical = False)
@@ -197,7 +186,7 @@ class DealerPolicy(object):
                 continue
 
             # replica must not be at the site already
-            if already_exists(site, item):
+            if already_exists(item, site, group):
                 continue
 
             # placement must be allowed by the policy
@@ -220,7 +209,7 @@ class DealerPolicy(object):
 
         return site_array[isite][0], item_name, item_size, None
 
-    def check_destination(self, item, destination, partition):
+    def check_destination(self, item, destination, group, partition):
         item_name, item_size, already_exists = self.item_info(item)
 
         if item_name is None:
@@ -231,7 +220,7 @@ class DealerPolicy(object):
             LOG.debug('Destination %s for %s is not a target site.', destination.name, item_name)
             return item_name, item_size, 'Not a target site'
 
-        if already_exists(destination, item):
+        if already_exists(item, destination, group):
             LOG.debug('%s is already at %s.', item_name, destination.name)
             return item_name, item_size, 'Replica exists'
 
