@@ -15,27 +15,6 @@ from dynamo.utils.signaling import SignalBlocker
 
 LOG = logging.getLogger(__name__)
 
-## Subroutines for creating replicas out of an object and a site
-
-def new_replica_from_dataset(dataset, site, group):
-    replica = DatasetReplica(dataset, site)
-    for block in dataset.blocks:
-        replica.block_replicas.add(BlockReplica(block, site, group, size = 0))
-
-    return replica
-
-def new_replica_from_block(block, site, group):
-    return BlockReplica(block, site, group, size = 0)
-
-def new_replica_from_blocks(blocks, site, group):
-    dataset = blocks[0].dataset
-    replica = DatasetReplica(dataset, site)
-    for block in blocks:
-        replica.block_replicas.add(BlockReplica(block, site, group, size = 0))
-
-    return replica
-
-
 class Dealer(object):
 
     def __init__(self, config):
@@ -96,20 +75,30 @@ class Dealer(object):
         requests = self._collect_requests(inventory)
 
         LOG.info('Determining the list of transfers to make.')
-        # copy_list is {plugin: [new_replica]}
+        # copy_list is {plugin: [new dataset replica]}
         copy_list = self._determine_copies(partition, group, requests)
 
         LOG.info('Saving the record')
-        for plugin in self._plugin_priorities.keys():
-            if plugin in copy_list:
-                plugin.postprocess(cycle_number, self.history, copy_list[plugin])
+        for plugin, replicas in copy_list.iteritems():
+            plugin.postprocess(cycle_number, self.history, copy_list[plugin])
 
         # We don't care about individual plugins any more - flatten the copy list
-        all_copies = sum(copy_list.itervalues(), [])
+        # Resolve potential overlaps (one plugin can request a part of dataset requested by another)
+        # by making everything into dataset replicas
+        # Group is fixed for a single run() for now, so there is no problem of overwriting ownerships
+        unique_map = {}
+        for plugin, replicas in copy_list.iteritems():
+            for replica in replicas:
+                try:
+                    unique_map[(replica.site, replica.dataset)].block_replicas.update(replica.block_replicas)
+                except KeyError:
+                    unique_map[(replica.site, replica.dataset)] = replica
+
+        unique_replicas = unique_map.values()
 
         LOG.info('Committing copy.')
         comment = 'Dynamo -- Automatic replication request for %s partition.' % partition.name
-        self._commit_copies(cycle_number, inventory, all_copies, comment)
+        self._commit_copies(cycle_number, inventory, unique_replicas, comment)
 
         self.history.close_copy_run(cycle_number)
 
@@ -241,10 +230,11 @@ class Dealer(object):
         @param partition       Partition we copy into.
         @param group           Make new replicas owned by this group.
         @param requests        [(item, destination, plugin)], where item is a Dataset, Block, or [Block]
-        @return {plugin: [new_replica]}
+        @return {plugin: [new dataset replica]}
         """
 
-        copy_list = {}
+        # returned dict
+        copy_list = collections.defaultdict(list)
         copy_volumes = dict((site, 0.) for site in self.policy.target_sites) # keep track of how much we are assigning to each site
 
         stats = {}
@@ -282,18 +272,20 @@ class Dealer(object):
             stats[plugin.name][destination.name] = (stat[0] + 1, stat[0] + item_size)
 
             if type(item) is Dataset:
-                new_replica = new_replica_from_dataset(item, destination, group)
+                dataset = item
+                blocks = dataset.blocks
             elif type(item) is Block:
-                new_replica = new_replica_from_block(item, destination, group)
+                dataset = block.dataset
+                blocks = [item]
             elif type(item) is list:
-                new_replica = new_replica_from_blocks(item, destination, group)
+                dataset = blocks[0].dataset
+                blocks = item
 
-            try:
-                plugin_copy_list = copy_list[plugin]
-            except KeyError:
-                plugin_copy_list = copy_list[plugin] = []
+            new_replica = DatasetReplica(dataset, destination)
+            for block in blocks:
+                new_replica.block_replicas.add(BlockReplica(block, destination, group, size = 0))
 
-            plugin_copy_list.append(new_replica)
+            copy_list[plugin].append(new_replica)
             # New replicas may not be in the target partition, but we add the size up to be conservative
             copy_volumes[destination] += item_size
 
@@ -320,7 +312,7 @@ class Dealer(object):
         """
         @param cycle_number  Cycle number.
         @param inventory     Dynamo inventory.
-        @param copy_list     Flat list of dataset or block replicas.
+        @param copy_list     List of dataset replicas.
         @param comment       Comment to be passed to the copy interface.
         """
 
@@ -342,29 +334,24 @@ class Dealer(object):
         
                 # It would be better if mapping from replicas to items is somehow kept
                 # Then we can get rid of creating yet another replica object below, which
-                # means we can let each plugin to decide which group they want to make replicas in
+                # means we can let each plugin decide which group they want to make replicas in
                 for copy_id, (approved, site, items) in copy_mapping.iteritems():
-                    dataset_list = set()
-                    size = 0
+                    dataset_sizes = collections.defaultdict(int)
+                    # items: mixed list of datasets and blocks
                     for item in items:
-                        size += item.size
-
                         if type(item) is Dataset:
-                            dataset_list.add(item)
+                            dataset_sizes[item] = item.size
                             if approved:
-                                replica = new_replica_from_dataset(item, site, group)
-                                inventory.update(replica)
-                                for block_replica in replica.block_replicas:
-                                    inventory.update(block_replica)
+                                inventory.update(DatasetReplica(item, site))
+                                for block in item.blocks:
+                                    inventory.update(BlockReplica(block, site, group, size = 0))
 
                         else:
-                            dataset_list.add(item.dataset)
+                            dataset_sizes[item] += item.size
                             if approved:
                                 if site.find_dataset_replica(item.dataset) is None:
-                                    replica = new_replica_from_dataset(item.dataset, site, group)
-                                    inventory.update(replica)
+                                    inventory.update(DatasetReplica(item.dataset, site))
 
-                                replica = new_replica_from_block(item, site, group)
-                                inventory.update(replica)
+                                inventory.update(BlockReplica(item, site, group, size = 0))
     
-                    self.history.make_copy_entry(cycle_number, site, copy_id, approved, dataset_list, size)
+                    self.history.make_copy_entry(cycle_number, site, copy_id, approved, dataset_sizes.items())

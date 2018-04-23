@@ -64,7 +64,7 @@ foreach (glob(__DIR__ . '/monitoring_enforcer/*') as $filename) {
 // Now preparing dropdown
 $html_replace = '<form method="GET">';
 $html_replace = $html_replace .'<select name="rule" onchange="this.form.submit()">';
-$html_replace = $html_replace . "<option value='Choose rule'>" . "Choose rule" . "</option>";
+$html_replace = $html_replace . "<option value='Choose policy'>" . "Choose policy" . "</option>";
 
 foreach (glob(__DIR__ . '/monitoring_enforcer/*.rrd') as $filename) {
   if ($var === $filename){
@@ -91,29 +91,61 @@ $considered_backends = array();
 $considered_lat = array();
 $considered_long = array();
 
-foreach($array['rules'] as $key => $value) {
-  if ($key != $var){
-    continue;
-  }
-  foreach($value['destinations'] as $pattern => $val) {
-    $site_patterns=explode(' ',str_replace(']','',str_replace('[','',strstr($val,'['))));
-    foreach($site_patterns as &$value){ 
-      if ($handle = fopen(__DIR__ . "/geodata/lat_long_sites.csv", "r")) {
-        $count = 0;
-        while (($line = fgets($handle, 4096)) !== FALSE) {
-	  $line_array = explode(",",$line);
-	  if (fnmatch($value,$line_array[0])){
-	    $considered_sites[] = $line_array[0];
-	    $considered_backends[] = $line_array[1];
-	    $considered_lat[] = $line_array[2];
-	    $considered_long[] = $line_array[3];
-	  }
-	  $count++;
+function get_sites($rulename) {
+
+  global $array;
+  global $considered_sites;
+  global $considered_backends;
+  global $considered_lat;
+  global $considered_long;
+  $considered_sites = array();
+  $considered_backends = array();
+  $considered_lat = array();
+  $considered_long = array();
+
+  foreach($array['rules'] as $key => $value) {
+    if ($key != $rulename){
+      continue;
+    } 
+
+
+
+    foreach($value['destinations'] as $pattern => $val) {
+      $site_patterns = array();
+
+      if (strpos($val, 'site.name == ') !== false) {
+        $site_patterns[] = str_replace('site.name == ','',$val);
+      }
+      else {
+        $site_patterns=explode(' ',str_replace(']','',str_replace('[','',strstr($val,'['))));
+      }  
+    
+      foreach($site_patterns as &$value){ 
+        if ($handle = fopen(__DIR__ . "/geodata/lat_long_sites.csv", "r")) {
+          $count = 0;
+          while (($line = fgets($handle, 4096)) !== FALSE) {
+	    $line_array = explode(",",$line);
+	    if (fnmatch($value,$line_array[0])){ 
+	      $considered_sites[] = $line_array[0];
+	      $considered_backends[] = $line_array[1];
+	      $considered_lat[] = $line_array[2];
+	      $considered_long[] = $line_array[3];
+	    }
+	    $count++;
+          }
+          fclose($handle);
         }
-        fclose($handle);
       }
     }
   }
+}
+
+get_sites($var);
+
+
+//echo $considered_sites[0];
+foreach($considered_sites as &$value){
+//echo $value;
 }
 
 // Obtain status from rrd file
@@ -137,10 +169,12 @@ if ( (isset($_REQUEST['getStatus']) && $_REQUEST['getStatus'])){
     else if ($var != $file) continue;
 
     if (($handle = fopen("monitoring_enforcer/" . $file, "r")) !== FALSE) {
-	
+
       $search      = str_replace('.rrd','',$file);
       $line_number = false;
-      
+     
+      get_sites($search);
+ 
       $count = 0;
       foreach($lines as $word) {
 	if (!$line_number){

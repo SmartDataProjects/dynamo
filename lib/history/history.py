@@ -69,25 +69,41 @@ class TransactionHistoryInterface(object):
         finally:
             self.release_lock()
 
-    def make_copy_entry(self, run_number, site, operation_id, approved, dataset_list, size):
+    def make_copy_entry(self, run_number, site, operation_id, approved, dataset_list):
+        """
+        @param run_number    Cycle number
+        @param site          Site object
+        @param operation_id  ID from the copy operation
+        @param approved      Boolean
+        @param dataset_list  [(dataset, size)]
+        """
+
         if self.config.get('test', False) or run_number == 0:
             # Don't do anything
             return
 
         self.acquire_lock()
         try:
-            self._do_make_copy_entry(run_number, site, operation_id, approved, dataset_list, size)
+            self._do_make_copy_entry(run_number, site, operation_id, approved, dataset_list)
         finally:
             self.release_lock()
 
-    def make_deletion_entry(self, run_number, site, operation_id, approved, datasets, size):
+    def make_deletion_entry(self, run_number, site, operation_id, approved, dataset_list):
+        """
+        @param run_number    Cycle number
+        @param site          Site object
+        @param operation_id  ID from the copy operation
+        @param approved      Boolean
+        @param dataset_list  [(dataset, size)]
+        """
+
         if self.config.get('test', False) or run_number == 0:
             # Don't do anything
             return
 
         self.acquire_lock()
         try:
-            self._do_make_deletion_entry(run_number, site, operation_id, approved, datasets, size)
+            self._do_make_deletion_entry(run_number, site, operation_id, approved, dataset_list)
         finally:
             self.release_lock()
 
@@ -245,19 +261,6 @@ class TransactionHistoryInterface(object):
         try:
             # list of HistoryRecords
             copies = self._do_get_incomplete_copies(partition)
-        finally:
-            self.release_lock()
-
-        return copies
-
-    def get_copied_replicas(self, run_number):
-        """
-        Get the list of (site name, dataset name) copied in the given run.
-        """
-        self.acquire_lock()
-        try:
-            # list of HistoryRecords
-            copies = self._do_get_copied_replicas(run_number)
         finally:
             self.release_lock()
 
