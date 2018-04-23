@@ -452,12 +452,8 @@ class CopyRequestsHandler(BaseHandler):
         sql = 'UPDATE `active_copies` SET `status` = \'queued\', `updated` = NOW() WHERE `item` LIKE %s AND `site` = %s AND `status` = \'new\''
 
         for replica in copy_list:
-            if type(replica) is DatasetReplica:
-                # active copies with dataset name
-                self.registry.query(sql, replica.dataset.name, replica.site.name)
+            # active copies with dataset name
+            self.registry.query(sql, replica.dataset.name, replica.site.name)
 
-                # active copies with block name
-                self.registry.query(sql, Block.to_full_name(replica.dataset.name, '%'), replica.site.name)
-
-            else:
-                self.registry.query(sql, replica.block.full_name(), replica.site.name)
+            # active copies with block name
+            self.registry.query(sql, Block.to_full_name(replica.dataset.name, '%'), replica.site.name)

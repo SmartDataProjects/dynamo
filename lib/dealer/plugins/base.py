@@ -15,6 +15,6 @@ class BaseHandler(object):
         Do post-request processing.
         @param cycle_number   Dealer cycle number
         @param history        History object
-        @param copy_list      List of replica objects (DatasetReplica or BlockReplica)
+        @param copy_list      List of DatasetReplicas
         """
         pass

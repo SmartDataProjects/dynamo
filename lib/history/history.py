@@ -73,27 +73,25 @@ class TransactionHistoryInterface(object):
         """
         raise NotImplementedError('close_deletion_cycle')
 
-    def make_copy_entry(self, cycle_number, site, operation_id, approved, datasets, size):
+    def make_copy_entry(self, cycle_number, site, operation_id, approved, dataset_list):
         """
         Record a copy operation.
         @param cycle_number  Cycle number
-        @param site          Site object of the copy destination
-        @param operation_id  Operation id returned by the copy operation
+        @param site          Site object
+        @param operation_id  ID from the copy operation
         @param approved      Boolean
-        @param datasets      List of Dataset objects
-        @param size          Total size to be copied
+        @param dataset_list  [(dataset, size)]
         """
         raise NotImplementedError('make_copy_entry')
 
-    def make_deletion_entry(self, cycle_number, site, operation_id, approved, datasets, size):
+    def make_deletion_entry(self, cycle_number, site, operation_id, approved, dataset_list):
         """
         Record a deletion operation.
         @param cycle_number  Cycle number
-        @param site          Site object of the deletion operation
-        @param operation_id  Operation id returned by the deletion operation
+        @param site          Site object
+        @param operation_id  ID from the copy operation
         @param approved      Boolean
-        @param datasets      List of Dataset objects
-        @param size          Total size to be deleted
+        @param dataset_list  [(dataset, size)]
         """
         raise NotImplementedError('make_deletion_entry')
 
