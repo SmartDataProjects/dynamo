@@ -9,7 +9,9 @@ function timeConverter(UNIX_timestamp){
     var hour = a.getHours();
     var min = a.getMinutes();
     var sec = a.getSeconds();
-    var time = year + '-' + month + '-' + date + ' ' + hour + ':' + min + ':' + sec +'0.000000';
+    var time = year + '-' + month + '-' + date + ' ' + hour + ':' + min;// + ':' + sec +'0.000000';
+    if (min == "0")
+	time = time + "0";
     return time;
 }
 
@@ -150,7 +152,7 @@ function drawStatus(data) {
 	    ];
 
     var layout1 = {
-	title: "Rule: " + '<a href="https://github.com/SmartDataProjects/dynamo-policies/blob/master/common/enforcer_rules.json#L'+line_number+'">'+title+'</a>',
+	title: "Rule: " + '<a href="https://github.com/SmartDataProjects/dynamo-policies/blob/master/common/enforcer_rules_physics.json#L'+line_number+'">'+title+'</a>',
 	yaxis: {
 	    title: '# of datasets',
 	    titlefont: {
@@ -162,12 +164,16 @@ function drawStatus(data) {
 
     Plotly.newPlot('Bars', state, layout1);
 
+    times_converted = times.map(timeConverter);
+
     var trend = [
 	    {
-		x: times.map(timeConverter),
+		x: times_converted,
 		y: missing,
 		type: 'scatter',
 		mode: 'lines',
+		name: 'hv',
+		line: {shape: 'hv'},
 		marker: {
 		    color: 'rgba(58,200,225,.5)',
 		    line: {
