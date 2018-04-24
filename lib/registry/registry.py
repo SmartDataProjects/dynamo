@@ -9,14 +9,16 @@ class DynamoRegistry(object):
 
     _methods_loaded = False
 
-    def __init__(self, config):
-        # Backend DB object dynamically loaded (including the module and class names from config)
-        modname, clsname = config.backend.module.split(':')
-        module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
-        cls = getattr(module, clsname)
+    @staticmethod
+    def get_instance(module, config):
+        import dynamo.registry.impl as impl
+        cls = getattr(impl, module)
+        if not issubclass(cls, DynamoRegistry):
+            raise RuntimeError('%s is not a subclass of DynamoRegistry' % module)
 
-        self.backend = cls(config.backend.config)
+        return cls(config)
 
+    def __init__(self):
         # ugly as hell.. this block loads all registry methods at the first instantiation
         if not DynamoRegistry._methods_loaded:
             DynamoRegistry._methods_loaded = True

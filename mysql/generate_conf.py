@@ -100,9 +100,53 @@ def generate_master_conf(conf_str):
 
     return master_conf
 
+def generate_registry_conf(conf_str):
+    conf = json.loads(conf_str)
+
+    with open(thisdir + '/grants.json') as source:
+        grants_conf = json.load(source)
+
+    writer_conf = grants_conf[conf['writer']]
+    reader_conf = grants_conf[conf['reader']]
+
+    registry_conf = OD({
+        'module': 'MySQLRegistry',
+        'read_config': OD(),
+        'write_config': OD()
+    })
+
+    if 'host' not in writer_conf:
+        host = 'localhost'
+    else:
+        host = writer_conf['host']
+
+    registry_conf['write_config']['db_params'] = OD({
+        'host': host,
+        'user': conf['writer'],
+        'passwd': writer_conf['passwd'],
+        'db': 'dynamoregister',
+        'reuse_connection': True
+    })
+
+    if 'host' not in reader_conf:
+        host = 'localhost'
+    else:
+        host = reader_conf['host']
+
+    registry_conf['read_config']['db_params'] = OD({
+        'host': host,
+        'user': conf['reader'],
+        'passwd': reader_conf['passwd'],
+        'db': 'dynamoregister',
+        'reuse_connection': True
+    })
+
+    return registry_conf
+
 try:
     __namespace__.generate_store_conf = generate_store_conf
     __namespace__.generate_master_conf = generate_master_conf
     __namespace__.generate_local_board_conf = generate_local_board_conf
+    __namespace__.generate_registry_conf = generate_registry_conf
 except NameError:
     pass
