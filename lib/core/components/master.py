@@ -168,12 +168,13 @@ class MasterServer(object):
         """
         raise NotImplementedError('user_exists')
 
-    def identify_user(self, dn):
+    def identify_user(self, dn, with_id = False):
         """
         Translate the DN to user account name.
-        @param dn   Certificate Distinguished Name.
+        @param dn     Certificate Distinguished Name.
+        @param get_id If true, return a tuple (user name, user id)
 
-        @return  User name (string) or None (if not identified)
+        @return  User name string or (user name, user id). None if not identified
         """
         raise NotImplementedError('identify_user')
 

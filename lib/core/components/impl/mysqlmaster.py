@@ -291,12 +291,15 @@ class MySQLMasterServer(MasterServer):
         result = self._mysql.query('SELECT COUNT(*) FROM `users` WHERE `name` = %s', name)[0]
         return len(result) != 0
 
-    def identify_user(self, dn): #override
-        result = self._mysql.query('SELECT `name` FROM `users` WHERE `dn` = %s', dn)
+    def identify_user(self, dn, with_id = False): #override
+        result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `dn` = %s', dn)
         if len(result) == 0:
             return None
         else:
-            return result[0]
+            if with_id:
+                return result[0]
+            else:
+                return result[0][0]
 
     def add_user(self, name, dn, email = None): #override
         sql = 'INSERT INTO `users` (`name`, `email`, `dn`) VALUES (%s, %s, %s)'
