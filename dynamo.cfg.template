@@ -31,32 +31,26 @@ email=
 # Server persistency store technology (leave blank if not running store)
 store=mysql
 
-# Store configuration to be passed to $store/generate_conf.py
+# Store configuration to be passed to $store/generate_store_conf.py
 store_conf={"server": "dynamosrv", "reader": "dynamoread"}
 
 # Master server technology
 master=mysql
 
-# Configuration to be passed to $master/generate_conf.py
+# Configuration to be passed to $master/generate_master_conf.py
 master_conf={"host": "localhost", "user": "dynamosrv"}
 
 # Master server shadow technology
 shadow=mysql
 
-# Configuration to be passed to $shadow/generate_conf.py
+# Configuration to be passed to $shadow/generate_shadow_conf.py
 shadow_conf={"host": "localhost", "user": "dynamosrv"}
 
 # Server update board technology
 local_board=mysql
 
-# Configuration to be passed to $local_board/generate_conf.py
+# Configuration to be passed to $local_board/generate_local_board_conf.py
 local_board_conf={"host": "localhost", "user": "dynamosrv"}
-
-# Registry backend DB technology
-registry=mysql
-
-# Configuration to be passed to $registry/generate_conf.py
-registry_conf={"writer": "dynamo", "reader": "dynamoread"}
 
 [applications]
 ## Dynamo application server configuration

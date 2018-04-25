@@ -19,8 +19,6 @@ shadow_mod = source_conf.get('server', 'shadow')
 shadow_conf_args = source_conf.get('server', 'shadow_conf')
 local_board_mod = source_conf.get('server', 'local_board')
 local_board_conf_args = source_conf.get('server', 'local_board_conf')
-registry_mod = source_conf.get('server', 'registry')
-registry_conf_args = source_conf.get('server', 'registry_conf')
 logdir = source_conf.get('paths', 'log_path')
 spooldir = source_conf.get('paths', 'spool_path')
 
@@ -32,7 +30,7 @@ class Namespace(object):
 
 generators = {}
 
-for mod in [persistency_mod, master_mod, shadow_mod, local_board_mod, registry_mod]:
+for mod in [persistency_mod, master_mod, shadow_mod, local_board_mod]:
     if mod not in generators:
         generators[mod] = Namespace()
         conf_gen_script = mod + '/generate_conf.py'
@@ -72,8 +70,6 @@ server_conf['manager'] = OD()
 server_conf['manager']['master'] = generators[master_mod].generate_master_conf(master_conf_args)
 server_conf['manager']['shadow'] = generators[shadow_mod].generate_master_conf(shadow_conf_args)
 server_conf['manager']['board'] = generators[local_board_mod].generate_local_board_conf(local_board_conf_args)
-
-server_conf['registry'] = generators[registry_mod].generate_registry_conf(registry_conf_args)
 
 server_conf['applications'] = OD()
 server_conf['applications']['enabled'] = (serve_applications == 'true')
