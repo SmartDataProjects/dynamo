@@ -14,7 +14,6 @@ from dynamo.core.inventory import DynamoInventory
 from dynamo.core.manager import ServerManager, OutOfSyncError
 import dynamo.core.serverutils as serverutils
 from dynamo.core.components.appserver import AppServer
-from dynamo.registry.registry import DynamoRegistry
 from dynamo.utils.signaling import SignalBlocker
 from dynamo.dataformat.exceptions import log_exception
 
@@ -47,9 +46,6 @@ class DynamoServer(object):
 
         ## Application collection
         self.applications_config = config.applications.clone()
-
-        ## Registry configuration
-        self.registry_config = config.registry.clone()
 
         ## Server status (and application) poll interval
         self.poll_interval = config.status_poll_interval
@@ -734,12 +730,7 @@ class DynamoServer(object):
         import dynamo.core.executable as executable
         executable.inventory = self.inventory
 
-        rconf = self.registry_config
-
-        if read_only:
-            executable.registry = DynamoRegistry.get_instance(rconf.module, rconf.read_config)
-        else:
-            executable.registry = DynamoRegistry.get_instance(rconf.module, rconf.write_config)
+        if not read_only:
             executable.read_only = False
             # create a list of updated and deleted objects the executable can fill
             executable.inventory._update_commands = []
