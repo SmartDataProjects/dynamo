@@ -14,7 +14,7 @@ class WebServer(object):
             self.user_id = user_id
 
     def __init__(self, config, dynamoserver):
-        self.config = config.clone()
+        self.modules_config = config.modules_config.clone()
         self.dynamo = dynamoserver
 
         # cookie string -> (user name, user id)
@@ -67,7 +67,7 @@ class WebServer(object):
 
         ## Step 4
         try:
-            content = cls(self.config, caller).run(request, self.dynamo.inventory)
+            content = cls(self.modules_config, caller).run(request, self.dynamo.inventory)
         except exceptions.AuthorizationError:
             start_response('403 Forbidden', [('Content-Type', 'text/plain')])
             return 'User not authorized to perform the request.'

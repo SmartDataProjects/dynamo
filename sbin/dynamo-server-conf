@@ -97,6 +97,7 @@ server_conf['web']['enabled'] = (serve_web == 'true')
 if serve_web == 'true':
     web_conf = server_conf['web']
     web_conf['socket'] = source_conf.get('web', 'socket')
+    web_conf['modules_config'] = OD()
 
 server_conf['notification_recipient'] = email
 server_conf['status_poll_interval'] = 1.0
