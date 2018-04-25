@@ -8,6 +8,11 @@ import dynamo.web.exceptions as exceptions
 from dynamo.web.modules import modules
 
 class WebServer(object):
+    class Caller(object):
+        def __init__(self, user, user_id):
+            self.user = user
+            self.user_id = user_id
+
     def __init__(self, config, dynamoserver):
         self.config = config.clone()
         self.dynamo = dynamoserver
@@ -42,6 +47,8 @@ class WebServer(object):
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
             return 'Only HTTP or HTTPS requests are allowed.'
 
+        caller = WebServer.Caller(user, user_id)
+
         ## Step 2
         module = environ['SCRIPT_NAME'].strip('/')
         command = environ['PATH_INFO'][1:]
@@ -60,7 +67,7 @@ class WebServer(object):
 
         ## Step 4
         try:
-            content = cls(self.config, user, user_id).run(request, self.dynamo.inventory)
+            content = cls(self.config, caller).run(request, self.dynamo.inventory)
         except exceptions.AuthorizationError:
             start_response('403 Forbidden', [('Content-Type', 'text/plain')])
             return 'User not authorized to perform the request.'
@@ -84,6 +91,7 @@ class WebServer(object):
         dn_string = environ['SSL_CLIENT_S_DN']
         dn_parts = []
         start = 0
+        end = 0
         while True:
             end = dn_string.find(',', end)
             if end == -1:
@@ -125,4 +133,4 @@ for pyfile in os.listdir(_moddir):
     if pyfile.startswith('_') or (not os.path.isdir(_moddir + '/' + pyfile) and not pyfile.endswith('.py')):
         continue
 
-    __import__(_modbase + pyfile[:-3], globals(), locals())
+    __import__(_modbase + pyfile.replace('.py', ''), globals(), locals())
