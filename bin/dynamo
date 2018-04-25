@@ -26,7 +26,7 @@ class ReceiveError(Exception):
     pass
 
 class DynamoServer(object):
-    def __init__(self, addr, certfile, keyfile, service):
+    def __init__(self, addr, certfile, keyfile, role):
         try:
             try:
                 context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
@@ -48,7 +48,7 @@ class DynamoServer(object):
         self._addr = addr
         self._certfile = certfile
         self._keyfile = keyfile
-        self._service = service
+        self._role = role
 
     def close(self):
         try:
@@ -102,7 +102,7 @@ class DynamoServer(object):
         return response_data['content']
 
     def poll(self, app_id):
-        in_data = {'command': 'poll', 'appid': app_id, 'service': self._service}
+        in_data = {'command': 'poll', 'appid': app_id, 'role': self._role}
         resp_data = self.communicate(in_data)
 
         print ' Application id:', resp_data['appid']
@@ -116,13 +116,13 @@ class DynamoServer(object):
         print ' Execute host:', resp_data['server']
 
     def kill(self, app_id):
-        in_data = {'command': 'kill', 'appid': app_id, 'service': self._service}
+        in_data = {'command': 'kill', 'appid': app_id, 'role': self._role}
         print self.communicate(in_data)
 
     def submit(self, cmd, title, write_request, workdir, asynch):
         executable, _, args = cmd.partition(' ') # yes this will fail if our executable name contains a space..
 
-        in_data = {'command': 'submit', 'title': title, 'args': args, 'write_request': write_request, 'service': self._service}
+        in_data = {'command': 'submit', 'title': title, 'args': args, 'write_request': write_request, 'role': self._role}
 
         if self._addr[0] in ('localhost', '127.0.0.1', socket.gethostname()):
             in_data['exec_path'] = executable
@@ -178,7 +178,7 @@ class DynamoServer(object):
                         kill = raw_input('Kill task? [y/n]: ')
                         if kill == 'y':
                             # Will use a fresh connection to kill
-                            DynamoServer(self._addr, self._certfile, self._keyfile, self._service).kill(app_id)
+                            DynamoServer(self._addr, self._certfile, self._keyfile, self._role).kill(app_id)
                         elif kill != 'n':
                             sys.stdout.write('Please answer in y/n.\n')
                             continue
@@ -205,7 +205,7 @@ class DynamoServer(object):
     def interact(self, write_request, workdir):
         import readline
 
-        in_data = {'command': 'interact', 'write_request': write_request, 'service': self._service}
+        in_data = {'command': 'interact', 'write_request': write_request, 'role': self._role}
 
         if workdir is not None:
             in_data['path'] = workdir
@@ -368,7 +368,7 @@ if __name__ == '__main__':
     parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request write access.')
     parser.add_argument('--poll', '-p', metavar = 'ID', dest = 'poll_appid', help = 'Just poll an existing application.')
     parser.add_argument('--kill', '-x', metavar = 'ID', dest = 'kill_appid', help = 'Abort an existing application.')
-    parser.add_argument('--service', '-e', metavar = 'NAME', dest = 'service', default = 'user', help = 'Service name used for authorization (default "user").')
+    parser.add_argument('--role', '-e', metavar = 'NAME', dest = 'role', default = 'user', help = 'Role name used for authorization (default "user").')
     parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
     parser.add_argument('--cert', '-c', metavar = 'PATH', dest = 'certfile', help = 'Non-standard certificate file location.')
     parser.add_argument('--key', '-k', metavar = 'PATH', dest = 'keyfile', help = 'Non-standard key file location.')
@@ -407,7 +407,7 @@ if __name__ == '__main__':
 
     server = None
     try:
-        server = DynamoServer(server_addr, certfile, keyfile, args.service)
+        server = DynamoServer(server_addr, certfile, keyfile, args.role)
 
         if args.poll_appid is not None:
             server.poll(args.poll_appid)

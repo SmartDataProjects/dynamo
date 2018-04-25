@@ -85,7 +85,7 @@ try:
     # we process one source at a time, because each source registers mysql locks as a different user
     for name, source_conf in config.sources.items():
         # first load the existing locks
-        instance_conf = Configuration({'users': [[source_conf.user, source_conf.service]]})
+        instance_conf = Configuration({'users': [[source_conf.user, source_conf.role]]})
         mysqllock = MySQLReplicaLock(instance_conf)
         mysqllock.load(inventory)
 
@@ -188,7 +188,7 @@ try:
         if args.test_run:
             LOG.info('Not sending data to registry.')
         else:
-            request_url = 'set?asuser=%s&service=%s' % (source_conf.user, source_conf.service)
+            request_url = 'set?asuser=%s&role=%s' % (source_conf.user, source_conf.role)
             registry.make_request(request_url, method = POST, options = data, format = 'json')
     
     # Intentionally removing the file only when everything succeeds

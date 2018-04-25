@@ -2,7 +2,7 @@
   "sources": {
     "unified": {
       "user": "vlimant",
-      "service": "unified",
+      "role": "unified",
       "url": "https://cms-unified.web.cern.ch/cms-unified/public/globallocks.json",
       "auth": "noauth",
       "content_type": "LIST_OF_DATASETS",
@@ -10,21 +10,21 @@
     },
     "unified_testbed": {
       "user": "vlimant",
-      "service": "unified-testbed",
+      "role": "unified-testbed",
       "url": "https://cmst2.web.cern.ch/cmst2/unified-testbed/globallocks.json",
       "auth": "cert",
       "content_type": "LIST_OF_DATASETS"
     },
     "testsamples": {
       "user": "vlimant",
-      "service": "wmcore",
+      "role": "wmcore",
       "url": "https://cmst1.web.cern.ch/CMST1/lockedData/lockTestSamples.json",
       "auth": "cert",
       "content_type": "SITE_TO_DATASETS"
     },
     "t0_prod": {
       "user": "dmytro",
-      "service": "t0-prod",
+      "role": "t0-prod",
       "url": "https://cmsweb.cern.ch/t0wmadatasvc/prod/dataset_locked",
       "auth": "cert",
       "content_type": "CMSWEB_LIST_OF_DATASETS",
@@ -44,7 +44,7 @@
   },
   "applock": {
     "user": "dynamo",
-    "service": "dynamo",
+    "role": "dynamo",
     "app": "detox",
     "db_params": {
       "db": "dynamoregister"

@@ -189,38 +189,38 @@ class MasterServer(object):
         """
         raise NotImplementedError('add_user')
 
-    def service_exists(self, name):
+    def role_exists(self, name):
         """
-        Check if a service exists.
-        @param name  Service name
+        Check if a role exists.
+        @param name  Role name
         
         @return boolean
         """
-        raise NotImplementedError('service_exists')
+        raise NotImplementedError('role_exists')
 
-    def add_service(self, name):
+    def add_role(self, name):
         """
-        Add a new service.
-        @param name  Service name
+        Add a new role.
+        @param name  Role name
 
         @return True if success, False if not.
         """
-        raise NotImplementedError('add_service')
+        raise NotImplementedError('add_role')
 
-    def is_authorized_user(self, user, service):
+    def is_authorized_user(self, user, role):
         """
         @param user     User name.
-        @param service  Service (role) name user is acting in.
+        @param role  Role (role) name user is acting in.
         
         @return boolean
         """
         raise NotImplementedError('is_authorized_user')
 
-    def authorize_user(self, user, service):
+    def authorize_user(self, user, role):
         """
-        Add (user, service) to authorization list.
+        Add (user, role) to authorization list.
         @param user     User name.
-        @param service  Service (role) name user is acting in.
+        @param role  Role (role) name user is acting in.
 
         @return True if success, False if not.
         """
@@ -229,7 +229,7 @@ class MasterServer(object):
     def list_authorized_users(self):
         """
         Get the full authorization list.
-        @return [(user, service)]
+        @return [(user, role)]
         """
         raise NotImplementedError('list_authorized_users')
 

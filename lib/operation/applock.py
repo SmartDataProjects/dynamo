@@ -5,7 +5,7 @@ class ApplicationLockInterface(object):
 
     def __init__(self, config):
         self.user = config.user
-        self.service = config.service
+        self.role = config.role
         self.app = config.app
 
     def __enter__(self):
@@ -17,7 +17,7 @@ class ApplicationLockInterface(object):
 
     def check(self):
         """
-        Return (user, service) that owns the current lock. If unlocked, return None.
+        Return (user, role) that owns the current lock. If unlocked, return None.
         """
         raise NotImplementedError('check')
 
