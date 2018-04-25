@@ -310,42 +310,6 @@ class MySQLMasterServer(MasterServer):
 
         return inserted != 0
 
-    def role_exists(self, name): #override
-        result = self._mysql.query('SELECT COUNT(*) FROM `roles` WHERE `name` = %s', name)[0]
-        return len(result) != 0
-
-    def add_role(self, name): #override
-        sql = 'INSERT INTO `roles` (`name`) VALUES (%s)'
-        try:
-            inserted = self._mysql.query(sql, name)
-        except:
-            return False
-
-        return inserted != 0
-
-    def is_authorized_user(self, user, role): #override
-        sql = 'SELECT COUNT(*) FROM `authorized_users` AS a'
-        sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
-        sql += ' INNER JOIN `roles` AS s ON s.`id` = a.`role_id`'
-        sql += ' WHERE u.`name` = %s AND s.`name` = %s'
-        return (self._mysql.query(sql, user, role)[0] != 0)
-
-    def authorize_user(self, user, role): #override
-        sql = 'INSERT INTO `authorized_users` (`user_id`, `role_id`)'
-        sql += ' SELECT u.`id`, s.`id` FROM `users` AS u, `roles` AS s'
-        sql += ' WHERE u.`name` = %s AND s.`name` = %s'
-        sql += ' ON DUPLICATE KEY UPDATE `user_id` = `user_id`'
-
-        inserted = self._mysql.query(sql, user, role)
-        return inserted != 0
-
-    def list_authorized_users(self): #override
-        sql = 'SELECT u.`name`, s.`name` FROM `authorized_users` AS a'
-        sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
-        sql += ' INNER JOIN `roles` AS s ON s.`id` = a.`role_id`'
-        
-        return self._mysql.query(sql)
-
     def check_connection(self): #override
         try:
             self._mysql.query('SELECT 1')

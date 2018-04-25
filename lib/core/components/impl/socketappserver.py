@@ -208,12 +208,6 @@ class SocketAppServer(AppServer):
 
             app_data = io.recv()
 
-            role = app_data.pop('role')
-    
-            if not master.is_authorized_user(user_name, role):
-                io.send('failed', 'Unauthorized user/role %s/%s' % (user_name, role))
-                return
-
             command = app_data.pop('command')
 
             if command == 'poll' or command == 'kill':

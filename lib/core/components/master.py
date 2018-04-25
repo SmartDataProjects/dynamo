@@ -189,50 +189,6 @@ class MasterServer(object):
         """
         raise NotImplementedError('add_user')
 
-    def role_exists(self, name):
-        """
-        Check if a role exists.
-        @param name  Role name
-        
-        @return boolean
-        """
-        raise NotImplementedError('role_exists')
-
-    def add_role(self, name):
-        """
-        Add a new role.
-        @param name  Role name
-
-        @return True if success, False if not.
-        """
-        raise NotImplementedError('add_role')
-
-    def is_authorized_user(self, user, role):
-        """
-        @param user     User name.
-        @param role  Role (role) name user is acting in.
-        
-        @return boolean
-        """
-        raise NotImplementedError('is_authorized_user')
-
-    def authorize_user(self, user, role):
-        """
-        Add (user, role) to authorization list.
-        @param user     User name.
-        @param role  Role (role) name user is acting in.
-
-        @return True if success, False if not.
-        """
-        raise NotImplementedError('authorize_user')
-
-    def list_authorized_users(self):
-        """
-        Get the full authorization list.
-        @return [(user, role)]
-        """
-        raise NotImplementedError('list_authorized_users')
-
     def check_connection(self):
         """
         @return  True if connection is OK, False if not
