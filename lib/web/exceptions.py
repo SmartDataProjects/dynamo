@@ -8,3 +8,7 @@ class IllFormedRequest(Exception):
     def __init__(self, param_name, value):
         self.param_name = param_name
         self.value = value
+
+class AuthorizationError(Exception):
+    """Raise if the user is not authorized for the request."""
+    pass
