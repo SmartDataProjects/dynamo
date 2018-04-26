@@ -672,8 +672,8 @@ class DynamoServer(object):
         # De-escalate privileges permanently
         os.seteuid(0)
         os.setegid(0)
-        os.setgid(uid)
-        os.setuid(gid)
+        os.setgid(gid)
+        os.setuid(uid)
 
         # Ignore SIGINT - see note above proc.terminate()
         # We will react to SIGTERM by raising KeyboardInterrupt
