@@ -4,10 +4,10 @@ import re
 from dynamo.dataformat import Dataset
 
 class ListDatasets(object):
-    def __init__(self, config, caller):
+    def __init__(self, config):
         pass
 
-    def run(self, request, inventory):
+    def run(self, caller, request, inventory):
         datasets = []
     
         # collect information from the inventory and registry according to the requests

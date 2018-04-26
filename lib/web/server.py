@@ -8,10 +8,10 @@ import dynamo.web.exceptions as exceptions
 from dynamo.web.modules import modules
 
 class WebServer(object):
-    class Caller(object):
-        def __init__(self, user, user_id):
-            self.user = user
-            self.user_id = user_id
+    class User(object):
+        def __init__(self, name, uid):
+            self.name = name
+            self.id = uid
 
     def __init__(self, config, dynamoserver):
         self.modules_config = config.modules_config.clone()
@@ -47,7 +47,7 @@ class WebServer(object):
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
             return 'Only HTTP or HTTPS requests are allowed.'
 
-        caller = WebServer.Caller(user, user_id)
+        caller = WebServer.User(user, user_id)
 
         ## Step 2
         module = environ['SCRIPT_NAME'].strip('/')
@@ -67,7 +67,7 @@ class WebServer(object):
 
         ## Step 4
         try:
-            content = cls(self.modules_config, caller).run(request, self.dynamo.inventory)
+            content = cls(self.modules_config).run(caller, request, self.dynamo.inventory)
         except exceptions.AuthorizationError:
             start_response('403 Forbidden', [('Content-Type', 'text/plain')])
             return 'User not authorized to perform the request.'
@@ -121,16 +121,3 @@ class WebServer(object):
             raise RuntimeError()
 
         return userinfo
-
-
-# Import all .py files and subdirectories under modules/
-# Yes this is gross
-# Imported modules and packages must fill in the modules dict in dynamo.web.modules
-# If placing a subdirectory, its __init__.py must take care of exporting everything in the subdirectory
-_modbase = __name__[:__name__.rfind('.')] + '.modules.'
-_moddir = os.path.dirname(__file__) + '/modules'
-for pyfile in os.listdir(_moddir):
-    if pyfile.startswith('_') or (not os.path.isdir(_moddir + '/' + pyfile) and not pyfile.endswith('.py')):
-        continue
-
-    __import__(_modbase + pyfile.replace('.py', ''), globals(), locals())

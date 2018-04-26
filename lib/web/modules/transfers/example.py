@@ -3,11 +3,11 @@ from dynamo.web.modules._mysqlhistory import MySQLHistoryMixin
 
 class Example(MySQLRegistryMixin, MySQLHistoryMixin):
 
-    def __init__(self, config, caller):
+    def __init__(self, config):
         MySQLRegistryMixin.__init__(self, config)
         MySQLHistoryMixin.__init__(self, config)
 
-    def run(self, request, inventory):
+    def run(self, caller, request, inventory):
         reg_sites = self.registry.query('SELECT `site` FROM `transfer_queue`')
         hist_sites = self.history.query('SELECT `site` FROM `transfer_queue`')
 
