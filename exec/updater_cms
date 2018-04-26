@@ -319,10 +319,7 @@ for dataset_tmp in dataset_tmps:
         create_dataset(dataset_tmp)
         continue
 
-    if dataset == dataset_tmp:
-        # if dataset size, num_files, etc. are identical, it's safe to assume all blocks are
-        continue
-    else:
+    if dataset != dataset_tmp:
         LOG.debug('Updating dataset %s', dataset.name)
         dataset.copy(dataset_tmp)
         inventory.register_update(dataset)
@@ -342,6 +339,8 @@ for dataset_tmp in dataset_tmps:
             continue
 
         if block == block_tmp:
+            # If num_files and size are identical, there is very little chance that the actual file list is different.
+            # We skip the file update.
             continue
         else:
             LOG.debug('Updating block %s', block.full_name())
