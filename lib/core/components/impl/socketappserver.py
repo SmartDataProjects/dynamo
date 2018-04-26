@@ -122,6 +122,9 @@ class SocketAppServer(AppServer):
                 certfile = config.certfile, keyfile = config.keyfile,
                 cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.cafile)
 
+        # allow reconnect to the same port even when it is in TIME_WAIT
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
         try:
             port = int(os.environ['DYNAMO_SERVER_PORT'])
         except:
@@ -259,10 +262,11 @@ class SocketAppServer(AppServer):
         if command == 'kill':
             if app['status'] == ServerManager.APP_NEW or app['status'] == ServerManager.APP_RUN:
                 master.update_application(app_id, status = ServerManager.APP_KILLED)
-                io.send('OK', 'Task aborted.')
+                io.send('OK', {'result': 'success', 'detail': 'Task aborted.'})
             else:
-                io.send('OK', 'Task already completed with status %s (exit code %s).' % \
-                    (ServerManager.application_status_name(app['status']), app['exit_code']))
+                io.send('OK', {'result': 'noaction',
+                    'detail': 'Task already completed with status %s (exit code %s).' % \
+                    (ServerManager.application_status_name(app['status']), app['exit_code'])})
         else:
             app['status'] = ServerManager.application_status_name(app['status'])
             io.send('OK', app)

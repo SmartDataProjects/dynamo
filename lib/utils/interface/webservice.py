@@ -309,7 +309,7 @@ class RESTService(object):
                 self.last_exception = (str(err)) + '\nBody:\n' + err.read()
             except:
                 self.last_errorcode = 0
-                self.last_exception = sys.exc_info()[2]
+                self.last_exception = sys.exc_info()[1]
 
             exceptions.append((self.last_errorcode, self.last_exception))
 

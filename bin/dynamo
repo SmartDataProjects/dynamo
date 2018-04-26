@@ -116,7 +116,9 @@ class DynamoServer(object):
 
     def kill(self, app_id):
         in_data = {'command': 'kill', 'appid': app_id}
-        print self.communicate(in_data)
+        response = self.communicate(in_data)
+        print response['detail']
+        return response['result']
 
     def submit(self, cmd, title, write_request, workdir, asynch):
         executable, _, args = cmd.partition(' ') # yes this will fail if our executable name contains a space..
@@ -173,16 +175,16 @@ class DynamoServer(object):
                     break
     
                 except KeyboardInterrupt:
-                    while True:
-                        kill = raw_input('Kill task? [y/n]: ')
-                        if kill == 'y':
-                            # Will use a fresh connection to kill
-                            DynamoServer(self._addr, self._certfile, self._keyfile).kill(app_id)
-                        elif kill != 'n':
-                            sys.stdout.write('Please answer in y/n.\n')
-                            continue
-            
-                        break
+                    kill = raw_input('Kill task? [y/n]: ')
+                    if kill == 'y':
+                        # Will use a fresh connection to kill
+                        result = DynamoServer(self._addr, self._certfile, self._keyfile).kill(app_id)
+                        if result == 'noaction':
+                            # job was already dead
+                            break
+                        # otherwise we'll wait for the server to send the termination notice
+                    elif kill != 'n':
+                        sys.stdout.write('Please answer in y/n.\n')
 
         except:
             exc_type, exc, tb = sys.exc_info()

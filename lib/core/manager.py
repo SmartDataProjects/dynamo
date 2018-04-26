@@ -1,6 +1,7 @@
 import time
 import threading
 import socket
+import hashlib
 
 from dynamo.core.components.master import MasterServer
 from dynamo.core.components.board import UpdateBoard
