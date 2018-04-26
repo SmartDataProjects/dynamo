@@ -1,8 +1,6 @@
 CREATE TABLE `datasets` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
-  `size` bigint(20) NOT NULL DEFAULT '-1',
-  `num_files` int(10) unsigned NOT NULL DEFAULT '0',
   `status` enum('UNKNOWN','DELETED','DEPRECATED','INVALID','PRODUCTION','VALID','IGNORED') CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   `data_type` enum('UNKNOWN','ALIGN','CALIB','COSMIC','DATA','LUMI','MC','RAW','TEST','') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'UNKNOWN',
   `software_version_id` int(10) unsigned NOT NULL DEFAULT '0',

@@ -120,10 +120,6 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
                 block = self._create_block(block_entry, dataset)
                 dataset.blocks.add(block)
 
-                # size and num_files are left 0 in _create_dataset (PhEDEx does not tell)
-                dataset.size += block.size
-                dataset.num_files += block.num_files
-
                 if with_files and 'file' in block_entry:
                     # See comments in get_block
                     block._files = set()
@@ -175,14 +171,10 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
 
         if link_dataset:
             existing = dataset.find_block(block.name)
-            if existing is None:
-                dataset.blocks.add(block)
-                dataset.size += block.size
-                dataset.num_files += block.num_files
-            else:
+            if existing is not None:
                 dataset.blocks.remove(existing)
-                dataset.size += block.size - existing.size
-                dataset.num_files += block.num_files - existing.num_files
+
+            dataset.blocks.add(block)
 
         return block
 

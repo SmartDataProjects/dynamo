@@ -271,13 +271,9 @@ class MySQLInventoryStore(InventoryStore):
                 dataset = block.dataset
                 _dataset_id = dataset.id
                 dataset.blocks.clear()
-                dataset.size = 0
-                dataset.num_files = 0
                 id_block_map = id_block_maps[dataset.id] = {}
             
             dataset.blocks.add(block)
-            dataset.size += block.size
-            dataset.num_files += block.num_files
 
             id_block_map[block.id] = block
 
@@ -451,8 +447,8 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql.query('CREATE TABLE `datasets_tmp` LIKE `datasets`')
 
-        fields = ('id', 'name', 'size', 'num_files', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        mapping = lambda dataset: (dataset.id, dataset.name, dataset.size, dataset.num_files, dataset.status, dataset.data_type, \
+        fields = ('id', 'name', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
+        mapping = lambda dataset: (dataset.id, dataset.name, dataset.status, dataset.data_type, \
             dataset._software_version_id, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
         software_versions = set()
@@ -671,19 +667,17 @@ class MySQLInventoryStore(InventoryStore):
             Dataset._software_versions_byid[vid] = version
             Dataset._software_versions_byvalue[value] = version
 
-        sql = 'SELECT d.`id`, d.`name`, d.`size`, d.`num_files`, d.`status`+0, d.`data_type`+0,'
+        sql = 'SELECT d.`id`, d.`name`, d.`status`+0, d.`data_type`+0,'
         sql += ' d.`software_version_id`, UNIX_TIMESTAMP(d.`last_update`), d.`is_open`'
         sql += ' FROM `datasets` AS d'
 
         if datasets_tmp is not None:
             sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = d.`id`' % datasets_tmp
 
-        for dataset_id, name, size, num_files, status, data_type, sw_version_id, last_update, is_open in self._mysql.xquery(sql):
+        for dataset_id, name, status, data_type, sw_version_id, last_update, is_open in self._mysql.xquery(sql):
             # size and num_files are reset when loading blocks
             dataset = Dataset(
                 name,
-                size = size,
-                num_files = num_files,
                 status = int(status),
                 data_type = int(data_type),
                 last_update = last_update,
@@ -920,8 +914,8 @@ class MySQLInventoryStore(InventoryStore):
                 sql = 'INSERT INTO `software_versions` (`id`, `cycle`, `major`, `minor`, `suffix`) VALUES (%s, %s, %s, %s, %s)'
                 software_version_id = self._mysql.query(sql, dataset._software_version_id, *dataset.software_version)
             
-        fields = ('name', 'size', 'num_files', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        self._mysql.insert_update('datasets', fields, dataset.name, dataset.size, dataset.num_files, \
+        fields = ('name', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
+        self._mysql.insert_update('datasets', fields, dataset.name, \
             dataset.status, dataset.data_type, dataset._software_version_id,
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
         dataset_id = self._mysql.last_insert_id

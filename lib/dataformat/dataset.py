@@ -7,7 +7,7 @@ from exceptions import ObjectError
 class Dataset(object):
     """Represents a dataset."""
 
-    __slots__ = ['_name', 'id', 'size', 'num_files', 'status', 'data_type',
+    __slots__ = ['_name', 'id', 'status', 'data_type',
         '_software_version_id', 'last_update', 'is_open',
         'blocks', 'replicas', 'attr']
 
@@ -32,6 +32,14 @@ class Dataset(object):
     @property
     def name(self):
         return self._name
+
+    @property
+    def size(self):
+        return sum(b.size for b in self.blocks)
+
+    @property
+    def num_files(self):
+        return sum(b.num_files for b in self.blocks)
 
     @property
     def files(self):
@@ -86,10 +94,8 @@ class Dataset(object):
         else:
             return arg
 
-    def __init__(self, name, size = 0, num_files = 0, status = STAT_UNKNOWN, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True, did = 0):
+    def __init__(self, name, status = STAT_UNKNOWN, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True, did = 0):
         self._name = name
-        self.size = size # redundant with sum of block sizes when blocks are loaded
-        self.num_files = num_files # redundant with sum of block num_files and len(files)
         self.status = Dataset.status_val(status)
         self.data_type = Dataset.data_type_val(data_type)
         self.software_version = software_version
@@ -107,21 +113,21 @@ class Dataset(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset %s (size=%d, num_files=%d, status=%s, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s, id=%d)' % \
-            (self._name, self.size, self.num_files, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
+        return 'Dataset %s (status=%s, data_type=%s, software_version=%s, last_update=%s, is_open=%s, id=%d, size %d, %d blocks, %d files, replicas %s)' % \
+            (self._name, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
             str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)), str(self.is_open), \
-            len(self.blocks), replica_sites, self.id)
+            self.id, self.size, len(self.blocks), self.num_files, replica_sites)
 
     def __repr__(self):
-        return 'Dataset(\'%s\',%d,%d,\'%s\',\'%s\',%s,%d,%s,%d)' % \
-            (self._name, self.size, self.num_files, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
+        return 'Dataset(\'%s\',\'%s\',\'%s\',%s,%d,%s,%d)' % \
+            (self._name, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
             repr(self.software_version), self.last_update, self.is_open, self.id)
 
     def __eq__(self, other):
         return self is other or \
-            (self._name == other._name and self.size == other.size and self.num_files == other.num_files and \
-            self.status == other.status and self.data_type == other.data_type and \
-            self._software_version_id == other._software_version_id and self.last_update == other.last_update and self.is_open == other.is_open)
+            (self._name == other._name and self.status == other.status and \
+            self.data_type == other.data_type and self._software_version_id == other._software_version_id and \
+            self.last_update == other.last_update and self.is_open == other.is_open)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -138,8 +144,6 @@ class Dataset(object):
 
     def copy(self, other):
         self.id = other.id
-        self.size = other.size
-        self.num_files = other.num_files
         self.status = other.status
         self.data_type = other.data_type
         self._software_version_id = other._software_version_id
@@ -224,8 +228,3 @@ class Dataset(object):
                 raise ObjectError('Could not find replica on %s of %s', str(site), self._name)
             else:
                 return None
-
-    def add_block(self, block):
-        self.blocks.add(block)
-        self.size += block.size
-        self.num_files += block.num_files

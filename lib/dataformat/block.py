@@ -3,7 +3,7 @@ import collections
 import threading
 import weakref
 
-from exceptions import ObjectError
+from exceptions import ObjectError, IntegrityError
 
 ## TODO
 # Add/remove operations on block.files in the subprocesses may get reset
@@ -47,6 +47,12 @@ class Block(object):
     @staticmethod
     def _fill_files_cache(block):
         files = Block._inventory_store.get_files(block)
+
+        if len(files) != block.num_files:
+            raise IntegrityError('Number of files mismatch in %s', str(block))
+        if sum(f.size for f in files) != block.size:
+            raise IntegrityError('Block file mismatch in %s', str(block))
+
         while len(Block._files_cache) >= Block._MAX_FILES_CACHE_DEPTH:
             # Keep _files_cache FIFO to Block._MAX_FILES_CACHE_DEPTH
             Block._files_cache.popitem(last = False)
