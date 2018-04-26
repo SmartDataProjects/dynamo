@@ -12,7 +12,7 @@ class DBS(RESTService):
     
     @staticmethod
     def set_default(config):
-        DBS._url = config.url_base
+        DBS._url_base = config.url_base
         DBS._num_attempts = config.num_attempts
 
     def __init__(self, config = None):

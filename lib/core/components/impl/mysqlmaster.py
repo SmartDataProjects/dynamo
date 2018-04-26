@@ -97,7 +97,7 @@ class MySQLMasterServer(MasterServer):
 
     def get_applications(self, older_than = 0, app_id = None): #override
         sql = 'SELECT `applications`.`id`, `applications`.`write_request`, `applications`.`title`, `applications`.`path`,'
-        sql += ' `applications`.`args`, 0+`applications`.`status`, `applications`.`server`, `applications`.`exit_code`, `users`.`name`'
+        sql += ' `applications`.`args`, 0+`applications`.`status`, `applications`.`server`, `applications`.`exit_code`, `users`.`name`, `applications`.`user_host`'
         sql += ' FROM `applications` INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
 
         constraints = []
@@ -110,9 +110,12 @@ class MySQLMasterServer(MasterServer):
             sql += ' WHERE ' + ' AND '.join(constraints)
 
         applications = []
-        for aid, write, title, path, args, status, server, exit_code, uname in self._mysql.xquery(sql):
-            applications.append({'appid': aid, 'write_request': (write == 1), 'user_name': uname, 'title': title,
-                'path': path, 'args': args, 'status': int(status), 'server': server, 'exit_code': exit_code})
+        for aid, write, title, path, args, status, server, exit_code, uname, uhost in self._mysql.xquery(sql):
+            applications.append({
+                'appid': aid, 'write_request': (write == 1), 'user_name': uname,
+                'user_host': uhost, 'title': title, 'path': path, 'args': args,
+                'status': int(status), 'server': server, 'exit_code': exit_code
+            })
 
         return applications
 
@@ -123,20 +126,20 @@ class MySQLMasterServer(MasterServer):
         else:
             return result[0]
 
-    def schedule_application(self, title, path, args, user, write_request): #override
+    def schedule_application(self, title, path, args, user, host, write_request): #override
         result = self._mysql.query('SELECT `id` FROM `users` WHERE `name` = %s', user)
         if len(result) == 0:
             return 0
         else:
             user_id = result[0]
 
-        sql = 'INSERT INTO `applications` (`write_request`, `title`, `path`, `args`, `user_id`) VALUES (%s, %s, %s, %s, %s)'
-        self._mysql.query(sql, write_request, title, path, args, user_id)
+        sql = 'INSERT INTO `applications` (`write_request`, `title`, `path`, `args`, `user_id`, `user_host`) VALUES (%s, %s, %s, %s, %s, %s)'
+        self._mysql.query(sql, write_request, title, path, args, user_id, host)
 
         return self._mysql.last_insert_id
 
     def get_next_application(self, read_only): #override
-        sql = 'SELECT `applications`.`id`, `write_request`, `title`, `path`, `args`, `users`.`name` FROM `applications`'
+        sql = 'SELECT `applications`.`id`, `write_request`, `title`, `path`, `args`, `users`.`name`, `user_host` FROM `applications`'
         sql += ' INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
         sql += ' WHERE `status` = \'new\''
         if read_only:
@@ -147,7 +150,11 @@ class MySQLMasterServer(MasterServer):
         if len(result) == 0:
             return None
         else:
-            return result[0]
+            appid, write_request, title, path, args, uname, uhost = result[0]
+            return {
+                'appid': appid, 'write_request': (write_request == 1), 'user_name': uname,
+                'user_host': uhost, 'title': title, 'path': path, 'args': args
+            }
 
     def update_application(self, app_id, **kwd): #override
         sql = 'UPDATE `applications` SET '

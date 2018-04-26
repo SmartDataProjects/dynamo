@@ -12,7 +12,7 @@ class PopDB(RESTService):
     
     @staticmethod
     def set_default(config):
-        PopDB._url = config.url_base
+        PopDB._url_base = config.url_base
         PopDB._num_attempts = config.num_attempts
 
     def __init__(self, config = None):

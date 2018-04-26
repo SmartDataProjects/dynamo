@@ -12,7 +12,7 @@ class SiteStatusBoard(RESTService):
     
     @staticmethod
     def set_default(config):
-        SiteStatusBoard._url = config.url_base
+        SiteStatusBoard._url_base = config.url_base
         SiteStatusBoard._num_attempts = config.num_attempts
 
     def __init__(self, config = None):

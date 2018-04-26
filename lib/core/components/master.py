@@ -82,13 +82,14 @@ class MasterServer(object):
     def get_writing_process_id(self):
         raise NotImplementedError('get_writing_process_id')
 
-    def schedule_application(self, title, path, args, user, write_request):
+    def schedule_application(self, title, path, args, user, host, write_request):
         """
         Schedule an application to the master server.
         @param title          Application title.
         @param path           Application path.
         @param args           Arguments to the application
         @param user           User name of the requester
+        @param host           Host name of the requester
         @param write_request  Boolean
 
         @return application id
@@ -96,6 +97,11 @@ class MasterServer(object):
         raise NotImplementedError('schedule_application')
 
     def get_next_application(self, read_only):
+        """
+        @param read_only    Limit to read_only applications
+        
+        @return {appid, write_request, user_name, user_host, title, path, args} or None
+        """
         raise NotImplementedError('get_next_application')
 
     def get_applications(self, older_than = 0, has_path = True, app_id = None):
@@ -105,7 +111,7 @@ class MasterServer(object):
         @param has_path     Return applications whose path is not NULL
         @param app_id       Return application with matching id.
 
-        @return {appid, write_request, user_name, title, path, args, status, server, exit_code}
+        @return [{appid, write_request, user_name, user_host, title, path, args, status, server, exit_code}]
         """
         raise NotImplementedError('get_applications')
 

@@ -3,6 +3,7 @@ import sys
 import shutil
 import time
 import logging
+import socket
 import shlex
 import signal
 import code
@@ -229,9 +230,9 @@ class DynamoServer(object):
                 ## Step 1: Poll
                 LOG.debug('Polling for applications.')
     
-                next_application = self.manager.get_next_application()
+                app = self.manager.get_next_application()
     
-                if next_application is None:
+                if app is None:
                     if len(child_processes) == 0 and first_wait:
                         LOG.info('Waiting for applications.')
                         first_wait = False
@@ -242,47 +243,47 @@ class DynamoServer(object):
                     continue
     
                 ## Step 2: If a script is found, check the authorization of the script.
-                app_id, write_request, title, path, args, user_name = next_application
-    
                 first_wait = True
                 do_sleep = False
 
-                if not os.path.exists(path + '/exec.py'):
-                    LOG.info('Application %s from user %s (write request: %s) not found.', title, user_name, write_request)
-                    self.manager.master.update_application(app_id, status = ServerManager.APP_NOTFOUND)
-                    appserver.notify_synch_app(app_id, {'status': ServerManager.APP_NOTFOUND})
+                if not os.path.exists(app['path'] + '/exec.py'):
+                    LOG.info('Application %s from user %s@%s (write request: %s) not found.', app['title'], app['user_name'], app['user_host'], app['write_request'])
+                    self.manager.master.update_application(app['appid'], status = ServerManager.APP_NOTFOUND)
+                    appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_NOTFOUND})
                     continue
     
-                LOG.info('Found application %s from user %s (write request: %s)', title, user_name, write_request)
+                LOG.info('Found application %s from user %s (write request: %s)', app['title'], app['user_name'], app['write_request'])
+
+                is_local = (app['user_host'] == socket.gethostname())
     
-                proc_args = (path, args)
+                proc_args = (app['path'], app['args'], is_local)
     
-                if write_request:
-                    if not self.manager.check_write_auth(title, user_name, path):
-                        LOG.warning('Application %s from user %s is not authorized for write access.', title, user_name)
+                if app['write_request']:
+                    if not self.manager.check_write_auth(app['title'], app['user_name'], app['path']):
+                        LOG.warning('Application %s from user %s is not authorized for write access.', app['title'], app['user_name'])
                         # TODO send a message
     
-                        self.manager.master.update_application(app_id, status = ServerManager.APP_AUTHFAILED)
-                        appserver.notify_synch_app(app_id, {'status': ServerManager.APP_AUTHFAILED})
+                        self.manager.master.update_application(app['appid'], status = ServerManager.APP_AUTHFAILED)
+                        appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_AUTHFAILED})
                         continue
     
                     queue = multiprocessing.Queue()
                     proc_args += (queue,)
     
-                    writing_process = (app_id, queue)
+                    writing_process = (app['appid'], queue)
     
                 ## Step 3: Spawn a child process for the script
-                self.manager.master.update_application(app_id, status = ServerManager.APP_RUN)
+                self.manager.master.update_application(app['appid'], status = ServerManager.APP_RUN)
     
-                proc = multiprocessing.Process(target = self.run_script, name = title, args = proc_args)
+                proc = multiprocessing.Process(target = self.run_script, name = app['title'], args = proc_args)
                 proc.daemon = True
                 proc.start()
 
-                appserver.notify_synch_app(app_id, {'status': ServerManager.APP_RUN, 'path': path, 'pid': proc.pid})
+                appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_RUN, 'path': app['path'], 'pid': proc.pid})
     
-                LOG.info('Started application %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
+                LOG.info('Started application %s (%s) from user %s@%s (PID %d).', app['title'], app['path'], app['user_name'], app['user_host'], proc.pid)
     
-                child_processes.append((app_id, proc, user_name, path))
+                child_processes.append((app['appid'], proc, app['user_name'], app['user_host'], app['path']))
 
         except KeyboardInterrupt:
             if len(child_processes) != 0:
@@ -310,8 +311,8 @@ class DynamoServer(object):
             # in the child. Child processes have to always ignore SIGINT and be killed only from
             # SIGTERM sent by the line below.
 
-            for app_id, proc, user_name, path in child_processes:
-                LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)
+            for app_id, proc, user_name, user_host, path in child_processes:
+                LOG.warning('Terminating %s (%s) requested by %s@%s (PID %d)', proc.name, path, user_name, user_host, proc.pid)
 
                 serverutils.killproc(proc)
 
@@ -381,7 +382,7 @@ class DynamoServer(object):
     def collect_processes(self, child_processes, writing_process, appserver):
         ichild = 0
         while ichild != len(child_processes):
-            app_id, proc, user_name, path = child_processes[ichild]
+            app_id, proc, user_name, user_host, path = child_processes[ichild]
 
             apps = self.manager.master.get_applications(app_id = app_id)
             if len(apps) == 0:
@@ -426,7 +427,7 @@ class DynamoServer(object):
                     continue
                 else:
                     # The process must be complete but did not join within 60 seconds
-                    LOG.error('Application %s (%s) from user %s is stuck (Status %s).', proc.name, path, user_name, ServerManager.application_status_name(status))
+                    LOG.error('Application %s (%s) from user %s@%s is stuck (Status %s).', proc.name, path, user_name, user_host, ServerManager.application_status_name(status))
             else:
                 if status == ServerManager.APP_RUN:
                     if proc.exitcode == 0:
@@ -434,7 +435,7 @@ class DynamoServer(object):
                     else:
                         status = ServerManager.APP_FAILED
 
-                LOG.info('Application %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, ServerManager.application_status_name(status))
+                LOG.info('Application %s (%s) from user %s@%s completed (Exit code %d Status %s).', proc.name, path, user_name, user_host, proc.exitcode, ServerManager.application_status_name(status))
 
                
             child_processes.pop(ichild)
@@ -443,8 +444,8 @@ class DynamoServer(object):
 
             self.manager.master.update_application(app_id, status = status, exit_code = proc.exitcode)
 
-            if read_only:
-                self.clean_readonly(path)
+            if user_host != socket.gethostname():
+                self.clean_remote_request(path)
 
         return writing_process
 
@@ -489,23 +490,20 @@ class DynamoServer(object):
     def cleanup(self):
         applications = self.manager.master.get_applications(older_than = self.applications_keep)
 
-        read_only_paths = []
-        for app_id, write_request, title, path, args, user_name in applications:
-            if not os.path.isdir(path):
+        remote_request_paths = []
+        for app in applications:
+            if not os.path.isdir(app['path']):
                 continue
 
-            if not write_request:
-                read_only_paths.append(path)
+            if app['user_host'] != socket.gethostname():
+                # First make sure all mounts are removed.
+                self.clean_remote_request(path)
 
-        # First make sure all mounts are removed.
-        for path in read_only_paths:
-            self.clean_readonly(path)
+            # Then remove the path
+            shutil.rmtree(app['path'])
+            self.manager.master.update_application(app_id = app['appid'], path = None)
 
-        for app_id, write_request, title, path, args, user_name in applications:
-            shutil.rmtree(path)
-            self.manager.master.update_application(app_id = app_id, path = None)
-
-    def clean_readonly(self, path):
+    def clean_remote_request(self, path):
         # Since threads cannot change the uid, we launch a subprocess.
         # (Mounts are made read-only, so there is no risk of accidents even if the subprocess fails)
         proc = multiprocessing.Process(target = serverutils.umountall, args = (path,))
@@ -549,12 +547,13 @@ class DynamoServer(object):
             # The server which sent the updates has set this server's status to updating
             self.manager.set_status(ServerManager.SRV_ONLINE)
 
-    def run_script(self, path, args, queue = None):
+    def run_script(self, path, args, is_local, queue = None):
         """
         Main function for script execution.
-        @param path   Path to the work area of the script. Will be the root directory in read-only processes.
-        @param args   Script command-line arguments.
-        @param queue  Queue if write-enabled.
+        @param path     Path to the work area of the script. Will be the root directory in read-only processes.
+        @param args     Script command-line arguments.
+        @param is_local True if script is requested from localhost.
+        @param queue    Queue if write-enabled.
         """
 
         old_stdout = sys.stdout
@@ -564,7 +563,7 @@ class DynamoServer(object):
         sys.stdout = stdout
         sys.stderr = stderr
 
-        path = self._pre_execution(path, queue is None)
+        path = self._pre_execution(path, is_local, queue is None)
 
         # Set argv
         sys.argv = [path + '/exec.py']
@@ -592,14 +591,15 @@ class DynamoServer(object):
 
         return 0
 
-    def run_interactive(self, path, stdout = sys.stdout, stderr = sys.stderr, make_console = code.InteractiveConsole):
+    def run_interactive(self, path, is_local, make_console, stdout = sys.stdout, stderr = sys.stderr):
         """
         Main function for interactive sessions.
         For now we limit interactive sessions to read-only.
         @param path         Path to the work area.
+        @param is_local     True if script is requested from localhost.
+        @param make_console Callable which takes a dictionary of locals as an argument and returns a console
         @param stdout       File-like object for stdout
         @param stderr       File-like object for stderr
-        @param make_console Callable which takes a dictionary of locals as an argument and returns a console
         """
 
         old_stdout = sys.stdout
@@ -607,7 +607,7 @@ class DynamoServer(object):
         sys.stdout = stdout
         sys.stderr = stderr
 
-        self._pre_execution(path, True)
+        self._pre_execution(path, is_local, True)
 
         # use receive of oconn as input
         mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': self.inventory}
@@ -622,27 +622,32 @@ class DynamoServer(object):
 
         return 0
 
-    def _pre_execution(self, path, read_only):
+    def _pre_execution(self, path, is_local, read_only):
         uid = os.geteuid()
         gid = os.getegid()
 
-        if read_only:
-            # Set defaults
-            for key, config in self.applications_config.defaults.items():
-                try:
+        # Set defaults
+        for key, config in self.applications_config.defaults.items():
+            try:
+                if read_only:
                     myconf = config['readonly']
-                except KeyError:
-                    myconf = config['all']
                 else:
-                    # security measure
-                    del config['fullauth']
+                    myconf = config['fullauth']
+            except KeyError:
+                myconf = config['all']
+            else:
+                # security measure
+                del config['fullauth']
 
-                modname, clsname = key.split(':')
-                module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
-                cls = getattr(module, clsname)
+            modname, clsname = key.split(':')
+            module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
+            cls = getattr(module, clsname)
 
-                cls.set_default(myconf)
+            cls.set_default(myconf)
 
+        if is_local:
+            os.chdir(path)
+        else:
             # Confine in a chroot jail
             # Allow access to directories in PYTHONPATH with bind mounts
             for base in serverutils.mountpoints:
@@ -663,22 +668,6 @@ class DynamoServer(object):
 
             path = ''
             os.chdir('/')
-
-        else:
-            # Set defaults
-            for key, config in self.applications_config.defaults.items():
-                try:
-                    myconf = config['fullauth']
-                except KeyError:
-                    myconf = config['all']
-
-                modname, clsname = key.split(':')
-                module = __import__(modname, globals(), locals())
-                cls = getattr(module, clsname)
-
-                cls.set_default(myconf)
-
-            os.chdir(path)
 
         # De-escalate privileges permanently
         os.seteuid(0)

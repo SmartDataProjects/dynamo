@@ -12,7 +12,7 @@ class SiteDB(RESTService):
     
     @staticmethod
     def set_default(config):
-        SiteDB._url = config.url_base
+        SiteDB._url_base = config.url_base
         SiteDB._num_attempts = config.num_attempts
 
     def __init__(self, config = None):

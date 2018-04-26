@@ -228,13 +228,13 @@ class ServerManager(object):
                 (len(self.master.get_host_list(status = ServerManager.SRV_STARTING)) != 0) or \
                 (self.master.get_writing_process_id() is not None)
 
-            next_app = self.master.get_next_application(read_only)
+            app = self.master.get_next_application(read_only)
     
-            if next_app is None:
+            if app is None:
                 return None
             else:
-                self.master.update_application(next_app[0], status = ServerManager.APP_ASSIGNED, hostname = self.hostname)
-                return next_app
+                self.master.update_application(app['appid'], status = ServerManager.APP_ASSIGNED, hostname = self.hostname)
+                return app
 
         finally:
             self.master.unlock()

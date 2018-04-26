@@ -171,7 +171,9 @@ class SocketAppServer(AppServer):
                 conn, addr = self._sock.accept()
             except:
                 if self._running:
-                    LOG.error('Application server socket failed. Cannot accept applications any more.')
+                    LOG.error('Application server connection failed with error: %s.' % str(sys.exc_info()[1]))
+                    continue
+
                 return
 
             thread.start_new_thread(self._process_application, (conn, addr))
@@ -192,11 +194,13 @@ class SocketAppServer(AppServer):
             # check user authorization
             user_cert_data = conn.getpeercert()
 
+            LOG.debug('New application request from %s:%s by %s' % (addr[0], addr[1], user_cert_data['subject']))
+
             for dkey in ['subject', 'issuer']:
                 dn = ''
                 for rdn in user_cert_data[dkey]:
                     dn += '/' + '+'.join('%s=%s' % (DN_TRANSLATION[key], value) for key, value in rdn)
-   
+
                 user_name = master.identify_user(dn)
                 if user_name is not None:
                     break
@@ -209,6 +213,8 @@ class SocketAppServer(AppServer):
             app_data = io.recv()
 
             command = app_data.pop('command')
+
+            LOG.info('Accepted %s from %s:%s by %s' % (command, addr[0], addr[1], user_name))
 
             if command == 'poll' or command == 'kill':
                 self._act_on_app(command, app_data['appid'], io)
@@ -285,6 +291,10 @@ class SocketAppServer(AppServer):
 
         app_data['path'] = workarea
         app_data['user'] = user
+        if io.host == 'localhost' or io.host == '127.0.0.1':
+            app_data['host'] = socket.gethostname()
+        else:
+            app_data['host'] = io.host
 
         mode = app_data.pop('mode')
 
@@ -302,9 +312,9 @@ class SocketAppServer(AppServer):
 
             # synchronous execution = client watches the app run
             # client sends the socket address to connect stdout/err to
-            addr_data = io.recv()
+            port_data = io.recv()
 
-            addr = (addr_data['host'], addr_data['port'])
+            addr = (io.host, port_data['port'])
 
             result = self._serve_synch_app(app_id, msg['path'], msg['pid'], addr)
 
@@ -315,8 +325,8 @@ class SocketAppServer(AppServer):
 
     def _interact(self, workarea, io):
         io.send('OK')
-        addr_data = io.recv()
-        addr = (addr_data['host'], addr_data['port'])
+        port_data = io.recv()
+        addr = (io.host, port_data['port'])
 
         proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', args = (workarea, addr))
         proc.start()
@@ -324,15 +334,22 @@ class SocketAppServer(AppServer):
 
         self.dynamo_server.clean_readonly(workarea)
 
+        LOG.info('Finished interactive session.')
+
     def _run_interactive(self, workarea, addr):
         conns = (socket.create_connection(addr), socket.create_connection(addr))
         stdout = conns[0].makefile('w')
         stderr = conns[1].makefile('w')
 
+        if addr[0] == 'locahost' or addr[0] == '127.0.0.1':
+            is_local = True
+        else:
+            is_local = (addr[0] == socket.gethostname())
+
         # use the receive side of conns[0] for stdin
         make_console = lambda l: SocketConsole(conns[0], l)
 
-        self.dynamo_server.run_interactive(workarea, stdout, stderr, make_console)
+        self.dynamo_server.run_interactive(workarea, is_local, make_console, stdout, stderr)
 
         stdout.close()
         stderr.close()

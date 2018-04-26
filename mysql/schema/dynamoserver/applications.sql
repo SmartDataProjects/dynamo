@@ -8,6 +8,7 @@ CREATE TABLE `applications` (
   `server` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
   `exit_code` int(10) unsigned DEFAULT NULL,
   `user_id` int(10) unsigned NOT NULL,
+  `user_host` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `email` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   PRIMARY KEY (`id`)

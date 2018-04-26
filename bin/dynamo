@@ -124,7 +124,7 @@ class DynamoServer(object):
         in_data = {'command': 'submit', 'title': title, 'args': args, 'write_request': write_request}
 
         if self._addr[0] in ('localhost', '127.0.0.1', socket.gethostname()):
-            in_data['exec_path'] = executable
+            in_data['exec_path'] = os.path.realpath(executable)
         else:
             with open(executable) as source:
                 in_data['exec'] = source.read()
@@ -241,7 +241,7 @@ class DynamoServer(object):
             sock.listen(2)
     
             # Send the coordinates to the server
-            self._send({'host': socket.gethostname(), 'port': port})
+            self._send({'port': port})
 
             oconn = sock.accept()[0]
             econn = sock.accept()[0]
