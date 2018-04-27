@@ -43,7 +43,8 @@ class Group(object):
         return 'Group %s (olevel=%s, id=%d)' % (self._name, Group.olevel_name(self._olevel), self.id)
 
     def __repr__(self):
-        return 'Group(\'%s\',\'%s\',%d)' % (self._name,Group.olevel_name(self._olevel), self.id)
+        # using repr(name) because name can be None
+        return 'Group(%s,\'%s\',%d)' % (repr(self._name),Group.olevel_name(self._olevel), self.id)
 
     def __eq__(self, other):
         return self is other or (self._name == other._name and self._olevel == other._olevel)

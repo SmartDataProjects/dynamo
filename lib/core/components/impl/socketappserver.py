@@ -136,6 +136,9 @@ class SocketAppServer(AppServer):
                 break
             except socket.error as err:
                 if err.errno == 98: # address already in use
+                    # check the server status before retrying - could be shut down
+                    dynamo_server.check_status_and_connection()
+                    # then print and retry
                     LOG.warning('Cannot bind to port %d. Retrying..', port)
                     time.sleep(5)
         else:

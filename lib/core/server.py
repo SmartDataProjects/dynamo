@@ -115,26 +115,26 @@ class DynamoServer(object):
 
         # Outer loop: restart the application server when error occurs
         while True:
+            # Lock write activities by other servers
+            self.manager.set_status(ServerManager.SRV_STARTING)
+
+            self.load_inventory()
+
+            bconf = self.manager_config.board
+            self.manager.master.advertise_board(bconf.module, bconf.config)
+
+            if self.inventory.has_store():
+                pconf = self.inventory_config.persistency
+                self.manager.master.advertise_store(pconf.module, pconf.readonly_config)
+
+            if self.manager.shadow is not None:
+                sconf = self.manager_config.shadow
+                self.manager.master.advertise_shadow(sconf.module, sconf.config)
+
+            # We are ready to work
+            self.manager.set_status(ServerManager.SRV_ONLINE)
+
             try:
-                # Lock write activities by other servers
-                self.manager.set_status(ServerManager.SRV_STARTING)
-
-                self.load_inventory()
-
-                bconf = self.manager_config.board
-                self.manager.master.advertise_board(bconf.module, bconf.config)
-
-                if self.inventory.has_store():
-                    pconf = self.inventory_config.persistency
-                    self.manager.master.advertise_store(pconf.module, pconf.readonly_config)
-
-                if self.manager.shadow is not None:
-                    sconf = self.manager_config.shadow
-                    self.manager.master.advertise_shadow(sconf.module, sconf.config)
-
-                # We are ready to work
-                self.manager.set_status(ServerManager.SRV_ONLINE)
-
                 # Actual stuff happens here
                 if self.applications_config.enabled:
                     self._run_application_cycles()
@@ -185,14 +185,19 @@ class DynamoServer(object):
         Step 7: Sleep for N seconds.
         """
 
+        child_processes = []
+
         # Start the application collector thread
-        aconf = self.applications_config.server
-        appserver = AppServer.get_instance(aconf.module, self, aconf.config)
-        appserver.start()
+        try:
+            aconf = self.applications_config.server
+            appserver = AppServer.get_instance(aconf.module, self, aconf.config)
+            appserver.start()
+        except:
+            # If app server fails, we don't consider it a recoverable error.
+            # KeyboardInterrupt will get the main process out of the retry loop
+            raise KeyboardInterrupt()
 
         LOG.info('Start polling for applications.')
-
-        child_processes = []
 
         try:
             # There can only be one child process with write access at a time. We pass it a Queue to communicate back.
@@ -320,9 +325,10 @@ class DynamoServer(object):
                 except:
                     pass
 
-            LOG.info('Stopping application server.')
-            # Close the application collector. The collector thread will terminate
-            appserver.stop()
+            if appserver is not None:
+                LOG.info('Stopping application server.')
+                # Close the application collector. The collector thread will terminate
+                appserver.stop()
 
     def _run_update_cycles(self):
         """

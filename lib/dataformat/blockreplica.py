@@ -39,8 +39,8 @@ class BlockReplica(object):
                 time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)))
 
     def __repr__(self):
-        return 'BlockReplica(\'%s\',\'%s\',\'%s\',%s,%s,%d,%d)' % \
-            (self._block_full_name(), self._site_name(), self._group_name(), \
+        return 'BlockReplica(\'%s\',\'%s\',%s,%s,%s,%d,%d)' % \
+            (self._block_full_name(), self._site_name(), repr(self._group_name()), \
             self.is_complete, self.is_custodial, self.size, self.last_update)
 
     def __eq__(self, other):
@@ -55,9 +55,9 @@ class BlockReplica(object):
 
     def copy(self, other):
         if self._block_full_name() != other._block_full_name():
-            raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._block_full_name(), self._block_full_name())
+            raise ObjectError('Cannot copy a replica of %s into a replica of %s' % (other._block_full_name(), self._block_full_name()))
         if self._site_name() != other._site_name():
-            raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site.name, self._site_name())
+            raise ObjectError('Cannot copy a replica at %s into a replica at %s' % (other._site.name, self._site_name()))
 
         self.group = other.group
         self.is_complete = other.is_complete
@@ -69,19 +69,19 @@ class BlockReplica(object):
         try:
             dataset = inventory.datasets[self._dataset_name()]
         except KeyError:
-            raise ObjectError('Unknown dataset %s', self._dataset_name())
+            raise ObjectError('Unknown dataset %s' % (self._dataset_name()))
 
         block = dataset.find_block(self._block_name(), must_find = True)
 
         try:
             site = inventory.sites[self._site_name()]
         except KeyError:
-            raise ObjectError('Unknown site %s', self._site_name())
+            raise ObjectError('Unknown site %s' % (self._site_name()))
 
         try:
             group = inventory.groups[self._group_name()]
         except KeyError:
-            raise ObjectError('Unknown group %s', self._group_name())
+            raise ObjectError('Unknown group %s' % (self._group_name()))
 
         replica = block.find_replica(site)
         updated = False

@@ -104,7 +104,7 @@ class Block(object):
     def __repr__(self):
         # this representation cannot be directly eval'ed into a Block
         return 'Block(\'%s\',\'%s\',%d,%d,%s,%d,%d,False)' % \
-            (self.real_name(), self._dataset_name(), self.size, self.num_files, self.is_open, self.id, self.last_update)
+            (self.real_name(), self._dataset_name(), self.size, self.num_files, self.is_open, self.last_update, self.id)
 
     def __eq__(self, other):
         return self is other or \
@@ -117,7 +117,7 @@ class Block(object):
 
     def copy(self, other):
         if self._dataset_name() != other._dataset_name():
-            raise ObjectError('Cannot copy a block of %s into a block of %s', other._dataset_name(), self._dataset_name())
+            raise ObjectError('Cannot copy a block of %s into a block of %s' % (other._dataset_name(), self._dataset_name()))
 
         self.id = other.id
         self.size = other.size
@@ -129,7 +129,7 @@ class Block(object):
         try:
             dataset = inventory.datasets[self._dataset_name()]
         except KeyError:
-            raise ObjectError('Unknown dataset %s', self._dataset_name())
+            raise ObjectError('Unknown dataset %s' % self._dataset_name())
 
         block = dataset.find_block(self._name)
         updated = False
@@ -204,7 +204,7 @@ class Block(object):
 
         except StopIteration:
             if must_find:
-                raise ObjectError('Cannot find file %s', str(lfn))
+                raise ObjectError('Cannot find file %s' % str(lfn))
             else:
                 return None
 
@@ -217,7 +217,7 @@ class Block(object):
 
         except StopIteration:
             if must_find:
-                raise ObjectError('Cannot find replica at %s for %s', site.name, self.full_name())
+                raise ObjectError('Cannot find replica at %s for %s' % (site.name, self.full_name()))
             else:
                 return None
 
