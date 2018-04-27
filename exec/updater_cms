@@ -269,7 +269,6 @@ def create_file(file_tmp, block):
     LOG.debug('Creating new file %s', file_tmp.lfn)
     lfile = File(file_tmp.lfn, block)
     lfile.copy(file_tmp)
-    # files.add, not add_file (latter increments block attrs which are already set)
     block.files.add(lfile)
     inventory.register_update(lfile)
 
@@ -277,7 +276,6 @@ def create_block(block_tmp, dataset):
     LOG.debug('Creating new block %s', block_tmp.full_name())
     block = Block(block_tmp.name, dataset)
     block.copy(block_tmp)
-    # blocks.add, not add_block (latter increments dataset attrs which are already set)
     dataset.blocks.add(block)
     inventory.register_update(block)
     # avoid database query
@@ -343,13 +341,15 @@ for dataset_tmp in dataset_tmps:
             # We skip the file update.
             continue
         else:
+            # Need to get the files here because copy may overwrite size or num_files, causing an IntegrityError
+            existing_files = dict(((f.lfn, f) for f in block.files))
+
             LOG.debug('Updating block %s', block.full_name())
             block.copy(block_tmp)
             inventory.register_update(block)
 
         # 3.4. Update files
 
-        existing_files = dict(((f.lfn, f) for f in block.files))
         file_names_in_source = set()
 
         for file_tmp in block_tmp.files:

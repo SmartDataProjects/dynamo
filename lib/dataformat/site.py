@@ -12,10 +12,6 @@ class Site(object):
     _statuses = ['ready', 'waitroom', 'morgue', 'unknown']
     STAT_READY, STAT_WAITROOM, STAT_MORGUE, STAT_UNKNOWN = range(1, len(_statuses) + 1)
 
-    @property
-    def name(self):
-        return self._name
-
     @staticmethod
     def storage_type_val(arg):
         if type(arg) is str:
@@ -43,6 +39,10 @@ class Site(object):
             return Site._statuses[arg - 1]
         else:
             return arg
+
+    @property
+    def name(self):
+        return self._name
 
     def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', status = STAT_UNKNOWN, sid = 0):
         self._name = name

@@ -15,7 +15,6 @@ from dynamo.core.inventory import DynamoInventory
 from dynamo.core.manager import ServerManager, OutOfSyncError
 import dynamo.core.serverutils as serverutils
 from dynamo.core.components.appserver import AppServer
-from dynamo.utils.signaling import SignalBlocker
 from dynamo.dataformat.exceptions import log_exception
 
 LOG = logging.getLogger(__name__)
@@ -408,10 +407,8 @@ class DynamoServer(object):
     
                     if read_state == 1:
                         status = ServerManager.APP_DONE
-    
-                        # Block system signals and get update done
-                        with SignalBlocker(logger = LOG):
-                            self.exec_updates(update_commands)
+                        # we would block signal here, but since we would be running this code in a subthread we don't have to
+                        self.exec_updates(update_commands)
     
                     elif read_state == 2:
                         status = ServerManager.APP_FAILED

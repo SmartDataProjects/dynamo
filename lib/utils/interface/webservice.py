@@ -79,11 +79,15 @@ class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
             with open('/tmp/x509cert', 'w') as out:
                 out.write(HTTPSCertKeyHandler._certfile)
 
+            os.chmod('/tmp/x509cert', 0600)
+
             HTTPSCertKeyHandler._certfile = '/tmp/x509cert'
 
             if HTTPSCertKeyHandler._keyfile:
                 with open('/tmp/x509key', 'w') as out:
                     out.write(HTTPSCertKeyHandler._keyfile)
+
+                os.chmod('/tmp/x509key', 0600)
 
                 HTTPSCertKeyHandler._keyfile = '/tmp/x509key'
 

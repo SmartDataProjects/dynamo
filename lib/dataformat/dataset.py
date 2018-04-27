@@ -29,6 +29,34 @@ class Dataset(object):
     _software_versions_byvalue = {}
     _software_version_lock = threading.Lock()
 
+    @staticmethod
+    def data_type_name(arg):
+        if type(arg) is int:
+            return Dataset._data_types[arg - 1]
+        else:
+            return arg
+
+    @staticmethod
+    def data_type_val(arg):
+        if type(arg) is str:
+            return eval('Dataset.TYPE_' + arg.upper())
+        else:
+            return arg
+
+    @staticmethod
+    def status_name(arg):
+        if type(arg) is int:
+            return Dataset._statuses[arg - 1]
+        else:
+            return arg
+
+    @staticmethod
+    def status_val(arg):
+        if type(arg) is str:
+            return eval('Dataset.STAT_' + arg.upper())
+        else:
+            return arg
+
     @property
     def name(self):
         return self._name
@@ -65,34 +93,6 @@ class Dataset(object):
                 Dataset._software_versions_byvalue[value] = version
     
         self._software_version_id = version.id
-
-    @staticmethod
-    def data_type_name(arg):
-        if type(arg) is int:
-            return Dataset._data_types[arg - 1]
-        else:
-            return arg
-
-    @staticmethod
-    def data_type_val(arg):
-        if type(arg) is str:
-            return eval('Dataset.TYPE_' + arg.upper())
-        else:
-            return arg
-
-    @staticmethod
-    def status_name(arg):
-        if type(arg) is int:
-            return Dataset._statuses[arg - 1]
-        else:
-            return arg
-
-    @staticmethod
-    def status_val(arg):
-        if type(arg) is str:
-            return eval('Dataset.STAT_' + arg.upper())
-        else:
-            return arg
 
     def __init__(self, name, status = STAT_UNKNOWN, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True, did = 0):
         self._name = name

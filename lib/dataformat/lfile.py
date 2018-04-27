@@ -53,7 +53,7 @@ class File(object):
 
         block = dataset.find_block(self._block_name(), must_find = True)
 
-        lfile = block.find_file(self._lfn)
+        lfile = block.find_file(self._lfn, updating = True)
         updated = False
         if lfile is None:
             lfile = File(self._lfn, block, self.size, self.id)

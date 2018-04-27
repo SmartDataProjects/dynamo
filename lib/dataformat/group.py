@@ -11,14 +11,6 @@ class Group(object):
     _ownership_levels = ['Dataset', 'Block']
     OL_DATASET, OL_BLOCK = range(1, len(_ownership_levels) + 1)
 
-    @property
-    def name(self):
-        return self._name
-
-    @property
-    def olevel(self):
-        return self._olevel
-
     @staticmethod
     def olevel_val(arg):
         if type(arg) is str:
@@ -32,6 +24,14 @@ class Group(object):
             return Group._ownership_levels[arg - 1]
         else:
             return arg
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def olevel(self):
+        return self._olevel
 
     def __init__(self, name, olevel = OL_BLOCK, gid = 0):
         self._name = name

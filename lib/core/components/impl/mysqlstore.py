@@ -558,49 +558,15 @@ class MySQLInventoryStore(InventoryStore):
     def _clone_from_common_class(self, source): #override
         # Do the closest thing to INSERT SELECT
 
-        self._mysql.query('TRUNCATE TABLE `partitions`')
-        rows = source._mysql.xquery('SELECT * FROM `partitions`')
-        self._mysql.insert_many('partitions', None, None, rows, do_update = False)
+        tables = ['partitions', 'groups', 'sites', 'quotas', 'software_versions',
+            'datasets', 'blocks', 'files', 'dataset_replicas', 'block_replicas', 'block_replica_sizes']
 
-        self._mysql.query('TRUNCATE TABLE `groups`')
-        rows = source._mysql.xquery('SELECT * FROM `groups`')
-        self._mysql.insert_many('groups', None, None, rows, do_update = False)
-
-        self._mysql.query('TRUNCATE TABLE `sites`')
-        rows = source._mysql.xquery('SELECT * FROM `sites`')
-        self._mysql.insert_many('sites', None, None, rows, do_update = False)
-
-        self._mysql.query('TRUNCATE TABLE `quotas`')
-        rows = source._mysql.xquery('SELECT * FROM `quotas`')
-        self._mysql.insert_many('quotas', None, None, rows, do_update = False)
-
-        self._mysql.query('TRUNCATE TABLE `software_versions`')
-        rows = source._mysql.xquery('SELECT * FROM `software_versions`')
-        self._mysql.insert_many('software_versions', None, None, rows, do_update = False)
-
-        self._mysql.query('TRUNCATE TABLE `datasets`')
-        rows = source._mysql.xquery('SELECT * FROM `datasets`')
-        self._mysql.insert_many('datasets', None, None, rows, do_update = False)
-
-        self._mysql.query('TRUNCATE TABLE `blocks`')
-        rows = source._mysql.xquery('SELECT * FROM `blocks`')
-        self._mysql.insert_many('blocks', None, None, rows, do_update = False)
-
-        self._mysql.query('TRUNCATE TABLE `files`')
-        rows = source._mysql.xquery('SELECT * FROM `files`')
-        self._mysql.insert_many('files', None, None, rows, do_update = False)
-
-        self._mysql.query('TRUNCATE TABLE `dataset_replicas`')
-        rows = source._mysql.xquery('SELECT * FROM `dataset_replicas`')
-        self._mysql.insert_many('dataset_replicas', None, None, rows, do_update = False)
-
-        self._mysql.query('TRUNCATE TABLE `block_replicas`')
-        rows = source._mysql.xquery('SELECT * FROM `block_replicas`')
-        self._mysql.insert_many('block_replicas', None, None, rows, do_update = False)
-
-        self._mysql.query('TRUNCATE TABLE `block_replica_sizes`')
-        rows = source._mysql.xquery('SELECT * FROM `block_replica_sizes`')
-        self._mysql.insert_many('block_replica_sizes', None, None, rows, do_update = False)
+        for table in tables:
+            fields = tuple(row[0] for row in self._mysql.query('SHOW COLUMNS FROM `%s`' % table))
+            fields_str = ', '.join('`%s`' % f for f in fields)
+            self._mysql.query('TRUNCATE TABLE `%s`' % table)
+            rows = source._mysql.xquery('SELECT %s FROM `%s`' % (fields_str, table))
+            self._mysql.insert_many(table, fields, None, rows, do_update = False)
 
     def _yield_partitions(self): #override
         sql = 'SELECT `id`, `name` FROM `partitions`'
@@ -907,7 +873,7 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query(sql, dataset_id, site_id)
 
     def save_dataset(self, dataset): #override
-        if dataset._software_version_id != 0:
+        if dataset.software_version is not None and dataset._software_version_id != 0:
             sql = 'SELECT COUNT(*) FROM `software_versions` WHERE `id` = %s'
             known_id = (self._mysql.query(sql, dataset._software_version_id)[0] == 1)
             if not known_id:

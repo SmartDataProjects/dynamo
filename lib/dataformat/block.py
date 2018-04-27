@@ -19,39 +19,16 @@ class Block(object):
     _MAX_FILES_CACHE_DEPTH = 100
     _inventory_store = None
 
-    @property
-    def name(self):
-        return self._name
-
-    @property
-    def dataset(self):
-        return self._dataset
-
-    @property
-    def files(self):
-        with Block._files_cache_lock:
-            if self._files is not None:
-                # self._files is either a real set (if _files was directly set), a valid weak proxy to a set,
-                # or an expired weak proxy to a set.
-                try:
-                    len(self._files)
-                except ReferenceError:
-                    # expired proxy
-                    self._files = None
-
-            if self._files is None:
-                self._files = weakref.proxy(Block._fill_files_cache(self))
-
-            return self._files
-
     @staticmethod
-    def _fill_files_cache(block):
+    def _fill_files_cache(block, check_consistency = True):
         files = Block._inventory_store.get_files(block)
 
-        if len(files) != block.num_files:
-            raise IntegrityError('Number of files mismatch in %s', str(block))
-        if sum(f.size for f in files) != block.size:
-            raise IntegrityError('Block file mismatch in %s', str(block))
+        if check_consistency:
+            if len(files) != block.num_files:
+                raise IntegrityError('Number of files mismatch in %s: predicted %d, loaded %d' % (str(block), block.num_files, len(files)))
+            size = sum(f.size for f in files)
+            if size != block.size:
+                raise IntegrityError('Block file mismatch in %s: predicted %d, loaded %d' % (str(block), block.size, size))
 
         while len(Block._files_cache) >= Block._MAX_FILES_CACHE_DEPTH:
             # Keep _files_cache FIFO to Block._MAX_FILES_CACHE_DEPTH
@@ -86,6 +63,18 @@ class Block(object):
             raise ObjectError('Invalid block name %s' % full_name)
 
         return full_name[:delim], Block.to_internal_name(full_name[delim + 1:])
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def dataset(self):
+        return self._dataset
+
+    @property
+    def files(self):
+        return self._check_and_load_files()
 
     def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False, last_update = 0, bid = 0, internal_name = True):
         if internal_name:
@@ -201,8 +190,14 @@ class Block(object):
 
         return Block.to_full_name(self._dataset_name(), self.real_name())
 
-    def find_file(self, lfn, must_find = False):
-        files = self.files
+    def find_file(self, lfn, must_find = False, updating = False):
+        """
+        @param lfn        File name
+        @param must_find  Raise an exception if file is not found.
+        @param updating   If True, don't check size and num_files consistency if files are to be loaded.
+        """
+
+        files = self._check_and_load_files(check_consistency = (not updating))
 
         try:
             return next(f for f in files if f._lfn == lfn)
@@ -241,3 +236,20 @@ class Block(object):
             return self._dataset
         else:
             return self._dataset.name
+
+    def _check_and_load_files(self, check_consistency = True):
+        # Used by File.embed_into - need to load the list of known files without consistency check
+        with Block._files_cache_lock:
+            if self._files is not None:
+                # self._files is either a real set (if _files was directly set), a valid weak proxy to a set,
+                # or an expired weak proxy to a set.
+                try:
+                    len(self._files)
+                except ReferenceError:
+                    # expired proxy
+                    self._files = None
+
+            if self._files is None:
+                self._files = weakref.proxy(Block._fill_files_cache(self, check_consistency = check_consistency))
+
+            return self._files

@@ -161,6 +161,7 @@ class DynamoServer(object):
         ## Synchronous execution: dynamo_exec will wait until process completion
 
         status = 'unknown'
+        return_code = None
         listener = None
 
         try:
