@@ -23,7 +23,7 @@ class Dealer(object):
         """
 
         self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
-        self.history = TransactionHistoryInterface(config.history.module, config.history.config)
+        self.history = TransactionHistoryInterface.get_instance()
 
         if config.test_run:
             self.copy_op.dry_run = True
@@ -32,7 +32,7 @@ class Dealer(object):
         self._attr_producers = []
 
         self.policy = DealerPolicy(config)
-        self._setup_plugins(config)
+        self._setup_plugins(config, config.test_run)
 
     def run(self, inventory, comment = ''):
         """
@@ -67,8 +67,8 @@ class Dealer(object):
             plugin.load(inventory)
 
         LOG.info('Saving site and dataset names.')
-        self.history.save_sites(inventory.sites.values())
-        self.history.save_datasets(inventory.datasets.values())
+        self.history.save_sites(inventory.sites.itervalues())
+        self.history.save_datasets(inventory.datasets.itervalues())
 
         LOG.info('Collecting copy proposals.')
         # Prioritized lists of datasets, blocks, and files
@@ -108,13 +108,14 @@ class Dealer(object):
 
         LOG.info('Dealer cycle completed')
 
-    def _setup_plugins(self, config):
+    def _setup_plugins(self, config, is_test_run):
         self._plugin_priorities = {}
 
         n_zero_prio = 0
         n_nonzero_prio = 0
         for name, spec in config.plugins.items():
             plugin = getattr(dealer_plugins, spec.module)(spec.config)
+            plugin.read_only = is_test_run
             self._plugin_priorities[plugin] = spec.priority
 
             if spec.priority:

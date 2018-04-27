@@ -31,9 +31,7 @@
       },
       "CRABAccessHistory": {
         "store": {
-          "db_params": {
-            "db": "dynamo"
-          }
+          "db": "dynamo"
         }
       },
       "ProtectedSiteTagger": {
@@ -42,7 +40,7 @@
       "DatasetRelease": {},
       "EnforcedProtectionTagger": {
         "enforcer": {
-          "policy": "$(DYNAMO_BASE)/policies/common/enforcer_rules_physics.json"
+          "policy": "$(DYNAMO_POLICIES)/common/enforcer_rules_physics.json"
         }
       },
       "BlockReplicaRelativeAge": {
@@ -51,9 +49,9 @@
   },
   "applock": {
     "user": "dynamo",
-    "service": "dynamo",
+    "role": "dynamo",
     "app": "detox",
-    "db_config": {
+    "db_params": {
       "db": "dynamoregister"
     }
   },

@@ -31,6 +31,7 @@ class Detox(object):
             self.history.test = True
             self.deletion_op.dry_run = True
             self.copy_op.dry_run = True
+            self.detoxhistory.test = True
 
         self.policy = DetoxPolicy(config)
 

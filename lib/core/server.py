@@ -14,6 +14,7 @@ import Queue
 from dynamo.core.inventory import DynamoInventory
 from dynamo.core.manager import ServerManager, OutOfSyncError
 import dynamo.core.serverutils as serverutils
+from dynamo.core.components.master import Authorizer
 from dynamo.core.components.appserver import AppServer
 from dynamo.dataformat.exceptions import log_exception
 
@@ -718,9 +719,10 @@ class DynamoServer(object):
         else:
             self.setup_remote_store(self.manager.store_host)
 
-        # Pass my registry and inventory to the executable through core.executable
+        # Pass my inventory and authorizer to the executable through core.executable
         import dynamo.core.executable as executable
         executable.inventory = self.inventory
+        executable.authorizer = Authorizer(self.manager.master)
 
         if not read_only:
             executable.read_only = False

@@ -70,7 +70,10 @@ class GlobalQueueRequestHistory(object):
 
             requests[job_id] = GlobalQueueJob(queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued)
 
-        last_update = self._store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
+        try:
+            last_update = self._store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`', retries = 1)[0]
+        except IndexError:
+            last_update = 0
 
         LOG.info('Loaded %d dataset request data. Last update at %s UTC', num_records, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(last_update)))
 
@@ -107,12 +110,18 @@ class GlobalQueueRequestHistory(object):
         htcondor = HTCondor(config.htcondor)
         store = MySQL(config.store)
 
-        last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
         try:
+            try:
+                last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`', retries = 1)[0]
+            except IndexError:
+                store.query('INSERT INTO `system` VALUES ()')
+                last_update = time.time() - 3600 * 24 # just go back by a day
+
             store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()', retries = 0, silent = True)
         except MySQLdb.OperationalError:
             # We have a read-only config
             read_only = True
+            LOG.info('Running update() in read-only mode.')
         else:
             read_only = False
 

@@ -3,10 +3,13 @@ class ApplicationLockInterface(object):
     Interface to application locks.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, authorizer):
         self.user = config.user
         self.role = config.role
         self.app = config.app
+
+        if not authorizer.check_user_auth(self.user, self.role, 'registry'):
+            raise RuntimeError('User not authorized to use application lock.')
 
     def __enter__(self):
         self.lock()

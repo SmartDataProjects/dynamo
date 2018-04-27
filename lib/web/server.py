@@ -115,7 +115,7 @@ class WebServer(object):
             key, _, value = part.partition(' = ')
             dn += '/' + key + '=' + value
 
-        userinfo = self.dynamo.manager.master.identify_user(dn, with_id = True)
+        userinfo = self.dynamo.manager.master.identify_user(dn = dn, with_id = True)
 
         if userinfo is None:
             raise RuntimeError()

@@ -62,7 +62,7 @@ for user, host in users:
     for grant in config[user]['grants']:
         if len(grant) == 2:
             db.query('GRANT %s ON `%s`.* TO \'%s\'@\'%s\'' % (grant[0], grant[1], user, host))
-        elif len(grant) == 2:
+        elif len(grant) == 3:
             db.query('GRANT %s ON `%s`.`%s` TO \'%s\'@\'%s\'' % (grant[0], grant[1], grant[2], user, host))
 
     db.commit()

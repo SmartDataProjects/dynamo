@@ -12,6 +12,9 @@ read_only = True
 ## Handle to the inventory
 inventory = ObjectRepository()
 
+## Handle to the authorizer part of the master server
+authorizer = None
+
 ## Make a standard logger that outputs to sys.stdout and sys.stderr
 import sys
 import logging

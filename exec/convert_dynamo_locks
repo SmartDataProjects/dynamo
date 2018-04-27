@@ -65,7 +65,7 @@ with open(config.process_lock, 'w') as process_lock:
 from dynamo.policy.producers import WebReplicaLock
 from dynamo.policy.producers import MySQLReplicaLock
 from dynamo.utils.interface.webservice import RESTService, POST
-from dynamo.core.executable import inventory
+from dynamo.core.executable import inventory, authorizer
 from dynamo.operation.impl.mysqlapplock import MySQLApplicationLockInterface
 
 LOG.info('Translating web-based replica locks into DB-based locks.')
@@ -75,7 +75,7 @@ comment = 'Auto-produced by dynamo'
 
 registry = RESTService(config.weblock)
 
-lock = MySQLApplicationLockInterface(config.applock)
+lock = MySQLApplicationLockInterface(config.applock, authorizer)
 # we don't unlock within this application unless something fails - need to run detox immediately afterwards
 lock.lock()
 

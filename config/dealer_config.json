@@ -26,7 +26,7 @@
         "config": {
           "enforcer": {
             "max_dataset_size": 50.0,
-            "policy": "$(DYNAMO_BASE)/policies/common/enforcer_rules_physics.json"
+            "policy": "$(DYNAMO_POLICIES)/common/enforcer_rules_physics.json"
           }
         }
       },
@@ -66,9 +66,7 @@
       "GlobalQueueRequestHistory": {
         "weight_halflife": 3.0,
         "store": {
-          "db_params": {
-            "db": "dynamo"
-          }
+          "db": "dynamo"
         }
       }
     },

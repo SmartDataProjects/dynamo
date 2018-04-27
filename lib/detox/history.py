@@ -1,6 +1,8 @@
 import os
+import re
 import sqlite3
 import lzma
+import random
 import logging
 
 from dynamo.utils.interface.mysql import MySQL
@@ -19,6 +21,8 @@ class DetoxHistory(object):
         self.snapshots_spool_dir = config.snapshots_spool_dir
         self.snapshots_archive_dir = config.snapshots_archive_dir
 
+        self.test = False
+
     def get_sites(self, cycle_number):
         """
         Collect the site status for a given cycle number or the latest cycle of the partition
@@ -32,8 +36,8 @@ class DetoxHistory(object):
 
         table_name = 'sites_%d' % cycle_number
 
-        sql = 'SELECT s.`name`, n.`status`, n.`quota` FROM `%s`.`%s` AS n' % (self.cache_db, table_name)
-        sql += ' INNER JOIN `%s`.`sites` AS s ON s.`id` = n.`site_id`' % self.history_db
+        sql = 'SELECT s.`name`, n.`status`, n.`quota` FROM `{0}`.`{1}` AS n'.format(self.cache_db, table_name)
+        sql += ' INNER JOIN `{0}`.`sites` AS s ON s.`id` = n.`site_id`'.format(self.history_db)
 
         sites_dict = {}
 
@@ -50,10 +54,15 @@ class DetoxHistory(object):
 
         for line in policy_lines:
             text = re.sub('\s+', ' ', line.condition.text)
-            ids = self._mysql.query('SELECT `id` FROM `policy_conditions` WHERE `text` = %s', text)
+            sql = 'SELECT `id` FROM {0}.`policy_conditions` WHERE `text` = %s'.format(self.history_db)
+            ids = self._mysql.query(sql, text)
             if len(ids) == 0:
-                self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
-                line.condition_id = self._mysql.last_insert_id
+                if self.test:
+                    line.condition_id = random.randint(1, 1000000)
+                else:
+                    sql = 'INSERT INTO {0}.`policy_conditions` (`text`) VALUES (%s)'.format(self.history_db)
+                    self._mysql.query(sql, text)
+                    line.condition_id = self._mysql.last_insert_id
             else:
                 line.condition_id = ids[0]
 
@@ -69,15 +78,18 @@ class DetoxHistory(object):
         in multiple of deleted, kept, and protected.
         """
 
+        if self.test:
+            return
+
         self._mysql.use_db(self.cache_db)
 
         # Make a snapshot table first and then fill the SQLite tables
         table_name = 'replicas_%s' % cycle_number
 
         if self._mysql.table_exists(table_name):
-            self._mysql.query('DROP TABLE `%s`' % table_name)
+            self._mysql.query('DROP TABLE `{0}`'.format(table_name))
 
-        self._mysql.query('CREATE TABLE `%s` LIKE `replicas`' % table_name)
+        self._mysql.query('CREATE TABLE `{0}` LIKE `replicas`'.format(table_name))
 
         # Insert full data into a temporary table with site and dataset names
         sql = 'CREATE TEMPORARY TABLE `replicas_tmp` ('
@@ -104,10 +116,10 @@ class DetoxHistory(object):
         self._mysql.insert_many('replicas_tmp', fields, None, replica_entry(protected_list, 'protect'), do_update = False)
 
         # Then use insert select join to convert the names to ids
-        sql = 'INSERT INTO `%s` (`site_id`, `dataset_id`, `size`, `decision`, `condition`)' % table_name
+        sql = 'INSERT INTO `{0}` (`site_id`, `dataset_id`, `size`, `decision`, `condition`)'.format(table_name)
         sql += ' SELECT s.`id`, d.`id`, r.`size`, r.`decision`, r.`condition` FROM `replicas_tmp` AS r'
-        sql += ' INNER JOIN `%s`.`sites` AS s ON s.`name` = r.`site`' % self.history_db
-        sql += ' INNER JOIN `%s`.`datasets` AS d ON d.`name` = r.`dataset`' % self.history_db
+        sql += ' INNER JOIN `{0}`.`sites` AS s ON s.`name` = r.`site`'.format(self.history_db)
+        sql += ' INNER JOIN `{0}`.`datasets` AS d ON d.`name` = r.`dataset`'.format(self.history_db)
         self._mysql.query(sql)
 
         self._mysql.query('DROP TABLE `replicas_tmp`')
@@ -162,7 +174,7 @@ class DetoxHistory(object):
 
         sql = 'INSERT INTO `replicas` VALUES (?, ?, ?, ?, ?)'
 
-        for entry in self._mysql.xquery('SELECT (`site_id`, `dataset_id`, `size`, `decision`, `condition`) FROM `%s`' % table_name):
+        for entry in self._mysql.xquery('SELECT (`site_id`, `dataset_id`, `size`, `decision`, `condition`) FROM `{0}`'.format(table_name)):
             snapshot_cursor(sql, entry)
 
         snapshot_db.commit()
@@ -172,6 +184,9 @@ class DetoxHistory(object):
 
         os.chmod(db_file_name, 0666)
 
+        # reset DB connection
+        self._mysql.use_db(None)
+
     def save_siteinfo(self, cycle_number, quotas):
         """
         Save the site partition quotas and site statuses for the cycle.
@@ -179,15 +194,18 @@ class DetoxHistory(object):
         @param quotas         {site: quota in TB}
         """
 
+        if self.test:
+            return
+
         self._mysql.use_db(self.cache_db)
 
         # Make a snapshot table first and then fill the SQLite tables
         table_name = 'sites_%s' % cycle_number
 
         if self._mysql.table_exists(table_name):
-            self._mysql.query('DROP TABLE `%s`' % table_name)
+            self._mysql.query('DROP TABLE `{0}`'.format(table_name))
 
-        self._mysql.query('CREATE TABLE `%s` LIKE `sites`' % table_name)
+        self._mysql.query('CREATE TABLE `{0}` LIKE `sites`'.format(table_name))
 
         # Insert full data into a temporary table with site and dataset names
         sql = 'CREATE TEMPORARY TABLE `sites_tmp` ('
@@ -203,9 +221,9 @@ class DetoxHistory(object):
         self._mysql.insert_many('sites_tmp', fields, mapping, quotas.iteritems(), do_update = False)
 
         # Then use insert select join to convert the names to ids
-        sql = 'INSERT INTO `%s` (`site_id`, `status`, `quota`)' % table_name
+        sql = 'INSERT INTO `{0}` (`site_id`, `status`, `quota`)'.format(table_name)
         sql += ' SELECT s.`id`, t.`status`, t.`quota` FROM `sites_tmp` AS t'
-        sql += ' INNER JOIN `%s`.`sites` AS s ON s.`name` = t.`site`' % self.history_db
+        sql += ' INNER JOIN `{0}`.`sites` AS s ON s.`name` = t.`site`'.format(self.history_db)
         self._mysql.query(sql)
 
         self._mysql.query('DROP TABLE `sites_tmp`')
@@ -275,6 +293,8 @@ class DetoxHistory(object):
             self._update_cache_usage('replicas', cycle_number)
             self._update_cache_usage('sites', cycle_number)
 
+        self._mysql.use_db(None)
+
     def get_deletion_decisions(self, cycle_number, size_only = True):
         """
         @param cycle_number   Cycle number
@@ -293,8 +313,8 @@ class DetoxHistory(object):
             volumes = {}
             sites = set()
 
-            query = 'SELECT s.`name`, SUM(r.`size`) * 1.e-12 FROM `%s`.`%s` AS r' % (self.cache_db, table_name)
-            query += ' INNER JOIN `%s`.`sites` AS s ON s.`id` = r.`site_id`' % self.history_db
+            query = 'SELECT s.`name`, SUM(r.`size`) * 1.e-12 FROM `{0}`.`{1}` AS r'.format(self.cache_db, table_name)
+            query += ' INNER JOIN `{0}`.`sites` AS s ON s.`id` = r.`site_id`'.format(self.history_db)
             query += ' WHERE r.`decision` LIKE %s'
             query += ' GROUP BY r.`site_id`'
 
@@ -318,10 +338,10 @@ class DetoxHistory(object):
         else:
             # return {site_name: [(dataset_name, size, decision, reason)]}
 
-            query = 'SELECT s.`name`, d.`name`, r.`size`, r.`decision`, p.`text` FROM `%s`.`%s` AS r' % (self.cache_db, table_name)
-            query += ' INNER JOIN `%s`.`sites` AS s ON s.`id` = r.`site_id`' % self.history_db
-            query += ' INNER JOIN `%s`.`datasets` AS d ON d.`id` = r.`dataset_id`' % self.history_db
-            query += ' LEFT JOIN `%s`.`policy_conditions` AS p ON p.`id` = r.`condition`' % self.history_db
+            query = 'SELECT s.`name`, d.`name`, r.`size`, r.`decision`, p.`text` FROM `{0}`.`{1}` AS r'.format(self.cache_db, table_name)
+            query += ' INNER JOIN `{0}`.`sites` AS s ON s.`id` = r.`site_id`'.format(self.history_db)
+            query += ' INNER JOIN `{0}`.`datasets` AS d ON d.`id` = r.`dataset_id`'.format(self.history_db)
+            query += ' LEFT JOIN `{0}`.`policy_conditions` AS p ON p.`id` = r.`condition`'.format(self.history_db)
             query += ' ORDER BY s.`name` ASC, r.`size` DESC'
 
             product = {}
@@ -349,9 +369,9 @@ class DetoxHistory(object):
         if overwrite or not table_exists:
             # fill from sqlite
             if table_exists:
-                self._mysql.query('TRUNCATE TABLE `%s`' % table_name)
+                self._mysql.query('TRUNCATE TABLE `{0}`'.format(table_name))
             else:
-                self._mysql.query('CREATE TABLE `%s` LIKE `%s`' % (table_name, template))
+                self._mysql.query('CREATE TABLE `{0}` LIKE `{1}`'.format(table_name, template))
 
             try:
                 cycle_number += 0
@@ -421,6 +441,8 @@ class DetoxHistory(object):
             # then update the cache usage
             self._update_cache_usage(template, cycle_number)
 
+        self._mysql.use_db(None)
+
     def _update_cache_usage(self, template, cycle_number):
         self._mysql.use_db(self.cache_db)
 
@@ -431,13 +453,13 @@ class DetoxHistory(object):
         old_replica_cycles = self._mysql.query(sql)
         for old_cycle in old_replica_cycles:
             table_name = 'replicas_%d' % old_cycle
-            self._mysql.query('DROP TABLE IF EXISTS `%s`' % table_name)
+            self._mysql.query('DROP TABLE IF EXISTS `{0}`'.format(table_name))
 
         sql = 'SELECT `cycle_id` FROM (SELECT `cycle_id`, MAX(`timestamp`) AS m FROM `sites_snapshot_usage` GROUP BY `cycle_id`) AS t WHERE m < DATE_SUB(NOW(), INTERVAL 1 WEEK)'
         old_site_cycles = self._mysql.query(sql)
         for old_cycle in old_site_cycles:
             table_name = 'sites_%d' % old_cycle
-            self._mysql.query('DROP TABLE IF EXISTS `%s`' % table_name)
+            self._mysql.query('DROP TABLE IF EXISTS `{0}`'.format(table_name))
 
         for old_cycle in set(old_replica_cycles) & set(old_site_cycles):
             scycle = '%09d' % old_cycle

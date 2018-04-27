@@ -89,11 +89,11 @@ class MySQLHistory(TransactionHistoryInterface):
             self._mysql.query(sql, replica.size, deletion_record.operation_id, replica.dataset_name)
 
     def save_sites(self, sites): #override
-        mapping = lambda s: s.name
+        mapping = lambda s: (s.name,)
         self._mysql.insert_many('sites', ('name',), mapping, sites, do_update = True)
 
     def save_datasets(self, datasets): #override
-        mapping = lambda d: d.name
+        mapping = lambda d: (d.name,)
         self._mysql.insert_many('datasets', ('name',), mapping, datasets, do_update = True)
 
     def get_incomplete_copies(self, partition): #override

@@ -70,7 +70,10 @@ class CRABAccessHistory(object):
 
             accesses.append((timestamp, num_accesses))
 
-        last_update = self._store.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
+        try:
+            last_update = self._store.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
+        except IndexError:
+            last_update = 0
 
         LOG.info('Loaded %d replica access data. Last update on %s UTC', num_records, time.strftime('%Y-%m-%d', time.gmtime(last_update)))
 
@@ -120,8 +123,13 @@ class CRABAccessHistory(object):
         popdb = PopDB(config.get('popdb', None))
         store = MySQL(config.store)
 
-        last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
         try:
+            try:
+                last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
+            except IndexError:
+                store.query('INSERT INTO `system` VALUES ()')
+                last_update = time.time() - 3600 * 24 # just go back by a day
+
             store.query('UPDATE `system` SET `dataset_accesses_last_update` = NOW()', retries = 0, silent = True)
         except MySQLdb.OperationalError:
             # We have a read-only config

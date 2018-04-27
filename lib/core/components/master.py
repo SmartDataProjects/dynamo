@@ -58,13 +58,6 @@ class MasterServer(object):
         """
         raise NotImplementedError('get_host_list')
 
-    def get_user_list(self):
-        """
-        Get data for all users.
-        @return [(username, email, dn)]
-        """
-        raise NotImplementedError('get_user_list')
-
     def copy(self, remote_master):
         """
         When acting as a local shadow of a remote master server, copy the remote content to local.
@@ -174,10 +167,17 @@ class MasterServer(object):
         """
         raise NotImplementedError('user_exists')
 
-    def identify_user(self, dn, with_id = False):
+    def list_users(self):
+        """
+        @return  [(name, dn, email)]
+        """
+        raise NotImplementedError('list_users')
+
+    def identify_user(self, dn = '', name = '', with_id = False):
         """
         Translate the DN to user account name.
         @param dn     Certificate Distinguished Name.
+        @param name   User name.
         @param get_id If true, return a tuple (user name, user id)
 
         @return  User name string or (user name, user id). None if not identified
@@ -195,6 +195,77 @@ class MasterServer(object):
         """
         raise NotImplementedError('add_user')
 
+    def role_exists(self, name):
+        """
+        Check if a role exists.
+        @param name  Role name
+        
+        @return boolean
+        """
+        raise NotImplementedError('role_exists')
+
+    def list_roles(self):
+        """
+        @return  List of role names
+        """
+        raise NotImplementedError('list_roles')
+
+    def add_role(self, name):
+        """
+        Add a new role.
+        @param name  Role name
+
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('add_role')
+
+    def list_authorization_targets(self):
+        """
+        @return List of authorization targets.
+        """
+        raise NotImplementedError('list_authorization_targets')
+
+    def check_user_auth(self, user, role, target):
+        """
+        Check the authorization on target for (user, role)
+        @param user    User name.
+        @param role    Role (role) name user is acting in. If None, authorize the user under all roles.
+        @param target  Authorization target. If None, authorize the user for all targets.
+
+        @return boolean
+        """
+        raise NotImplementedError('check_user_auth')
+
+    def authorize_user(self, user, role, target):
+        """
+        Add (user, role) to authorization list.
+        @param user    User name.
+        @param role    Role (role) name user is acting in. If None, authorize the user under all roles.
+        @param target  Authorization target. If None, authorize the user for all targets.
+
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('authorize_user')
+
+    def revoke_user_authorization(self, user, role, target):
+        """
+        Revoke authorization on target from (user, role).
+        @param user    User name.
+        @param role    Role (role) name user is acting in. If None, authorize the user under all roles.
+        @param target  Authorization target. If None, authorize the user for all targets.
+
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('revoke_user_authorization')
+
+    def list_authorized_users(self, target):
+        """
+        @param target Authorization target. Pass None to get the list of users authorized for all targets.
+
+        @return List of (user name, role name) authorized for the target.
+        """
+        raise NotImplementedError('list_authorized_users')
+
     def check_connection(self):
         """
         @return  True if connection is OK, False if not
@@ -206,3 +277,23 @@ class MasterServer(object):
 
     def disconnect(self):
         raise NotImplementedError('disconnect')
+
+
+class Authorizer(object):
+    """
+    Interface to provide read-only user authorization routines of the master server without exposing the server itself.
+    """
+
+    def __init__(self, server):
+        # can't do
+        #  self.user_exists = server.user_exists
+        # because self.user_exists.__self__ will point to server
+
+        self.user_exists = lambda name: server.user_exists(name)
+        self.list_users = lambda: server.list_users()
+        self.identify_user = lambda dn = '', name = '', with_id = False: server.identify_user(dn = dn, name = name, with_id = with_id)
+        self.role_exists = lambda name: server.role_exists(name)
+        self.list_roles = lambda: server.list_roles()
+        self.list_authorization_targets = lambda: server.list_authorization_targets()
+        self.check_user_auth = lambda user, role, target: server.check_user_auth(user, role, target)
+        self.list_authorized_users = lambda target: server.list_authorized_users(target)

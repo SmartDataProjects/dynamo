@@ -66,10 +66,8 @@ class MySQLMasterServer(MasterServer):
 
         return self._mysql.query(sql)
 
-    def get_user_list(self): #override
-        return self._mysql.query('SELECT `name`, `email`, `dn` FROM `users` ORDER BY `id`')
-
     def copy(self, remote_master):
+        # List of servers
         self._mysql.query('DELETE FROM `servers`')
         self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
 
@@ -77,12 +75,30 @@ class MySQLMasterServer(MasterServer):
         fields = ('hostname', 'last_heartbeat', 'status', 'store_host', 'store_module', 'shadow_module', 'shadow_config', 'board_module', 'board_config')
         self._mysql.insert_many('servers', fields, None, all_servers, do_update = True)
 
+        # List of users
         self._mysql.query('DELETE FROM `users`')
         self._mysql.query('ALTER TABLE `users` AUTO_INCREMENT = 1')
 
-        all_users = remote_master.get_user_list()
+        all_users = remote_master.list_users()
         fields = ('name', 'email', 'dn')
         self._mysql.insert_many('users', fields, None, all_users, do_update = True)
+
+        # List of roles
+        self._mysql.query('DELETE FROM `roles`')
+        self._mysql.query('ALTER TABLE `roles` AUTO_INCREMENT = 1')
+
+        all_roles = remote_master.list_roles()
+        fields = ('name',)
+        self._mysql.insert_many('roles', fields, None, all_roles, do_update = True)
+
+        # List of authorizations
+        self._mysql.query('DELETE FROM `user_authorizations`')
+
+        targets = remote_master.list_authorization_targets()
+        targets.append(None)
+        for target in targets:
+            for user, role in remote_master.list_authorized_users(target):
+                self.authorize_user(user, role, target)
 
     def get_next_master(self, current): #override
         self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', current)
@@ -298,8 +314,15 @@ class MySQLMasterServer(MasterServer):
         result = self._mysql.query('SELECT COUNT(*) FROM `users` WHERE `name` = %s', name)[0]
         return len(result) != 0
 
-    def identify_user(self, dn, with_id = False): #override
-        result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `dn` = %s', dn)
+    def list_users(self):
+        return self._mysql.query('SELECT `name`, `email`, `dn` FROM `users` ORDER BY `id`')
+
+    def identify_user(self, dn = '', name = '', with_id = False): #override
+        if dn:
+            result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `dn` = %s', dn)
+        else:
+            result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `name` = %s', name)
+
         if len(result) == 0:
             return None
         else:
@@ -316,6 +339,92 @@ class MySQLMasterServer(MasterServer):
             return False
 
         return inserted != 0
+
+    def role_exists(self, name): #override
+        result = self._mysql.query('SELECT COUNT(*) FROM `roles` WHERE `name` = %s', name)[0]
+        return result != 0
+
+    def list_roles(self):
+        return self._mysql.query('SELECT `name` FROM `roles`')
+
+    def add_role(self, name): #override
+        sql = 'INSERT INTO `roles` (`name`) VALUES (%s)'
+        try:
+            inserted = self._mysql.query(sql, name)
+        except:
+            return False
+
+        return inserted != 0
+
+    def list_authorization_targets(self): #override
+        sql = 'SELECT SUBSTRING(COLUMN_TYPE, 5) FROM `information_schema`.`COLUMNS`'
+        sql += ' WHERE `TABLE_SCHEMA` = \'dynamoserver\' AND `TABLE_NAME` = \'user_authorizations\' AND `COLUMN_NAME` = \'target\'';
+        result = self._mysql.query(sql)[0]
+        # eval the results as a python tuple
+        return list(eval(result))
+
+    def check_user_auth(self, user, role, target): #override
+        sql = 'SELECT COUNT(*) FROM `user_authorizations` WHERE `user_id` = (SELECT `id` FROM `users` WHERE `name` = %s) AND'
+
+        if role is None:
+            sql += ' `role_id` = 0 AND'
+        else:
+            sql += ' `role_id` = (SELECT `id` FROM `roles` WHERE `name` = %s) AND'
+
+        if target is None:
+            sql += ' `target` IS NULL'
+        else:
+            sql += ' `target` = %s'
+
+        return self._mysql.query(sql, user, role, target)[0] != 0
+
+    def authorize_user(self, user, role, target): #override
+        if role is None:
+            role_id = 0
+        else:
+            try:
+                role_id = self._mysql.query('SELECT `id` FROM `roles` WHERE `name` = %s', role)[0]
+            except IndexError:
+                raise RuntimeError('Unknown role %s' % role)
+
+        sql = 'INSERT INTO `user_authorizations` (`user_id`, `role_id`, `target`)'
+        sql += ' SELECT u.`id`, %s, %s FROM `users` AS u WHERE u.`name` = %s'
+        sql += ' ON DUPLICATE KEY UPDATE `user_id` = `user_id`'
+
+        inserted = self._mysql.query(sql, role_id, target, user)
+        return inserted != 0
+
+    def revoke_user_authorization(self, user, role, target): #override
+        try:
+            user_id = self._mysql.query('SELECT `id` FROM `users` WHERE `name` = %s', user)[0]
+        except IndexError:
+            raise RuntimeError('Unknown user %s' % user)
+
+        if role is None:
+            role_id = 0
+        else:
+            try:
+                role_id = self._mysql.query('SELECT `id` FROM `roles` WHERE `name` = %s', role)[0]
+            except IndexError:
+                raise RuntimeError('Unknown role %s' % role)
+
+        sql = 'DELETE FROM `user_authorizations` WHERE `user_id` = %s AND `role_id` = %s AND `target` = %s'
+        deleted = self._mysql.query(sql, user_id, role_id, target)
+        return deleted != 0
+
+    def list_authorized_users(self, target): #override
+        sql = 'SELECT u.`name`, s.`name` FROM `user_authorizations` AS a'
+        sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
+        sql += ' INNER JOIN `roles` AS s ON s.`id` = a.`role_id`'
+
+        if target is None:
+            sql += ' WHERE a.`target` IS NULL'
+            args = tuple()            
+        else:
+            sql += ' WHERE a.`target` = %s'
+            args = (target,)
+        
+        return self._mysql.query(sql, *args)
 
     def check_connection(self): #override
         try:
