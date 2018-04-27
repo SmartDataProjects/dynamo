@@ -44,7 +44,7 @@ class SitePartition(object):
             self.quota * 1.e-12, ('%.2f' % self.occupancy_fraction()) if self.quota != 0 else 'inf')
 
     def __repr__(self):
-        return 'SitePartition(\'%s\',\'%s\',%d)' % (self._site_name(), self._partition_name(), self._quota)
+        return 'SitePartition(%s,%s,%d)' % (repr(self._site_name()), repr(self._partition_name()), self._quota)
 
     def __eq__(self, other):
         return self is other or \

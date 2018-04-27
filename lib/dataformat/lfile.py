@@ -25,7 +25,7 @@ class File(object):
         return 'File %s (block=%s, size=%d, id=%d)' % (self._lfn, self._block_full_name(), self.size, self.id)
 
     def __repr__(self):
-        return 'File(\'%s\',\'%s\',%d,%d)' % (self._lfn, self._block_full_name(), self.size, self.id)
+        return 'File(%s,%s,%d,%d)' % (repr(self._lfn), repr(self._block_full_name()), self.size, self.id)
 
     def __eq__(self, other):
         return self is other or \

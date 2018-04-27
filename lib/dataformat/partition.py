@@ -35,7 +35,7 @@ class Partition(object):
         return 'Partition %s (id=%d)' % (self._name, self.id)
 
     def __repr__(self):
-        return 'Partition(\'%s\',None,%d)' % (self._name,self.id)
+        return 'Partition(%s,None,%d)' % (repr(self._name),self.id)
 
     def __eq__(self, other):
         # only comparing names since the rest are set by configuration and are basically constants

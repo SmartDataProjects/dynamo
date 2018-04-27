@@ -23,7 +23,7 @@ class DatasetReplica(object):
             (self._site_name(), self._dataset_name(), len(self.block_replicas))
 
     def __repr__(self):
-        return 'DatasetReplica(\'%s\',\'%s\')' % (self._dataset_name(), self._site_name())
+        return 'DatasetReplica(%s,%s)' % (repr(self._dataset_name()), repr(self._site_name()))
 
     def __eq__(self, other):
         return self is other or (self._dataset_name() == other._dataset_name() and self._site_name() == other._site_name())

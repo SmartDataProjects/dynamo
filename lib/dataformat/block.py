@@ -103,8 +103,8 @@ class Block(object):
 
     def __repr__(self):
         # this representation cannot be directly eval'ed into a Block
-        return 'Block(\'%s\',\'%s\',%d,%d,%s,%d,%d,False)' % \
-            (self.real_name(), self._dataset_name(), self.size, self.num_files, self.is_open, self.last_update, self.id)
+        return 'Block(%s,%s,%d,%d,%s,%d,%d,False)' % \
+            (repr(self.real_name()), repr(self._dataset_name()), self.size, self.num_files, self.is_open, self.last_update, self.id)
 
     def __eq__(self, other):
         return self is other or \

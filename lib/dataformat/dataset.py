@@ -119,8 +119,8 @@ class Dataset(object):
             self.id, self.size, len(self.blocks), self.num_files, replica_sites)
 
     def __repr__(self):
-        return 'Dataset(\'%s\',\'%s\',\'%s\',%s,%d,%s,%d)' % \
-            (self._name, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
+        return 'Dataset(%s,\'%s\',\'%s\',%s,%d,%s,%d)' % \
+            (repr(self._name), Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
             repr(self.software_version), self.last_update, self.is_open, self.id)
 
     def __eq__(self, other):
