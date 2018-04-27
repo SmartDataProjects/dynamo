@@ -103,7 +103,7 @@ class MySQLHistory(TransactionHistoryInterface):
         self._mysql.query('INSERT INTO `copy_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`) VALUES (%s, %s, NOW(), %s, %s)', operation_id, run_number, approved, site_id)
         
         fields = ('copy_id', 'dataset_id', 'size')
-        mapping = lambda (name, size): (operation_id, dataset_ids[name], size)
+        mapping = lambda (dataset, size): (operation_id, dataset_ids[dataset.name], size)
 
         self._mysql.insert_many('copied_replicas', fields, mapping, dataset_list, do_update = False)
 
@@ -118,10 +118,10 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._mysql.query('INSERT INTO `deletion_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`) VALUES (%s, %s, NOW(), %s, %s)', operation_id, run_number, approved, site_id)
 
-        fields = ('copy_id', 'dataset_id', 'size')
-        mapping = lambda (name, size): (operation_id, dataset_ids[name], size)
+        fields = ('deletion_id', 'dataset_id', 'size')
+        mapping = lambda (dataset, size): (operation_id, dataset_ids[dataset.name], size)
 
-        self._mysql.insert_many('deleted_replicas', fields, mapping, id_sizes, do_update = False)
+        self._mysql.insert_many('deleted_replicas', fields, mapping, dataset_list, do_update = False)
 
     def _do_update_copy_entry(self, copy_record): #override
         self._mysql.query('UPDATE `copy_requests` SET `approved` = %s WHERE `id` = %s', copy_record.approved, copy_record.operation_id)

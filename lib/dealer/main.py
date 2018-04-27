@@ -278,8 +278,8 @@ class Dealer(object):
                 dataset = block.dataset
                 blocks = [item]
             elif type(item) is list:
-                dataset = blocks[0].dataset
                 blocks = item
+                dataset = blocks[0].dataset
 
             new_replica = DatasetReplica(dataset, destination)
             for block in blocks:
@@ -347,7 +347,7 @@ class Dealer(object):
                                     inventory.update(BlockReplica(block, site, group, size = 0))
 
                         else:
-                            dataset_sizes[item] += item.size
+                            dataset_sizes[item.dataset] += item.size
                             if approved:
                                 if site.find_dataset_replica(item.dataset) is None:
                                     inventory.update(DatasetReplica(item.dataset, site))
