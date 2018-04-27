@@ -330,6 +330,7 @@ replica_variables = {
     'dataset.release': DatasetRelease(),
     'dataset.is_latest_production_release': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'latest_production_release', dict_default = False),
     'dataset.on_protected_site': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'on_protected_site', dict_default = False),
+    'dataset.unknown_in_all_dbs': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'unknown_in_all_dbs', dict_default = False),
     'replica.size': ReplicaSize(),
     'replica.incomplete': ReplicaIncomplete(),
     'replica.last_block_created': DatasetReplicaAttr(Attr.TIME_TYPE, 'last_block_created', tuple()),
