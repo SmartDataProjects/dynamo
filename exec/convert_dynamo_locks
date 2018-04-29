@@ -12,7 +12,6 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Convert web-based locks to registry locks')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
-parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Do not upload changes to registry.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -23,43 +22,44 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout)
-from dynamo.core.executable import make_standard_logger
+from dynamo.core.executable import read_only, make_standard_logger
 
 LOG = make_standard_logger(config.log_level)
 
-## Check if another process is running
-process_exists = False
+if not read_only:
+    ## Check if another process is running
+    process_exists = False
+    
+    while os.path.exists(config.process_lock):
+        try:
+            source = open(config.process_lock)
+        except (OSError, IOError):
+            break
+    
+        process_exists = True
+    
+        pid = int(source.read().strip())
+        source.close()
+    
+        try:
+            with open('/proc/%d/cmdline' % pid) as proc:
+                if not 'dynamod' in proc.read():
+                    raise Exception()
+        except:
+            LOG.error('Lock file %s exists but process %d is not a Dynamo process.', config.process_lock, pid)
+            os.unlink(config.process_lock)
+            process_exists = False
+            break
+    
+        LOG.info('Another process %d is performing the lock conversion. Waiting for completion.', pid)
+        time.sleep(5)
+    
+    if process_exists:
+        LOG.info('Locks are converted by another process. Exiting.')
+        sys.exit(0)
 
-while os.path.exists(config.process_lock):
-    try:
-        source = open(config.process_lock)
-    except (OSError, IOError):
-        break
-
-    process_exists = True
-
-    pid = int(source.read().strip())
-    source.close()
-
-    try:
-        with open('/proc/%d/cmdline' % pid) as proc:
-            if not 'dynamod' in proc.read():
-                raise Exception()
-    except:
-        LOG.error('Lock file %s exists but process %d is not a Dynamo process.', config.process_lock, pid)
-        os.unlink(config.process_lock)
-        process_exists = False
-        break
-
-    LOG.info('Another process %d is performing the lock conversion. Waiting for completion.', pid)
-    time.sleep(5)
-
-if process_exists:
-    LOG.info('Locks are converted by another process. Exiting.')
-    sys.exit(0)
-
-with open(config.process_lock, 'w') as process_lock:
-    process_lock.write('%d' % os.getpid())
+    with open(config.process_lock, 'w') as process_lock:
+        process_lock.write('%d' % os.getpid())
 
 ## Start conversion
 from dynamo.policy.producers import WebReplicaLock
@@ -70,22 +70,32 @@ from dynamo.operation.impl.mysqlapplock import MySQLApplicationLockInterface
 
 LOG.info('Translating web-based replica locks into DB-based locks.')
 
-expiry = '2018-04-30'
+expiry = '2018-06-30'
 comment = 'Auto-produced by dynamo'
 
 registry = RESTService(config.weblock)
 
-lock = MySQLApplicationLockInterface(config.applock, authorizer)
-# we don't unlock within this application unless something fails - need to run detox immediately afterwards
-lock.lock()
+if not read_only:
+    lock = MySQLApplicationLockInterface(config.applock, authorizer)
+    lock.lock()
 
 unlocked_datasets = set()
 
 try:
     # we process one source at a time, because each source registers mysql locks as a different user
     for name, source_conf in config.sources.items():
+        userdata = authorizer.identify_user(name = source_conf.user, with_id = True)
+        if userdata is None:
+            raise RuntimeError('Unknown user %s' % source_conf.user)
+        roledata = authorizer.identify_role(name = source_conf.role, with_id = True)
+        if roledata is None:
+            raise RuntimeError('Unknown role %s' % source_conf.role)
+
         # first load the existing locks
-        instance_conf = Configuration({'users': [[source_conf.user, source_conf.role]]})
+        instance_conf = Configuration({
+            'users': [[userdata[1], roledata[1]]],
+            'db_params': {'db': config.mysqllock.db}
+        })
         mysqllock = MySQLReplicaLock(instance_conf)
         mysqllock.load(inventory)
 
@@ -99,7 +109,6 @@ try:
         LOG.info('Translating ' + name)
     
         instance_conf = Configuration({'sources': {name: source_conf.clone()}, 'auth': config.auth})
-    
         weblock = WebReplicaLock(instance_conf)
         weblock.update(inventory)
     
@@ -185,17 +194,19 @@ try:
     
         LOG.info('Sending %d datasets and blocks to registry frontend', len(data))
     
-        if args.test_run:
+        if read_only:
             LOG.info('Not sending data to registry.')
         else:
             request_url = 'set?asuser=%s&role=%s' % (source_conf.user, source_conf.role)
             registry.make_request(request_url, method = POST, options = data, format = 'json')
-    
-    # Intentionally removing the file only when everything succeeds
-    os.unlink(config.process_lock)
+
+    if not read_only:
+        # Intentionally removing the file only when everything succeeds
+        os.unlink(config.process_lock)
 
 finally:
-    lock.unlock()
+    if not read_only:
+        lock.unlock()
 
 # update block replicas that got unlocked
 from dynamo.source.impl import PhEDExReplicaInfoSource

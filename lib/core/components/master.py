@@ -202,14 +202,14 @@ class MasterServer(object):
         """
         raise NotImplementedError('add_user')
 
-    def role_exists(self, name):
+    def identify_role(self, name, with_id = False):
         """
         Check if a role exists.
         @param name  Role name
         
-        @return boolean
+        @return  Role name string or (role name, role id). None if not identified
         """
-        raise NotImplementedError('role_exists')
+        raise NotImplementedError('identify_role')
 
     def list_roles(self):
         """

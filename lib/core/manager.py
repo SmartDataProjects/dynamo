@@ -418,7 +418,7 @@ class Authorizer(object):
         self.user_exists = lambda name: manager.master.user_exists(name)
         self.list_users = lambda: manager.master.list_users()
         self.identify_user = lambda dn = '', name = '', with_id = False: manager.master.identify_user(dn = dn, name = name, with_id = with_id)
-        self.role_exists = lambda name: manager.master.role_exists(name)
+        self.identify_role = lambda name, with_id = False: manager.master.identify_role(name, with_id = with_id)
         self.list_roles = lambda: manager.master.list_roles()
         self.list_authorization_targets = lambda: manager.master.list_authorization_targets()
         self.check_user_auth = lambda user, role, target: manager.master.check_user_auth(user, role, target)

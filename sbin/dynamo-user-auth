@@ -100,7 +100,7 @@ if master_server.identify_user(name = args.user) is None:
     else:
         sys.exit(0)
 
-if args.role and not master_server.role_exists(args.role):
+if args.role and master_server.identify_role(args.role) is None:
     response = raw_input('Create new role "%s"? [y/N]' % args.role)
     if response == 'y':
         master_server.add_role(args.role)

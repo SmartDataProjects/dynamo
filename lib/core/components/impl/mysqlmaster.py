@@ -341,7 +341,7 @@ class MySQLMasterServer(MasterServer):
             return None
         else:
             if with_id:
-                return result[0]
+                return (result[0][0], int(result[0][1]))
             else:
                 return result[0][0]
 
@@ -354,9 +354,15 @@ class MySQLMasterServer(MasterServer):
 
         return inserted != 0
 
-    def role_exists(self, name): #override
-        result = self._mysql.query('SELECT COUNT(*) FROM `roles` WHERE `name` = %s', name)[0]
-        return result != 0
+    def identify_role(self, name, with_id = False): #override
+        try:
+            if with_id:
+                name, rid = self._mysql.query('SELECT `name`, `id` FROM `roles` WHERE `name` = %s', name)[0]
+                return (name, int(rid))
+            else:
+                return self._mysql.query('SELECT `name` FROM `roles` WHERE `name` = %s', name)[0]
+        except IndexError:
+            return None
 
     def list_roles(self):
         return self._mysql.query('SELECT `name` FROM `roles`')

@@ -40,7 +40,10 @@
     }
   },
   "weblock": {
-    "url_base": "https://localhost/registry/detoxlock",
+    "url_base": "https://localhost/registry/detoxlock"
+  },
+  "mysqllock": {
+    "db": "dynamoregister"
   },
   "applock": {
     "user": "dynamo",

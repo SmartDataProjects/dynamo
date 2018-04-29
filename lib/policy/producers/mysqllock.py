@@ -20,18 +20,15 @@ class MySQLReplicaLock(object):
         self._mysql = MySQL(config.get('db_params', None))
 
         self.users = []
-        for user, role in config.users:
-            self.users.append((user, role))
+        for user_id, role_id in config.users:
+            self.users.append((user_id, role_id))
 
     def load(self, inventory):
-        query = 'SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `unlock_date` IS NULL'
         if len(self.users) != 0:
-            query += ' AND (`user_id`, `role_id`) IN ('
-            query += 'SELECT u.`id`, s.`id` FROM `users` AS u, `roles` AS s WHERE '
-            query += ' OR '.join('(u.`name` LIKE "%s" AND s.`name` LIKE "%s")' % us for us in self.users)
-            query += ')'
-
-        entries = self._mysql.query(query)
+            entries = self._mysql.select_many('detox_locks', ('item', 'sites', 'groups'), ('user_id', 'role_id'), self.users, additional_conditions = ['`unlock_date` IS NULL'])
+        else:
+            query = 'SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `unlock_date` IS NULL'
+            entries = self._mysql.query(query)
 
         for item_name, sites_pattern, groups_pattern in entries:
             if '#' in item_name:
