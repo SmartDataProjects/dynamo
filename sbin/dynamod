@@ -71,7 +71,7 @@ if config.web.enabled:
     from dynamo.web.server import WebServer
     from flup.server.fcgi import WSGIServer
 
-    web = WebServer(config.web, server)
+    web = WebServer(config.web, server.inventory, Authorizer(server.manager))
     # Thread-based WSGI server
     WSGIServer(web.main, bindAddress = config.web.socket, umask = 0).run()
 

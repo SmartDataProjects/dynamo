@@ -392,6 +392,13 @@ class MySQLMasterServer(MasterServer):
 
         return self._mysql.query(sql, user, role, target)[0] != 0
 
+    def list_user_auth(self, user): #override
+        sql = 'SELECT r.`name`, a.`target` FROM `user_authorizations` AS a'
+        sql += ' LEFT JOIN `roles` AS r ON r.`id` = a.`role_id`'
+        sql += ' WHERE a.`user_id` = (SELECT `id` FROM `users` WHERE `name` = %s)'
+
+        return self._mysql.query(sql, user)
+
     def authorize_user(self, user, role, target): #override
         if role is None:
             role_id = 0

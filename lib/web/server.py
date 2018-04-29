@@ -2,20 +2,19 @@ import os
 import sys
 import re
 import json
+import collections
 
 import dynamo.web.exceptions as exceptions
 # Actual modules imported at the bottom of this file
 from dynamo.web.modules import modules
 
 class WebServer(object):
-    class User(object):
-        def __init__(self, name, uid):
-            self.name = name
-            self.id = uid
+    User = collections.namedtuple('User', ['name', 'id', 'authlist'])
 
-    def __init__(self, config, dynamoserver):
+    def __init__(self, config, inventory, authorizer):
         self.modules_config = config.modules_config.clone()
-        self.dynamo = dynamoserver
+        self.inventory = inventory
+        self.authorizer = authorizer
 
         # cookie string -> (user name, user id)
         self.known_users = {}
@@ -34,6 +33,7 @@ class WebServer(object):
         if environ['REQUEST_SCHEME'] == 'http':
             # No auth
             user, user_id = None, 0
+            authlist = []
 
         elif environ['REQUEST_SCHEME'] == 'https':
             # Client DN must match a known user
@@ -43,11 +43,13 @@ class WebServer(object):
                 start_response('403 Forbidden', [('Content-Type', 'text/plain')])
                 return 'Unknown user.\nClient name: %s' % environ['SSL_CLIENT_S_DN']
 
+            authlist = self.authorizer.list_user_auth(user)
+
         else:
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
             return 'Only HTTP or HTTPS requests are allowed.'
 
-        caller = WebServer.User(user, user_id)
+        caller = WebServer.User(user, user_id, authlist)
 
         ## Step 2
         module = environ['SCRIPT_NAME'].strip('/')
@@ -67,7 +69,7 @@ class WebServer(object):
 
         ## Step 4
         try:
-            content = cls(self.modules_config).run(caller, request, self.dynamo.inventory)
+            content = cls(self.modules_config).run(caller, request, self.inventory)
         except exceptions.AuthorizationError:
             start_response('403 Forbidden', [('Content-Type', 'text/plain')])
             return 'User not authorized to perform the request.'
@@ -115,7 +117,7 @@ class WebServer(object):
             key, _, value = part.partition(' = ')
             dn += '/' + key + '=' + value
 
-        userinfo = self.dynamo.manager.master.identify_user(dn = dn, with_id = True)
+        userinfo = self.authorizer.identify_user(dn = dn, with_id = True)
 
         if userinfo is None:
             raise RuntimeError()
