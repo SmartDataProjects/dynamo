@@ -339,8 +339,6 @@ class SocketAppServer(AppServer):
         proc.start()
         proc.join()
 
-        self.dynamo_server.clean_readonly(workarea)
-
         LOG.info('Finished interactive session.')
 
     def _run_interactive(self, workarea, addr):

@@ -6,6 +6,7 @@ import logging
 import socket
 import shlex
 import signal
+import traceback
 import code
 import multiprocessing
 import threading
@@ -447,16 +448,12 @@ class DynamoServer(object):
                         status = ServerManager.APP_FAILED
 
                 LOG.info('Application %s (%s) from user %s@%s completed (Exit code %d Status %s).', proc.name, path, user_name, user_host, proc.exitcode, ServerManager.application_status_name(status))
-
                
             child_processes.pop(ichild)
 
             appserver.notify_synch_app(app_id, {'status': status, 'exit_code': proc.exitcode})
 
             self.manager.master.update_application(app_id, status = status, exit_code = proc.exitcode)
-
-            if user_host != socket.gethostname():
-                self.clean_remote_request(path)
 
         return writing_process
 
@@ -585,15 +582,24 @@ class DynamoServer(object):
 
         # Execute the script
         try:
-            myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
-            execfile(path + '/exec.py', myglobals)
-        except SystemExit as exc:
-            if exc.code == 0:
-                pass
-            else:
-                raise
+            try:
+                myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
+                execfile(path + '/exec.py', myglobals)
+            except SystemExit as exc:
+                if exc.code == 0:
+                    pass
+                else:
+                    raise
+        except:
+            # cut out the first 2 lines of traceback (which refers to this function)
+            exc_type, exc, tb = sys.exc_info()
+            tb_lines = traceback.format_tb(tb)[2:]
+            sys.stderr.write('Traceback (most recent call last):\n')
+            sys.stderr.write(''.join(tb_lines))
+            sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
+            sys.stderr.flush()
         finally:
-            self._post_execution(queue)
+            self._post_execution(path, is_local, queue)
 
         sys.stdout = old_stdout
         sys.stderr = old_stderr
@@ -628,7 +634,7 @@ class DynamoServer(object):
         try:
             console.interact(BANNER)
         finally:
-            self._post_execution(None)
+            self._post_execution(path, is_local, None)
 
         sys.stdout = old_stdout
         sys.stderr = old_stderr
@@ -740,7 +746,7 @@ class DynamoServer(object):
 
         return path
 
-    def _post_execution(self, queue):
+    def _post_execution(self, path, is_local, queue):
         if queue is not None:
             # Collect updates if write-enabled
 
@@ -766,6 +772,10 @@ class DynamoServer(object):
             
             # Put end-of-message
             queue.put((DynamoInventory.CMD_EOM, None))
+
+        if not is_local:
+            # jobs were confined in a chroot jail
+            self.clean_remote_request(path)
 
     def shutdown(self):
         LOG.info('Shutting down Dynamo server..')
