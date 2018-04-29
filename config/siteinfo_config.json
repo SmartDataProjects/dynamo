@@ -9,9 +9,7 @@
   },
   "crabaccess": {
     "store": {
-      "db_params": {
-        "db": "dynamo"
-      }
+      "db": "dynamo"
     }
   },
   "log_level": "info"

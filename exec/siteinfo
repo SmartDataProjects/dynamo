@@ -16,7 +16,7 @@ sys.argv = []
 from dynamo.dataformat import Configuration, Site
 from dynamo.history.history import TransactionHistoryInterface
 from dynamo.policy.producers import CRABAccessHistory
-from dynamo.core.executable import inventory, make_standard_logger
+from dynamo.core.executable import inventory, read_only, make_standard_logger
 from dynamo.detox.history import DetoxHistory
 
 config = Configuration(args.config)
@@ -41,7 +41,10 @@ dataset_lists = collections.defaultdict(dict)
 dscount_now = collections.defaultdict(int)
 dscount_prev = collections.defaultdict(int)
 
-sitesinfo = open(config.out_path + '/SitesInfo.txt', 'w')
+if not read_only:
+    sitesinfo = open(config.out_path + '/SitesInfo.txt', 'w')
+else:
+    sitesinfo = sys.stdout
 
 sitesinfo.write('#\n')
 sitesinfo.write('#- S I T E S  I N F O R M A T I O N ----\n')
@@ -169,15 +172,20 @@ for partition in config.partitions:
             for (dataset, size, decision, reason) in datasets:
                 dscount_prev[dataset] += 1
 
-sitesinfo.close()
+if not read_only:
+    sitesinfo.close()
 
 for site in dataset_lists:
     st = inventory.sites[site]
 
-    if not os.path.isdir(config.out_path + '/result/' + site):
-        os.makedirs(config.out_path + '/result/' + site)
+    if not read_only:
+        if not os.path.isdir(config.out_path + '/result/' + site):
+            os.makedirs(config.out_path + '/result/' + site)
 
-    remaining = open(config.out_path + '/result/' + site + '/RemainingDatasets.txt', 'w')
+        remaining = open(config.out_path + '/result/' + site + '/RemainingDatasets.txt', 'w')
+    else:
+        print 'RemainingDatasets for', site
+        remaining = sys.stdout
 
     remaining.write('# -- ' + time.strftime('%Y-%m-%d %H:%M') + '\n')
     remaining.write('\n')
@@ -208,6 +216,7 @@ for site in dataset_lists:
 
             remaining.write('  %6.1f %9.1f %6d %6d  %s\n' % (rank, size * 1.e-9, dscount_prev[dataset], dscount_now[dataset], dataset))
 
-    remaining.close()
+    if not read_only:
+        remaining.close()
         
 LOG.info('Finished writing ASCII SiteInfo.')
