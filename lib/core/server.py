@@ -76,16 +76,15 @@ class DynamoServer(object):
         self.inventory = DynamoInventory(self.inventory_config)
 
         ## Wait until there is no write process
-        while True:
-            if self.manager.master.get_writing_process_id() is not None:
-                LOG.debug('A write-enabled process is running. Checking again in 5 seconds.')
-                time.sleep(5)
-            else:
-                break
+        while self.manager.master.get_writing_process_id() is not None:
+            LOG.debug('A write-enabled process is running. Checking again in 5 seconds.')
+            time.sleep(5)
 
         ## Write process is done.
         ## Other servers will not start a new write process while there is a server with status 'starting'.
         ## The only states the other running servers can be in are therefore 'updating' or 'online'
+        while self.manager.count_servers(ServerManager.SRV_UPDATING) != 0:
+            time.sleep(2)
 
         if self.manager.count_servers(ServerManager.SRV_ONLINE) == 0:
             # I am the first server to start the inventory - need to have a store.
@@ -94,9 +93,14 @@ class DynamoServer(object):
         else:
             if self.inventory.has_store():
                 # Clone the content from a remote store
-                hostname, module, config = self.manager.find_remote_store()
-                LOG.info('Cloning inventory content from persistency store at %s', hostname)
-                self.inventory.clone_store(module, config)
+                hostname, module, config, version = self.manager.find_remote_store()
+                # No server will be updating because write process is blocked while we load
+                if version == self.inventory.store_version():
+                    LOG.info('Local persistency store is up to date.')
+                else:
+                    # TODO cloning can take hours; need a way to unblock other servers and pool the updates
+                    LOG.info('Cloning inventory content from persistency store at %s', hostname)
+                    self.inventory.clone_store(module, config)
             else:
                 self.setup_remote_store()
 
@@ -127,6 +131,7 @@ class DynamoServer(object):
             if self.inventory.has_store():
                 pconf = self.inventory_config.persistency
                 self.manager.master.advertise_store(pconf.module, pconf.readonly_config)
+                self.manager.master.advertise_store_version(self.inventory.store_version())
 
             if self.manager.shadow is not None:
                 sconf = self.manager_config.shadow
@@ -381,8 +386,10 @@ class DynamoServer(object):
 
     def setup_remote_store(self, hostname = ''):
         # find_remote_store raises a RuntimeError if not source is found
-        hostname, module, config = self.manager.find_remote_store(hostname = hostname)
+        hostname, module, config, version = self.manager.find_remote_store(hostname = hostname)
         LOG.info('Using persistency store at %s', hostname)
+        self.manager.register_remote_store(hostname)
+
         self.inventory.init_store(module, config)
 
     def collect_processes(self, child_processes, writing_process, appserver):
@@ -527,6 +534,8 @@ class DynamoServer(object):
             elif cmd == DynamoInventory.CMD_DELETE:
                 CHANGELOG.info('Deleting %s', str(obj))
                 self.inventory.delete(obj, write = True)
+
+        self.manager.master.advertise_store_version(self.inventory.store_version())
 
         self.manager.set_status(ServerManager.SRV_ONLINE)
 

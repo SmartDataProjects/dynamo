@@ -22,7 +22,8 @@ class InventoryStore(object):
         return cls(config)
 
     def __init__(self, config):
-        pass
+        # Version number / string that identifies the exact state of the store
+        self.version = None
 
     def close(self):
         pass

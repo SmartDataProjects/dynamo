@@ -161,8 +161,19 @@ class ServerManager(object):
     def count_servers(self, status):
         """
         Count the number of servers (including self) in the given status.
+        @parameter status  A single SRV_* value or a list of SRV_*
         """
-        return len(self.master.get_host_list(status = status))
+        try:
+            len(status)
+        except TypeError:
+            # single value
+            return len(self.master.get_host_list(status = status))
+        else:
+            # use a set just in case for some reason the host changes the status in the middle of counting
+            hostnames = set()
+            for stat in status:
+                hostnames.update(n for n, _, _ in self.master.get_host_list(status = stat))
+            return len(hostnames)
 
     def get_updates(self):
         """
@@ -285,13 +296,10 @@ class ServerManager(object):
                     continue
 
                 if server.status == ServerManager.SRV_ONLINE:
-                    # store_config = (module, config)
+                    # store_config = (module, config, version)
                     store_config = self.master.get_store_config(server.hostname)
                     if store_config is None:
                         continue
-
-                    self.store_host = server.hostname
-                    self.master.declare_remote_store(self.store_host)
 
                     return (server.hostname,) + store_config
                     
@@ -303,6 +311,10 @@ class ServerManager(object):
             else:
                 self.set_status(ServerManager.SRV_ERROR)
                 raise RuntimeError('Could not find a remote persistency store to connect to.')
+
+    def register_remote_store(self, hostname):
+        self.store_host = hostname
+        self.master.declare_remote_store(hostname)
 
     def collect_hosts(self):
         """

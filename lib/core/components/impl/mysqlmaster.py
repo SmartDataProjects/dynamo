@@ -1,3 +1,4 @@
+import time
 import json
 import socket
 
@@ -270,15 +271,28 @@ class MySQLMasterServer(MasterServer):
         sql = 'UPDATE `servers` SET `store_module` = %s, `store_config` = %s WHERE `id` = %s'
         self._mysql.query(sql, module, config.dump_json(), self._server_id)
 
+    def advertise_store_version(self, version): #override
+        sql = 'UPDATE `servers` SET `store_version` = %s WHERE `id` = %s'
+        self._mysql.query(sql, version, self._server_id)
+
     def get_store_config(self, hostname): #override
-        sql = 'SELECT `store_module`, `store_config` FROM `servers` WHERE `hostname` = %s'
+        self._mysql.query('LOCK TABLES `servers` READ')
+        while self.get_status(hostname) == ServerManager.SRV_UPDATING:
+            # need to get the version of the remote server when it's not updating
+            self._mysql.query('UNLOCK TABLES')
+            time.sleep(2)
+            self._mysql.query('LOCK TABLES `servers` READ')
+        
+        sql = 'SELECT `store_module`, `store_config`, `store_version` FROM `servers` WHERE `hostname` = %s'
         result = self._mysql.query(sql, hostname)
+        self._mysql.query('UNLOCK TABLES')
+
         if len(result) == 0:
             return None
 
-        module, config_str = result[0]
+        module, config_str, version = result[0]
 
-        return module, Configuration(json.loads(config_str))
+        return module, Configuration(json.loads(config_str)), version
 
     def advertise_shadow(self, module, config): #override
         config = config.clone()

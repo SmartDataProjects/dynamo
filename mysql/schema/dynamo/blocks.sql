@@ -9,4 +9,4 @@ CREATE TABLE `blocks` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`),
   KEY `datasets` (`dataset_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;

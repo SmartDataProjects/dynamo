@@ -4,4 +4,4 @@ CREATE TABLE `quotas` (
   `storage` int(10) NOT NULL,
   PRIMARY KEY (`site_id`,`partition_id`),
   KEY `partitions` (`partition_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;

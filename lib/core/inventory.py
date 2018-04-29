@@ -92,11 +92,13 @@ class DynamoInventory(ObjectRepository):
     def has_store(self):
         return (self._store is not None)
 
+    def store_version(self):
+        return self._store.version
+
     def check_store(self):
         """
         Check the connection to store.
         """
-
         return self._store.check_connection()
 
     def flush_to_store(self):

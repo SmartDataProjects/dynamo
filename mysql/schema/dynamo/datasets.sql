@@ -8,4 +8,4 @@ CREATE TABLE `datasets` (
   `is_open` tinyint(1) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;

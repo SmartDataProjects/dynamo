@@ -146,7 +146,14 @@ class MasterServer(object):
     def advertise_store(self, module, config):
         raise NotImplementedError('advertise_store')
 
+    def advertise_store_version(self, version):
+        raise NotImplementedError('advertise_store_version')
+
     def get_store_config(self, hostname):
+        """
+        @param hostname  Remote host name.
+        @return (module, config, version)
+        """
         raise NotImplementedError('get_store_config')
 
     def advertise_board(self, module, config):
