@@ -590,9 +590,9 @@ class DynamoServer(object):
                 else:
                     raise
         except:
-            # cut out the first 2 lines of traceback (which refers to this function)
+            # cut out the first block of traceback (which refers to this function)
             exc_type, exc, tb = sys.exc_info()
-            tb_lines = traceback.format_tb(tb)[2:]
+            tb_lines = traceback.format_tb(tb)[1:]
             sys.stderr.write('Traceback (most recent call last):\n')
             sys.stderr.write(''.join(tb_lines))
             sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
