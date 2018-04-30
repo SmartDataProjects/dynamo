@@ -24,14 +24,16 @@ class SiteDBUserInfoSource(UserInfoSource):
 
             return (name, email, dn)
 
-    def get_user_list(self, users, filt = '*'): #override
+    def get_user_list(self): #override
         result = self._sitedb.make_request('people')
 
+        all_users = {}
         for user in users:
             user_info = result[0]
             name = user_info[0]
             email = user_info[1]
             dn = user_info[4]
             
-            users[name] = (name, email, dn)
+            all_users[name] = (name, email, dn)
 
+        return all_users

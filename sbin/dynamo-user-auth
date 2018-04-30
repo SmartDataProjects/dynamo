@@ -43,7 +43,7 @@ except KeyError:
 
 config = Configuration(config_path)
 
-## Create the registry
+## Create a handle to the master server
 
 from dynamo.core.components.master import MasterServer
 

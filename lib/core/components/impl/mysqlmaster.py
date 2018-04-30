@@ -354,6 +354,35 @@ class MySQLMasterServer(MasterServer):
 
         return inserted != 0
 
+    def update_user(self, name, dn = None, email = None): #override
+        if dn is None and email is None:
+            return
+
+        args = tuple()
+
+        sql = 'UPDATE `users` SET `dn` = '
+
+        if dn is None:
+            sql += '`dn`'
+        else:
+            sql += '%s'
+            args += (dn,)
+
+        sql += ', `email` = '
+
+        if email is None:
+            sql += '`email`'
+        else:
+            sql += '%s'
+            args += (email,)
+
+        sql += ' WHERE `name` = %s'
+
+        self._mysql.query(sql, *args)
+
+    def delete_user(self, name): #override
+        self._mysql.query('DELETE FROM `users` WHERE `name` = %s', name)
+
     def identify_role(self, name, with_id = False): #override
         try:
             if with_id:

@@ -202,6 +202,22 @@ class MasterServer(object):
         """
         raise NotImplementedError('add_user')
 
+    def update_user(self, name, dn = None, email = None):
+        """
+        Update data on user.
+        @param name   User name
+        @param dn     New DN
+        @param email  New email
+        """
+        raise NotImplementedError('update_user')
+
+    def delete_user(self, name):
+        """
+        Delete a user.
+        @param name   User name
+        """
+        raise NotImplementedError('delete_user')
+
     def identify_role(self, name, with_id = False):
         """
         Check if a role exists.
