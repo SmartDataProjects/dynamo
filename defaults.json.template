@@ -33,8 +33,7 @@
       "certfile": ""
     },
     "readonly": {
-      "certfile": "",
-      "load_content": true
+      "certfile": ""
     }
   }
 }

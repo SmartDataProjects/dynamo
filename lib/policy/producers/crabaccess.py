@@ -119,7 +119,7 @@ class CRABAccessHistory(object):
             dataset.attr['last_access'] = max(last_access, dataset.last_update)
 
     @staticmethod
-    def update(config, inventory):
+    def update(config, inventory, read_only = False):
         popdb = PopDB(config.get('popdb', None))
         store = MySQL(config.store)
 
@@ -127,16 +127,17 @@ class CRABAccessHistory(object):
             try:
                 last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_accesses_last_update`) FROM `system`')[0]
             except IndexError:
-                store.query('INSERT INTO `system` VALUES ()')
+                if not read_only:
+                    store.query('INSERT INTO `system` VALUES ()')
                 last_update = time.time() - 3600 * 24 # just go back by a day
 
-            store.query('UPDATE `system` SET `dataset_accesses_last_update` = NOW()', retries = 0, silent = True)
+            if not read_only:
+                store.query('UPDATE `system` SET `dataset_accesses_last_update` = NOW()', retries = 0, silent = True)
+
         except MySQLdb.OperationalError:
             # We have a read-only config
             read_only = True
-            LOG.info('Running update() in read-only mode.')
-        else:
-            read_only = False
+            LOG.info('Cannot write to DB. Switching to read_only.')
 
         start_time = max(last_update, (time.time() - 3600 * 24 * config.max_back_query))
         start_date = datetime.date(*time.gmtime(start_time)[:3])

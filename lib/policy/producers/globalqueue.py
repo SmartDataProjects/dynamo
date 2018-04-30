@@ -106,7 +106,7 @@ class GlobalQueueRequestHistory(object):
             dataset.attr['request_weight'] = weight
 
     @staticmethod
-    def update(config, inventory):
+    def update(config, inventory, read_only = False):
         htcondor = HTCondor(config.htcondor)
         store = MySQL(config.store)
 
@@ -114,16 +114,17 @@ class GlobalQueueRequestHistory(object):
             try:
                 last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`', retries = 1)[0]
             except IndexError:
-                store.query('INSERT INTO `system` VALUES ()')
+                if not read_only:
+                    store.query('INSERT INTO `system` VALUES ()')
                 last_update = time.time() - 3600 * 24 # just go back by a day
 
-            store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()', retries = 0, silent = True)
+            if not read_only:
+                store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()', retries = 0, silent = True)
+
         except MySQLdb.OperationalError:
             # We have a read-only config
             read_only = True
-            LOG.info('Running update() in read-only mode.')
-        else:
-            read_only = False
+            LOG.info('Cannot write to DB. Switching to read_only.')
 
         source_records = GlobalQueueRequestHistory._get_source_records(htcondor, inventory, last_update)
 
