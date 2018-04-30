@@ -16,6 +16,7 @@ from enforcerprotected import EnforcedProtectionTagger
 from datasetrelease import DatasetRelease
 from relativeage import BlockReplicaRelativeAge
 from dbs import CheckAllDBS
+from taperequest import TapeCopyRequested
 
 __all__ = [
     'CRABAccessHistory',
@@ -26,7 +27,8 @@ __all__ = [
     'EnforcedProtectionTagger',
     'DatasetRelease',
     'BlockReplicaRelativeAge',
-    'CheckAllDBS'
+    'CheckAllDBS',
+    'TapeCopyRequested'
 ]
 
 # Dictionary of registered producers

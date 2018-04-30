@@ -321,7 +321,7 @@ replica_variables = {
     'dataset.name': DatasetName(),
     'dataset.status': DatasetStatus(),
     'dataset.on_tape': DatasetOnTape(),
-    'dataset.tape_copy_requested': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'tape_copy_requested', dicts_default = False),
+    'dataset.tape_copy_requested': DatasetAttr(Attr.BOOL_TYPE, dict_attr = 'tape_copy_requested', dict_default = False),
     'dataset.size': DatasetAttr(Attr.NUMERIC_TYPE, 'size'),
     'dataset.last_update': DatasetAttr(Attr.TIME_TYPE, 'last_update'),
     'dataset.last_access': DatasetAttr(Attr.TIME_TYPE, dict_attr = 'last_access', dict_default = 0),

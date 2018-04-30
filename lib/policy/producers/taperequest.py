@@ -24,7 +24,7 @@ class TapeCopyRequested(object):
             if site.storage_type != Site.TYPE_MSS:
                 continue
 
-            requests = phedex.make_request('transferrequests', ['node=' + site.name, 'approval=pending'])
+            requests = self._phedex.make_request('transferrequests', ['node=' + site.name, 'approval=pending'])
             for request in requests:
                 for dest in request['destinations']['node']:
                     if dest['name'] != site.name:
