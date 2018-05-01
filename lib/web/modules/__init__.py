@@ -1,3 +1,5 @@
+import os
+
 modules = {}
 
 # Import all .py files and subdirectories in this package
