@@ -1,4 +1,6 @@
 import example
 
-exports = {}
-exports.update(example.exports)
+export_data = {}
+export_data.update(example.export_data)
+
+export_web = {}

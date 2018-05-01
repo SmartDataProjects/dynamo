@@ -60,6 +60,10 @@ try:
 except OSError:
     LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 
+## Import the web server (die here if ill-configured)
+if config.web.enabled:
+    from dynamo.web.server import WebServer
+
 ## Start the server
 server = main.DynamoServer(config)
 
@@ -68,12 +72,8 @@ srv_thread = threading.Thread(target = server.run)
 srv_thread.start()
 
 if config.web.enabled:
-    from dynamo.web.server import WebServer
-    from flup.server.fcgi import WSGIServer
-
     web = WebServer(config.web, server.inventory, Authorizer(server.manager))
-    # Thread-based WSGI server
-    WSGIServer(web.main, bindAddress = config.web.socket, umask = 0).run()
+    web.start()
 
 else:
     # WSGIServer intercepts INT, TERM, and HUP so we do the same here

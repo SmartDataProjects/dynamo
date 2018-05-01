@@ -3,6 +3,8 @@ import sys
 import re
 import json
 import collections
+from cgi import FieldStorage
+from flup.server.fcgi import WSGIServer
 
 import dynamo.web.exceptions as exceptions
 # Actual modules imported at the bottom of this file
@@ -12,12 +14,17 @@ class WebServer(object):
     User = collections.namedtuple('User', ['name', 'id', 'authlist'])
 
     def __init__(self, config, inventory, authorizer):
+        self.socket = config.socket
         self.modules_config = config.modules_config.clone()
         self.inventory = inventory
         self.authorizer = authorizer
 
         # cookie string -> (user name, user id)
         self.known_users = {}
+
+    def start(self):
+        # Thread-based WSGI server
+        WSGIServer(self.main, bindAddress = self.socket, umask = 0).run()
 
     def main(self, environ, start_response):
         """
@@ -52,20 +59,22 @@ class WebServer(object):
         caller = WebServer.User(user, user_id, authlist)
 
         ## Step 2
-        module = environ['SCRIPT_NAME'].strip('/')
-        command = environ['PATH_INFO'][1:]
+        mode = environ['SCRIPT_NAME'].strip('/')
+        if mode != 'data' and mode != 'web':
+            start_response('404 Not Found', [('Content-Type', 'text/plain')])
+            return 'Invalid request %s.' % mode
+
+        module, _, command = environ['PATH_INFO'][1:].partition('/')
 
         try:
-            cls = modules[module][command]
+            cls = modules[mode][module][command]
         except KeyError:
             start_response('404 Not Found', [('Content-Type', 'text/plain')])
             return 'Invalid request %s/%s.' % (module, command)
 
         ## Step 3
-        request = {}
-        for query in environ['QUERY_STRING'].split('&'):
-            key, _, value = query.partition('=')
-            request[key] = value
+        # FieldStorage is a dict-like class that holds both GET and POST requests
+        request = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
 
         ## Step 4
         try:
@@ -84,8 +93,12 @@ class WebServer(object):
             return 'Exception: ' + str(sys.exc_info()[1])
 
         ## Step 5
-        start_response('200 OK', [('Content-Type', 'application/json')])
-        return json.dumps(content)
+        if mode == 'data':
+            start_response('200 OK', [('Content-Type', 'application/json')])
+            return json.dumps(content)
+        else:
+            start_response('200 OK', [('Content-Type', 'text/html')])
+            return content
 
     def identify_user(self, environ):
         """Read the DN string in the environ and return (user name, user id)."""

@@ -34,4 +34,4 @@ class ListDatasets(object):
         return response
 
 # exported to __init__.py
-exports = {'datasets': ListDatasets}
+export_data = {'datasets': ListDatasets}

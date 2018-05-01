@@ -14,7 +14,7 @@ class Example(MySQLRegistryMixin, MySQLHistoryMixin):
         return []
 
 ## Define the mapping from PATH_INFO (https://server/module/PATH_INFO) to class
-exports = {
+export_data = {
     'example': Example
 }
 
