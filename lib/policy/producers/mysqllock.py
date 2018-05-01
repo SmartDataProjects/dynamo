@@ -24,6 +24,12 @@ class MySQLReplicaLock(object):
             self.users.append((user_id, role_id))
 
     def load(self, inventory):
+        for dataset in inventory.datasets.itervalues():
+            try:
+                dataset.attr.pop('locked_blocks')
+            except KeyError:
+                pass
+
         if len(self.users) != 0:
             entries = self._mysql.select_many('detox_locks', ('item', 'sites', 'groups'), ('user_id', 'role_id'), self.users, additional_conditions = ['`unlock_date` IS NULL'])
         else:
@@ -54,21 +60,6 @@ class MySQLReplicaLock(object):
 
                 datasets = [dataset]
 
-            dataset_blocks = []
-            for dataset in datasets:
-                if block_pattern is None:
-                    blocks = None
-
-                else:
-                    block = dataset.find_block(block_name)
-                    if block is None:
-                        LOG.debug('Cannot lock unknown block %s', block_name)
-                        continue
-                    
-                    blocks = set([block])
-
-                dataset_blocks.append((dataset, blocks))
-
             specified_sites = []
             if sites_pattern:
                 if sites_pattern == '*':
@@ -95,7 +86,7 @@ class MySQLReplicaLock(object):
                     except KeyError:
                         pass
 
-            for dataset, blocks in dataset_blocks:
+            for dataset in datasets:
                 sites = set(specified_sites)
                 groups = set(specified_groups)
 
@@ -113,30 +104,50 @@ class MySQLReplicaLock(object):
                     locked_blocks = dataset.attr['locked_blocks']
                 except KeyError:
                     locked_blocks = dataset.attr['locked_blocks'] = {}
-    
-                for replica in dataset.replicas:
-                    if replica.site not in sites:
-                        continue
-    
-                    if replica.site not in locked_blocks:
-                        locked_blocks[replica.site] = set()
-    
-                    for block_replica in replica.block_replicas:
-                        if block_replica.group not in groups:
+
+                if block_pattern is None:
+                    for replica in dataset.replicas:
+                        if replica.site not in sites:
                             continue
-    
-                        if block_replica.block in blocks:
+        
+                        if replica.site not in locked_blocks:
+                            locked_blocks[replica.site] = set()
+        
+                        for block_replica in replica.block_replicas:
+                            if block_replica.group not in groups:
+                                continue
+        
                             locked_blocks[replica.site].add(block_replica.block)
+                else:
+                    block = dataset.find_block(block_name)
+                    if block is None:
+                        LOG.debug('Cannot lock unknown block %s', block_name)
+                        continue
+
+                    for replica in block.replicas:
+                        if replica.site not in sites:
+                            continue
+
+                        if replica.group not in groups:
+                            continue
+        
+                        if replica.site not in locked_blocks:
+                            locked_blocks[replica.site] = set([block])
+                        else:
+                            locked_blocks[replica.site].add(block)
                             
-            for dataset in inventory.dataests.itervalues():
-                try:
-                    locked_blocks = dataset.attr['locked_blocks']
-                except KeyError:
+        for dataset in inventory.dataests.itervalues():
+            try:
+                locked_blocks = dataset.attr['locked_blocks']
+            except KeyError:
+                continue
+
+            for site, blocks in locked_blocks.items():
+                if blocks is None:
                     continue
 
-                for site, blocks in locked_blocks.items():
-                    # if all blocks are locked, set to None (dataset-level lock)
-                    if blocks == dataset.blocks:
-                        locked_blocks[site] = None
+                # if all blocks are locked, set to None (dataset-level lock)
+                if blocks == dataset.blocks:
+                    locked_blocks[site] = None
 
         LOG.info('Locked %d items.', len(entries))

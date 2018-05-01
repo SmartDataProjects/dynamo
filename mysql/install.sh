@@ -42,7 +42,7 @@ else
   HAS_ROOTCNF=false
 fi
 
-MYSQL="mysql $MYSQLOPT"
+MYSQL="mysql -A $MYSQLOPT"
 
 # Set up grants
 echo '############################'
@@ -62,6 +62,8 @@ HAS_DIFFERENCE=false
 
 for DB in $(ls $THISDIR/schema) dynamo_tmp
 do
+  echo "$DB .."
+
   # Does the database exist?
   echo 'SELECT 1;' | $MYSQL -D $DB > /dev/null 2>&1
 

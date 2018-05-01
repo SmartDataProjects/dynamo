@@ -45,12 +45,58 @@ class WebReplicaLock(object):
 
         self._sources[name] = (webservice.RESTService(rest_config), content_type, site_pattern, lock_url)
 
-    def update(self, inventory):
+    def load(self, inventory):
         for dataset in inventory.datasets.itervalues():
             try:
                 dataset.attr.pop('locked_blocks')
             except KeyError:
                 pass
+
+        for item, site in self.get_list(inventory):
+            if type(item) is Dataset:
+                dataset = item
+                block = None
+            else:
+                dataset = item.dataset
+                block = item
+
+            try:
+                locked_blocks = dataset.attr['locked_blocks']
+            except KeyError:
+                locked_blocks = dataset.attr['locked_blocks'] = {}
+
+            if site is None:
+                sites = [r.site for r in dataset.replicas]
+            else:
+                sites = [site]
+                    
+            for st in sites:
+                if block is None:
+                    locked_blocks[st] = None
+                elif st in locked_blocks:
+                    if locked_blocks[st] is None:
+                        pass
+                    else:
+                        locked_blocks[st].add(block)
+                else:
+                    locked_blocks[st] = set(block)
+
+        for dataset in inventory.dataests.itervalues():
+            try:
+                locked_blocks = dataset.attr['locked_blocks']
+            except KeyError:
+                continue
+
+            for site, blocks in locked_blocks.items():
+                if blocks is None:
+                    continue
+
+                # if all blocks are locked, set to None (dataset-level lock)
+                if blocks == dataset.blocks:
+                    locked_blocks[site] = None
+
+    def get_list(self, inventory):
+        all_locks = [] # [(item, site)]
 
         for source, content_type, site_pattern, lock_url in self._sources.itervalues():        
             if lock_url is not None:
@@ -94,16 +140,14 @@ class WebReplicaLock(object):
                         LOG.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                         continue
 
-                    try:
-                        locked_blocks = dataset.attr['locked_blocks']
-                    except KeyError:
-                        locked_blocks = dataset.attr['locked_blocks'] = {}
-
-                    for replica in dataset.replicas:
-                        if site_re is not None and not site_re.match(replica.site.name):
-                            continue
-
-                        locked_blocks[replica.site] = None
+                    if site_re is not None:
+                        for replica in dataset.replicas:
+                            if not site_re.match(replica.site.name):
+                                continue
+                            
+                            all_locks.append((dataset, replica.site))
+                    else:
+                        all_locks.append((dataset, None))
 
             elif content_type == WebReplicaLock.CMSWEB_LIST_OF_DATASETS:
                 # data['result'] -> simple list of datasets
@@ -118,16 +162,14 @@ class WebReplicaLock(object):
                         LOG.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                         continue
 
-                    try:
-                        locked_blocks = dataset.attr['locked_blocks']
-                    except KeyError:
-                        locked_blocks = dataset.attr['locked_blocks'] = {}
-
-                    for replica in dataset.replicas:
-                        if site_re is not None and not site_re.match(replica.site.name):
-                            continue
-
-                        locked_blocks[replica.site] = None
+                    if site_re is not None:
+                        for replica in dataset.replicas:
+                            if not site_re.match(replica.site.name):
+                                continue
+    
+                            all_locks.append((dataset, replica.site))
+                    else:
+                        all_locks.append((dataset, None))
                 
             elif content_type == WebReplicaLock.SITE_TO_DATASETS:
                 # data = {site: {dataset: info}}
@@ -160,21 +202,13 @@ class WebReplicaLock(object):
                             continue
 
                         if block_name is None:
-                            block = None
+                            all_locks.append((dataset, site))
                         else:
-                            block = dataset.find_block(block_name)
-                            if block is None:
+                            block_replica = replica.find_block_replica(block_name)
+                            if block_replica is None:
                                 LOG.debug('Unknown block %s in %s', object_name, source.url_base)
                                 continue
 
-                        try:
-                            locked_blocks = dataset.attr['locked_blocks']
-                        except KeyError:
-                            locked_blocks = dataset.attr['locked_blocks'] = {}
-    
-                        if block is None:
-                            locked_blocks[site] = None
-                        elif site in locked_blocks and locked_blocks[site] is not None:
-                            locked_blocks[site].add(block)
-                        else:
-                            locked_blocks[site] = set([block])
+                            all_locks.append((block_replica.block, site))
+
+        return all_locks
