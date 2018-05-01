@@ -2,10 +2,11 @@ import logging
 import collections
 import urllib2
 import fnmatch
+import re
 import time
 
 import dynamo.utils.interface.webservice as webservice
-from dynamo.dataformat import Configuration, Block
+from dynamo.dataformat import Configuration, Block, ObjectError
 
 LOG = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class WebReplicaLock(object):
     """
     Dataset lock read from www sources.
     Sets one attr:
-      locked_blocks:   {site: set of blocks}
+      locked_blocks:   {site: set([blocks]) or None if dataset-level}
     """
 
     produces = ['locked_blocks']
@@ -71,6 +72,11 @@ class WebReplicaLock(object):
                     LOG.info('Lock files are being produced. Waiting 60 seconds.')
                     time.sleep(60)
 
+            if site_pattern is None:
+                site_re = None
+            else:
+                site_re = re.compile(fnmatch.translate(site_pattern))
+
             LOG.info('Retrieving lock information from %s', source.url_base)
 
             data = source.make_request()
@@ -88,22 +94,16 @@ class WebReplicaLock(object):
                         LOG.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                         continue
 
-                    if dataset.replicas is None:
-                        continue
-
                     try:
                         locked_blocks = dataset.attr['locked_blocks']
                     except KeyError:
                         locked_blocks = dataset.attr['locked_blocks'] = {}
 
                     for replica in dataset.replicas:
-                        if site_pattern is not None and not fnmatch.fnmatch(replica.site.name, site_pattern):
+                        if site_re is not None and not site_re.match(replica.site.name):
                             continue
 
-                        if replica.site in locked_blocks:
-                            locked_blocks[replica.site].update(brep.block for brep in replica.block_replicas)
-                        else:
-                            locked_blocks[replica.site] = set(brep.block for brep in replica.block_replicas)
+                        locked_blocks[replica.site] = None
 
             elif content_type == WebReplicaLock.CMSWEB_LIST_OF_DATASETS:
                 # data['result'] -> simple list of datasets
@@ -118,22 +118,16 @@ class WebReplicaLock(object):
                         LOG.debug('Unknown dataset %s in %s', dataset_name, source.url_base)
                         continue
 
-                    if dataset.replicas is None:
-                        continue
-
                     try:
                         locked_blocks = dataset.attr['locked_blocks']
                     except KeyError:
                         locked_blocks = dataset.attr['locked_blocks'] = {}
 
                     for replica in dataset.replicas:
-                        if site_pattern is not None and not fnmatch.fnmatch(replica.site.name, site_pattern):
+                        if site_re is not None and not site_re.match(replica.site.name):
                             continue
 
-                        if replica.site in locked_blocks:
-                            locked_blocks[replica.site].update(brep.block for brep in replica.block_replicas)
-                        else:
-                            locked_blocks[replica.site] = set(brep.block for brep in replica.block_replicas)
+                        locked_blocks[replica.site] = None
                 
             elif content_type == WebReplicaLock.SITE_TO_DATASETS:
                 # data = {site: {dataset: info}}
@@ -149,11 +143,10 @@ class WebReplicaLock(object):
                             LOG.debug('Object %s is not locked at %s', object_name, site_name)
                             continue
 
-                        if '#' in object_name:
-                            dataset_name, block_real_name = object_name.split('#')
-                        else:
-                            dataset_name = object_name
-                            block_real_name = None
+                        try:
+                            dataset_name, block_name = Block.from_full_name(object_name)
+                        except ObjectError:
+                            dataset_name, block_name = object_name, None
 
                         try:
                             dataset = inventory.datasets[dataset_name]
@@ -166,22 +159,22 @@ class WebReplicaLock(object):
                             LOG.debug('Replica of %s is not at %s in %s', dataset_name, site_name, source.url_base)
                             continue
 
-                        if block_real_name is None:
-                            blocks = list(dataset.blocks)
+                        if block_name is None:
+                            block = None
                         else:
-                            block = dataset.find_block(Block.to_internal_name(block_real_name))
+                            block = dataset.find_block(block_name)
                             if block is None:
-                                LOG.debug('Unknown block %s of %s in %s', block_real_name, dataset_name, source.url_base)
+                                LOG.debug('Unknown block %s in %s', object_name, source.url_base)
                                 continue
-
-                            blocks = [block]
 
                         try:
                             locked_blocks = dataset.attr['locked_blocks']
                         except KeyError:
                             locked_blocks = dataset.attr['locked_blocks'] = {}
     
-                        if site in locked_blocks:
-                            locked_blocks[site].update(blocks)
+                        if block is None:
+                            locked_blocks[site] = None
+                        elif site in locked_blocks and locked_blocks[site] is not None:
+                            locked_blocks[site].add(block)
                         else:
-                            locked_blocks[site] = set(blocks)
+                            locked_blocks[site] = set([block])
