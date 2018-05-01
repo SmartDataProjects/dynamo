@@ -398,15 +398,15 @@ class DetoxLock {
     );
 
     if ($add_user_service) {
-      $fields[] = '`users`.`name`';
-      $fields[] = '`services`.`name`';
+      $fields[] = 'u.`name`';
+      $fields[] = 'r.`name`';
     }
 
     $query = 'SELECT ' . implode(',', $fields) . ' FROM `detox_locks`';
     
     if ($add_user_service) {
-      $query .= ' INNER JOIN `users` ON `users`.`id` = `detox_locks`.`user_id`';
-      $query .= ' INNER JOIN `services` ON `services`.`id` = `detox_locks`.`service_id`';
+      $query .= ' INNER JOIN `dynamoserver`.`users` AS u ON u.`id` = `detox_locks`.`user_id`';
+      $query .= ' INNER JOIN `dynamoserver`.`roles` AS r ON r.`id` = `detox_locks`.`role_id`';
     }
 
     $where_clause = array();
@@ -430,7 +430,7 @@ class DetoxLock {
     else {
       if ($add_user_service && isset($request['user'])) {
         if ($request['user'] != '*') { // * = match all users
-          $where_clause[] = '`users`.`name` = ?';
+          $where_clause[] = 'u.`name` = ?';
           $params[0] .= 's';
           $params[] = &$request['user'];
         }
@@ -443,13 +443,13 @@ class DetoxLock {
         
       if ($add_user_service && isset($request['service'])) {
         if ($request['service'] != '*') { // * = match all services
-          $where_clause[] = '`services`.`name` = ?';
+          $where_clause[] = 'r.`name` = ?';
           $params[0] .= 's';
           $params[] = &$request['service'];
         }
       }
       else {
-        $where_clause[] = '`detox_locks`.`service_id` = ?';
+        $where_clause[] = '`detox_locks`.`role_id` = ?';
         $params[0] .= 'i';
         $params[] = &$this->_sid;
       }
@@ -555,7 +555,7 @@ class DetoxLock {
 
   private function create_lock($item, $sites, $groups, $expiration, $comment)
   {
-    $query = 'INSERT INTO `detox_locks` (`item`, `sites`, `groups`, `lock_date`, `expiration_date`, `user_id`, `service_id`, `comment`) VALUES (?, ?, ?, NOW(), FROM_UNIXTIME(?), ?, ?, ?)';
+    $query = 'INSERT INTO `detox_locks` (`item`, `sites`, `groups`, `lock_date`, `expiration_date`, `user_id`, `role_id`, `comment`) VALUES (?, ?, ?, NOW(), FROM_UNIXTIME(?), ?, ?, ?)';
     $stmt = $this->_db->prepare($query);
     $stmt->bind_param('ssssiis', $item, $sites, $groups, $expiration, $this->_uid, $this->_sid, $comment);
     $stmt->execute();

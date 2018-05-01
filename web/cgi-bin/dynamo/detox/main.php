@@ -26,7 +26,7 @@ else
 if ($command == 'getPartitions') {
   $data = array();
   
-  $stmt = $history_db->prepare('SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `runs` INNER JOIN `partitions` ON `partitions`.`id` = `runs`.`partition_id` WHERE `runs`.`operation` = ? ORDER BY `partitions`.`id`');
+  $stmt = $history_db->prepare('SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `cycles` INNER JOIN `partitions` ON `partitions`.`id` = `cycles`.`partition_id` WHERE `cycles`.`operation` = ? ORDER BY `partitions`.`id`');
   $stmt->bind_param('s', $operation);
   $stmt->bind_result($id, $name);
   $stmt->execute();
@@ -50,7 +50,7 @@ else if($command == 'findCycle') {
 
   $cycle = 0;
 
-  $stmt = $history_db->prepare('SELECT `run_id` FROM `deletion_requests` WHERE `id` = ?');
+  $stmt = $history_db->prepare('SELECT `cycle_id` FROM `deletion_requests` WHERE `id` = ?');
   $stmt->bind_param('i', $phedex);
   $stmt->bind_result($cycle);
   $stmt->execute();
@@ -69,7 +69,7 @@ $partition_id = 0;
 
 if (isset($_REQUEST['cycleNumber'])) {
   $cycle = 0 + $_REQUEST['cycleNumber'];
-  $stmt = $history_db->prepare('SELECT `partition_id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `runs` WHERE `id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ?');
+  $stmt = $history_db->prepare('SELECT `partition_id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `cycles` WHERE `id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ?');
   $stmt->bind_param('is', $cycle, $operation);
   $stmt->bind_result($partition_id, $policy_version, $comment, $timestamp);
   $stmt->execute();
@@ -93,7 +93,7 @@ if ($cycle == 0) {
   if ($partition_id == 0)
     $partition_id = 10;
 
-  $stmt = $history_db->prepare('SELECT `id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `runs` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ? ORDER BY `id` DESC LIMIT 1');
+  $stmt = $history_db->prepare('SELECT `id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `cycles` WHERE `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ? ORDER BY `id` DESC LIMIT 1');
   $stmt->bind_param('is', $partition_id, $operation);
   $stmt->bind_result($cycle, $policy_version, $comment, $timestamp);
   $stmt->execute();
@@ -226,7 +226,7 @@ else if ($command == 'dumpDeletions') {
   exit(0);
 }
 
-$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` > ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ? ORDER BY `id` ASC LIMIT 1');
+$stmt = $history_db->prepare('SELECT `id` FROM `cycles` WHERE `id` > ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ? ORDER BY `id` ASC LIMIT 1');
 $stmt->bind_param('iis', $cycle, $partition_id, $operation);
 $stmt->bind_result($next_cycle);
 $stmt->execute();
@@ -234,7 +234,7 @@ if (!$stmt->fetch())
   $next_cycle = 0;
 $stmt->close();
 
-$stmt = $history_db->prepare('SELECT `id` FROM `runs` WHERE `id` < ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ? ORDER BY `id` DESC LIMIT 1');
+$stmt = $history_db->prepare('SELECT `id` FROM `cycles` WHERE `id` < ? AND `partition_id` = ? AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = ? ORDER BY `id` DESC LIMIT 1');
 $stmt->bind_param('iis', $cycle, $partition_id, $operation);
 $stmt->bind_result($prev_cycle);
 $stmt->execute();
@@ -343,7 +343,7 @@ if ($command == 'getData') {
 
     $data['requestIds'] = array();
 
-    $stmt = $history_db->prepare('SELECT `id` FROM `deletion_requests` WHERE `run_id` = ? AND `id` > 0');
+    $stmt = $history_db->prepare('SELECT `id` FROM `deletion_requests` WHERE `cycle_id` = ? AND `id` > 0');
     $stmt->bind_param('i', $cycle);
     $stmt->bind_result($request_id);
     $stmt->execute();
