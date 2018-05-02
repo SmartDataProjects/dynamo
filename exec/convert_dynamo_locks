@@ -17,7 +17,7 @@ args = parser.parse_args()
 sys.argv = []
 
 ## Load the configuration
-from dynamo.dataformat.configuration import Configuration, Dataset, Block, ObjectError
+from dynamo.dataformat import Configuration, Dataset, Block, ObjectError
 
 config = Configuration(args.config)
 
@@ -63,7 +63,7 @@ if not read_only:
 
 ## Start conversion
 from dynamo.policy.producers import WebReplicaLock
-from dynamo.utils.interface import MySQL
+from dynamo.utils.interface.mysql import MySQL
 from dynamo.core.executable import inventory, authorizer
 from dynamo.operation.impl.mysqlapplock import MySQLApplicationLockInterface
 
@@ -121,7 +121,7 @@ try:
             else:
                 loaded_locks.add((item.full_name(), site_name))
 
-        num_locked = 0:
+        num_locked = 0
 
         # lock new appearences
         for item, site in loaded_locks - existing_locks:

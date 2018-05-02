@@ -179,9 +179,6 @@ def filter_and_categorize(request, inventory, counts_only = False):
                 for group, count in counts.items():
                     product[group.name].append((dataset, count))
 
-        if len(product) > 100:
-            raise exceptions.ResponseDenied('Too many keys in response')
-
     return product
 
 

@@ -464,8 +464,13 @@ class MySQLMasterServer(MasterServer):
             except IndexError:
                 raise RuntimeError('Unknown role %s' % role)
 
-        sql = 'DELETE FROM `user_authorizations` WHERE `user_id` = %s AND `role_id` = %s AND `target` = %s'
-        deleted = self._mysql.query(sql, user_id, role_id, target)
+        if target is None:
+            sql = 'DELETE FROM `user_authorizations` WHERE `user_id` = %s AND `role_id` = %s AND `target` IS NULL'
+            deleted = self._mysql.query(sql, user_id, role_id)
+        else:
+            sql = 'DELETE FROM `user_authorizations` WHERE `user_id` = %s AND `role_id` = %s AND `target` = %s'
+            deleted = self._mysql.query(sql, user_id, role_id, target)
+
         return deleted != 0
 
     def list_authorized_users(self, target): #override

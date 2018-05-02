@@ -97,6 +97,9 @@ class WebServer(object):
             if ex.allowed is not None:
                 msg += ' Allowed values: [%s]' % ['"%s"' % v for v in ex.allowed]
             return msg
+        except exceptions.ResponseDenied as ex:
+            start_response('400 Bad Request', [('Content-Type', 'text/plain')])
+            return 'Server denied response due to: ' % ex.message
         except:
             start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
             if self.debug:

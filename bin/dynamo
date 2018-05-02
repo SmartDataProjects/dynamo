@@ -28,6 +28,13 @@ class ReceiveError(Exception):
 class DynamoServer(object):
     def __init__(self, addr, certfile, keyfile):
         try:
+            open(certfile).close()
+            open(keyfile).close()
+        except:
+            # Certificate or key not readable -> consider as an SSL error
+            raise ssl.SSLError()
+
+        try:
             try:
                 context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
             except AttributeError:

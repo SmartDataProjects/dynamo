@@ -238,7 +238,7 @@ fi
 
 if [ $WEBSERVER ]
 then
-#  $SOURCE/web/install.sh
+  $SOURCE/web/install.sh
   if [ $? -ne 0 ]
   then
     echo
