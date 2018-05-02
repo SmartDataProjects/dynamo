@@ -98,12 +98,14 @@ class MySQLHistory(TransactionHistoryInterface):
 
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        dataset_ids = self._mysql.select_many('datasets', ('id',), 'name', (d.name for d, s in dataset_list))
-        id_sizes = zip(dataset_ids, [s for d, s in dataset_list])
+        dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (d.name for d, s in dataset_list)))
 
         self._mysql.query('INSERT INTO `copy_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`) VALUES (%s, %s, NOW(), %s, %s)', operation_id, run_number, approved, site_id)
+        
+        fields = ('copy_id', 'dataset_id', 'size')
+        mapping = lambda (dataset, size): (operation_id, dataset_ids[dataset.name], size)
 
-        self._mysql.insert_many('copied_replicas', ('copy_id', 'dataset_id', 'size'), lambda (d, s): (operation_id, d, s), id_sizes, do_update = False)
+        self._mysql.insert_many('copied_replicas', fields, mapping, dataset_list, do_update = False)
 
     def _do_make_deletion_entry(self, run_number, site, operation_id, approved, dataset_list): #override
         """
@@ -112,12 +114,14 @@ class MySQLHistory(TransactionHistoryInterface):
 
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        dataset_ids = self._mysql.select_many('datasets', ('id',), 'name', (d.name for d, s in dataset_list))
-        id_sizes = zip(dataset_ids, [s for d, s in dataset_list])
+        dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (d.name for d, s in dataset_list)))
 
         self._mysql.query('INSERT INTO `deletion_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`) VALUES (%s, %s, NOW(), %s, %s)', operation_id, run_number, approved, site_id)
 
-        self._mysql.insert_many('deleted_replicas', ('deletion_id', 'dataset_id', 'size'), lambda (d, s): (operation_id, d, s), id_sizes, do_update = False)
+        fields = ('deletion_id', 'dataset_id', 'size')
+        mapping = lambda (dataset, size): (operation_id, dataset_ids[dataset.name], size)
+
+        self._mysql.insert_many('deleted_replicas', fields, mapping, dataset_list, do_update = False)
 
     def _do_update_copy_entry(self, copy_record): #override
         self._mysql.query('UPDATE `copy_requests` SET `approved` = %s WHERE `id` = %s', copy_record.approved, copy_record.operation_id)
