@@ -48,7 +48,7 @@ class MySQLHistory(TransactionHistoryInterface):
         dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (d.name for d, s in dataset_list)))
 
         self._mysql.query('INSERT INTO `copy_requests` (`id`, `run_id`, `timestamp`, `approved`, `site_id`) VALUES (%s, %s, NOW(), %s, %s)', operation_id, run_number, approved, site_id)
-
+        
         fields = ('copy_id', 'dataset_id', 'size')
         mapping = lambda (dataset, size): (operation_id, dataset_ids[dataset.name], size)
 

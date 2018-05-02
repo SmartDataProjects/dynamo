@@ -136,8 +136,8 @@ class PhEDExDeletionInterface(DeletionInterface):
                             LOG.error('Could not delete %s from %s', str(items[0]), site.name)
                             result = []
                         else:
-                            self._run_deletion_request(request_mapping, site, level, item[:len(item) / 2], comments)
-                            self._run_deletion_request(request_mapping, site, level, item[len(item) / 2:], comments)
+                            self._run_deletion_request(request_mapping, site, level, items[:len(items) / 2], comments)
+                            self._run_deletion_request(request_mapping, site, level, items[len(items) / 2:], comments)
                     else:
                         result = []
 
