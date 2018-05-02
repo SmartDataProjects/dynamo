@@ -66,6 +66,8 @@ class DynamoInventory(ObjectRepository):
     def __init__(self, config):
         ObjectRepository.__init__(self)
 
+        self.loaded = False
+
         self._store = None
         if 'persistency' in config:
             self.init_store(config.persistency.module, config.persistency.config)
@@ -114,6 +116,8 @@ class DynamoInventory(ObjectRepository):
         @param sites    2-tuple (included, excluded)
         @param datasets 2-tuple (included, excluded)
         """
+
+        self.loaded = False
         
         self.groups.clear()
         self.groups[None] = df.Group.null_group
@@ -146,6 +150,8 @@ class DynamoInventory(ObjectRepository):
             num_block_replicas += sum(len(r.block_replicas) for r in dataset.replicas)
 
         LOG.info('Data is loaded to memory. %d groups, %d sites, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.groups), len(self.sites), len(self.datasets), num_dataset_replicas, num_block_replicas)
+
+        self.loaded = True
 
     def _load_partitions(self):
         """Load partition data from a text table."""

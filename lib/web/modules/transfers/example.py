@@ -1,9 +1,10 @@
+from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._mysqlregistry import MySQLRegistryMixin
 from dynamo.web.modules._mysqlhistory import MySQLHistoryMixin
 
-class Example(MySQLRegistryMixin, MySQLHistoryMixin):
-
+class Example(WebModule, MySQLRegistryMixin, MySQLHistoryMixin):
     def __init__(self, config):
+        WebModule.__init__(self, config)
         MySQLRegistryMixin.__init__(self, config)
         MySQLHistoryMixin.__init__(self, config)
 

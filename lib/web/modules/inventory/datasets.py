@@ -1,18 +1,16 @@
 import fnmatch
 import re
 
+from dynamo.web.modules._base import WebModule
 from dynamo.dataformat import Dataset
 
-class ListDatasets(object):
-    def __init__(self, config):
-        pass
-
+class ListDatasets(WebModule):
     def run(self, caller, request, inventory):
         datasets = []
     
         # collect information from the inventory and registry according to the requests
         if 'dataset' in request:
-            match_name = request['dataset']
+            match_name = request.getvalue('dataset')
             if '*' in match_name:
                 pattern = re.compile(fnmatch.translate(match_name))
                 for name in inventory.datasets.iterkeys():

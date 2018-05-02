@@ -16,7 +16,7 @@ from dynamo.core.inventory import DynamoInventory
 from dynamo.core.manager import ServerManager, Authorizer, OutOfSyncError
 import dynamo.core.serverutils as serverutils
 from dynamo.core.components.appserver import AppServer
-from dynamo.dataformat.exceptions import log_exception
+from dynamo.utils.log import log_exception
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
@@ -47,6 +47,10 @@ class DynamoServer(object):
 
         ## Application collection
         self.applications_config = config.applications.clone()
+        if self.applications_config.enabled:
+            # Initialize the appserver since it may require elevated privilege (this Ctor is run as root)
+            aconf = self.applications_config.server
+            self.appserver = AppServer.get_instance(aconf.module, self, aconf.config)
 
         ## Server status (and application) poll interval
         self.poll_interval = config.status_poll_interval
@@ -195,12 +199,11 @@ class DynamoServer(object):
 
         # Start the application collector thread
         try:
-            aconf = self.applications_config.server
-            appserver = AppServer.get_instance(aconf.module, self, aconf.config)
-            appserver.start()
+            self.appserver.start()
         except:
             # If app server fails, we don't consider it a recoverable error.
             # KeyboardInterrupt will get the main process out of the retry loop
+            log_exception(LOG)
             raise KeyboardInterrupt()
 
         LOG.info('Start polling for applications.')
@@ -223,7 +226,7 @@ class DynamoServer(object):
     
                 ## Step 5 (easier to do here because we use "continue"s)
                 LOG.debug('Collect processes')
-                writing_process = self.collect_processes(child_processes, writing_process, appserver)
+                writing_process = self.collect_processes(child_processes, writing_process)
 
                 ## Step 6 (easier to do here because we use "continue"s)
                 LOG.debug('Clean old workareas')
@@ -259,7 +262,7 @@ class DynamoServer(object):
                 if not os.path.exists(app['path'] + '/exec.py'):
                     LOG.info('Application %s from user %s@%s (write request: %s) not found.', app['title'], app['user_name'], app['user_host'], app['write_request'])
                     self.manager.master.update_application(app['appid'], status = ServerManager.APP_NOTFOUND)
-                    appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_NOTFOUND})
+                    self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_NOTFOUND})
                     continue
     
                 LOG.info('Found application %s from user %s (write request: %s)', app['title'], app['user_name'], app['write_request'])
@@ -274,7 +277,7 @@ class DynamoServer(object):
                         # TODO send a message
     
                         self.manager.master.update_application(app['appid'], status = ServerManager.APP_AUTHFAILED)
-                        appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_AUTHFAILED})
+                        self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_AUTHFAILED})
                         continue
     
                     queue = multiprocessing.Queue()
@@ -289,7 +292,7 @@ class DynamoServer(object):
                 proc.daemon = True
                 proc.start()
 
-                appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_RUN, 'path': app['path'], 'pid': proc.pid})
+                self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_RUN, 'path': app['path'], 'pid': proc.pid})
     
                 LOG.info('Started application %s (%s) from user %s@%s (PID %d).', app['title'], app['path'], app['user_name'], app['user_host'], proc.pid)
     
@@ -331,10 +334,9 @@ class DynamoServer(object):
                 except:
                     pass
 
-            if appserver is not None:
-                LOG.info('Stopping application server.')
-                # Close the application collector. The collector thread will terminate
-                appserver.stop()
+            LOG.info('Stopping application server.')
+            # Close the application collector. The collector thread will terminate
+            self.appserver.stop()
 
     def _run_update_cycles(self):
         """
@@ -392,7 +394,7 @@ class DynamoServer(object):
 
         self.inventory.init_store(module, config)
 
-    def collect_processes(self, child_processes, writing_process, appserver):
+    def collect_processes(self, child_processes, writing_process):
         ichild = 0
         while ichild != len(child_processes):
             app_id, proc, user_name, user_host, path = child_processes[ichild]
@@ -450,7 +452,7 @@ class DynamoServer(object):
                
             child_processes.pop(ichild)
 
-            appserver.notify_synch_app(app_id, {'status': status, 'exit_code': proc.exitcode})
+            self.appserver.notify_synch_app(app_id, {'status': status, 'exit_code': proc.exitcode})
 
             self.manager.master.update_application(app_id, status = status, exit_code = proc.exitcode)
 

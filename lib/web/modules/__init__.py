@@ -15,4 +15,4 @@ for pyfile in os.listdir(_moddir):
     module = pyfile.replace('.py', '')
     imp = __import__('dynamo.web.modules.' + module, globals(), locals(), ['export_data', 'export_web'])
     modules['data'][module] = imp.export_data
-    modules['data'][module] = imp.export_web
+    modules['web'][module] = imp.export_web

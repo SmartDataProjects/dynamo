@@ -1,7 +1,9 @@
 import os
 import sys
 import re
+import traceback
 import json
+import logging
 import collections
 from cgi import FieldStorage
 from flup.server.fcgi import WSGIServer
@@ -9,6 +11,8 @@ from flup.server.fcgi import WSGIServer
 import dynamo.web.exceptions as exceptions
 # Actual modules imported at the bottom of this file
 from dynamo.web.modules import modules
+
+LOG = logging.getLogger(__name__)
 
 class WebServer(object):
     User = collections.namedtuple('User', ['name', 'id', 'authlist'])
@@ -21,6 +25,8 @@ class WebServer(object):
 
         # cookie string -> (user name, user id)
         self.known_users = {}
+
+        self.debug = config.debug
 
     def start(self):
         # Thread-based WSGI server
@@ -87,15 +93,34 @@ class WebServer(object):
             return 'Missing required parameter "%s".' % ex.param_name
         except exceptions.IllFormedRequest as ex:
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            return 'Parameter "%s" has illegal value "%s".' % (ex.param_name, ex.value)
+            msg = 'Parameter "%s" has illegal value "%s".' % (ex.param_name, ex.value)
+            if ex.allowed is not None:
+                msg += ' Allowed values: [%s]' % ['"%s"' % v for v in ex.allowed]
+            return msg
         except:
             start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
-            return 'Exception: ' + str(sys.exc_info()[1])
+            if self.debug:
+                exc_type, exc, tb = sys.exc_info()
+                response = 'Caught exception %s while waiting for task to complete.\n' % exc_type.__name__
+                response += 'Traceback (most recent call last):\n'
+                response += ''.join(traceback.format_tb(tb)) + '\n'
+                response += '%s: %s\n' % (exc_type.__name__, str(exc))
+                return response
+            else:
+                return 'Exception: ' + str(sys.exc_info()[1])
 
         ## Step 5
         if mode == 'data':
             start_response('200 OK', [('Content-Type', 'application/json')])
-            return json.dumps(content)
+
+            data_str = json.dumps(content)
+
+            if 'callback' in request:
+                # JSONP request
+                return request.getvalue('callback') + '(' + data_str + ')'
+            else:
+                # Normal JSON
+                return data_str
         else:
             start_response('200 OK', [('Content-Type', 'text/html')])
             return content

@@ -1,4 +1,4 @@
-from exceptions import IntegrityError, ObjectError, ConfigurationError, log_exception
+from exceptions import IntegrityError, ObjectError, ConfigurationError
 from dataset import Dataset
 from block import Block
 from lfile import File
