@@ -84,11 +84,7 @@ class MySQL(object):
             self._connection_parameters['db'] = db
 
     def hostname(self):
-        cursor = self.get_cursor()
-        cursor.execute('SELECT @@hostname')
-        result = cursor.fetchall()
-        cursor.close()
-        return result[0][0]
+        return self.query('SELECT @@hostname')[0]
 
     def close(self):
         if self._connection is not None:
@@ -478,9 +474,9 @@ class MySQL(object):
 
             while itr:
                 if type(obj) is str:
-                    pool_expr += "'%s'" % obj
+                    pool_expr += MySQLdb.escape_string(obj)
                 else:
-                    pool_expr += str(obj)
+                    pool_expr += MySQLdb.escape(obj, MySQLdb.converters.conversions)
 
                 try:
                     obj = itr.next()
@@ -488,7 +484,7 @@ class MySQL(object):
                     itr = None
                     break
 
-                if self.max_query_len > 0 and len(pool_expr) < self.max_query_len:
+                if self.max_query_len > 0 and len(pool_expr) > self.max_query_len:
                     break
 
                 pool_expr += ','

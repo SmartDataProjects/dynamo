@@ -188,8 +188,15 @@ class SocketAppServer(AppServer):
             # keeps blocking when socket is closed
             try:
                 conn, addr = self._sock.accept()
-            except:
+            except Exception as ex:
                 if self._running:
+                    try:
+                        if ex.errno == 9: # Bad file descriptor -> socket is closed
+                            self.stop()
+                            break
+                    except:
+                        pass
+
                     LOG.error('Application server connection failed with error: %s.' % str(sys.exc_info()[1]))
                     continue
 
