@@ -56,6 +56,8 @@ class DynamoServer(object):
         self._certfile = certfile
         self._keyfile = keyfile
 
+        self._is_local = (self._addr[0] in ('localhost', '127.0.0.1', socket.gethostname()))
+
     def close(self):
         try:
             self._conn.shutdown(socket.SHUT_RDWR)
@@ -132,7 +134,7 @@ class DynamoServer(object):
 
         in_data = {'command': 'submit', 'title': title, 'args': args, 'write_request': write_request}
 
-        if self._addr[0] in ('localhost', '127.0.0.1', socket.gethostname()):
+        if self._is_local:
             in_data['exec_path'] = os.path.realpath(executable)
         else:
             with open(executable) as source:
@@ -159,6 +161,8 @@ class DynamoServer(object):
 
         sys.stderr.write(' Application id: %d\n' % app_id)
         sys.stderr.write(' Path: %s\n' % path)
+        if self._is_local:
+            sys.stderr.write(' PID: %d\n' % resp_data['pid'])
 
         if asynch:
             return

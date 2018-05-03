@@ -36,6 +36,7 @@ class TransactionHistoryInterface(object):
 
     def __init__(self, config):
         self.test = config.get('test', False)
+        self.read_only = config.get('read_only', False)
 
     def new_copy_cycle(self, partition, policy_version, comment = ''):
         """

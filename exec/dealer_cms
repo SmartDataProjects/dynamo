@@ -21,7 +21,7 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout)
-from dynamo.core.executable import make_standard_logger
+from dynamo.core.executable import make_standard_logger, read_only
 
 LOG = make_standard_logger(config.log_level)
 
@@ -39,7 +39,12 @@ if 'undertaker' in dealer_config.plugins:
 
 dealer_config.test_run = args.test_run
 
-dealer = Dealer(config.dealer)
+dealer = Dealer(dealer_config)
+
+if read_only:
+    dealer.copy_op.dry_run = True
+    dealer.history.test = True
+
 dealer.run(inventory, comment = args.comment)
 
 ## If test run, don't send back the inventory updates

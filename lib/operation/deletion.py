@@ -20,6 +20,7 @@ class DeletionInterface(object):
         config = Configuration(config)
 
         self.dry_run = config.get('dry_run', False)
+        self._next_operation_id = 1
 
     def schedule_deletion(self, replica, comments = ''):
         """

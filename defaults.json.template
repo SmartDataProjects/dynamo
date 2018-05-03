@@ -12,8 +12,15 @@
       }
     },
     "readonly": {
-      "module": "DummyHistory",
-      "config": {}
+      "module": "MySQLHistory",
+      "config": {
+        "db_params": {
+          "user": "dynamoread",
+          "passwd": "",
+          "host": "localhost",
+          "db": "dynamohistory"
+        }
+      }
     }
   },
   "utils.interface.mysql:MySQL": {

@@ -22,6 +22,7 @@ class DetoxHistory(object):
         self.snapshots_archive_dir = config.snapshots_archive_dir
 
         self.test = False
+        self.read_only = False
 
     def get_sites(self, cycle_number):
         """
@@ -52,6 +53,9 @@ class DetoxHistory(object):
         @param policy_lines  List of PolicyLine objects
         """
 
+        if self.read_only:
+            return
+
         for line in policy_lines:
             text = re.sub('\s+', ' ', line.condition.text)
             sql = 'SELECT `id` FROM {0}.`policy_conditions` WHERE `text` = %s'.format(self.history_db)
@@ -78,7 +82,7 @@ class DetoxHistory(object):
         in multiple of deleted, kept, and protected.
         """
 
-        if self.test:
+        if self.read_only:
             return
 
         self._mysql.use_db(self.cache_db)
@@ -194,7 +198,7 @@ class DetoxHistory(object):
         @param quotas         {site: quota in TB}
         """
 
-        if self.test:
+        if self.read_only:
             return
 
         self._mysql.use_db(self.cache_db)
@@ -358,7 +362,7 @@ class DetoxHistory(object):
 
             return product
 
-    def _fill_snapshot_cache(self, template, cycle_number, overwrite = False):
+    def _fill_snapshot_cache(self, template, cycle_number):
         self._mysql.use_db(self.cache_db)
 
         # cycle_number is either a cycle number or a partition name. %s works for both
@@ -366,32 +370,43 @@ class DetoxHistory(object):
 
         table_exists = self._mysql.table_exists(table_name)
 
-        if overwrite or not table_exists:
+        is_cycle = True
+        try:
+            cycle_number += 0
+        except TypeError:
+            is_cycle = False
+
+        if not is_cycle or not table_exists:
+            if is_cycle:
+                db_file_name = '%s/snapshot_%09d.db' % (self.snapshots_spool_dir, cycle_number)
+
+                if not os.path.exists(db_file_name):
+                    try:
+                        os.makedirs(self.snapshots_spool_dir)
+                        os.chmod(self.snapshots_spool_dir, 0777)
+                    except OSError:
+                        pass
+
+                    scycle = '%09d' % cycle_number
+                    xz_file_name = '%s/%s/%s/snapshot_%09d.db.xz' % (self.snapshots_archive_dir, scycle[:3], scycle[3:6], cycle_number)
+                    if not os.path.exists(xz_file_name):
+                        raise RuntimeError('Archived snapshot DB ' + xz_file_name + ' does not exist')
+    
+                    with open(xz_file_name, 'rb') as xz_file:
+                        with open(db_file_name, 'wb') as db_file:
+                            db_file.write(lzma.decompress(xz_file.read()))
+
+            else:
+                db_file_name = '%s/snapshot_%s.db' % (self.snapshots_spool_dir, cycle_number)
+
+                if not os.path.exists(db_file_name):
+                    return
+
             # fill from sqlite
             if table_exists:
                 self._mysql.query('TRUNCATE TABLE `{0}`'.format(table_name))
             else:
                 self._mysql.query('CREATE TABLE `{0}` LIKE `{1}`'.format(table_name, template))
-
-            try:
-                cycle_number += 0
-            except TypeError:
-                db_file_name = '%s/snapshot_%s.db' % (self.config.snapshots_spool_dir, cycle_number)
-
-                if not os.path.exists(db_file_name):
-                    return
-            else:
-                db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, cycle_number)
-
-                if not os.path.exists(db_file_name):
-                    scycle = '%09d' % cycle_number
-                    xz_file_name = '%s/%s/%s/snapshot_%09d.db.xz' % (self.config.snapshots_archive_dir, scycle[:3], scycle[3:6], cycle_number)
-                    if not os.path.exists(xz_file_name):
-                        raise RuntimeError('Snapshot DB ' + db_file_name + ' does not exist')
-    
-                    with open(xz_file_name, 'rb') as xz_file:
-                        with open(db_file_name, 'wb') as db_file:
-                            db_file.write(lzma.decompress(xz_file.read()))
 
             snapshot_db = sqlite3.connect(db_file_name)
             snapshot_db.text_factory = str # otherwise we'll get unicode and MySQLdb cannot convert that
@@ -426,17 +441,12 @@ class DetoxHistory(object):
             snapshot_cursor.close()
             snapshot_db.close()
 
-        try:
-            cycle_number += 0
-        except TypeError:
-            # cycle_number is actually a partition name. Nothing more to do
-            return
-        else:
+        if is_cycle:
             # cycle_number is really a number. Update the partition cache table too
-            sql = 'SELECT p.`name` FROM `partitions` AS p INNER JOIN `cycles` AS r ON r.`partition_id` = p.`id` WHERE r.`id` = %s'
+            sql = 'SELECT p.`name` FROM `{hdb}`.`partitions` AS p INNER JOIN `{hdb}`.`cycles` AS r ON r.`partition_id` = p.`id` WHERE r.`id` = %s'.format(hdb = self.history_db)
             partition = self._mysql.query(sql, cycle_number)[0]
     
-            self._fill_snapshot_cache(template, partition, overwrite)
+            self._fill_snapshot_cache(template, partition)
 
             # then update the cache usage
             self._update_cache_usage(template, cycle_number)
@@ -463,7 +473,7 @@ class DetoxHistory(object):
 
         for old_cycle in set(old_replica_cycles) & set(old_site_cycles):
             scycle = '%09d' % old_cycle
-            db_file_name = '%s/snapshot_%09d.db' % (self.config.snapshots_spool_dir, old_cycle)
+            db_file_name = '%s/snapshot_%09d.db' % (self.snapshots_spool_dir, old_cycle)
             if os.path.exists(db_file_name):
                 try:
                     os.unlink(db_file_name)

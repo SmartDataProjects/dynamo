@@ -24,13 +24,19 @@ class Detox(object):
 
         self.deletion_op = DeletionInterface.get_instance(config.deletion_op.module, config.deletion_op.config)
         self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
-        self.history = TransactionHistoryInterface.get_instance()
+
+        if 'history' in config:
+            self.history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
+        else:
+            self.history = TransactionHistoryInterface.get_instance()
         self.detoxhistory = DetoxHistory(config.detox_history)
 
         if config.test_run:
-            self.history.test = True
             self.deletion_op.dry_run = True
             self.copy_op.dry_run = True
+
+            # history.test = True does not mean read-only
+            self.history.test = True
             self.detoxhistory.test = True
 
         self.policy = DetoxPolicy(config)

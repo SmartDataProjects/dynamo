@@ -326,7 +326,7 @@ class MySQLMasterServer(MasterServer):
 
     def user_exists(self, name):
         result = self._mysql.query('SELECT COUNT(*) FROM `users` WHERE `name` = %s', name)[0]
-        return len(result) != 0
+        return result != 0
 
     def list_users(self):
         return self._mysql.query('SELECT `name`, `email`, `dn` FROM `users` ORDER BY `id`')

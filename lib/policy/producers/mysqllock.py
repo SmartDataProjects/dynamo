@@ -136,7 +136,7 @@ class MySQLReplicaLock(object):
                         else:
                             locked_blocks[replica.site].add(block)
                             
-        for dataset in inventory.dataests.itervalues():
+        for dataset in inventory.datasets.itervalues():
             try:
                 locked_blocks = dataset.attr['locked_blocks']
             except KeyError:

@@ -24,7 +24,10 @@ config = Configuration(args.config)
 LOG = make_standard_logger(config.log_level)
 
 # History
-history = TransactionHistoryInterface.get_instance()
+if 'history' in config:
+    history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
+else:
+    history = TransactionHistoryInterface.get_instance()
 
 # Detox-specific history
 detoxhistory = DetoxHistory(config.detox_history)

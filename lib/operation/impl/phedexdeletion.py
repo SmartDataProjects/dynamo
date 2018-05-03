@@ -24,9 +24,6 @@ class PhEDExDeletionInterface(DeletionInterface):
 
         self.deletion_chunk_size = config.get('chunk_size', 50.) * 1.e+12
 
-        if self.dry_run:
-            self._next_operation_id = 1
-
     def schedule_deletion(self, replica, comments = ''): #override
         request_mapping = {}
 

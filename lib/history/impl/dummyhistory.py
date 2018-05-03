@@ -45,10 +45,10 @@ class DummyHistory(TransactionHistoryInterface):
             deletion_record.operation_id, deletion_record.approved, len(deletion_record.replicas))
 
     def save_sites(self, sites): #override
-        LOG.info('Saving %d sites', len(sites))
+        LOG.info('Saving sites.')
 
     def save_datasets(self, datasets): #override
-        LOG.info('Saving %d datasets', len(datasets))
+        LOG.info('Saving datasets.')
 
     def get_incomplete_copies(self, partition): #override
         return self.incomplete_copies

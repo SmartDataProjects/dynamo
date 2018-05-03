@@ -45,7 +45,11 @@ LOG = make_standard_logger(config.log_level)
 from dynamo.history.history import TransactionHistoryInterface
 from dynamo.operation.copy import CopyInterface
 
-history = TransactionHistoryInterface.get_instance()
+if 'history' in config:
+    history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
+else:
+    history = TransactionHistoryInterface.get_instance()
+
 copy = CopyInterface.get_instance(dealer_config.copy_op.module, dealer_config.copy_op.config)
 
 ## Paths

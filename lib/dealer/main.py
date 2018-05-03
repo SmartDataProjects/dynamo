@@ -23,7 +23,11 @@ class Dealer(object):
         """
 
         self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
-        self.history = TransactionHistoryInterface.get_instance()
+
+        if 'history' in config:
+            self.history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
+        else:
+            self.history = TransactionHistoryInterface.get_instance()
 
         if config.test_run:
             self.copy_op.dry_run = True
@@ -204,19 +208,41 @@ class Dealer(object):
             reqlist = reqlists[plugin]
             request = reqlist.pop(0)
 
+            item, destination = request
+
+            if type(item) is Dataset:
+                dataset = item
+                # check that there is at least one source (allow it to be incomplete - could be in production)
+                if len(dataset.replicas) == 0:
+                    continue
+
+                name = item.name
+            elif type(item) is Block:
+                if len(item.replicas) == 0:
+                    continue
+
+                dataset = item.dataset
+                name = item.full_name()
+            elif type(item) is list:
+                no_source = False
+                for block in item:
+                    if len(block.replicas) == 0:
+                        no_source = True
+                        break
+
+                if no_source:
+                    continue
+
+                dataset = item[0].dataset
+                name = dataset.name + '#'
+                name += ':'.join(block.real_name() for block in item)
+
+            if dataset.status not in (Dataset.STAT_PRODUCTION, Dataset.STAT_VALID):
+                continue
+
             requests.append(request + (plugin,))
 
             if LOG.getEffectiveLevel() == logging.DEBUG:
-                item, destination = request
-   
-                if type(item).__name__ == 'Dataset':
-                    name = item.name
-                elif type(item).__name__ == 'Block':
-                    name = item.full_name()
-                elif type(item) is list:
-                    name = item[0].dataset.name + '#'
-                    name += ':'.join(block.real_name() for block in item)
-
                 if destination is None:
                     destname = 'somewhere'
                 else:

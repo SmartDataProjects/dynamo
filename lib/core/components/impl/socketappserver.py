@@ -315,7 +315,7 @@ class SocketAppServer(AppServer):
                 io.send('failed', {'status': ServerManager.application_status_name(msg['status'])})
                 return
 
-            io.send('OK', {'appid': app_id, 'path': msg['path']}) # msg['path'] should be == workarea
+            io.send('OK', {'appid': app_id, 'path': msg['path'], 'pid': msg['pid']}) # msg['path'] should be == workarea
 
             # synchronous execution = client watches the app run
             # client sends the socket address to connect stdout/err to
@@ -323,7 +323,7 @@ class SocketAppServer(AppServer):
 
             addr = (io.host, port_data['port'])
 
-            result = self._serve_synch_app(app_id, msg['path'], msg['pid'], addr)
+            result = self._serve_synch_app(app_id, msg['path'], addr)
 
             io.send('OK', result)
 
@@ -366,7 +366,7 @@ class SocketAppServer(AppServer):
                 pass
             conn.close()
 
-    def _serve_synch_app(self, app_id, path, pid, addr):
+    def _serve_synch_app(self, app_id, path, addr):
         conns = (socket.create_connection(addr), socket.create_connection(addr))
 
         stop_reading = threading.Event()

@@ -114,9 +114,9 @@ class GlobalQueueRequestHistory(object):
             try:
                 last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`', retries = 1)[0]
             except IndexError:
+                last_update = time.time() - 3600 * 24 # just go back by a day
                 if not read_only:
                     store.query('INSERT INTO `system` VALUES ()')
-                last_update = time.time() - 3600 * 24 # just go back by a day
 
             if not read_only:
                 store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()', retries = 0, silent = True)
