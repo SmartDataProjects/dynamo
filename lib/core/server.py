@@ -305,9 +305,9 @@ class DynamoServer(object):
 
         except:
             if len(child_processes) != 0:
-                LOG.error('Exception in server process. Terminating all child processes..')
+                LOG.error('Exception (%s) in server process. Terminating all child processes..', sys.exc_info()[0].__name__)
             else:
-                LOG.error('Exception in server process.')
+                LOG.error('Exception (%s) in server process.', sys.exc_info()[0].__name__)
 
             if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
                 try:

@@ -114,7 +114,7 @@ READCONF="$THISDIR/../utilities/readconf -I $THISDIR/../dynamo.cfg"
 CONTENTS_PATH=$($READCONF web.contents_path)
 
 mkdir -p $CONTENTS_PATH/html
-cp -r $HTMLSOURCE/*.html $CONTENTS_PATH/html
+cp $THISDIR/html/*.html $CONTENTS_PATH/html
 
 ln -s $HTMLTARGET/dynamo/dynamo/css $CONTENTS_PATH/css
 ln -s $HTMLTARGET/dynamo/dynamo/js $CONTENTS_PATH/js

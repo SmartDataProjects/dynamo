@@ -489,7 +489,7 @@ class MySQLMasterServer(MasterServer):
 
     def create_authorizer(self): #override
         # connection will be opened next time a query is made
-        self._mysql.close()
+        self._mysql.make_new_connection()
         return Authorizer(self)
 
     def check_connection(self): #override

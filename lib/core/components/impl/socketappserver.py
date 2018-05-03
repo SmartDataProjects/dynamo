@@ -174,8 +174,11 @@ class SocketAppServer(AppServer):
 
         self._running = False
 
-        self._sock.shutdown(socket.SHUT_RDWR)
-        self._sock.close()
+        try:
+            self._sock.shutdown(socket.SHUT_RDWR)
+            self._sock.close()
+        except:
+            pass
 
     def _accept_applications(self):
         """Infinite loop to serve incoming connections."""
