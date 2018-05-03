@@ -6,7 +6,7 @@ class Partition(object):
     that returns True when the passed block replica belongs to the partition.
     """
 
-    __slots__ = ['_name', '_subpartitions', '_parent', '_condition']
+    __slots__ = ['_name', 'id', '_subpartitions', '_parent', '_condition']
 
     @property
     def name(self):
@@ -20,20 +20,22 @@ class Partition(object):
     def parent(self):
         return self._parent
 
-    def __init__(self, name, condition = None):
+    def __init__(self, name, condition = None, pid = 0):
         self._name = name
         self._subpartitions = None
         self._parent = None
+
+        self.id = pid
 
         # Members that cannot be exported in a pickle (and thus cannot be communicated
         # through multiprocessing queues) - excluded in __getstate__
         self._condition = condition
 
     def __str__(self):
-        return 'Partition %s' % self._name
+        return 'Partition %s (id=%d)' % (self._name, self.id)
 
     def __repr__(self):
-        return 'Partition(name=\'%s\')' % self._name
+        return 'Partition(%s,None,%d)' % (repr(self._name),self.id)
 
     def __eq__(self, other):
         # only comparing names since the rest are set by configuration and are basically constants
@@ -51,10 +53,7 @@ class Partition(object):
             setattr(self, key, value)
 
     def copy(self, other):
-        pass
-
-    def unlinked_clone(self, attrs = True):
-        return Partition(self._name)
+        self.id = other.id
 
     def embed_into(self, inventory, check = False):
         updated = False

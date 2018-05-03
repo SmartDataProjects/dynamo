@@ -1,0 +1,11 @@
+{
+  "registry": {
+  },
+  "history": {
+  },  
+  "inventory": {
+    "monitor": {
+      "body_html": "inventory/monitor.html"
+    }
+  }
+}

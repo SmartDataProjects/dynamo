@@ -2,6 +2,17 @@ class UserInfoSource(object):
     """
     Interface specs for user data authority.
     """
+
+    @staticmethod
+    def get_instance(module, config):
+        import dynamo.source.impl as impl
+        cls = getattr(impl, module)
+
+        if not issubclass(cls, UserInfoSource):
+            raise RuntimeError('%s is not a subclass of UserInfoSource' % module)
+
+        return cls(config)
+
         
     def __init__(self, config):
         pass
@@ -13,11 +24,8 @@ class UserInfoSource(object):
         """
         raise NotImplementedError('get_user')
 
-    def get_user_list(self, users, filt = '*'):
+    def get_user_list(self):
         """
-        REVIEW THIS
-        Fill the given list with users with names matching the filter.
-        @param users   {name: userdata} to be filled with user information in the expected format.
-        @param filt    Wildcard pattern.
+        @return  {name: (name, email, DN)}
         """
         raise NotImplementedError('get_user_list')

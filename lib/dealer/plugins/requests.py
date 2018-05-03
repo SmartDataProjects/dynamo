@@ -42,12 +42,19 @@ class CopyRequestsHandler(BaseHandler):
         blocks_to_propose = {} # {site: {dataset: set of blocks}}
 
         # re-request all new active copies
-        self.registry.query('LOCK TABLES `active_copies` WRITE')
+        if not self.read_only:
+            self.registry.query('LOCK TABLES `active_copies` WRITE', retries = 1)
 
         sql = 'SELECT `request_id`, `item`, `site` FROM `active_copies` WHERE `status` = \'new\''
         sql += ' ORDER BY `site`, `item`'
 
-        fail_sql = 'UPDATE `active_copies` SET `status` = \'failed\' WHERE `request_id` = %s AND `item` = %s AND `site` = %s'
+        def record_failure(request_id, item_name, site_name):
+            if self.read_only:
+                return
+
+            sql = 'UPDATE `active_copies` SET `status` = \'failed\''
+            sql += ' WHERE `request_id` = %s AND `item` = %s AND `site` = %s'
+            self.registry.query(sql, request_id, item_name, site_name)
 
         active_requests = []
 
@@ -57,7 +64,7 @@ class CopyRequestsHandler(BaseHandler):
                 site = inventory.sites[site_name]
             except KeyError:
                 # shouldn't happen but for safety
-                self.registry.query(fail_sql, request_id, item_name, site_name)
+                record_failure(request_id, item_name, site_name)
                 continue
 
             try:
@@ -72,7 +79,7 @@ class CopyRequestsHandler(BaseHandler):
                     dataset = inventory.datasets[item_name]
                 except KeyError:
                     # shouldn't happen but for safety
-                    self.registry.query(fail_sql, request_id, item_name, site_name)
+                    record_failure(request_id, item_name, site_name)
                     continue
 
                 active_requests.append((dataset, site))
@@ -88,14 +95,14 @@ class CopyRequestsHandler(BaseHandler):
                     dataset = inventory.datasets[dataset_name]
                 except KeyError:
                     # shouldn't happen but for safety
-                    self.registry.query(fail_sql, request_id, item_name, site_name)
+                    record_failure(request_id, item_name, site_name)
                     continue
 
                 block = dataset.find_block(block_name)
 
                 if block is None:
                     # shouldn't happen but for safety
-                    self.registry.query(fail_sql, request_id, item_name, site_name)
+                    record_failure(request_id, item_name, site_name)
                     continue
 
                 active_requests[-1][0].append(block)
@@ -118,11 +125,13 @@ class CopyRequestsHandler(BaseHandler):
 
                 blocks.update(item)
 
-        self.registry.query('UNLOCK TABLES')
+        if not self.read_only:
+            self.registry.query('UNLOCK TABLES')
 
         ## deal with new requests
 
-        self.registry.query('LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `copy_request_sites` AS s WRITE, `copy_request_items` AS i WRITE, `active_copies` WRITE, `active_copies` AS a WRITE')
+        if not self.read_only:
+            self.registry.query('LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `copy_request_sites` AS s WRITE, `copy_request_items` AS i WRITE, `active_copies` WRITE, `active_copies` AS a WRITE')
 
         # group into (group, # copies, request count, request time, [list of sites], [list of items], [list of active transfers])
         grouped_requests = {} # {request_id: copy info}
@@ -156,10 +165,10 @@ class CopyRequestsHandler(BaseHandler):
         for request_id, item_name, site_name in self.registry.xquery(sql):
             grouped_requests[request_id][6].append((item_name, site_name))
 
-        reject_sql = 'UPDATE `copy_requests` AS r SET r.`status` = \'rejected\', r.`rejection_reason` = %s'
-        reject_sql += ' WHERE r.`id` = %s'
-
         def activate(request_id, item, site, status):
+            if self.read_only:
+                return
+
             activate_sql = 'INSERT INTO `active_copies` (`request_id`, `item`, `site`, `status`, `created`, `updated`)'
             activate_sql += ' VALUES (%s, %s, %s, %s, NOW(), NOW())'
 
@@ -170,13 +179,20 @@ class CopyRequestsHandler(BaseHandler):
                 for block in item:
                     self.registry.query(activate_sql, request_id, block.full_name(), site.name, status)
 
+        def reject(request_id, reason):
+            if self.read_only:
+                return
+
+            sql = 'UPDATE `copy_requests` AS r SET r.`status` = \'rejected\', r.`rejection_reason` = %s'
+            sql += ' WHERE r.`id` = %s'
+            self.registry.query(sql, reason, request_id)
 
         # loop over requests and find items and destinations
         for request_id, (group_name, num_copies, request_count, request_time, site_names, item_names, active_copies) in grouped_requests.iteritems():
             try:
                 group = inventory.groups[group_name]
             except KeyError:
-                self.registry.query(reject_sql, 'Invalid group name %s' % group_name, request_id)
+                reject(request_id, 'Invalid group name %s' % group_name)
                 continue
 
             sites = [] # list of sites
@@ -197,7 +213,7 @@ class CopyRequestsHandler(BaseHandler):
                         sites.append(site)
 
             if len(sites) == 0:
-                self.registry.query(reject_sql, 'No valid site name in list', request_id)
+                reject(request_id, 'No valid site name in list')
                 continue
 
             rejected = False
@@ -219,7 +235,7 @@ class CopyRequestsHandler(BaseHandler):
                     try:
                         dataset = inventory.datasets[item_name]
                     except KeyError:
-                        self.registry.query(reject_sql, 'Dataset %s not found' % item_name, request_id)
+                        reject(request_id, 'Dataset %s not found' % item_name)
                         rejected = True
                         break
 
@@ -234,7 +250,7 @@ class CopyRequestsHandler(BaseHandler):
                             dataset = inventory.datasets[dataset_name]
                         except KeyError:
                             # if any of the dataset name is invalid, reject the entire request
-                            self.registry.query(reject_sql, 'Dataset %s not found' % dataset_name, request_id)
+                            reject(request_id, 'Dataset %s not found' % dataset_name)
                             rejected = True
                             break
 
@@ -243,7 +259,7 @@ class CopyRequestsHandler(BaseHandler):
 
                     block = dataset.find_block(block_name)
                     if block is None:
-                        self.registry.query(reject_sql, 'Block %s not found' % item_name, request_id)
+                        reject(request_id, 'Block %s not found' % item_name)
                         rejected = True
                         break
 
@@ -260,7 +276,7 @@ class CopyRequestsHandler(BaseHandler):
                 item = items[ii]
                 if type(item) is Dataset:
                     if dataset.size > self.max_size:
-                        self.registry.query(reject_sql, 'Dataset %s is too large (>%.0f TB)' % (dataset.name, self.max_size * 1.e-12), request_id)
+                        reject(request_id, 'Dataset %s is too large (>%.0f TB)' % (dataset.name, self.max_size * 1.e-12))
                         rejected = True
                         break
 
@@ -270,7 +286,7 @@ class CopyRequestsHandler(BaseHandler):
                     total_size = sum(b.size for b in item)
 
                     if total_size > self.max_size:
-                        self.registry.query(reject_sql, 'Request size for %s too large (>%.0f TB)' % (dataset.name, self.max_size * 1.e-12), request_id)
+                        reject(request_id, 'Request size for %s too large (>%.0f TB)' % (dataset.name, self.max_size * 1.e-12))
                         rejected = True
                         break
 
@@ -324,7 +340,7 @@ class CopyRequestsHandler(BaseHandler):
                             
                             if rejection_reason is not None:
                                 # item_name is guaranteed to be valid
-                                self.registry.query(reject_sql, 'Cannot copy %s to %s' % (item_name, destination.name), request_id)
+                                reject(request_id, 'Cannot copy %s to %s' % (item_name, destination.name))
                                 rejected = True
         
                             new_requests.append((item, destination))
@@ -389,7 +405,7 @@ class CopyRequestsHandler(BaseHandler):
     
                         if destination is None:
                             # if any of the item cannot find any of the num_new destinations, reject the request
-                            self.registry.query(reject_sql, 'Destination %d for %s not available' % (icopy, item_name), request_id)
+                            reject(request_id, 'Destination %d for %s not available' % (icopy, item_name))
                             rejected = True
                             break
     
@@ -429,9 +445,11 @@ class CopyRequestsHandler(BaseHandler):
             for item, site in completed_requests:
                 activate(request_id, item, site, 'completed')
 
-            self.registry.query('UPDATE `copy_requests` SET `status` = \'activated\' WHERE `id` = %s', request_id)
+            if not self.read_only:
+                self.registry.query('UPDATE `copy_requests` SET `status` = \'activated\' WHERE `id` = %s', request_id)
 
-        self.registry.query('UNLOCK TABLES')
+        if not self.read_only:
+            self.registry.query('UNLOCK TABLES')
 
         # form the final proposal
         dealer_requests = []
@@ -444,10 +462,13 @@ class CopyRequestsHandler(BaseHandler):
 
         return dealer_requests
 
-    def postprocess(self, run_number, history, copy_list): # override
+    def postprocess(self, cycle_number, history, copy_list): # override
         """
         Create active copy entries for accepted copies.
         """
+
+        if self.read_only:
+            return
 
         sql = 'UPDATE `active_copies` SET `status` = \'queued\', `updated` = NOW() WHERE `item` LIKE %s AND `site` = %s AND `status` = \'new\''
 

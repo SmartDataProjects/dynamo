@@ -5,31 +5,7 @@
     "copy_op": {
       "module": "PhEDExCopyInterface",
       "config": {
-        "phedex": {
-          "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
-          "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
-          "auth_handler": "HTTPSCertKeyHandler",
-          "auth_handler_conf": {},
-          "num_attempts": 5
-        },
         "chunk_size": 50
-      }
-    },
-    "history": {
-      "module": "MySQLHistory",
-      "config": {
-        "db_params": {
-          "config_file": "/etc/my.cnf.d/dynamo.cnf",
-          "config_group": "mysql",
-          "db": "dynamohistory"
-        },
-        "cache_db_params": {
-          "config_file": "/etc/my.cnf.d/dynamo.cnf",
-          "config_group": "mysql",
-          "db": "dynamohistory_cache"
-        },
-        "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
-        "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
       }
     },
     "plugins": {
@@ -40,8 +16,6 @@
           "max_size": 200.0,
           "block_request_max": 0.5,
           "db_params": {
-            "config_file": "/etc/my.cnf.d/dynamo.cnf",
-            "config_group": "mysql",
             "db": "dynamoregister"
           }
         }
@@ -52,7 +26,7 @@
         "config": {
           "enforcer": {
             "max_dataset_size": 50.0,
-            "policy": "$(DYNAMO_BASE)/policies/common/enforcer_rules_physics.json"
+            "policy": "$(DYNAMO_POLICIES)/common/enforcer_rules_physics.json"
           }
         }
       },
@@ -73,18 +47,18 @@
           "max_dataset_size": 50.0,
           "max_cycle_volume": 5.0,
           "target_reasons": {
-            "dataset.name == /*/*/MINIAOD* and replica.num_full_disk_copy_common_owner < 3": 2,
             "dataset.name == /*/*/MINIAOD* and replica.num_full_other_copy_common_owner < 2": 2,
-            "replica.num_full_disk_copy_common_owner < 2": 1,
             "replica.num_full_other_copy_common_owner == 0": 1
-          }
+          },
+          "detox_history": {}
         }
       },
       "undertaker": {
         "priority": 2,
         "module": "Undertaker",
         "config": {
-          "additional_sites": []
+          "additional_sites": [],
+          "detox_history": {}
         }
       }
     },
@@ -92,11 +66,7 @@
       "GlobalQueueRequestHistory": {
         "weight_halflife": 3.0,
         "store": {
-          "db_params": {
-            "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
-            "config_group": "mysql",
-            "db": "dynamo"
-          }
+          "db": "dynamo"
         }
       }
     },
@@ -104,6 +74,12 @@
     "target_site_occupancy": 0.93,
     "max_site_pending_fraction": 0.03,
     "max_total_cycle_volume": 200
+  },
+  "detox_history": {
+    "history_db": "dynamohistory",
+    "cache_db": "dynamohistory_cache",
+    "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
+    "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
   },
   "log_level": "info"
 }

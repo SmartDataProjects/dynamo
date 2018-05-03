@@ -26,9 +26,9 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout & stderr)
-import dynamo.core.executable as executable
+from dynamo.core.executable import make_standard_logger, read_only, inventory
 
-LOG = executable.make_standard_logger(config.log_level)
+LOG = make_standard_logger(config.log_level)
 
 ## Option compatibilities
 if args.mode not in [None, 'ReplicaDelta', 'ReplicaFull']:
@@ -51,13 +51,6 @@ LOG.info('Starting inventory update.')
 
 ## Load and initialize sources
 import dynamo.source.impl as sources
-
-inventory = executable.inventory
-
-config.groups.config.phedex = config.phedex
-config.sites.config.phedex = config.phedex
-config.datasets.config.phedex = config.phedex
-config.replicas.config.phedex = config.phedex
 
 if 'include_sites' in config:
     config.sites.config.include = config.include_sites
@@ -276,7 +269,6 @@ def create_file(file_tmp, block):
     LOG.debug('Creating new file %s', file_tmp.lfn)
     lfile = File(file_tmp.lfn, block)
     lfile.copy(file_tmp)
-    # files.add, not add_file (latter increments block attrs which are already set)
     block.files.add(lfile)
     inventory.register_update(lfile)
 
@@ -284,7 +276,6 @@ def create_block(block_tmp, dataset):
     LOG.debug('Creating new block %s', block_tmp.full_name())
     block = Block(block_tmp.name, dataset)
     block.copy(block_tmp)
-    # blocks.add, not add_block (latter increments dataset attrs which are already set)
     dataset.blocks.add(block)
     inventory.register_update(block)
     # avoid database query
@@ -326,10 +317,7 @@ for dataset_tmp in dataset_tmps:
         create_dataset(dataset_tmp)
         continue
 
-    if dataset == dataset_tmp:
-        # if dataset size, num_files, etc. are identical, it's safe to assume all blocks are
-        continue
-    else:
+    if dataset != dataset_tmp:
         LOG.debug('Updating dataset %s', dataset.name)
         dataset.copy(dataset_tmp)
         inventory.register_update(dataset)
@@ -349,15 +337,19 @@ for dataset_tmp in dataset_tmps:
             continue
 
         if block == block_tmp:
+            # If num_files and size are identical, there is very little chance that the actual file list is different.
+            # We skip the file update.
             continue
         else:
+            # Need to get the files here because copy may overwrite size or num_files, causing an IntegrityError
+            existing_files = dict(((f.lfn, f) for f in block.files))
+
             LOG.debug('Updating block %s', block.full_name())
             block.copy(block_tmp)
             inventory.register_update(block)
 
         # 3.4. Update files
 
-        existing_files = dict(((f.lfn, f) for f in block.files))
         file_names_in_source = set()
 
         for file_tmp in block_tmp.files:
@@ -582,7 +574,7 @@ if check_replicas:
 
 # 7. Save the execution state
 
-if not executable.read_only and args.mode is not None and os.path.exists(config.updater_state_file):
+if not read_only and args.mode is not None and os.path.exists(config.updater_state_file):
     # Regardless of update mode, clear the updated datasets from the table
     state_db = sqlite3.connect(config.updater_state_file)
     cursor = state_db.cursor()

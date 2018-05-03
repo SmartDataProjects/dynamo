@@ -3,27 +3,40 @@ import sys
 import logging
 import time
 import re
+import threading
 
 import MySQLdb
 import MySQLdb.converters
 import MySQLdb.cursors
+import MySQLdb.connections
 
 # Fix for some (newer) versions of MySQLdb
 from types import TupleType, ListType
 MySQLdb.converters.conversions[TupleType] = MySQLdb.converters.escape_sequence
 MySQLdb.converters.conversions[ListType] = MySQLdb.converters.escape_sequence
 
+from dynamo.dataformat import Configuration
+
 LOG = logging.getLogger(__name__)
 
 class MySQL(object):
-    """Generic MySQL interface (for an interface)."""
+    """Generic thread-safe MySQL interface (for an interface)."""
+
+    _default_parameters = {}
+
+    @staticmethod
+    def set_default(config):
+        MySQL._default_parameters = dict(config)
 
     @staticmethod
     def escape_string(string):
         return MySQLdb.escape_string(string)
     
     def __init__(self, config):
-        self._connection_parameters = {}
+        config = Configuration(config)
+
+        self._connection_parameters = dict(MySQL._default_parameters)
+
         if 'config_file' in config and 'config_group' in config:
             # Check file exists and readable
             with open(config['config_file']):
@@ -41,22 +54,51 @@ class MySQL(object):
             self._connection_parameters['db'] = config['db']
 
         self._connection = None
+
+        # Avoid interference in case the module is used from multiple threads
+        self._connection_lock = threading.RLock()
         
         # Use with care! A deadlock can occur when another session tries to lock a table used by a session with
         # reuse_connection = True
         self.reuse_connection = config.get('reuse_connection', False)
 
-        # default 1M characters
+        # Default 1M characters
         self.max_query_len = config.get('max_query_len', 1000000)
 
+        # Row id of the last insertion. Will be nonzero if the table has an auto-increment primary key.
+        # **NOTE** While core execution of query() and xquery() are locked and thread-safe, last_insert_id is not.
+        # Use insert_and_get_id() in a threaded environment.
         self.last_insert_id = 0
 
     def db_name(self):
         return self._connection_parameters['db']
 
+    def use_db(self, db):
+        self.close()
+        if db is None:
+            try:
+                self._connection_parameters.pop('db')
+            except:
+                pass
+        else:
+            self._connection_parameters['db'] = db
+
+    def hostname(self):
+        cursor = self.get_cursor()
+        cursor.execute('SELECT @@hostname')
+        result = cursor.fetchall()
+        cursor.close()
+        return result[0][0]
+
     def close(self):
         if self._connection is not None:
             self._connection.close()
+
+    def get_cursor(self, cursor_cls = MySQLdb.connections.Connection.default_cursor):
+        if self._connection is None:
+            self._connection = MySQLdb.connect(**self._connection_parameters)
+
+        return self._connection.cursor(cursor_cls)
 
     def query(self, sql, *args, **kwd):
         """
@@ -78,14 +120,15 @@ class MySQL(object):
         except KeyError:
             silent = False
 
-        if self._connection is None:
-            self._connection = MySQLdb.connect(**self._connection_parameters)
+        self._connection_lock.acquire()
 
-        cursor = self._connection.cursor()
-
-        self.last_insert_id = 0
+        cursor = None
 
         try:
+            cursor = self.get_cursor()
+    
+            self.last_insert_id = 0
+
             if LOG.getEffectiveLevel() == logging.DEBUG:
                 if len(args) == 0:
                     LOG.debug(sql)
@@ -96,9 +139,11 @@ class MySQL(object):
                 for _ in range(num_attempts):
                     try:
                         cursor.execute(sql, args)
+                        self._connection.commit()
                         break
                     except MySQLdb.OperationalError as err:
                         if not (self.reuse_connection and err.args[0] == 2006):
+                            raise
                             #2006 = MySQL server has gone away
                             #If we are reusing connections, this type of error is to be ignored
                             if not silent:
@@ -108,8 +153,8 @@ class MySQL(object):
 
                         # reconnect to server
                         cursor.close()
-                        self._connection = MySQLdb.connect(**self._connection_parameters)
-                        cursor = self._connection.cursor()
+                        self._connection = None
+                        cursor = self.get_cursor()
         
                 else: # 10 failures
                     if not silent:
@@ -129,12 +174,10 @@ class MySQL(object):
     
             if cursor.description is None:
                 if cursor.lastrowid != 0:
-                    # insert query
+                    # insert query on an auto-increment column
                     self.last_insert_id = cursor.lastrowid
-                    return cursor.lastrowid
-                else:
-                    # update query
-                    return cursor.rowcount
+
+                return cursor.rowcount
     
             elif len(result) != 0 and len(result[0]) == 1:
                 # single column requested
@@ -144,11 +187,14 @@ class MySQL(object):
                 return list(result)
 
         finally:
-            cursor.close()
+            if cursor is not None:
+                cursor.close()
     
-            if not self.reuse_connection:
+            if not self.reuse_connection and self._connection is not None:
                 self._connection.close()
                 self._connection = None
+
+            self._connection_lock.release()
 
     def xquery(self, sql, *args):
         """
@@ -158,14 +204,15 @@ class MySQL(object):
          - values if one column is called
         """
 
-        if self._connection is None:
-            self._connection = MySQLdb.connect(**self._connection_parameters)
-
-        cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
-
-        self.last_insert_id = 0
+        cursor = None
 
         try:
+            self._connection_lock.acquire()
+
+            cursor = self.get_cursor(MySQLdb.cursors.SSCursor)
+    
+            self.last_insert_id = 0
+
             if LOG.getEffectiveLevel() == logging.DEBUG:
                 if len(args) == 0:
                     LOG.debug(sql)
@@ -182,8 +229,8 @@ class MySQL(object):
                         last_except = sys.exc_info()[1]
                         # reconnect to server
                         cursor.close()
-                        self._connection = MySQLdb.connect(**self._connection_parameters)
-                        cursor = self._connection.cursor(MySQLdb.cursors.SSCursor)
+                        self._connection = None
+                        cursor = self.get_cursor(MySQLdb.cursors.SSCursor)
         
                 else: # 10 failures
                     LOG.error('Too many OperationalErrors. Last exception:')
@@ -217,11 +264,24 @@ class MySQL(object):
 
         finally:
             # only called on exception or return
-            cursor.close()
+            if cursor is not None:
+                cursor.close()
     
-            if not self.reuse_connection:
+            if not self.reuse_connection and self._connection is not None:
                 self._connection.close()
                 self._connection = None
+
+            self._connection_lock.release()
+
+    def insert_and_get_id(self, sql, *args, **kwd):
+        """
+        Thread-safe call for an insertion query to a table with an auto-increment primary key.
+        @return (last_insert_id, rowcount)
+        """
+
+        with self._connection_lock:
+            rowcount = self.query(sql, *args, **kwd)
+            return self.last_insert_id, rowcount
 
     def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = ''):
         result = []
@@ -238,10 +298,10 @@ class MySQL(object):
         for add in additional_conditions:
             sqlbase += '(%s) AND ' % add
 
-        sqlbase += key_str + ' IN '
+        sqlbase += key_str + ' IN {pool}'
 
         def execute(pool_expr):
-            sql = sqlbase + pool_expr
+            sql = sqlbase.format(pool = pool_expr)
             if order_by:
                 sql += ' ORDER BY ' + order_by
 
@@ -278,16 +338,19 @@ class MySQL(object):
     def insert_many(self, table, fields, mapping, objects, do_update = True, db = ''):
         """
         INSERT INTO table (fields) VALUES (mapping(objects)).
-        Arguments:
-         table: table name.
-         fields: name of columns.
-         mapping: typically a lambda that takes an element in the objects list and return a tuple corresponding to a row to insert.
-         objects: list or iterator of objects to insert.
+        @param table         Table name.
+        @param fields        Name of columns. If None, perform INSERT INTO table VALUES
+        @param mapping       Typically a lambda that takes an element in the objects list and return a tuple corresponding to a row to insert.
+        @param objects       List or iterator of objects to insert.
+        @param do_update     If True, use ON DUPLICATE KEY UPDATE which can be slower than a straight INSERT.
+        @param db            DB name.
+
+        @return  total number of inserted rows.
         """
 
         try:
             if len(objects) == 0:
-                return
+                return 0
         except TypeError:
             pass
 
@@ -298,17 +361,27 @@ class MySQL(object):
             # we'll need to have the first element ready below anyway; do it here
             obj = itr.next()
         except StopIteration:
-            return
+            return 0
 
         if db == '':
             db = self.db_name()
 
-        sqlbase = 'INSERT INTO `{db}`.`{table}` ({fields}) VALUES %s'.format(db = db, table = table, fields = ','.join(['`%s`' % f for f in fields]))
-        if do_update:
-            sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join(['`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields])
+        sqlbase = 'INSERT INTO `%s`.`%s`' % (db, table)
+        if fields:
+            sqlbase += ' (%s)' % ','.join('`%s`' % f for f in fields)
+        sqlbase += ' VALUES %s'
+        if fields and do_update:
+            sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join('`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields)
 
-        template = '(' + ','.join(['%s'] * len(fields)) + ')'
+        if mapping is None:
+            ncol = len(obj)
+        else:
+            ncol = len(mapping(obj))
+
         # template = (%s, %s, ...)
+        template = '(' + ','.join(['%s'] * ncol) + ')'
+
+        num_inserted = 0
 
         while True:
             values = ''
@@ -333,64 +406,21 @@ class MySQL(object):
 
             if values == '':
                 break
+            
+            num_inserted += self.query(sqlbase % values)
 
-            self.query(sqlbase % values)
+        return num_inserted
 
-    def make_snapshot(self, tag):
-        snapshot_db = self.db_name() + '_' + tag
+    def insert_update(self, table, fields, *values):
+        placeholders = ', '.join(['%s'] * len(fields))
 
-        self.query('CREATE DATABASE `{copy}`'.format(copy = snapshot_db))
+        sql = 'INSERT INTO `%s` (' % table
+        sql += ', '.join('`%s`' % f for f in fields)
+        sql += ') VALUES (' + placeholders + ')'
+        sql += ' ON DUPLICATE KEY UPDATE '
+        sql += ', '.join('`%s`=VALUES(`%s`)' % (f, f) for f in fields)
 
-        tables = self.query('SHOW TABLES')
-
-        for table in tables:
-            self.query('CREATE TABLE `{copy}`.`{table}` LIKE `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name(), table = table))
-
-            self.query('INSERT INTO `{copy}`.`{table}` SELECT * FROM `{orig}`.`{table}`'.format(copy = snapshot_db, orig = self.db_name(), table = table))
-
-        return snapshot_db
-
-    def remove_snapshot(self, tag = '', newer_than = time.time(), older_than = 0):
-        if tag:
-            self.query('DROP DATABASE ' + self.db_name() + '_' + tag)
-
-        else:
-            snapshots = self.list_snapshots(timestamp_only = True)
-            for snapshot in snapshots:
-                tm = int(time.mktime(time.strptime(snapshot, '%y%m%d%H%M%S')))
-                if (newer_than == older_than and tm == newer_than) or \
-                        (tm > newer_than and tm < older_than):
-                    database = self.db_name() + '_' + snapshot
-                    LOG.info('Dropping database ' + database)
-                    self.query('DROP DATABASE ' + database)
-
-    def list_snapshots(self, timestamp_only):
-        databases = self.query('SHOW DATABASES')
-
-        if timestamp_only:
-            snapshots = [db.replace(self.db_name() + '_', '') for db in databases if re.match(self.db_name() + '_[0-9]{12}$', db)]
-        else:
-            snapshots = [db.replace(self.db_name() + '_', '') for db in databases if db.startswith(self.db_name() + '_')]
-
-        return sorted(snapshots, reverse = True)
-
-    def recover_from(self, tag):
-        snapshot_name = self.db_name() + '_' + tag
-
-        snapshot_tables = self.query('SHOW TABLES FROM `%s`' % snapshot_name)
-        current_tables = self.query('SHOW TABLES')
-
-        for table in snapshot_tables:
-            if table not in current_tables:
-                self.query('CREATE TABLE `{current}`.`{table}` LIKE `{snapshot}`.`{table}`'.format(current = self.db_name(), snapshot = snapshot_name, table = table))
-            else:
-                self.query('TRUNCATE TABLE `%s`.`%s`' % (self.db_name(), table))
-
-            self.query('INSERT INTO `{current}`.`{table}` SELECT * FROM `{snapshot}`.`{table}`'.format(current = self.db_name(), snapshot = snapshot_name, table = table))
-
-        for table in current_tables:
-            if table not in snapshot_tables:
-                self.query('DROP TABLE `%s`.`%s`' % (self.db_name(), table))
+        return self.query(sql, *values)
 
     def _execute_in_batches(self, execute, pool):
         """
@@ -469,7 +499,7 @@ class MySQL(object):
         if not db:
             db = self.db_name()
 
-        return len(self.query('SELECT * FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s LIMIT 1', db, table)) != 0
+        return self.query('SELECT COUNT(*) FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s', db, table)[0] != 0
 
     def create_tmp_table(self, table, columns, db = ''):
         if not db:

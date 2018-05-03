@@ -2,7 +2,7 @@ import re
 import collections
 import logging
 
-from dynamo.utils.interface import RESTService
+from dynamo.utils.interface.webservice import RESTService
 from dynamo.dataformat import Dataset
 
 LOG = logging.getLogger(__name__)

@@ -3,6 +3,7 @@ import random
 
 from base import BaseHandler
 from dynamo.dataformat import Site
+from dynamo.detox.history import DetoxHistory
 
 LOG = logging.getLogger(__name__)
 
@@ -16,21 +17,22 @@ class BalancingHandler(BaseHandler):
 
         self.max_dataset_size = config.max_dataset_size * 1.e+12
         self.max_cycle_volume = config.max_cycle_volume * 1.e+12
+        self.detoxhistory = DetoxHistory(config.detox_history)
         self.target_reasons = dict(config.target_reasons)
 
     def get_requests(self, inventory, history, policy):
-        latest_runs = history.get_deletion_runs(policy.partition_name)
-        if len(latest_runs) == 0:
+        latest_cycles = history.get_deletion_cycles(policy.partition_name)
+        if len(latest_cycles) == 0:
             return []
 
-        latest_run = latest_runs[0]
+        latest_cycle = latest_cycles[0]
 
-        LOG.info('Balancing site occupancy based on the protected fractions in the latest cycle %d', latest_run)
+        LOG.info('Balancing site occupancy based on the protected fractions in the latest cycle %d', latest_cycle)
         LOG.debug('Protection reason considered as "last copy":')
         for reason in self.target_reasons.keys():
             LOG.debug(reason)
 
-        deletion_decisions = history.get_deletion_decisions(latest_run, size_only = False)
+        deletion_decisions = self.detoxhistory.get_deletion_decisions(latest_cycle, size_only = False)
 
         partition = inventory.partitions[policy.partition_name]
 
@@ -54,7 +56,7 @@ class BalancingHandler(BaseHandler):
                 continue
 
             protections = [(ds_name, size, reason) for ds_name, size, decision, reason in decisions if decision == 'protect']
-            protected_fraction = sum(size for _, size, _ in protections) / quota
+            protected_fraction = float(sum(size for _, size, _ in protections)) / quota
 
             LOG.debug('Site %s protected fraction %f', site.name, protected_fraction)
 
@@ -128,7 +130,7 @@ class BalancingHandler(BaseHandler):
             request.append(dataset)
 
             size = dataset.size
-            protected_fractions[maxsite] -= size / maxsite.partitions[partition].quota
+            protected_fractions[maxsite] -= float(size) / maxsite.partitions[partition].quota
             total_size += size
 
         return request

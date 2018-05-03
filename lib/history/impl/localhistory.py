@@ -119,24 +119,11 @@ class LocalHistory(TransactionHistoryInterface):
         if host != '' or pid != 0:
             raise TransactionHistoryInterface.LockError('Failed to release lock from ' + socket.gethostname() + ':' + str(os.getpid()))
 
-    def _do_make_snapshot(self, tag): #override
-        new_db = self._mysql.make_snapshot(tag)
-
-        self._mysql.query('UPDATE `%s`.`lock` SET `lock_host` = \'\', `lock_process` = 0' % new_db)
-
-    def _do_remove_snapshot(self, tag, newer_than, older_than): #override
-        self._mysql.remove_snapshot(tag = tag, newer_than = newer_than, older_than = older_than)
-
-    def _do_list_snapshots(self, timestamp_only): #override
-        return self._mysql.list_snapshots(timestamp_only)
-
-    def _do_recover_from(self, tag): #override
-        self._mysql.recover_from(tag)
-
     def _do_new_run(self, operation, partition, policy_version, is_test, comment): #override
         part_ids = self._mysql.query('SELECT `id` FROM `partitions` WHERE `name` LIKE %s', partition)
         if len(part_ids) == 0:
-            part_id = self._mysql.query('INSERT INTO `partitions` (`name`) VALUES (%s)', partition)
+            self._mysql.query('INSERT INTO `partitions` (`name`) VALUES (%s)', partition)
+            part_id = self._mysql.last_insert_id
         else:
             part_id = part_ids[0]
 
@@ -151,7 +138,9 @@ class LocalHistory(TransactionHistoryInterface):
             else:
                 operation_str = 'deletion'
 
-        return self._mysql.query('INSERT INTO `runs` (`operation`, `partition_id`, `policy_version`, `comment`, `time_start`) VALUES (%s, %s, %s, %s, NOW())', operation_str, part_id, policy_version, comment)
+        self._mysql.query('INSERT INTO `runs` (`operation`, `partition_id`, `policy_version`, `comment`, `time_start`) VALUES (%s, %s, %s, %s, NOW())', operation_str, part_id, policy_version, comment)
+
+        return self._mysql.last_insert_id
 
     def _do_close_run(self, operation, run_number): #override
         self._mysql.query('UPDATE `runs` SET `time_end` = FROM_UNIXTIME(%s) WHERE `id` = %s', time.time(), run_number)
@@ -305,7 +294,8 @@ class LocalHistory(TransactionHistoryInterface):
             text = re.sub('\s+', ' ', policy.condition.text)
             ids = self._mysql.query('SELECT `id` FROM `policy_conditions` WHERE `text` LIKE %s', text)
             if len(ids) == 0:
-                policy.condition_id = self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
+                self._mysql.query('INSERT INTO `policy_conditions` (`text`) VALUES (%s)', text)
+                policy.condition_id = self._mysql.last_insert_id
             else:
                 policy.condition_id = ids[0]
 

@@ -12,206 +12,167 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Convert web-based locks to registry locks')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
-parser.add_argument('--test-run', '-T', action = 'store_true', dest = 'test_run', help = 'Do not upload changes to registry.')
 
 args = parser.parse_args()
 sys.argv = []
 
 ## Load the configuration
-from dynamo.dataformat.configuration import Configuration
+from dynamo.dataformat import Configuration, Dataset, Block, ObjectError
 
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout)
-from dynamo.core.executable import make_standard_logger
+from dynamo.core.executable import read_only, make_standard_logger
 
 LOG = make_standard_logger(config.log_level)
 
-## Check if another process is running
-process_exists = False
+if not read_only:
+    ## Check if another process is running
+    process_exists = False
+    
+    while os.path.exists(config.process_lock):
+        try:
+            source = open(config.process_lock)
+        except (OSError, IOError):
+            break
+    
+        process_exists = True
+    
+        pid = int(source.read().strip())
+        source.close()
+    
+        try:
+            with open('/proc/%d/cmdline' % pid) as proc:
+                if not 'dynamod' in proc.read():
+                    raise Exception()
+        except:
+            LOG.error('Lock file %s exists but process %d is not a Dynamo process.', config.process_lock, pid)
+            os.unlink(config.process_lock)
+            process_exists = False
+            break
+    
+        LOG.info('Another process %d is performing the lock conversion. Waiting for completion.', pid)
+        time.sleep(5)
+    
+    if process_exists:
+        LOG.info('Locks are converted by another process. Exiting.')
+        sys.exit(0)
 
-while os.path.exists(config.process_lock):
-    try:
-        source = open(config.process_lock)
-    except (OSError, IOError):
-        break
-
-    process_exists = True
-
-    pid = int(source.read().strip())
-    source.close()
-
-    try:
-        with open('/proc/%d/cmdline' % pid) as proc:
-            if not 'dynamod' in proc.read():
-                raise Exception()
-    except:
-        LOG.error('Lock file %s exists but process %d is not a Dynamo process.', config.process_lock, pid)
-        os.unlink(config.process_lock)
-        process_exists = False
-        break
-
-    LOG.info('Another process %d is performing the lock conversion. Waiting for completion.', pid)
-    time.sleep(5)
-
-if process_exists:
-    LOG.info('Locks are converted by another process. Exiting.')
-    sys.exit(0)
-
-with open(config.process_lock, 'w') as process_lock:
-    process_lock.write('%d' % os.getpid())
+    with open(config.process_lock, 'w') as process_lock:
+        process_lock.write('%d' % os.getpid())
 
 ## Start conversion
 from dynamo.policy.producers import WebReplicaLock
-from dynamo.policy.producers import MySQLReplicaLock
-from dynamo.utils.interface.webservice import POST
-from dynamo.core.executable import inventory
-from dynamo.core.executable import registry
+from dynamo.utils.interface.mysql import MySQL
+from dynamo.core.executable import inventory, authorizer
 from dynamo.operation.impl.mysqlapplock import MySQLApplicationLockInterface
 
 LOG.info('Translating web-based replica locks into DB-based locks.')
 
-expiry = '2018-04-30'
+expiry = '2018-06-30'
 comment = 'Auto-produced by dynamo'
 
-lock = MySQLApplicationLockInterface(config.applock)
-# we don't unlock within this application unless something fails - need to run detox immediately afterwards
-lock.lock()
-
+# will query PhEDEx later for those
 unlocked_datasets = set()
+
+if not read_only:
+    lock = MySQLApplicationLockInterface(config.applock, authorizer)
+    lock.lock()
+
+mysql = MySQL(Configuration(db = 'dynamoregister', reuse_connection = True))
+mysql.query('LOCK TABLES `detox_locks` WRITE')
 
 try:
     # we process one source at a time, because each source registers mysql locks as a different user
     for name, source_conf in config.sources.items():
-        # first load the existing locks
-        instance_conf = Configuration({'db_params': config.mysqllock.db_params, 'users': [[source_conf.user, source_conf.service]]})
-        mysqllock = MySQLReplicaLock(instance_conf)
-        mysqllock.load(inventory)
+        userdata = authorizer.identify_user(name = source_conf.user, with_id = True)
+        if userdata is None:
+            raise RuntimeError('Unknown user %s' % source_conf.user)
 
-        for dataset in inventory.datasets.itervalues():
-            try:
-                dataset.attr['locked_blocks_original'] = dataset.attr['locked_blocks']
-                dataset.attr.pop('locked_blocks')
-            except KeyError:
-                pass
+        user, user_id = userdata
+
+        roledata = authorizer.identify_role(name = source_conf.role, with_id = True)
+        if roledata is None:
+            raise RuntimeError('Unknown role %s' % source_conf.role)
+        
+        role, role_id = roledata
 
         LOG.info('Translating ' + name)
+
+        existing_lock_ids = {}
+        sql = 'SELECT `id`, `item`, `sites` FROM `detox_locks` WHERE `user_id` = %s AND `role_id` = %s AND `unlock_date` IS NULL'
+        for lid, item, site in mysql.xquery(sql, user_id, role_id):
+            existing_lock_ids[(item, site)] = lid
+
+        existing_locks = set(existing_lock_ids.keys())
     
         instance_conf = Configuration({'sources': {name: source_conf.clone()}, 'auth': config.auth})
-    
         weblock = WebReplicaLock(instance_conf)
-        weblock.update(inventory)
-    
-        data = []
-        
-        for dataset in inventory.datasets.itervalues():
-            try:
-                locked_blocks = dataset.attr['locked_blocks']
-            except KeyError:
-                # weblock did not create any lock for this dataset
-                try:
-                    locked_blocks_original = dataset.attr['locked_blocks_original']
-                except KeyError:
-                    pass
-                else:
-                    for site, blocks in locked_blocks_original.iteritems():
-                        for block in blocks:
-                            block_replica = site.find_block_replica(block)
-                            if block_replica is not None:
-                                unlocked_datasets.add(site.find_dataset_replica(block.dataset))
 
-                continue
-
-            # check for unlocked block replicas
-            try:
-                locked_blocks_original = dataset.attr['locked_blocks_original']
-            except KeyError:
-                pass
+        loaded_locks = set()
+        for item, site in weblock.get_list(inventory):
+            if site is None:
+                site_name = None
             else:
-                for site, blocks in locked_blocks_original.iteritems():
-                    try:
-                        site_locked_blocks = locked_blocks[site]
-                    except KeyError:
-                        for block in blocks:
-                            block_replica = site.find_block_replica(block)
-                            if block_replica is not None:
-                                unlocked_datasets.add(site.find_dataset_replica(block.dataset))
-                    else:
-                        for block in blocks:
-                            if block not in site_locked_blocks:
-                                block_replica = site.find_block_replica(block)
-                                if block_replica is not None:
-                                    unlocked_datasets.add(site.find_dataset_replica(block.dataset))
-       
-            entries = []
-        
-            # if the lock applies to all sites and all blocks of this dataset, we just make one global lock
-            collapse_dataset = True
-            locked_sites = set()
-    
-            for site, blocks in locked_blocks.iteritems():
-                locked_sites.add(site)
-    
-                replica = site.find_dataset_replica(dataset)
-        
-                if blocks == set(br.block for br in replica.block_replicas):
-                    entries.append({'item': dataset.name, 'sites': site.name, 'expires': expiry, 'comment': comment})
-                else:
-                    for block in blocks:
-                        entries.append({'item': dataset.name + '#' + block.real_name(), 'sites': site.name, 'expires': expiry, 'comment': comment})
-        
-                    collapse_dataset = False
-    
-            if locked_sites != set(r.site for r in dataset.replicas):
-                collapse_dataset = False
-        
-            if collapse_dataset:
-                # replace entries with a single-element list
-                entries = [{'item': dataset.name, 'expires': expiry, 'comment': comment}]
-        
-            data.extend(entries)
-            
-        # cleanup
-        for dataset in inventory.datasets.itervalues():
+                site_name = site.name
+
+            if type(item) is Dataset:
+                loaded_locks.add((item.name, site_name))
+            else:
+                loaded_locks.add((item.full_name(), site_name))
+
+        num_locked = 0
+
+        # lock new appearences
+        for item, site in loaded_locks - existing_locks:
+            sql = 'INSERT INTO `detox_locks` (`item`, `sites`, `lock_date`, `expiration_date`, `user_id`, `role_id`, `comment`)'
+            sql += ' VALUES (%s, %s, NOW(), %s, %s, %s, \'Auto-produced by dynamo\')'
+            if not read_only:
+                mysql.query(sql, item, site, expiry, user_id, role_id)
+            num_locked += 1
+
+        num_unlocked = 0
+
+        # unlock excess
+        for item, site in existing_locks - loaded_locks:
+            if not read_only:
+                mysql.query('UPDATE `detox_locks` SET `unlock_date` = NOW() WHERE `id` = %s', existing_locks[(item, site)])
+            num_unlocked += 1
+
             try:
-                dataset.attr.pop('locked_blocks')
-            except KeyError:
-                pass
-            try:
-                dataset.attr.pop('locked_blocks_original')
-            except KeyError:
-                pass
+                dataset_name, block_name = Block.from_full_name(item)
+            except ObjectError:
+                unlocked_datasets.add(item)
+            else:
+                unlocked_datasets.add(dataset_name)
     
-        LOG.info('Sending %d datasets and blocks to registry frontend', len(data))
-    
-        if args.test_run:
-            LOG.info('Not sending data to registry.')
-        else:
-            request_url = 'detoxlock/set?asuser=%s&service=%s' % (source_conf.user, source_conf.service)
-            registry.frontend.make_request(request_url, method = POST, options = data, format = 'json')
-    
-    # Intentionally removing the file only when everything succeeds
-    os.unlink(config.process_lock)
+        LOG.info('Locked: %d, Unlocked: %d', num_locked, num_unlocked)
+
+    if not read_only:
+        # Intentionally removing the file only when everything succeeds
+        os.unlink(config.process_lock)
 
 finally:
-    lock.unlock()
+    if not read_only:
+        lock.unlock()
+
+mysql.query('UNLOCK TABLES')
 
 # update block replicas that got unlocked
 from dynamo.source.impl import PhEDExReplicaInfoSource
 
-replica_source = PhEDExReplicaInfoSource(config.replica_source)
+replica_source = PhEDExReplicaInfoSource()
 
-for dataset_replica in unlocked_datasets:
-    dataset = dataset_replica.dataset
-    site = dataset_replica.site
-
-    source_reps = replica_source.get_replicas(dataset = dataset.name, site = site.name)
+for dataset_name in unlocked_datasets:
+    try:
+        dataset = inventory.datasets[dataset_name]
+    except KeyError:
+        continue
+        
+    source_reps = replica_source.get_replicas(dataset = dataset.name)
     if len(source_reps) == 0:
         # not good but fine
         continue
 
-    block_names = set(brep.block.name for brep in dataset_replica.block_replicas)
-
     for rep in source_reps:
-        if rep.block.name in block_names:
-            inventory.update(rep)
+        inventory.update(rep)

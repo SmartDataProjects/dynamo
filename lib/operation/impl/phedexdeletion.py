@@ -4,26 +4,25 @@ import collections
 from dynamo.operation.deletion import DeletionInterface
 from dynamo.utils.interface.webservice import POST
 from dynamo.utils.interface.phedex import PhEDEx
-from dynamo.dataformat import DatasetReplica, BlockReplica, Site
+from dynamo.dataformat import DatasetReplica, BlockReplica, Site, Configuration
 
 LOG = logging.getLogger(__name__)
 
 class PhEDExDeletionInterface(DeletionInterface):
     """Deletion using PhEDEx."""
 
-    def __init__(self, config):
+    def __init__(self, config = None):
+        config = Configuration(config)
+
         DeletionInterface.__init__(self, config)
 
-        self._phedex = PhEDEx(config.phedex)
+        self._phedex = PhEDEx(config.get('phedex', None))
 
-        self.auto_approval = config.auto_approval
-        self.allow_tape_deletion = config.allow_tape_deletion
-        self.tape_auto_approval = config.tape_auto_approval
+        self.auto_approval = config.get('auto_approval', True)
+        self.allow_tape_deletion = config.get('allow_tape_deletion', False)
+        self.tape_auto_approval = config.get('tape_auto_approval', False)
 
-        self.deletion_chunk_size = config.chunk_size * 1.e+12
-
-        if self.dry_run:
-            self._next_operation_id = 1
+        self.deletion_chunk_size = config.get('chunk_size', 50.) * 1.e+12
 
     def schedule_deletion(self, replica, comments = ''): #override
         request_mapping = {}

@@ -24,7 +24,7 @@ function get_user($db, $cert_dn, $issuer_dn, $service, $as_user, &$uid, &$uname,
   $uid = 0;
   $sid = 0;
 
-  $query = 'SELECT `users`.`id`, `users`.`name`, `services`.`id` FROM `users`, `services` WHERE (`users`.`dn` = ? OR `users`.`dn` = ?) AND `services`.`name` = ?';
+  $query = 'SELECT u.`id`, u.`name`, r.`id` FROM `dynamoserver`.`users` AS u, `dynamoserver`.`roles` AS r WHERE (u.`dn` = ? OR u.`dn` = ?) AND r.`name` = ?';
   $stmt = $db->prepare($query);
   $stmt->bind_param('sss', $cert_dn, $issuer_dn, $service);
   $stmt->bind_result($uid, $uname, $sid);
@@ -36,9 +36,9 @@ function get_user($db, $cert_dn, $issuer_dn, $service, $as_user, &$uid, &$uname,
     return false;
 
   // check if this user has admin permission
-  $query = 'SELECT COUNT(*) FROM `authorized_users`';
-  $query .= ' INNER JOIN `services` ON `services`.`id` = `authorized_users`.`service_id`';
-  $query .= ' WHERE `authorized_users`.`user_id` = ? AND `services`.`name` = "admin"';
+  $query = 'SELECT COUNT(*) FROM `dynamoserver`.`user_authorizations` AS a';
+  $query .= ' INNER JOIN `dynamoserver`.`roles` AS r ON r.`id` = a.`role_id`';
+  $query .= ' WHERE a.`user_id` = ? AND r.`name` = "admin" AND a.`target` = "registry"';
 
   $stmt = $db->prepare($query);
   $stmt->bind_param('i', $uid);
@@ -50,7 +50,7 @@ function get_user($db, $cert_dn, $issuer_dn, $service, $as_user, &$uid, &$uname,
   if ($count == 0) {
     // a normal user - (user, service) must be in authorized_users table
 
-    $query = 'SELECT COUNT(*) FROM `authorized_users` WHERE `user_id` = ? AND `service_id` = ?';
+    $query = 'SELECT COUNT(*) FROM `dynamoserver`.`user_authorizations` WHERE `user_id` = ? AND `role_id` = ? AND `target` = "registry"';
 
     $stmt = $db->prepare($query);
     $stmt->bind_param('ii', $uid, $sid);
@@ -71,9 +71,9 @@ function get_user($db, $cert_dn, $issuer_dn, $service, $as_user, &$uid, &$uname,
 
     $uname = $as_user;
 
-    $query = 'SELECT `authorized_users`.`user_id` FROM `authorized_users`';
-    $query .= ' INNER JOIN `users` ON `users`.`id` = `authorized_users`.`user_id`';
-    $query .= ' WHERE `authorized_users`.`service_id` = ? AND `users`.`name` = ?';
+    $query = 'SELECT a.`user_id` FROM `dynamoserver`.`user_authorizations` AS a';
+    $query .= ' INNER JOIN `dynamoserver`.`users` AS u ON u.`id` = a.`user_id`';
+    $query .= ' WHERE a.`role_id` = ? AND u.`name` = ? AND a.`target` = "registry"';
 
     $stmt = $db->prepare($query);
     $stmt->bind_param('is', $sid, $as_user);

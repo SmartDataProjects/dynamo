@@ -2,6 +2,7 @@ class BaseHandler(object):
     def __init__(self, name):
         self.name = name
         self.required_attrs = []
+        self.read_only = False
 
     def get_requests(self, inventory, history, policy):
         """

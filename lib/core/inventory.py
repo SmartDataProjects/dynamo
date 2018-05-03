@@ -3,8 +3,8 @@ import re
 
 from dynamo.policy.condition import Condition
 from dynamo.policy.variables import replica_variables
-from dynamo.dataformat import Group, Partition, Block, ObjectError, ConfigurationError
-import dynamo.core.impl as persistency_impl
+import dynamo.dataformat as df
+from dynamo.core.components.persistency import InventoryStore
 
 LOG = logging.getLogger(__name__)
 
@@ -24,10 +24,13 @@ class ObjectRepository(object):
         self.partitions = NameKeyDict()
 
         # null group always exist
-        self.groups[None] = Group.null_group
+        self.groups[None] = df.Group.null_group
 
     def load(self):
         pass
+
+    def make_object(self, repstr):
+        return eval('df.' + repstr)
 
     def update(self, obj):
         return obj.embed_into(self)
@@ -38,7 +41,7 @@ class ObjectRepository(object):
     def delete(self, obj):
         try:
             return obj.unlink_from(self)
-        except (KeyError, ObjectError) as e:
+        except (KeyError, df.ObjectError) as e:
             # When delete is attempted on a nonexistent object or something linked to a nonexistent object
             # As this is less alarming, error message is suppressed to debug level.
             LOG.debug('%s in inventory.delete(%s)', type(e).__name__, str(obj))
@@ -60,25 +63,51 @@ class DynamoInventory(ObjectRepository):
     CMD_UPDATE, CMD_DELETE, CMD_EOM = range(3)
     _cmd_str = ['UPDATE', 'DELETE', 'EOM']
 
-    def __init__(self, config, load = True):
+    def __init__(self, config):
         ObjectRepository.__init__(self)
 
-        self.init_store(config.persistency.module, config.persistency.config)
+        self.loaded = False
+
+        self._store = None
+        if 'persistency' in config:
+            self.init_store(config.persistency.module, config.persistency.config)
 
         self.partition_def_path = config.partition_def_path
         
-        if load:
-            self.load()
-
         # When the user application is authorized to change the inventory state, all updated
         # and deleted objects are kept in this list until the end of execution.
         self._update_commands = None
 
     def init_store(self, module, config):
-        persistency_cls = getattr(persistency_impl, module)
-        self._store = persistency_cls(config)
+        if self._store:
+            self._store.close()
 
-        Block._inventory_store = self._store
+        self._store = InventoryStore.get_instance(module, config)
+
+        df.Block._inventory_store = self._store
+
+    def clone_store(self, module, config):
+        source = InventoryStore.get_instance(module, config)
+        self._store.clone_from(source)
+        source.close()
+
+    def has_store(self):
+        return (self._store is not None)
+
+    def store_version(self):
+        return self._store.version
+
+    def check_store(self):
+        """
+        Check the connection to store.
+        """
+        return self._store.check_connection()
+
+    def flush_to_store(self):
+        """
+        Save the full inventory content to store.
+        """
+        self._store.save_data(self)
 
     def load(self, groups = (None, None), sites = (None, None), datasets = (None, None)):
         """
@@ -87,9 +116,11 @@ class DynamoInventory(ObjectRepository):
         @param sites    2-tuple (included, excluded)
         @param datasets 2-tuple (included, excluded)
         """
+
+        self.loaded = False
         
         self.groups.clear()
-        self.groups[None] = Group.null_group
+        self.groups[None] = df.Group.null_group
         self.sites.clear()
         self.datasets.clear()
         self.partitions.clear()
@@ -98,7 +129,7 @@ class DynamoInventory(ObjectRepository):
 
         self._load_partitions()
 
-        LOG.info('Loading data from local persistent storage.')
+        LOG.info('Loading data from persistent storage.')
 
         group_names = self._get_group_names(*groups)
         site_names = self._get_site_names(*sites)
@@ -120,11 +151,12 @@ class DynamoInventory(ObjectRepository):
 
         LOG.info('Data is loaded to memory. %d groups, %d sites, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.groups), len(self.sites), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
+        self.loaded = True
+
     def _load_partitions(self):
         """Load partition data from a text table."""
 
-        partition_names = self._store.get_partition_names()
-
+        conditions = {}
         with open(self.partition_def_path) as defsource:
             subpartitions = {}
             for line in defsource:
@@ -133,36 +165,20 @@ class DynamoInventory(ObjectRepository):
                     continue
         
                 name = matches.group(1)
-                try:
-                    partition_names.remove(name)
-                except ValueError:
-                    LOG.warning('Unknown partition %s appears in %s', name, self.partition_def_path)
-                    continue
-
                 condition_text = matches.group(2).strip()
-                
+
                 matches = re.match('\[(.+)\]$', condition_text)
                 if matches:
-                    partition = Partition(name)
-                    subpartitions[partition] = map(str.strip, matches.group(1).split(','))
+                    condition = map(str.strip, matches.group(1).split(','))
                 else:
-                    partition = Partition(name, Condition(condition_text, replica_variables))
+                    condition = Condition(condition_text, replica_variables)
 
-                self.partitions.add(partition)
+                conditions[name] = condition
 
-        if len(partition_names) != 0:
-            LOG.error('No definition given for the following partitions: %s', partition_names)
-            raise ConfigurationError()
+        partitions = self._store.get_partitions(conditions)
 
-        for partition, subp_names in subpartitions.iteritems():
-            try:
-                subparts = tuple(self.partitions[name] for name in subp_names)
-            except KeyError:
-                raise IntegrityError('Unknown partition ' + name + ' specified in subpartition list for ' + partition.name)
-
-            partition._subpartitions = subparts
-            for subp in subparts:
-                subp._parent = partition
+        for partition in partitions:
+            self.partitions.add(partition)
 
     def _get_group_names(self, included, excluded):
         """Return the list of group names or None according to the arguments."""
@@ -268,10 +284,7 @@ class DynamoInventory(ObjectRepository):
                 changelog.info('Updating %s', str(obj))
 
             LOG.debug('%s has changed. Adding a clone to updated objects list.', str(obj))
-            # The content of update_commands gets pickled and shipped back to the server process.
-            # Pickling process follows all links between the objects. We create an unlinked clone
-            # here to avoid shipping the entire inventory.
-            self._update_commands.append((DynamoInventory.CMD_UPDATE, obj.unlinked_clone()))
+            self._update_commands.append((DynamoInventory.CMD_UPDATE, repr(obj)))
 
         if write:
             if changelog is not None:
@@ -298,7 +311,7 @@ class DynamoInventory(ObjectRepository):
             return
 
         if self._update_commands is not None:
-            self._update_commands.append((DynamoInventory.CMD_DELETE, deleted_object.unlinked_clone(attrs = False)))
+            self._update_commands.append((DynamoInventory.CMD_DELETE, repr(deleted_object)))
 
         if write:
             try:

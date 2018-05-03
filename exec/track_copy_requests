@@ -17,12 +17,12 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout)
-from dynamo.core.executable import make_standard_logger
+from dynamo.core.executable import read_only, make_standard_logger
 
 LOG = make_standard_logger(config.log_level)
 
 ## Instantiate registry backend
-from dynamo.utils.interface import MySQL
+from dynamo.utils.interface.mysql import MySQL
 
 # need to lock tables -> reuse connections
 config.registry['reuse_connection'] = True
@@ -33,13 +33,19 @@ registry = MySQL(config.registry)
 from dynamo.core.executable import inventory
 from dynamo.dataformat import Block, ObjectError
 
-registry.query('LOCK TABLES `active_copies` WRITE, `active_copies` AS a READ, `copy_requests` AS r READ')
+if not read_only:
+    registry.query('LOCK TABLES `active_copies` WRITE, `active_copies` AS a READ, `copy_requests` AS r READ')
+
+def update(request_id, item, site):
+    if read_only:
+        return
+
+    sql = 'UPDATE `active_copies` SET `status` = \'completed\', `updated` = NOW() WHERE `request_id` = %s AND `item` = %s AND `site` = %s'
+    registry.query(update_sql, request_id, item, site)
 
 sql = 'SELECT r.`id`, a.`item`, a.`site`, r.`group` FROM `active_copies` AS a'
 sql += ' INNER JOIN `copy_requests` AS r ON r.`id` = a.`request_id`'
 sql += ' WHERE a.`status` IN (\'new\', \'queued\')'
-
-update_sql = 'UPDATE `active_copies` SET `status` = \'completed\', `updated` = NOW() WHERE `request_id` = %s AND `item` = %s AND `site` = %s'
 
 for request_id, item_name, site_name, group_name in registry.query(sql):
     try:
@@ -82,7 +88,7 @@ for request_id, item_name, site_name, group_name in registry.query(sql):
 
         if replica.is_complete():
             LOG.debug('%s complete', replica)
-            registry.query(update_sql, request_id, item_name, site_name)
+            update(request_id, item_name, site_name)
         else:
             LOG.debug('%s incomplete', replica)
 
@@ -102,26 +108,33 @@ for request_id, item_name, site_name, group_name in registry.query(sql):
 
         if replica.is_complete:
             LOG.debug('%s complete', replica)
-            registry.query(update_sql, request_id, item_name, site_name)
+            update(request_id, item_name, site_name)
         else:
             LOG.debug('%s incomplete', replica)
 
-registry.query('UNLOCK TABLES')
+if not read_only:
+    registry.query('UNLOCK TABLES')
 
 ## Set the request status
-registry.query('LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `active_copies` AS a READ')
+if not read_only:
+    registry.query('LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `active_copies` AS a READ')
+
+def update(request_id):
+    if read_only:
+        return
+
+    sql = 'UPDATE `copy_requests` SET `status` = \'completed\' WHERE `id` = %s'
+    registry.query(sql, request_id)
 
 sql = 'SELECT r.`id`, a.`status` FROM `copy_requests` AS r INNER JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
 sql += ' WHERE r.`status` = \'activated\''
-
-update_sql = 'UPDATE `copy_requests` SET `status` = \'completed\' WHERE `id` = %s'
 
 _request_id = 0
 all_complete = False
 for request_id, status in registry.query(sql):
     if request_id != _request_id:
         if all_complete:
-            registry.query(update_sql, _request_id)
+            update(_request_id)
 
         _request_id = request_id
         all_complete = True
@@ -130,6 +143,7 @@ for request_id, status in registry.query(sql):
         all_complete = False
 
 if all_complete:
-    registry.query(update_sql, _request_id)
+    update(_request_id)
 
-registry.query('UNLOCK TABLES')
+if not read_only:
+    registry.query('UNLOCK TABLES')

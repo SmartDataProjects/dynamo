@@ -31,7 +31,7 @@ class SitePartition(object):
         else:
             return self._quota
 
-    def __init__(self, site, partition, quota = 0.):
+    def __init__(self, site, partition, quota = 0):
         self._site = site
         self._partition = partition
         # partition quota in bytes
@@ -41,10 +41,10 @@ class SitePartition(object):
 
     def __str__(self):
         return 'SitePartition %s/%s (quota=%f TB, occupancy %s)' % (self._site_name(), self._partition_name(), \
-            self.quota * 1.e-12, ('%.2f' % self.occupancy_fraction()) if self.quota != 0. else 'inf')
+            self.quota * 1.e-12, ('%.2f' % self.occupancy_fraction()) if self.quota != 0 else 'inf')
 
     def __repr__(self):
-        return 'SitePartition(%s, %s)' % (repr(self._site), repr(self._partition))
+        return 'SitePartition(%s,%s,%d)' % (repr(self._site_name()), repr(self._partition_name()), self._quota)
 
     def __eq__(self, other):
         return self is other or \
@@ -60,12 +60,6 @@ class SitePartition(object):
             raise ObjectError('Cannot copy a site partition of %s into a site partition of %s', other._partition_name(), self._partition_name())
 
         self._quota = other._quota
-
-    def unlinked_clone(self, attrs = True):
-        if attrs:
-            return SitePartition(self._site_name(), self._partition_name(), self._quota)
-        else:
-            return SitePartition(self._site_name(), self._partition_name())
 
     def embed_into(self, inventory, check = False):
         try:
@@ -120,9 +114,9 @@ class SitePartition(object):
     def occupancy_fraction(self, physical = True):
         quota = self.quota
 
-        if quota == 0.:
+        if quota == 0:
             return sys.float_info.max
-        elif quota < 0.:
+        elif quota < 0:
             return 0.
         else:
             total_size = 0.

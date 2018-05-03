@@ -1,15 +1,21 @@
 """
-A module used for communication between the server and the executables.
-Also can be used to set up an environment for the executables to run
+A module used for communication between the server and the applications.
+Also can be used to set up an environment for the applications to run
 as standalone python scripts.
 """
 
 from dynamo.core.inventory import ObjectRepository
 
+## Whether this is a read-only process
 read_only = True
-registry = None
+
+## Handle to the inventory
 inventory = ObjectRepository()
 
+## Handle to the authorizer part of the master server
+authorizer = None
+
+## Make a standard logger that outputs to sys.stdout and sys.stderr
 import sys
 import logging
 

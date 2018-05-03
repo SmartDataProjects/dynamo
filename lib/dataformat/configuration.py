@@ -42,6 +42,9 @@ class Configuration(dict):
     def __setattr__(self, attr, value):
         self[attr] = value
 
+    def __repr__(self):
+        return self.dump_json()
+
     def get(self, attr, default):
         """Return the default value if attr is not found."""
         try:
@@ -51,3 +54,31 @@ class Configuration(dict):
 
     def clone(self):
         return Configuration(self)
+
+    def dump_json(self, indent = -1):
+        if indent >= 0:
+            def dump_with_indent(cont, idt):
+                try:
+                    keys = cont.keys()
+                except AttributeError:
+                    return json.dumps(cont)
+                else:
+                    if len(keys) == 0:
+                        return '{}'
+                    else:
+                        js = '{\n'
+        
+                        cont_lines = []
+                        for key in keys:
+                            line = ' ' * (idt + 2)
+                            line += '"%s": %s' % (key, dump_with_indent(cont[key], idt + 2))
+                            cont_lines.append(line)
+        
+                        js += ',\n'.join(cont_lines)
+                        js += '\n' + (' ' * idt) + '}'
+                        return js
+    
+            return dump_with_indent(self, indent)
+    
+        else:
+            return json.dumps(self)

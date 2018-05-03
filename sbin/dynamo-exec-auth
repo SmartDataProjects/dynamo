@@ -6,11 +6,10 @@ import hashlib
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Dynamo')
-parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', help = 'Title of the executable.')
-parser.add_argument('--executable', '-x', metavar = 'PATH', dest = 'executable', help = 'Executable file.')
-parser.add_argument('--user', '-u', metavar = 'USER', dest = 'user', default = '', help = 'User name.')
+parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', nargs = '+', help = 'Title of the executable.')
+parser.add_argument('--executable', '-x', metavar = 'PATH', dest = 'executable', nargs = '+', help = 'Executable file.')
+parser.add_argument('--user', '-u', metavar = 'USER', dest = 'user', nargs = '+', help = 'User name.')
 parser.add_argument('--delete', '-D', action = 'store_true', help = 'Delete entry.')
-parser.add_argument('--update', '-U', action = 'store_true', help = 'Overwrite existing entry if there is any. Otherwise do nothing.')
 parser.add_argument('--list', '-L', action = 'store_true', help = 'List existing entries.')
 
 args = parser.parse_args()
@@ -35,103 +34,137 @@ try:
 except KeyError:
     config_path = '/etc/dynamo/server_config.json'
 
-server_config = Configuration(config_path)
+config = Configuration(config_path)
 
-## Create the registry
+if 'applications' not in config or not config.applications.enabled:
+    sys.stderr.write('This host is not an application server.\n')
+    sys.exit(1)
 
-from dynamo.core.registry import DynamoRegistry
+## Connect to the master server
 
-registry = DynamoRegistry(server_config.registry)
+from dynamo.core.components.master import MasterServer
+
+master_config = config.manager.master
+master = MasterServer.get_instance(master_config.module, master_config.config)
 
 ## Find the user id
 
 if args.user:
-    result = registry.backend.query('SELECT `id` FROM `users` WHERE `name` = %s', args.user)
-    if len(result) == 0:
-        sys.stderr.write('Invalid user %s\n' % args.user)
-        sys.exit(1)
+    for user in args.user:
+        if not master.user_exists(user):
+            sys.stderr.write('Invalid user %s\n' % args.user)
+            sys.exit(1)
 
-    user_id = result[0]
-else:
-    user_id = 0
+authorized_apps = {}
+for title, user, checksum in master.list_authorized_applications(titles = args.title, users = args.user):
+    authorized_apps[(title, user)] = checksum
 
 if args.list:
-    sql = 'SELECT u.`name`, a.`title` FROM `authorized_executables` AS a LEFT JOIN `users` AS u ON u.`id` = a.`user_id`'
-    constraints = []
-    params = []
-    if user_id != 0:
-        constraints.append('u.`id` = %s')
-        params.append(user_id)
-    if args.title:
-        constraints.append('a.`title` = %s')
-        params.append(args.title)
     if args.executable:
-        with open(args.executable) as source:
-            checksum = hashlib.md5(source.read()).hexdigest()
-        constraints.append('a.`checksum` = %s')
-        params.append(checksum)
+        selected = []
+        for ex in args.executable:
+            with open(ex) as source:
+                checksum = hashlib.md5(source.read()).hexdigest()
 
-    if len(constraints):
-        sql += ' WHERE ' + ' AND '.join(constraints)
+            for key, value in authorized_apps.items():
+                if value == checksum:
+                    selected.append(key)
 
-    print '%10s  %10s' % ('USER', 'TITLE')
-    for user, title in registry.backend.query(sql, *tuple(params)):
-        print '%10s  %10s' % (user, title)
+        new_apps = {}
+        for key in selected:
+            new_apps[key] = authorized_apps[key]
 
-    sys.exit(0)
+        authorized_apps = new_apps
+   
+    print '%10s  %10s' % ('TITLE', 'USER')
+    for title, user in sorted(authorized_apps.keys()):
+        if user is None:
+            user = 'ALL'
+        print '%10s  %10s' % (title, user)
 
-if not args.title:
-    sys.stderr.write('--title (-t) is required.\n')
-    sys.exit(1)
-
-## Check for existing entry
-
-existing = registry.backend.query('SELECT COUNT(*) FROM `authorized_executables` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)[0]
-
-if args.update and not existing:
-    sys.stdout.write('Executable %s for user %s not previously authorized.' % (args.title, args.user))
     sys.exit(0)
 
 ## Entry deletion
 
 if args.delete:
-    if existing:
-        registry.backend.query('DELETE FROM `authorized_executables` WHERE `user_id` = %s AND `title` = %s', user_id, args.title)
-        sys.stdout.write('Deleted executable %s' % args.title)
-        if user_id != 0:
-            sys.stdout.write(' (user %s).\n' % args.user)
+    if not args.user and not args.title:
+        sys.stderr.write('Need --user or --title to delete.')
+        sys.exit(1)
+
+    revoke_list = []
+    for title, user in authorized_apps.keys():
+        if args.title is not None and title not in args.title:
+            continue
+        if args.user is not None and user not in args.user:
+            continue
+
+        revoke_list.append((title, user))
+
+    for title, user in revoke_list:
+        success = master.revoke_application_authorization(title, user)
+        if user is None:
+            user = 'ALL'
+
+        if success:
+            sys.stdout.write('Deleted executable %s (user %s).\n' % (title, user))
         else:
-            sys.stdout.write('.\n')
-    else:
-        sys.stdout.write('Executable %s' % args.title)
-        if user_id != 0:
-            sys.stdout.write(' (user %s)' % args.user)
-        sys.stdout.write(' does not exist.\n')
+            sys.stderr.write('Failed to delete executable %s (user %s).\n' % (title, user))
+            sys.exit(1)
 
     sys.exit(0)
 
 ## If not deleting, executable must be passed
 
-if not args.executable:
+if args.executable is None:
     sys.stderr.write('Missing --executable\n')
     sys.exit(1)
 
+if len(args.executable) != 1:
+    sys.stderr.write('Only one executable can be authorized at a time.\n')
+    sys.exit(1)
+
+if args.title is None:
+    sys.stderr.write('Missing --title\n')
+    sys.exit(1)
+
+if len(args.title) != 1:
+    sys.stderr.write('Only one title can be given.\n')
+    sys.exit(1)
+
+title = args.title[0]
+
 ## Compute the checksum and insert/update.
     
-with open(args.executable) as source:
+with open(args.executable[0]) as source:
     checksum = hashlib.md5(source.read()).hexdigest()
 
-sql = 'INSERT INTO `authorized_executables` (`user_id`, `title`, `checksum`) VALUES (%s, %s, UNHEX(%s))'
-sql += ' ON DUPLICATE KEY UPDATE `checksum` = VALUES(`checksum`)'
-registry.backend.query(sql, user_id, args.title, checksum)
-
-if existing:
-    sys.stdout.write('Updated')
+if args.user is None:
+    users = [None]
 else:
-    sys.stdout.write('Inserted')
+    users = args.users
 
-sys.stdout.write(' executable %s' % args.title)
-if user_id != 0:
-    sys.stdout.write(' (user %s)' % args.user)
+for user in users:
+    if user is None:
+        user_name = 'ALL'
+    else:
+        user_name = user
 
-sys.stdout.write(': %s\n' % checksum)
+    try:
+        existing = authorized_apps[(title, user)]
+        if existing == checksum:
+            sys.stdout.write('Executable %s (user %s) is already authorized.\n' % (title, user_name))
+        else:
+            success = master.revoke_application_authorization(title, user)
+            if success:
+                raise KeyError()
+            else:
+                sys.stderr.write('Failed to update authorization of executable %s (user %s).\n' % (title, user_name))
+                sys.exit(1)
+
+    except KeyError:
+        success = master.authorize_application(title, checksum, user)
+        if success:
+            sys.stdout.write('Authorized executable %s (user %s).\n' % (title, user_name))
+        else:
+            sys.stderr.write('Failed to authorize executable %s (user %s).\n' % (title, user_name))
+            sys.exit(1)

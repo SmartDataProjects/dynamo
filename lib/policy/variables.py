@@ -222,7 +222,7 @@ class ReplicaIsLocked(BlockReplicaAttr):
         except KeyError:
             return False
 
-        return replica.block in locked_blocks
+        return locked_blocks is None or replica.block in locked_blocks
 
 class BlockNumFullDiskCopy(BlockReplicaAttr):
     def __init__(self):

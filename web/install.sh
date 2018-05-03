@@ -1,30 +1,21 @@
 #!/bin/bash
 
+###########################################################################################
+## install.sh
+##
+## Sets up web scripts for Apache. To be phased out by WSGI + Lighttpd.
+###########################################################################################
+
+THISDIR=$(cd $(dirname $0); pwd)
+
+source $THISDIR/../utilities/shellutils.sh
+
+echo '################################'
+echo '######  WEB DEPENDENCIES  ######'
+echo '################################'
 echo
-echo "Installing web scripts."
-echo
 
-require () {
-  "$@" >/dev/null 2>&1 && return 0
-  echo
-  echo "[Fatal] Failed: $@"
-  exit 1
-}
-
-### Source the configuration parameters
-
-export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]})/..; pwd)
-
-if ! [ -e $SOURCE/config.sh ]
-then
-  echo
-  echo "$SOURCE/config.sh does not exist."
-  exit 1
-fi
-
-require source $SOURCE/config.sh
-
-### Verify dependencies ###
+echo "-> Checking dependencies.."
 
 require pgrep -f httpd
 require which php
@@ -40,14 +31,17 @@ fi
 
 # Also should check memory_limit
 
-### Copy files ###
+echo '#############################################'
+echo '######  PHP SCRIPTS AND HTML TEMPLATES ######'
+echo '#############################################'
+echo
 
-TARGET=$WEB_PATH
+TARGET=/var/www
 
 HTMLTARGET=$TARGET/html/dynamo
 BINTARGET=$TARGET/cgi-bin
-HTMLSOURCE=$SOURCE/web/html/dynamo
-BINSOURCE=$SOURCE/web/cgi-bin
+HTMLSOURCE=$THISDIR/html/dynamo
+BINSOURCE=$THISDIR/cgi-bin
 
 if [ -e $BINTARGET/dynamo/common/db_conf.php ]
 then
@@ -90,7 +84,7 @@ rm $BINTARGET/dynamo/common/db_conf.php.template
 [ -L $HTMLTARGET/registry/invalidation ] || ln -sf $BINTARGET/registry/invalidation.php $HTMLTARGET/registry/invalidation
 [ -L $HTMLTARGET/registry/request ] || ln -sf $BINTARGET/registry/requests.php $HTMLTARGET/registry/request
 
-mv /tmp/dealermon.$$ $HTMLTARGET/dynamo/dealermon
+mv /tmp/dealermon.$$ $HTMLTARGET/dynamo/dealermon 2>/dev/null
 chmod 777 $HTMLTARGET/dynamo/dealermon
 
 ### Verify .htaccess override

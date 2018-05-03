@@ -1,0 +1,451 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import ssl
+import mimetools
+import socket
+import threading
+import Queue
+import traceback
+import select
+import time
+import json
+
+SERVER_HOST = 'localhost'
+SERVER_PORT = 39626
+CLIENT_PORT_RANGE = (39627, 39637)
+
+class ConnectError(Exception):
+    pass
+
+class SendError(Exception):
+    pass
+
+class ReceiveError(Exception):
+    pass
+
+class DynamoServer(object):
+    def __init__(self, addr, certfile, keyfile):
+        try:
+            open(certfile).close()
+            open(keyfile).close()
+        except:
+            # Certificate or key not readable -> consider as an SSL error
+            raise ssl.SSLError()
+
+        try:
+            try:
+                context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+            except AttributeError:
+                # python 2.6
+                self._conn = ssl.wrap_socket(socket.create_connection(addr), certfile = certfile, keyfile = keyfile)
+            else:
+                context.load_cert_chain(certfile, keyfile = keyfile)
+                context.verify_mode = ssl.CERT_NONE
+                self._conn = context.wrap_socket(socket.create_connection(addr))
+        except ssl.SSLError:
+            raise
+        except:
+            raise ConnectError()
+
+        # Receive "Connected" upon authentication & authorization success
+        self._recv()
+
+        self._addr = addr
+        self._certfile = certfile
+        self._keyfile = keyfile
+
+        self._is_local = (self._addr[0] in ('localhost', '127.0.0.1', socket.gethostname()))
+
+    def close(self):
+        try:
+            self._conn.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+
+        self._conn.close()
+
+    def communicate(self, data):
+        self._send(data)
+        return self._recv()
+
+    def _send(self, data):
+        bytes = json.dumps(data)
+        try:
+            self._conn.sendall('%d %s' % (len(bytes), bytes))
+        except:
+            raise SendError()
+
+    def _recv(self):
+        response = ''
+        while True:
+            try:
+                bytes = self._conn.recv(1024)
+            except socket.error:
+                # socket closed
+                break
+            if not bytes:
+                break
+    
+            if not response:
+                # first communication
+                length, _, bytes = bytes.partition(' ')
+                length = int(length)
+    
+            response += bytes
+                
+            if len(response) == length:
+                break
+    
+        try:
+            response_data = json.loads(response)
+        except:
+            raise ReceiveError()
+        
+        if response_data['status'] != 'OK':
+            sys.stderr.write('Server responded: [%s] %s\n' % (response_data['status'], response_data['content']))
+            raise RuntimeError()
+
+        return response_data['content']
+
+    def poll(self, app_id):
+        in_data = {'command': 'poll', 'appid': app_id}
+        resp_data = self.communicate(in_data)
+
+        print ' Application id:', resp_data['appid']
+        print ' Write request:', resp_data['write_request']
+        print ' User:', resp_data['user_name']
+        print ' Title:', resp_data['title']
+        print ' Path:', resp_data['path']
+        print ' Arguments:', resp_data['args']
+        print ' Status:', resp_data['status']
+        print ' Exit code:', resp_data['exit_code']
+        print ' Execute host:', resp_data['server']
+
+    def kill(self, app_id):
+        in_data = {'command': 'kill', 'appid': app_id}
+        response = self.communicate(in_data)
+        print response['detail']
+        return response['result']
+
+    def submit(self, cmd, title, write_request, workdir, asynch):
+        executable, _, args = cmd.partition(' ') # yes this will fail if our executable name contains a space..
+
+        in_data = {'command': 'submit', 'title': title, 'args': args, 'write_request': write_request}
+
+        if self._is_local:
+            in_data['exec_path'] = os.path.realpath(executable)
+        else:
+            with open(executable) as source:
+                in_data['exec'] = source.read()
+
+        if workdir is not None:
+            in_data['path'] = workdir
+        
+        if asynch:
+            in_data['mode'] = 'asynch'
+        else:
+            in_data['mode'] = 'synch'
+            sys.stderr.write('Submitting application data and waiting for server response.\n')
+    
+        resp_data = self.communicate(in_data)
+
+        app_id = resp_data['appid']
+        path = resp_data['path']
+
+        if asynch:
+            sys.stderr.write('Application accepted.\n')
+        else:
+            sys.stderr.write('Application started.\n')
+
+        sys.stderr.write(' Application id: %d\n' % app_id)
+        sys.stderr.write(' Path: %s\n' % path)
+        if self._is_local:
+            sys.stderr.write(' PID: %d\n' % resp_data['pid'])
+
+        if asynch:
+            return
+
+        sys.stderr.write('+++++++++++++++++++++++++++++++++++++++++++++++++++++\n')
+
+        ## Synchronous execution: dynamo_exec will wait until process completion
+
+        status = 'unknown'
+        return_code = None
+        listener = None
+
+        try:
+            listener = self.start_output_listener()
+
+            while True:
+                # come back here if Ctrl+C -> "no"
+                try:
+                    result = self._recv()
+                    status = result['status']
+                    return_code = result['exit_code']
+                    break
+    
+                except KeyboardInterrupt:
+                    kill = raw_input('Kill task? [y/n]: ')
+                    if kill == 'y':
+                        # Will use a fresh connection to kill
+                        result = DynamoServer(self._addr, self._certfile, self._keyfile).kill(app_id)
+                        if result == 'noaction':
+                            # job was already dead
+                            break
+                        # otherwise we'll wait for the server to send the termination notice
+                    elif kill != 'n':
+                        sys.stdout.write('Please answer in y/n.\n')
+
+        except:
+            exc_type, exc, tb = sys.exc_info()
+            sys.stderr.write('Caught exception %s while waiting for task to complete.\n' % exc_type.__name__)
+    
+            sys.stderr.write('Traceback (most recent call last):\n')
+            sys.stderr.write(''.join(traceback.format_tb(tb)) + '\n')
+            sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
+            
+            return_code = 2
+
+        if listener:
+            listener.stop()
+
+        sys.stderr.write('+++++++++++++++++++++++++++++++++++++++++++++++++++++\n')
+        sys.stderr.write('Dynamo executable completed with status %s (code %s).\n' % (status, return_code))
+        sys.exit(return_code)
+
+    def interact(self, write_request, workdir):
+        import readline
+
+        in_data = {'command': 'interact', 'write_request': write_request}
+
+        if workdir is not None:
+            in_data['path'] = workdir
+
+        self.communicate(in_data)
+
+        listener = self.start_output_listener(interactive = True)
+
+        listener.read_stdin()
+
+        listener.stop()
+
+    def start_output_listener(self, interactive = False):
+        ## Open a listening socket for the server to connect to. Two connections will be made for stdout and stderr.
+        sock = socket.socket(socket.AF_INET)
+
+        try:
+            port_range_e = os.environ['DYNAMO_CLIENT_PORT_RANGE'].partition('-') # N0-N1
+            port_range = range(int(port_range_e[0]), int(port_range_e[1]) + 1)
+        except KeyError:
+            port_range = range(*CLIENT_PORT_RANGE)
+
+        for port in port_range:
+            try:
+                sock.bind(('', port))
+            except:
+                pass
+            else:
+                break
+
+        oconn = None
+        econn = None
+        try:
+            sock.listen(2)
+    
+            # Send the coordinates to the server
+            self._send({'port': port})
+
+            oconn = sock.accept()[0]
+            econn = sock.accept()[0]
+
+            listener = OutputListener(oconn, econn, interactive)
+            listener.start()
+    
+        except:
+            for conn in (oconn, econn):
+                if conn is not None:
+                    try:
+                        conn.shutdown(socket.SHUT_RDWR)
+                    except:
+                        pass
+                    conn.close()
+
+            raise
+
+        finally:
+            # We don't need to accept any more connections
+            sock.close()
+
+        return listener
+
+
+class OutputListener(object):
+    """Receive data from sockets and write to stdout/err."""
+
+    def __init__(self, oconn, econn, connect_stdin):
+        self.oconn = oconn
+        self.econn = econn
+        self.term_lock = threading.Lock()
+        if connect_stdin:
+            self.prompt = Queue.Queue()
+        else:
+            self.prompt = None
+
+    def start(self):
+        oth = threading.Thread(target = self.read_socket, args = (self.oconn, sys.stdout, self.prompt))
+        eth = threading.Thread(target = self.read_socket, args = (self.econn, sys.stderr))
+
+        oth.daemon = True
+        eth.daemon = True
+        oth.start()
+        eth.start()
+
+    def stop(self):
+        self.oconn.shutdown(socket.SHUT_RDWR)
+        self.oconn.close()
+        self.econn.shutdown(socket.SHUT_RDWR)
+        self.econn.close()
+
+    def read_socket(self, conn, stream, prompt = None):
+        """
+        Read data from socket and print to stream line by line.
+        """
+        line = ''
+        while True:
+            try:
+                data = conn.recv(2048)
+                if data == '':
+                    break
+
+                with self.term_lock:
+                    while True:
+                        newline = data.find('\n')
+                        if newline == -1:
+                            if len(data) == 2048:
+                                line += data
+                            elif prompt:
+                                prompt.put(data)
+                            else:
+                                line += data
+    
+                            break
+                        else:
+                            line += data[:newline + 1]
+                            stream.write(line)
+                            stream.flush()
+
+                            line = ''
+                            data = data[newline + 1:]
+    
+            except EOFError:
+                break
+
+        if line != '':
+            with self.term_lock:
+                stream.write(line + '\n')
+                stream.flush()
+
+        if prompt:
+            self.prompt.put(None)
+
+    def read_stdin(self):
+        while True:
+            try:
+                ppt = self.prompt.get()
+                if ppt is None:
+                    break
+    
+                line = raw_input(ppt)
+            except EOFError:
+                sys.stdout.write('\n')
+                self.oconn.sendall('0 ')
+                break
+            except KeyboardInterrupt:
+                sys.stderr.write('\nKeyboardInterrupt\n')
+                self.oconn.sendall('1 \n')
+            else:
+                line += '\n'
+                self.oconn.sendall(('%d ' % len(line)) + line)
+
+
+if __name__ == '__main__':
+    from argparse import ArgumentParser
+    
+    parser = ArgumentParser(description = 'Execute a Dynamo application.')
+    parser.add_argument('cmd', metavar = 'CMD', nargs = '?', help = 'Executable command. If not given, start an interactive session.')
+    parser.add_argument('--asynchronous', '-A', action = 'store_true', dest = 'asynch', help = 'Do not wait for the executable to complete.')
+    parser.add_argument('--server', '-s', metavar = 'HOST[:PORT]', dest = 'server', help = 'Server host.')
+    parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', default = 'DynamoExecutable', help = 'Executable title.')
+    parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request write access.')
+    parser.add_argument('--poll', '-p', metavar = 'ID', dest = 'poll_appid', help = 'Just poll an existing application.')
+    parser.add_argument('--kill', '-x', metavar = 'ID', dest = 'kill_appid', help = 'Abort an existing application.')
+    parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
+    parser.add_argument('--cert', '-c', metavar = 'PATH', dest = 'certfile', help = 'Non-standard certificate file location.')
+    parser.add_argument('--key', '-k', metavar = 'PATH', dest = 'keyfile', help = 'Non-standard key file location.')
+    
+    args = parser.parse_args()
+    sys.argv = []
+
+    ## Server host
+    server_port = SERVER_PORT
+    if args.server:
+        server_host = args.server
+    elif 'DYNAMO_SERVER_HOST' in os.environ:
+        server_host = os.environ['DYNAMO_SERVER_HOST']
+    else:
+        server_host = SERVER_HOST
+
+    if ':' in server_host:
+        server_host, _, port = args.server.partition(':')
+        server_port = int(port)
+
+    server_addr = (server_host, server_port)
+    
+    ## Open a connection to the server
+    if args.certfile:
+        certfile = args.certfile
+    else:
+        try:
+            certfile = os.environ['X509_USER_PROXY']
+        except KeyError:
+            certfile = '/tmp/x509up_u%d' % os.getuid()
+    
+    if args.keyfile:
+        keyfile = args.keyfile
+    else:
+        keyfile = certfile
+
+    server = None
+    try:
+        server = DynamoServer(server_addr, certfile, keyfile)
+
+        if args.poll_appid is not None:
+            server.poll(args.poll_appid)
+        elif args.kill_appid is not None:
+            server.kill(args.kill_appid)
+        elif args.cmd is None:
+            server.interact(args.write_request, args.workdir)
+        else:
+            server.submit(args.cmd, args.title, args.write_request, args.workdir, args.asynch)
+
+    except ssl.SSLError:
+        sys.stderr.write('Failed to open an SSL connection to Dynamo server at %s:%d.\n' % server_addr)
+        sys.stderr.write('Please check that you have a valid certificate and key or a certificate proxy at\n')
+        sys.stderr.write('1. Paths given in --cert and --key options\n')
+        sys.stderr.write('2. $X509_USER_PROXY\n')
+        sys.stderr.write('3. /tmp/x509up_u%d\n' % os.getuid())
+
+    except ConnectError:
+        sys.stderr.write('Failed to connect to Dynamo server at %s:%d.\n' % server_addr)
+
+    except (SendError, ReceiveError):
+        sys.stderr.write('Communication with Dynamo server at %s:%d failed.\n' % server_addr)
+
+    except RuntimeError:
+        pass
+
+    finally:
+        if server:
+            server.close()

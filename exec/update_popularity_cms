@@ -21,13 +21,12 @@ from dynamo.dataformat import Configuration
 
 config = Configuration(args.config)
 
-config.crabaccess.store = config.mysql
-config.globalqueue.store = config.mysql
-
 ## Set up logging (write to stdout)
-from dynamo.core.executable import make_standard_logger
+from dynamo.core.executable import read_only, make_standard_logger
 
 LOG = make_standard_logger(config.log_level)
+
+LOG.info('read_only %s', read_only)
 
 ## Load the inventory
 from dynamo.core.executable import inventory
@@ -39,7 +38,7 @@ if args.crabaccess:
     
     from dynamo.policy.producers.crabaccess import CRABAccessHistory
     
-    CRABAccessHistory.update(config.crabaccess, inventory)
+    CRABAccessHistory.update(config.crabaccess, inventory, read_only = read_only)
     
     LOG.info('CRABAccessHistory update completed.')
 
@@ -50,6 +49,6 @@ if args.globalqueue:
     
     from dynamo.policy.producers.globalqueue import GlobalQueueRequestHistory
     
-    GlobalQueueRequestHistory.update(config.globalqueue, inventory)
+    GlobalQueueRequestHistory.update(config.globalqueue, inventory, read_only = read_only)
     
     LOG.info('GlobalQueueRequestHistory update completed.')

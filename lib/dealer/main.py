@@ -7,11 +7,11 @@ import random
 
 from dynamo.dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site, ConfigurationError
 from dynamo.dealer.dealerpolicy import DealerPolicy
-import dynamo.dealer.plugins as dealer_plugins
-import dynamo.operation.impl as operation_impl
-import dynamo.history.impl as history_impl
-import dynamo.policy.producers as producers
+from dynamo.operation.copy import CopyInterface
+from dynamo.history.history import TransactionHistoryInterface
 from dynamo.utils.signaling import SignalBlocker
+import dynamo.dealer.plugins as dealer_plugins
+import dynamo.policy.producers as producers
 
 LOG = logging.getLogger(__name__)
 
@@ -21,14 +21,22 @@ class Dealer(object):
         """
         @param config      Configuration
         """
-        
-        self.copy_op = getattr(operation_impl, config.copy_op.module)(config.copy_op.config)
-        self.history = getattr(history_impl, config.history.module)(config.history.config)
+
+        self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
+
+        if 'history' in config:
+            self.history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
+        else:
+            self.history = TransactionHistoryInterface.get_instance()
+
+        if config.test_run:
+            self.copy_op.dry_run = True
+            self.history.test = True
 
         self._attr_producers = []
 
         self.policy = DealerPolicy(config)
-        self._setup_plugins(config)
+        self._setup_plugins(config, config.test_run)
 
     def run(self, inventory, comment = ''):
         """
@@ -42,7 +50,7 @@ class Dealer(object):
         """
 
         # fetch the deletion cycle number
-        cycle_number = self.history.new_copy_run(self.policy.partition_name, self.policy.version, comment = comment)
+        cycle_number = self.history.new_copy_cycle(self.policy.partition_name, self.policy.version, comment = comment)
 
         LOG.info('Dealer cycle %d for %s starting', cycle_number, self.policy.partition_name)
 
@@ -63,8 +71,8 @@ class Dealer(object):
             plugin.load(inventory)
 
         LOG.info('Saving site and dataset names.')
-        self.history.save_sites(inventory.sites.values())
-        self.history.save_datasets(inventory.datasets.values())
+        self.history.save_sites(inventory.sites.itervalues())
+        self.history.save_datasets(inventory.datasets.itervalues())
 
         LOG.info('Collecting copy proposals.')
         # Prioritized lists of datasets, blocks, and files
@@ -100,17 +108,18 @@ class Dealer(object):
         comment = 'Dynamo -- Automatic replication request for %s partition.' % partition.name
         self._commit_copies(cycle_number, inventory, unique_replicas, comment)
 
-        self.history.close_copy_run(cycle_number)
+        self.history.close_copy_cycle(cycle_number)
 
         LOG.info('Dealer cycle completed')
 
-    def _setup_plugins(self, config):
+    def _setup_plugins(self, config, is_test_run):
         self._plugin_priorities = {}
 
         n_zero_prio = 0
         n_nonzero_prio = 0
         for name, spec in config.plugins.items():
             plugin = getattr(dealer_plugins, spec.module)(spec.config)
+            plugin.read_only = is_test_run
             self._plugin_priorities[plugin] = spec.priority
 
             if spec.priority:
@@ -199,19 +208,41 @@ class Dealer(object):
             reqlist = reqlists[plugin]
             request = reqlist.pop(0)
 
+            item, destination = request
+
+            if type(item) is Dataset:
+                dataset = item
+                # check that there is at least one source (allow it to be incomplete - could be in production)
+                if len(dataset.replicas) == 0:
+                    continue
+
+                name = item.name
+            elif type(item) is Block:
+                if len(item.replicas) == 0:
+                    continue
+
+                dataset = item.dataset
+                name = item.full_name()
+            elif type(item) is list:
+                no_source = False
+                for block in item:
+                    if len(block.replicas) == 0:
+                        no_source = True
+                        break
+
+                if no_source:
+                    continue
+
+                dataset = item[0].dataset
+                name = dataset.name + '#'
+                name += ':'.join(block.real_name() for block in item)
+
+            if dataset.status not in (Dataset.STAT_PRODUCTION, Dataset.STAT_VALID):
+                continue
+
             requests.append(request + (plugin,))
 
             if LOG.getEffectiveLevel() == logging.DEBUG:
-                item, destination = request
-   
-                if type(item).__name__ == 'Dataset':
-                    name = item.name
-                elif type(item).__name__ == 'Block':
-                    name = item.full_name()
-                elif type(item) is list:
-                    name = item[0].dataset.name + '#'
-                    name += ':'.join(block.real_name() for block in item)
-
                 if destination is None:
                     destname = 'somewhere'
                 else:

@@ -13,7 +13,7 @@ class PhEDExGroupInfoSource(GroupInfoSource):
     def __init__(self, config):
         GroupInfoSource.__init__(self, config)
 
-        self._phedex = PhEDEx(config.phedex)
+        self._phedex = PhEDEx(config.get('phedex', None))
 
     def get_group(self, name): #override
         if self.include is not None:

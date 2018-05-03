@@ -1,167 +1,320 @@
 import os
 import sys
-import pwd
+import shutil
 import time
 import logging
-import hashlib
+import socket
 import shlex
 import signal
+import traceback
+import code
 import multiprocessing
+import threading
 import Queue
 
 from dynamo.core.inventory import DynamoInventory
-from dynamo.core.registry import DynamoRegistry
-from dynamo.utils.signaling import SignalBlocker
+from dynamo.core.manager import ServerManager, Authorizer, OutOfSyncError
+import dynamo.core.serverutils as serverutils
+from dynamo.core.components.appserver import AppServer
+from dynamo.utils.log import log_exception
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
 
-def killproc(proc):
-    uid = os.geteuid()
-    os.seteuid(0)
-    proc.terminate()
-    os.seteuid(uid)
-    proc.join(5)
+BANNER = '''
++++++++++++++++++++++++++++++++++++++
+++++++++++++++ DYNAMO +++++++++++++++
+++++++++++++++  v2.1  +++++++++++++++
++++++++++++++++++++++++++++++++++++++
+'''
 
-class Dynamo(object):
+class DynamoServer(object):
     """Main daemon class."""
 
     def __init__(self, config):
         LOG.info('Initializing Dynamo server %s.', __file__)
 
-        ## User names
-        # User with full privilege (still not allowed to write to inventory store)
-        self.full_user = config.user
-        # Restricted user
-        self.read_user = config.read_user
-
-        ## Create the registry
-        self.registry = DynamoRegistry(config.registry)
-        self.registry_config = config.registry.clone()
+        ## User name
+        self.user = config.user
 
         ## Create the inventory
-        self.inventory = DynamoInventory(config.inventory, load = False)
         self.inventory_config = config.inventory.clone()
+        self.inventory = None
+
+        ## Create the server manager
+        self.manager_config = config.manager.clone()
+        self.manager = ServerManager(self.manager_config)
+
+        ## Application collection
+        self.applications_config = config.applications.clone()
+        if self.applications_config.enabled:
+            # Initialize the appserver since it may require elevated privilege (this Ctor is run as root)
+            aconf = self.applications_config.server
+            self.appserver = AppServer.get_instance(aconf.module, self, aconf.config)
+
+        ## Server status (and application) poll interval
+        self.poll_interval = config.status_poll_interval
 
         ## Load the inventory content (filter according to debug config)
-        load_opts = {}
+        self.inventory_load_opts = {}
         if 'debug' in config:
             for objs in ['groups', 'sites', 'datasets']:
                 included = config.debug.get('included_' + objs, None)
                 excluded = config.debug.get('excluded_' + objs, None)
     
-                load_opts[objs] = (included, excluded)
-        
+                self.inventory_load_opts[objs] = (included, excluded)
+
+        ## Maximum number of consecutive unhandled errors before shutting down the server
+        self.max_num_errors = config.max_num_errors
+        self.num_errors = 0
+
+        ## How long application workspaces are retained (days)
+        self.applications_keep = config.applications_keep * 3600 * 24
+
+        ## Shutdown flag
+        # Default is set. KeyboardInterrupt is raised when flag is cleared
+        self.shutdown_flag = threading.Event()
+        self.shutdown_flag.set()
+
+    def load_inventory(self):
+        self.inventory = DynamoInventory(self.inventory_config)
+
+        ## Wait until there is no write process
+        while self.manager.master.get_writing_process_id() is not None:
+            LOG.debug('A write-enabled process is running. Checking again in 5 seconds.')
+            time.sleep(5)
+
+        ## Write process is done.
+        ## Other servers will not start a new write process while there is a server with status 'starting'.
+        ## The only states the other running servers can be in are therefore 'updating' or 'online'
+        while self.manager.count_servers(ServerManager.SRV_UPDATING) != 0:
+            time.sleep(2)
+
+        if self.manager.count_servers(ServerManager.SRV_ONLINE) == 0:
+            # I am the first server to start the inventory - need to have a store.
+            if not self.inventory.has_store():
+                raise RuntimeError('No persistent inventory storage is available.')
+        else:
+            if self.inventory.has_store():
+                # Clone the content from a remote store
+                hostname, module, config, version = self.manager.find_remote_store()
+                # No server will be updating because write process is blocked while we load
+                if version == self.inventory.store_version():
+                    LOG.info('Local persistency store is up to date.')
+                else:
+                    # TODO cloning can take hours; need a way to unblock other servers and pool the updates
+                    LOG.info('Cloning inventory content from persistency store at %s', hostname)
+                    self.inventory.clone_store(module, config)
+            else:
+                self.setup_remote_store()
+
         LOG.info('Loading the inventory.')
-        self.inventory.load(**load_opts)
+        self.inventory.load(**self.inventory_load_opts)
+
+        LOG.info('Inventory is ready.')
 
     def run(self):
         """
-        Infinite-loop main body of the daemon.
-        Step 1: Poll the registry for one uploaded script.
-        Step 2: If a script is found, check the authorization of the script.
-        Step 3: Spawn a child process for the script.
-        Step 4: Collect completed child processes. Get updates from the write-enabled child process if there is one.
-        Step 5: Sleep for N seconds.
+        Main body of the server, but mostly focuses on exception handling. dynamod runs this function
+        in a non-main thread.
         """
 
-        LOG.info('Started dynamo daemon.')
+        # Number of unhandled errors
+        self.num_errors = 0
+
+        # Outer loop: restart the application server when error occurs
+        while True:
+            # Lock write activities by other servers
+            self.manager.set_status(ServerManager.SRV_STARTING)
+
+            self.load_inventory()
+
+            bconf = self.manager_config.board
+            self.manager.master.advertise_board(bconf.module, bconf.config)
+
+            if self.inventory.has_store():
+                pconf = self.inventory_config.persistency
+                self.manager.master.advertise_store(pconf.module, pconf.readonly_config)
+                self.manager.master.advertise_store_version(self.inventory.store_version())
+
+            if self.manager.shadow is not None:
+                sconf = self.manager_config.shadow
+                self.manager.master.advertise_shadow(sconf.module, sconf.config)
+
+            # We are ready to work
+            self.manager.set_status(ServerManager.SRV_ONLINE)
+
+            try:
+                # Actual stuff happens here
+                if self.applications_config.enabled:
+                    self._run_application_cycles()
+                else:
+                    self._run_update_cycles()
+
+            except KeyboardInterrupt:
+                LOG.info('Server process was interrupted.')
+                # KeyboardInterrupt is raised when shutdown_flag is set
+                # Notify shutdown ready
+                self.shutdown_flag.set()
+                return
+    
+            except OutOfSyncError:
+                LOG.error('Server has gone out of sync with its peers.')
+                log_exception(LOG)
+   
+            except:
+                log_exception(LOG)
+                self.num_errors += 1
+
+            if self.num_errors >= self.max_num_errors:
+                LOG.error('Consecutive %d errors occurred. Shutting down Dynamo.' % self.num_errors)
+                os.kill(os.getpid(), signal.SIGINT)
+                self.shutdown_flag.clear()
+                return
+
+            if not self.manager.master.connected:
+                # We need to reconnect to another server
+                LOG.error('Lost connection to the master server.')
+                self.manager.reconnect_master()
+    
+            # set server status to initial
+            try:
+                self.manager.reset_status()
+            except:
+                self.manager.status = ServerManager.SRV_INITIAL
+
+    def _run_application_cycles(self):
+        """
+        Infinite-loop main body of the daemon.
+        Step 1: Poll the applications list for one uploaded script.
+        Step 2: If a script is found, check the authorization of the script.
+        Step 3: Spawn a child process for the script.
+        Step 4: Apply updates sent by other servers.
+        Step 5: Collect completed child processes. Get updates from the write-enabled child process if there is one.
+        Step 6: Clean up.
+        Step 7: Sleep for N seconds.
+        """
 
         child_processes = []
 
-        # There can only be one child process with write access at a time. We pass it a Queue to communicate back.
-        # writing_process is a tuple (proc, queue) when some process is writing
-        writing_process = (0, None)
+        # Start the application collector thread
+        try:
+            self.appserver.start()
+        except:
+            # If app server fails, we don't consider it a recoverable error.
+            # KeyboardInterrupt will get the main process out of the retry loop
+            log_exception(LOG)
+            raise KeyboardInterrupt()
+
+        LOG.info('Start polling for applications.')
 
         try:
-            LOG.info('Start polling for executables.')
-
+            # There can only be one child process with write access at a time. We pass it a Queue to communicate back.
+            # writing_process is a tuple (proc, queue) when some process is writing
+            writing_process = (0, None)
+    
             first_wait = True
-            sleep_time = 0
+            do_sleep = False
 
             while True:
-                self.registry.backend.query('UNLOCK TABLES')
-
+                LOG.debug('Check status and connection')
+                self.check_status_and_connection()
+    
                 ## Step 4 (easier to do here because we use "continue"s)
-                completed_processes = self.collect_processes(child_processes, writing_process)
-
-                if writing_process[0] in [exec_id for exec_id, status in completed_processes]:
-                    writing_process = (0, None)
-
+                LOG.debug('Read updates')
+                self.read_updates()
+    
                 ## Step 5 (easier to do here because we use "continue"s)
-                time.sleep(sleep_time)
+                LOG.debug('Collect processes')
+                writing_process = self.collect_processes(child_processes, writing_process)
 
+                ## Step 6 (easier to do here because we use "continue"s)
+                LOG.debug('Clean old workareas')
+                self.cleanup()
+    
+                ## Step 7 (easier to do here because we use "continue"s)
+                if do_sleep:
+                    # one successful cycle - reset the error counter
+                    self.num_errors = 0
+
+                    LOG.debug('Sleep %d', self.poll_interval)
+                    time.sleep(self.poll_interval)
+    
                 ## Step 1: Poll
-                LOG.debug('Polling for executables.')
-
-                # UNLOCK statement at the top of the while loop
-                self.registry.backend.query('LOCK TABLES `action` WRITE')
-
-                sql = 'SELECT s.`id`, s.`write_request`, s.`title`, s.`path`, s.`args`, s.`user_id`, u.`name`'
-                sql += ' FROM `action` AS s INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
-                sql += ' WHERE s.`status` = \'new\''
-                if writing_process[0] != 0:
-                    # we don't allow write_requesting executables while there is one running
-                    sql += ' AND s.`write_request` = 0'
-                sql += ' ORDER BY s.`timestamp` LIMIT 1'
-                result = self.registry.backend.query(sql)
-
-                if len(result) == 0:
+                LOG.debug('Polling for applications.')
+    
+                app = self.manager.get_next_application()
+    
+                if app is None:
                     if len(child_processes) == 0 and first_wait:
-                        LOG.info('Waiting for executables.')
+                        LOG.info('Waiting for applications.')
                         first_wait = False
-
-                    sleep_time = 0.5
-
-                    LOG.debug('No executable found, sleeping for %d seconds.', sleep_time)
-
+    
+                    do_sleep = True
+    
+                    LOG.debug('No application found, sleeping for %.1f second(s).' % self.poll_interval)
                     continue
-
+    
                 ## Step 2: If a script is found, check the authorization of the script.
-                exec_id, write_request, title, path, args, user_id, user_name = result[0]
-
                 first_wait = True
-                sleep_time = 0
+                do_sleep = False
 
-                if not os.path.exists(path + '/exec.py'):
-                    LOG.info('Executable %s from user %s (write request: %s) not found.', title, user_name, write_request)
-                    self.registry.backend.query('UPDATE `action` SET `status` = \'notfound\' WHERE `id` = %s', exec_id)
+                if not os.path.exists(app['path'] + '/exec.py'):
+                    LOG.info('Application %s from user %s@%s (write request: %s) not found.', app['title'], app['user_name'], app['user_host'], app['write_request'])
+                    self.manager.master.update_application(app['appid'], status = ServerManager.APP_NOTFOUND)
+                    self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_NOTFOUND})
                     continue
+    
+                LOG.info('Found application %s from user %s (write request: %s)', app['title'], app['user_name'], app['write_request'])
 
-                LOG.info('Found executable %s from user %s (write request: %s)', title, user_name, write_request)
-
-                proc_args = (path, args)
-
-                if write_request:
-                    if not self.check_write_auth(title, user_id, path):
-                        LOG.warning('Executable %s from user %s is not authorized for write access.', title, user_name)
-                        # send a message
-
-                        self.registry.backend.query('UPDATE `action` SET `status` = \'authfailed\' where `id` = %s', exec_id)
+                is_local = (app['user_host'] == socket.gethostname())
+    
+                proc_args = (app['path'], app['args'], is_local)
+    
+                if app['write_request']:
+                    if not self.manager.check_write_auth(app['title'], app['user_name'], app['path']):
+                        LOG.warning('Application %s from user %s is not authorized for write access.', app['title'], app['user_name'])
+                        # TODO send a message
+    
+                        self.manager.master.update_application(app['appid'], status = ServerManager.APP_AUTHFAILED)
+                        self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_AUTHFAILED})
                         continue
-
+    
                     queue = multiprocessing.Queue()
                     proc_args += (queue,)
-
-                    writing_process = (exec_id, queue)
-
+    
+                    writing_process = (app['appid'], queue)
+    
                 ## Step 3: Spawn a child process for the script
-                self.registry.backend.query('UPDATE `action` SET `status` = \'run\' WHERE `id` = %s', exec_id)
-
-                proc = multiprocessing.Process(target = self._run_one, name = title, args = proc_args)
-                child_processes.append((exec_id, proc, user_name, path))
-
+                self.manager.master.update_application(app['appid'], status = ServerManager.APP_RUN)
+    
+                proc = multiprocessing.Process(target = self.run_script, name = app['title'], args = proc_args)
                 proc.daemon = True
                 proc.start()
 
-                LOG.info('Started executable %s (%s) from user %s (PID %d).', title, path, user_name, proc.pid)
+                self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_RUN, 'path': app['path'], 'pid': proc.pid})
+    
+                LOG.info('Started application %s (%s) from user %s@%s (PID %d).', app['title'], app['path'], app['user_name'], app['user_host'], proc.pid)
+    
+                child_processes.append((app['appid'], proc, app['user_name'], app['user_host'], app['path']))
 
         except KeyboardInterrupt:
-            LOG.info('Server process was interrupted.')
+            if len(child_processes) != 0:
+                LOG.info('Terminating all child processes..')
+            raise
 
         except:
-            # log the exception
-            LOG.warning('Exception in server process. Terminating all child processes.')
+            if len(child_processes) != 0:
+                LOG.error('Exception in server process. Terminating all child processes..')
+            else:
+                LOG.error('Exception in server process.')
+
+            if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
+                try:
+                    self.manager.set_status(ServerManager.SRV_ERROR)
+                except:
+                    pass
+
             raise
 
         finally:
@@ -171,94 +324,139 @@ class Dynamo(object):
             # in the child. Child processes have to always ignore SIGINT and be killed only from
             # SIGTERM sent by the line below.
 
-            self.registry.backend.query('UNLOCK TABLES')
+            for app_id, proc, user_name, user_host, path in child_processes:
+                LOG.warning('Terminating %s (%s) requested by %s@%s (PID %d)', proc.name, path, user_name, user_host, proc.pid)
 
-            for exec_id, proc, user_name, path in child_processes:
-                LOG.warning('Terminating %s (%s) requested by %s (PID %d)', proc.name, path, user_name, proc.pid)
+                serverutils.killproc(proc)
 
-                killproc(proc)
+                try:
+                    self.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
+                except:
+                    pass
 
-                if proc.is_alive():
-                    LOG.warning('Child process %d did not return after 5 seconds.', proc.pid)
+            LOG.info('Stopping application server.')
+            # Close the application collector. The collector thread will terminate
+            self.appserver.stop()
 
-                self.registry.backend.query('UPDATE `action` SET `status` = \'killed\' where `id` = %s', exec_id)
+    def _run_update_cycles(self):
+        """
+        Infinite-loop main body of the daemon.
+        Step 1: Apply updates sent by other servers.
+        Step 2: Sleep for N seconds.
+        """
 
-    def check_write_auth(self, title, user_id, path):
-        # check authorization
-        with open(path + '/exec.py') as source:
-            checksum = hashlib.md5(source.read()).hexdigest()
+        LOG.info('Start checking for updates.')
 
-        sql = 'SELECT `user_id` FROM `authorized_executables` WHERE `title` = %s AND `checksum` = UNHEX(%s)'
-        for auth_user_id in self.registry.backend.query(sql, title, checksum):
-            if auth_user_id == 0 or auth_user_id == user_id:
-                return True
+        try:
+            while True:
+                self.check_status_and_connection()
+    
+                ## Step 1
+                self.read_updates()
 
-        return False
+                # one successful cycle - reset the error counter
+                self.num_errors = 0
+    
+                ## Step 2
+                time.sleep(self.poll_interval)
+
+        except KeyboardInterrupt:
+            raise
+
+        except:
+            LOG.error('Exception in server process.')
+
+            if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
+                try:
+                    self.manager.set_status(ServerManager.SRV_ERROR)
+                except:
+                    pass
+
+            raise
+
+    def check_status_and_connection(self):
+        if not self.shutdown_flag.is_set():
+            raise KeyboardInterrupt('Shutdown')
+
+        ## Check status (raises exception if error)
+        self.manager.check_status()
+    
+        if not self.inventory.check_store():
+            # We lost connection to the remote persistency store. Try another server.
+            # If there is no server to connect to, this method raises a RuntimeError
+            self.setup_remote_store()
+
+    def setup_remote_store(self, hostname = ''):
+        # find_remote_store raises a RuntimeError if not source is found
+        hostname, module, config, version = self.manager.find_remote_store(hostname = hostname)
+        LOG.info('Using persistency store at %s', hostname)
+        self.manager.register_remote_store(hostname)
+
+        self.inventory.init_store(module, config)
 
     def collect_processes(self, child_processes, writing_process):
-        completed_processes = []
-
         ichild = 0
         while ichild != len(child_processes):
-            exec_id, proc, user_name, path = child_processes[ichild]
+            app_id, proc, user_name, user_host, path = child_processes[ichild]
 
-            status = ''
+            apps = self.manager.master.get_applications(app_id = app_id)
+            if len(apps) == 0:
+                status = ServerManager.APP_KILLED
+            else:
+                status = apps[0]['status']
+            
+            if status == ServerManager.APP_KILLED:
+                serverutils.killproc(proc)
 
-            # Was the job aborted in the registry?
-            result = self.registry.backend.query('SELECT `status` FROM `action` WHERE `id` = %s', exec_id)
-            if len(result) == 0 or result[0] != 'run':
-                status = 'killed'
-                killproc(proc)
-                proc.join(60)
+            read_only = True
 
-            elif exec_id == writing_process[0]:
-                # If this is the writing process, read data from the queue
-                
-                # read_state: 0 -> nothing written yet, 1 -> read OK, 2 -> failure
-                read_state, update_commands = self.collect_updates(writing_process[1])
+            if app_id == writing_process[0]:
+                read_only = False
 
-                if read_state == 1:
-                    status = 'done'
+                if status == ServerManager.APP_KILLED:
+                    read_state = -1
 
-                    # Block system signals and get update done
-                    with SignalBlocker(logger = LOG):
-                        for cmd, obj in update_commands:
-                            if cmd == DynamoInventory.CMD_UPDATE:
-                                self.inventory.update(obj, write = True, changelog = CHANGELOG)
-                            elif cmd == DynamoInventory.CMD_DELETE:
-                                CHANGELOG.info('Deleting %s', str(obj))
-                                self.inventory.delete(obj, write = True)
-
-                elif read_state == 2:
-                    status = 'failed'
-                    killproc(proc)
+                else: # i.e. status == RUN
+                    # If this is the writing process, read data from the queue
+                    # read_state: 0 -> nothing written yet (process is running), 1 -> read OK, 2 -> failure
+                    read_state, update_commands = self.collect_updates(writing_process[1])
+    
+                    if read_state == 1:
+                        status = ServerManager.APP_DONE
+                        # we would block signal here, but since we would be running this code in a subthread we don't have to
+                        self.exec_updates(update_commands)
+    
+                    elif read_state == 2:
+                        status = ServerManager.APP_FAILED
+                        serverutils.killproc(proc)
 
                 if read_state != 0:
                     proc.join(60)
+                    writing_process = (0, None)
     
             if proc.is_alive():
-                if not status:
+                if status == ServerManager.APP_RUN:
                     ichild += 1
                     continue
                 else:
-                    # status set -> the process must be complete but did not join within 60 seconds
-                    LOG.error('Executable %s (%s) from user %s is stuck (Status %s).', proc.name, path, user_name, status)
+                    # The process must be complete but did not join within 60 seconds
+                    LOG.error('Application %s (%s) from user %s@%s is stuck (Status %s).', proc.name, path, user_name, user_host, ServerManager.application_status_name(status))
             else:
-                if not status:
+                if status == ServerManager.APP_RUN:
                     if proc.exitcode == 0:
-                        status = 'done'
+                        status = ServerManager.APP_DONE
                     else:
-                        status = 'failed'
+                        status = ServerManager.APP_FAILED
 
-                LOG.info('Executable %s (%s) from user %s completed (Exit code %d Status %s).', proc.name, path, user_name, proc.exitcode, status)
+                LOG.info('Application %s (%s) from user %s@%s completed (Exit code %d Status %s).', proc.name, path, user_name, user_host, proc.exitcode, ServerManager.application_status_name(status))
+               
+            child_processes.pop(ichild)
 
-            # process completed or is alive but stuck -> remove from the list and set status in the table
-            child_proc = child_processes.pop(ichild)
-            completed_processes.append((child_proc[0], status))
+            self.appserver.notify_synch_app(app_id, {'status': status, 'exit_code': proc.exitcode})
 
-            self.registry.backend.query('UPDATE `action` SET `status` = %s, `exit_code` = %s where `id` = %s', status, proc.exitcode, exec_id)
+            self.manager.master.update_application(app_id, status = status, exit_code = proc.exitcode)
 
-        return completed_processes
+        return writing_process
 
     def collect_updates(self, queue):
         print_every = 1000
@@ -270,8 +468,9 @@ class Dynamo(object):
 
         while True:
             try:
-                # In case the child process fails to put EOM at the end, we time out in 60 seconds.
-                cmd, obj = queue.get(block = reading, timeout = 60)
+                # Once we have an item sent, we'll read until the end (EOM).
+                # If the child dies in the middle of messaging, we get out of the while loop by timeout = 60
+                cmd, objstr = queue.get(block = reading, timeout = 60)
             except Queue.Empty:
                 if reading:
                     # The child process crashed or timed out
@@ -279,57 +478,232 @@ class Dynamo(object):
                 else:
                     return 0, update_commands
             else:
-                reading = True
+                reading = True # Now we have to read until the end - start blocking queue.get
 
                 if LOG.getEffectiveLevel() == logging.DEBUG:
-                    LOG.debug('From queue: %d %s', cmd, obj)
+                    LOG.debug('From queue: %d %s', cmd, objstr)
 
                 if cmd == DynamoInventory.CMD_UPDATE:
                     updates_received += 1
-                    update_commands.append((cmd, obj))
+                    update_commands.append((cmd, objstr))
                 elif cmd == DynamoInventory.CMD_DELETE:
                     deletes_received += 1
-                    update_commands.append((cmd, obj))
+                    update_commands.append((cmd, objstr))
 
                 if cmd == DynamoInventory.CMD_EOM or len(update_commands) % print_every == 0:
                     LOG.info('Received %d updates and %d deletes.', updates_received, deletes_received)
 
                 if cmd == DynamoInventory.CMD_EOM:
                     return 1, update_commands
-        
-    def _run_one(self, path, args, queue = None):
-        # Set the uid of the process
+
+    def cleanup(self):
+        applications = self.manager.master.get_applications(older_than = self.applications_keep)
+
+        remote_request_paths = []
+        for app in applications:
+            if not os.path.isdir(app['path']):
+                continue
+
+            if app['user_host'] != socket.gethostname():
+                # First make sure all mounts are removed.
+                self.clean_remote_request(path)
+
+            # Then remove the path
+            shutil.rmtree(app['path'])
+            self.manager.master.update_application(app_id = app['appid'], path = None)
+
+    def clean_remote_request(self, path):
+        # Since threads cannot change the uid, we launch a subprocess.
+        # (Mounts are made read-only, so there is no risk of accidents even if the subprocess fails)
+        proc = multiprocessing.Process(target = serverutils.umountall, args = (path,))
+        proc.start()
+        proc.join()
+
+    def exec_updates(self, update_commands):
+        # My updates
+        self.manager.set_status(ServerManager.SRV_UPDATING)
+
+        for cmd, objstr in update_commands:
+            # Create a python object from its representation string
+            obj = self.inventory.make_object(objstr)
+
+            if cmd == DynamoInventory.CMD_UPDATE:
+                self.inventory.update(obj, write = True, changelog = CHANGELOG)
+            elif cmd == DynamoInventory.CMD_DELETE:
+                CHANGELOG.info('Deleting %s', str(obj))
+                self.inventory.delete(obj, write = True)
+
+        self.manager.master.advertise_store_version(self.inventory.store_version())
+
+        self.manager.set_status(ServerManager.SRV_ONLINE)
+
+        # Others
+        self.manager.send_updates(update_commands)
+
+    def read_updates(self):
+        has_updates = False
+        for cmd, objstr in self.manager.get_updates():
+            has_updates = True
+
+            # Create a python object from its representation string
+            obj = self.inventory.make_object(objstr)
+
+            if cmd == 'update':
+                self.inventory.update(obj, write = True, changelog = CHANGELOG)
+            elif cmd == DynamoInventory.CMD_DELETE:
+                CHANGELOG.info('Deleting %s', str(obj))
+                self.inventory.delete(obj, write = True)
+
+        if has_updates:
+            # The server which sent the updates has set this server's status to updating
+            self.manager.set_status(ServerManager.SRV_ONLINE)
+
+    def run_script(self, path, args, is_local, queue = None):
+        """
+        Main function for script execution.
+        @param path     Path to the work area of the script. Will be the root directory in read-only processes.
+        @param args     Script command-line arguments.
+        @param is_local True if script is requested from localhost.
+        @param queue    Queue if write-enabled.
+        """
+
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        stdout = open(path + '/_stdout', 'a')
+        stderr = open(path + '/_stderr', 'a')
+        sys.stdout = stdout
+        sys.stderr = stderr
+
+        path = self._pre_execution(path, is_local, queue is None)
+
+        # Set argv
+        sys.argv = [path + '/exec.py']
+        if args:
+            sys.argv += shlex.split(args) # split using shell-like syntax
+
+        # Execute the script
+        try:
+            try:
+                myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
+                execfile(path + '/exec.py', myglobals)
+            except SystemExit as exc:
+                if exc.code == 0:
+                    pass
+                else:
+                    raise
+        except:
+            # cut out the first block of traceback (which refers to this function)
+            exc_type, exc, tb = sys.exc_info()
+            tb_lines = traceback.format_tb(tb)[1:]
+            sys.stderr.write('Traceback (most recent call last):\n')
+            sys.stderr.write(''.join(tb_lines))
+            sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
+            sys.stderr.flush()
+        finally:
+            self._post_execution(path, is_local, queue)
+
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        stdout.close()
+        stderr.close()
+
+        # Queue stays available on the other end even if we terminate the process
+
+        return 0
+
+    def run_interactive(self, path, is_local, make_console, stdout = sys.stdout, stderr = sys.stderr):
+        """
+        Main function for interactive sessions.
+        For now we limit interactive sessions to read-only.
+        @param path         Path to the work area.
+        @param is_local     True if script is requested from localhost.
+        @param make_console Callable which takes a dictionary of locals as an argument and returns a console
+        @param stdout       File-like object for stdout
+        @param stderr       File-like object for stderr
+        """
+
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        sys.stdout = stdout
+        sys.stderr = stderr
+
+        self._pre_execution(path, is_local, True)
+
+        # use receive of oconn as input
+        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': self.inventory}
+        console = make_console(mylocals)
+        try:
+            console.interact(BANNER)
+        finally:
+            self._post_execution(path, is_local, None)
+
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+
+        return 0
+
+    def _pre_execution(self, path, is_local, read_only):
+        uid = os.geteuid()
+        gid = os.getegid()
+
+        # Set defaults
+        for key, config in self.applications_config.defaults.items():
+            try:
+                if read_only:
+                    myconf = config['readonly']
+                else:
+                    myconf = config['fullauth']
+            except KeyError:
+                myconf = config['all']
+            else:
+                # security measure
+                del config['fullauth']
+
+            modname, clsname = key.split(':')
+            module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
+            cls = getattr(module, clsname)
+
+            cls.set_default(myconf)
+
+        if is_local:
+            os.chdir(path)
+        else:
+            # Confine in a chroot jail
+            # Allow access to directories in PYTHONPATH with bind mounts
+            for base in serverutils.mountpoints:
+                try:
+                    os.makedirs(path + base)
+                except OSError:
+                    # shouldn't happen but who knows
+                    continue
+
+                serverutils.bindmount(base, path + base)
+
+            os.mkdir(path + '/tmp')
+            os.chmod(path + '/tmp', 0777)
+
+            os.seteuid(0)
+            os.setegid(0)
+            os.chroot(path)
+
+            path = ''
+            os.chdir('/')
+
+        # De-escalate privileges permanently
         os.seteuid(0)
         os.setegid(0)
+        os.setgid(gid)
+        os.setuid(uid)
 
-        if queue is None:
-            pwnam = pwd.getpwnam(self.read_user)
-        else:
-            pwnam = pwd.getpwnam(self.full_user)
-
-        os.setgid(pwnam.pw_gid)
-        os.setuid(pwnam.pw_uid)
-
-        # Redirect STDOUT and STDERR to file, close STDIN
-        stdout = sys.stdout
-        stderr = sys.stderr
-        sys.stdout = open(path + '/_stdout', 'a')
-        sys.stderr = open(path + '/_stderr', 'a')
-        sys.stdin.close()
-
-        ## Ignore SIGINT - see note above proc.terminate()
-        ## We will react to SIGTERM by raising KeyboardInterrupt
+        # Ignore SIGINT - see note above proc.terminate()
+        # We will react to SIGTERM by raising KeyboardInterrupt
         from dynamo.utils.signaling import SignalConverter
         
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
         signal_converter = SignalConverter()
         signal_converter.set(signal.SIGTERM)
-
-        # Set argv
-        sys.argv = [path + '/exec.py']
-        if args:
-            sys.argv += shlex.split(args) # split using shell-like syntax
+        # we won't call unset()
 
         # Reset logging
         # This is a rather hacky solution relying perhaps on the implementation internals of
@@ -352,50 +726,45 @@ class Dynamo(object):
                 handler.flush()
                 handler.close()
 
-        # Re-initialize
-        #  - inventory store with read-only connection
-        #  - registry backend with read-only connection
+        # Re-initialize inventory store with read-only connection
         # This is for security and simply for concurrency - multiple processes
         # should not share the same DB connection
-        backend_config = self.registry_config.backend
-        self.registry.set_backend(backend_config.interface, backend_config.readonly_config)
+        if self.inventory.has_store():
+            pconf = self.inventory_config.persistency
+            self.inventory.init_store(pconf.module, pconf.readonly_config)
+        else:
+            self.setup_remote_store(self.manager.store_host)
 
-        persistency_config = self.inventory_config.persistency
-        self.inventory.init_store(persistency_config.module, persistency_config.readonly_config)
-
-        # Pass my registry and inventory to the executable through core.executable
+        # Pass my inventory and authorizer to the executable through core.executable
         import dynamo.core.executable as executable
-        executable.registry = self.registry
         executable.inventory = self.inventory
+        executable.authorizer = Authorizer(self.manager)
 
-        if queue is not None:
+        if not read_only:
             executable.read_only = False
             # create a list of updated and deleted objects the executable can fill
             executable.inventory._update_commands = []
 
-        try:
-            execfile(path + '/exec.py', {'__name__': '__main__'})
-        except SystemExit as exc:
-            if exc.code == 0:
-                pass
-            else:
-                raise
+        return path
 
+    def _post_execution(self, path, is_local, queue):
         if queue is not None:
+            # Collect updates if write-enabled
+
             nobj = len(self.inventory._update_commands)
             sys.stderr.write('Sending %d updated objects to the server process.\n' % nobj)
             sys.stderr.flush()
             wm = 0.
-            for iobj, (cmd, obj) in enumerate(self.inventory._update_commands):
+            for iobj, (cmd, objstr) in enumerate(self.inventory._update_commands):
                 if float(iobj) / nobj * 100. > wm:
                     sys.stderr.write(' %.0f%%..' % (float(iobj) / nobj * 100.))
                     sys.stderr.flush()
                     wm += 5.
 
                 try:
-                    queue.put((cmd, obj))
+                    queue.put((cmd, objstr))
                 except:
-                    sys.stderr.write('Exception while sending %s %s\n' % (DynamoInventory._cmd_str[cmd], str(obj)))
+                    sys.stderr.write('Exception while sending %s %s\n' % (DynamoInventory._cmd_str[cmd], objstr))
                     raise
 
             if nobj != 0:
@@ -405,11 +774,18 @@ class Dynamo(object):
             # Put end-of-message
             queue.put((DynamoInventory.CMD_EOM, None))
 
-        # Queue stays available on the other end even if we terminate the process
+        if not is_local:
+            # jobs were confined in a chroot jail
+            self.clean_remote_request(path)
 
-        sys.stdout.close()
-        sys.stderr.close()
-        sys.stdout = stdout
-        sys.stderr = stderr
+    def shutdown(self):
+        LOG.info('Shutting down Dynamo server..')
 
-        return 0
+        if self.shutdown_flag.is_set():
+            self.shutdown_flag.clear()
+            state = self.shutdown_flag.wait(60)
+            if not state:
+                # timed out
+                LOG.warning('Shutdown timeout of 60 seconds have passed.')
+
+        self.manager.disconnect()

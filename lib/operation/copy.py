@@ -1,10 +1,26 @@
+from dynamo.dataformat import Configuration
+
 class CopyInterface(object):
     """
     Interface to data copy application.
     """
 
-    def __init__(self, config):
+    @staticmethod
+    def get_instance(module, config = None):
+        import dynamo.operation.impl as impl
+        cls = getattr(impl, module)
+
+        if not issubclass(cls, CopyInterface):
+            raise RuntimeError('%s is not a subclass of CopyInterface' % module)
+
+        return cls(config)
+
+
+    def __init__(self, config = None):
+        config = Configuration(config)
+
         self.dry_run = config.get('dry_run', False)
+        self._next_operation_id = 1
 
     def schedule_copy(self, replica, comments = ''):
         """

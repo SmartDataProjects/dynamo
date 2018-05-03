@@ -1,0 +1,100 @@
+[paths]
+## Common paths
+
+# Install target directory
+dynamo_base=/usr/local/dynamo
+
+# Configuration directory
+config_path=/etc/dynamo
+
+# Temporary working directory
+spool_path=/var/spool/dynamo
+
+# Server log directory
+log_path=/var/log/dynamo
+
+# Archival directory
+archive_path=/local/data/dynamo
+
+# Location of the policy package
+policy_path=/usr/local/dynamo-policies
+
+[server]
+## Dynamo server configuration
+
+# User under which dynamo runs
+user=dynamo
+
+# Email address to send server notifications to
+email=
+
+# Server persistency store technology (leave blank if not running store)
+store=mysql
+
+# Store configuration to be passed to $store/generate_store_conf.py
+store_conf={"server": "dynamosrv", "reader": "dynamoread"}
+
+# Master server technology
+master=mysql
+
+# Configuration to be passed to $master/generate_master_conf.py
+master_conf={"host": "localhost", "user": "dynamosrv"}
+
+# Master server shadow technology
+shadow=mysql
+
+# Configuration to be passed to $shadow/generate_shadow_conf.py
+shadow_conf={"host": "localhost", "user": "dynamosrv"}
+
+# Server update board technology
+local_board=mysql
+
+# Configuration to be passed to $local_board/generate_local_board_conf.py
+local_board_conf={"host": "localhost", "user": "dynamosrv"}
+
+[applications]
+## Dynamo application server configuration
+
+# Whether to run an application server
+enabled=true
+
+# AppServer class name
+server=SocketAppServer
+
+# SocketAppServer server uses an OpenSSL socket to receive requests
+#  certfile: Server certificate (can be self-signed)
+#  keyfile: Server private key (can be self-signed)
+#  capath: CA path for client authentication (can be a directory in python 2.7; otherwise a single file with all CA certs concatenated)
+server_conf={"certfile": "/etc/pki/tls/certs/localhost.crt",
+             "keyfile": "/etc/pki/tls/private/localhost.key",
+             "capath": "/etc/pki/tls/certs/ca-bundle.crt"}
+
+# Path to the default configuration file for common tools (relative to this file)
+defaults_conf=defaults.json
+
+[web]
+## Dynamo web server (backend) configuration
+
+# Whether to run a web interface
+enabled=true
+
+# Path to the UNIX socket used to communicate with the http fronend
+socket=/var/spool/dynamo/dynamoweb.sock
+
+# Path to load the static contents (HTML, CSS, JS) from
+contents_path=/usr/local/dynamo/web
+
+# Path to the configuration file for web modules
+modules_config=/etc/dynamo/web_modules_config.json
+
+[scheduler]
+
+# Registry user name for scheduled executables
+user=dynamo
+
+# Scheduler work directory
+workdir=/var/spool/dynamo/scheduler
+
+# Sequence file for scheduler daemon
+sequence=cms.seq
+

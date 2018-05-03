@@ -50,8 +50,8 @@ class PhEDExSiteInfoSource(SiteInfoSource):
     def __init__(self, config):
         SiteInfoSource.__init__(self, config)
 
-        self._phedex = PhEDEx(config.phedex)
-        self._ssb = SiteStatusBoard(config.ssb)
+        self._phedex = PhEDEx(config.get('phedex', None))
+        self._ssb = SiteStatusBoard(config.get('ssb', None))
 
         self.ssb_cache_lifetime = config.ssb_cache_lifetime
         self._ssb_cache_timestamp = 0

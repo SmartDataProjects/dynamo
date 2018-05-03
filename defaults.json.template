@@ -1,0 +1,46 @@
+{
+  "history.history:TransactionHistoryInterface": {
+    "fullauth": {
+      "module": "MySQLHistory",
+      "config": {
+        "db_params": {
+          "user": "dynamo",
+          "passwd": "",
+          "host": "localhost",
+          "db": "dynamohistory"
+        }
+      }
+    },
+    "readonly": {
+      "module": "MySQLHistory",
+      "config": {
+        "db_params": {
+          "user": "dynamoread",
+          "passwd": "",
+          "host": "localhost",
+          "db": "dynamohistory"
+        }
+      }
+    }
+  },
+  "utils.interface.mysql:MySQL": {
+    "fullauth": {
+      "user": "dynamo",
+      "passwd": "",
+      "host": "localhost"
+    },
+    "readonly": {
+      "user": "dynamoread",
+      "passwd": "",
+      "host": "localhost"
+    }
+  },
+  "utils.interface.webservice:HTTPSCertKeyHandler": {
+    "fullauth": {
+      "certfile": ""
+    },
+    "readonly": {
+      "certfile": ""
+    }
+  }
+}

@@ -20,7 +20,7 @@ class GlobalQueueRequestHistory(object):
     produces = ['request_weight']
 
     def __init__(self, config):
-        self._store = MySQL(config.store.db_params)
+        self._store = MySQL(config.store)
 
         # Weight computation halflife constant (given in days in config)
         self.weight_halflife = config.weight_halflife * 3600. * 24.
@@ -70,7 +70,10 @@ class GlobalQueueRequestHistory(object):
 
             requests[job_id] = GlobalQueueJob(queue_time, completion_time, nodes_total, nodes_done, nodes_failed, nodes_queued)
 
-        last_update = self._store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
+        try:
+            last_update = self._store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`', retries = 1)[0]
+        except IndexError:
+            last_update = 0
 
         LOG.info('Loaded %d dataset request data. Last update at %s UTC', num_records, time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(last_update)))
 
@@ -103,18 +106,25 @@ class GlobalQueueRequestHistory(object):
             dataset.attr['request_weight'] = weight
 
     @staticmethod
-    def update(config, inventory):
-        htcondor = HTCondor(config.htcondor.config)
-        store = MySQL(config.store.db_params)
+    def update(config, inventory, read_only = False):
+        htcondor = HTCondor(config.htcondor)
+        store = MySQL(config.store)
 
-        last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`')[0]
         try:
-            store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()', retries = 0, silent = True)
+            try:
+                last_update = store.query('SELECT UNIX_TIMESTAMP(`dataset_requests_last_update`) FROM `system`', retries = 1)[0]
+            except IndexError:
+                last_update = time.time() - 3600 * 24 # just go back by a day
+                if not read_only:
+                    store.query('INSERT INTO `system` VALUES ()')
+
+            if not read_only:
+                store.query('UPDATE `system` SET `dataset_requests_last_update` = NOW()', retries = 0, silent = True)
+
         except MySQLdb.OperationalError:
             # We have a read-only config
             read_only = True
-        else:
-            read_only = False
+            LOG.info('Cannot write to DB. Switching to read_only.')
 
         source_records = GlobalQueueRequestHistory._get_source_records(htcondor, inventory, last_update)
 

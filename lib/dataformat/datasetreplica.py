@@ -23,7 +23,7 @@ class DatasetReplica(object):
             (self._site_name(), self._dataset_name(), len(self.block_replicas))
 
     def __repr__(self):
-        return 'DatasetReplica(%s, %s)' % (repr(self._dataset), repr(self._site))
+        return 'DatasetReplica(%s,%s)' % (repr(self._dataset_name()), repr(self._site_name()))
 
     def __eq__(self, other):
         return self is other or (self._dataset_name() == other._dataset_name() and self._site_name() == other._site_name())
@@ -38,9 +38,6 @@ class DatasetReplica(object):
             raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site_name(), self._site_name())
 
         # not doing anything, actually
-
-    def unlinked_clone(self, attrs = True):
-        return DatasetReplica(self._dataset_name(), self._site_name())
 
     def embed_into(self, inventory, check = False):
         try:

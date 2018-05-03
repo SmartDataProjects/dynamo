@@ -1,13 +1,14 @@
 import time
 import copy
+import threading
 
 from exceptions import ObjectError
 
 class Dataset(object):
     """Represents a dataset."""
 
-    __slots__ = ['_name', 'size', 'num_files', 'status', 'data_type',
-        'software_version', 'last_update', 'is_open',
+    __slots__ = ['_name', 'id', 'status', 'data_type',
+        '_software_version_id', 'last_update', 'is_open',
         'blocks', 'replicas', 'attr']
 
     # Enumerator for dataset type.
@@ -17,13 +18,16 @@ class Dataset(object):
     _statuses = ['unknown', 'deleted', 'deprecated', 'invalid', 'production', 'valid', 'ignored']
     STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, len(_statuses) + 1)
 
-    @property
-    def name(self):
-        return self._name
+    class SoftwareVersion(object):
+        __slots__ = ['id', 'value']
+    
+        def __init__(self, value, vid = 0):
+            self.id = vid
+            self.value = value
 
-    @property
-    def files(self):
-        return set.union(*tuple(b.files for b in self.blocks))
+    _software_versions_byid = []
+    _software_versions_byvalue = {}
+    _software_version_lock = threading.Lock()
 
     @staticmethod
     def data_type_name(arg):
@@ -53,15 +57,52 @@ class Dataset(object):
         else:
             return arg
 
-    def __init__(self, name, size = 0, num_files = 0, status = STAT_UNKNOWN, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True):
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def size(self):
+        return sum(b.size for b in self.blocks)
+
+    @property
+    def num_files(self):
+        return sum(b.num_files for b in self.blocks)
+
+    @property
+    def files(self):
+        all_files = set()
+        for block in self.blocks:
+            all_files.update(block.files)
+
+        return all_files
+
+    @property
+    def software_version(self):
+        return Dataset._software_versions_byid[self._software_version_id].value
+
+    @software_version.setter
+    def software_version(self, value):
+        with Dataset._software_version_lock:
+            try:
+                version = Dataset._software_versions_byvalue[value]
+            except KeyError:
+                vid = len(Dataset._software_versions_byid)
+                version = Dataset.SoftwareVersion(value, vid = vid)
+                Dataset._software_versions_byid.append(version)
+                Dataset._software_versions_byvalue[value] = version
+    
+        self._software_version_id = version.id
+
+    def __init__(self, name, status = STAT_UNKNOWN, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True, did = 0):
         self._name = name
-        self.size = size # redundant with sum of block sizes when blocks are loaded
-        self.num_files = num_files # redundant with sum of block num_files and len(files)
-        self.status = status
-        self.data_type = data_type
+        self.status = Dataset.status_val(status)
+        self.data_type = Dataset.data_type_val(data_type)
         self.software_version = software_version
         self.last_update = last_update # in UNIX time
         self.is_open = is_open
+
+        self.id = did
 
         self.blocks = set()
         self.replicas = set()
@@ -72,19 +113,21 @@ class Dataset(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Dataset %s (size=%d, num_files=%d, status=%s, data_type=%s, software_version=%s, last_update=%s, is_open=%s, %d blocks, replicas=%s)' % \
-            (self._name, self.size, self.num_files, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
+        return 'Dataset %s (status=%s, data_type=%s, software_version=%s, last_update=%s, is_open=%s, id=%d, size %d, %d blocks, %d files, replicas %s)' % \
+            (self._name, Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
             str(self.software_version), time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)), str(self.is_open), \
-            len(self.blocks), replica_sites)
+            self.id, self.size, len(self.blocks), self.num_files, replica_sites)
 
     def __repr__(self):
-        return 'Dataset(\'%s\')' % self._name
+        return 'Dataset(%s,\'%s\',\'%s\',%s,%d,%s,%d)' % \
+            (repr(self._name), Dataset.status_name(self.status), Dataset.data_type_name(self.data_type), \
+            repr(self.software_version), self.last_update, self.is_open, self.id)
 
     def __eq__(self, other):
         return self is other or \
-            (self._name == other._name and self.size == other.size and self.num_files == other.num_files and \
-            self.status == other.status and self.data_type == other.data_type and \
-            self.software_version == other.software_version and self.last_update == other.last_update and self.is_open == other.is_open)
+            (self._name == other._name and self.status == other.status and \
+            self.data_type == other.data_type and self._software_version_id == other._software_version_id and \
+            self.last_update == other.last_update and self.is_open == other.is_open)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -100,22 +143,14 @@ class Dataset(object):
             setattr(self, key, value)
 
     def copy(self, other):
-        self.size = other.size
-        self.num_files = other.num_files
+        self.id = other.id
         self.status = other.status
         self.data_type = other.data_type
-        self.software_version = other.software_version
+        self._software_version_id = other._software_version_id
         self.last_update = other.last_update
         self.is_open = other.is_open
 
         self.attr = copy.deepcopy(other.attr)
-
-    def unlinked_clone(self, attrs = True):
-        if attrs:
-            return Dataset(self._name, self.size, self.num_files, self.status, self.data_type,
-                self.software_version, self.last_update, self.is_open)
-        else:
-            return Dataset(self._name)
 
     def embed_into(self, inventory, check = False):
         updated = False
@@ -193,8 +228,3 @@ class Dataset(object):
                 raise ObjectError('Could not find replica on %s of %s', str(site), self._name)
             else:
                 return None
-
-    def add_block(self, block):
-        self.blocks.add(block)
-        self.size += block.size
-        self.num_files += block.num_files

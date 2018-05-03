@@ -3,7 +3,7 @@ import fnmatch
 import re
 
 from dynamo.utils.interface.mysql import MySQL
-from dynamo.dataformat import Block
+from dynamo.dataformat import Block, ObjectError
 
 LOG = logging.getLogger(__name__)
 
@@ -11,34 +11,37 @@ class MySQLReplicaLock(object):
     """
     Dataset lock read from local DB.
     Sets one attr:
-      locked_blocks:   {site: set of blocks}
+      locked_blocks:   {site: set([blocks]) or None if dataset-level}
     """
 
     produces = ['locked_blocks']
 
     def __init__(self, config):
-        self._mysql = MySQL(config.db_params)
+        self._mysql = MySQL(config.get('db_params', None))
 
         self.users = []
-        for user, service in config.users:
-            self.users.append((user, service))
+        for user_id, role_id in config.users:
+            self.users.append((user_id, role_id))
 
     def load(self, inventory):
-        query = 'SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `unlock_date` IS NULL'
-        if len(self.users) != 0:
-            query += ' AND (`user_id`, `service_id`) IN ('
-            query += 'SELECT u.`id`, s.`id` FROM `users` AS u, `services` AS s WHERE '
-            query += ' OR '.join('(u.`name` LIKE "%s" AND s.`name` LIKE "%s")' % us for us in self.users)
-            query += ')'
+        for dataset in inventory.datasets.itervalues():
+            try:
+                dataset.attr.pop('locked_blocks')
+            except KeyError:
+                pass
 
-        entries = self._mysql.query(query)
+        if len(self.users) != 0:
+            entries = self._mysql.select_many('detox_locks', ('item', 'sites', 'groups'), ('user_id', 'role_id'), self.users, additional_conditions = ['`unlock_date` IS NULL'])
+        else:
+            query = 'SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `unlock_date` IS NULL'
+            entries = self._mysql.query(query)
 
         for item_name, sites_pattern, groups_pattern in entries:
-            if '#' in item_name:
-                dataset_pattern, block_pattern = item_name.split('#')
-            else:
-                dataset_pattern = item_name
-                block_pattern = None
+            # wildcard not allowed in block name
+            try:
+                dataset_pattern, block_name = Block.from_full_name(item_name)
+            except ObjectError:
+                dataset_pattern, block_name = item_name, None
 
             if '*' in dataset_pattern:
                 pat_exp = re.compile(fnmatch.translate(dataset_pattern))
@@ -56,29 +59,6 @@ class MySQLReplicaLock(object):
                     continue
 
                 datasets = [dataset]
-
-            dataset_blocks = []
-            for dataset in datasets:
-                if block_pattern is None or block_pattern == '*':
-                    blocks = set(dataset.blocks)
-
-                elif '*' in block_pattern:
-                    pat_exp = re.compile(fnmatch.translate(block_pattern))
-
-                    blocks = set()
-                    for block in dataset.blocks:
-                        if pat_exp.match(block.real_name()):
-                            blocks.add(block)
-
-                else:
-                    block = dataset.find_block(Block.to_internal_name(block_pattern))
-                    if block is None:
-                        LOG.debug('Cannot lock unknown block %s#%s', dataset_pattern, block_pattern)
-                        continue
-                    
-                    blocks = set([block])
-
-                dataset_blocks.append((dataset, blocks))
 
             specified_sites = []
             if sites_pattern:
@@ -106,7 +86,7 @@ class MySQLReplicaLock(object):
                     except KeyError:
                         pass
 
-            for dataset, blocks in dataset_blocks:
+            for dataset in datasets:
                 sites = set(specified_sites)
                 groups = set(specified_groups)
 
@@ -124,19 +104,50 @@ class MySQLReplicaLock(object):
                     locked_blocks = dataset.attr['locked_blocks']
                 except KeyError:
                     locked_blocks = dataset.attr['locked_blocks'] = {}
-    
-                for replica in dataset.replicas:
-                    if replica.site not in sites:
-                        continue
-    
-                    if replica.site not in locked_blocks:
-                        locked_blocks[replica.site] = set()
-    
-                    for block_replica in replica.block_replicas:
-                        if block_replica.group not in groups:
+
+                if block_pattern is None:
+                    for replica in dataset.replicas:
+                        if replica.site not in sites:
                             continue
-    
-                        if block_replica.block in blocks:
+        
+                        if replica.site not in locked_blocks:
+                            locked_blocks[replica.site] = set()
+        
+                        for block_replica in replica.block_replicas:
+                            if block_replica.group not in groups:
+                                continue
+        
                             locked_blocks[replica.site].add(block_replica.block)
+                else:
+                    block = dataset.find_block(block_name)
+                    if block is None:
+                        LOG.debug('Cannot lock unknown block %s', block_name)
+                        continue
+
+                    for replica in block.replicas:
+                        if replica.site not in sites:
+                            continue
+
+                        if replica.group not in groups:
+                            continue
+        
+                        if replica.site not in locked_blocks:
+                            locked_blocks[replica.site] = set([block])
+                        else:
+                            locked_blocks[replica.site].add(block)
+                            
+        for dataset in inventory.datasets.itervalues():
+            try:
+                locked_blocks = dataset.attr['locked_blocks']
+            except KeyError:
+                continue
+
+            for site, blocks in locked_blocks.items():
+                if blocks is None:
+                    continue
+
+                # if all blocks are locked, set to None (dataset-level lock)
+                if blocks == dataset.blocks:
+                    locked_blocks[site] = None
 
         LOG.info('Locked %d items.', len(entries))

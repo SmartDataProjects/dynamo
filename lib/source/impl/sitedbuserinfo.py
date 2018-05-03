@@ -9,7 +9,7 @@ class SiteDBUserInfoSource(UserInfoSource):
     def __init__(self, config):
         UserInfoSource.__init__(self, config)
         
-        self._sitedb = SiteDB(config.sitedb)
+        self._sitedb = SiteDB(config.get('sitedb', None))
 
     def get_user(self, name): #override
         result = self._sitedb.make_request('people', ['match=%s' % name])
@@ -24,14 +24,16 @@ class SiteDBUserInfoSource(UserInfoSource):
 
             return (name, email, dn)
 
-    def get_user_list(self, users, filt = '*'): #override
+    def get_user_list(self): #override
         result = self._sitedb.make_request('people')
 
+        all_users = {}
         for user in users:
             user_info = result[0]
             name = user_info[0]
             email = user_info[1]
             dn = user_info[4]
             
-            users[name] = (name, email, dn)
+            all_users[name] = (name, email, dn)
 
+        return all_users

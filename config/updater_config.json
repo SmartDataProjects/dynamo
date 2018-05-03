@@ -2,17 +2,9 @@
   "updater_state_file": "$(DYNAMO_SPOOL)/updater_cms.state",
   "excluded_secondary_datasets": [],
   "num_update_datasets": 50,
-  "phedex": {
-    "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
-    "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
-    "auth_handler": "HTTPSCertKeyHandler",
-    "auth_handler_conf": {},
-    "num_attempts": 5
-  },
   "groups": {
     "module": "PhEDExGroupInfoSource",
     "config": {
-      "phedex": {},
       "dataset_level_groups": ["AnalysisOps", "IB RelVal", "RelVal"]
     }
   },
@@ -21,33 +13,16 @@
   "sites": {
     "module": "PhEDExSiteInfoSource",
     "config": {
-      "ssb": {
-        "url_base": "http://dashb-ssb.cern.ch/dashboard/request.py",
-        "auth_handler": "HTTPSCertKeyHandler",
-        "auth_handler_conf": {},
-        "num_attempts": 5
-      },
-      "phedex": {},
       "ssb_cache_lifetime": 1800
     }
   },
   "datasets": {
     "module": "PhEDExDatasetInfoSource",
-    "config": {
-      "dbs": {
-        "url_base": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
-        "auth_handler": "HTTPSCertKeyHandler",
-        "auth_handler_conf": {},
-        "num_attempts": 5
-      },
-      "phedex": {}
-    }
+    "config": {}
   },
   "replicas": {
     "module": "PhEDExReplicaInfoSource",
-    "config": {
-      "phedex": {}
-    }
+    "config": {}
   },
   "log_level": "info"
 }

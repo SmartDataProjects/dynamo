@@ -4,7 +4,6 @@
     "deletion_op": {
       "module": "PhEDExDeletionInterface",
       "config": {
-        "phedex": {},
         "auto_approval": true,
         "allow_tape_deletion": false,
         "tape_auto_approval": false,
@@ -14,60 +13,34 @@
     "copy_op": {
       "module": "PhEDExCopyInterface",
       "config": {
-        "phedex": {},
         "chunk_size": 50
       }
     },
-    "history": {
-      "module": "MySQLHistory",
-      "config": {
-        "db_params": {
-          "config_file": "/etc/my.cnf.d/dynamo.cnf",
-          "config_group": "mysql",
-          "db": "dynamohistory"
-        },
-        "cache_db_params": {
-          "config_file": "/etc/my.cnf.d/dynamo.cnf",
-          "config_group": "mysql",
-          "db": "dynamohistory_cache"
-        },
-        "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
-        "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
-      }
+    "detox_history": {
+      "history_db": "dynamohistory",
+      "cache_db": "dynamohistory_cache",
+      "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
+      "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
     },
     "attrs": {
       "MySQLReplicaLock": {
         "users": [],
         "db_params": {
-          "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
-          "config_group": "mysql",
           "db": "dynamoregister"
         }
       },
       "CRABAccessHistory": {
         "store": {
-          "db_params": {
-            "config_file": "/etc/my.cnf.d/dynamo-read.cnf",
-            "config_group": "mysql",
-            "db": "dynamo"
-          }
+          "db": "dynamo"
         }
       },
       "ProtectedSiteTagger": {
-        "sites": ["T1_IT_CNAF_MSS"]
+        "sites": []
       },
-      "DatasetRelease": {
-        "dbs": {
-          "config": {
-            "url_base": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
-            "auth_handler": "HTTPSCertKeyHandler",
-            "auth_handler_conf": {}
-          }
-        }
-      },
+      "DatasetRelease": {},
       "EnforcedProtectionTagger": {
         "enforcer": {
-          "policy": "$(DYNAMO_BASE)/policies/common/enforcer_rules_physics.json"
+          "policy": "$(DYNAMO_POLICIES)/common/enforcer_rules_physics.json"
         }
       },
       "BlockReplicaRelativeAge": {
@@ -85,20 +58,11 @@
   },
   "applock": {
     "user": "dynamo",
-    "service": "dynamo",
+    "role": "dynamo",
     "app": "detox",
-    "db_config": {
-      "config_file": "/etc/my.cnf.d/dynamo.cnf",
-      "config_group": "mysql",
+    "db_params": {
       "db": "dynamoregister"
     }
-  },
-  "phedex": {
-    "url_base": "https://cmsweb.cern.ch/phedex/datasvc/json/prod",
-    "dbs_url": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
-    "auth_handler": "HTTPSCertKeyHandler",
-    "auth_handler_conf": {},
-    "num_attempts": 5
   },
   "log_level": "info"
 }

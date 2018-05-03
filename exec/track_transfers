@@ -42,11 +42,15 @@ LOG = make_standard_logger(config.log_level)
 
 ## Data source
 
-import dynamo.history.impl as history_impl
-import dynamo.operation.impl as operation_impl
+from dynamo.history.history import TransactionHistoryInterface
+from dynamo.operation.copy import CopyInterface
 
-history = getattr(history_impl, dealer_config.history.module)(dealer_config.history.config)
-copy = getattr(operation_impl, dealer_config.copy_op.module)(dealer_config.copy_op.config)
+if 'history' in config:
+    history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
+else:
+    history = TransactionHistoryInterface.get_instance()
+
+copy = CopyInterface.get_instance(dealer_config.copy_op.module, dealer_config.copy_op.config)
 
 ## Paths
 
@@ -320,28 +324,27 @@ if not read_only:
     except:
         pass
 
-## Deletion part - first delete rrd files of completed requests that are older than one week,
-## since we do not want them to be a part of the graphs anymore 
-
-for subdir in os.listdir(rrd_dir):
-    if subdir in ['total.rrd', 'overview.txt', 'monitoring']:
-        continue
-
-    subpath = rrd_dir + '/' + subdir
-
-    existing_rrds = ['%s/%s' % (subpath, r) for r in os.listdir(subpath) if r.endswith('.rrd')]
-
-    older_than = datetime.now() - timedelta(days=20)
+    ## Deletion part - first delete rrd files of completed requests that are older than one week,
+    ## since we do not want them to be a part of the graphs anymore 
     
-    for existing_rrd in existing_rrds:
-        filetime = datetime.fromtimestamp(os.path.getmtime(existing_rrd))
-        if not read_only and existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
-            # Delete pngs and rrd files
-            os.unlink(existing_rrd)
+    for subdir in os.listdir(rrd_dir):
+        if subdir in ['total.rrd', 'overview.txt', 'monitoring']:
+            continue
+    
+        subpath = rrd_dir + '/' + subdir
+    
+        existing_rrds = ['%s/%s' % (subpath, r) for r in os.listdir(subpath) if r.endswith('.rrd')]
+    
+        older_than = datetime.now() - timedelta(days=20)
+        
+        for existing_rrd in existing_rrds:
+            filetime = datetime.fromtimestamp(os.path.getmtime(existing_rrd))
+            if not read_only and existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
+                # Delete pngs and rrd files
+                os.unlink(existing_rrd)
 
-## Copy rrds to the /var/www location
+    ## Copy rrds to the /var/www location
 
-if not read_only:
     target_dir = config.rrd_publish_target + '/monitoring'
     try:
         os.makedirs(target_dir)

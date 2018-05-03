@@ -230,7 +230,8 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
                 univals = [dsetObj.name,'dataset',targetSite,'copy',nowTime,nowTime]
                 sql = self.form_sqlinsert("requests_unified",uninames,univals)
                 print sql
-                reqid = self._mysql.query(sql)
+                self._mysql.query(sql)
+                reqid = self._mysql.last_insert_id
             else:
                 reqid = ids[0]
 
@@ -292,7 +293,8 @@ class LocalDBSSSB(CopyInterface, DeletionInterface, SiteInfoSourceInterface, Rep
             if len(ids) == 0:
                 univals = [dsetObj.name,'dataset',targetSite,'delete',nowTime,nowTime]
                 sql = self.form_sqlinsert("requests_unified",uninames,univals)
-                reqid = self._mysql.query(sql)
+                self._mysql.query(sql)
+                reqid = self._mysql.last_insert_id
                 status = 'new'
             else:
                 (reqid,status) = ids[0]

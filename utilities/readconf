@@ -1,0 +1,48 @@
+#!/usr/bin/env python
+
+import sys
+import json
+from ConfigParser import ConfigParser
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Parse configuration files')
+
+parser.add_argument('path', metavar = 'PATH', help = 'Configuration file.')
+parser.add_argument('name', metavar = 'NAME', help = 'Configuration parameter name delimited by dots (.).')
+parser.add_argument('--json', '-J', action = 'store_true', dest = 'json', help = 'Parse as JSON (default).')
+parser.add_argument('--ini', '-I', action = 'store_true', dest = 'ini', help = 'Parse as INI config file.')
+
+args = parser.parse_args()
+sys.argv = []
+
+if not args.json and not args.ini:
+    args.json = True
+
+if args.json:
+    with open(args.path) as source:
+        conf = json.load(source)
+else:
+    parser = ConfigParser()
+    parser.read(args.path)
+    conf = {}
+    for section in parser.sections():
+        conf[section] = dict(parser.items(section))
+
+keys = args.name.split('.')
+
+val = conf
+for key in keys:
+    try:
+        key = int(key)
+    except ValueError:
+        pass
+
+    try:
+        val = val[key]
+    except:
+        sys.exit(1)
+
+if type(val) is dict or type(val) is list:
+    print json.dumps(val)
+else:
+    print val

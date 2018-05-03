@@ -9,6 +9,17 @@ class DatasetInfoSource(object):
     Interface specs for probe to the dataset information source.
     """
 
+    @staticmethod
+    def get_instance(module, config):
+        import dynamo.source.impl as impl
+        cls = getattr(impl, module)
+
+        if not issubclass(cls, DatasetInfoSource):
+            raise RuntimeError('%s is not a subclass of DatasetInfoSource' % module)
+
+        return cls(config)
+
+
     def __init__(self, config):
         if hasattr(config, 'include'):
             if type(config.include) is list:

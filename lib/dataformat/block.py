@@ -3,7 +3,7 @@ import collections
 import threading
 import weakref
 
-from exceptions import ObjectError
+from exceptions import ObjectError, IntegrityError
 
 ## TODO
 # Add/remove operations on block.files in the subprocesses may get reset
@@ -12,32 +12,7 @@ from exceptions import ObjectError
 class Block(object):
     """Smallest data unit for data management."""
 
-    __slots__ = ['_name', '_dataset', 'size', 'num_files', 'is_open', 'replicas', 'last_update', '_files']
-
-    @property
-    def name(self):
-        return self._name
-
-    @property
-    def dataset(self):
-        return self._dataset
-
-    @property
-    def files(self):
-        with Block._files_cache_lock:
-            if self._files is not None:
-                # self._files is either a real set (if _files was directly set), a valid weak proxy to a set,
-                # or an expired weak proxy to a set.
-                try:
-                    len(self._files)
-                except ReferenceError:
-                    # expired proxy
-                    self._files = None
-
-            if self._files is None:
-                self._files = weakref.proxy(Block._fill_files_cache(self))
-
-            return self._files
+    __slots__ = ['_name', '_dataset', 'id', 'size', 'num_files', 'is_open', 'replicas', 'last_update', '_files']
 
     _files_cache = collections.OrderedDict()
     _files_cache_lock = threading.Lock()
@@ -45,8 +20,16 @@ class Block(object):
     _inventory_store = None
 
     @staticmethod
-    def _fill_files_cache(block):
+    def _fill_files_cache(block, check_consistency = True):
         files = Block._inventory_store.get_files(block)
+
+        if check_consistency:
+            if len(files) != block.num_files:
+                raise IntegrityError('Number of files mismatch in %s: predicted %d, loaded %d' % (str(block), block.num_files, len(files)))
+            size = sum(f.size for f in files)
+            if size != block.size:
+                raise IntegrityError('Block file mismatch in %s: predicted %d, loaded %d' % (str(block), block.size, size))
+
         while len(Block._files_cache) >= Block._MAX_FILES_CACHE_DEPTH:
             # Keep _files_cache FIFO to Block._MAX_FILES_CACHE_DEPTH
             Block._files_cache.popitem(last = False)
@@ -81,13 +64,30 @@ class Block(object):
 
         return full_name[:delim], Block.to_internal_name(full_name[delim + 1:])
 
-    def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False, last_update = 0):
-        self._name = name
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def dataset(self):
+        return self._dataset
+
+    @property
+    def files(self):
+        return self._check_and_load_files()
+
+    def __init__(self, name, dataset, size = 0, num_files = 0, is_open = False, last_update = 0, bid = 0, internal_name = True):
+        if internal_name:
+            self._name = name
+        else:
+            self._name = Block.to_internal_name(name)
         self._dataset = dataset
         self.size = size
         self.num_files = num_files
         self.is_open = is_open
         self.last_update = last_update
+        
+        self.id = bid
 
         self.replicas = set()
 
@@ -96,13 +96,15 @@ class Block(object):
     def __str__(self):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
-        return 'Block %s (size=%d, num_files=%d, is_open=%s, last_update=%s, replicas=%s)' % \
+        return 'Block %s (size=%d, num_files=%d, is_open=%s, last_update=%s, replicas=%s, id=%d)' % \
             (self.full_name(), self.size, self.num_files, self.is_open,
                 time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)),
-                replica_sites)
+                replica_sites, self.id)
 
     def __repr__(self):
-        return 'Block(Block.to_internal_name(\'%s\', %s)' % (self.real_name(), repr(self._dataset))
+        # this representation cannot be directly eval'ed into a Block
+        return 'Block(%s,%s,%d,%d,%s,%d,%d,False)' % \
+            (repr(self.real_name()), repr(self._dataset_name()), self.size, self.num_files, self.is_open, self.last_update, self.id)
 
     def __eq__(self, other):
         return self is other or \
@@ -115,29 +117,24 @@ class Block(object):
 
     def copy(self, other):
         if self._dataset_name() != other._dataset_name():
-            raise ObjectError('Cannot copy a block of %s into a block of %s', other._dataset_name(), self._dataset_name())
+            raise ObjectError('Cannot copy a block of %s into a block of %s' % (other._dataset_name(), self._dataset_name()))
 
+        self.id = other.id
         self.size = other.size
         self.num_files = other.num_files
         self.is_open = other.is_open
         self.last_update = other.last_update
 
-    def unlinked_clone(self, attrs = True):
-        if attrs:
-            return Block(self._name, self._dataset_name(), self.size, self.num_files, self.is_open, self.last_update)
-        else:
-            return Block(self._name, self._dataset_name())
-
     def embed_into(self, inventory, check = False):
         try:
             dataset = inventory.datasets[self._dataset_name()]
         except KeyError:
-            raise ObjectError('Unknown dataset %s', self._dataset_name())
+            raise ObjectError('Unknown dataset %s' % self._dataset_name())
 
         block = dataset.find_block(self._name)
         updated = False
         if block is None:
-            block = Block(self._name, dataset, self.size, self.num_files, self.is_open, self.last_update)
+            block = Block(self._name, dataset, self.size, self.num_files, self.is_open, self.last_update, self.id)
             dataset.blocks.add(block)
             updated = True
         elif check and (block is self or block == self):
@@ -193,19 +190,21 @@ class Block(object):
 
         return Block.to_full_name(self._dataset_name(), self.real_name())
 
-    def find_file(self, lfn, must_find = False):
-        files = self.files
+    def find_file(self, lfn, must_find = False, updating = False):
+        """
+        @param lfn        File name
+        @param must_find  Raise an exception if file is not found.
+        @param updating   If True, don't check size and num_files consistency if files are to be loaded.
+        """
+
+        files = self._check_and_load_files(check_consistency = (not updating))
 
         try:
-            if type(lfn) is str:
-                return next(f for f in files if f.lfn == lfn)
-            else:
-                # can be a tuple (directory_id, basename)
-                return next(f for f in files if f.fid() == lfn)
+            return next(f for f in files if f._lfn == lfn)
 
         except StopIteration:
             if must_find:
-                raise ObjectError('Cannot find file %s', str(lfn))
+                raise ObjectError('Cannot find file %s' % str(lfn))
             else:
                 return None
 
@@ -218,7 +217,7 @@ class Block(object):
 
         except StopIteration:
             if must_find:
-                raise ObjectError('Cannot find replica at %s for %s', site.name, self.full_name())
+                raise ObjectError('Cannot find replica at %s for %s' % (site.name, self.full_name()))
             else:
                 return None
 
@@ -237,3 +236,20 @@ class Block(object):
             return self._dataset
         else:
             return self._dataset.name
+
+    def _check_and_load_files(self, check_consistency = True):
+        # Used by File.embed_into - need to load the list of known files without consistency check
+        with Block._files_cache_lock:
+            if self._files is not None:
+                # self._files is either a real set (if _files was directly set), a valid weak proxy to a set,
+                # or an expired weak proxy to a set.
+                try:
+                    len(self._files)
+                except ReferenceError:
+                    # expired proxy
+                    self._files = None
+
+            if self._files is None:
+                self._files = weakref.proxy(Block._fill_files_cache(self, check_consistency = check_consistency))
+
+            return self._files
