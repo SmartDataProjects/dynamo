@@ -29,7 +29,7 @@ sys.argv = []
 
 from dynamo.dataformat import Configuration, HistoryRecord
 from dynamo.utils.parallel import Map
-from dynamo.core.executable import read_only, make_standard_logger
+from dynamo.core.executable import read_only, make_standard_logger, inventory
 
 ## Configuration
 
@@ -139,12 +139,12 @@ def is_transfer_stuck(rrd_file):
     return 0
 
 
-for site, site_records in records.iteritems():
+for sitename, site_records in records.iteritems():
     # Will do this per site, parallelizing copy_status query for the records
-    LOG.info('Processing %s', site)
+    LOG.info('Processing %s', sitename)
 
     # Create a directory for the site
-    site_rrd_dir = rrd_dir + '/' + site
+    site_rrd_dir = rrd_dir + '/' + sitename
 
     if not read_only:
         try:
@@ -152,12 +152,12 @@ for site, site_records in records.iteritems():
         except OSError:
             pass
 
-    site_totals = totals[site] = {
+    site_totals = totals[sitename] = {
         "total_volume": 0., # total of all datasets
         "copied_volume": 0., # copied volume
     }
 
-    site_ongoing_totals = ongoing_totals[site] = {
+    site_ongoing_totals = ongoing_totals[sitename] = {
         "ongoing": 0., # number of ongoing transfers
         "total": 0., # total of datasets that are not 100%
         "total_stuck": 0., # out of which is stuck
@@ -186,36 +186,49 @@ for site, site_records in records.iteritems():
             continue
 
         status_map = {}
-        for (sitename, dataset), status_data in status.iteritems():
-            if sitename == site:
+        for (st_sitename, dataset), status_data in status.iteritems():
+            if st_sitename == sitename:
                 status_map[dataset] = status_data
             else:
-                LOG.error('Site name mismatch for copy record %d: %s != %s', record.operation_id, site, sitename)
+                LOG.error('Site name mismatch for copy record %d: %s != %s', record.operation_id, sitename, st_sitename)
 
         update_record = False
 
-        for replica in record.replicas:
+        for replica_record in record.replicas:
             try:
-                status_data = status_map[replica.dataset_name]
+                status_data = status_map[replica_record.dataset_name]
             except KeyError:
                 status_data = None
 
             if status_data is None:
                 # the copy request was cancelled
-                replica.status = HistoryRecord.ST_CANCELLED
+                replica_record.status = HistoryRecord.ST_CANCELLED
                 update_record = True
 
                 continue
 
             total, copied, last_update = status_data
 
-            LOG.debug('%s %s %s %s %s', site, replica.dataset_name, total, copied, last_update)
+            LOG.debug('%s %s %s %s %s', sitename, replica_record.dataset_name, total, copied, last_update)
 
             if copied is None:
                 copied = 0
 
-            if total != replica.size:
-                replica.size = total
+            # Total size could actually be smaller if this was a dataset-level subscription on which
+            # block-level deletions took place afterwards
+            # Inventory would know if the dataset replica is partial. size(physcal = False) returns the
+            # projected size of all block replicas
+            try:
+                site = inventory.sites[sitename]
+                dataset = inventory.datasets[datasetname]
+            except KeyError:
+                pass
+            else:
+                replica = site.find_dataset_replica(dataset)
+                total = replica.size(physical = False)
+
+            if total != replica_record.size:
+                replica_record.size = total
                 update_record = True
 
             # Keeping track of the request status
@@ -226,10 +239,10 @@ for site, site_records in records.iteritems():
             site_totals['copied_volume'] += copied
 
             # We have an RRD file for each (site, dataset) combination
-            rrd_file = '%s/%d_%s.rrd' % (site_rrd_dir, record.operation_id, replica.dataset_name[1:].replace('/', '+'))
+            rrd_file = '%s/%d_%s.rrd' % (site_rrd_dir, record.operation_id, replica_record.dataset_name[1:].replace('/', '+'))
 
             if copied == total:
-                replica.status = HistoryRecord.ST_COMPLETE
+                replica_record.status = HistoryRecord.ST_COMPLETE
                 update_record = True
 
                 if not read_only:
@@ -272,7 +285,7 @@ for site, site_records in records.iteritems():
 
                 dataset_details.append({
                     'id': record.operation_id,
-                    'name': replica.dataset_name,
+                    'name': replica_record.dataset_name,
                     'copied': copied,
                     'total': total,
                     'stuck': is_stuck
