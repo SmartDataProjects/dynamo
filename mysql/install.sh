@@ -44,14 +44,6 @@ fi
 
 MYSQL="mysql -A $MYSQLOPT"
 
-# Set up grants
-echo '############################'
-echo '######  MYSQL GRANTS  ######'
-echo '############################'
-echo
-
-python $THISDIR/grants.py -q $MYSQLOPT
-
 # Set up databases
 echo '##########################################'
 echo '######  MYSQL DATABASES AND TABLES  ######'
@@ -106,8 +98,22 @@ do
   done
 done
 
+# Set up grants
+echo '############################'
+echo '######  MYSQL GRANTS  ######'
+echo '############################'
+echo
+
+python $THISDIR/grants.py -q $MYSQLOPT
+
 if $HAS_ROOTCNF
 then
+# Set up grants
+  echo '############################'
+  echo '######  MYSQL BACKUP  ######'
+  echo '############################'
+  echo
+
   echo "Set up DB backup cron job [y/n]?"
   if confirmed
   then
@@ -116,10 +122,10 @@ then
 
     crontab -l -u root > /tmp/crontab.tmp.$$
     chmod 600 /tmp/crontab.tmp.$$
-    if ! grep -q $INSTALL_PATH/sbin/backup /tmp/crontab.tmp.$$
+    if ! grep -q $INSTALL_PATH/utilities/mysql_backup /tmp/crontab.tmp.$$
     then
       echo "Setting up cron job"
-      echo "  00 01 * * * $INSTALL_PATH/sbin/mysql_backup > $LOG_PATH/backup.log 2>&1"
+      echo "  00 01 * * * $INSTALL_PATH/utilities/mysql_backup > $LOG_PATH/backup.log 2>&1"
       echo
       echo "Note: It is advised to set up binary logging of dynamohistory and dynamoregister by adding"
       echo "the following lines to the [mysqld] section of /etc/my.cnf:"
@@ -128,7 +134,7 @@ then
       echo "  binlog-do-db=dynamoregister"
       echo
   
-      echo "00 01 * * * $INSTALL_PATH/sbin/mysql_backup > $LOG_PATH/backup.log 2>&1" >> /tmp/crontab.tmp.$$
+      echo "00 01 * * * $INSTALL_PATH/utilities/mysql_backup > $LOG_PATH/backup.log 2>&1" >> /tmp/crontab.tmp.$$
       crontab -u root - < /tmp/crontab.tmp.$$
     fi
     rm /tmp/crontab.tmp.$$

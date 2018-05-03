@@ -58,7 +58,12 @@ warnifnot rpm -q rrdtool-python
 require rpm -q sqlite
 if [ "$APPSERVER" = "true" ]
 then
-  require rpm -q openssl-libs
+  if [[ $(uname -r) =~ el7 ]]
+  then
+    require rpm -q openssl-libs
+  else
+    require rpm -q openssl
+  fi
 fi
 if [ "$WEBSERVER" = "true" ]
 then
