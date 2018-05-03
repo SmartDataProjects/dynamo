@@ -11,6 +11,7 @@ from flup.server.fcgi import WSGIServer
 import dynamo.web.exceptions as exceptions
 # Actual modules imported at the bottom of this file
 from dynamo.web.modules import modules
+from dynamo.web.modules._html import HTMLMixin
 
 LOG = logging.getLogger(__name__)
 
@@ -23,10 +24,17 @@ class WebServer(object):
         self.inventory = inventory
         self.authorizer = authorizer
 
+        self.contents_path = config.contents_path
+        # common mixin class used by all page-generating modules
+        with open(self.contents_path + '/html/' + config.html.header) as source:
+            HTMLMixin.header_html = source.read()
+        with open(self.contents_path + '/html/' + config.html.footer) as source:
+            HTMLMixin.footer_html = source.read()
+
         # cookie string -> (user name, user id)
         self.known_users = {}
 
-        self.debug = config.debug
+        self.debug = config.get('debug', False)
 
     def start(self):
         # Thread-based WSGI server
@@ -35,11 +43,12 @@ class WebServer(object):
     def main(self, environ, start_response):
         """
         WSGI callable. Steps:
-        1. Identify the user if HTTPS
-        2. Find the module class.
-        3. Parse the query string into a dictionary.
-        4. Call the run() function of the module class.
-        5. Respond.
+        1. Determine protocol. If HTTPS, identify the user.
+        2. If js or css is requested, respond.
+        3. Find the module class.
+        4. Parse the query string into a dictionary.
+        5. Call the run() function of the module class.
+        6. Respond.
         """
 
         ## Step 1
@@ -62,10 +71,26 @@ class WebServer(object):
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
             return 'Only HTTP or HTTPS requests are allowed.'
 
-        caller = WebServer.User(user, user_id, authlist)
-
         ## Step 2
         mode = environ['SCRIPT_NAME'].strip('/')
+        if mode == 'js' or mode == 'css':
+            try:
+                source = open(self.contents_path + '/' + mode + environ['PATH_INFO'])
+            except IOError:
+                start_response('404 Not Found', [('Content-Type', 'text/plain')])
+                return 'Invalid request %s%s.' % (mode + environ['PATH_INFO'])
+            else:
+                content = source.read()
+                source.close()
+                if mode == 'js':
+                    ctype = 'text/javascript'
+                else:
+                    ctype = 'text/css'
+
+                start_response('200 OK', [('Content-Type', ctype)])
+                return content
+
+        ## Step 3
         if mode != 'data' and mode != 'web':
             start_response('404 Not Found', [('Content-Type', 'text/plain')])
             return 'Invalid request %s.' % mode
@@ -78,11 +103,13 @@ class WebServer(object):
             start_response('404 Not Found', [('Content-Type', 'text/plain')])
             return 'Invalid request %s/%s.' % (module, command)
 
-        ## Step 3
+        ## Step 4
         # FieldStorage is a dict-like class that holds both GET and POST requests
         request = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
 
-        ## Step 4
+        ## Step 5
+        caller = WebServer.User(user, user_id, authlist)
+
         try:
             content = cls(self.modules_config).run(caller, request, self.inventory)
         except exceptions.AuthorizationError:
@@ -112,7 +139,7 @@ class WebServer(object):
             else:
                 return 'Exception: ' + str(sys.exc_info()[1])
 
-        ## Step 5
+        ## Step 6
         if mode == 'data':
             start_response('200 OK', [('Content-Type', 'application/json')])
 
