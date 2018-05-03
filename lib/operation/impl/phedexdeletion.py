@@ -123,6 +123,7 @@ class PhEDExDeletionInterface(DeletionInterface):
                 result = [{'id': '%d' % self._next_operation_id}]
                 self._next_operation_id += 1
             else:
+                result = []
                 try:
                     result = self._phedex.make_request('delete', options, method = POST)
                 except:
@@ -132,12 +133,9 @@ class PhEDExDeletionInterface(DeletionInterface):
                         # problematic item through trial and error.
                         if len(items) == 1:
                             LOG.error('Could not delete %s from %s', str(items[0]), site.name)
-                            result = []
                         else:
                             self._run_deletion_request(request_mapping, site, level, items[:len(items) / 2], comments)
                             self._run_deletion_request(request_mapping, site, level, items[len(items) / 2:], comments)
-                    else:
-                        result = []
 
             if len(result) != 0:
                 request_id = int(result[0]['id']) # return value is a string
