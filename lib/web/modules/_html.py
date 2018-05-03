@@ -1,8 +1,9 @@
 class HTMLMixin(object):
+    contents_path = None
     header_html = None
     footer_html = None
 
-    def __init__(self, title, body):
+    def __init__(self, title, body_path):
         # Page title
         self.title = title
         # List of additional CSS
@@ -16,7 +17,7 @@ class HTMLMixin(object):
         # Additional components in the title block
         self.titleblock = None
         # Body HTML
-        with open(body) as source:
+        with open(HTMLMixin.contents_path + '/html/' + body_path) as source:
             self.body_html = source.read()
 
     def form_html(self, repl):

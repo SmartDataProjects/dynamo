@@ -81,6 +81,12 @@ enabled=true
 # Path to the UNIX socket used to communicate with the http fronend
 socket=/var/spool/dynamo/dynamoweb.sock
 
+# Path to load the static contents (HTML, CSS, JS) from
+contents_path=/usr/local/dynamo/web
+
+# Path to the configuration file for web modules
+modules_config=/etc/dynamo/web_modules_config.json
+
 [scheduler]
 
 # Registry user name for scheduled executables

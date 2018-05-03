@@ -24,11 +24,11 @@ class WebServer(object):
         self.inventory = inventory
         self.authorizer = authorizer
 
-        self.contents_path = config.contents_path
+        HTMLMixin.contents_path = config.contents_path
         # common mixin class used by all page-generating modules
-        with open(self.contents_path + '/html/' + config.html.header) as source:
+        with open(HTMLMixin.contents_path + '/html/header_common.html') as source:
             HTMLMixin.header_html = source.read()
-        with open(self.contents_path + '/html/' + config.html.footer) as source:
+        with open(HTMLMixin.contents_path + '/html/footer_common.html') as source:
             HTMLMixin.footer_html = source.read()
 
         # cookie string -> (user name, user id)
@@ -75,7 +75,7 @@ class WebServer(object):
         mode = environ['SCRIPT_NAME'].strip('/')
         if mode == 'js' or mode == 'css':
             try:
-                source = open(self.contents_path + '/' + mode + environ['PATH_INFO'])
+                source = open(HTMLMixin.contents_path + '/' + mode + environ['PATH_INFO'])
             except IOError:
                 start_response('404 Not Found', [('Content-Type', 'text/plain')])
                 return 'Invalid request %s%s.' % (mode + environ['PATH_INFO'])

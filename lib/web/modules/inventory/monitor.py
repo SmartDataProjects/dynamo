@@ -8,7 +8,7 @@ import dynamo.web.exceptions as exceptions
 class DatasetStats(WebModule, HTMLMixin):
     def __init__(self, config):
         WebModule.__init__(self, config)
-        HTMLMixin.__init__(self, 'Dynamo dataset statistics', config.body_html)
+        HTMLMixin.__init__(self, 'Dynamo dataset statistics', config.inventory.monitor.body_html)
 
         self.stylesheets = ['css/inventory.css']
         self.scripts = ['js/utils.js', 'js/inventory.js']
