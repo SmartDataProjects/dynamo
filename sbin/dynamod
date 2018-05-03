@@ -79,15 +79,15 @@ try:
     srv_thread.start()
     
     if config.web.enabled:
-        from dynamo.core.manager import Authorizer
+        from dynamo.core.components.master import Authorizer
 
         while server.inventory is None or not server.inventory.loaded:
             time.sleep(2)
 
         config.web.modules_config = Configuration(config.web.modules_config_path)
-        del config.web.modules_config_path
+        config.web.pop('modules_config_path')
     
-        web = WebServer(config.web, server.inventory, Authorizer(server.manager))
+        web = WebServer(config.web, server.inventory, Authorizer(server.manager.master))
         web.start()
     
     else:

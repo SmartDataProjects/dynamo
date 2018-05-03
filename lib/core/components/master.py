@@ -297,6 +297,12 @@ class MasterServer(object):
         """
         raise NotImplementedError('list_authorized_users')
 
+    def create_authorizer(self):
+        """
+        @return A new authorizer instance with fresh connection
+        """
+        raise NotImplementedError('create_authorizer')
+
     def check_connection(self):
         """
         @return  True if connection is OK, False if not
@@ -308,3 +314,24 @@ class MasterServer(object):
 
     def disconnect(self):
         raise NotImplementedError('disconnect')
+
+
+class Authorizer(object):
+    """
+    Interface to provide read-only user authorization routines of the master server without exposing the server itself.
+    """
+
+    def __init__(self, master):
+        # can't do
+        #  self.user_exists = master.user_exists
+        # because self.user_exists.__self__ will point to master
+
+        self.user_exists = lambda name: master.user_exists(name)
+        self.list_users = lambda: master.list_users()
+        self.identify_user = lambda dn = '', name = '', with_id = False: master.identify_user(dn = dn, name = name, with_id = with_id)
+        self.identify_role = lambda name, with_id = False: master.identify_role(name, with_id = with_id)
+        self.list_roles = lambda: master.list_roles()
+        self.list_authorization_targets = lambda: master.list_authorization_targets()
+        self.check_user_auth = lambda user, role, target: master.check_user_auth(user, role, target)
+        self.list_user_auth = lambda user: master.list_user_auth(user)
+        self.list_authorized_users = lambda target: master.list_authorized_users(target)

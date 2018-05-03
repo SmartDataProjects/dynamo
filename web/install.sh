@@ -84,7 +84,8 @@ rm $BINTARGET/dynamo/common/db_conf.php.template
 [ -L $HTMLTARGET/registry/invalidation ] || ln -sf $BINTARGET/registry/invalidation.php $HTMLTARGET/registry/invalidation
 [ -L $HTMLTARGET/registry/request ] || ln -sf $BINTARGET/registry/requests.php $HTMLTARGET/registry/request
 
-mv /tmp/dealermon.$$ $HTMLTARGET/dynamo/dealermon 2>/dev/null
+mv /tmp/dealermon.$$/monitoring* $HTMLTARGET/dynamo/dealermon 2>/dev/null
+[ $? -eq 0 ] && rm -rf /tmp/dealermon.$$
 chmod 777 $HTMLTARGET/dynamo/dealermon
 
 ### Verify .htaccess override
@@ -102,5 +103,20 @@ echo "In particular, for apache, the environment variable"
 echo "export OPENSSL_ALLOW_PROXY_CERTS=1"
 echo "must be set in the httpd execution environment."
 echo "The line above should be placed in /etc/init.d/httpd (SL6) or /etc/sysconfig/httpd (CentOS 7, without export)."
+
+echo '#######################################'
+echo '######  NEW-STYLE HTML TEMPLATES ######'
+echo '#######################################'
+echo
+
+READCONF="$THISDIR/../utilities/readconf -I $THISDIR/../dynamo.cfg"
+
+CONTENTS_PATH=$($READCONF web.contents_path)
+
+mkdir -p $CONTENTS_PATH/html
+cp -r $HTMLSOURCE/*.html $CONTENTS_PATH/html
+
+ln -s $HTMLTARGET/dynamo/dynamo/css $CONTENTS_PATH/css
+ln -s $HTMLTARGET/dynamo/dynamo/js $CONTENTS_PATH/js
 
 exit 0

@@ -2,7 +2,7 @@ import time
 import json
 import socket
 
-from dynamo.core.components.master import MasterServer
+from dynamo.core.components.master import MasterServer, Authorizer
 from dynamo.core.manager import ServerManager
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration
@@ -486,6 +486,11 @@ class MySQLMasterServer(MasterServer):
             args = (target,)
         
         return self._mysql.query(sql, *args)
+
+    def create_authorizer(self): #override
+        # connection will be opened next time a query is made
+        self._mysql.close()
+        return Authorizer(self)
 
     def check_connection(self): #override
         try:

@@ -403,24 +403,3 @@ class ServerManager(object):
         for server in self.other_servers.itervalues():
             if server.board:
                 server.board.disconnect()
-
-
-class Authorizer(object):
-    """
-    Interface to provide read-only user authorization routines of the master server without exposing the server itself.
-    """
-
-    def __init__(self, manager):
-        # can't do
-        #  self.user_exists = manager.master.user_exists
-        # because self.user_exists.__self__ will point to master
-
-        self.user_exists = lambda name: manager.master.user_exists(name)
-        self.list_users = lambda: manager.master.list_users()
-        self.identify_user = lambda dn = '', name = '', with_id = False: manager.master.identify_user(dn = dn, name = name, with_id = with_id)
-        self.identify_role = lambda name, with_id = False: manager.master.identify_role(name, with_id = with_id)
-        self.list_roles = lambda: manager.master.list_roles()
-        self.list_authorization_targets = lambda: manager.master.list_authorization_targets()
-        self.check_user_auth = lambda user, role, target: manager.master.check_user_auth(user, role, target)
-        self.list_user_auth = lambda user: manager.master.list_user_auth(user)
-        self.list_authorized_users = lambda target: manager.master.list_authorized_users(target)

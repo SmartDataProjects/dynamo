@@ -13,7 +13,7 @@ import threading
 import Queue
 
 from dynamo.core.inventory import DynamoInventory
-from dynamo.core.manager import ServerManager, Authorizer, OutOfSyncError
+from dynamo.core.manager import ServerManager, OutOfSyncError
 import dynamo.core.serverutils as serverutils
 from dynamo.core.components.appserver import AppServer
 from dynamo.utils.log import log_exception
@@ -738,7 +738,7 @@ class DynamoServer(object):
         # Pass my inventory and authorizer to the executable through core.executable
         import dynamo.core.executable as executable
         executable.inventory = self.inventory
-        executable.authorizer = Authorizer(self.manager)
+        executable.authorizer = self.manager.master.create_authorizer()
 
         if not read_only:
             executable.read_only = False

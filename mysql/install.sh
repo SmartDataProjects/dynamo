@@ -42,7 +42,7 @@ else
   HAS_ROOTCNF=false
 fi
 
-MYSQL="mysql -A $MYSQLOPT"
+MYSQL="mysql $MYSQLOPT"
 
 # Set up databases
 echo '##########################################'
@@ -117,7 +117,7 @@ then
   echo "Set up DB backup cron job [y/n]?"
   if confirmed
   then
-    READCONF="$SOURCE/utilities/readconf -I $SOURCE/dynamo.cfg"
+    READCONF="$THISDIR/../utilities/readconf -I $THISDIR/../dynamo.cfg"
     INSTALL_PATH=$($READCONF paths.dynamo_base)
 
     crontab -l -u root > /tmp/crontab.tmp.$$

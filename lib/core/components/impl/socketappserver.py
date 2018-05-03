@@ -15,7 +15,17 @@ from dynamo.core.components.appserver import AppServer
 from dynamo.core.manager import ServerManager
 
 SERVER_PORT = 39626
-DN_TRANSLATION = {'domainComponent': 'DC', 'organizationalUnitName': 'OU', 'commonName': 'CN'}
+DN_TRANSLATION = {
+    'commonName': 'CN',
+    'localityName': 'L',
+    'stateOrProvinceName': 'ST',
+    'organizationName': 'O',
+    'organizationalUnitName': 'OU',
+    'countryName': 'C',
+    'streetAddress': 'STREET',
+    'domainComponent': 'DC',
+    'userId': 'UID'
+}
 
 LOG = logging.getLogger(__name__)
 
@@ -246,7 +256,7 @@ class SocketAppServer(AppServer):
                     shutil.rmtree(workarea)
 
         except:
-            io.send('failed', 'Exception: ' + str(sys.exc_info()[1]))
+            io.send('failed', sys.exc_info()[0].__name__ + ': ' + str(sys.exc_info()[1]))
         finally:
             conn.close()
 
