@@ -304,7 +304,7 @@ class MySQLMasterServer(MySQLAuthorizer, MasterServer):
         return False
 
     def list_authorized_applications(self, titles = None, users = None, checksums = None): #override
-        sql = 'SELECT a.`title`, u.`name`, a.`checksum` FROM `authorized_applications` AS a'
+        sql = 'SELECT a.`title`, u.`name`, HEX(a.`checksum`) FROM `authorized_applications` AS a'
         sql += ' LEFT JOIN `users` AS u ON u.`id` = a.`user_id`'
 
         constraints = []

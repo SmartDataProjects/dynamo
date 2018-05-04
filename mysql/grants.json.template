@@ -28,6 +28,7 @@
       ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_queue"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "transfer_queue"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "stage_queue"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "detox_locks"],
       ["SELECT", "dynamoserver", "users"]
     ]
   },

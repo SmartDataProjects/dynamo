@@ -45,6 +45,10 @@
   "mysqllock": {
     "db": "dynamoregister"
   },
+  "replica_source": {
+    "include_sites": ["T0_*", "T1_*", "T2_*"],
+    "exclude_sites": ["T0_CH_CERN_Export", "T1_*_Buffer", "T2_CH_CERNBOX", "T2_MY_UPM_BIRUNI"],
+  },
   "applock": {
     "user": "dynamo",
     "role": "dynamo",
