@@ -236,7 +236,12 @@ for sitename, request_ids in records.iteritems():
                 pass
             else:
                 replica = site.find_dataset_replica(dataset)
-                total = replica.size(physical = False)
+                if replica is None:
+                    LOG.warning('Replica %s:%s does not exist', site.name, dataset.name)
+                    total = 0
+                    update_record = True
+                else:
+                    total = replica.size(physical = False)
 
             # Keeping track of the request status
             request_total += total

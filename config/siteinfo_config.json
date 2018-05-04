@@ -1,5 +1,4 @@
 {
-  "out_path": "/home/cmsprod/public_html/IntelROCCS/Detox",
   "partitions": ["Physics", "DataOps", "caf-comm", "caf-alca", "local", "IB RelVal"],
   "detox_history": {
     "history_db": "dynamohistory",

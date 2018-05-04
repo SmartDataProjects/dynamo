@@ -43,7 +43,7 @@ dealer = Dealer(dealer_config)
 
 if read_only:
     dealer.copy_op.dry_run = True
-    dealer.history.test = True
+    dealer.history.read_only = True
 
 dealer.run(inventory, comment = args.comment)
 

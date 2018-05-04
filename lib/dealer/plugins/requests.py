@@ -220,6 +220,9 @@ class CopyRequestsHandler(BaseHandler):
                 reject(request_id, 'No valid site name in list')
                 continue
 
+            # randomize site ordering
+            random.shuffle(sites)
+
             rejected = False
 
             items = [] # list of datasets or (list of blocks from a dataset)
@@ -341,7 +344,7 @@ class CopyRequestsHandler(BaseHandler):
 
                     # bring sites where the item already exists first (may want to just "flip" the ownership)
                     sites_and_existence = []
-                    for destination in random.shuffle(sites):
+                    for destination in sites:
                         exists = already_exists(item, destination, group) # 0, 1, or 2
                         if exists != 0:
                             sites_and_existence.insert(0, (destination, exists))

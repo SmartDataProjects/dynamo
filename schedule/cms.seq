@@ -47,7 +47,7 @@ WAIT 600
 & <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/RelVal.txt
 & <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/DataOps.txt --test-run
 & <detox> --config /etc/dynamo/detox_config.json --policy $(DYNAMO_BASE)/policies/detox/caf-alca.txt --test-run
-& {siteinfo} --config /etc/dynamo/siteinfo_config.json
+& {siteinfo} --config /etc/dynamo/siteinfo_config.json --out /home/cmsprod/public_html/IntelROCCS/Detox
 WAIT 14400
 
 [SEQUENCE dealer]

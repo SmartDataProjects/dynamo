@@ -344,7 +344,7 @@ class MySQLMasterServer(MySQLAuthorizer, MasterServer):
             sql += ' (0, %s)'
             args = (title,)
         else:
-            sql += ' (SELECT u.`id`, %s, FROM `users` AS u WHERE u.`name` = %s)'
+            sql += ' (SELECT u.`id`, %s FROM `users` AS u WHERE u.`name` = %s)'
             args = (title, user)
 
         deleted = self._mysql.query(sql, *args)
