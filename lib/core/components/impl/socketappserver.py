@@ -343,8 +343,10 @@ class SocketAppServer(AppServer):
         port_data = io.recv()
         addr = (io.host, port_data['port'])
 
-        defaults_config = self.dynamo_server.applications_config.defaults
-        proc = multiprocessing.Process(target = run_interactive_through_socket, name = 'interactive', args = (addr, workarea, defaults_config))
+        defaults_config, inventory, authorizer = self.dynamo_server.get_subprocess_args()
+
+        args = (addr, workarea, defaults_config, inventory, authorizer)
+        proc = multiprocessing.Process(target = run_interactive_through_socket, name = 'interactive', args = args)
         proc.start()
         proc.join()
 
@@ -379,7 +381,7 @@ class SocketAppServer(AppServer):
         return {'status': ServerManager.application_status_name(msg['status']), 'exit_code': msg['exit_code']}
 
 
-def run_interactive_through_socket(addr, workarea, defaults_config):
+def run_interactive_through_socket(addr, workarea, defaults_config, inventory, authorizer):
     conns = (socket.create_connection(addr), socket.create_connection(addr))
     stdout = conns[0].makefile('w')
     stderr = conns[1].makefile('w')
@@ -392,7 +394,7 @@ def run_interactive_through_socket(addr, workarea, defaults_config):
     # use the receive side of conns[0] for stdin
     make_console = lambda l: SocketConsole(conns[0], l)
 
-    serverutils.run_interactive(workarea, defaults_config, is_local, make_console, stdout, stderr)
+    serverutils.run_interactive(workarea, is_local, defaults_config, inventory, authorizer, make_console, stdout, stderr)
 
     stdout.close()
     stderr.close()

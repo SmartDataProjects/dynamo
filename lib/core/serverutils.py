@@ -104,20 +104,20 @@ def umountall(path):
     for mount in mountpoints:
         umount(path + mount)
 
-def clean_remote_request(self, path):
+def clean_remote_request(path):
     # Since threads cannot change the uid, we launch a subprocess.
     # (Mounts are made read-only, so there is no risk of accidents even if the subprocess fails)
     proc = multiprocessing.Process(target = umountall, args = (path,))
     proc.start()
     proc.join()
 
-def run_script(path, args, defaults_config, is_local, inventory, authorizer, queue = None):
+def run_script(path, args, is_local, defaults_config, inventory, authorizer, queue = None):
     """
     Main function for script execution.
     @param path            Path to the work area of the script. Will be the root directory in read-only processes.
     @param args            Script command-line arguments.
-    @param defaults_config A Configuration object specifying the global defaults for various tools
     @param is_local        True if script is requested from localhost.
+    @param defaults_config A Configuration object specifying the global defaults for various tools
     @param inventory       A DynamoInventoryProxy instance
     @param authorizer      An Authorizer instance
     @param queue           Queue if write-enabled.
@@ -130,7 +130,7 @@ def run_script(path, args, defaults_config, is_local, inventory, authorizer, que
     sys.stdout = stdout
     sys.stderr = stderr
 
-    path = pre_execution(path, defaults_config, is_local, queue is None, inventory, authorizer)
+    path = pre_execution(path, is_local, queue is None, defaults_config, inventory, authorizer)
 
     # Set argv
     sys.argv = [path + '/exec.py']
@@ -156,7 +156,7 @@ def run_script(path, args, defaults_config, is_local, inventory, authorizer, que
         sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
         sys.stderr.flush()
     finally:
-        post_execution(path, is_local, queue)
+        post_execution(path, is_local, inventory, queue)
 
     sys.stdout = old_stdout
     sys.stderr = old_stderr
@@ -167,13 +167,13 @@ def run_script(path, args, defaults_config, is_local, inventory, authorizer, que
 
     return 0
 
-def run_interactive(path, defaults_config, is_local, inventory, authorizer, make_console, stdout = sys.stdout, stderr = sys.stderr):
+def run_interactive(path, is_local, defaults_config, inventory, authorizer, make_console, stdout = sys.stdout, stderr = sys.stderr):
     """
     Main function for interactive sessions.
     For now we limit interactive sessions to read-only.
     @param path            Path to the work area.
-    @param defaults_config A Configuration object specifying the global defaults for various tools
     @param is_local        True if script is requested from localhost.
+    @param defaults_config A Configuration object specifying the global defaults for various tools
     @param inventory       A DynamoInventoryProxy instance
     @param authorizer      An Authorizer instance
     @param make_console    A callable which takes a dictionary of locals as an argument and returns a console
@@ -186,7 +186,7 @@ def run_interactive(path, defaults_config, is_local, inventory, authorizer, make
     sys.stdout = stdout
     sys.stderr = stderr
 
-    pre_execution(path, defaults_config, is_local, True, inventory, authorizer)
+    pre_execution(path, is_local, True, defaults_config, inventory, authorizer)
 
     # use receive of oconn as input
     mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': inventory}
@@ -194,14 +194,14 @@ def run_interactive(path, defaults_config, is_local, inventory, authorizer, make
     try:
         console.interact(BANNER)
     finally:
-        self._post_execution(path, is_local, None)
+        post_execution(path, is_local, inventory, None)
 
     sys.stdout = old_stdout
     sys.stderr = old_stderr
 
     return 0
 
-def pre_execution(path, defaults_config, is_local, read_only, inventory, authorizer):
+def pre_execution(path, is_local, read_only, defaults_config, inventory, authorizer):
     uid = os.geteuid()
     gid = os.getegid()
 
@@ -300,7 +300,7 @@ def pre_execution(path, defaults_config, is_local, read_only, inventory, authori
 
     return path
 
-def post_execution(self, path, is_local, inventory, queue):
+def post_execution(path, is_local, inventory, queue):
     if queue is not None:
         # Collect updates if write-enabled
 

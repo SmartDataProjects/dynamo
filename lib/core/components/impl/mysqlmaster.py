@@ -96,6 +96,7 @@ class MySQLAuthorizer(Authorizer):
 
 class MySQLMasterServer(MySQLAuthorizer, MasterServer):
     def __init__(self, config):
+        MySQLAuthorizer.__init__(self, config)
         MasterServer.__init__(self, config)
 
         self._server_id = 0

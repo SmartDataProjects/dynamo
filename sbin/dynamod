@@ -63,7 +63,7 @@ try:
     if config.web.enabled:
         from dynamo.web.server import WebServer
     
-    ## Start the server
+    ## Start the server (read restricted files (e.g. private keys) here before we switch euid)
     server = main.DynamoServer(config)
 
     ## Set the effective user id to config.user

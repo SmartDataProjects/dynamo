@@ -92,7 +92,7 @@ class MySQL(object):
 
     def config(self):
         conf = Configuration()
-        for key in ['host', 'user' 'passwd', 'db']:
+        for key in ['host', 'user', 'passwd', 'db']:
             try:
                 conf[key] = self._connection_parameters[key]
             except KeyError:

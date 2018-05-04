@@ -224,6 +224,9 @@ class DynamoInventory(ObjectRepository):
 
         self.loaded = True
 
+    def make_object(self, repstr):
+        return eval('df.' + repstr)
+
     def _load_partitions(self):
         """Load partition data from a text table."""
 
@@ -333,7 +336,7 @@ class DynamoInventory(ObjectRepository):
 
         LOG.debug('Saving changes on %s to inventory store.', str(obj))
 
-        embedded_clone = self.update(obj)
+        embedded_clone = ObjectRepository.update(self, obj)
 
         if self._has_store:
             try:
@@ -349,7 +352,7 @@ class DynamoInventory(ObjectRepository):
         @param obj    Object to delete from this inventory.
         """
 
-        deleted_object = self.delete(self, obj)
+        deleted_object = ObjectRepository.delete(self, obj)
 
         if deleted_object is None:
             return

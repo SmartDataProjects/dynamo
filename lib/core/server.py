@@ -198,6 +198,16 @@ class DynamoServer(object):
 
         self.manager.disconnect()
 
+    def get_subprocess_args(self):
+        # Create a inventory proxy with a fresh connection to the store backend
+        # Otherwise my connection will be closed when the inventory is garbage-collected in the child process
+        inventory_proxy = self.inventory.create_proxy()
+
+        # Similarly pass a new Authorizer with a fresh connection
+        authorizer = self.manager.master.create_authorizer()
+
+        return self.applications_config.defaults, inventory_proxy, authorizer
+
     def _run_application_cycles(self):
         """
         Infinite-loop main body of the daemon.
@@ -294,8 +304,9 @@ class DynamoServer(object):
                         continue
     
                     queue = multiprocessing.Queue()
-    
                     writing_process = (app['appid'], queue)
+                else:
+                    queue = None
     
                 ## Step 3: Spawn a child process for the script
                 self.manager.master.update_application(app['appid'], status = ServerManager.APP_RUN)
@@ -524,14 +535,17 @@ class DynamoServer(object):
     def _read_updates(self):
         update_commands = self.manager.get_updates()
 
-        self._exec_updates(update_commands)
+        has_update = self._exec_updates(update_commands)
 
-        if len(update_commands) != 0:
+        # update_commands is an iterator - cannot just do len()
+        if has_update:
             # The server which sent the updates has set this server's status to updating
             self.manager.set_status(ServerManager.SRV_ONLINE)
 
     def _exec_updates(self, update_commands):
+        has_update = False
         for cmd, objstr in update_commands:
+            has_update = True
             # Create a python object from its representation string
             obj = self.inventory.make_object(objstr)
 
@@ -543,18 +557,15 @@ class DynamoServer(object):
                 CHANGELOG.info('Deleting %s', str(obj))
                 self.inventory.delete(obj)
 
-        if self.inventory.has_store:
+        if has_update and self.inventory.has_store:
             self.manager.master.advertise_store_version(self.inventory.store_version())
 
+        return has_update
+
     def _start_subprocess(self, app, is_local, queue):
-        # Create a inventory proxy with a fresh connection to the store backend
-        # Otherwise my connection will be closed when the inventory is garbage-collected in the child process
-        inventory_proxy = self.inventory.create_proxy()
+        defaults_conf, inventory, authorizer = self.get_subprocess_args()
 
-        # Similarly pass a new Authorizer with a fresh connection
-        authorizer = self.manager.master.create_authorizer()
-
-        proc_args = (app['path'], app['args'], self.applications_config.default, is_local, inventory_proxy, authorizer, queue)
+        proc_args = (app['path'], app['args'], is_local, defaults_conf, inventory, authorizer, queue)
 
         proc = multiprocessing.Process(target = serverutils.run_script, name = app['title'], args = proc_args)
         proc.daemon = True
