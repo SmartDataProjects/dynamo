@@ -58,19 +58,19 @@ class MySQLAuthorizer(Authorizer):
         return list(eval(result))
 
     def check_user_auth(self, user, role, target): #override
-        sql = 'SELECT COUNT(*) FROM `user_authorizations` WHERE `user_id` = (SELECT `id` FROM `users` WHERE `name` = %s) AND'
+        sql = 'SELECT `target` FROM `user_authorizations` WHERE `user_id` = (SELECT `id` FROM `users` WHERE `name` = %s) AND'
+
+        args = (user,)
 
         if role is None:
-            sql += ' `role_id` = 0 AND'
+            sql += ' `role_id` = 0'
         else:
-            sql += ' `role_id` = (SELECT `id` FROM `roles` WHERE `name` = %s) AND'
+            sql += ' `role_id` = (SELECT `id` FROM `roles` WHERE `name` = %s)'
+            args += (role,)
 
-        if target is None:
-            sql += ' `target` IS NULL'
-        else:
-            sql += ' `target` = %s'
+        targets = self._mysql.query(sql, *args)
 
-        return self._mysql.query(sql, user, role, target)[0] != 0
+        return target in targets
 
     def list_user_auth(self, user): #override
         sql = 'SELECT r.`name`, a.`target` FROM `user_authorizations` AS a'
