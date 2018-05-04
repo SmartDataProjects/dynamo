@@ -473,10 +473,7 @@ class MySQL(object):
             pool_expr = '('
 
             while itr:
-                if type(obj) is str:
-                    pool_expr += MySQLdb.escape_string(obj)
-                else:
-                    pool_expr += MySQLdb.escape(obj, MySQLdb.converters.conversions)
+                pool_expr += MySQLdb.escape(obj, MySQLdb.converters.conversions)
 
                 try:
                     obj = itr.next()
