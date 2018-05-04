@@ -25,10 +25,16 @@ class AppServer(object):
         ## register them first.
         self.notify_lock = threading.Lock()
 
-    def start(self):
-        """Start the server."""
+        self._running = False
 
-        raise NotImplementedError('start')
+    def start(self):
+        """Start a daemon thread that runs the accept loop and return."""
+
+        th = threading.Thread(target = self._accept_applications)
+        th.daemon = True
+        th.start()
+
+        self._running = True
 
     def stop(self):
         """Stop the server."""
@@ -56,6 +62,11 @@ class AppServer(object):
 
     def remove_synch_app_queue(self, app_id):
         self.synch_app_queues.pop(app_id)
+
+    def _accept_applications(self):
+        """Infinite loop to serve incoming connections."""
+
+        raise NotImplementedError('_accept_applications')
 
     def _make_workarea(self):
         """

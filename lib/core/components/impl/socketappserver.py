@@ -158,17 +158,6 @@ class SocketAppServer(AppServer):
 
         self._sock.listen(5)
 
-        self._running = False
-
-    def start(self):
-        """Start a daemon thread that runs the accept loop and return."""
-
-        th = threading.Thread(target = self._accept_applications)
-        th.daemon = True
-        th.start()
-
-        self._running = True
-
     def stop(self):
         """Shut down the socket."""
 
@@ -180,9 +169,7 @@ class SocketAppServer(AppServer):
         except:
             pass
 
-    def _accept_applications(self):
-        """Infinite loop to serve incoming connections."""
-
+    def _accept_applications(self): #override
         while True:
             # blocks until there is a connection
             # keeps blocking when socket is closed
