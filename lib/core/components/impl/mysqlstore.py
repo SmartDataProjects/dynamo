@@ -5,7 +5,7 @@ import hashlib
 
 from dynamo.core.components.persistency import InventoryStore
 from dynamo.utils.interface.mysql import MySQL
-from dynamo.dataformat import Partition, Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
+from dynamo.dataformat import Configuration, Partition, Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
 
 LOG = logging.getLogger(__name__)
 
@@ -28,6 +28,10 @@ class MySQLInventoryStore(InventoryStore):
             return False
 
         return True
+
+    def new_handle(self): #override
+        config = Configuration(db_params = self._mysql.config())
+        return MySQLInventoryStore(config)
 
     def get_partitions(self, conditions):
         partitions = {}

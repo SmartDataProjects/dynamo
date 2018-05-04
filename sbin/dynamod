@@ -33,7 +33,7 @@ else:
 LOG.addHandler(log_handler)
 
 ## Print some nice banner before we start logging with the timestamp format
-LOG.critical(main.BANNER)
+LOG.critical(main.serverutils.BANNER)
 
 log_handler.setFormatter(logging.Formatter(fmt = log_format))
 
@@ -47,7 +47,7 @@ else:
     log_handler = logging.StreamHandler()
 changelog.addHandler(log_handler)
 
-changelog.critical(main.BANNER)
+changelog.critical(main.serverutils.BANNER)
 
 log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
 
@@ -79,15 +79,13 @@ try:
     srv_thread.start()
     
     if config.web.enabled:
-        from dynamo.core.components.master import Authorizer
-
         while server.inventory is None or not server.inventory.loaded:
             time.sleep(2)
 
         config.web.modules_config = Configuration(config.web.modules_config_path)
         config.web.pop('modules_config_path')
     
-        web = WebServer(config.web, server.inventory, Authorizer(server.manager.master))
+        web = WebServer(config.web, server.inventory, server.manager.master.create_authorizer())
         web.start()
     
     else:

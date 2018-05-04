@@ -90,10 +90,26 @@ class MySQL(object):
         if self._connection is not None:
             self._connection.close()
 
-    def make_new_connection(self):
-        # Create a new connection (actually, plan to create) without closing the current one.
-        # Useful when forking.
-        self._connection = None
+    def config(self):
+        conf = Configuration()
+        for key in ['host', 'user' 'passwd', 'db']:
+            try:
+                conf[key] = self._connection_parameters[key]
+            except KeyError:
+                pass
+        try:
+            conf['config_file'] = self._connection_parameters['read_default_file']
+        except KeyError:
+            pass
+        try:
+            conf['config_group'] = self._connection_parameters['read_default_group']
+        except KeyError:
+            pass
+
+        conf['reuse_connection'] = self.reuse_connection
+        conf['max_query_len'] = self.max_query_len
+
+        return conf
 
     def get_cursor(self, cursor_cls = MySQLdb.connections.Connection.default_cursor):
         if self._connection is None:

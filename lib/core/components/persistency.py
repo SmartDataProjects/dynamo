@@ -34,6 +34,13 @@ class InventoryStore(object):
         """
         return False
 
+    def new_handle(self):
+        """
+        Return a clone of self with new connections etc.
+        """
+
+        raise NotImplementedError('new_handle')
+
     def get_partitions(self, conditions):
         """
         Return a list of partition objects.

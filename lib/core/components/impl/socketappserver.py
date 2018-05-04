@@ -13,6 +13,7 @@ import logging
 
 from dynamo.core.components.appserver import AppServer
 from dynamo.core.manager import ServerManager
+import dynamo.core.serverutils as serverutils
 
 SERVER_PORT = 39626
 DN_TRANSLATION = {
@@ -342,36 +343,12 @@ class SocketAppServer(AppServer):
         port_data = io.recv()
         addr = (io.host, port_data['port'])
 
-        proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', args = (workarea, addr))
+        defaults_config = self.dynamo_server.applications_config.defaults
+        proc = multiprocessing.Process(target = run_interactive_through_socket, name = 'interactive', args = (addr, workarea, defaults_config))
         proc.start()
         proc.join()
 
         LOG.info('Finished interactive session.')
-
-    def _run_interactive(self, workarea, addr):
-        conns = (socket.create_connection(addr), socket.create_connection(addr))
-        stdout = conns[0].makefile('w')
-        stderr = conns[1].makefile('w')
-
-        if addr[0] == 'locahost' or addr[0] == '127.0.0.1':
-            is_local = True
-        else:
-            is_local = (addr[0] == socket.gethostname())
-
-        # use the receive side of conns[0] for stdin
-        make_console = lambda l: SocketConsole(conns[0], l)
-
-        self.dynamo_server.run_interactive(workarea, is_local, make_console, stdout, stderr)
-
-        stdout.close()
-        stderr.close()
-
-        for conn in conns:
-            try:
-                conn.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
-            conn.close()
 
     def _serve_synch_app(self, app_id, path, addr):
         conns = (socket.create_connection(addr), socket.create_connection(addr))
@@ -401,6 +378,31 @@ class SocketAppServer(AppServer):
 
         return {'status': ServerManager.application_status_name(msg['status']), 'exit_code': msg['exit_code']}
 
+
+def run_interactive_through_socket(addr, workarea, defaults_config):
+    conns = (socket.create_connection(addr), socket.create_connection(addr))
+    stdout = conns[0].makefile('w')
+    stderr = conns[1].makefile('w')
+
+    if addr[0] == 'localhost' or addr[0] == '127.0.0.1':
+        is_local = True
+    else:
+        is_local = (addr[0] == socket.gethostname())
+
+    # use the receive side of conns[0] for stdin
+    make_console = lambda l: SocketConsole(conns[0], l)
+
+    serverutils.run_interactive(workarea, defaults_config, is_local, make_console, stdout, stderr)
+
+    stdout.close()
+    stderr.close()
+
+    for conn in conns:
+        try:
+            conn.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+        conn.close()
 
 class SocketConsole(code.InteractiveConsole):
     """
