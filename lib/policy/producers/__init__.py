@@ -17,6 +17,7 @@ from datasetrelease import DatasetRelease
 from relativeage import BlockReplicaRelativeAge
 from dbs import CheckAllDBS
 from taperequest import TapeCopyRequested
+from unhandledcopy import UnhandledCopyExists
 
 __all__ = [
     'CRABAccessHistory',
@@ -28,7 +29,8 @@ __all__ = [
     'DatasetRelease',
     'BlockReplicaRelativeAge',
     'CheckAllDBS',
-    'TapeCopyRequested'
+    'TapeCopyRequested',
+    'UnhandledCopyExists'
 ]
 
 # Dictionary of registered producers

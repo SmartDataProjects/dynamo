@@ -32,7 +32,7 @@ class MySQL(object):
     def escape_string(string):
         return MySQLdb.escape_string(string)
     
-    def __init__(self, config):
+    def __init__(self, config = None):
         config = Configuration(config)
 
         self._connection_parameters = dict(MySQL._default_parameters)

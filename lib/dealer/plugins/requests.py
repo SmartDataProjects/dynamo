@@ -1,6 +1,7 @@
 import collections
 import logging
 import fnmatch
+import random
 import re
 
 from dynamo.dealer.plugins.base import BaseHandler
@@ -27,6 +28,9 @@ class CopyRequestsHandler(BaseHandler):
         # convert block-level requests to dataset-level if requested size is greater than
         # dataset size * block_request_max
         self.block_request_max = config.block_request_max
+
+        # list of group names from which ownership of blocks can be taken away
+        self.overwritten_groups = config.get('overwritten_groups', [])
 
     def get_requests(self, inventory, history, policy): # override
         """
@@ -305,7 +309,7 @@ class CopyRequestsHandler(BaseHandler):
             for item in items:
                 # function to find existing copies
                 # will not make a request only if there is a full copy of the item
-                _, _, already_exists = policy.item_info(item)
+                _, _, already_exists, owned_by = policy.item_info(item)
 
                 if type(item) is Dataset:
                     dataset = item
@@ -316,28 +320,13 @@ class CopyRequestsHandler(BaseHandler):
                     # make one copy at each site
 
                     for destination in sites:
-                        # skip already activated requests
-                        if type(item) is Dataset:
-                            if (item.name, destination.name) in active_copies:
-                                continue
-                        else:
-                            is_active = False
-
-                            # if there is at least one active copy of any of the blocks, this request must be active
-                            block_names = set(block.full_name() for block in item)
-                            for it, st in active_copies:
-                                if st == destination.name and it in block_names:
-                                    is_active = True
-                                    break
+                        if copy_activated_at(item, destination, active_copies):
+                            continue
     
-                            if is_active:
-                                continue
-    
-                        if already_exists(item, destination, group):
+                        if already_exists(item, destination, group) == 2:
                             completed_requests.append((item, destination))
                         else:
                             item_name, _, rejection_reason = policy.check_destination(item, destination, group, partition)
-                            
                             if rejection_reason is not None:
                                 # item_name is guaranteed to be valid
                                 reject(request_id, 'Cannot copy %s to %s' % (item_name, destination.name))
@@ -347,33 +336,25 @@ class CopyRequestsHandler(BaseHandler):
 
                 else:
                     # total of n copies
-
                     candidate_sites = []
                     num_new = num_copies
 
-                    for destination in sites:
+                    # bring sites where the item already exists first (may want to just "flip" the ownership)
+                    sites_and_existence = []
+                    for destination in random.shuffle(sites):
+                        exists = already_exists(item, destination, group) # 0, 1, or 2
+                        if exists != 0:
+                            sites_and_existence.insert(0, (destination, exists))
+                        else:
+                            sites_and_existence.append((destination, exists))
+
+                    for destination, exists in sites_and_existence:
                         if num_new == 0:
                             break
 
-                        # skip already activated requests
-                        if type(item) is Dataset:
-                            if (item.name, destination.name) in active_copies:
-                                num_new -= 1
-                                continue
-
-                        else:
-                            is_active = False
-
-                            # if there is at least one active copy of any of the blocks, this request must be active
-                            block_names = set(block.full_name() for block in item)
-                            for it, st in active_copies:
-                                if st == destination.name and it in block_names:
-                                    is_active = True
-                                    break
-    
-                            if is_active:
-                                num_new -= 1
-                                continue
+                        if copy_activated_at(item, destination, active_copies):
+                            num_new -= 1
+                            continue
 
                         # consider copies proposed by other requests as complete
                         try:
@@ -394,9 +375,15 @@ class CopyRequestsHandler(BaseHandler):
                                     continue
 
                         # if the item already exists, it's a complete copy too
-                        if already_exists(item, destination, group):
+                        if exists == 2:
                             num_new -= 1
                             completed_requests.append((item, destination))
+                        elif exists == 1:
+                            # if the current group can be overwritten, make a request
+                            # otherwise skip
+                            if len(self.overwritten_groups) != 0 and owned_by(item, destination) in self.overwritten_groups:
+                                new_requests.append((item, destination))
+                                num_new -= 1
                         else:
                             candidate_sites.append(destination)
 
@@ -478,3 +465,17 @@ class CopyRequestsHandler(BaseHandler):
 
             # active copies with block name
             self.registry.query(sql, Block.to_full_name(replica.dataset.name, '%'), replica.site.name)
+
+
+def copy_activated_at(item, destination, active_copies):
+    # skip already activated requests
+    if type(item) is Dataset:
+        return (item.name, destination.name) in active_copies
+    else:
+        # if there is at least one active copy of any of the blocks, this request must be active
+        block_names = set(block.full_name() for block in item)
+        for it, st in active_copies:
+            if st == destination.name and it in block_names:
+                return True
+
+        return False

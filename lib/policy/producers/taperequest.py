@@ -50,3 +50,4 @@ class TapeCopyRequested(object):
 
                         # just label the entire dataset
                         dataset.attr['tape_copy_requested'] = True
+ 

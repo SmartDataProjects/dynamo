@@ -44,7 +44,12 @@
         }
       },
       "BlockReplicaRelativeAge": {},
-      "TapeCopyRequested": {}
+      "TapeCopyRequested": {},
+      "UnhandledCopyExists": {
+        "registry": {
+          "db": "dynamoregister"
+        }
+      }
     }
   },
   "applock": {
