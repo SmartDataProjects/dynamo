@@ -240,6 +240,7 @@ class DynamoServer(object):
     
             first_wait = True
             do_sleep = False
+            cleanup_timer = 0
 
             while True:
                 LOG.debug('Check status and connection')
@@ -254,8 +255,11 @@ class DynamoServer(object):
                 writing_process = self._collect_processes(child_processes, writing_process)
 
                 ## Step 6 (easier to do here because we use "continue"s)
-                LOG.debug('Clean old workareas')
-                self._cleanup()
+                cleanup_timer += 1
+                if cleanup_timer == 100000:
+                    LOG.debug('Clean old workareas')
+                    self._cleanup()
+                    cleanup_timer = 0
     
                 ## Step 7 (easier to do here because we use "continue"s)
                 if do_sleep:
@@ -519,7 +523,7 @@ class DynamoServer(object):
 
             # Then remove the path
             shutil.rmtree(app['path'])
-            self.manager.master.update_application(app_id = app['appid'], path = None)
+            self.manager.master.delete_application(app['appid'])
 
     def _update_inventory(self, update_commands):
         # My updates

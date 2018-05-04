@@ -286,6 +286,9 @@ class MySQLMasterServer(MySQLAuthorizer, MasterServer):
 
         self._mysql.query(sql, *tuple(args))
 
+    def delete_application(self, app_id): #override
+        self._mysql.query('DELETE FROM `applications` WHERE `id` = %s', app_id)
+
     def check_application_auth(self, title, user, checksum): #override
         result = self._mysql.query('SELECT `id` FROM `users` WHERE `name` = %s', user)
         if len(result) == 0:

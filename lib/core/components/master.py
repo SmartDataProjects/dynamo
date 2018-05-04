@@ -205,6 +205,14 @@ class MasterServer(Authorizer):
         """
         raise NotImplementedError('update_application')
 
+    def delete_application(self, app_id):
+        """
+        Delete the application record.
+        
+        @param app_id    Application id
+        """
+        raise NotImplementedError('delete_application')
+
     def check_application_auth(self, title, user, checksum):
         raise NotImplementedError('check_application_auth')
 
