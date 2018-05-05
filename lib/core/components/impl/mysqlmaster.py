@@ -2,7 +2,7 @@ import time
 import json
 import socket
 
-from dynamo.core.components.master import Authorizer, MasterServer
+from dynamo.core.components.master import Authorizer, Scheduler, MasterServer
 from dynamo.core.manager import ServerManager
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration
@@ -11,10 +11,11 @@ class MySQLAuthorizer(Authorizer):
     def __init__(self, config):
         Authorizer.__init__(self, config)
 
-        db_params = Configuration(config.db_params)
-        db_params.reuse_connection = True # we use locks
-
-        self._mysql = MySQL(db_params)
+        if not hasattr(self, '_mysql'):
+            db_params = Configuration(config.db_params)
+            db_params.reuse_connection = True # we use locks
+    
+            self._mysql = MySQL(db_params)
 
     def user_exists(self, name):
         result = self._mysql.query('SELECT COUNT(*) FROM `users` WHERE `name` = %s', name)[0]
@@ -94,107 +95,15 @@ class MySQLAuthorizer(Authorizer):
         return self._mysql.query(sql, *args)
 
 
-class MySQLMasterServer(MySQLAuthorizer, MasterServer):
+class MySQLScheduler(Scheduler):
     def __init__(self, config):
-        MySQLAuthorizer.__init__(self, config)
-        MasterServer.__init__(self, config)
+        Scheduler.__init__(self, config)
 
-        self._server_id = 0
+        if not hasattr(self, '_mysql'):
+            db_params = Configuration(config.db_params)
+            db_params.reuse_connection = True # we use locks
 
-    def _connect(self): #override
-        self._mysql.query('LOCK TABLES `servers` WRITE')
-
-        if self.get_master_host() == 'localhost' or self.get_master_host() == socket.gethostname():
-            # This is the master server; wipe the table clean
-            self._mysql.query('DELETE FROM `servers`')
-            self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
-        else:
-            self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
-
-        self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
-        # id of this server
-        self._server_id = self._mysql.last_insert_id
-
-        self._mysql.query('UNLOCK TABLES')
-
-    def lock(self): #override
-        self._mysql.query('LOCK TABLES `servers` WRITE, `applications` WRITE, `users` READ')
-
-    def unlock(self): #override
-        self._mysql.query('UNLOCK TABLES')
-
-    def get_master_host(self): #override
-        return self._mysql.hostname()
-
-    def set_status(self, status, hostname): #override
-        self._mysql.query('UPDATE `servers` SET `status` = %s WHERE `hostname` = %s', ServerManager.server_status_name(status), hostname)
-
-    def get_status(self, hostname): #override
-        result = self._mysql.query('SELECT `status` FROM `servers` WHERE `hostname` = %s', hostname)
-        if len(result) == 0:
-            return None
-        else:
-            return ServerManager.server_status_val(result[0])
-
-    def get_host_list(self, status = None, detail = False): #override
-        if detail:
-            sql = 'SELECT `hostname`, `last_heartbeat`, `status`, `store_host`, `store_module`,'
-            sql += ' `shadow_module`, `shadow_config`, `board_module`, `board_config`'
-        else:
-            sql = 'SELECT `hostname`, `status`, `store_module` IS NOT NULL'
-
-        sql += ' FROM `servers`'
-        if status != None:
-            sql += ' WHERE `status` = \'%s\'' % ServerManager.server_status_name(status)
-
-        sql += ' ORDER BY `id`'
-
-        return self._mysql.query(sql)
-
-    def copy(self, remote_master):
-        # List of servers
-        self._mysql.query('DELETE FROM `servers`')
-        self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
-
-        all_servers = remote_master.get_host_list(detail = True)
-        fields = ('hostname', 'last_heartbeat', 'status', 'store_host', 'store_module', 'shadow_module', 'shadow_config', 'board_module', 'board_config')
-        self._mysql.insert_many('servers', fields, None, all_servers, do_update = True)
-
-        # List of users
-        self._mysql.query('DELETE FROM `users`')
-        self._mysql.query('ALTER TABLE `users` AUTO_INCREMENT = 1')
-
-        all_users = remote_master.list_users()
-        fields = ('name', 'email', 'dn')
-        self._mysql.insert_many('users', fields, None, all_users, do_update = True)
-
-        # List of roles
-        self._mysql.query('DELETE FROM `roles`')
-        self._mysql.query('ALTER TABLE `roles` AUTO_INCREMENT = 1')
-
-        all_roles = remote_master.list_roles()
-        fields = ('name',)
-        self._mysql.insert_many('roles', fields, None, all_roles, do_update = True)
-
-        # List of authorizations
-        self._mysql.query('DELETE FROM `user_authorizations`')
-
-        targets = remote_master.list_authorization_targets()
-        targets.append(None)
-        for target in targets:
-            for user, role in remote_master.list_authorized_users(target):
-                self.authorize_user(user, role, target)
-
-    def get_next_master(self, current): #override
-        self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', current)
-        
-        # shadow config must be the same as master
-        result = self._mysql.query('SELECT `shadow_module`, `shadow_config` FROM `servers` ORDER BY `id` LIMIT 1')
-        if len(result) == 0:
-            raise RuntimeError('No servers can become master at this moment')
-
-        module, config_str = result[0]
-        return module, Configuration(json.loads(config_str))
+            self._mysql = MySQL(db_params)
 
     def get_applications(self, older_than = 0, app_id = None): #override
         sql = 'SELECT `applications`.`id`, `applications`.`write_request`, `applications`.`title`, `applications`.`path`,'
@@ -349,6 +258,110 @@ class MySQLMasterServer(MySQLAuthorizer, MasterServer):
 
         deleted = self._mysql.query(sql, *args)
         return deleted != 0
+
+
+class MySQLMasterServer(MySQLAuthorizer, MySQLScheduler, MasterServer):
+    def __init__(self, config):
+        MySQLAuthorizer.__init__(self, config)
+        MySQLScheduler.__init__(self, config)
+        MasterServer.__init__(self, config)
+
+        self._server_id = 0
+
+    def _connect(self): #override
+        self._mysql.query('LOCK TABLES `servers` WRITE')
+
+        if self.get_master_host() == 'localhost' or self.get_master_host() == socket.gethostname():
+            # This is the master server; wipe the table clean
+            self._mysql.query('DELETE FROM `servers`')
+            self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
+        else:
+            self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
+
+        self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
+        # id of this server
+        self._server_id = self._mysql.last_insert_id
+
+        self._mysql.query('UNLOCK TABLES')
+
+    def lock(self): #override
+        self._mysql.query('LOCK TABLES `servers` WRITE, `applications` WRITE, `users` READ')
+
+    def unlock(self): #override
+        self._mysql.query('UNLOCK TABLES')
+
+    def get_master_host(self): #override
+        return self._mysql.hostname()
+
+    def set_status(self, status, hostname): #override
+        self._mysql.query('UPDATE `servers` SET `status` = %s WHERE `hostname` = %s', ServerManager.server_status_name(status), hostname)
+
+    def get_status(self, hostname): #override
+        result = self._mysql.query('SELECT `status` FROM `servers` WHERE `hostname` = %s', hostname)
+        if len(result) == 0:
+            return None
+        else:
+            return ServerManager.server_status_val(result[0])
+
+    def get_host_list(self, status = None, detail = False): #override
+        if detail:
+            sql = 'SELECT `hostname`, `last_heartbeat`, `status`, `store_host`, `store_module`,'
+            sql += ' `shadow_module`, `shadow_config`, `board_module`, `board_config`'
+        else:
+            sql = 'SELECT `hostname`, `status`, `store_module` IS NOT NULL'
+
+        sql += ' FROM `servers`'
+        if status != None:
+            sql += ' WHERE `status` = \'%s\'' % ServerManager.server_status_name(status)
+
+        sql += ' ORDER BY `id`'
+
+        return self._mysql.query(sql)
+
+    def copy(self, remote_master):
+        # List of servers
+        self._mysql.query('DELETE FROM `servers`')
+        self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
+
+        all_servers = remote_master.get_host_list(detail = True)
+        fields = ('hostname', 'last_heartbeat', 'status', 'store_host', 'store_module', 'shadow_module', 'shadow_config', 'board_module', 'board_config')
+        self._mysql.insert_many('servers', fields, None, all_servers, do_update = True)
+
+        # List of users
+        self._mysql.query('DELETE FROM `users`')
+        self._mysql.query('ALTER TABLE `users` AUTO_INCREMENT = 1')
+
+        all_users = remote_master.list_users()
+        fields = ('name', 'email', 'dn')
+        self._mysql.insert_many('users', fields, None, all_users, do_update = True)
+
+        # List of roles
+        self._mysql.query('DELETE FROM `roles`')
+        self._mysql.query('ALTER TABLE `roles` AUTO_INCREMENT = 1')
+
+        all_roles = remote_master.list_roles()
+        fields = ('name',)
+        self._mysql.insert_many('roles', fields, None, all_roles, do_update = True)
+
+        # List of authorizations
+        self._mysql.query('DELETE FROM `user_authorizations`')
+
+        targets = remote_master.list_authorization_targets()
+        targets.append(None)
+        for target in targets:
+            for user, role in remote_master.list_authorized_users(target):
+                self.authorize_user(user, role, target)
+
+    def get_next_master(self, current): #override
+        self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', current)
+        
+        # shadow config must be the same as master
+        result = self._mysql.query('SELECT `shadow_module`, `shadow_config` FROM `servers` ORDER BY `id` LIMIT 1')
+        if len(result) == 0:
+            raise RuntimeError('No servers can become master at this moment')
+
+        module, config_str = result[0]
+        return module, Configuration(json.loads(config_str))
 
     def advertise_store(self, module, config): #override
         config = config.clone()

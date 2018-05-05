@@ -1,5 +1,5 @@
 from mysqlboard import MySQLUpdateBoard
-from mysqlmaster import MySQLMasterServer
+from mysqlmaster import MySQLAuthorizer, MySQLScheduler, MySQLMasterServer
 from mysqlstore import MySQLInventoryStore
 from socketappserver import SocketAppServer
 

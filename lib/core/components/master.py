@@ -10,6 +10,15 @@ class Authorizer(object):
     therefore be implemented as stateless as possible.
     """
 
+    @staticmethod
+    def get_instance(module, config):
+        import dynamo.core.components.impl as impl
+        cls = getattr(impl, module)
+        if not issubclass(cls, Authorizer):
+            raise RuntimeError('%s is not a subclass of Authorizer' % module)
+
+        return cls(config)
+
     def __init__(self, config):
         pass
 
@@ -88,77 +97,22 @@ class Authorizer(object):
         raise NotImplementedError('list_authorized_users')
 
 
-class MasterServer(Authorizer):
+class Scheduler(object):
     """
-    An interface to the master server that coordinates server activities.
+    Object responsible for scheduling applications.
     """
 
     @staticmethod
     def get_instance(module, config):
         import dynamo.core.components.impl as impl
         cls = getattr(impl, module)
-        if not issubclass(cls, MasterServer):
-            raise RuntimeError('%s is not a subclass of MasterServer' % module)
+        if not issubclass(cls, Scheduler):
+            raise RuntimeError('%s is not a subclass of Scheduler' % module)
 
         return cls(config)
 
     def __init__(self, config):
-        Authorizer.__init__(self, config)
-
-        self.connected = False
-
-    def connect(self):
-        """
-        Connect to the master server.
-        """
-        LOG.info('Connecting to master server')
-
-        self._connect()
-        self.connected = True
-
-        LOG.info('Master host: %s', self.get_master_host())
-
-    def lock(self):
-        raise NotImplementedError('lock')
-
-    def unlock(self):
-        raise NotImplementedError('unlock')
-
-    def get_master_host(self):
-        """
-        @return  Current master server host name.
-        """
-        raise NotImplementedError('get_master_host')
-
-    def set_status(self, status, hostname):
-        raise NotImplementedError('set_status')
-
-    def get_status(self, hostname):
-        raise NotImplementedError('get_status')
-
-    def get_host_list(self, status = None, detail = False):
-        """
-        Get data for all servers connected to this master server.
-        @param status   Limit to servers in the given status
-        @param detail   boolean
-        
-        @return If detail = True, list of full info. If detail = False, [(hostname, status, has_store)]
-        """
-        raise NotImplementedError('get_host_list')
-
-    def copy(self, remote_master):
-        """
-        When acting as a local shadow of a remote master server, copy the remote content to local.
-        @param remote_master  MasterServer instance of the remote server.
-        """
-        raise NotImplementedError('copy')
-
-    def get_next_master(self, current):
-        """
-        Return the shadow module name and configuration of the server next-in-line from the current master.
-        @return  (shadow module, shadow config)
-        """
-        raise NotImplementedError('get_next_master')
+        pass
 
     def get_writing_process_id(self):
         raise NotImplementedError('get_writing_process_id')
@@ -238,6 +192,80 @@ class MasterServer(Authorizer):
         @return True if success, False if not.
         """
         raise NotImplementedError('revoke_application_authorization')
+
+
+class MasterServer(Authorizer, Scheduler):
+    """
+    An interface to the master server that coordinates server activities.
+    """
+
+    @staticmethod
+    def get_instance(module, config):
+        import dynamo.core.components.impl as impl
+        cls = getattr(impl, module)
+        if not issubclass(cls, MasterServer):
+            raise RuntimeError('%s is not a subclass of MasterServer' % module)
+
+        return cls(config)
+
+    def __init__(self, config):
+        Authorizer.__init__(self, config)
+        Scheduler.__init__(self, config)
+
+        self.connected = False
+
+    def connect(self):
+        """
+        Connect to the master server.
+        """
+        LOG.info('Connecting to master server')
+
+        self._connect()
+        self.connected = True
+
+        LOG.info('Master host: %s', self.get_master_host())
+
+    def lock(self):
+        raise NotImplementedError('lock')
+
+    def unlock(self):
+        raise NotImplementedError('unlock')
+
+    def get_master_host(self):
+        """
+        @return  Current master server host name.
+        """
+        raise NotImplementedError('get_master_host')
+
+    def set_status(self, status, hostname):
+        raise NotImplementedError('set_status')
+
+    def get_status(self, hostname):
+        raise NotImplementedError('get_status')
+
+    def get_host_list(self, status = None, detail = False):
+        """
+        Get data for all servers connected to this master server.
+        @param status   Limit to servers in the given status
+        @param detail   boolean
+        
+        @return If detail = True, list of full info. If detail = False, [(hostname, status, has_store)]
+        """
+        raise NotImplementedError('get_host_list')
+
+    def copy(self, remote_master):
+        """
+        When acting as a local shadow of a remote master server, copy the remote content to local.
+        @param remote_master  MasterServer instance of the remote server.
+        """
+        raise NotImplementedError('copy')
+
+    def get_next_master(self, current):
+        """
+        Return the shadow module name and configuration of the server next-in-line from the current master.
+        @return  (shadow module, shadow config)
+        """
+        raise NotImplementedError('get_next_master')
 
     def advertise_store(self, module, config):
         raise NotImplementedError('advertise_store')
