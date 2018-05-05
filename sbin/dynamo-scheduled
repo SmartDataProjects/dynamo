@@ -19,7 +19,7 @@ from dynamo.core.manager import ServerManager
 from dynamo.core.components.master import Scheduler
 import dynamo.core.components.impl as comp_impl
 
-def loop_sequence(sequence_name, work_dir_base, user, config, sequence):
+def loop_sequence(sequence_name, app_paths, work_dir_base, user, config, sequence):
     ## Ignore SIGINT - see note above proc.terminate() at the end of the file
     ## We will react to SIGTERM by raising KeyboardInterrupt
     from dynamo.utils.signaling import SignalConverter
@@ -40,6 +40,9 @@ def loop_sequence(sequence_name, work_dir_base, user, config, sequence):
             break
     else:
         raise RuntimeError('No scheduler class found')
+
+    # OK I'm not caring any more
+    scheduler._mysql.reuse_connection = False
 
     work_dir = work_dir_base + '/' + sequence_name
     title = ''
@@ -70,14 +73,14 @@ def loop_sequence(sequence_name, work_dir_base, user, config, sequence):
 
                 if action[0] == EXECUTE:
                     title, arguments, criticality, write_request = action[1:]
-                    application = applications[title]
+                    app_path = app_paths[title]
     
                     LOG.info('Starting %s', title)
-                    LOG.info('Command: %s %s', application, arguments)
+                    LOG.info('Command: %s %s', app_path, arguments)
     
                     with open(work_dir + '/log.out', 'a') as out:
                         out.write('------------------------ ' + title + ' ------------------------\n')
-                        out.write('%s %s\n\n' % (application, arguments))
+                        out.write('%s %s\n\n' % (app_path, arguments))
     
                     with open(work_dir + '/log.err', 'a') as out:
                         out.write('------------------------ ' + title + ' ------------------------\n\n')
@@ -89,8 +92,8 @@ def loop_sequence(sequence_name, work_dir_base, user, config, sequence):
     
                     # Poll for task completion
                     while True:
-                        time.sleep(1)
-                        applications = scheduler.get_applications(app_id = app_id)
+                        time.sleep(5)
+                        applications = scheduler.get_applications(app_id = task_id)
                         if len(applications) == 0:
                             # We assume the application was killed an removed
                             status = ServerManager.EXC_KILLED
@@ -215,6 +218,9 @@ if __name__ == '__main__':
             break
     else:
         raise RuntimeError('No scheduler class found')
+
+    # OK I'm not caring any more
+    scheduler._mysql.reuse_connection = False
     
     ## Load the sequences
     # commands
@@ -222,7 +228,7 @@ if __name__ == '__main__':
     # criticality
     REPEAT_SEQ, REPEAT_LINE, PASS = range(3)
     
-    applications = {} # {title: exec path}
+    app_paths = {} # {title: exec path}
     authorized_applications = set() # set of titles
     sequences = {} # {name: sequence}
     sequence = []
@@ -262,7 +268,7 @@ if __name__ == '__main__':
     
                 LOG.debug('Define application %s = %s (write enabled: %d) (line %d)', title, application, write_enabled, iline)
     
-                applications[title] = application
+                app_paths[title] = application
                 if write_enabled:
                     authorized_applications.add(title)
                 
@@ -357,10 +363,10 @@ if __name__ == '__main__':
                     # This application is used multiple times in the sequence
                     continue
     
-                application = applications[title]
+                app_path = app_paths[title]
     
                 os.makedirs(path)
-                shutil.copy(application, path + '/exec.py')
+                shutil.copy(app_path, path + '/exec.py')
     
                 # Make symlinks from subdir/_std(out|err) to log.(out|err)
                 os.symlink(work_dir + '/log.out', path + '/_stdout')
@@ -377,7 +383,7 @@ if __name__ == '__main__':
         ## Create a process for each sequence and start as daemons
         processes = []
         for name, sequence in sequences.iteritems():
-            proc = multiprocessing.Process(target = loop_sequence, name = name, args = (name, args.work_dir, args.auth_user, config, sequence))
+            proc = multiprocessing.Process(target = loop_sequence, name = name, args = (name, app_paths, args.work_dir, args.auth_user, config, sequence))
             proc.daemon = True
             proc.start()
             LOG.info('Started sequence %s.', name)
