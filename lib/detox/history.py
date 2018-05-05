@@ -206,6 +206,9 @@ class DetoxHistory(object):
         if self.read_only:
             return
 
+        reuse = self._mysql.reuse_connection
+        self._mysql.reuse_connection = True
+
         self._mysql.use_db(self.cache_db)
 
         # Make a snapshot table first and then fill the SQLite tables
@@ -303,6 +306,8 @@ class DetoxHistory(object):
             self._update_cache_usage('sites', cycle_number)
 
         self._mysql.use_db(None)
+
+        self._mysql.reuse_connection = reuse
 
     def get_deletion_decisions(self, cycle_number, size_only = True):
         """
