@@ -236,7 +236,7 @@ def pre_execution(path, is_local, read_only, defaults_config, inventory, authori
                 # shouldn't happen but who knows
                 continue
 
-            serverutils.bindmount(base, path + base)
+            bindmount(base, path + base)
 
         os.mkdir(path + '/tmp')
         os.chmod(path + '/tmp', 0777)

@@ -105,7 +105,7 @@ class MySQLReplicaLock(object):
                 except KeyError:
                     locked_blocks = dataset.attr['locked_blocks'] = {}
 
-                if block_pattern is None:
+                if block_name is None:
                     for replica in dataset.replicas:
                         if replica.site not in sites:
                             continue

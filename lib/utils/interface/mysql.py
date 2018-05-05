@@ -89,6 +89,7 @@ class MySQL(object):
     def close(self):
         if self._connection is not None:
             self._connection.close()
+            self._connection = None
 
     def config(self):
         conf = Configuration()
