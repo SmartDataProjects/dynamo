@@ -472,7 +472,7 @@ class DynamoServer(object):
         return writing_process
 
     def _collect_updates(self, queue):
-        print_every = 1000
+        print_every = 100000
         updates_received = 0
         deletes_received = 0
 

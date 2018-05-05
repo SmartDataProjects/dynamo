@@ -45,17 +45,19 @@ class File(object):
         if self._block_name() is None:
             raise ObjectError('Cannot embed into inventory a stray file %s', self._lfn)
 
-        if hasattr(inventory, 'has_store'):
-            # this is the server-side main inventory which doesn't need a running image of files
-            # will be never called with check = True
-            return self
-
         try:
             dataset = inventory.datasets[self._dataset_name()]
         except KeyError:
             raise ObjectError('Unknown dataset %s', self._dataset_name())
 
         block = dataset.find_block(self._block_name(), must_find = True)
+
+        if hasattr(inventory, 'has_store'):
+            # This is the server-side main inventory which doesn't need a running image of files,
+            # so we don't call block.find_file (which triggers an inventory store lookup) but simply
+            # return a clone of this file linked to the proper block.
+            # Also in this case the function will never be called with check = True
+            return File(self._lfn, block, self.size, self.id)
 
         # At this point (if there is any change) block must have loaded files as a non-volatile set
         lfile = block.find_file(self._lfn)
@@ -81,16 +83,21 @@ class File(object):
         if self._block_name() is None:
             return None
 
-        if hasattr(inventory, 'has_store'):
-            # this is the server-side main inventory which doesn't need a running image of files
-            return self
-
         try:
             dataset = inventory.datasets[self._dataset_name()]
-            block = dataset.find_block(self._block_name())
+            block = dataset.find_block(self._block_name(), must_find = True)
             # At this point (if there is any change) block must have loaded files as a real (non-cache) set
-            lfile = block.find_file(self._lfn, must_find = True)
         except (KeyError, ObjectError):
+            return None
+
+        if hasattr(inventory, 'has_store'):
+            # This is the server-side main inventory which doesn't need a running image of files,
+            # so we don't call block.find_file (which triggers an inventory store lookup) but simply
+            # return a clone of this file linked to the proper block.
+            return File(self._lfn, block, self.size, self.id)
+
+        lfile = block.find_file(self._lfn)
+        if lfile is None:
             return None
 
         lfile.unlink()
