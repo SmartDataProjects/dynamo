@@ -255,12 +255,18 @@ class ServerManager(object):
         """
         Get the application status.
         """
-        status = self.master.get_application_status(self, app_id)
-        if status is None:
+        applications = self.master.get_applications(self, app_id = app_id)
+        if len(applications) == 0:
             # We assume the application was killed an removed
             return ServerManager.EXC_KILLED
         else:
-            return status
+            return applications[0]['status']
+
+    def set_applicaton_status(self, app_id, status):
+        """
+        Set the application status.
+        """
+        self.master.update_application(app_id, status = status)
 
     def check_write_auth(self, title, user, path):
         """
