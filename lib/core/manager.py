@@ -255,32 +255,33 @@ class ServerManager(object):
         """
         Get the application status.
         """
-        applications = self.master.get_applications(self, app_id = app_id)
+        applications = self.master.get_applications(app_id = app_id)
         if len(applications) == 0:
             # We assume the application was killed an removed
             return ServerManager.EXC_KILLED
         else:
             return applications[0]['status']
 
-    def set_applicaton_status(self, app_id, status):
+    def set_application_status(self, app_id, status):
         """
         Set the application status.
         """
         self.master.update_application(app_id, status = status)
 
-    def check_write_auth(self, title, user, path):
+    def check_write_auth(self, title, user, path, exc_name = 'exec.py'):
         """
         Check the authorization of write-requesting application. The title, user_id, and the md5 hash of the application
         script must match the registration.
 
-        @param title   Title of the application
-        @param user    Requester user name
-        @param path    Application path
+        @param title    Title of the application
+        @param user     Requester user name
+        @param path     Application path
+        @param exc_name Executable file name
 
         @return boolean
         """
         # check authorization
-        with open(path + '/exec.py') as source:
+        with open(path + '/' + exc_name) as source:
             checksum = hashlib.md5(source.read()).hexdigest()
 
         return self.master.check_application_auth(title, user, checksum)
