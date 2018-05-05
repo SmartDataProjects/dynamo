@@ -6,6 +6,7 @@ import random
 import logging
 
 from dynamo.utils.interface.mysql import MySQL
+from dynamo.dataformat import Site
 
 LOG = logging.getLogger(__name__)
 
@@ -276,8 +277,8 @@ class DetoxHistory(object):
 
         sql = 'INSERT INTO `sites` VALUES (?, ?, ?)'
 
-        for site, quota in quotas.iteritems():
-            snapshot_cursor.execute(sql, (site_id_map[site.name], site.status, quota))
+        for entry in self._mysql.xquery('SELECT `site_id`, 0+`status`, `quota` FROM `{0}`'.format(table_name)):
+            snapshot_cursor.execute(sql, entry)
 
         snapshot_db.commit()
 
