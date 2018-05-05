@@ -255,26 +255,33 @@ class ServerManager(object):
         """
         Get the application status.
         """
-        status = self.master.get_application_status(self, app_id)
-        if status is None:
+        applications = self.master.get_applications(app_id = app_id)
+        if len(applications) == 0:
             # We assume the application was killed an removed
             return ServerManager.EXC_KILLED
         else:
-            return status
+            return applications[0]['status']
 
-    def check_write_auth(self, title, user, path):
+    def set_application_status(self, app_id, status):
+        """
+        Set the application status.
+        """
+        self.master.update_application(app_id, status = status)
+
+    def check_write_auth(self, title, user, path, exc_name = 'exec.py'):
         """
         Check the authorization of write-requesting application. The title, user_id, and the md5 hash of the application
         script must match the registration.
 
-        @param title   Title of the application
-        @param user    Requester user name
-        @param path    Application path
+        @param title    Title of the application
+        @param user     Requester user name
+        @param path     Application path
+        @param exc_name Executable file name
 
         @return boolean
         """
         # check authorization
-        with open(path + '/exec.py') as source:
+        with open(path + '/' + exc_name) as source:
             checksum = hashlib.md5(source.read()).hexdigest()
 
         return self.master.check_application_auth(title, user, checksum)
@@ -403,24 +410,3 @@ class ServerManager(object):
         for server in self.other_servers.itervalues():
             if server.board:
                 server.board.disconnect()
-
-
-class Authorizer(object):
-    """
-    Interface to provide read-only user authorization routines of the master server without exposing the server itself.
-    """
-
-    def __init__(self, manager):
-        # can't do
-        #  self.user_exists = manager.master.user_exists
-        # because self.user_exists.__self__ will point to master
-
-        self.user_exists = lambda name: manager.master.user_exists(name)
-        self.list_users = lambda: manager.master.list_users()
-        self.identify_user = lambda dn = '', name = '', with_id = False: manager.master.identify_user(dn = dn, name = name, with_id = with_id)
-        self.identify_role = lambda name, with_id = False: manager.master.identify_role(name, with_id = with_id)
-        self.list_roles = lambda: manager.master.list_roles()
-        self.list_authorization_targets = lambda: manager.master.list_authorization_targets()
-        self.check_user_auth = lambda user, role, target: manager.master.check_user_auth(user, role, target)
-        self.list_user_auth = lambda user: manager.master.list_user_auth(user)
-        self.list_authorized_users = lambda target: manager.master.list_authorized_users(target)

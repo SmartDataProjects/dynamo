@@ -67,14 +67,8 @@ class PhEDExDeletionInterface(DeletionInterface):
 
             for replica in replica_list:
                 if type(replica) is DatasetReplica:
-                    blocks = set(r.block for r in replica.block_replicas)
-
-                    if blocks == replica.dataset.blocks:
-                        deletion_lists['dataset'].append(replica.dataset)
-                    else:
-                        deletion_lists['block'].extend(blocks)
-
-                else: #BlockReplica
+                    deletion_lists['dataset'].append(replica.dataset)
+                else:
                     deletion_lists['block'].append(replica.block)
 
             self._run_deletion_request(request_mapping, site, 'dataset', deletion_lists['dataset'], comments)

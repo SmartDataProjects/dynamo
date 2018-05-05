@@ -13,9 +13,20 @@ import logging
 
 from dynamo.core.components.appserver import AppServer
 from dynamo.core.manager import ServerManager
+import dynamo.core.serverutils as serverutils
 
 SERVER_PORT = 39626
-DN_TRANSLATION = {'domainComponent': 'DC', 'organizationalUnitName': 'OU', 'commonName': 'CN'}
+DN_TRANSLATION = {
+    'commonName': 'CN',
+    'localityName': 'L',
+    'stateOrProvinceName': 'ST',
+    'organizationName': 'O',
+    'organizationalUnitName': 'OU',
+    'countryName': 'C',
+    'streetAddress': 'STREET',
+    'domainComponent': 'DC',
+    'userId': 'UID'
+}
 
 LOG = logging.getLogger(__name__)
 
@@ -148,35 +159,32 @@ class SocketAppServer(AppServer):
 
         self._sock.listen(5)
 
-        self._running = False
-
-    def start(self):
-        """Start a daemon thread that runs the accept loop and return."""
-
-        th = threading.Thread(target = self._accept_applications)
-        th.daemon = True
-        th.start()
-
-        self._running = True
-
     def stop(self):
         """Shut down the socket."""
 
         self._running = False
 
-        self._sock.shutdown(socket.SHUT_RDWR)
-        self._sock.close()
+        try:
+            self._sock.shutdown(socket.SHUT_RDWR)
+            self._sock.close()
+        except:
+            pass
 
-    def _accept_applications(self):
-        """Infinite loop to serve incoming connections."""
-
+    def _accept_applications(self): #override
         while True:
             # blocks until there is a connection
             # keeps blocking when socket is closed
             try:
                 conn, addr = self._sock.accept()
-            except:
+            except Exception as ex:
                 if self._running:
+                    try:
+                        if ex.errno == 9: # Bad file descriptor -> socket is closed
+                            self.stop()
+                            break
+                    except:
+                        pass
+
                     LOG.error('Application server connection failed with error: %s.' % str(sys.exc_info()[1]))
                     continue
 
@@ -246,7 +254,7 @@ class SocketAppServer(AppServer):
                     shutil.rmtree(workarea)
 
         except:
-            io.send('failed', 'Exception: ' + str(sys.exc_info()[1]))
+            io.send('failed', sys.exc_info()[0].__name__ + ': ' + str(sys.exc_info()[1]))
         finally:
             conn.close()
 
@@ -335,36 +343,14 @@ class SocketAppServer(AppServer):
         port_data = io.recv()
         addr = (io.host, port_data['port'])
 
-        proc = multiprocessing.Process(target = self._run_interactive, name = 'interactive', args = (workarea, addr))
+        defaults_config, inventory, authorizer = self.dynamo_server.get_subprocess_args()
+
+        args = (addr, workarea, defaults_config, inventory, authorizer)
+        proc = multiprocessing.Process(target = run_interactive_through_socket, name = 'interactive', args = args)
         proc.start()
         proc.join()
 
         LOG.info('Finished interactive session.')
-
-    def _run_interactive(self, workarea, addr):
-        conns = (socket.create_connection(addr), socket.create_connection(addr))
-        stdout = conns[0].makefile('w')
-        stderr = conns[1].makefile('w')
-
-        if addr[0] == 'locahost' or addr[0] == '127.0.0.1':
-            is_local = True
-        else:
-            is_local = (addr[0] == socket.gethostname())
-
-        # use the receive side of conns[0] for stdin
-        make_console = lambda l: SocketConsole(conns[0], l)
-
-        self.dynamo_server.run_interactive(workarea, is_local, make_console, stdout, stderr)
-
-        stdout.close()
-        stderr.close()
-
-        for conn in conns:
-            try:
-                conn.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
-            conn.close()
 
     def _serve_synch_app(self, app_id, path, addr):
         conns = (socket.create_connection(addr), socket.create_connection(addr))
@@ -394,6 +380,31 @@ class SocketAppServer(AppServer):
 
         return {'status': ServerManager.application_status_name(msg['status']), 'exit_code': msg['exit_code']}
 
+
+def run_interactive_through_socket(addr, workarea, defaults_config, inventory, authorizer):
+    conns = (socket.create_connection(addr), socket.create_connection(addr))
+    stdout = conns[0].makefile('w')
+    stderr = conns[1].makefile('w')
+
+    if addr[0] == 'localhost' or addr[0] == '127.0.0.1':
+        is_local = True
+    else:
+        is_local = (addr[0] == socket.gethostname())
+
+    # use the receive side of conns[0] for stdin
+    make_console = lambda l: SocketConsole(conns[0], l)
+
+    serverutils.run_interactive(workarea, is_local, defaults_config, inventory, authorizer, make_console, stdout, stderr)
+
+    stdout.close()
+    stderr.close()
+
+    for conn in conns:
+        try:
+            conn.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+        conn.close()
 
 class SocketConsole(code.InteractiveConsole):
     """

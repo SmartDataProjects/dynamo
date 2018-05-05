@@ -9,6 +9,7 @@ from argparse import ArgumentParser
 parser = ArgumentParser(description = 'Generate SitesInfo and RemainingDatasets files for Unified.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
 parser.add_argument('--cycle', '-y', metavar = 'ID', dest = 'cycle', type = int, default = 0, help = 'Cycle number.')
+parser.add_argument('--out', '-o', metavar = 'PATH', dest = 'out_path', help = 'Output directory.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -16,7 +17,7 @@ sys.argv = []
 from dynamo.dataformat import Configuration, Site
 from dynamo.history.history import TransactionHistoryInterface
 from dynamo.policy.producers import CRABAccessHistory
-from dynamo.core.executable import inventory, read_only, make_standard_logger
+from dynamo.core.executable import inventory, make_standard_logger
 from dynamo.detox.history import DetoxHistory
 
 config = Configuration(args.config)
@@ -44,8 +45,8 @@ dataset_lists = collections.defaultdict(dict)
 dscount_now = collections.defaultdict(int)
 dscount_prev = collections.defaultdict(int)
 
-if not read_only:
-    sitesinfo = open(config.out_path + '/SitesInfo.txt', 'w')
+if args.out_path:
+    sitesinfo = open(args.out_path + '/SitesInfo.txt', 'w')
 else:
     sitesinfo = sys.stdout
 
@@ -175,17 +176,17 @@ for partition in config.partitions:
             for (dataset, size, decision, reason) in datasets:
                 dscount_prev[dataset] += 1
 
-if not read_only:
+if sitesinfo is not sys.stdout:
     sitesinfo.close()
 
 for site in dataset_lists:
     st = inventory.sites[site]
 
-    if not read_only:
-        if not os.path.isdir(config.out_path + '/result/' + site):
-            os.makedirs(config.out_path + '/result/' + site)
+    if args.out_path:
+        if not os.path.isdir(args.out_path + '/result/' + site):
+            os.makedirs(args.out_path + '/result/' + site)
 
-        remaining = open(config.out_path + '/result/' + site + '/RemainingDatasets.txt', 'w')
+        remaining = open(args.out_path + '/result/' + site + '/RemainingDatasets.txt', 'w')
     else:
         print 'RemainingDatasets for', site
         remaining = sys.stdout
@@ -219,7 +220,7 @@ for site in dataset_lists:
 
             remaining.write('  %6.1f %9.1f %6d %6d  %s\n' % (rank, size * 1.e-9, dscount_prev[dataset], dscount_now[dataset], dataset))
 
-    if not read_only:
+    if remaining is not sys.stdout:
         remaining.close()
         
 LOG.info('Finished writing ASCII SiteInfo.')

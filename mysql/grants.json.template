@@ -14,7 +14,7 @@
       ["ALL PRIVILEGES", "dynamo\\_tmp"],
       ["SELECT, LOCK TABLES", "dynamoregister"],
       ["SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE TEMPORARY TABLES, DROP", "dynamohistory"],
-      ["SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE, DROP", "dynamohistory\\_cache"],
+      ["SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE TEMPORARY TABLES, CREATE, DROP", "dynamohistory\\_cache"],
       ["INSERT, UPDATE", "dynamo", "system"],
       ["INSERT, UPDATE, DELETE", "dynamo", "dataset_requests"],
       ["INSERT, UPDATE, DELETE", "dynamo", "dataset_accesses"],
@@ -28,6 +28,7 @@
       ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_queue"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "transfer_queue"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "stage_queue"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "detox_locks"],
       ["SELECT", "dynamoserver", "users"]
     ]
   },

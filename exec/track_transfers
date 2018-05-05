@@ -220,12 +220,18 @@ for sitename, site_records in records.iteritems():
             # projected size of all block replicas
             try:
                 site = inventory.sites[sitename]
-                dataset = inventory.datasets[datasetname]
+                dataset = inventory.datasets[replica_record.dataset_name]
             except KeyError:
                 pass
             else:
                 replica = site.find_dataset_replica(dataset)
-                total = replica.size(physical = False)
+                if replica is None:
+                    LOG.warning('Replica %s:%s does not exist', site.name, dataset.name)
+                    total = 0
+                    replica_record.status = HistoryRecord.ST_CANCELLED
+                    update_record = True
+                else:
+                    total = replica.size(physical = False)
 
             if total != replica_record.size:
                 replica_record.size = total

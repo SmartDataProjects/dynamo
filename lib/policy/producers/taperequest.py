@@ -17,7 +17,7 @@ class TapeCopyRequested(object):
     produces = ['tape_copy_requested']
 
     def __init__(self, config):
-        self._phedex = PhEDEx(config.phedex)
+        self._phedex = PhEDEx(config.get('phedex', None))
 
     def load(self, inventory):
         for site in inventory.sites.itervalues():
@@ -50,3 +50,4 @@ class TapeCopyRequested(object):
 
                         # just label the entire dataset
                         dataset.attr['tape_copy_requested'] = True
+ 

@@ -75,14 +75,14 @@ echo "Installing the daemon."
 if [[ $(uname -r) =~ el7 ]]
 then
   cp $SOURCE/daemon/dynamo-scheduled.systemd /usr/lib/systemd/system/dynamo-scheduled.service
-  sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /usr/lib/systemd/system/dynamo-scheduled.service
+  sed -i "s|_DYNAMOBASE_|$DYNAMO_BASE|" /usr/lib/systemd/system/dynamo-scheduled.service
   sed -i "s|_WORKDIR_|$WORKDIR|" /usr/lib/systemd/system/dynamo-scheduled.service
   sed -i "s|_USER_|$SCHED_USER|" /usr/lib/systemd/system/dynamo-scheduled.service
 
   systemctl daemon-reload
 else
   cp $SOURCE/daemon/dynamo-scheduled.sysv /etc/init.d/dynamo-scheduled
-  sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamo-scheduled
+  sed -i "s|_DYNAMOBASE_|$DYNAMO_BASE|" /etc/init.d/dynamo-scheduled
   sed -i "s|_WORKDIR_|$WORKDIR|" /etc/init.d/dynamo-scheduled
   sed -i "s|_USER_|$SCHED_USER|" /etc/init.d/dynamo-scheduled
   chmod +x /etc/init.d/dynamo-scheduled

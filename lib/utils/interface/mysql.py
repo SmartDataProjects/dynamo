@@ -32,7 +32,7 @@ class MySQL(object):
     def escape_string(string):
         return MySQLdb.escape_string(string)
     
-    def __init__(self, config):
+    def __init__(self, config = None):
         config = Configuration(config)
 
         self._connection_parameters = dict(MySQL._default_parameters)
@@ -84,15 +84,33 @@ class MySQL(object):
             self._connection_parameters['db'] = db
 
     def hostname(self):
-        cursor = self.get_cursor()
-        cursor.execute('SELECT @@hostname')
-        result = cursor.fetchall()
-        cursor.close()
-        return result[0][0]
+        return self.query('SELECT @@hostname')[0]
 
     def close(self):
         if self._connection is not None:
             self._connection.close()
+            self._connection = None
+
+    def config(self):
+        conf = Configuration()
+        for key in ['host', 'user', 'passwd', 'db']:
+            try:
+                conf[key] = self._connection_parameters[key]
+            except KeyError:
+                pass
+        try:
+            conf['config_file'] = self._connection_parameters['read_default_file']
+        except KeyError:
+            pass
+        try:
+            conf['config_group'] = self._connection_parameters['read_default_group']
+        except KeyError:
+            pass
+
+        conf['reuse_connection'] = self.reuse_connection
+        conf['max_query_len'] = self.max_query_len
+
+        return conf
 
     def get_cursor(self, cursor_cls = MySQLdb.connections.Connection.default_cursor):
         if self._connection is None:
@@ -472,10 +490,7 @@ class MySQL(object):
             pool_expr = '('
 
             while itr:
-                if type(obj) is str:
-                    pool_expr += "'%s'" % obj
-                else:
-                    pool_expr += str(obj)
+                pool_expr += MySQLdb.escape(obj, MySQLdb.converters.conversions)
 
                 try:
                     obj = itr.next()
@@ -483,7 +498,7 @@ class MySQL(object):
                     itr = None
                     break
 
-                if self.max_query_len > 0 and len(pool_expr) < self.max_query_len:
+                if self.max_query_len > 0 and len(pool_expr) > self.max_query_len:
                     break
 
                 pool_expr += ','

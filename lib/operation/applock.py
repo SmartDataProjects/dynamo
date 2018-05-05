@@ -18,12 +18,6 @@ class ApplicationLockInterface(object):
         self.unlock()
         return exc_type is None and exc_value is None and traceback is None
 
-    def check(self):
-        """
-        Return (user, role) that owns the current lock. If unlocked, return None.
-        """
-        raise NotImplementedError('check')
-
     def lock(self):
         raise NotImplementedError('lock')
 

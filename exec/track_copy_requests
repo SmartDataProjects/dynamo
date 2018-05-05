@@ -41,7 +41,7 @@ def update(request_id, item, site):
         return
 
     sql = 'UPDATE `active_copies` SET `status` = \'completed\', `updated` = NOW() WHERE `request_id` = %s AND `item` = %s AND `site` = %s'
-    registry.query(update_sql, request_id, item, site)
+    registry.query(sql, request_id, item, site)
 
 sql = 'SELECT r.`id`, a.`item`, a.`site`, r.`group` FROM `active_copies` AS a'
 sql += ' INNER JOIN `copy_requests` AS r ON r.`id` = a.`request_id`'

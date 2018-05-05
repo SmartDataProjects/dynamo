@@ -16,10 +16,10 @@
 INITLOG_ARGS=""
 
 EXECUTABLE=dynamo-scheduled # executable this script spawns
-TARGET=_INSTALLPATH_/sbin/dynamo-scheduled # full path to the executable
+TARGET=_DYNAMOBASE_/sbin/dynamo-scheduled # full path to the executable
 ARGS="/etc/dynamo/scheduled.seq _WORKDIR_ _USER_"
 
-source _INSTALLPATH_/etc/profile.d/init.sh
+source _DYNAMOBASE_/etc/profile.d/init.sh
 
 # Path to the running script, server binary, and short-form for messages.
 PIDFILE=${PIDFILE-/var/run/dynamo-scheduled.pid}

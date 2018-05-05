@@ -2,7 +2,93 @@ import logging
 
 LOG = logging.getLogger(__name__)
 
-class MasterServer(object):
+class Authorizer(object):
+    """
+    Interface to provide read-only user authorization routines of the master server
+    without exposing the server itself.
+    Authorizer and MasterServer are used from multiple threads. The methods should
+    therefore be implemented as stateless as possible.
+    """
+
+    def __init__(self, config):
+        pass
+
+    def user_exists(self, name):
+        """
+        Check if a user exists.
+        @param name  User name
+        
+        @return boolean
+        """
+        raise NotImplementedError('user_exists')
+
+    def list_users(self):
+        """
+        @return  [(name, dn, email)]
+        """
+        raise NotImplementedError('list_users')
+
+    def identify_user(self, dn = '', name = '', with_id = False):
+        """
+        Translate the DN to user account name.
+        @param dn     Certificate Distinguished Name.
+        @param name   User name.
+        @param get_id If true, return a tuple (user name, user id)
+
+        @return  User name string or (user name, user id). None if not identified
+        """
+        raise NotImplementedError('identify_user')
+
+    def identify_role(self, name, with_id = False):
+        """
+        Check if a role exists.
+        @param name  Role name
+        
+        @return  Role name string or (role name, role id). None if not identified
+        """
+        raise NotImplementedError('identify_role')
+
+    def list_roles(self):
+        """
+        @return  List of role names
+        """
+        raise NotImplementedError('list_roles')
+
+    def list_authorization_targets(self):
+        """
+        @return List of authorization targets.
+        """
+        raise NotImplementedError('list_authorization_targets')
+
+    def check_user_auth(self, user, role, target):
+        """
+        Check the authorization on target for (user, role)
+        @param user    User name.
+        @param role    Role (role) name user is acting in. If None, authorize the user under all roles.
+        @param target  Authorization target. If None, authorize the user for all targets.
+
+        @return boolean
+        """
+        raise NotImplementedError('check_user_auth')
+
+    def list_user_auth(self, user):
+        """
+        @param user    User name.
+        
+        @return [(role, target)]
+        """
+        raise NotImplementedError('list_user_auth')
+
+    def list_authorized_users(self, target):
+        """
+        @param target Authorization target. Pass None to get the list of users authorized for all targets.
+
+        @return List of (user name, role name) authorized for the target.
+        """
+        raise NotImplementedError('list_authorized_users')
+
+
+class MasterServer(Authorizer):
     """
     An interface to the master server that coordinates server activities.
     """
@@ -17,6 +103,8 @@ class MasterServer(object):
         return cls(config)
 
     def __init__(self, config):
+        Authorizer.__init__(self, config)
+
         self.connected = False
 
     def connect(self):
@@ -117,6 +205,14 @@ class MasterServer(object):
         """
         raise NotImplementedError('update_application')
 
+    def delete_application(self, app_id):
+        """
+        Delete the application record.
+        
+        @param app_id    Application id
+        """
+        raise NotImplementedError('delete_application')
+
     def check_application_auth(self, title, user, checksum):
         raise NotImplementedError('check_application_auth')
 
@@ -165,32 +261,6 @@ class MasterServer(object):
     def declare_remote_store(self, hostname):
         raise NotImplementedError('declare_remote_store')
 
-    def user_exists(self, name):
-        """
-        Check if a user exists.
-        @param name  User name
-        
-        @return boolean
-        """
-        raise NotImplementedError('user_exists')
-
-    def list_users(self):
-        """
-        @return  [(name, dn, email)]
-        """
-        raise NotImplementedError('list_users')
-
-    def identify_user(self, dn = '', name = '', with_id = False):
-        """
-        Translate the DN to user account name.
-        @param dn     Certificate Distinguished Name.
-        @param name   User name.
-        @param get_id If true, return a tuple (user name, user id)
-
-        @return  User name string or (user name, user id). None if not identified
-        """
-        raise NotImplementedError('identify_user')
-
     def add_user(self, name, dn, email = None):
         """
         Add a new user.
@@ -218,21 +288,6 @@ class MasterServer(object):
         """
         raise NotImplementedError('delete_user')
 
-    def identify_role(self, name, with_id = False):
-        """
-        Check if a role exists.
-        @param name  Role name
-        
-        @return  Role name string or (role name, role id). None if not identified
-        """
-        raise NotImplementedError('identify_role')
-
-    def list_roles(self):
-        """
-        @return  List of role names
-        """
-        raise NotImplementedError('list_roles')
-
     def add_role(self, name):
         """
         Add a new role.
@@ -241,31 +296,6 @@ class MasterServer(object):
         @return True if success, False if not.
         """
         raise NotImplementedError('add_role')
-
-    def list_authorization_targets(self):
-        """
-        @return List of authorization targets.
-        """
-        raise NotImplementedError('list_authorization_targets')
-
-    def check_user_auth(self, user, role, target):
-        """
-        Check the authorization on target for (user, role)
-        @param user    User name.
-        @param role    Role (role) name user is acting in. If None, authorize the user under all roles.
-        @param target  Authorization target. If None, authorize the user for all targets.
-
-        @return boolean
-        """
-        raise NotImplementedError('check_user_auth')
-
-    def list_user_auth(self, user):
-        """
-        @param user    User name.
-        
-        @return [(role, target)]
-        """
-        raise NotImplementedError('list_user_auth')
 
     def authorize_user(self, user, role, target):
         """
@@ -289,13 +319,11 @@ class MasterServer(object):
         """
         raise NotImplementedError('revoke_user_authorization')
 
-    def list_authorized_users(self, target):
+    def create_authorizer(self):
         """
-        @param target Authorization target. Pass None to get the list of users authorized for all targets.
-
-        @return List of (user name, role name) authorized for the target.
+        @return A new authorizer instance with a fresh connection
         """
-        raise NotImplementedError('list_authorized_users')
+        raise NotImplementedError('create_authorizer')
 
     def check_connection(self):
         """

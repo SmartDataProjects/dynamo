@@ -136,7 +136,7 @@ try:
         # unlock excess
         for item, site in existing_locks - loaded_locks:
             if not read_only:
-                mysql.query('UPDATE `detox_locks` SET `unlock_date` = NOW() WHERE `id` = %s', existing_locks[(item, site)])
+                mysql.query('UPDATE `detox_locks` SET `unlock_date` = NOW() WHERE `id` = %s', existing_lock_ids[(item, site)])
             num_unlocked += 1
 
             try:
@@ -161,7 +161,7 @@ mysql.query('UNLOCK TABLES')
 # update block replicas that got unlocked
 from dynamo.source.impl import PhEDExReplicaInfoSource
 
-replica_source = PhEDExReplicaInfoSource()
+replica_source = PhEDExReplicaInfoSource(config.replica_source)
 
 for dataset_name in unlocked_datasets:
     try:
@@ -175,4 +175,6 @@ for dataset_name in unlocked_datasets:
         continue
 
     for rep in source_reps:
+
+
         inventory.update(rep)

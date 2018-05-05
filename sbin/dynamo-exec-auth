@@ -141,7 +141,7 @@ with open(args.executable[0]) as source:
 if args.user is None:
     users = [None]
 else:
-    users = args.users
+    users = args.user
 
 for user in users:
     if user is None:

@@ -137,7 +137,7 @@ class Site(object):
             return self._dataset_replicas[dataset]
         except KeyError:
             if must_find:
-                raise ObjectError('Could not find replica of %s in %s', dataset.name, self._name)
+                raise ObjectError('Could not find replica of %s in %s' % (dataset.name, self._name))
             else:
                 return None
 
@@ -147,7 +147,7 @@ class Site(object):
                 dataset_replica = self._dataset_replicas[block.dataset]
             except KeyError:
                 if must_find:
-                    raise ObjectError('Could not find replica of %s in %s', block.dataset.name, self._name)
+                    raise ObjectError('Could not find replica of %s in %s' % (block.dataset.name, self._name))
                 else:
                     return None
             else:
@@ -160,7 +160,7 @@ class Site(object):
                         return block_replica
 
             if must_find:
-                raise ObjectError('Could not find replica of %s in %s', block.full_name(), self._name)
+                raise ObjectError('Could not find replica of %s in %s' % (block.full_name(), self._name))
             else:
                 return None
 
@@ -220,7 +220,7 @@ class Site(object):
 
     def update_partitioning(self, replica):
         if replica.site is not self:
-            raise ObjectError('%s passed to update_partitioning of %s', replica, self)
+            raise ObjectError('%s passed to update_partitioning of %s' % (str(replica), str(self)))
 
         if type(replica).__name__ == 'DatasetReplica':
             if replica not in self._dataset_replicas:

@@ -15,6 +15,7 @@
         "config": {
           "max_size": 200.0,
           "block_request_max": 0.5,
+          "overwritten_groups": ["DataOps"],
           "db_params": {
             "db": "dynamoregister"
           }

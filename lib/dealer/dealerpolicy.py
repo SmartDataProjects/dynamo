@@ -21,26 +21,86 @@ class ReplicaPlacementRule(object):
         return True
 
 
+# "already_exists" functions
+# Return values are
+# 0 -> item does not exist at the site
+# 1 -> item exists but is owned by a different group
+# 2 -> item exists and is owned by the group
+
 def dataset_already_exists(dataset, site, group):
+    level = 0
     replica = site.find_dataset_replica(dataset)
     if replica is not None and replica.is_full():
+        level = 1
+
         owners = set(brep.group for brep in replica.block_replicas)
         if len(owners) == 1 and list(owners)[0] == group:
-            return True
+            level = 2
 
-    return False
+    return level
 
 def block_already_exists(block, site, group):
+    level = 0
     replica = site.find_block_replica(block)
-    return replica is not None and replica.is_complete and replica.group == group
+    if replica is not None and replica.is_complete:
+        level = 1
+        if replica.group == group:
+            level = 2
+
+    return level
 
 def blocks_already_exist(blocks, site, group):
+    complete_at_site = True
+    owned_at_site = True
+
     for block in blocks:
         replica = site.find_block_replica(block)
-        if replica is None or not replica.is_complete or replica.group != group:
-            return False
+        if replica is None or not replica.is_complete:
+            complete_at_site = False
+        if replica.group != group:
+            owned_at_site = False
 
-    return True
+    if complete_at_site:
+        if owned_at_site:
+            return 2
+        else:
+            return 1
+    else:
+        return 0
+
+# "group finding" functions
+# If the item is owned by a single group at the site, return the group object
+# Otherwise return None
+
+def dataset_owned_by(dataset, site, group):
+    replica = site.find_dataset_replica(dataset)
+    if replica is not None:
+        owners = set(brep.group for brep in replica.block_replicas)
+        if len(owners) == 1:
+            return list(owners)[0]
+
+    return None
+
+def block_owned_by(block, site, group):
+    replica = site.find_block_replica(block)
+    if replica is not None:
+        return replica.group
+
+    return None
+
+def blocks_owned_by(blocks, site, group):
+    group = None
+
+    for block in blocks:
+        replica = site.find_block_replica(block)
+        if replica is None:
+            if group is None:
+                group = replica.group
+            else:
+                return None
+
+    return group
+
 
 class DealerPolicy(object):
     """
@@ -143,29 +203,32 @@ class DealerPolicy(object):
             item_name = item.name
             item_size = item.size
             already_exists = dataset_already_exists
+            owned_by = dataset_owned_by
 
         elif type(item) is Block:
             item_name = item.full_name()
             item_size = item.size
             already_exists = block_already_exists
+            owned_by = block_owned_by
 
         elif type(item) is list:
             # list of blocks (must belong to the same dataset)
             if len(item) == 0:
-                return None, None, None
+                return None, None, None, None
 
             dataset = item[0].dataset
             item_name = dataset.name
             item_size = sum(b.size for b in item)
             already_exists = blocks_already_exist
+            owned_by = blocks_owned_by
 
         else:
-            return None, None, None
+            return None, None, None, None
 
-        return item_name, item_size, already_exists
+        return item_name, item_size, already_exists, owned_by
 
     def find_destination_for(self, item, group, partition, candidates = None):
-        item_name, item_size, already_exists = self.item_info(item)
+        item_name, item_size, already_exists, owned_by = self.item_info(item)
 
         if item_name is None:
             LOG.warning('Invalid request found. Skipping.')
@@ -210,7 +273,7 @@ class DealerPolicy(object):
         return site_array[isite][0], item_name, item_size, None
 
     def check_destination(self, item, destination, group, partition):
-        item_name, item_size, already_exists = self.item_info(item)
+        item_name, item_size, already_exists, owned_by = self.item_info(item)
 
         if item_name is None:
             LOG.warning('Invalid request found. Skipping.')
@@ -220,7 +283,7 @@ class DealerPolicy(object):
             LOG.debug('Destination %s for %s is not a target site.', destination.name, item_name)
             return item_name, item_size, 'Not a target site'
 
-        if already_exists(item, destination, group):
+        if already_exists(item, destination, group) == 2:
             LOG.debug('%s is already at %s.', item_name, destination.name)
             return item_name, item_size, 'Replica exists'
 

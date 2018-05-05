@@ -54,7 +54,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         self._mysql.insert_many('copied_replicas', fields, mapping, dataset_list, do_update = False)
 
-    def make_deletion_entry(self, cycle_number, site, operation_id, approved, datasets, size): #override
+    def make_deletion_entry(self, cycle_number, site, operation_id, approved, dataset_list): #override
         if self.test or self.read_only or cycle_number == 0:
             # Don't do anything
             return

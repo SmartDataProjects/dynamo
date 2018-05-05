@@ -6,6 +6,7 @@ import random
 import logging
 
 from dynamo.utils.interface.mysql import MySQL
+from dynamo.dataformat import Site
 
 LOG = logging.getLogger(__name__)
 
@@ -84,6 +85,9 @@ class DetoxHistory(object):
 
         if self.read_only:
             return
+    
+        reuse = self._mysql.reuse_connection
+        self._mysql.reuse_connection = True
 
         self._mysql.use_db(self.cache_db)
 
@@ -112,7 +116,7 @@ class DetoxHistory(object):
                 dataset_name = replica.dataset.name
                 for condition_id, block_replicas in matches.iteritems():
                     size = sum(r.size for r in block_replicas)
-                    yield (size, decision, condition_id, site_name, dataset_name)
+                    yield (site_name, dataset_name, size, decision, condition_id)
 
         fields = ('site', 'dataset', 'size', 'decision', 'condition')
         self._mysql.insert_many('replicas_tmp', fields, None, replica_entry(deleted_list, 'delete'), do_update = False)
@@ -178,8 +182,8 @@ class DetoxHistory(object):
 
         sql = 'INSERT INTO `replicas` VALUES (?, ?, ?, ?, ?)'
 
-        for entry in self._mysql.xquery('SELECT (`site_id`, `dataset_id`, `size`, `decision`, `condition`) FROM `{0}`'.format(table_name)):
-            snapshot_cursor(sql, entry)
+        for entry in self._mysql.xquery('SELECT `site_id`, `dataset_id`, `size`, `decision`, `condition` FROM `{0}`'.format(table_name)):
+            snapshot_cursor.execute(sql, entry)
 
         snapshot_db.commit()
         
@@ -191,6 +195,8 @@ class DetoxHistory(object):
         # reset DB connection
         self._mysql.use_db(None)
 
+        self._mysql.reuse_connection = reuse
+
     def save_siteinfo(self, cycle_number, quotas):
         """
         Save the site partition quotas and site statuses for the cycle.
@@ -200,6 +206,9 @@ class DetoxHistory(object):
 
         if self.read_only:
             return
+
+        reuse = self._mysql.reuse_connection
+        self._mysql.reuse_connection = True
 
         self._mysql.use_db(self.cache_db)
 
@@ -268,8 +277,8 @@ class DetoxHistory(object):
 
         sql = 'INSERT INTO `sites` VALUES (?, ?, ?)'
 
-        for site, quota in quotas.iteritems():
-            snapshot_cursor.execute(sql, (site_id_map[site.name], site.status, quota))
+        for entry in self._mysql.xquery('SELECT `site_id`, 0+`status`, `quota` FROM `{0}`'.format(table_name)):
+            snapshot_cursor.execute(sql, entry)
 
         snapshot_db.commit()
 
@@ -298,6 +307,8 @@ class DetoxHistory(object):
             self._update_cache_usage('sites', cycle_number)
 
         self._mysql.use_db(None)
+
+        self._mysql.reuse_connection = reuse
 
     def get_deletion_decisions(self, cycle_number, size_only = True):
         """

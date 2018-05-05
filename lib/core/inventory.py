@@ -26,12 +26,6 @@ class ObjectRepository(object):
         # null group always exist
         self.groups[None] = df.Group.null_group
 
-    def load(self):
-        pass
-
-    def make_object(self, repstr):
-        return eval('df.' + repstr)
-
     def update(self, obj):
         return obj.embed_into(self)
 
@@ -55,6 +49,74 @@ class ObjectRepository(object):
         pass
 
 
+class DynamoInventoryProxy(ObjectRepository):
+    """Inventory object used by Dynamo applications"""
+    def __init__(self, inventory):
+        self.groups = inventory.groups
+        self.sites = inventory.sites
+        self.datasets = inventory.datasets
+        self.partitions = inventory.partitions
+        self._store = inventory.new_store_handle()
+
+        # When the user application is authorized to change the inventory state, all updated
+        # and deleted objects are kept in this list until the end of execution.
+        self._update_commands = None
+
+    def update(self, obj): #override
+        """
+        Update an object. Only update the member values of the immediate object.
+        If object state changes, register the new clone to be sent back to the Dynamo server.
+        @param obj    Object to embed into this inventory.
+        """
+
+        try:
+            embedded_clone, updated = obj.embed_into(self, check = True)
+        except:
+            LOG.error('Exception in inventory.update(%s)', str(obj))
+            raise
+
+        if updated:
+            self.register_update(embedded_clone)
+
+        return embedded_clone
+
+    def register_update(self, obj): #override
+        """
+        Put the text representation of obj to _update_commands.
+        """
+
+        if self._update_commands is None:
+            return
+
+        LOG.debug('%s has changed. Adding a clone to updated objects list.', str(obj))
+        self._update_commands.append((DynamoInventory.CMD_UPDATE, repr(obj)))
+
+    def delete(self, obj): #override
+        """
+        Delete an object. Behavior over other objects linked to the one deleted
+        depends on the type.
+        @param obj    Object to delete from this inventory.
+        """
+
+        deleted_object = ObjectRepository.delete(self, obj)
+
+        if deleted_object is None:
+            return
+
+        if self._update_commands is not None:
+            LOG.debug('%s is deleted.', str(obj))
+            self._update_commands.append((DynamoInventory.CMD_DELETE, repr(deleted_object)))
+
+    def clear_update(self): #override
+        """
+        Empty the _updated_objects and _deleted_objects lists. This operation
+        *does not* revert the updates done to this inventory.
+        """
+
+        if self._update_commands is not None:
+            self._update_commands = []
+
+
 class DynamoInventory(ObjectRepository):
     """
     Inventory class. ObjectRepository with a persistent store backend.
@@ -63,20 +125,26 @@ class DynamoInventory(ObjectRepository):
     CMD_UPDATE, CMD_DELETE, CMD_EOM = range(3)
     _cmd_str = ['UPDATE', 'DELETE', 'EOM']
 
+    @property
+    def has_store(self):
+        return self._has_store
+
     def __init__(self, config):
         ObjectRepository.__init__(self)
 
+        # True when full content is available in memory
         self.loaded = False
+
+        # True if configured with a PersistencyStore this can write to
+        # (all inventories will have a persistency backend, but cannot write to dynamically assigned ones)
+        self._has_store = False
 
         self._store = None
         if 'persistency' in config:
+            self._has_store = True
             self.init_store(config.persistency.module, config.persistency.config)
 
         self.partition_def_path = config.partition_def_path
-        
-        # When the user application is authorized to change the inventory state, all updated
-        # and deleted objects are kept in this list until the end of execution.
-        self._update_commands = None
 
     def init_store(self, module, config):
         if self._store:
@@ -90,9 +158,6 @@ class DynamoInventory(ObjectRepository):
         source = InventoryStore.get_instance(module, config)
         self._store.clone_from(source)
         source.close()
-
-    def has_store(self):
-        return (self._store is not None)
 
     def store_version(self):
         return self._store.version
@@ -108,6 +173,12 @@ class DynamoInventory(ObjectRepository):
         Save the full inventory content to store.
         """
         self._store.save_data(self)
+
+    def new_store_handle(self):
+        return self._store.new_handle()
+
+    def create_proxy(self):
+        return DynamoInventoryProxy(self)
 
     def load(self, groups = (None, None), sites = (None, None), datasets = (None, None)):
         """
@@ -152,6 +223,9 @@ class DynamoInventory(ObjectRepository):
         LOG.info('Data is loaded to memory. %d groups, %d sites, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.groups), len(self.sites), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
         self.loaded = True
+
+    def make_object(self, repstr):
+        return eval('df.' + repstr)
 
     def _load_partitions(self):
         """Load partition data from a text table."""
@@ -254,55 +328,28 @@ class DynamoInventory(ObjectRepository):
         else:
             return None
 
-    def update(self, obj, write = False, changelog = None):
+    def update(self, obj): #override
         """
-        Update an object. Only update the member values of the immediate object.
-        When calling from a subprocess, pass down the unlinked clone of the argument
-        to _update_commands.
-        @param obj    Object to embed into this inventory.
-        @param write  Write updated object to persistent store.
+        Update an object in memory and write it to store.
+        @param obj        Object to embed into this inventory.
         """
 
-        try:
-            embedded_clone, updated = obj.embed_into(self, check = True)
-        except:
-            LOG.error('Exception in inventory.update(%s)', str(obj))
-            raise
+        LOG.debug('Saving changes on %s to inventory store.', str(obj))
 
-        if updated:
-            self.register_update(embedded_clone, write, changelog)
+        embedded_clone = ObjectRepository.update(self, obj)
 
-        return embedded_clone
-
-    def register_update(self, obj, write = False, changelog = None):
-        """
-        Put the obj to _update_commands list and write to store.
-        """
-
-        if self._update_commands is not None:
-            if changelog is not None:
-                changelog.info('Updating %s', str(obj))
-
-            LOG.debug('%s has changed. Adding a clone to updated objects list.', str(obj))
-            self._update_commands.append((DynamoInventory.CMD_UPDATE, repr(obj)))
-
-        if write:
-            if changelog is not None:
-                changelog.info('Saving %s', str(obj))
-
-            LOG.debug('%s has changed. Saving changes to inventory store.', str(obj))
+        if self._has_store:
             try:
-                obj.write_into(self._store)
+                embedded_clone.write_into(self._store)
             except:
                 LOG.error('Exception writing %s to inventory store', str(obj))
-                raise
+                raise        
 
-    def delete(self, obj, write = False):
+    def delete(self, obj): #override
         """
-        Delete an object. Behavior over other objects linked to the one deleted
+        Delete an object from memory and write the change to store.
         depends on the type.
         @param obj    Object to delete from this inventory.
-        @param write  Record deletion to persistent store.
         """
 
         deleted_object = ObjectRepository.delete(self, obj)
@@ -310,20 +357,9 @@ class DynamoInventory(ObjectRepository):
         if deleted_object is None:
             return
 
-        if self._update_commands is not None:
-            self._update_commands.append((DynamoInventory.CMD_DELETE, repr(deleted_object)))
-
-        if write:
+        if self._has_store:
             try:
                 deleted_object.delete_from(self._store)
             except:
                 LOG.error('Exception writing deletion of %s to inventory store', str(obj))
                 raise
-
-    def clear_update(self):
-        """
-        Empty the _updated_objects and _deleted_objects lists. This operation
-        *does not* revert the updates done to this inventory.
-        """
-
-        self._update_commands = []
