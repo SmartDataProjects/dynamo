@@ -161,11 +161,12 @@ class DynamoServer(object):
 
         sys.stderr.write(' Application id: %d\n' % app_id)
         sys.stderr.write(' Path: %s\n' % path)
-        if self._is_local:
-            sys.stderr.write(' PID: %d\n' % resp_data['pid'])
 
         if asynch:
             return
+
+        if self._is_local:
+            sys.stderr.write(' PID: %d\n' % resp_data['pid'])
 
         sys.stderr.write('+++++++++++++++++++++++++++++++++++++++++++++++++++++\n')
 
