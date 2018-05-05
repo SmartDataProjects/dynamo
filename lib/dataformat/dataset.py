@@ -143,7 +143,6 @@ class Dataset(object):
             setattr(self, key, value)
 
     def copy(self, other):
-        self.id = other.id
         self.status = other.status
         self.data_type = other.data_type
         self._software_version_id = other._software_version_id

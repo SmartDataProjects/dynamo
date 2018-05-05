@@ -53,7 +53,6 @@ class Group(object):
         return not self.__eq__(other)
 
     def copy(self, other):
-        self.id = other.id
         self._olevel = other._olevel
 
     def embed_into(self, inventory, check = False):

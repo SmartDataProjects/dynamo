@@ -19,6 +19,9 @@ class Block(object):
 
     @staticmethod
     def _fill_files_cache(block):
+        if block.id == 0:
+            return frozenset()
+
         files = frozenset(Block._inventory_store.get_files(block))
 
         if len(files) != block._num_files:
@@ -136,7 +139,6 @@ class Block(object):
         if self._dataset_name() != other._dataset_name():
             raise ObjectError('Cannot copy a block of %s into a block of %s' % (other._dataset_name(), self._dataset_name()))
 
-        self.id = other.id
         self.is_open = other.is_open
         self.last_update = other.last_update
 
@@ -294,6 +296,6 @@ class Block(object):
                         pass
 
                 if self._files is None:
-                    self._files = Block._inventory_store.get_files(block)
+                    self._files = Block._inventory_store.get_files(self)
 
             return self._files

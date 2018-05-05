@@ -76,7 +76,6 @@ class Site(object):
     def copy(self, other):
         """Only copy simple member variables."""
 
-        self.id = other.id
         self.host = other.host
         self.storage_type = other.storage_type
         # Temporarily commenting out to not overwrite what Max collected

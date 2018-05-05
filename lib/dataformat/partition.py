@@ -53,7 +53,7 @@ class Partition(object):
             setattr(self, key, value)
 
     def copy(self, other):
-        self.id = other.id
+        pass
 
     def embed_into(self, inventory, check = False):
         updated = False

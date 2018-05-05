@@ -39,7 +39,6 @@ class File(object):
         if self._block_full_name() != other._block_full_name():
             raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._block_full_name(), self._block_full_name())
 
-        self.id = other.id
         self.size = other.size
 
     def embed_into(self, inventory, check = False):
