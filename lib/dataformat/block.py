@@ -5,14 +5,12 @@ import weakref
 
 from exceptions import ObjectError, IntegrityError
 
-## TODO
-# Add/remove operations on block.files in the subprocesses may get reset
-# Need a mechanism to permanintize files once there is a write operation
-
 class Block(object):
-    """Smallest data unit for data management."""
+    """
+    Smallest data unit for data management.
+    """
 
-    __slots__ = ['_name', '_dataset', 'id', 'size', 'num_files', 'is_open', 'replicas', 'last_update', '_files']
+    __slots__ = ['_name', '_dataset', 'id', '_size', '_num_files', 'is_open', 'replicas', 'last_update', '_files']
 
     _files_cache = collections.OrderedDict()
     _files_cache_lock = threading.Lock()
@@ -20,15 +18,14 @@ class Block(object):
     _inventory_store = None
 
     @staticmethod
-    def _fill_files_cache(block, check_consistency = True):
-        files = Block._inventory_store.get_files(block)
+    def _fill_files_cache(block):
+        files = frozenset(Block._inventory_store.get_files(block))
 
-        if check_consistency:
-            if len(files) != block.num_files:
-                raise IntegrityError('Number of files mismatch in %s: predicted %d, loaded %d' % (str(block), block.num_files, len(files)))
-            size = sum(f.size for f in files)
-            if size != block.size:
-                raise IntegrityError('Block file mismatch in %s: predicted %d, loaded %d' % (str(block), block.size, size))
+        if len(files) != block._num_files:
+            raise IntegrityError('Number of files mismatch in %s: predicted %d, loaded %d' % (str(block), block._num_files, len(files)))
+        size = sum(f.size for f in files)
+        if size != block._size:
+            raise IntegrityError('Block file mismatch in %s: predicted %d, loaded %d' % (str(block), block._size, size))
 
         while len(Block._files_cache) >= Block._MAX_FILES_CACHE_DEPTH:
             # Keep _files_cache FIFO to Block._MAX_FILES_CACHE_DEPTH
@@ -73,6 +70,26 @@ class Block(object):
         return self._dataset
 
     @property
+    def num_files(self):
+        return self._num_files
+
+    @num_files.setter
+    def num_files(self, value):
+        if value != self._num_files:
+            self._check_and_load_files(cache = False)
+            self._num_files = value
+
+    @property
+    def size(self):
+        return self._size
+
+    @num_files.setter
+    def size(self, value):
+        if value != self._size:
+            self._check_and_load_files(cache = False)
+            self._size = value
+
+    @property
     def files(self):
         return self._check_and_load_files()
 
@@ -82,8 +99,8 @@ class Block(object):
         else:
             self._name = Block.to_internal_name(name)
         self._dataset = dataset
-        self.size = size
-        self.num_files = num_files
+        self._size = size
+        self._num_files = num_files
         self.is_open = is_open
         self.last_update = last_update
         
@@ -97,19 +114,19 @@ class Block(object):
         replica_sites = '[%s]' % (','.join([r.site.name for r in self.replicas]))
 
         return 'Block %s (size=%d, num_files=%d, is_open=%s, last_update=%s, replicas=%s, id=%d)' % \
-            (self.full_name(), self.size, self.num_files, self.is_open,
+            (self.full_name(), self._size, self._num_files, self.is_open,
                 time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)),
                 replica_sites, self.id)
 
     def __repr__(self):
         # this representation cannot be directly eval'ed into a Block
         return 'Block(%s,%s,%d,%d,%s,%d,%d,False)' % \
-            (repr(self.real_name()), repr(self._dataset_name()), self.size, self.num_files, self.is_open, self.last_update, self.id)
+            (repr(self.real_name()), repr(self._dataset_name()), self._size, self._num_files, self.is_open, self.last_update, self.id)
 
     def __eq__(self, other):
         return self is other or \
             (self._name == other._name and self._dataset_name() == other._dataset_name() and \
-            self.size == other.size and self.num_files == other.num_files and \
+            self._size == other._size and self._num_files == other._num_files and \
             self.is_open == other.is_open and self.last_update == other.last_update)
 
     def __ne__(self, other):
@@ -120,10 +137,14 @@ class Block(object):
             raise ObjectError('Cannot copy a block of %s into a block of %s' % (other._dataset_name(), self._dataset_name()))
 
         self.id = other.id
-        self.size = other.size
-        self.num_files = other.num_files
         self.is_open = other.is_open
         self.last_update = other.last_update
+
+        if self._size != other._size or self._num_files != other._num_files:
+            # updating file parameters -> need to load files permanently
+            self._check_and_load_files(cache = False)
+            self._size = other._size
+            self._num_files = other._num_files
 
     def embed_into(self, inventory, check = False):
         try:
@@ -134,7 +155,7 @@ class Block(object):
         block = dataset.find_block(self._name)
         updated = False
         if block is None:
-            block = Block(self._name, dataset, self.size, self.num_files, self.is_open, self.last_update, self.id)
+            block = Block(self._name, dataset, self._size, self._num_files, self.is_open, self.last_update, self.id)
             dataset.blocks.add(block)
             updated = True
         elif check and (block is self or block == self):
@@ -163,12 +184,14 @@ class Block(object):
         for replica in list(self.replicas):
             replica.unlink()
 
-        for lfile in list(self.files):
-            lfile.unlink(files = self.files)
+        # not unlinking individual files - they are not linked to anything other than this block
 
         self._dataset.blocks.remove(self)
-        self._dataset.size -= self.size
-        self._dataset.num_files -= self.num_files
+
+        try:
+            Block._files_cache.pop(self)
+        except KeyError:
+            pass
 
     def write_into(self, store):
         store.save_block(self)
@@ -190,23 +213,38 @@ class Block(object):
 
         return Block.to_full_name(self._dataset_name(), self.real_name())
 
-    def find_file(self, lfn, must_find = False, updating = False):
+    def find_file(self, lfn, must_find = False):
         """
         @param lfn        File name
         @param must_find  Raise an exception if file is not found.
-        @param updating   If True, don't check size and num_files consistency if files are to be loaded.
         """
-
-        files = self._check_and_load_files(check_consistency = (not updating))
-
         try:
-            return next(f for f in files if f._lfn == lfn)
+            return next(f for f in self.files if f._lfn == lfn)
 
         except StopIteration:
             if must_find:
                 raise ObjectError('Cannot find file %s' % str(lfn))
             else:
                 return None
+
+    def add_file(self, lfile):
+        """
+        Add a file to self._files. This function does *not* increment _num_files or _size.
+        """
+        # make self._files a non-volatile set
+        self._check_and_load_files(cache = False)
+        self._files.add(lfile)
+
+    def remove_file(self, lfile):
+        """
+        Remove a file from self._files. This function does *not* decrement _num_files or _size.
+        """
+        if lfile not in self.files:
+            return
+
+        # make self._files a non-volatile set
+        self._check_and_load_files(cache = False)
+        self._files.remove(lfile)
 
     def find_replica(self, site, must_find = False):
         try:
@@ -221,35 +259,41 @@ class Block(object):
             else:
                 return None
 
-    def add_file(self, lfile):
-        # this function can change block_replica.is_complete
-
-        files = self.files
-
-        files.add(lfile)
-
-        self.size += lfile.size
-        self.num_files += 1
-
     def _dataset_name(self):
         if type(self._dataset) is str:
             return self._dataset
         else:
             return self._dataset.name
 
-    def _check_and_load_files(self, check_consistency = True):
-        # Used by File.embed_into - need to load the list of known files without consistency check
+    def _check_and_load_files(self, cache = True):
         with Block._files_cache_lock:
-            if self._files is not None:
-                # self._files is either a real set (if _files was directly set), a valid weak proxy to a set,
-                # or an expired weak proxy to a set.
-                try:
-                    len(self._files)
-                except ReferenceError:
-                    # expired proxy
-                    self._files = None
+            if cache:
+                if self._files is not None:
+                    # self._files is either a real set (if _files was directly set), a valid weak proxy to a frozenset,
+                    # or an expired weak proxy to a frozenset.
+                    try:
+                        len(self._files)
+                    except ReferenceError:
+                        # expired proxy
+                        self._files = None
+    
+                if self._files is None:
+                    self._files = weakref.proxy(Block._fill_files_cache(self))
 
-            if self._files is None:
-                self._files = weakref.proxy(Block._fill_files_cache(self, check_consistency = check_consistency))
+            else:
+                if type(self._files) is weakref.ProxyType:
+                    try:
+                        self._files = set(self._files)
+                    except ReferenceError:
+                        # expired proxy
+                        self._files = None
+
+                    try:
+                        Block._files_cache.pop(self)
+                    except KeyError:
+                        pass
+
+                if self._files is None:
+                    self._files = Block._inventory_store.get_files(block)
 
             return self._files

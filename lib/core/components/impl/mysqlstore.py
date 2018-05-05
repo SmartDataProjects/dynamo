@@ -138,7 +138,6 @@ class MySQLInventoryStore(InventoryStore):
         if block.id == 0:
             return files
 
-        # assuming unique block names
         sql = 'SELECT `id`, `size`, `name` FROM `files` WHERE `block_id` = %s'
 
         for fid, size, name in self._mysql.xquery(sql, block.id):

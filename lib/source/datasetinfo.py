@@ -62,20 +62,18 @@ class DatasetInfoSource(object):
         """
         raise NotImplementedError('get_dataset')
 
-    def get_block(self, name, dataset = None, with_files = False):
+    def get_block(self, name, with_files = False):
         """
         Get a linked set of Blocks-Files with full information.
         @param name     Name of block
-        @param dataset  If not None, link the block against this dataset.
         @return  Block with full list of Files
         """
         raise NotImplementedError('get_block')
 
-    def get_file(self, name, block = None):
+    def get_file(self, name):
         """
         Get a File object.
         @param name  Name of file
-        @param block If not None, link the file against this block.
         @return  File
         """
         raise NotImplementedError('get_file')

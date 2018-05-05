@@ -46,6 +46,11 @@ class File(object):
         if self._block_name() is None:
             raise ObjectError('Cannot embed into inventory a stray file %s', self._lfn)
 
+        if hasattr(inventory, 'has_store'):
+            # this is the server-side main inventory which doesn't need a running image of files
+            # will be never called with check = True
+            return self
+
         try:
             dataset = inventory.datasets[self._dataset_name()]
         except KeyError:
@@ -53,11 +58,12 @@ class File(object):
 
         block = dataset.find_block(self._block_name(), must_find = True)
 
-        lfile = block.find_file(self._lfn, updating = True)
+        # At this point (if there is any change) block must have loaded files as a non-volatile set
+        lfile = block.find_file(self._lfn)
         updated = False
         if lfile is None:
             lfile = File(self._lfn, block, self.size, self.id)
-            block.files.add(lfile) # not add_file - block has to be updated by itself
+            block.add_file(lfile) # doesn't change the block attributes
 
             updated = True
         elif check and (lfile is self or lfile == self):
@@ -76,24 +82,27 @@ class File(object):
         if self._block_name() is None:
             return None
 
+        if hasattr(inventory, 'has_store'):
+            # this is the server-side main inventory which doesn't need a running image of files
+            return self
+
         try:
             dataset = inventory.datasets[self._dataset_name()]
             block = dataset.find_block(self._block_name())
+            # At this point (if there is any change) block must have loaded files as a real (non-cache) set
             lfile = block.find_file(self._lfn, must_find = True)
         except (KeyError, ObjectError):
             return None
 
         lfile.unlink()
+
         return lfile
 
-    def unlink(self, files = None):
-        if files is None:
-            files = self._block.files
+    def unlink(self):
+        if type(self._block.files) is not set:
+            self._block.files = set(self._block.files)
 
-        files.remove(self)
-
-        self._block.size -= self.size
-        self._block.num_files -= 1
+        self._block.files.remove(self)
 
     def write_into(self, store):
         store.save_file(self)
