@@ -16,7 +16,6 @@ class MySQLInventoryStore(InventoryStore):
         InventoryStore.__init__(self, config)
 
         self._mysql = MySQL(config.db_params)
-        self._compute_version()
 
     def close(self):
         self._mysql.close()
@@ -374,8 +373,6 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('DROP TABLE `partitions`')
         self._mysql.query('RENAME TABLE `partitions_tmp` TO `partitions`')
 
-        self._compute_version()
-
         return num
 
     def _save_groups(self, groups): #override
@@ -394,8 +391,6 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('DROP TABLE `groups`')
         self._mysql.query('RENAME TABLE `groups_tmp` TO `groups`')
 
-        self._compute_version()
-
         return num
 
     def _save_sites(self, sites): #override
@@ -412,8 +407,6 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql.query('DROP TABLE `sites`')
         self._mysql.query('RENAME TABLE `sites_tmp` TO `sites`')
-
-        self._compute_version()
 
         return num
 
@@ -436,8 +429,6 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql.query('DROP TABLE `quotas`')
         self._mysql.query('RENAME TABLE `quotas_tmp` TO `quotas`')
-
-        self._compute_version()
 
         return num
 
@@ -475,8 +466,6 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('DROP TABLE `software_versions`')
         self._mysql.query('RENAME TABLE `software_versions_tmp` TO `software_versions`')
 
-        self._compute_version()
-
         return num
 
     def _save_blocks(self, blocks): #override
@@ -495,8 +484,6 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('DROP TABLE `blocks`')
         self._mysql.query('RENAME TABLE `blocks_tmp` TO `blocks`')
 
-        self._compute_version()
-
         return num
 
     def _save_files(self, files): #override
@@ -513,8 +500,6 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('DROP TABLE `files`')
         self._mysql.query('RENAME TABLE `files_tmp` TO `files`')
 
-        self._compute_version()
-
         return num
 
     def _save_dataset_replicas(self, replicas): #override
@@ -530,8 +515,6 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql.query('DROP TABLE `dataset_replicas`')
         self._mysql.query('RENAME TABLE `dataset_replicas_tmp` TO `dataset_replicas`')
-
-        self._compute_version()
 
         return num
 
@@ -566,8 +549,6 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('DROP TABLE `block_replica_sizes`')
         self._mysql.query('RENAME TABLE `block_replica_sizes_tmp` TO `block_replica_sizes`')
 
-        self._compute_version()
-
         return num
 
     def _clone_from_common_class(self, source): #override
@@ -582,8 +563,6 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query('TRUNCATE TABLE `%s`' % table)
             rows = source._mysql.xquery('SELECT %s FROM `%s`' % (fields_str, table))
             self._mysql.insert_many(table, fields, None, rows, do_update = False)
-
-        self._compute_version()
 
     def _yield_partitions(self): #override
         sql = 'SELECT `id`, `name` FROM `partitions`'
@@ -809,8 +788,6 @@ class MySQLInventoryStore(InventoryStore):
             # new insert
             block.id = block_id
 
-        self._compute_version()
-
     def delete_block(self, block): #override
         dataset_id = block.dataset.id
         if dataset_id == 0:
@@ -822,8 +799,6 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' WHERE b.`dataset_id` = %s AND b.`name` = %s'
 
         self._mysql.query(sql, dataset_id, block.real_name())
-
-        self._compute_version()
 
     def save_file(self, lfile): #override
         dataset_id = lfile.block.dataset.id
@@ -842,13 +817,9 @@ class MySQLInventoryStore(InventoryStore):
             # new insert
             lfile.id = file_id
 
-        self._compute_version()
-
     def delete_file(self, lfile): #override
         sql = 'DELETE FROM `files` WHERE `name` = %s'
         self._mysql.query(sql, lfile.lfn)
-
-        self._compute_version()
 
     def save_blockreplica(self, block_replica): #override
         block_id = block_replica.block.id
@@ -870,8 +841,6 @@ class MySQLInventoryStore(InventoryStore):
         else:
             sql = 'DELETE FROM `block_replica_sizes` WHERE `block_id` = %s AND `site_id` = %s'
             self._mysql.query(sql, block_id, site_id)
-
-        self._compute_version()
 
     def delete_blockreplica(self, block_replica): #override
         dataset_id = block_replica.block.dataset.id
@@ -899,8 +868,6 @@ class MySQLInventoryStore(InventoryStore):
             sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
             self._mysql.query(sql, dataset_id, site_id)
 
-        self._compute_version()
-
     def save_dataset(self, dataset): #override
         if dataset.software_version is not None and dataset._software_version_id != 0:
             sql = 'SELECT COUNT(*) FROM `software_versions` WHERE `id` = %s'
@@ -919,8 +886,6 @@ class MySQLInventoryStore(InventoryStore):
             # new insert
             dataset.id = dataset_id
 
-        self._compute_version()
-
     def delete_dataset(self, dataset): #override
         sql = 'DELETE FROM d, b, f, dr, br, brs USING `datasets` AS d'
         sql += ' LEFT JOIN `blocks` AS b ON b.`dataset_id` = d.`id`'
@@ -931,8 +896,6 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' WHERE d.`name` = %s'
 
         self._mysql.query(sql, dataset.name)
-
-        self._compute_version()
 
     def save_datasetreplica(self, dataset_replica): #override
         dataset_id = dataset_replica.dataset.id
@@ -945,8 +908,6 @@ class MySQLInventoryStore(InventoryStore):
 
         fields = ('dataset_id', 'site_id')
         self._mysql.insert_update('dataset_replicas', fields, dataset_id, site_id)
-
-        self._compute_version()
 
     def delete_datasetreplica(self, dataset_replica): #override
         dataset_id = dataset_replica.dataset.id
@@ -967,8 +928,6 @@ class MySQLInventoryStore(InventoryStore):
         sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
         self._mysql.query(sql, dataset_id, site_id)
 
-        self._compute_version()
-
     def save_group(self, group): #override
         fields = ('name', 'olevel')
         self._mysql.insert_update('groups', fields, group.name, Group.olevel_name(group.olevel))
@@ -977,16 +936,12 @@ class MySQLInventoryStore(InventoryStore):
         if group_id != 0:
             group.id = group_id
 
-        self._compute_version()
-
     def delete_group(self, group): #override
         sql = 'DELETE FROM `groups` WHERE `id` = %s'
         self._mysql.query(sql, group.id)
 
         sql = 'UPDATE `block_replicas` SET `group_id` = 0 WHERE `group_id` = %s'
         self._mysql.query(sql, group.id)
-
-        self._compute_version()
 
     def save_partition(self, partition): #override
         fields = ('name',)
@@ -995,8 +950,6 @@ class MySQLInventoryStore(InventoryStore):
 
         if partition_id != 0:
             partition.id = partition_id
-
-        self._compute_version()
 
         # For new partitions, persistency requires saving site partition data with default parameters.
         # We handle missing site partition entries at load time - if a row is missing, SitePartition object with
@@ -1008,8 +961,6 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' WHERE p.`name` = %s'
         self._mysql.query(sql, partition.name)
 
-        self._compute_version()
-
     def save_site(self, site): #override
         fields = ('name', 'host', 'storage_type', 'backend', 'status')
         self._mysql.insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.status)
@@ -1017,8 +968,6 @@ class MySQLInventoryStore(InventoryStore):
 
         if site_id != 0:
             site.id = site_id
-
-        self._compute_version()
 
         # For new sites, persistency requires saving site partition data with default parameters.
         # We handle missing site partition entries at load time - if a row is missing, SitePartition object with
@@ -1032,8 +981,6 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' LEFT JOIN `quotas` AS q ON q.`site_id` = s.`id`'
         sql += ' WHERE s.`name` = %s'
         self._mysql.query(sql, site.name)
-
-        self._compute_version()
 
     def save_sitepartition(self, site_partition): #override
         # We are only saving quotas. For superpartitions, there is nothing to do.
@@ -1051,9 +998,7 @@ class MySQLInventoryStore(InventoryStore):
         fields = ('site_id', 'partition_id', 'storage')
         self._mysql.insert_update('quotas', fields, site_id, partition_id, site_partition.quota * 1.e-12)
 
-        self._compute_version()
-
-    def _compute_version(self):
+    def version(self):
         """
         Concatenate hex checksums of all tables and take the md5.
         """
@@ -1065,5 +1010,4 @@ class MySQLInventoryStore(InventoryStore):
                 cksum = padding + cksum
             csstr += cksum
 
-        self.version = hashlib.md5(csstr).hexdigest()
-
+        return hashlib.md5(csstr).hexdigest()
