@@ -18,29 +18,9 @@ class Block(object):
     _inventory_store = None
 
     @staticmethod
-    def _fill_files_cache(block):
-        if block.id == 0:
-            return frozenset()
-
-        files = frozenset(Block._inventory_store.get_files(block))
-
-        if len(files) != block._num_files:
-            raise IntegrityError('Number of files mismatch in %s: predicted %d, loaded %d' % (str(block), block._num_files, len(files)))
-        size = sum(f.size for f in files)
-        if size != block._size:
-            raise IntegrityError('Block file mismatch in %s: predicted %d, loaded %d' % (str(block), block._size, size))
-
-        while len(Block._files_cache) >= Block._MAX_FILES_CACHE_DEPTH:
-            # Keep _files_cache FIFO to Block._MAX_FILES_CACHE_DEPTH
-            Block._files_cache.popitem(last = False)
-
-        Block._files_cache[block] = files
-        return files
-
-    @staticmethod
     def to_internal_name(name_str):
         # block name format: [8]-[4]-[4]-[4]-[12] where [n] is an n-digit hex.
-        return int(name_str.replace('-', ''), 16)
+        return long(name_str.replace('-', ''), 16)
 
     @staticmethod
     def to_real_name(name):
@@ -86,7 +66,7 @@ class Block(object):
     def size(self):
         return self._size
 
-    @num_files.setter
+    @size.setter
     def size(self, value):
         if value != self._size:
             self._check_and_load_files(cache = False)
@@ -280,7 +260,13 @@ class Block(object):
                         self._files = None
     
                 if self._files is None:
-                    self._files = weakref.proxy(Block._fill_files_cache(self))
+                    while len(Block._files_cache) >= Block._MAX_FILES_CACHE_DEPTH:
+                        # Keep _files_cache FIFO to Block._MAX_FILES_CACHE_DEPTH
+                        Block._files_cache.popitem(last = False)
+
+                    files = frozenset(self._load_files())
+                    Block._files_cache[self] = files
+                    self._files = weakref.proxy(files)
 
             else:
                 if type(self._files) is weakref.ProxyType:
@@ -296,6 +282,20 @@ class Block(object):
                         pass
 
                 if self._files is None:
-                    self._files = Block._inventory_store.get_files(self)
+                    self._files = self._load_files()
 
             return self._files
+
+    def _load_files(self):
+        if self.id == 0:
+            raise RuntimeError('Cannot load files for a block with no id')
+
+        files = Block._inventory_store.get_files(self)
+
+        if len(files) != self._num_files:
+            raise IntegrityError('Number of files mismatch in %s: predicted %d, loaded %d' % (str(self), self._num_files, len(files)))
+        size = sum(f.size for f in files)
+        if size != self._size:
+            raise IntegrityError('Self file mismatch in %s: predicted %d, loaded %d' % (str(self), self._size, size))
+
+        return files
