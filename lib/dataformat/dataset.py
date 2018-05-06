@@ -31,30 +31,30 @@ class Dataset(object):
 
     @staticmethod
     def data_type_name(arg):
-        if type(arg) is int:
+        try:
             return Dataset._data_types[arg - 1]
-        else:
+        except:
             return arg
 
     @staticmethod
     def data_type_val(arg):
-        if type(arg) is str:
+        try:
             return eval('Dataset.TYPE_' + arg.upper())
-        else:
+        except:
             return arg
 
     @staticmethod
     def status_name(arg):
-        if type(arg) is int:
+        try:
             return Dataset._statuses[arg - 1]
-        else:
+        except:
             return arg
 
     @staticmethod
     def status_val(arg):
-        if type(arg) is str:
+        try:
             return eval('Dataset.STAT_' + arg.upper())
-        else:
+        except:
             return arg
 
     @property

@@ -14,30 +14,30 @@ class Site(object):
 
     @staticmethod
     def storage_type_val(arg):
-        if type(arg) is str:
+        try:
             return eval('Site.TYPE_' + arg.upper())
-        else:
+        except:
             return arg
 
     @staticmethod
     def storage_type_name(arg):
-        if type(arg) is int:
+        try:
             return Site._storage_types[arg - 1]
-        else:
+        except:
             return arg
 
     @staticmethod
     def status_val(arg):
-        if type(arg) is str:
+        try:
             return eval('Site.STAT_' + arg.upper())
-        else:
+        except:
             return arg
 
     @staticmethod
     def status_name(arg):
-        if type(arg) is int:
+        try:
             return Site._statuses[arg - 1]
-        else:
+        except:
             return arg
 
     @property

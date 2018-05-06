@@ -13,16 +13,16 @@ class Group(object):
 
     @staticmethod
     def olevel_val(arg):
-        if type(arg) is str:
+        try:
             return eval('Group.OL_' + arg.upper())
-        else:
+        except:
             return arg
 
     @staticmethod
     def olevel_name(arg):
-        if type(arg) is int:
+        try:
             return Group._ownership_levels[arg - 1]
-        else:
+        except:
             return arg
 
     @property

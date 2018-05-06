@@ -592,9 +592,9 @@ class MySQLInventoryStore(InventoryStore):
             yield Site(
                 name,
                 host = host,
-                storage_type = storage_type,
+                storage_type = int(storage_type),
                 backend = backend,
-                status = status,
+                status = int(status),
                 sid = site_id
             )
 
