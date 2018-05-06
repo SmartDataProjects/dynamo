@@ -15,6 +15,9 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
     """DatasetInfoSource using PhEDEx and DBS."""
 
     def __init__(self, config = None):
+        if config is None:
+            config = Configuration()
+
         DatasetInfoSource.__init__(self, config)
 
         self._phedex = PhEDEx(config.get('phedex', None))
