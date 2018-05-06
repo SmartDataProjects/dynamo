@@ -248,6 +248,9 @@ class Block(object):
             return self._dataset.name
 
     def _check_and_load_files(self, cache = True):
+        if type(self._files) is set:
+            return self._files
+
         with Block._files_cache_lock:
             if cache:
                 if self._files is not None:
@@ -288,7 +291,7 @@ class Block(object):
 
     def _load_files(self):
         if self.id == 0:
-            raise RuntimeError('Cannot load files for a block with no id')
+            return set()
 
         files = Block._inventory_store.get_files(self)
 
@@ -296,6 +299,6 @@ class Block(object):
             raise IntegrityError('Number of files mismatch in %s: predicted %d, loaded %d' % (str(self), self._num_files, len(files)))
         size = sum(f.size for f in files)
         if size != self._size:
-            raise IntegrityError('Self file mismatch in %s: predicted %d, loaded %d' % (str(self), self._size, size))
+            raise IntegrityError('Size mismatch in %s: predicted %d, loaded %d' % (str(self), self._size, size))
 
         return files

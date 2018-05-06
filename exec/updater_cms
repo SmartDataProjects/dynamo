@@ -278,8 +278,6 @@ def create_block(block_tmp, dataset):
     block.copy(block_tmp)
     dataset.blocks.add(block)
     inventory.register_update(block)
-    # avoid database query
-    block._files = set()
 
     # add files
     for file_tmp in block_tmp.files:
