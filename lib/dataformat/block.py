@@ -307,5 +307,5 @@ class Block(object):
             # updating file parameters -> need to load files permanently
             self._check_and_load_files(cache = False)
 
-            self._size = other._size
-            self._num_files = other._num_files
+        self._size = other._size
+        self._num_files = other._num_files
