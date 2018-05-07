@@ -41,6 +41,8 @@ class CopyRequestsHandler(BaseHandler):
         """
 
         partition = inventory.partitions[policy.partition_name]
+
+        overwritten_groups = [inventory.groups[name] for name in self.overwritten_groups]
         
         # full list of blocks to be proposed to Dealer
         blocks_to_propose = {} # {site: {dataset: set of blocks}}
@@ -384,7 +386,7 @@ class CopyRequestsHandler(BaseHandler):
                         elif exists == 1:
                             # if the current group can be overwritten, make a request
                             # otherwise skip
-                            if len(self.overwritten_groups) != 0 and owned_by(item, destination) in self.overwritten_groups:
+                            if len(overwritten_groups) != 0 and owned_by(item, destination) in overwritten_groups:
                                 new_requests.append((item, destination))
                                 num_new -= 1
                         else:

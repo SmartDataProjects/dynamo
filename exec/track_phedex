@@ -253,7 +253,7 @@ for sitename, request_ids in records.iteritems():
             # We have an RRD file for each (site, dataset) combination
             rrd_file = '%s/%d_%s.rrd' % (site_rrd_dir, request_id, datasetname[1:].replace('/', '+'))
 
-            if copied != total:
+            if total != 0 and copied != total:
                 incomplete_replicas_rrd.add(rrd_file)
 
                 if not read_only and not os.path.exists(rrd_file):
