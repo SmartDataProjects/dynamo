@@ -146,8 +146,8 @@ def run_script(path, args, is_local, defaults_config, inventory, authorizer, que
         # cut out the first block of traceback (which refers to this function)
         exc_type, exc, tb = sys.exc_info()
 
-        if exc_type is SystemExit and exc.code == 0:
-            pass
+        if exc_type is SystemExit:
+            raise
         else:
             tb_lines = traceback.format_tb(tb)[1:]
             sys.stderr.write('Traceback (most recent call last):\n')
@@ -155,7 +155,7 @@ def run_script(path, args, is_local, defaults_config, inventory, authorizer, que
             sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
             sys.stderr.flush()
     
-            return 1
+            sys.exit(1)
 
     finally:
         post_execution(path, is_local, inventory, queue)
@@ -166,8 +166,6 @@ def run_script(path, args, is_local, defaults_config, inventory, authorizer, que
         stderr.close()
 
     # Queue stays available on the other end even if we terminate the process
-
-    return 0
 
 def run_interactive(path, is_local, defaults_config, inventory, authorizer, make_console, stdout = sys.stdout, stderr = sys.stderr):
     """

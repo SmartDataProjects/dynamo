@@ -154,7 +154,7 @@ class MySQLScheduler(Scheduler):
         sql += ' WHERE `status` = \'new\''
         if read_only:
             sql += ' AND `write_request` = 0'
-        sql += ' ORDER BY `timestamp` LIMIT 1'
+        sql += ' ORDER BY `applications`.`id` LIMIT 1'
         result = self._mysql.query(sql)
 
         if len(result) == 0:
