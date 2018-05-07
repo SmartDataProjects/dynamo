@@ -112,6 +112,9 @@ class Dealer(object):
 
         LOG.info('Dealer cycle completed')
 
+    def get_plugins(self):
+        return self._plugin_priorities.keys()
+
     def _setup_plugins(self, config, is_test_run):
         self._plugin_priorities = {}
 

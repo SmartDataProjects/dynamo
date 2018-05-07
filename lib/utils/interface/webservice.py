@@ -38,7 +38,7 @@ class RequestWatcher(object):
         self.event.clear()
         self.event.wait(timeout)
         if not self.event.is_set():
-            raise RuntimeError('Timeout in %s' % name)
+            raise RuntimeError('Timeout in %s' % self.name)
 
     def stop(self):
         self.event.set()
