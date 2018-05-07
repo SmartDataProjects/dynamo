@@ -149,6 +149,7 @@ def run_script(path, args, is_local, defaults_config, inventory, authorizer, que
         if exc_type is SystemExit:
             raise
         else:
+            # print the traceback "manually" to cut out the first two lines showing the server process
             tb_lines = traceback.format_tb(tb)[1:]
             sys.stderr.write('Traceback (most recent call last):\n')
             sys.stderr.write(''.join(tb_lines))
