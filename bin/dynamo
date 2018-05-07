@@ -161,11 +161,12 @@ class DynamoServer(object):
 
         sys.stderr.write(' Application id: %d\n' % app_id)
         sys.stderr.write(' Path: %s\n' % path)
-        if self._is_local:
-            sys.stderr.write(' PID: %d\n' % resp_data['pid'])
 
         if asynch:
             return
+
+        if self._is_local:
+            sys.stderr.write(' PID: %d\n' % resp_data['pid'])
 
         sys.stderr.write('+++++++++++++++++++++++++++++++++++++++++++++++++++++\n')
 
@@ -379,8 +380,8 @@ if __name__ == '__main__':
     parser.add_argument('--server', '-s', metavar = 'HOST[:PORT]', dest = 'server', help = 'Server host.')
     parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', default = 'DynamoExecutable', help = 'Executable title.')
     parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request write access.')
-    parser.add_argument('--poll', '-p', metavar = 'ID', dest = 'poll_appid', help = 'Just poll an existing application.')
-    parser.add_argument('--kill', '-x', metavar = 'ID', dest = 'kill_appid', help = 'Abort an existing application.')
+    parser.add_argument('--poll', '-p', metavar = 'ID', dest = 'poll_appid', type = int, help = 'Just poll an existing application.')
+    parser.add_argument('--kill', '-x', metavar = 'ID', dest = 'kill_appid', type = int, help = 'Abort an existing application.')
     parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
     parser.add_argument('--cert', '-c', metavar = 'PATH', dest = 'certfile', help = 'Non-standard certificate file location.')
     parser.add_argument('--key', '-k', metavar = 'PATH', dest = 'keyfile', help = 'Non-standard key file location.')

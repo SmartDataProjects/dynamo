@@ -13,16 +13,16 @@ class Group(object):
 
     @staticmethod
     def olevel_val(arg):
-        if type(arg) is str:
+        try:
             return eval('Group.OL_' + arg.upper())
-        else:
+        except:
             return arg
 
     @staticmethod
     def olevel_name(arg):
-        if type(arg) is int:
+        try:
             return Group._ownership_levels[arg - 1]
-        else:
+        except:
             return arg
 
     @property
@@ -53,7 +53,6 @@ class Group(object):
         return not self.__eq__(other)
 
     def copy(self, other):
-        self.id = other.id
         self._olevel = other._olevel
 
     def embed_into(self, inventory, check = False):

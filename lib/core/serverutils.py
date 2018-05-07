@@ -139,33 +139,34 @@ def run_script(path, args, is_local, defaults_config, inventory, authorizer, que
 
     # Execute the script
     try:
-        try:
-            myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
-            execfile(path + '/exec.py', myglobals)
-        except SystemExit as exc:
-            if exc.code == 0:
-                pass
-            else:
-                raise
+        myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
+        execfile(path + '/exec.py', myglobals)
+
     except:
         # cut out the first block of traceback (which refers to this function)
         exc_type, exc, tb = sys.exc_info()
-        tb_lines = traceback.format_tb(tb)[1:]
-        sys.stderr.write('Traceback (most recent call last):\n')
-        sys.stderr.write(''.join(tb_lines))
-        sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
-        sys.stderr.flush()
+
+        if exc_type is SystemExit:
+            raise
+        else:
+            # print the traceback "manually" to cut out the first two lines showing the server process
+            tb_lines = traceback.format_tb(tb)[1:]
+            sys.stderr.write('Traceback (most recent call last):\n')
+            sys.stderr.write(''.join(tb_lines))
+            sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
+            sys.stderr.flush()
+    
+            sys.exit(1)
+
     finally:
         post_execution(path, is_local, inventory, queue)
 
-    sys.stdout = old_stdout
-    sys.stderr = old_stderr
-    stdout.close()
-    stderr.close()
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        stdout.close()
+        stderr.close()
 
     # Queue stays available on the other end even if we terminate the process
-
-    return 0
 
 def run_interactive(path, is_local, defaults_config, inventory, authorizer, make_console, stdout = sys.stdout, stderr = sys.stderr):
     """

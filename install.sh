@@ -129,9 +129,7 @@ python -m compileall $INSTALL_PATH/python/site-packages/dynamo > /dev/null
 
 ### Install the executables ###
 
-cp $SOURCE/bin/* $INSTALL_PATH/bin/
-chown $USER:$(id -gn $USER) $INSTALL_PATH/bin/*
-chmod 755 $INSTALL_PATH/bin/*
+cp $SOURCE/bin/dynamo /usr/local/bin/
 
 cp $SOURCE/exec/* $INSTALL_PATH/exec/
 chown $USER:$(id -gn $USER) $INSTALL_PATH/exec/*

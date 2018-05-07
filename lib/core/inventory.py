@@ -160,7 +160,7 @@ class DynamoInventory(ObjectRepository):
         source.close()
 
     def store_version(self):
-        return self._store.version
+        return self._store.version()
 
     def check_store(self):
         """

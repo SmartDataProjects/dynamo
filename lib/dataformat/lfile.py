@@ -39,8 +39,7 @@ class File(object):
         if self._block_full_name() != other._block_full_name():
             raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._block_full_name(), self._block_full_name())
 
-        self.id = other.id
-        self.size = other.size
+        self._copy_no_check(other)
 
     def embed_into(self, inventory, check = False):
         if self._block_name() is None:
@@ -53,18 +52,26 @@ class File(object):
 
         block = dataset.find_block(self._block_name(), must_find = True)
 
-        lfile = block.find_file(self._lfn, updating = True)
+        if hasattr(inventory, 'has_store'):
+            # This is the server-side main inventory which doesn't need a running image of files,
+            # so we don't call block.find_file (which triggers an inventory store lookup) but simply
+            # return a clone of this file linked to the proper block.
+            # Also in this case the function will never be called with check = True
+            return File(self._lfn, block, self.size, self.id)
+
+        # At this point (if there is any change) block must have loaded files as a non-volatile set
+        lfile = block.find_file(self._lfn)
         updated = False
         if lfile is None:
             lfile = File(self._lfn, block, self.size, self.id)
-            block.files.add(lfile) # not add_file - block has to be updated by itself
+            block.add_file(lfile) # doesn't change the block attributes
 
             updated = True
         elif check and (lfile is self or lfile == self):
             # identical object -> return False if check is requested
             pass
         else:
-            lfile.copy(self)
+            lfile._copy_no_check(self)
             updated = True
 
         if check:
@@ -78,22 +85,30 @@ class File(object):
 
         try:
             dataset = inventory.datasets[self._dataset_name()]
-            block = dataset.find_block(self._block_name())
-            lfile = block.find_file(self._lfn, must_find = True)
+            block = dataset.find_block(self._block_name(), must_find = True)
+            # At this point (if there is any change) block must have loaded files as a real (non-cache) set
         except (KeyError, ObjectError):
             return None
 
+        if hasattr(inventory, 'has_store'):
+            # This is the server-side main inventory which doesn't need a running image of files,
+            # so we don't call block.find_file (which triggers an inventory store lookup) but simply
+            # return a clone of this file linked to the proper block.
+            return File(self._lfn, block, self.size, self.id)
+
+        lfile = block.find_file(self._lfn)
+        if lfile is None:
+            return None
+
         lfile.unlink()
+
         return lfile
 
-    def unlink(self, files = None):
-        if files is None:
-            files = self._block.files
+    def unlink(self):
+        if type(self._block.files) is not set:
+            self._block.files = set(self._block.files)
 
-        files.remove(self)
-
-        self._block.size -= self.size
-        self._block.num_files -= 1
+        self._block.files.remove(self)
 
     def write_into(self, store):
         store.save_file(self)
@@ -130,3 +145,6 @@ class File(object):
             return None
         else:
             return self._block.dataset.name
+
+    def _copy_no_check(self, other):
+        self.size = other.size

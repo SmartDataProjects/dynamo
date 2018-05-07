@@ -15,6 +15,9 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
     """DatasetInfoSource using PhEDEx and DBS."""
 
     def __init__(self, config = None):
+        if config is None:
+            config = Configuration()
+
         DatasetInfoSource.__init__(self, config)
 
         self._phedex = PhEDEx(config.get('phedex', None))
@@ -128,7 +131,7 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         
         return dataset
 
-    def get_block(self, name, dataset = None, with_files = False): #override
+    def get_block(self, name, with_files = False): #override
         ## Get the full block-file data from PhEDEx
         if not name.startswith('/') or name.count('/') != 3 or '#' in name:
             return None
@@ -149,14 +152,8 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         except:
             return None
 
-        if dataset is None:
-            link_dataset = False
-            # Just need a named object
-            dataset = Dataset(dataset_entry['name'])
-        else:
-            link_dataset = True
-            if dataset.name != dataset_entry['name']:
-                raise IntegrityError('Inconsistent dataset %s passed to get_block(%s)', dataset.name, name)
+        # Just need a named object
+        dataset = Dataset(dataset_entry['name'])
 
         block = self._create_block(block_entry, dataset)
 
@@ -169,16 +166,9 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
             for file_entry in block_entry['file']:
                 block._files.add(self._create_file(file_entry, block))
 
-        if link_dataset:
-            existing = dataset.find_block(block.name)
-            if existing is not None:
-                dataset.blocks.remove(existing)
-
-            dataset.blocks.add(block)
-
         return block
 
-    def get_file(self, name, block = None):
+    def get_file(self, name):
         ## Get the file data from PhEDEx
 
         result = self._phedex.make_request('data', ['file=' + name, 'level=file'])
@@ -196,27 +186,11 @@ class PhEDExDatasetInfoSource(DatasetInfoSource):
         bname = block_entry['name']
         block_name = Block.to_internal_name(bname[bname.find('#') + 1:])
 
-        if block is None:
-            link_block = False
-            # Just need a named object
-            dataset = Dataset(dataset_entry['name'])
-            block = Block(block_name, dataset)
-        else:
-            link_block = True
-            if block.name != block_name:
-                raise IntegrityError('Inconsistent block %s passed to get_file(%s)', block.full_name(), name)
+        # Just need a named object
+        dataset = Dataset(dataset_entry['name'])
+        block = Block(block_name, dataset)
 
         lfile = self._create_file(file_entry, block)
-
-        if link_block:
-            # Caution - by adding this file we edit the block properties too
-
-            existing = block.find_file(lfile.fid())
-            if existing is None:
-                block.add_file(lfile)
-            else:
-                existing.unlink()
-                block.add_file(lfile)
 
         return lfile
 

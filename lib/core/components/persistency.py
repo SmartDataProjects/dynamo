@@ -22,8 +22,7 @@ class InventoryStore(object):
         return cls(config)
 
     def __init__(self, config):
-        # Version number / string that identifies the exact state of the store
-        self.version = None
+        pass
 
     def close(self):
         pass
@@ -366,3 +365,9 @@ class InventoryStore(object):
         3. Delete the site.
         """
         raise NotImplementedError('delete_site')
+
+    def version(self):
+        """
+        Return the version identifier of the current store state.
+        """
+        raise NotImplementedError('version')
