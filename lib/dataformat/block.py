@@ -119,14 +119,7 @@ class Block(object):
         if self._dataset_name() != other._dataset_name():
             raise ObjectError('Cannot copy a block of %s into a block of %s' % (other._dataset_name(), self._dataset_name()))
 
-        self.is_open = other.is_open
-        self.last_update = other.last_update
-
-        if self._size != other._size or self._num_files != other._num_files:
-            # updating file parameters -> need to load files permanently
-            self._check_and_load_files(cache = False)
-            self._size = other._size
-            self._num_files = other._num_files
+        self._copy_no_check(other)
 
     def embed_into(self, inventory, check = False):
         try:
@@ -144,7 +137,10 @@ class Block(object):
             # identical object -> return False if check is requested
             pass
         else:
-            block.copy(self)
+            # server-side inventory should not load files and just copy the values
+            server_side = hasattr(inventory, 'has_store')
+            block._copy_no_check(self, load_files = (not server_side))
+
             updated = True
 
         if check:
@@ -302,3 +298,14 @@ class Block(object):
             raise IntegrityError('Size mismatch in %s: predicted %d, loaded %d' % (str(self), self._size, size))
 
         return files
+
+    def _copy_no_check(self, other, load_files = True):
+        self.is_open = other.is_open
+        self.last_update = other.last_update
+
+        if load_files and (self._size != other._size or self._num_files != other._num_files):
+            # updating file parameters -> need to load files permanently
+            self._check_and_load_files(cache = False)
+
+            self._size = other._size
+            self._num_files = other._num_files

@@ -39,7 +39,7 @@ class File(object):
         if self._block_full_name() != other._block_full_name():
             raise ObjectError('Cannot copy a replica of %s into a replica of %s', other._block_full_name(), self._block_full_name())
 
-        self.size = other.size
+        self._copy_no_check(other)
 
     def embed_into(self, inventory, check = False):
         if self._block_name() is None:
@@ -71,7 +71,7 @@ class File(object):
             # identical object -> return False if check is requested
             pass
         else:
-            lfile.copy(self)
+            lfile._copy_no_check(self)
             updated = True
 
         if check:
@@ -145,3 +145,6 @@ class File(object):
             return None
         else:
             return self._block.dataset.name
+
+    def _copy_no_check(self, other):
+        self.size = other.size
