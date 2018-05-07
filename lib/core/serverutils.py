@@ -143,11 +143,14 @@ def run_script(path, args, is_local, defaults_config, inventory, authorizer, que
         execfile(path + '/exec.py', myglobals)
 
     except:
-        # cut out the first block of traceback (which refers to this function)
         exc_type, exc, tb = sys.exc_info()
 
         if exc_type is SystemExit:
+            if exc.code != 0:
+                # don't send any updates back
+                queue = None
             raise
+
         else:
             # print the traceback "manually" to cut out the first two lines showing the server process
             tb_lines = traceback.format_tb(tb)[1:]
