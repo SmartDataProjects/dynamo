@@ -72,7 +72,7 @@ def blocks_already_exist(blocks, site, group):
 # If the item is owned by a single group at the site, return the group object
 # Otherwise return None
 
-def dataset_owned_by(dataset, site, group):
+def dataset_owned_by(dataset, site):
     replica = site.find_dataset_replica(dataset)
     if replica is not None:
         owners = set(brep.group for brep in replica.block_replicas)
@@ -81,14 +81,14 @@ def dataset_owned_by(dataset, site, group):
 
     return None
 
-def block_owned_by(block, site, group):
+def block_owned_by(block, site):
     replica = site.find_block_replica(block)
     if replica is not None:
         return replica.group
 
     return None
 
-def blocks_owned_by(blocks, site, group):
+def blocks_owned_by(blocks, site):
     group = None
 
     for block in blocks:

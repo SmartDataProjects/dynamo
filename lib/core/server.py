@@ -408,6 +408,18 @@ class DynamoServer(object):
         self.inventory.init_store(module, config)
 
     def _collect_processes(self, child_processes, writing_process):
+        """
+        Loop through child processes and make state machine transitions.
+        Processes come in this function in status RUN or KILLED. It is also possible that
+        the master server somehow lost the record of the process (which we considered KILLED).
+        KILLED jobs will be terminated and popped out of the child_processes list.
+        RUN jobs will be polled. If not alive, status changes to DONE or FAILED depending on
+        the exit code. If alive, nothing happens.
+        In either case, for write-enabled processes, updates are collected from the queue.
+        If the status is RUN and collection fails, the subprocess is terminated and the status
+        is set to FAILED.
+        """
+
         ichild = 0
         while ichild != len(child_processes):
             app_id, proc, user_name, user_host, path = child_processes[ichild]
@@ -417,35 +429,27 @@ class DynamoServer(object):
                 status = ServerManager.APP_KILLED
             else:
                 status = apps[0]['status']
-            
-            if status == ServerManager.APP_KILLED:
-                serverutils.killproc(proc)
-
-            read_only = True
 
             if app_id == writing_process[0]:
-                read_only = False
+                # If this is the writing process, read data from the queue
+                # read_state: 0 -> nothing written yet (process is running), 1 -> read OK, 2 -> failure
+                read_state, update_commands = self._collect_updates(writing_process[1])
 
-                if status == ServerManager.APP_KILLED:
-                    read_state = -1
-
-                else: # i.e. status == RUN
-                    # If this is the writing process, read data from the queue
-                    # read_state: 0 -> nothing written yet (process is running), 1 -> read OK, 2 -> failure
-                    read_state, update_commands = self._collect_updates(writing_process[1])
-    
+                if status == ServerManager.APP_RUN:
                     if read_state == 1:
-                        status = ServerManager.APP_DONE
                         # we would block signal here, but since we would be running this code in a subthread we don't have to
                         self._update_inventory(update_commands)
     
                     elif read_state == 2:
                         status = ServerManager.APP_FAILED
-                        serverutils.killproc(proc)
+                        serverutils.killproc(proc, 60)
 
-                if read_state != 0:
-                    proc.join(60)
+                # If the process is killed or updates are read, release the writing_process
+                if status != ServerManager.APP_RUN or read_state != 0:
                     writing_process = (0, None)
+
+            if status == ServerManager.APP_KILLED:
+                serverutils.killproc(proc, 60)
     
             if proc.is_alive():
                 if status == ServerManager.APP_RUN:
