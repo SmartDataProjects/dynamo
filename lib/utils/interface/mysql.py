@@ -4,6 +4,7 @@ import logging
 import time
 import re
 import threading
+from ConfigParser import ConfigParser
 
 import MySQLdb
 import MySQLdb.converters
@@ -38,12 +39,15 @@ class MySQL(object):
         self._connection_parameters = dict(MySQL._default_parameters)
 
         if 'config_file' in config and 'config_group' in config:
-            # Check file exists and readable
-            with open(config['config_file']):
-                pass
+            parser = ConfigParser()
+            parser.read(config['config_file'])
+            group = config['config_group']
+            for ckey, key in [('host', 'host'), ('user', 'user'), ('password', 'passwd'), ('db', 'db')]:
+                try:
+                    self._connection_parameters[key] = parser.get(group, ckey)
+                except:
+                    pass
 
-            self._connection_parameters['read_default_file'] = config['config_file']
-            self._connection_parameters['read_default_group'] = config['config_group']
         if 'host' in config:
             self._connection_parameters['host'] = config['host']
         if 'user' in config:
