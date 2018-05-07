@@ -162,7 +162,7 @@ def is_transfer_stuck(rrd_file):
     rows = result[2]
 
     # rewind to the last non-null record
-    while len(rows) != 0 and rows[-1][1] is None:
+    while len(rows) != 0 and (rows[-1][1] is None or rows[-1][1] == 0):
         rows.pop()
 
     if len(rows) > 480:
