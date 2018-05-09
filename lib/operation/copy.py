@@ -49,9 +49,7 @@ class CopyInterface(object):
     def copy_status(self, operation_id):
         """
         Returns the completion status specified by the operation id as a
-        {(site, dataset): status} dictionary.
-        status can be a tuple (last_update, total, copied), or if the copy request
-        is cancelled for some reason (e.g. subscription removed), None.
+        {(site_name, item_name): (total_bytes, copied_bytes, last_update)} dictionary.
         """
 
         raise NotImplementedError('copy_status')

@@ -101,11 +101,13 @@ class DynamoInventoryProxy(ObjectRepository):
         deleted_object = ObjectRepository.delete(self, obj)
 
         if deleted_object is None:
-            return
+            return None
 
         if self._update_commands is not None:
             LOG.debug('%s is deleted.', str(obj))
             self._update_commands.append((DynamoInventory.CMD_DELETE, repr(deleted_object)))
+
+        return deleted_object
 
     def clear_update(self): #override
         """
@@ -343,7 +345,9 @@ class DynamoInventory(ObjectRepository):
                 embedded_clone.write_into(self._store)
             except:
                 LOG.error('Exception writing %s to inventory store', str(obj))
-                raise        
+                raise
+
+        return embedded_clone
 
     def delete(self, obj): #override
         """
@@ -355,7 +359,7 @@ class DynamoInventory(ObjectRepository):
         deleted_object = ObjectRepository.delete(self, obj)
 
         if deleted_object is None:
-            return
+            return None
 
         if self._has_store:
             try:
@@ -363,3 +367,5 @@ class DynamoInventory(ObjectRepository):
             except:
                 LOG.error('Exception writing deletion of %s to inventory store', str(obj))
                 raise
+
+        return deleted_object

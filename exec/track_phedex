@@ -27,9 +27,9 @@ parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', requi
 args = parser.parse_args()
 sys.argv = []
 
-from dynamo.dataformat import Configuration
+from dynamo.dataformat import Configuration, Block, ObjectError
 from dynamo.utils.parallel import Map
-from dynamo.core.executable import read_only, make_standard_logger, inventory
+from dynamo.core.executable import read_only, make_standard_logger
 
 ## Configuration
 
@@ -207,41 +207,33 @@ for sitename, request_ids in records.iteritems():
     for request_id, status in status_list:
         LOG.info('Transfer request ID: %d', request_id)
 
-        request_total = 0
-        request_copied = 0
-
-        for (st_sitename, datasetname), status_data in status.iteritems():
-            if status_data is None:
-                # the copy request was cancelled
-                continue
-
-            total, copied, last_update = status_data
-    
-            LOG.debug('%s %s %s %s %s', st_sitename, datasetname, total, copied, last_update)
-
+        status_map = {}
+        for (st_sitename, item), status_data in status.iteritems():
             if st_sitename != sitename:
                 continue
 
-            if copied is None:
-                copied = 0
-
-            # Total size could actually be smaller if this was a dataset-level subscription on which
-            # block-level deletions took place afterwards
-            # Inventory would know if the dataset replica is partial. size(physcal = False) returns the
-            # projected size of all block replicas
-            try:
-                site = inventory.sites[sitename]
-                dataset = inventory.datasets[datasetname]
-            except KeyError:
-                pass
+            if status_data is None:
+                total = copied = 0
             else:
-                replica = site.find_dataset_replica(dataset)
-                if replica is None:
-                    LOG.warning('Replica %s:%s does not exist', site.name, dataset.name)
-                    total = 0
-                    update_record = True
-                else:
-                    total = replica.size(physical = False)
+                total, copied, last_update = status_data
+
+            try:
+                dataset_name, _ = Block.from_full_name(item)
+            except ObjectError:
+                dataset_name = item
+
+            try:
+                current = status_map[dataset_name]
+            except KeyError:
+                status_map[dataset_name] = (total, copied)
+            else:
+                status_map[dataset_name] = (total + current[0], copied + current[1])
+
+        request_total = 0
+        request_copied = 0
+
+        for dataset_name, (total, copied) in status_map.iteritems():
+            LOG.debug('%s %s %s %s', st_sitename, dataset_name, total, copied)
 
             # Keeping track of the request status
             request_total += total
@@ -251,7 +243,7 @@ for sitename, request_ids in records.iteritems():
             site_totals['copied_volume'] += copied
 
             # We have an RRD file for each (site, dataset) combination
-            rrd_file = '%s/%d_%s.rrd' % (site_rrd_dir, request_id, datasetname[1:].replace('/', '+'))
+            rrd_file = '%s/%d_%s.rrd' % (site_rrd_dir, request_id, dataset_name[1:].replace('/', '+'))
 
             if total != 0 and copied != total:
                 incomplete_replicas_rrd.add(rrd_file)
@@ -284,7 +276,7 @@ for sitename, request_ids in records.iteritems():
 
                 dataset_details.append({
                     'id': request_id,
-                    'name': datasetname,
+                    'name': dataset_name,
                     'copied': copied,
                     'total': total,
                     'stuck': is_stuck
@@ -295,6 +287,8 @@ for sitename, request_ids in records.iteritems():
                     os.unlink(rrd_file)
                 except OSError:
                     pass
+
+    dataset_details.sort(key = lambda x: x['total'])
 
     if not read_only:
         with open("%s/filelist.txt" % site_rrd_dir, "w") as csvfilelist:

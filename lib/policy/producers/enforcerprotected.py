@@ -19,6 +19,9 @@ class EnforcedProtectionTagger(object):
         partition = inventory.partitions[self.enforcer.partition_name]
 
         for rule_name, rule in self.enforcer.rules.iteritems():
+            if not rule.protect:
+                continue
+
             target_replicas = collections.defaultdict(set) # {dataset: set(replicas)}
             target_sites = self.enforcer.get_destination_sites(rule_name, inventory, partition)
 

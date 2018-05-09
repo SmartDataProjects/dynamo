@@ -55,5 +55,7 @@ class HTMLMixin(object):
 
         if self.titleblock is not None:
             repl['_TITLEBLOCK_'] = '\n' + self.titleblock
+        else:
+            repl['_TITLEBLOCK_'] = ''
 
         return (HTMLMixin.header_html + self.body_html + HTMLMixin.footer_html).format(**repl)

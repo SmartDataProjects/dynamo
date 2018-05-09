@@ -27,9 +27,9 @@ parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', requi
 args = parser.parse_args()
 sys.argv = []
 
-from dynamo.dataformat import Configuration, HistoryRecord
+from dynamo.dataformat import Configuration, HistoryRecord, Block, ObjectError
 from dynamo.utils.parallel import Map
-from dynamo.core.executable import read_only, make_standard_logger, inventory
+from dynamo.core.executable import read_only, make_standard_logger
 
 ## Configuration
 
@@ -171,10 +171,7 @@ for sitename, site_records in records.iteritems():
 
     for record, status in status_list:
         LOG.info('Transfer request ID: %d', record.operation_id)
-
-        request_total = 0
-        request_copied = 0
-    
+   
         if len(status) == 0:
             # old transfer. seems to not exist anymore. Call it complete and just update the history DB.
             for replica in record.replicas:
@@ -185,53 +182,46 @@ for sitename, site_records in records.iteritems():
 
             continue
 
+        request_total = 0
+        request_copied = 0
+
         status_map = {}
-        for (st_sitename, dataset), status_data in status.iteritems():
-            if st_sitename == sitename:
-                status_map[dataset] = status_data
-            else:
+        for (st_sitename, item), status_data in status.iteritems():
+            if st_sitename != sitename:
+                # Dealer does not make requests to multiple sites in a single operation, so hitting this line indicates some sort of error
                 LOG.error('Site name mismatch for copy record %d: %s != %s', record.operation_id, sitename, st_sitename)
+                continue
+
+            if status_data is None:
+                continue
+
+            total, copied, last_update = status_data
+
+            try:
+                dataset_name, _ = Block.from_full_name(item)
+            except ObjectError:
+                dataset_name = item
+
+            try:
+                current_total, current_copied = status_map[dataset_name]
+            except KeyError:
+                status_map[dataset_name] = (total, copied)
+            else:
+                status_map[dataset_name] = (total + current_total, copied + current_copied)
 
         update_record = False
 
         for replica_record in record.replicas:
             try:
-                status_data = status_map[replica_record.dataset_name]
+                total, copied = status_map[replica_record.dataset_name]
             except KeyError:
-                status_data = None
-
-            if status_data is None:
                 # the copy request was cancelled
                 replica_record.status = HistoryRecord.ST_CANCELLED
                 update_record = True
 
                 continue
 
-            total, copied, last_update = status_data
-
-            LOG.debug('%s %s %s %s %s', sitename, replica_record.dataset_name, total, copied, last_update)
-
-            if copied is None:
-                copied = 0
-
-            # Total size could actually be smaller if this was a dataset-level subscription on which
-            # block-level deletions took place afterwards
-            # Inventory would know if the dataset replica is partial. size(physcal = False) returns the
-            # projected size of all block replicas
-            try:
-                site = inventory.sites[sitename]
-                dataset = inventory.datasets[replica_record.dataset_name]
-            except KeyError:
-                pass
-            else:
-                replica = site.find_dataset_replica(dataset)
-                if replica is None:
-                    LOG.warning('Replica %s:%s does not exist', site.name, dataset.name)
-                    total = 0
-                    replica_record.status = HistoryRecord.ST_CANCELLED
-                    update_record = True
-                else:
-                    total = replica.size(physical = False)
+            LOG.debug('%s %s %s %s', sitename, replica_record.dataset_name, total, copied)
 
             if total != replica_record.size:
                 replica_record.size = total
@@ -301,6 +291,8 @@ for sitename, site_records in records.iteritems():
         if update_record and not read_only:
             LOG.info('Updating history record %d', record.operation_id)
             history.update_copy_entry(record)
+
+    dataset_details.sort(key = lambda x: x['total'])
 
     if not read_only:
         with open("%s/filelist.txt" % site_rrd_dir, "w") as csvfilelist:
