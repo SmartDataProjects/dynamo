@@ -293,21 +293,26 @@ class DealerPolicy(object):
             LOG.debug('Destination %s for %s is not a target site.', destination.name, item_name)
             return item_name, item_size, 'Not a target site'
 
-        if already_exists(item, destination, group) == 2:
-            LOG.debug('%s is already at %s.', item_name, destination.name)
-            return item_name, item_size, 'Replica exists'
-
         if not self.is_allowed_destination(item, destination):
             LOG.debug('Placement of %s to %s not allowed by policy.', item_name, destination.name)
             return item_name, item_size, 'Not allowed'
 
-        site_partition = destination.partitions[partition]
-        occupancy_fraction = site_partition.occupancy_fraction(physical = False)
-        if site_partition.quota > 0:
-            occupancy_fraction += float(item_size) / site_partition.quota
+        exists_level = already_exists(item, destination, group)
 
-        if occupancy_fraction > 1.:
-            LOG.debug('Cannot copy %s to %s because destination is full.', item_name, destination.name)
-            return item_name, item_size, 'Destination is full'
+        if exists_level == 2: # exists and owned by the same group
+            LOG.debug('%s is already at %s.', item_name, destination.name)
+            return item_name, item_size, 'Replica exists'
+
+        elif exists_level == 0: # does not exist
+            site_partition = destination.partitions[partition]
+            if site_partition.quota > 0:
+                occupancy_fraction = site_partition.occupancy_fraction(physical = False)
+                occupancy_fraction += float(item_size) / site_partition.quota
+            else:
+                occupancy_fraction = 1.
+    
+            if occupancy_fraction >= 1.:
+                LOG.debug('Cannot copy %s to %s because destination is full.', item_name, destination.name)
+                return item_name, item_size, 'Destination is full'
 
         return item_name, item_size, None

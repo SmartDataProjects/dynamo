@@ -23,7 +23,7 @@ class EnforcerRule(object):
         for cond_text in config.replicas:
             self.target_replicas.append(Condition(cond_text, replica_variables))
 
-        self.protect = config.protect
+        self.protect = config.get('protect', False)
 
 
 class EnforcerInterface(object):

@@ -9,14 +9,11 @@
       }
     },
     "plugins": {
-      "enforcer": {
+      "reassigner": {
         "priority": 1,
-        "module": "EnforcerHandler",
+        "module": "GroupReassigner",
         "config": {
-          "enforcer": {
-            "max_dataset_size": 50.0,
-            "policy": "/home/yiiyama/ddm/dynamo-policies/common/enforcer_rules_alldisk.json"
-          }
+          "from_groups": ["B2G", "SMP", "b-physics", "b-tagging", "e-gamma_ecal", "exotica", "forward", "higgs", "jets-met_hcal", "muon", "susy", "tau-pflow", "top", "tracker-dpg", "tracker-pog", "trigger", "upgrade"]
         }
       }
     },
@@ -26,5 +23,5 @@
     "max_site_pending_fraction": 1.0,
     "max_total_cycle_volume": 100
   },
-  "log_level": "info"
+  "log_level": "debug"
 }
