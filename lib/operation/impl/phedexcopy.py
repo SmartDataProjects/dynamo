@@ -210,11 +210,41 @@ class PhEDExCopyInterface(CopyInterface):
                 for chunk in chunks:
                     subscriptions.extend(self._phedex.make_request('subscriptions', ['node=%s' % site_name] + ['block=%s' % n for n in chunk]))
 
+            overridden = set()
+
             for dataset in subscriptions:
+                dataset_name = dataset['name']
+
                 try:
                     blocks = dataset['block']
                 except KeyError:
-                    LOG.error('Subscription of %s is supposed to be block-level but is not', dataset['name'])
+                    try:
+                        cont = dataset['subscription'][0]
+                    except KeyError:
+                        LOG.error('Subscription of %s neither block-level nor dataset-level', dataset_name)
+                        continue
+
+                    site_name = cont['node']
+
+                    if (site_name, dataset_name) in overridden:
+                        # this is a dataset-level subscription and we've processed this dataset already
+                        continue
+
+                    overridden.add((site_name, dataset_name))
+
+                    LOG.debug('Block-level subscription of %s at %s is overridden', dataset_name, site_name)
+
+                    requested_blocks = [name for name in block_names if name.startswith(dataset_name + '#')]
+
+                    blocks = self._phedex.make_request('blockreplicas', ['node=%s' % site_name, 'dataset=%s' % dataset_name])
+                    for block in blocks:
+                        block_name = block['name']
+                        if block_name not in requested_blocks:
+                            continue
+                        
+                        replica = block['replica'][0]
+                        status[(site_name, block_name)] = (block['bytes'], replica['bytes'], replica['time_update'])
+
                     continue
 
                 for block in blocks:

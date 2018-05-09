@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 
-###############################################################
-####### This script will spit out png files monitoring ########
-####### the copy status through Phedex on three levels: #######
-####### -per replica, -per request, -per site #################
-#
-####### yiiyama@mit.edu, bmaier@mit.edu #######################
-###############################################################
+##############################################################
+###### This script will spit out png files monitoring   ######
+###### the copy status through Phedex on three levels:  ######
+###### -per replica, -per request, -per site            ######
+###### No overlap removal is made in the case when      ######
+###### requests of the same blocks/datasets are made at ######
+###### a single site.                                   ######
+######                                                  ######
+###### yiiyama@mit.edu, bmaier@mit.edu                  ######
+##############################################################
 
 import sys
 import os
