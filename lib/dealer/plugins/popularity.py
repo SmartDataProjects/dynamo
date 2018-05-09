@@ -82,7 +82,3 @@ class PopularityHandler(BaseHandler):
                 break
         
         return datasets_to_request
-
-    def postprocess(self, cycle_number, history, copy_list): # override
-        if not self.read_only:
-            history.save_dataset_popularity(cycle_number, self._datasets)

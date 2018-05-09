@@ -37,7 +37,7 @@ class Detox(object):
 
             # history.test = True does not mean read-only
             self.history.test = True
-            self.detoxhistory.test = True
+            # there is no test flag for detoxhistory
 
         self.policy = DetoxPolicy(config)
 

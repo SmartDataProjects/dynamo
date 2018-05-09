@@ -22,7 +22,6 @@ class DetoxHistory(object):
         self.snapshots_spool_dir = config.snapshots_spool_dir
         self.snapshots_archive_dir = config.snapshots_archive_dir
 
-        self.test = False
         self.read_only = False
 
     def get_sites(self, cycle_number):
@@ -62,12 +61,9 @@ class DetoxHistory(object):
             sql = 'SELECT `id` FROM {0}.`policy_conditions` WHERE `text` = %s'.format(self.history_db)
             ids = self._mysql.query(sql, text)
             if len(ids) == 0:
-                if self.test:
-                    line.condition_id = random.randint(1, 1000000)
-                else:
-                    sql = 'INSERT INTO {0}.`policy_conditions` (`text`) VALUES (%s)'.format(self.history_db)
-                    self._mysql.query(sql, text)
-                    line.condition_id = self._mysql.last_insert_id
+                sql = 'INSERT INTO {0}.`policy_conditions` (`text`) VALUES (%s)'.format(self.history_db)
+                self._mysql.query(sql, text)
+                line.condition_id = self._mysql.last_insert_id
             else:
                 line.condition_id = ids[0]
 

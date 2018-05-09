@@ -558,12 +558,13 @@ class DynamoServer(object):
             obj = self.inventory.make_object(objstr)
 
             if cmd == DynamoInventory.CMD_UPDATE:
-                CHANGELOG.info('Saving %s', str(obj))
-                self.inventory.update(obj)
+                embedded_object = self.inventory.update(obj)
+                CHANGELOG.info('Saved %s', str(embedded_object))
 
             elif cmd == DynamoInventory.CMD_DELETE:
-                CHANGELOG.info('Deleting %s', str(obj))
-                self.inventory.delete(obj)
+                deleted_object = self.inventory.delete(obj)
+                if deleted_object is not None:
+                    CHANGELOG.info('Deleting %s', str(deleted_object))
 
         if has_update and self.inventory.has_store:
             self.manager.master.advertise_store_version(self.inventory.store_version())

@@ -211,6 +211,10 @@ class Dealer(object):
             reqlist = reqlists[plugin]
             request = reqlist.pop(0)
 
+            if len(reqlist) == 0:
+                LOG.debug('No more requests from %s', plugin.name)
+                reqlists.pop(plugin)
+
             item, destination = request
 
             if type(item) is Dataset:
@@ -243,8 +247,6 @@ class Dealer(object):
             if dataset.status not in (Dataset.STAT_PRODUCTION, Dataset.STAT_VALID):
                 continue
 
-            requests.append(request + (plugin,))
-
             if LOG.getEffectiveLevel() == logging.DEBUG:
                 if destination is None:
                     destname = 'somewhere'
@@ -253,9 +255,7 @@ class Dealer(object):
     
                 LOG.debug('Selecting request from %s: %s to %s', plugin.name, name, destname)
 
-            if len(reqlist) == 0:
-                LOG.debug('No more requests from %s', plugin.name)
-                reqlists.pop(plugin)
+            requests.append(request + (plugin,))
 
         return requests
 

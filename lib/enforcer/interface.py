@@ -23,6 +23,8 @@ class EnforcerRule(object):
         for cond_text in config.replicas:
             self.target_replicas.append(Condition(cond_text, replica_variables))
 
+        self.protect = config.protect
+
 
 class EnforcerInterface(object):
     """
@@ -66,6 +68,7 @@ class EnforcerInterface(object):
             target_num = rule.num_copies
 
             already_there = 0
+            en_route = 0
             still_missing = 0
 
             if target_num > len(destination_sites):
@@ -96,20 +99,24 @@ class EnforcerInterface(object):
                         # no condition matched
                         continue
 
-                    num_considered = 0
+                    num_complete = 0
+                    num_incomplete = 0
 
                     for other_replica in dataset.replicas:
                         if other_replica is replica:
                             continue
 
                         if other_replica.site in destination_sites:
-                            num_considered += 1
-                            if num_considered == target_num:
-                                already_there += 1
-                                break
+                            if other_replica.is_complete():
+                                num_complete += 1
+                            else:
+                                num_incomplete += 1
 
+                    if num_complete >= target_num:
+                        already_there += 1
+                    elif num_complete + num_incomplete >= target_num:
+                        en_route += 1
                     else:
-                        # num_considered did not hit target_num
                         # create a request
 
                         site_candidates = destination_sites - set(r.site for r in dataset.replicas if r.is_full())
@@ -125,7 +132,7 @@ class EnforcerInterface(object):
                                 product.append((dataset, target_site))
 
             if self.write_rrds:
-                product.append((rule_name, already_there, still_missing))
+                product.append((rule_name, already_there, en_route, still_missing))
 
         if not self.write_rrds:
             # randomize requests

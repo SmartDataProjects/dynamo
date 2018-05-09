@@ -93,7 +93,7 @@ def create_rrd(path):
 
 rrd_info = enforcer.report_back(inventory)
 
-for rule_name, already_there, still_missing in rrd_info:
+for rule_name, already_there, en_route, still_missing in rrd_info:
     
     rrd_file = '%s/%s.rrd' % (rrd_dir, rule_name)
 
@@ -110,7 +110,7 @@ for rule_name, already_there, still_missing in rrd_info:
         lasttime = 0
             
     if not read_only and timestamp != lasttime:
-        rrdtool.update(rrd_file, '%d:%i:%i' % (timestamp, still_missing, already_there))
+        rrdtool.update(rrd_file, '%d:%i:%i' % (timestamp, still_missing + en_route, already_there))
 
 if not read_only:
     target_dir = config.rrd_publish_target + '/monitoring_enforcer'

@@ -4,7 +4,7 @@ import collections
 from dynamo.operation.copy import CopyInterface
 from dynamo.utils.interface.webservice import POST
 from dynamo.utils.interface.phedex import PhEDEx
-from dynamo.dataformat import Block, DatasetReplica, BlockReplica, Configuration
+from dynamo.dataformat import DatasetReplica, Configuration
 
 LOG = logging.getLogger(__name__)
 
@@ -154,9 +154,11 @@ class PhEDExCopyInterface(CopyInterface):
             items = []
 
     def copy_status(self, request_id): #override
+        status = {}
+
         request = self._phedex.make_request('transferrequests', 'request=%d' % request_id)
         if len(request) == 0:
-            return {}
+            return status
 
         # A single request can have multiple destinations
         site_names = [d['name'] for d in request[0]['destinations']['node']]
@@ -169,46 +171,59 @@ class PhEDExCopyInterface(CopyInterface):
         for ds_entry in request[0]['data']['dbs']['block']:
             block_names.append(ds_entry['name'])
 
-        subscriptions = []
+        if len(dataset_names) != 0:
+            # Process dataset-level subscriptions
 
-        for site_name in site_names:
-            if len(dataset_names) != 0:
-                chunks = [dataset_names[i:i + 35] for i in xrange(0, len(dataset_names), 35)]
+            subscriptions = []
+            chunks = [dataset_names[i:i + 35] for i in xrange(0, len(dataset_names), 35)]
+            for site_name in site_names:
                 for chunk in chunks:
                     subscriptions.extend(self._phedex.make_request('subscriptions', ['node=%s' % site_name] + ['dataset=%s' % n for n in chunk]))
-    
-            if len(block_names) != 0:
-                chunks = [block_names[i:i + 35] for i in xrange(0, len(block_names), 35)]
+
+            for dataset in subscriptions:
+                dataset_name = dataset['name']
+                try:
+                    cont = dataset['subscription'][0]
+                except KeyError:
+                    LOG.error('Subscription of %s should exist but doesn\'t', dataset_name)
+                    continue
+
+                site_name = cont['node']
+                bytes = dataset['bytes']
+
+                node_bytes = cont['node_bytes']
+                if node_bytes is None:
+                    node_bytes = 0
+                elif node_bytes != bytes:
+                    # it's possible that there were block-level deletions
+                    blocks = self._phedex.make_request('blockreplicas', ['node=%s' % site_name, 'dataset=%s' % dataset_name])
+                    bytes = sum(b['bytes'] for b in blocks)
+
+                status[(site_name, dataset_name)] = (bytes, node_bytes, cont['time_update'])
+
+        if len(block_names) != 0:
+            # Process block-level subscriptions
+
+            subscriptions = []
+            chunks = [block_names[i:i + 35] for i in xrange(0, len(block_names), 35)]
+            for site_name in site_names:
                 for chunk in chunks:
                     subscriptions.extend(self._phedex.make_request('subscriptions', ['node=%s' % site_name] + ['block=%s' % n for n in chunk]))
 
-        status = {}
-        for dataset in subscriptions:
-            try:
-                cont = dataset['subscription'][0]
-                bytes = dataset['bytes']
-                if cont['node_bytes'] is not None:
-                    node_bytes = cont['node_bytes']
-                else:
-                    node_bytes = 0
-                time_update = cont['time_update']
-                site_name = cont['node']
-            except KeyError:
-                # this was a block-level subscription (no 'subscription' field for the dataset)
-                bytes = 0
-                node_bytes = 0
-                time_update = 0
-                site_name = 'unknown'
+            for dataset in subscriptions:
                 for block in dataset['block']:
-                    cont = block['subscription'][0]
-                    bytes += block['bytes']
-                    if cont['node_bytes'] is not None:
-                        node_bytes += cont['node_bytes']
+                    block_name = block['name']
+                    try:
+                        cont = block['subscription'][0]
+                    except KeyError:
+                        LOG.error('Subscription of %s should exist but doesn\'t', block_name)
+                        continue
 
-                    time_update = max(time_update, cont['time_update'])
-                    site_name = cont['node']
+                    node_bytes = cont['node_bytes']:
+                    if node_bytes is None:
+                        node_bytes = 0
 
-            status[(site_name, dataset['name'])] = (bytes, node_bytes, time_update)
+                    status[(cont['node'], block_name)] = (block['bytes'], node_bytes, cont['time_update'])
 
         # now we pick up whatever did not appear in the subscriptions call
         for site_name in site_names:
@@ -218,8 +233,7 @@ class PhEDExCopyInterface(CopyInterface):
                     status[key] = None
 
             for block_name in block_names:
-                dataset_name = Block.from_full_name(block_name)[0]
-                key = (site_name, dataset_name)
+                key = (site_name, block_name)
                 if key not in status:
                     status[key] = None
 
