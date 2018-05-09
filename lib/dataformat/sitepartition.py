@@ -17,7 +17,7 @@ class SitePartition(object):
 
     @property
     def quota(self):
-        if self._partition.subpartitions is not None:
+        if type(self._partition) is not str and self._partition.subpartitions is not None:
             q = 0
             for p in self._partition.subpartitions:
                 try:
@@ -40,8 +40,18 @@ class SitePartition(object):
         self.replicas = {}
 
     def __str__(self):
-        return 'SitePartition %s/%s (quota=%f TB, occupancy %s)' % (self._site_name(), self._partition_name(), \
-            self.quota * 1.e-12, ('%.2f' % self.occupancy_fraction()) if self.quota != 0 else 'inf')
+        if type(self._partition) is str:
+            quota = '?'
+            occupancy = '?'
+        else:
+            if self.quota == 0:
+                quota = 'inf'
+                occupancy = '0'
+            else:
+                quota = '%.0f' % (self.quota * 1.e-12)
+                occupancy = '%.2f' % self.occupancy_fraction()
+
+        return 'SitePartition %s/%s (quota=%s TB, occupancy %s)' % (self._site_name(), self._partition_name(), quota, occupancy)
 
     def __repr__(self):
         return 'SitePartition(%s,%s,%d)' % (repr(self._site_name()), repr(self._partition_name()), self._quota)

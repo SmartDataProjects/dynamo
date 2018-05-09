@@ -211,7 +211,13 @@ class PhEDExCopyInterface(CopyInterface):
                     subscriptions.extend(self._phedex.make_request('subscriptions', ['node=%s' % site_name] + ['block=%s' % n for n in chunk]))
 
             for dataset in subscriptions:
-                for block in dataset['block']:
+                try:
+                    blocks = dataset['block']
+                except KeyError:
+                    LOG.error('Subscription of %s is supposed to be block-level but is not', dataset['name'])
+                    continue
+
+                for block in blocks:
                     block_name = block['name']
                     try:
                         cont = block['subscription'][0]
@@ -219,7 +225,7 @@ class PhEDExCopyInterface(CopyInterface):
                         LOG.error('Subscription of %s should exist but doesn\'t', block_name)
                         continue
 
-                    node_bytes = cont['node_bytes']:
+                    node_bytes = cont['node_bytes']
                     if node_bytes is None:
                         node_bytes = 0
 

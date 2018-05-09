@@ -264,7 +264,10 @@ for sitename, request_ids in records.iteritems():
                     lasttime = 0
 
                 if not read_only and timestamp != lasttime:
-                    rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
+                    try:
+                        rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
+                    except:
+                        pass
                 
                 # Tally up this tranfsfer
 
