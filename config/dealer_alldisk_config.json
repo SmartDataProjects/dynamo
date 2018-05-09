@@ -1,7 +1,7 @@
 {
   "dealer": {
-    "partition_name": "RelVal",
-    "group_name": "RelVal",
+    "partition_name": "AllDisk",
+    "group_name": "AnalysisOps",
     "copy_op": {
       "module": "PhEDExCopyInterface",
       "config": {
@@ -15,16 +15,16 @@
         "config": {
           "enforcer": {
             "max_dataset_size": 50.0,
-            "policy": "$(DYNAMO_POLICIES)/common/enforcer_rules_relval.json"
+            "policy": "/home/yiiyama/ddm/dynamo-policies/common/enforcer_rules_alldisk.json"
           }
         }
       }
     },
     "attrs": {},
     "target_sites": ["T1_*_Disk", "T2_*"],
-    "target_site_occupancy": 0.9,
-    "max_site_pending_fraction": 0.03,
-    "max_total_cycle_volume": 20
+    "target_site_occupancy": 1.0,
+    "max_site_pending_fraction": 1.0,
+    "max_total_cycle_volume": 100
   },
   "log_level": "info"
 }

@@ -139,10 +139,6 @@ class DealerPolicy(object):
         site = site_partition.site
         quota = site_partition.quota
 
-        if quota <= 0:
-            LOG.debug('%s has quota %f TB <= 0', site.name, quota * 1.e-12)
-            return False
-
         if site.status != Site.STAT_READY:
             LOG.debug('%s is not ready', site.name)
             return False
@@ -160,20 +156,33 @@ class DealerPolicy(object):
             LOG.debug('%s does not match target site def', site.name)
             return False
 
-        occupancy_fraction = site_partition.occupancy_fraction(physical = False)
-        occupancy_fraction += float(additional_volume) / quota
+        if self.target_site_occupancy < 1.:
+            if quota == 0.:
+                LOG.debug('%s has no quota', site.name)
+                return False
+            elif quota > 0.:
+                occupancy_fraction = site_partition.occupancy_fraction(physical = False)
+                occupancy_fraction += float(additional_volume) / quota
+        
+                if occupancy_fraction > self.target_site_occupancy:
+                    LOG.debug('%s occupancy fraction %f > %f', site.name, occupancy_fraction, self.target_site_occupancy)
+                    return False
 
-        if occupancy_fraction > self.target_site_occupancy:
-            LOG.debug('%s occupancy fraction %f > %f', site.name, occupancy_fraction, self.target_site_occupancy)
-            return False
+        if self.max_site_pending_fraction < 1.:
+            if quota == 0.:
+                LOG.debug('%s has no quota', site.name)
+                return False
+            elif quota > 0.:
+                occupancy_fraction = site_partition.occupancy_fraction(physical = False)
+                occupancy_fraction += float(additional_volume) / quota
 
-        # Difference between projected and physical volumes
-        pending_fraction = occupancy_fraction
-        pending_fraction -= site_partition.occupancy_fraction(physical = True)
-
-        if pending_fraction > self.max_site_pending_fraction:
-            LOG.debug('%s pending fraction %f > %f', site.name, pending_fraction, self.max_site_pending_fraction)
-            return False
+                # Difference between projected and physical volumes
+                pending_fraction = occupancy_fraction
+                pending_fraction -= site_partition.occupancy_fraction(physical = True)
+        
+                if pending_fraction > self.max_site_pending_fraction:
+                    LOG.debug('%s pending fraction %f > %f', site.name, pending_fraction, self.max_site_pending_fraction)
+                    return False
 
         return True
 
@@ -241,12 +250,13 @@ class DealerPolicy(object):
         for site in candidates:
             site_partition = site.partitions[partition]
 
-            projected_occupancy = site_partition.occupancy_fraction(physical = False)
-            projected_occupancy += float(item_size) / site_partition.quota
-
-            # total projected volume must not exceed the quota
-            if projected_occupancy > 1.:
-                continue
+            if site_partition.quota > 0.:
+                projected_occupancy = site_partition.occupancy_fraction(physical = False)
+                projected_occupancy += float(item_size) / site_partition.quota
+    
+                # total projected volume must not exceed the quota
+                if projected_occupancy > 1.:
+                    continue
 
             # replica must not be at the site already
             if already_exists(item, site, group):
