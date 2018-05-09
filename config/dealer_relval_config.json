@@ -39,7 +39,7 @@
         "config": {
           "enforcer": {
             "max_dataset_size": 50.0,
-            "policy": "$(DYNAMO_BASE)/policies/common/enforcer_rules_relval.json"
+            "policy": "$(DYNAMO_POLICIES)/common/enforcer_rules_relval.json"
           }
         }
       }
