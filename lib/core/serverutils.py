@@ -146,10 +146,10 @@ def run_script(path, args, is_local, defaults_config, inventory, authorizer, que
         exc_type, exc, tb = sys.exc_info()
 
         if exc_type is SystemExit:
-            if exc.code != 0:
-                # don't send any updates back
-                queue = None
-            raise
+            if exc.code == 0:
+                send_updates(inventory, queue)
+            else:
+                raise
 
         else:
             # print the traceback "manually" to cut out the first two lines showing the server process
@@ -161,15 +161,19 @@ def run_script(path, args, is_local, defaults_config, inventory, authorizer, que
     
             sys.exit(1)
 
+    else:
+        send_updates(inventory, queue)
+        # Queue stays available on the other end even if we terminate the process
+
     finally:
-        post_execution(path, is_local, inventory, queue)
+        # cleanup
+        post_execution(path, is_local)
 
-        sys.stdout = old_stdout
-        sys.stderr = old_stderr
-        stdout.close()
-        stderr.close()
+        sys.stdout.close()
+        sys.stderr.close()
 
-    # Queue stays available on the other end even if we terminate the process
+    sys.stdout = old_stdout
+    sys.stderr = old_stderr
 
 def run_interactive(path, is_local, defaults_config, inventory, authorizer, make_console, stdout = sys.stdout, stderr = sys.stderr):
     """
@@ -198,12 +202,10 @@ def run_interactive(path, is_local, defaults_config, inventory, authorizer, make
     try:
         console.interact(BANNER)
     finally:
-        post_execution(path, is_local, inventory, None)
+        post_execution(path, is_local)
 
     sys.stdout = old_stdout
     sys.stderr = old_stderr
-
-    return 0
 
 def pre_execution(path, is_local, read_only, defaults_config, inventory, authorizer):
     uid = os.geteuid()
@@ -304,33 +306,36 @@ def pre_execution(path, is_local, read_only, defaults_config, inventory, authori
 
     return path
 
-def post_execution(path, is_local, inventory, queue):
-    if queue is not None:
-        # Collect updates if write-enabled
+def send_updates(inventory, queue):
+    if queue is None:
+        return
 
-        nobj = len(inventory._update_commands)
-        sys.stderr.write('Sending %d updated objects to the server process.\n' % nobj)
-        sys.stderr.flush()
-        wm = 0.
-        for iobj, (cmd, objstr) in enumerate(inventory._update_commands):
-            if float(iobj) / nobj * 100. > wm:
-                sys.stderr.write(' %.0f%%..' % (float(iobj) / nobj * 100.))
-                sys.stderr.flush()
-                wm += 5.
+    # Collect updates if write-enabled
 
-            try:
-                queue.put((cmd, objstr))
-            except:
-                sys.stderr.write('Exception while sending %s %s\n' % (DynamoInventory._cmd_str[cmd], objstr))
-                raise
-
-        if nobj != 0:
-            sys.stderr.write(' 100%.\n')
+    nobj = len(inventory._update_commands)
+    sys.stderr.write('Sending %d updated objects to the server process.\n' % nobj)
+    sys.stderr.flush()
+    wm = 0.
+    for iobj, (cmd, objstr) in enumerate(inventory._update_commands):
+        if float(iobj) / nobj * 100. > wm:
+            sys.stderr.write(' %.0f%%..' % (float(iobj) / nobj * 100.))
             sys.stderr.flush()
-        
-        # Put end-of-message
-        queue.put((DynamoInventory.CMD_EOM, None))
+            wm += 5.
 
+        try:
+            queue.put((cmd, objstr))
+        except:
+            sys.stderr.write('Exception while sending %s %s\n' % (DynamoInventory._cmd_str[cmd], objstr))
+            raise
+
+    if nobj != 0:
+        sys.stderr.write(' 100%.\n')
+        sys.stderr.flush()
+    
+    # Put end-of-message
+    queue.put((DynamoInventory.CMD_EOM, None))
+
+def post_execution(path, is_local):
     if not is_local:
         # jobs were confined in a chroot jail
         clean_remote_request(path)
