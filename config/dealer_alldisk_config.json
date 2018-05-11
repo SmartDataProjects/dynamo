@@ -1,0 +1,27 @@
+{
+  "dealer": {
+    "partition_name": "AllDisk",
+    "group_name": "AnalysisOps",
+    "copy_op": {
+      "module": "PhEDExCopyInterface",
+      "config": {
+        "chunk_size": 50
+      }
+    },
+    "plugins": {
+      "reassigner": {
+        "priority": 1,
+        "module": "GroupReassigner",
+        "config": {
+          "from_groups": ["B2G", "SMP", "b-physics", "b-tagging", "e-gamma_ecal", "exotica", "forward", "higgs", "jets-met_hcal", "muon", "susy", "tau-pflow", "top", "tracker-dpg", "tracker-pog", "trigger", "upgrade"]
+        }
+      }
+    },
+    "attrs": {},
+    "target_sites": ["T1_*_Disk", "T2_*"],
+    "target_site_occupancy": 1.0,
+    "max_site_pending_fraction": 1.0,
+    "max_total_cycle_volume": 100
+  },
+  "log_level": "debug"
+}

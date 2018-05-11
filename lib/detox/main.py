@@ -302,23 +302,17 @@ class Detox(object):
                         block_replicas -= action.block_replicas
     
                     elif isinstance(action, DeleteBlock):
-                        unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, action.block_replicas)
-                        if len(unlinked_replicas) != 0:
-                            # deleted list contains blocks that should actually be deleted, instead of just kicked out
+                        # blocks sorted into ones to be unlinked and ones to be reowned
+                        # ones to be unlinked are removed from block_replicas
+                        # ones to be reowned are added to reowned
+                        # the two sets overlap only when reowning causes the block replica to go out of the partition
+                        # unlinked - reowned are returned as to_delete
+                        to_delete = self._unlink_block_replicas(replica, partition, action.block_replicas, repository, reowned, block_replicas)
+
+                        if len(to_delete) != 0:
+                            # to_delete list contains blocks that should actually be deleted, instead of just kicked out
                             # from the repository
-                            get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
-
-                            # unlinked_replicas on the other hand contains all block replicas that should be kicked out
-                            for block_replica in unlinked_replicas:
-                                block_replica.unlink_from(repository)
-
-                            block_replicas -= set(unlinked_replicas)
-
-                        if len(reowned_replicas) != 0:
-                            if replica in reowned:
-                                reowned[replica].extend(reowned_replicas)
-                            else:
-                                reowned[replica] = list(reowned_replicas)
+                            get_list(deleted, replica, condition_id).update(to_delete)
 
                     elif isinstance(action, DismissBlock):
                         if replica.site in triggered_sites:
@@ -341,25 +335,16 @@ class Detox(object):
     
                     elif isinstance(action, Delete):
                         # delete a full dataset or a remainder after block-level operations
-                        unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, block_replicas)
-                        if len(unlinked_replicas) != 0:
-                            get_list(deleted, replica, condition_id).update(set(unlinked_replicas) - set(reowned_replicas))
+                        to_delete = self._unlink_block_replicas(replica, partition, block_replicas, repository, reowned)
 
-                            # here we actually modify the partition repository
-                            for block_replica in unlinked_replicas:
-                                block_replica.unlink_from(repository)
+                        if len(to_delete) != 0:
+                            get_list(deleted, replica, condition_id).update(to_delete)
 
                         # as a result of the modification, the dataset replica can become empty
                         if len(replica.block_replicas) == 0:
                             # if all blocks were deleted, take the replica off all_replicas for later iterations
                             # this is the only place where the replica can become empty
                             empty_replicas.add(replica)
-
-                        if len(reowned_replicas) != 0:
-                            if replica in reowned:
-                                reowned[replica].extend(reowned_replicas)
-                            else:
-                                reowned[replica] = list(reowned_replicas)
 
                     elif isinstance(action, Dismiss):
                         if replica.site in triggered_sites:
@@ -439,22 +424,13 @@ class Detox(object):
                 LOG.debug('Deleting replica: %s', str(replica))
 
                 for condition_id, matches in delete_candidates[replica].iteritems():
-                    unlinked_replicas, reowned_replicas = self._unlink_block_replicas(replica, partition, matches)
-                    if len(unlinked_replicas) != 0:
-                        to_delete = set(unlinked_replicas) - set(reowned_replicas)
+                    to_delete = self._unlink_block_replicas(replica, partition, matches, repository, reowned)
+
+                    if len(to_delete) != 0:
+                        get_list(deleted, replica, condition_id).update(to_delete)
 
                         if self.policy.iterative_deletion:
                             deleted_volume += sum(br.size for br in to_delete)
-
-                        get_list(deleted, replica, condition_id).update(to_delete)
-                        for block_replica in unlinked_replicas:
-                            block_replica.unlink_from(repository)
-
-                    if len(reowned_replicas) != 0:
-                        if replica in reowned:
-                            reowned[replica].extend(reowned_replicas)
-                        else:
-                            reowned[replica] = list(reowned_replicas)
 
                 if len(replica.block_replicas) == 0:
                     replica.unlink_from(repository)
@@ -484,10 +460,10 @@ class Detox(object):
 
         return deleted, kept, protected, reowned
 
-    def _unlink_block_replicas(self, replica, partition, block_replicas = None):
+    def _unlink_block_replicas(self, replica, partition, block_replicas, repository, reowned, remaining_block_replicas = None):
         if block_replicas is None or len(block_replicas) == len(replica.block_replicas):
-            blocks_to_unlink = list(replica.block_replicas)
-            blocks_to_hand_over = []
+            blocks_to_unlink = set(replica.block_replicas)
+            blocks_to_hand_over = set()
 
         else:
             # Special operation - if we are deleting block replicas owned by group B, whose
@@ -504,18 +480,18 @@ class Detox(object):
                     break
 
             if dr_owner is None:
-                blocks_to_unlink = list(block_replicas)
-                blocks_to_hand_over = []
+                blocks_to_unlink = set(block_replicas)
+                blocks_to_hand_over = set()
 
                 LOG.debug('All blocks to unlink in %s', len(blocks_to_hand_over), str(replica))
             else:
-                blocks_to_unlink = []
-                blocks_to_hand_over = []
+                blocks_to_unlink = set()
+                blocks_to_hand_over = set()
                 for block_replica in block_replicas:
                     if block_replica.group.olevel == Group.OL_DATASET:
-                        blocks_to_unlink.append(block_replica)
+                        blocks_to_unlink.add(block_replica)
                     else:
-                        blocks_to_hand_over.append(block_replica)
+                        blocks_to_hand_over.add(block_replica)
 
                 LOG.debug('%d blocks to hand over to %s in %s', len(blocks_to_hand_over), dr_owner.name, str(replica))
 
@@ -525,9 +501,35 @@ class Detox(object):
                     # if the change of owner disqualifies this block replica from the partition,
                     # we unlink it from the repository.
                     if not partition.contains(block_replica):
-                        blocks_to_unlink.append(block_replica)
+                        blocks_to_unlink.add(block_replica)
 
-        return blocks_to_unlink, blocks_to_hand_over
+        if len(blocks_to_unlink) != 0:
+            for block_replica in blocks_to_unlink:
+                block_replica.unlink_from(repository)
+
+            # if this replica was put in reowned list earlier, take it out
+            try:
+                reowned_replicas = reowned[replica]
+            except KeyError:
+                pass
+            else:
+                for block_replica in blocks_to_unlink:
+                    reowned_replicas.remove(block_replica)
+
+                if len(reowned_replicas) == 0:
+                    reowned.pop(replica)
+
+            # if called when encountering a DeleteBlock operation, take these blocks out from consideration in further iterations
+            if remaining_block_replicas is not None:
+                remaining_block_replicas -= blocks_to_unlink
+
+        if len(blocks_to_hand_over) != 0:
+            if replica in reowned:
+                reowned[replica].extend(blocks_to_hand_over)
+            else:
+                reowned[replica] = blocks_to_hand_over
+
+        return blocks_to_unlink - blocks_to_hand_over
 
     def _commit_deletions(self, cycle_number, inventory, deleted, comment):
         """
