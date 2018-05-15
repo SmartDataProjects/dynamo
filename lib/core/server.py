@@ -518,7 +518,8 @@ class DynamoServer(object):
 
         remote_request_paths = []
         for app in applications:
-            if not os.path.isdir(app['path']):
+            path = app['path']
+            if not os.path.isdir(path):
                 continue
 
             if app['user_host'] != socket.gethostname():
@@ -526,7 +527,7 @@ class DynamoServer(object):
                 serverutils.clean_remote_request(path)
 
             # Then remove the path
-            shutil.rmtree(app['path'])
+            shutil.rmtree(path)
             self.manager.master.delete_application(app['appid'])
 
     def _update_inventory(self, update_commands):
