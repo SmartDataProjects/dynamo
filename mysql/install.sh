@@ -119,6 +119,7 @@ then
   then
     READCONF="$THISDIR/../utilities/readconf -I $THISDIR/../dynamo.cfg"
     INSTALL_PATH=$($READCONF paths.dynamo_base)
+    LOG_PATH=$($READCONF paths.log_path)
 
     crontab -l -u root > /tmp/crontab.tmp.$$
     chmod 600 /tmp/crontab.tmp.$$
