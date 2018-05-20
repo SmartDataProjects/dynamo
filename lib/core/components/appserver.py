@@ -18,6 +18,10 @@ class AppServer(object):
     def __init__(self, dynamo_server, config):
         self.dynamo_server = dynamo_server
 
+        # Base directory for application work areas
+        # Caution: everything under this directory is subject to automatic cleanup by the Dynamo server
+        self.workarea_base = config.workarea_base
+
         ## Queues synchronous applications will wait on. {app_id: Queue}
         self.synch_app_queues = {}
         ## notify_synch_lock can be called from the DynamoServer immediately
@@ -73,22 +77,18 @@ class AppServer(object):
         Make a work area under spool with a random 64-bit hex as the name. This can be a static function.
         """
 
-        workarea = os.environ['DYNAMO_SPOOL'] + '/work/'
         while True:
-            d = hex(random.randint(0, 0xffffffffffffffff))[2:-1]
+            workarea = '{0}/{1:016x}'.format(self.workarea_base, random.randint(0, 0xffffffffffffffff)) # zero-padded 16-char length hex
             try:
-                os.makedirs(workarea + d)
+                os.makedirs(workarea)
             except OSError:
-                if not os.path.exists(workarea + d):
-                    return ''
+                if not os.path.exists(workarea):
+                    return '' # failed to create the work area
                 else:
                     # remarkably, the directory existed
                     continue
 
-            workarea += d
-            break
-
-        return workarea
+            return workarea
 
     def _schedule_app(self, mode, **app_data):
         """

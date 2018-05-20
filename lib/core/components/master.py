@@ -142,7 +142,7 @@ class Scheduler(object):
     def get_applications(self, older_than = 0, has_path = True, app_id = None):
         """
         Get the list of application entries.
-        @param older_than   Return only applications older than N seconds
+        @param older_than   Return only applications with UNIX time stamps older than the value
         @param has_path     Return applications whose path is not NULL
         @param app_id       Return application with matching id.
 

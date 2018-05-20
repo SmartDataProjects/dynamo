@@ -182,10 +182,13 @@ class ServerManager(object):
         self.board.lock()
         try:
             update_commands = self.board.get_updates()
+            has_updates = False
             for cmd, obj in update_commands:
+                has_updates = True
                 yield (cmd, obj)
-    
-            self.board.flush()
+
+            if has_updates:
+                self.board.flush()
 
         finally:
             self.board.unlock()

@@ -112,7 +112,7 @@ class MySQLScheduler(Scheduler):
 
         constraints = []
         if older_than > 0:
-            constraints.append('UNIX_TIMESTAMP(`applications`.`timestamp`) < UNIX_TIMESTAMP() - %d' % older_than)
+            constraints.append('UNIX_TIMESTAMP(`applications`.`timestamp`) < %d' % older_than)
         if app_id is not None:
             constraints.append('`applications`.`id` = %d' % app_id)
 
