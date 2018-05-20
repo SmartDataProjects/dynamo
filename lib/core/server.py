@@ -257,7 +257,7 @@ class DynamoServer(object):
                 ## Step 6 (easier to do here because we use "continue"s)
                 cleanup_timer += 1
                 if cleanup_timer == 100000:
-                    LOG.log('Triggering cleanup of old applications.')
+                    LOG.info('Triggering cleanup of old applications.')
                     self._cleanup()
                     cleanup_timer = 0
     
@@ -528,7 +528,10 @@ class DynamoServer(object):
 
             # Then remove the path if created by appserver
             if app['path'].startswith(self.appserver.workarea_base):
-                shutil.rmtree(app['path'])
+                try:
+                    shutil.rmtree(app['path'])
+                except OSError:
+                    pass
 
             # Finally remove the entry
             self.manager.master.delete_application(app['appid'])
