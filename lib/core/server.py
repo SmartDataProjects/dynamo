@@ -257,7 +257,7 @@ class DynamoServer(object):
                 ## Step 6 (easier to do here because we use "continue"s)
                 cleanup_timer += 1
                 if cleanup_timer == 100000:
-                    LOG.debug('Clean old workareas')
+                    LOG.log('Triggering cleanup of old applications.')
                     self._cleanup()
                     cleanup_timer = 0
     
@@ -266,7 +266,7 @@ class DynamoServer(object):
                     # one successful cycle - reset the error counter
                     self.num_errors = 0
 
-                    LOG.debug('Sleep %d', self.poll_interval)
+                    LOG.debug('Sleep ' + str(self.poll_interval))
                     time.sleep(self.poll_interval)
     
                 ## Step 1: Poll
@@ -514,20 +514,23 @@ class DynamoServer(object):
                     return 1, update_commands
 
     def _cleanup(self):
-        applications = self.manager.master.get_applications(older_than = self.applications_keep)
+        applications = self.manager.master.get_applications(older_than = int(time.time() - self.applications_keep))
 
-        remote_request_paths = []
         for app in applications:
-            path = app['path']
-            if not os.path.isdir(path):
+            if not os.path.isdir(app['path']):
                 continue
+
+            LOG.debug('Cleaning up %s (%s).', app['title'], app['path'])
 
             if app['user_host'] != socket.gethostname():
                 # First make sure all mounts are removed.
-                serverutils.clean_remote_request(path)
+                serverutils.clean_remote_request(app['path'])
 
-            # Then remove the path
-            shutil.rmtree(path)
+            # Then remove the path if created by appserver
+            if app['path'].startswith(self.appserver.workarea_base):
+                shutil.rmtree(app['path'])
+
+            # Finally remove the entry
             self.manager.master.delete_application(app['appid'])
 
     def _update_inventory(self, update_commands):
