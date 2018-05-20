@@ -517,21 +517,19 @@ class DynamoServer(object):
         applications = self.manager.master.get_applications(older_than = int(time.time() - self.applications_keep))
 
         for app in applications:
-            if not os.path.isdir(app['path']):
-                continue
-
             LOG.debug('Cleaning up %s (%s).', app['title'], app['path'])
 
-            if app['user_host'] != socket.gethostname():
-                # First make sure all mounts are removed.
-                serverutils.clean_remote_request(app['path'])
-
-            # Then remove the path if created by appserver
-            if app['path'].startswith(self.appserver.workarea_base):
-                try:
-                    shutil.rmtree(app['path'])
-                except OSError:
-                    pass
+            if os.path.isdir(app['path']):
+                if app['user_host'] != socket.gethostname():
+                    # First make sure all mounts are removed.
+                    serverutils.clean_remote_request(app['path'])
+    
+                # Then remove the path if created by appserver
+                if app['path'].startswith(self.appserver.workarea_base):
+                    try:
+                        shutil.rmtree(app['path'])
+                    except OSError:
+                        pass
 
             # Finally remove the entry
             self.manager.master.delete_application(app['appid'])
