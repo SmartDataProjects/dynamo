@@ -100,7 +100,7 @@ def loop_sequence(sequence_name, app_paths, work_dir_base, user, config, sequenc
                         else:
                             status = applications[0]['status']
 
-                        if status not in [ServerManager.APP_NEW, ServerManager.APP_RUN]:
+                        if status not in [ServerManager.APP_NEW, ServerManager.APP_ASSIGNED, ServerManager.APP_RUN]:
                             break
 
                     task_id = 0
