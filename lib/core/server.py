@@ -55,10 +55,6 @@ class DynamoServer(object):
     
                 self.inventory_load_opts[objs] = (included, excluded)
 
-        ## Maximum number of consecutive unhandled errors before shutting down the server
-        self.max_num_errors = config.max_num_errors
-        self.num_errors = 0
-
         ## How long application workspaces are retained (days)
         self.applications_keep = config.applications_keep * 3600 * 24
 
@@ -110,10 +106,7 @@ class DynamoServer(object):
         in a non-main thread.
         """
 
-        # Number of unhandled errors
-        self.num_errors = 0
-
-        # Outer loop: restart the application server when error occurs
+        # Outer loop: restart the application server when the inventory goes out of synch
         while True:
             # Lock write activities by other servers
             self.manager.set_status(ServerManager.SRV_STARTING)
@@ -137,6 +130,7 @@ class DynamoServer(object):
 
             try:
                 # Actual stuff happens here
+                # Both functions are infinite loops; the only way out is an exception (can be a peaceful KeyboardInterrupt)
                 if self.applications_config.enabled:
                     self._run_application_cycles()
                 else:
@@ -147,32 +141,34 @@ class DynamoServer(object):
                 # KeyboardInterrupt is raised when shutdown_flag is set
                 # Notify shutdown ready
                 self.shutdown_flag.set()
-                return
+
+                break
     
             except OutOfSyncError:
                 LOG.error('Server has gone out of sync with its peers.')
                 log_exception(LOG)
+
+                if not self.manager.master.connected:
+                    # We need to reconnect to another server
+                    LOG.error('Lost connection to the master server.')
+                    self.manager.reconnect_master()
+        
+                # set server status to initial
+                try:
+                    self.manager.reset_status()
+                except:
+                    self.manager.status = ServerManager.SRV_INITIAL
    
             except:
                 log_exception(LOG)
-                self.num_errors += 1
-
-            if self.num_errors >= self.max_num_errors:
-                LOG.error('Consecutive %d errors occurred. Shutting down Dynamo.' % self.num_errors)
+                LOG.error('Shutting down Dynamo.')
+                # Call sigint on myself to get out of the web server / signal.pause()
                 os.kill(os.getpid(), signal.SIGINT)
+                # Once this function returns, dynamod calls server.shutdown()
+                # If the flag is not cleared already, shutdown() will wait 60 seconds before timing out.
                 self.shutdown_flag.clear()
-                return
 
-            if not self.manager.master.connected:
-                # We need to reconnect to another server
-                LOG.error('Lost connection to the master server.')
-                self.manager.reconnect_master()
-    
-            # set server status to initial
-            try:
-                self.manager.reset_status()
-            except:
-                self.manager.status = ServerManager.SRV_INITIAL
+                break
 
     def check_status_and_connection(self):
         if not self.shutdown_flag.is_set():
@@ -187,6 +183,8 @@ class DynamoServer(object):
             self._setup_remote_store()
 
     def shutdown(self):
+        # Called by dynamod
+        # Clears the flag so that check_status_and_connection raises a KeyboardInterrupt
         LOG.info('Shutting down Dynamo server..')
 
         if self.shutdown_flag.is_set():
@@ -220,16 +218,10 @@ class DynamoServer(object):
         Step 7: Sleep for N seconds.
         """
 
-        child_processes = []
-
         # Start the application collector thread
-        try:
-            self.appserver.start()
-        except:
-            # If app server fails, we don't consider it a recoverable error.
-            # KeyboardInterrupt will get the main process out of the retry loop
-            log_exception(LOG)
-            raise KeyboardInterrupt()
+        self.appserver.start()
+
+        child_processes = []
 
         LOG.info('Start polling for applications.')
 
@@ -264,8 +256,6 @@ class DynamoServer(object):
                 ## Step 7 (easier to do here because we use "continue"s)
                 if do_sleep:
                     # one successful cycle - reset the error counter
-                    self.num_errors = 0
-
                     LOG.debug('Sleep ' + str(self.poll_interval))
                     time.sleep(self.poll_interval)
     
@@ -378,9 +368,6 @@ class DynamoServer(object):
     
                 ## Step 1
                 self._read_updates()
-
-                # one successful cycle - reset the error counter
-                self.num_errors = 0
     
                 ## Step 2
                 time.sleep(self.poll_interval)

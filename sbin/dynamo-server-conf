@@ -102,7 +102,6 @@ if serve_web == 'true':
 
 server_conf['notification_recipient'] = email
 server_conf['status_poll_interval'] = 1.0
-server_conf['max_num_errors'] = 3
 server_conf['applications_keep'] = 7
 
 server_conf['logging'] = OD({
