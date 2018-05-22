@@ -159,11 +159,8 @@ class SocketAppServer(AppServer):
 
         self._sock.listen(5)
 
-    def stop(self):
+    def _do_stop(self): #override
         """Shut down the socket."""
-
-        self._running = False
-
         try:
             self._sock.shutdown(socket.SHUT_RDWR)
             self._sock.close()
@@ -232,26 +229,35 @@ class SocketAppServer(AppServer):
 
             if command == 'poll' or command == 'kill':
                 self._act_on_app(command, app_data['appid'], io)
-                return
 
-            # new application - get the work area path
-            if 'path' in app_data:
-                # work area specified
-                workarea = app_data['path']
+            elif command == 'schedule':
+                self._schedule_sequence(app_data['schedule'], io)
+
+            elif command == 'start':
+                self._start_sequence(app_data['sequence'], io)
+
+            elif command == 'stop':
+                self._stop_sequence(app_data['sequence'], io)
+
             else:
-                workarea = self._make_workarea()
-                if not workarea:
-                    io.send('failed', 'Failed to create work area')
-
-            if command == 'submit':
-                self._submit_app(app_data, user_name, workarea, io)
-
-            elif command == 'interact':
-                self._interact(workarea, io)
-
-                # cleanup
-                if 'path' not in app_data:
-                    shutil.rmtree(workarea)
+                # new single application - get the work area path
+                if 'path' in app_data:
+                    # work area specified
+                    workarea = app_data['path']
+                else:
+                    workarea = self._make_workarea()
+                    if not workarea:
+                        io.send('failed', 'Failed to create work area')
+    
+                if command == 'submit':
+                    self._submit_app(app_data, user_name, workarea, io)
+    
+                elif command == 'interact':
+                    self._interact(workarea, io)
+    
+                    # cleanup
+                    if 'path' not in app_data:
+                        shutil.rmtree(workarea)
 
         except:
             io.send('failed', sys.exc_info()[0].__name__ + ': ' + str(sys.exc_info()[1]))
@@ -281,6 +287,10 @@ class SocketAppServer(AppServer):
         else:
             app['status'] = ServerManager.application_status_name(app['status'])
             io.send('OK', app)
+
+    def _schedule_sequence(self, schedule, io):
+        # schedule: a file containing one or more sequence definitions
+        pass
 
     def _submit_app(self, app_data, user, workarea, io):
         # schedule the app on master
