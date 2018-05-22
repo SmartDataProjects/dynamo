@@ -139,12 +139,13 @@ class Scheduler(object):
         """
         raise NotImplementedError('get_next_application')
 
-    def get_applications(self, older_than = 0, has_path = True, app_id = None):
+    def get_applications(self, older_than = 0, status = None, app_id = None, path = None):
         """
         Get the list of application entries.
         @param older_than   Return only applications with UNIX time stamps older than the value
-        @param has_path     Return applications whose path is not NULL
+        @param status       Return only applications in the given status
         @param app_id       Return application with matching id.
+        @param path         Return application at the given path.
 
         @return [{appid, write_request, user_name, user_host, title, path, args, status, server, exit_code}]
         """

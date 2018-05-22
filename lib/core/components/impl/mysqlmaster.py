@@ -105,22 +105,33 @@ class MySQLScheduler(Scheduler):
 
             self._mysql = MySQL(db_params)
 
-    def get_applications(self, older_than = 0, app_id = None): #override
+    def get_applications(self, older_than = 0, status = None, app_id = None, path = None): #override
         sql = 'SELECT `applications`.`id`, `applications`.`write_request`, `applications`.`title`, `applications`.`path`,'
         sql += ' `applications`.`args`, 0+`applications`.`status`, `applications`.`server`, `applications`.`exit_code`, `users`.`name`, `applications`.`user_host`'
         sql += ' FROM `applications` INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
 
         constraints = []
+        args = []
         if older_than > 0:
-            constraints.append('UNIX_TIMESTAMP(`applications`.`timestamp`) < %d' % older_than)
+            constraints.append('UNIX_TIMESTAMP(`applications`.`timestamp`) < %s')
+            args.append(older_than)
+        if status is not None:
+            constraints.append('`applications`.`status` = %s')
+            args.append(status)
         if app_id is not None:
-            constraints.append('`applications`.`id` = %d' % app_id)
+            constraints.append('`applications`.`id` = %s')
+            args.append(app_id)
+        if path is not None:
+            constraints.append('`applications`.`path` = %s')
+            args.append(path)
 
         if len(constraints) != 0:
             sql += ' WHERE ' + ' AND '.join(constraints)
 
+        args = tuple(args)
+
         applications = []
-        for aid, write, title, path, args, status, server, exit_code, uname, uhost in self._mysql.xquery(sql):
+        for aid, write, title, path, args, status, server, exit_code, uname, uhost in self._mysql.xquery(sql, *args):
             applications.append({
                 'appid': aid, 'write_request': (write == 1), 'user_name': uname,
                 'user_host': uhost, 'title': title, 'path': path, 'args': args,

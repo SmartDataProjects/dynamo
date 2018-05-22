@@ -1,6 +1,7 @@
 import os
 import re
 import random
+import time
 import threading
 import Queue
 import hashlib
@@ -58,11 +59,7 @@ class AppServer(object):
         """Stop the server. Applications should have all terminated by the time this function is called."""
 
         self._running = False
-
-        for dname in os.listdir(self.scheduler_base):
-            shutil.rmtree(self.scheduler_base + '/' + dname)
-
-        self._do_stop()
+        self._stop_accepting()
 
     def notify_synch_app(self, app_id, data):
         """
@@ -109,20 +106,85 @@ class AppServer(object):
 
             return workarea
 
-    def _schedule_app(self, mode, **app_data):
+    def _poll_app(self, app_id):
+        app = self._get_app(app_id)
+
+        if app is None:
+            return False, 'Unknown appid %d' % app_id
+
+        app['status'] = ServerManager.application_status_name(app['status'])
+        return True, app
+
+    def _kill_app(self, app_id):
+        app = self._get_app(app_id)
+
+        if app is None:
+            return False, 'Unknown appid %d' % app_id
+
+        if app['status'] in (ServerManager.APP_NEW, ServerManager.APP_RUN):
+            self.dynamo_server.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
+            return True, {'result': 'success', 'detail': 'Task aborted.'}
+        else:
+            return True, {'result': 'noaction', 'detail': 'Task already completed with status %s (exit code %s).' % \
+                          (ServerManager.application_status_name(app['status']), app['exit_code'])}
+
+    def _get_app(self, app_id):
+        apps = self.dynamo_server.manager.master.get_applications(app_id = app_id)
+        if len(apps) == 0:
+            return None
+        else:
+            return apps[0]
+
+    def _schedule_app(self, app_data):
         """
         Call schedule_application on the master server. If mode == 'synch', create a communication
         queue and register it under synch_app_queues. The server should then wait on this queue
         before starting the application.
         """
+
+        app_data = dict(app_data)
+
+        # schedule the app on master
+        if 'exec_path' in app_data:
+            try:
+                shutil.copyfile(app_data['exec_path'], workarea + '/exec.py')
+            except Exception as exc:
+                return False, 'Could not copy executable %s to %s (%s)' % (app_data['exec_path'], workarea, str(exc))
+
+            app_data.pop('exec_path')
+
+        elif 'exec' in app_data:
+            with open(workarea + '/exec.py', 'w') as out:
+                out.write(app_data['exec'])
+                
+            app_data.pop('exec')
+
+        mode = app_data.pop('mode')
+
         with self.notify_lock:
+            keys = set(app_data.keys())
+            args = set(['title', 'path', 'args', 'user', 'host', 'write_request'])
+            if len(keys - args) != 0:
+                return False, 'Extra parameter(s): %s' % (str(list(keys - args)))
+            if len(args - keys) != 0:
+                return False, 'Missing parameter(s): %s' % (str(list(args - keys)))
+
             app_id = self.dynamo_server.manager.master.schedule_application(**app_data)
             if mode == 'synch':
                 self.synch_app_queues[app_id] = Queue.Queue()
 
-        return app_id
+        if mode == 'synch':
+            msg = self.wait_synch_app_queue(app_id)
 
-    def _parse_sequence_defs(self, path):
+            if msg['status'] != ServerManager.APP_RUN:
+                # this app is not going to run
+                return False, 'Application status: %s.' % ServerManager.application_status_name(msg['status'])
+
+            return True, {'appid': app_id, 'path': msg['path'], 'pid': msg['pid']} # msg['path'] should be == workarea
+        else:
+            return True, {'appid': app_id, 'path': workarea}
+
+    def _add_sequences(self, path):
         """
         Parse a sequence definition file and create an sqlite3 database for each sequence.
         @param path   Name of the file containing one or more sequence definitions.
@@ -245,17 +307,13 @@ class AppServer(object):
 
             try:
                 os.makedirs(work_dir)
-                os.chmod(work_dir, 0777)
-            
+
                 with open(work_dir + '/log.out', 'w'):
                     pass
             
-                os.chmod(work_dir + '/log.out', 0666)
-            
                 with open(work_dir + '/log.err', 'w'):
                     pass
-            
-                os.chmod(work_dir + '/log.err', 0666)
+
             except:
                 try:
                     shutil.rmtree(work_dir)
@@ -314,4 +372,45 @@ class AppServer(object):
             db.commit()
             db.close()
 
-            os.chmod(work_dir + '/sequence.db', 0666)
+            with open(work_dir + '/state', 'w') as out:
+                out.write('disabled\n')
+
+        return True, ''
+
+    def _delete_sequence(self, name):
+        if not os.path.exists(self.scheduler_base + '/' + name):
+            return False, 'Sequence %s does not exist.' % name
+
+        self._stop_seqeunce(name)
+
+        try:
+            shutil.rmtree(self.scheduler_base + '/' + name)
+        except:
+            return False, 'Failed to delete sequence %s.' % name
+
+        return True, ''
+
+    def _start_sequence(self, name):
+        try:
+            with open(self.scheduler_base + '/' + name + '/state', 'w') as out:
+                out.write('enabled\n')
+        except:
+            return False, 'Failed to start sequence %s.' % name
+
+        return True, ''
+
+    def _stop_sequence(self, name):
+        try:
+            with open(self.scheduler_base + '/' + name + '/state', 'w') as out:
+                out.write('disabled\n')
+        except:
+            return False, 'Failed to stop sequence %s.' % name
+
+        # kill all running applications
+        # there should be only one but whatever
+        for subdir in os.listdir(self.scheduler_base + '/' + name):
+            path = self.scheduler_base + '/' + name + '/' + subdir
+            for app in self.dynamo_server.manager.master.get_applications(status = ServerManager.APP_RUN, path = path):
+                self.dynamo_server.manager.master.update_application(app['appid'], status = ServerManager.APP_KILLED)
+
+        return True, ''
