@@ -382,9 +382,9 @@ class AppServer(object):
             db.close()
 
             with open(work_dir + '/state', 'w') as out:
-                out.write('disabled\n')
+                out.write('enabled\n')
 
-        return True, ''
+        return True, {'sequence': sorted(sequences.keys())}
 
     def _delete_sequence(self, name):
         if not os.path.exists(self.scheduler_base + '/' + name):

@@ -129,6 +129,26 @@ class DynamoServer(object):
         print response['detail']
         return response['result']
 
+    def add_sequence(self, sequence_def_path):
+        in_data = {'command': 'add', 'schedule': sequence_def_path}
+        response = self.communicate(in_data)
+        print 'Sequence(s) added:', ' '.join(response['sequence'])
+
+    def start_sequence(self, sequence_name):
+        in_data = {'command': 'start', 'sequence': sequence_name}
+        response = self.communicate(in_data)
+        print 'Started sequence', sequence_name
+
+    def stop_sequence(self, sequence_name):
+        in_data = {'command': 'stop', 'sequence': sequence_name}
+        response = self.communicate(in_data)
+        print 'Stopped sequence', sequence_name
+
+    def delete_sequence(self, sequence_name):
+        in_data = {'command': 'remove', 'sequence': sequence_name}
+        response = self.communicate(in_data)
+        print 'Deleted sequence', sequence_name
+
     def submit(self, cmd, title, write_request, workdir, asynch):
         executable, _, args = cmd.partition(' ') # yes this will fail if our executable name contains a space..
 
@@ -380,9 +400,13 @@ if __name__ == '__main__':
     parser.add_argument('--server', '-s', metavar = 'HOST[:PORT]', dest = 'server', help = 'Server host.')
     parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', default = 'DynamoExecutable', help = 'Executable title.')
     parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request write access.')
+    parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
     parser.add_argument('--poll', '-p', metavar = 'ID', dest = 'poll_appid', type = int, help = 'Just poll an existing application.')
     parser.add_argument('--kill', '-x', metavar = 'ID', dest = 'kill_appid', type = int, help = 'Abort an existing application.')
-    parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
+    parser.add_argument('--add-sequence', '-a', metavar = 'PATH', dest = 'add_sequence', help = 'Create and start new scheduled sequences.')
+    parser.add_argument('--start-sequence', '-q', metavar = 'PATH', dest = 'start_sequence', help = 'Start a stopped sequence.')
+    parser.add_argument('--stop-sequence', '-o', metavar = 'PATH', dest = 'stop_sequence', help = 'Stop a sequence.')
+    parser.add_argument('--delete-sequence', '-d', metavar = 'PATH', dest = 'delete_sequence', help = 'Delete a sequence from scheduler.')
     parser.add_argument('--cert', '-c', metavar = 'PATH', dest = 'certfile', help = 'Non-standard certificate file location.')
     parser.add_argument('--key', '-k', metavar = 'PATH', dest = 'keyfile', help = 'Non-standard key file location.')
     
@@ -426,6 +450,14 @@ if __name__ == '__main__':
             server.poll(args.poll_appid)
         elif args.kill_appid is not None:
             server.kill(args.kill_appid)
+        elif args.add_sequence is not None:
+            server.add_sequence(args.add_sequence)
+        elif args.start_sequence is not None:
+            server.start_sequence(args.start_sequence)
+        elif args.stop_sequence is not None:
+            server.stop_sequence(args.stop_sequence)
+        elif args.delete_sequence is not None:
+            server.delete_sequence(args.delete_sequence)
         elif args.cmd is None:
             server.interact(args.write_request, args.workdir)
         else:
