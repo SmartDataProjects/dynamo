@@ -59,9 +59,6 @@ class DynamoServer(object):
         self.max_num_errors = config.max_num_errors
         self.num_errors = 0
 
-        ## How long application workspaces are retained (days)
-        self.applications_keep = config.applications_keep * 3600 * 24
-
         ## Shutdown flag
         # Default is set. KeyboardInterrupt is raised when flag is cleared
         self.shutdown_flag = threading.Event()
@@ -321,7 +318,7 @@ class DynamoServer(object):
     
                 LOG.info('Started application %s (%s) from user %s@%s (PID %d).', app['title'], app['path'], app['user_name'], app['user_host'], proc.pid)
     
-                child_processes.append((app['appid'], proc, app['user_name'], app['user_host'], app['path']))
+                child_processes.append((app['appid'], proc, app['user_name'], app['user_host'], app['path'], time.time()))
 
         except KeyboardInterrupt:
             if len(child_processes) != 0:
@@ -349,7 +346,7 @@ class DynamoServer(object):
             # in the child. Child processes have to always ignore SIGINT and be killed only from
             # SIGTERM sent by the line below.
 
-            for app_id, proc, user_name, user_host, path in child_processes:
+            for app_id, proc, user_name, user_host, path, time_start in child_processes:
                 LOG.warning('Terminating %s (%s) requested by %s@%s (PID %d)', proc.name, path, user_name, user_host, proc.pid)
 
                 serverutils.killproc(proc)
@@ -412,6 +409,7 @@ class DynamoServer(object):
         Loop through child processes and make state machine transitions.
         Processes come in this function in status RUN or KILLED. It is also possible that
         the master server somehow lost the record of the process (which we considered KILLED).
+        If the process times out, status is set to KILLED.
         KILLED jobs will be terminated and popped out of the child_processes list.
         RUN jobs will be polled. If not alive, status changes to DONE or FAILED depending on
         the exit code. If alive, nothing happens.
@@ -422,13 +420,17 @@ class DynamoServer(object):
 
         ichild = 0
         while ichild != len(child_processes):
-            app_id, proc, user_name, user_host, path = child_processes[ichild]
+            app_id, proc, user_name, user_host, path, time_start = child_processes[ichild]
 
             apps = self.manager.master.get_applications(app_id = app_id)
             if len(apps) == 0:
                 status = ServerManager.APP_KILLED
             else:
                 status = apps[0]['status']
+
+            # Kill processes running for too long (timeout given in seconds)
+            if time_start < time.time() - self.applications_config.timeout:
+                status = ServerManager.APP_KILLED
 
             if app_id == writing_process[0]:
                 # If this is the writing process, read data from the queue
@@ -514,7 +516,10 @@ class DynamoServer(object):
                     return 1, update_commands
 
     def _cleanup(self):
-        applications = self.manager.master.get_applications(older_than = int(time.time() - self.applications_keep))
+        # retain_records_for given in days
+        cutoff = int(time.time()) - self.applications_config.retain_records_for * 24 * 60 * 60
+
+        applications = self.manager.master.get_applications(older_than = cutoff)
 
         for app in applications:
             LOG.debug('Cleaning up %s (%s).', app['title'], app['path'])
