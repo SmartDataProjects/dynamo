@@ -97,7 +97,7 @@ class Authorizer(object):
         raise NotImplementedError('list_authorized_users')
 
 
-class Scheduler(object):
+class AppManager(object):
     """
     Object responsible for scheduling applications.
     """
@@ -106,8 +106,8 @@ class Scheduler(object):
     def get_instance(module, config):
         import dynamo.core.components.impl as impl
         cls = getattr(impl, module)
-        if not issubclass(cls, Scheduler):
-            raise RuntimeError('%s is not a subclass of Scheduler' % module)
+        if not issubclass(cls, AppManager):
+            raise RuntimeError('%s is not a subclass of AppManager' % module)
 
         return cls(config)
 
@@ -195,7 +195,7 @@ class Scheduler(object):
         raise NotImplementedError('revoke_application_authorization')
 
 
-class MasterServer(Authorizer, Scheduler):
+class MasterServer(Authorizer, AppManager):
     """
     An interface to the master server that coordinates server activities.
     """
@@ -211,7 +211,7 @@ class MasterServer(Authorizer, Scheduler):
 
     def __init__(self, config):
         Authorizer.__init__(self, config)
-        Scheduler.__init__(self, config)
+        AppManager.__init__(self, config)
 
         self.connected = False
 

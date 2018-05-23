@@ -2,7 +2,7 @@ import time
 import json
 import socket
 
-from dynamo.core.components.master import Authorizer, Scheduler, MasterServer
+from dynamo.core.components.master import Authorizer, AppManager, MasterServer
 from dynamo.core.manager import ServerManager
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration
@@ -95,9 +95,9 @@ class MySQLAuthorizer(Authorizer):
         return self._mysql.query(sql, *args)
 
 
-class MySQLScheduler(Scheduler):
+class MySQLAppManager(AppManager):
     def __init__(self, config):
-        Scheduler.__init__(self, config)
+        AppManager.__init__(self, config)
 
         if not hasattr(self, '_mysql'):
             db_params = Configuration(config.db_params)
@@ -271,10 +271,10 @@ class MySQLScheduler(Scheduler):
         return deleted != 0
 
 
-class MySQLMasterServer(MySQLAuthorizer, MySQLScheduler, MasterServer):
+class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
     def __init__(self, config):
         MySQLAuthorizer.__init__(self, config)
-        MySQLScheduler.__init__(self, config)
+        MySQLAppManager.__init__(self, config)
         MasterServer.__init__(self, config)
 
         self._server_id = 0
