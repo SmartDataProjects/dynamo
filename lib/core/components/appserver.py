@@ -9,7 +9,10 @@ import logging
 import shutil
 import smtplib
 import socket
+import sqlite3
 from email.mime.text import MIMEText
+
+from dynamo.core.manager import ServerManager
 
 LOG = logging.getLogger(__name__)
 
@@ -205,12 +208,14 @@ class AppServer(object):
         except Exception as ex:
             return False, ex.message
 
-        for name in sequences.keys():
-            if os.path.exists(self.scheduler_base + '/' + name):
-                return False, 'Sequence %s already exists.' % name
-
         for name, sequence in sequences.items():
             work_dir = self.scheduler_base + '/' + name
+
+            if os.path.exists(work_dir):
+                try:
+                    shutil.rmtree(work_dir)
+                except:
+                    return False, 'Failed to set up %s.' % name
 
             try:
                 os.makedirs(work_dir)
@@ -257,7 +262,7 @@ class AppServer(object):
             sql += '`title` TEXT DEFAULT NULL,'
             sql += '`arguments` TEXT DEFAULT NULL,'
             sql += '`criticality` TINYINT DEFAULT NULL,'
-            sql += '`write_request` TINYINT DEFAULT NULL'
+            sql += '`write_request` TINYINT DEFAULT NULL,'
             sql += '`app_id` INTEGER DEFAULT NULL'
             sql += ')'
             db.execute(sql)
@@ -282,6 +287,8 @@ class AppServer(object):
             db.close()
 
             self.dynamo_server.manager.master.register_sequence(name, user)
+
+        LOG.info('Added sequence(s) %s', ' '.join(sorted(sequences.keys())))
 
         return True, {'sequence': sorted(sequences.keys())}
 
@@ -356,6 +363,8 @@ class AppServer(object):
                 app = self._get_app(row[0])
                 if app is not None and app['status'] not in (ServerManager.APP_DONE, ServerManager.APP_FAILED, ServerManager.APP_KILLED):
                     self.dynamo_server.manager.master.update_application(row[0], status = ServerManager.APP_KILLED)
+        except:
+            return False, 'Failed to stop sequence %s.' % name
 
         return True, ''
 
@@ -420,7 +429,7 @@ class AppServer(object):
                                     LOG.warning('[Scheduler] Restarting sequence %s.', sequence_name)
                                     self._schedule_from_sequence(sequence_name, 0)
                                 elif criticality == AppServer.REPEAT_LINE:
-                                    LOG.warning('[Scheduler] Restarting application %s of sequence.', title, sequence_name)
+                                    LOG.warning('[Scheduler] Restarting application %s of sequence %s.', title, sequence_name)
                                     self._schedule_from_sequence(sequence_name, iline)
 
                 elif command == AppServer.WAIT:
@@ -598,6 +607,9 @@ class AppServer(object):
         return sequences, app_paths
 
     def _send_failure_notice(self, sequence_name, app):
+        if not self.dynamo_server.notification_recipient:
+            return
+
         text = 'Message from dynamo-scheduled@%s:\n' % socket.gethostname()
         text += 'Application %s of sequence %s failed.\n' % (app['title'], sequence_name)
         text += 'Details:\n'
@@ -607,7 +619,7 @@ class AppServer(object):
         msg = MIMEText(text)
         msg['Subject'] = '[Dynamo Scheduler] %s/%s failed' % (sequence_name, app['title'])
         msg['From'] = 'dynamo@' + socket.gethostname()
-        msg['To'] = config.notification_recipient
+        msg['To'] = self.dynamo_server.notification_recipient
 
         mailserv = smtplib.SMTP('localhost')
         mailserv.sendmail(msg['From'], [msg['To']], msg.as_string())

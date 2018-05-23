@@ -60,6 +60,9 @@ class DynamoServer(object):
     
                 self.inventory_load_opts[objs] = (included, excluded)
 
+        ## Recipient of error message emails
+        self.notification_recipient = config.notification_recipient
+
         ## Shutdown flag
         # Default is set. KeyboardInterrupt is raised when flag is cleared
         self.shutdown_flag = threading.Event()

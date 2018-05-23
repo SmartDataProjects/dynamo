@@ -243,16 +243,16 @@ class SocketAppServer(AppServer):
                 act_and_respond(self._kill_app(app_data['appid']))
 
             elif command == 'add':
-                act_and_respond(self._add_sequences(app_data['schedule']))
+                act_and_respond(self._add_sequences(app_data['schedule'], user_name))
 
             elif command == 'remove':
-                act_and_respond(self._delete_sequence(app_data['sequence']))
+                act_and_respond(self._delete_sequence(app_data['sequence'], user_name))
 
             elif command == 'start':
-                act_and_respond(self._start_sequence(app_data['sequence']))
+                act_and_respond(self._start_sequence(app_data['sequence'], user_name))
 
             elif command == 'stop':
-                act_and_respond(self._stop_sequence(app_data['sequence']))
+                act_and_respond(self._stop_sequence(app_data['sequence'], user_name))
 
             else:
                 # new single application - get the work area path
