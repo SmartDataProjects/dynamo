@@ -191,119 +191,19 @@ class AppServer(object):
         else:
             return True, {'appid': app_id, 'path': workarea}
 
-    def _add_sequences(self, path):
+    def _add_sequences(self, path, user):
         """
         Parse a sequence definition file and create an sqlite3 database for each sequence.
         @param path   Name of the file containing one or more sequence definitions.
+        @param user   Name of the user requesting to run the sequence
         """
 
         LOG.info('Parsing sequence definition %s', path)
 
-        scheduler = self.dynamo_server.manager.master
-
-        app_paths = {} # {title: exec path}
-        authorized_applications = set() # set of titles
-        sequences = {} # {name: sequence}
-        sequence = None
-
-        with open(path) as source:
-            iline = -1
-            for line in source:
-                iline += 1
-        
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-        
-                LOG.debug(line)
-        
-                # Application definitions
-                # {title} = path  ...  This application cannot write
-                # <title> = path  ...  This application can be used to write
-                matches = re.match('({\S+}|<\S+>)\s*=\s*(\S+)', line)
-                if matches:
-                    enclosed_title = matches.group(1)
-                    title = enclosed_title[1:-1]
-                    write_enabled = (enclosed_title[0] == '<')
-                    application = matches.group(2)
-        
-                    # Replace environment variables
-                    matches = re.findall('\$\(([^\)]+)\)', application)
-                    for match in matches:
-                        application = application.replace('$(%s)' % match, os.environ[match])
-    
-                    with open(application) as source:
-                        checksum = hashlib.md5(source.read()).hexdigest()
-        
-                    if write_enabled and not scheduler.check_application_auth(title, self.dynamo_server.user, checksum):
-                        return False, 'Application %s (%s) is not authorized for server write operation (line %d).' % (title, application, iline)
-        
-                    LOG.debug('Define application %s = %s (write enabled: %d) (line %d)', title, application, write_enabled, iline)
-        
-                    app_paths[title] = application
-                    if write_enabled:
-                        authorized_applications.add(title)
-                    
-                    continue
-        
-                # Sequence definitions
-                # [SEQUENCE title]
-                matches = re.match('\[SEQUENCE\s(\S+)\]', line)
-                if matches:
-                    # Sequence header
-                    LOG.debug('New sequence %s (line %d)', matches.group(1), iline)
-                    sequence = sequences[matches.group(1)] = []
-                    continue
-
-                # If the line is not an application or sequence definition, there needs to be an open sequence
-                if sequence is None:
-                    return False, 'Invalid line "%s" before sequence definition is given.' % line
-        
-                # Sequence application step definitions
-                # {title} options  ...  Read-only execution
-                # <title> options  ...  Write-request execution
-                matches = re.match('(\^|\&|\|) +({\S+}|<\S+>)\s*(.*)', line)
-                if matches:
-                    if matches.group(1) == '^':
-                        criticality = AppServer.REPEAT_SEQ
-                    elif matches.group(1) == '&':
-                        criticality = AppServer.REPEAT_LINE
-                    else:
-                        criticality = AppServer.PASS
-        
-                    enclosed_title = matches.group(2)
-                    title = enclosed_title[1:-1]
-                    write_request = (enclosed_title[0] == '<')
-                    arguments = matches.group(3)
-        
-                    if write_request and title not in authorized_applications:
-                        return False, 'Application %s is not write-enabled (line %d).' % iline
-        
-                    # Replace environment variables
-                    matches = re.findall('\$\(([^\)]+)\)', arguments)
-                    for match in matches:
-                        arguments = arguments.replace('$(%s)' % match, os.environ[match])
-        
-                    LOG.debug('Execute %s %s (line %d)', title, arguments, iline)
-        
-                    sequence.append((AppServer.EXECUTE, title, arguments, criticality, write_request))
-                    continue
-        
-                matches = re.match('WAIT\s+(.*)', line)
-                if matches:
-                    try:
-                        sleep_time = eval(matches.group(1))
-                        if type(sleep_time) not in [int, float]:
-                            raise RuntimeError()
-                    except:
-                        return False, 'Wait time %s is not a numerical expression (line %d).' % (matches.group(1), iline)
-        
-                    LOG.debug('Wait for %d seconds (line %d)', sleep_time, iline)
-                    sequence.append((AppServer.WAIT, sleep_time))
-                    continue
-        
-                if line == 'TERMINATE':
-                    sequence.append([AppServer.TERMINATE])
+        try:
+            sequences, app_paths = self._parse_sequence_def(path, user)
+        except Exception as ex:
+            return False, ex.message
 
         for name in sequences.keys():
             if os.path.exists(self.scheduler_base + '/' + name):
@@ -330,7 +230,7 @@ class AppServer(object):
                 return False, 'Failed to set up %s.' % name
         
             for action in sequence:
-                if action[0] == EXECUTE:
+                if action[0] == AppServer.EXECUTE:
                     title = action[1]
         
                     path = '%s/%s' % (work_dir, title)
@@ -381,45 +281,75 @@ class AppServer(object):
             db.commit()
             db.close()
 
-            with open(work_dir + '/state', 'w') as out:
-                out.write('enabled\n')
+            self.dynamo_server.manager.master.register_sequence(name, user)
 
         return True, {'sequence': sorted(sequences.keys())}
 
-    def _delete_sequence(self, name):
-        if not os.path.exists(self.scheduler_base + '/' + name):
-            return False, 'Sequence %s does not exist.' % name
+    def _get_sequence(self, name, user):
+        sequence = self.dynamo_server.manager.master.find_sequence(name)
+        if sequence is None:
+            raise Exception('Sequence %s does not exist.' % name)
 
-        self._stop_seqeunce(name)
+        name, reg_user, enabled = sequence
+        if reg_user != user:
+            raise Exception('Sequence %s is not registered for user %s.' % (name, user))
 
+        return sequence
+
+    def _delete_sequence(self, name, user):
         try:
-            shutil.rmtree(self.scheduler_base + '/' + name)
-        except:
+            _, _, enabled = self._get_sequence(name, user)
+        except Exception as ex:
+            return False, ex.message
+
+        if enabled:
+            success, msg = self._do_stop_seqeunce(name)
+            if not success:
+                return False, msg
+
+        if not self.dynamo_server.manager.master.delete_sequence(name):
             return False, 'Failed to delete sequence %s.' % name
+
+        if os.path.exists(self.scheduler_base + '/' + name):
+            try:
+                shutil.rmtree(self.scheduler_base + '/' + name)
+            except:
+                return False, 'Failed to delete sequence %s.' % name
 
         return True, ''
 
-    def _start_sequence(self, name):
+    def _start_sequence(self, name, user):
         try:
-            with open(self.scheduler_base + '/' + name + '/state', 'w') as out:
-                out.write('enabled\n')
-        except:
+            _, _, enabled = self._get_sequence(name, user)
+        except Exception as ex:
+            return False, ex.message
+
+        if enabled:
+            return True, ''
+
+        if not self.dynamo_server.manager.master.update_sequence(name, True):
             return False, 'Failed to start sequence %s.' % name
 
         return True, ''
 
-    def _stop_sequence(self, name):
-        work_dir = self.scheduler_base + '/' + name
-
+    def _stop_sequence(self, name, user):
         try:
-            with open(work_dir + '/state', 'w') as out:
-                out.write('disabled\n')
-        except:
+            _, _, enabled = self._get_sequence(name, user)
+        except Exception as ex:
+            return False, ex.message
+
+        if not enabled:
+            return True, ''
+
+        self._do_stop_sequence(name)
+
+    def _do_stop_sequence(self, name):
+        if not self.dynamo_server.manager.master.update_sequence(name, False):
             return False, 'Failed to stop sequence %s.' % name
 
         # kill all running applications
         try:
-            db = sqlite3.connect(work_dir + '/sequence.db')
+            db = sqlite3.connect(self.scheduler_base + '/' + name + '/sequence.db')
             cursor = db.cursor()
             cursor.execute('SELECT `app_id` FROM `sequence` WHERE `app_id` IS NOT NULL')
             for row in cursor.fetchall():
@@ -436,18 +366,8 @@ class AppServer(object):
         """
 
         while True:
-            for sequence_name in os.listdir(self.scheduler_base):
+            for sequence_name in self.dynamo_server.manager.master.get_enabled_sequences():
                 work_dir = self.scheduler_base + '/' + sequence_name
-                
-                try:
-                    with open(work_dir + '/state') as source:
-                        state = source.read().strip()
-                except:
-                    LOG.error('[Scheduler] %s/state missing', work_dir)
-                    continue
-
-                if state != 'enabled':
-                    continue
 
                 db = sqlite3.connect(work_dir + '/sequence.db')
                 cursor = db.cursor()
@@ -557,7 +477,7 @@ class AppServer(object):
                 cursor.execute('UPDATE `sequence` SET `arguments` = ? WHERE `id` = ?', (int(time.time()) + time_wait, sid))
 
             elif command == AppServer.TERMINATE:
-                self._stop_sequence(sequence_name)
+                self._do_stop_sequence(sequence_name)
 
         except:
             LOG.error('Failed to schedule line %d of sequence %s.', to_line, sequence_name)
@@ -569,6 +489,113 @@ class AppServer(object):
                     db.close()
                 except:
                     pass
+
+    def _parse_sequence_def(self, path, user):
+        app_paths = {} # {title: exec path}
+        authorized_applications = set() # set of titles
+        sequences = {} # {name: sequence}
+        sequence = None
+
+        with open(path) as source:
+            iline = -1
+            for line in source:
+                iline += 1
+        
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+        
+                LOG.debug(line)
+        
+                # Application definitions
+                # {title} = path  ...  This application cannot write
+                # <title> = path  ...  This application can be used to write
+                matches = re.match('({\S+}|<\S+>)\s*=\s*(\S+)', line)
+                if matches:
+                    enclosed_title = matches.group(1)
+                    title = enclosed_title[1:-1]
+                    write_enabled = (enclosed_title[0] == '<')
+                    application = matches.group(2)
+        
+                    # Replace environment variables
+                    matches = re.findall('\$\(([^\)]+)\)', application)
+                    for match in matches:
+                        application = application.replace('$(%s)' % match, os.environ[match])
+    
+                    with open(application) as source:
+                        checksum = hashlib.md5(source.read()).hexdigest()
+        
+                    if write_enabled and not self.dynamo_server.manager.master.check_application_auth(title, user, checksum):
+                        raise Exception('Application %s (%s) is not authorized for server write operation (line %d).' % (title, application, iline))
+        
+                    LOG.debug('Define application %s = %s (write enabled: %d) (line %d)', title, application, write_enabled, iline)
+        
+                    app_paths[title] = application
+                    if write_enabled:
+                        authorized_applications.add(title)
+                    
+                    continue
+        
+                # Sequence definitions
+                # [SEQUENCE title]
+                matches = re.match('\[SEQUENCE\s(\S+)\]', line)
+                if matches:
+                    # Sequence header
+                    LOG.debug('New sequence %s (line %d)', matches.group(1), iline)
+                    sequence = sequences[matches.group(1)] = []
+                    continue
+
+                # If the line is not an application or sequence definition, there needs to be an open sequence
+                if sequence is None:
+                    raise Exception('Invalid line "%s" before sequence definition is given.' % line)
+        
+                # Sequence application step definitions
+                # {title} options  ...  Read-only execution
+                # <title> options  ...  Write-request execution
+                matches = re.match('(\^|\&|\|) +({\S+}|<\S+>)\s*(.*)', line)
+                if matches:
+                    if matches.group(1) == '^':
+                        criticality = AppServer.REPEAT_SEQ
+                    elif matches.group(1) == '&':
+                        criticality = AppServer.REPEAT_LINE
+                    else:
+                        criticality = AppServer.PASS
+        
+                    enclosed_title = matches.group(2)
+                    title = enclosed_title[1:-1]
+                    write_request = (enclosed_title[0] == '<')
+                    arguments = matches.group(3)
+        
+                    if write_request and title not in authorized_applications:
+                        raise Exception('Application %s is not write-enabled (line %d).' % iline)
+        
+                    # Replace environment variables
+                    matches = re.findall('\$\(([^\)]+)\)', arguments)
+                    for match in matches:
+                        arguments = arguments.replace('$(%s)' % match, os.environ[match])
+        
+                    LOG.debug('Execute %s %s (line %d)', title, arguments, iline)
+        
+                    sequence.append((AppServer.EXECUTE, title, arguments, criticality, write_request))
+                    continue
+        
+                matches = re.match('WAIT\s+(.*)', line)
+                if matches:
+                    try:
+                        sleep_time = eval(matches.group(1))
+                        if type(sleep_time) not in [int, float]:
+                            raise RuntimeError()
+                    except:
+                        raise Exception('Wait time %s is not a numerical expression (line %d).' % (matches.group(1), iline))
+        
+                    LOG.debug('Wait for %d seconds (line %d)', sleep_time, iline)
+                    sequence.append((AppServer.WAIT, sleep_time))
+                    continue
+        
+                if line == 'TERMINATE':
+                    sequence.append([AppServer.TERMINATE])
+
+        return sequences, app_paths
 
     def _send_failure_notice(self, sequence_name, app):
         text = 'Message from dynamo-scheduled@%s:\n' % socket.gethostname()

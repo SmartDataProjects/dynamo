@@ -194,6 +194,50 @@ class AppManager(object):
         """
         raise NotImplementedError('revoke_application_authorization')
 
+    def register_sequence(self, name, user):
+        """
+        Register a scheduled sequence.
+        @param name  Name of the sequence
+        @param user  Name of the user
+
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('register_sequence')
+
+    def find_sequence(self, name):
+        """
+        Find a sequence with the given name.
+        @param name  Name of the sequence
+
+        @return (name, user, enabled) or None
+        """
+        raise NotImplementedError('find_sequence')
+
+    def update_sequence(self, name, enabled):
+        """
+        Toggle the sequence state.
+        @param name    Name of the sequence
+        @param enabled True: sequence enabled, False: disabled
+
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('update_sequence')
+
+    def delete_sequence(self, name):
+        """
+        Delete a registered sequence.
+        @param name    Name of the sequence
+
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('delete_sequence')
+
+    def get_enabled_sequences(self):
+        """
+        @return [name]
+        """
+        raise NotImplementedError('get_enabled_sequences')
+
 
 class MasterServer(Authorizer, AppManager):
     """

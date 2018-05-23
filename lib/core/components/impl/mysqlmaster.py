@@ -270,6 +270,36 @@ class MySQLAppManager(AppManager):
         deleted = self._mysql.query(sql, *args)
         return deleted != 0
 
+    def register_sequence(self, name, user): #override
+        sql = 'INSERT INTO `application_sequences` (`name`, `user_id`) SELECT %s, `id` FROM `users` WHERE `name` = %s'
+        inserted = self._mysql.query(sql, name, user)
+        return inserted != 0
+
+    def find_sequence(self, name): #override
+        sql = 'SELECT u.`name`, s.`status` FROM `application_sequences` AS s'
+        sql += ' INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
+        sql += ' WHERE s.`name` = %s'
+
+        result = self._mysql.query(sql, name)
+        if len(result) == 0:
+            return None
+            
+        return (name, result[0], result[1] == 'enabled')
+
+    def update_sequence(self, name, enabled): #override
+        sql = 'UPDATE `application_sequences` SET `status` = %s WHERE `name` = %s'
+        updated = self._mysql.query(sql, 'enabled' if enabled else 'disabled', name)
+        return updated != 0
+
+    def delete_sequence(self, name): #override
+        sql = 'DELETE FROM `application_sequences` WHERE `name` = %s'
+        deleted = self._mysql.query(sql, name)
+        return deleted != 0
+
+    def get_enabled_sequences(self): #override
+        sql = 'SELECT `name` FROM `application_sequences` WHERE `status` = \'enabled\''
+        return self._mysql.query(sql)
+
 
 class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
     def __init__(self, config):
