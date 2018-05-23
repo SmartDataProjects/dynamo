@@ -7,6 +7,9 @@ import Queue
 import hashlib
 import logging
 import shutil
+import smtplib
+import socket
+from email.mime.text import MIMEText
 
 LOG = logging.getLogger(__name__)
 
@@ -49,9 +52,13 @@ class AppServer(object):
     def start(self):
         """Start a daemon thread that runs the accept loop and return."""
 
-        th = threading.Thread(target = self._accept_applications)
-        th.daemon = True
-        th.start()
+        accept_thread = threading.Thread(target = self._accept_applications)
+        accept_thread.daemon = True
+        accept_thread.start()
+
+        scheduler_thread = threading.Thread(target = self._scheduler)
+        scheduler_thread.daemon = True
+        scheduler_thread.start()
 
         self._running = True
 
@@ -344,30 +351,32 @@ class AppServer(object):
             cursor = db.cursor()
 
             sql = 'CREATE TABLE `sequence` ('
-            sql += '`id` INTEGERY PRIMARY KEY,'
+            sql += '`id` INTEGER PRIMARY KEY,'
+            sql += '`line` INTEGER NOT NULL,'
             sql += '`command` TINYINT NOT NULL,'
-            sql += '`title` TEXT NOT NULL,'
-            sql += '`arguments` TEXT NOT NULL,'
-            sql += '`criticality` TINYINT NOT NULL,'
-            sql += '`write_request` TINYINT NOT NULL'
+            sql += '`title` TEXT DEFAULT NULL,'
+            sql += '`arguments` TEXT DEFAULT NULL,'
+            sql += '`criticality` TINYINT DEFAULT NULL,'
+            sql += '`write_request` TINYINT DEFAULT NULL'
+            sql += '`app_id` INTEGER DEFAULT NULL'
             sql += ')'
             db.execute(sql)
 
-            for action in sequence:
+            for iline, action in enumerate(sequence):
                 if action[0] == AppServer.EXECUTE:
-                    sql = 'INSERT INTO `sequence` (`command`, `title`, `arguments`, `criticality`, `write_request`)'
-                    sql += ' VALUES (?, ?, ?, ?, ?)'
-                    cursor.execute(sql, action)
+                    sql = 'INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `write_request`)'
+                    sql += ' VALUES (?, ?, ?, ?, ?, ?)'
+                    cursor.execute(sql, (iline,) + action)
 
                 elif action[1] == AppServer.WAIT:
-                    sql = 'INSERT INTO `sequence` (`command`, `title`)'
+                    sql = 'INSERT INTO `sequence` (`line`, `command`, `title`)'
                     sql += ' VALUES (?, ?)'
-                    cursor.execute(sql, (action[0], str(action[1])))
+                    cursor.execute(sql, (iline, action[0], str(action[1])))
 
                 elif action[1] == AppServer.TERMINATE:
-                    sql = 'INSERT INTO `sequence` (`command`)'
+                    sql = 'INSERT INTO `sequence` (`line`, `command`)'
                     sql += ' VALUES (?)'
-                    cursor.execute(sql, (action[0],))
+                    cursor.execute(sql, (iline, action[0]))
 
             db.commit()
             db.close()
@@ -400,17 +409,179 @@ class AppServer(object):
         return True, ''
 
     def _stop_sequence(self, name):
+        work_dir = self.scheduler_base + '/' + name
+
         try:
-            with open(self.scheduler_base + '/' + name + '/state', 'w') as out:
+            with open(work_dir + '/state', 'w') as out:
                 out.write('disabled\n')
         except:
             return False, 'Failed to stop sequence %s.' % name
 
         # kill all running applications
-        # there should be only one but whatever
-        for subdir in os.listdir(self.scheduler_base + '/' + name):
-            path = self.scheduler_base + '/' + name + '/' + subdir
-            for app in self.dynamo_server.manager.master.get_applications(status = ServerManager.APP_RUN, path = path):
-                self.dynamo_server.manager.master.update_application(app['appid'], status = ServerManager.APP_KILLED)
+        try:
+            db = sqlite3.connect(work_dir + '/sequence.db')
+            cursor = db.cursor()
+            cursor.execute('SELECT `app_id` FROM `sequence` WHERE `app_id` IS NOT NULL')
+            for row in cursor.fetchall():
+                app = self._get_app(row[0])
+                if app is not None and app['status'] not in (ServerManager.APP_DONE, ServerManager.APP_FAILED, ServerManager.APP_KILLED):
+                    self.dynamo_server.manager.master.update_application(row[0], status = ServerManager.APP_KILLED)
 
         return True, ''
+
+    def _scheduler(self):
+        """
+        A function to be run as a thread. Rotates through the scheduler sequence directories and execute whatever is up next.
+        Perhaps we want an independent logger for this thread
+        """
+
+        while True:
+            for sequence_name in os.listdir(self.scheduler_base):
+                work_dir = self.scheduler_base + '/' + sequence_name
+                
+                try:
+                    with open(work_dir + '/state') as source:
+                        state = source.read().strip()
+                except:
+                    LOG.error('[Scheduler] %s/state missing', work_dir)
+                    continue
+
+                if state != 'enabled':
+                    continue
+
+                db = sqlite3.connect(work_dir + '/sequence.db')
+                cursor = db.cursor()
+                try:
+                    cursor.execute('SELECT `line`, `command`, `title`, `arguments`, `criticality`, `write_request`, `app_id` FROM `sequence` ORDER BY `id` LIMIT 1')
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise Exception()
+                except:
+                    LOG.error('[Scheduler] Failed to fetch the current command for sequence %s.', sequence_name)
+                    continue
+
+                db.close()
+
+                iline, command, title, arguments, criticality, write_request, app_id = row
+
+                if command == AppServer.EXECUTE:
+                    # poll the app_id
+                    app = self._get_app(app_id)
+
+                    if app is None:
+                        LOG.error('[Scheduler] Application %s in sequence %s disappeared.', title, sequence_name)
+                        self._schedule_from_sequence(sequence_name, iline)
+                    else:
+                        if app['status'] in (ServerManager.APP_NEW, ServerManager.APP_ASSIGNED, ServerManager.APP_RUN):
+                            continue
+                        else:
+                            try:
+                                with open(work_dir + '/log.out', 'a') as out:
+                                    out.write('\n')
+                            except:
+                                pass
+            
+                            try:
+                                with open(work_dir + '/log.err', 'a') as out:
+                                    out.write('\n')
+                            except:
+                                pass
+
+                            if app['status'] == ServerManager.APP_DONE:
+                                LOG.info('[Scheduler] Application %s in sequence %s completed.', title, sequence_name)
+                                self._schedule_from_sequence(sequence_name, iline + 1)
+
+                            else:
+                                LOG.warning('[Scheduler] Application %s in sequence %s terminated with status %s.', title, sequence_name, ServerManager.application_status_name(app['status']))
+                                if criticality != AppServer.PASS:
+                                    self._send_failure_notice(sequence_name, app)
+
+                                if criticality == AppServer.REPEAT_SEQ:
+                                    LOG.warning('[Scheduler] Restarting sequence %s.', sequence_name)
+                                    self._schedule_from_sequence(sequence_name, 0)
+                                elif criticality == AppServer.REPEAT_LINE:
+                                    LOG.warning('[Scheduler] Restarting application %s of sequence.', title, sequence_name)
+                                    self._schedule_from_sequence(sequence_name, iline)
+
+                elif command == AppServer.WAIT:
+                    # title is the number of seconds expressed in a decimal string
+                    # arguments is set to the unix timestamp (string) until when the sequence should wait
+                    wait_until = int(arguments)
+                    if time.time() < wait_until:
+                        continue
+                    else:
+                        self._schedule_from_sequence(sequence_name, iline + 1)
+
+            # all sequences processed; now sleep for 10 seconds
+            time.sleep(10)
+
+    def _schedule_from_sequence(self, sequence_name, to_line):
+        work_dir = self.scheduler_base + '/' + sequence_name
+
+        db = None
+        try:
+            db = sqlite3.connect(work_dir + '/sequence.db')
+            cursor = db.cursor()
+    
+            cursor.execute('SELECT COUNT(*) FROM `sequence` WHERE `command` = ?', (AppServer.TERMINATE,))
+            terminated = cursor.fetchone()[0]
+
+            cursor.execute('SELECT MAX(`line`) FROM `sequence`')
+            max_line = cursor.fetchone()[0]
+
+            to_line %= max_line
+    
+            cursor.execute('SELECT `id`, `line`, `command`, `title`, `arguments`, `criticality`, `write_request` FROM `sequence` ORDER BY `id`')
+            for row in cursor.fetchall():
+                if row[1] == to_line:
+                    break
+
+                cursor.execute('DELETE FROM `sequence` WHERE `id` = ?', (row[0],))
+    
+                if not terminated:
+                    # this sequence is an infinite loop; move the entry to the bottom
+                    cursor.execute('INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `write_request`) VALUES (?, ?, ?, ?, ?, ?)', row)
+
+            else:
+                # looped through??
+                LOG.error('Could not find line %d in sequence %s', to_line, sequence_name)
+                return
+                
+            sid, iline, command, title, arguments, criticality, write_request = row
+
+            if command == AppServer.EXECUTE:
+                self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.dynamo_server.user, socket.gethostname(), (write_request != 0))
+
+            elif command == AppServer.WAIT:
+                time_wait = int(title)
+                cursor.execute('UPDATE `sequence` SET `arguments` = ? WHERE `id` = ?', (int(time.time()) + time_wait, sid))
+
+            elif command == AppServer.TERMINATE:
+                self._stop_sequence(sequence_name)
+
+        except:
+            LOG.error('Failed to schedule line %d of sequence %s.', to_line, sequence_name)
+
+        finally:
+            if db is not None:
+                try:
+                    db.commit()
+                    db.close()
+                except:
+                    pass
+
+    def _send_failure_notice(self, sequence_name, app):
+        text = 'Message from dynamo-scheduled@%s:\n' % socket.gethostname()
+        text += 'Application %s of sequence %s failed.\n' % (app['title'], sequence_name)
+        text += 'Details:\n'
+        for key in sorted(app.keys()):
+            text += ' %s = %s\n' % (key, app[key])
+
+        msg = MIMEText(text)
+        msg['Subject'] = '[Dynamo Scheduler] %s/%s failed' % (sequence_name, app['title'])
+        msg['From'] = 'dynamo@' + socket.gethostname()
+        msg['To'] = config.notification_recipient
+
+        mailserv = smtplib.SMTP('localhost')
+        mailserv.sendmail(msg['From'], [msg['To']], msg.as_string())
+        mailserv.quit()
