@@ -43,6 +43,11 @@ class DynamoServer(object):
             aconf = self.applications_config.server
             self.appserver = AppServer.get_instance(aconf.module, self, aconf.config)
 
+            if self.applications_config.timeout < 60:
+                # Some errors were observed when the timeout is too short
+                # (probably 1 second is enough - we just need to get through pre_execution)
+                self.applications_config.timeout = 60
+
         ## Server status (and application) poll interval
         self.poll_interval = config.status_poll_interval
 
@@ -54,9 +59,6 @@ class DynamoServer(object):
                 excluded = config.debug.get('excluded_' + objs, None)
     
                 self.inventory_load_opts[objs] = (included, excluded)
-
-        ## How long application workspaces are retained (days)
-        self.applications_keep = config.applications_keep * 3600 * 24
 
         ## Shutdown flag
         # Default is set. KeyboardInterrupt is raised when flag is cleared
@@ -279,18 +281,18 @@ class DynamoServer(object):
                 do_sleep = False
 
                 if not os.path.exists(app['path'] + '/exec.py'):
-                    LOG.info('Application %s from user %s@%s (write request: %s) not found.', app['title'], app['user_name'], app['user_host'], app['write_request'])
+                    LOG.info('Application %s from %s@%s (write request: %s) not found.', app['title'], app['user_name'], app['user_host'], app['write_request'])
                     self.manager.master.update_application(app['appid'], status = ServerManager.APP_NOTFOUND)
                     self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_NOTFOUND})
                     continue
     
-                LOG.info('Found application %s from user %s (write request: %s)', app['title'], app['user_name'], app['write_request'])
+                LOG.info('Found application %s from %s (write request: %s)', app['title'], app['user_name'], app['write_request'])
 
                 is_local = (app['user_host'] == socket.gethostname())
     
                 if app['write_request']:
                     if not self.manager.check_write_auth(app['title'], app['user_name'], app['path']):
-                        LOG.warning('Application %s from user %s is not authorized for write access.', app['title'], app['user_name'])
+                        LOG.warning('Application %s from %s is not authorized for write access.', app['title'], app['user_name'])
                         # TODO send a message
     
                         self.manager.master.update_application(app['appid'], status = ServerManager.APP_AUTHFAILED)
@@ -309,9 +311,9 @@ class DynamoServer(object):
                 
                 self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_RUN, 'path': app['path'], 'pid': proc.pid})
     
-                LOG.info('Started application %s (%s) from user %s@%s (PID %d).', app['title'], app['path'], app['user_name'], app['user_host'], proc.pid)
+                LOG.info('Started application %s (%s) from %s@%s (AID %d PID %d).', app['title'], app['path'], app['user_name'], app['user_host'], app['appid'], proc.pid)
     
-                child_processes.append((app['appid'], proc, app['user_name'], app['user_host'], app['path']))
+                child_processes.append((app['appid'], proc, app['user_name'], app['user_host'], app['path'], time.time()))
 
         except KeyboardInterrupt:
             if len(child_processes) != 0:
@@ -339,10 +341,10 @@ class DynamoServer(object):
             # in the child. Child processes have to always ignore SIGINT and be killed only from
             # SIGTERM sent by the line below.
 
-            for app_id, proc, user_name, user_host, path in child_processes:
-                LOG.warning('Terminating %s (%s) requested by %s@%s (PID %d)', proc.name, path, user_name, user_host, proc.pid)
+            for app_id, proc, user_name, user_host, path, time_start in child_processes:
+                LOG.warning('Terminating %s (%s) from %s@%s (AID %d PID %d)', proc.name, path, user_name, user_host, app_id, proc.pid)
 
-                serverutils.killproc(proc)
+                serverutils.killproc(proc, LOG)
 
                 try:
                     self.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
@@ -399,6 +401,7 @@ class DynamoServer(object):
         Loop through child processes and make state machine transitions.
         Processes come in this function in status RUN or KILLED. It is also possible that
         the master server somehow lost the record of the process (which we considered KILLED).
+        If the process times out, status is set to KILLED.
         KILLED jobs will be terminated and popped out of the child_processes list.
         RUN jobs will be polled. If not alive, status changes to DONE or FAILED depending on
         the exit code. If alive, nothing happens.
@@ -409,13 +412,20 @@ class DynamoServer(object):
 
         ichild = 0
         while ichild != len(child_processes):
-            app_id, proc, user_name, user_host, path = child_processes[ichild]
+            app_id, proc, user_name, user_host, path, time_start = child_processes[ichild]
+
+            id_str = '%s (%s) from %s@%s (AID %d PID %d)' % (proc.name, path, user_name, user_host, app_id, proc.pid)
 
             apps = self.manager.master.get_applications(app_id = app_id)
             if len(apps) == 0:
                 status = ServerManager.APP_KILLED
             else:
                 status = apps[0]['status']
+
+            # Kill processes running for too long (timeout given in seconds)
+            if time_start < time.time() - self.applications_config.timeout:
+                LOG.warning('Application %s timed out.', id_str)
+                status = ServerManager.APP_KILLED
 
             if app_id == writing_process[0]:
                 # If this is the writing process, read data from the queue
@@ -429,22 +439,23 @@ class DynamoServer(object):
     
                     elif read_state == 2:
                         status = ServerManager.APP_FAILED
-                        serverutils.killproc(proc, 60)
+                        serverutils.killproc(proc, LOG, 60)
 
                 # If the process is killed or updates are read, release the writing_process
                 if status != ServerManager.APP_RUN or read_state != 0:
                     writing_process = (0, None)
 
-            if status == ServerManager.APP_KILLED:
-                serverutils.killproc(proc, 60)
-    
+            if status == ServerManager.APP_KILLED and proc.is_alive():
+                LOG.warning('Terminating %s.', id_str)
+                serverutils.killproc(proc, LOG, 60)
+
             if proc.is_alive():
                 if status == ServerManager.APP_RUN:
                     ichild += 1
                     continue
                 else:
                     # The process must be complete but did not join within 60 seconds
-                    LOG.error('Application %s (%s) from user %s@%s is stuck (Status %s).', proc.name, path, user_name, user_host, ServerManager.application_status_name(status))
+                    LOG.error('Application %s is stuck (Status %s).', id_str, ServerManager.application_status_name(status))
             else:
                 if status == ServerManager.APP_RUN:
                     if proc.exitcode == 0:
@@ -452,7 +463,7 @@ class DynamoServer(object):
                     else:
                         status = ServerManager.APP_FAILED
 
-                LOG.info('Application %s (%s) from user %s@%s completed (Exit code %d Status %s).', proc.name, path, user_name, user_host, proc.exitcode, ServerManager.application_status_name(status))
+                LOG.info('Application %s completed (Exit code %d Status %s).', id_str, proc.exitcode, ServerManager.application_status_name(status))
                
             child_processes.pop(ichild)
 
@@ -501,7 +512,10 @@ class DynamoServer(object):
                     return 1, update_commands
 
     def _cleanup(self):
-        applications = self.manager.master.get_applications(older_than = int(time.time() - self.applications_keep))
+        # retain_records_for given in days
+        cutoff = int(time.time()) - self.applications_config.retain_records_for * 24 * 60 * 60
+
+        applications = self.manager.master.get_applications(older_than = cutoff)
 
         for app in applications:
             LOG.debug('Cleaning up %s (%s).', app['title'], app['path'])

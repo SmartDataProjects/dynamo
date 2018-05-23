@@ -10,6 +10,7 @@ from ctypes import cdll
 libc = cdll.LoadLibrary("/lib64/libc.so.6") # will use glibc mount()
 
 from dynamo.core.inventory import DynamoInventory
+from dynamo.utils.log import log_exception
 
 BANNER = '''
 +++++++++++++++++++++++++++++++++++++
@@ -18,12 +19,14 @@ BANNER = '''
 +++++++++++++++++++++++++++++++++++++
 '''
 
-def killproc(proc, timeout = 5):
+def killproc(proc, LOG, timeout = 5):
     try:
         proc.terminate()
     except OSError:
-        pass
-    proc.join(timeout)
+        LOG.error('Exception terminating process %d', proc.pid)
+        log_exception(LOG)
+    else:
+        proc.join(timeout)
 
 def bindmount(source, target):
     # Enums defined in sys/mount.h - not named variables in libc.so
@@ -151,6 +154,9 @@ def run_script(path, args, is_local, defaults_config, inventory, authorizer, que
             else:
                 raise
 
+        elif exc_type is KeyboardInterrupt:
+            sys.exit(2)
+
         else:
             # print the traceback "manually" to cut out the first two lines showing the server process
             tb_lines = traceback.format_tb(tb)[1:]
@@ -171,9 +177,9 @@ def run_script(path, args, is_local, defaults_config, inventory, authorizer, que
 
         sys.stdout.close()
         sys.stderr.close()
-
-    sys.stdout = old_stdout
-    sys.stderr = old_stderr
+        # multiprocessing/forking.py still uses sys.stdout and sys.stderr - need to return them to the original FDs
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
 
 def run_interactive(path, is_local, defaults_config, inventory, authorizer, make_console, stdout = sys.stdout, stderr = sys.stderr):
     """
@@ -260,15 +266,20 @@ def pre_execution(path, is_local, read_only, defaults_config, inventory, authori
     os.setgid(gid)
     os.setuid(uid)
 
-    # Ignore SIGINT - see note above proc.terminate()
     # We will react to SIGTERM by raising KeyboardInterrupt
     from dynamo.utils.signaling import SignalConverter
-    
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     signal_converter = SignalConverter()
     signal_converter.set(signal.SIGTERM)
     # we won't call unset()
+
+    # Ignore SIGINT
+    # If the main process was interrupted by Ctrl+C:
+    # Ctrl+C will pass SIGINT to all child processes (if this process is the head of the
+    # foreground process group). In this case calling terminate() will duplicate signals
+    # in the child. Child processes have to always ignore SIGINT and be killed only from
+    # SIGTERM sent by the line below.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     # Reset logging
     # This is a rather hacky solution relying perhaps on the implementation internals of
