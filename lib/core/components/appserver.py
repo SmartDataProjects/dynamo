@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import random
 import time
@@ -394,43 +395,48 @@ class AppServer(object):
                 iline, command, title, arguments, criticality, write_request, app_id = row
 
                 if command == AppServer.EXECUTE:
+                    if app_id is None:
+                        self._schedule_from_sequence(sequence_name, iline)
+                        continue
+
                     # poll the app_id
                     app = self._get_app(app_id)
 
                     if app is None:
                         LOG.error('[Scheduler] Application %s in sequence %s disappeared.', title, sequence_name)
                         self._schedule_from_sequence(sequence_name, iline)
+                        continue
+
+                    if app['status'] in (ServerManager.APP_NEW, ServerManager.APP_ASSIGNED, ServerManager.APP_RUN):
+                        continue
                     else:
-                        if app['status'] in (ServerManager.APP_NEW, ServerManager.APP_ASSIGNED, ServerManager.APP_RUN):
-                            continue
+                        try:
+                            with open(work_dir + '/log.out', 'a') as out:
+                                out.write('\n')
+                        except:
+                            pass
+        
+                        try:
+                            with open(work_dir + '/log.err', 'a') as out:
+                                out.write('\n')
+                        except:
+                            pass
+
+                        if app['status'] == ServerManager.APP_DONE:
+                            LOG.info('[Scheduler] Application %s in sequence %s completed.', title, sequence_name)
+                            self._schedule_from_sequence(sequence_name, iline + 1)
+
                         else:
-                            try:
-                                with open(work_dir + '/log.out', 'a') as out:
-                                    out.write('\n')
-                            except:
-                                pass
-            
-                            try:
-                                with open(work_dir + '/log.err', 'a') as out:
-                                    out.write('\n')
-                            except:
-                                pass
+                            LOG.warning('[Scheduler] Application %s in sequence %s terminated with status %s.', title, sequence_name, ServerManager.application_status_name(app['status']))
+                            if criticality != AppServer.PASS:
+                                self._send_failure_notice(sequence_name, app)
 
-                            if app['status'] == ServerManager.APP_DONE:
-                                LOG.info('[Scheduler] Application %s in sequence %s completed.', title, sequence_name)
-                                self._schedule_from_sequence(sequence_name, iline + 1)
-
-                            else:
-                                LOG.warning('[Scheduler] Application %s in sequence %s terminated with status %s.', title, sequence_name, ServerManager.application_status_name(app['status']))
-                                if criticality != AppServer.PASS:
-                                    self._send_failure_notice(sequence_name, app)
-
-                                if criticality == AppServer.REPEAT_SEQ:
-                                    LOG.warning('[Scheduler] Restarting sequence %s.', sequence_name)
-                                    self._schedule_from_sequence(sequence_name, 0)
-                                elif criticality == AppServer.REPEAT_LINE:
-                                    LOG.warning('[Scheduler] Restarting application %s of sequence %s.', title, sequence_name)
-                                    self._schedule_from_sequence(sequence_name, iline)
+                            if criticality == AppServer.REPEAT_SEQ:
+                                LOG.warning('[Scheduler] Restarting sequence %s.', sequence_name)
+                                self._schedule_from_sequence(sequence_name, 0)
+                            elif criticality == AppServer.REPEAT_LINE:
+                                LOG.warning('[Scheduler] Restarting application %s of sequence %s.', title, sequence_name)
+                                self._schedule_from_sequence(sequence_name, iline)
 
                 elif command == AppServer.WAIT:
                     # title is the number of seconds expressed in a decimal string
@@ -458,7 +464,7 @@ class AppServer(object):
             cursor.execute('SELECT MAX(`line`) FROM `sequence`')
             max_line = cursor.fetchone()[0]
 
-            to_line %= max_line
+            to_line %= (max_line + 1)
     
             cursor.execute('SELECT `id`, `line`, `command`, `title`, `arguments`, `criticality`, `write_request` FROM `sequence` ORDER BY `id`')
             for row in cursor.fetchall():
@@ -473,13 +479,24 @@ class AppServer(object):
 
             else:
                 # looped through??
-                LOG.error('Could not find line %d in sequence %s', to_line, sequence_name)
+                LOG.error('[Scheduler] Could not find line %d in sequence %s', to_line, sequence_name)
                 return
                 
             sid, iline, command, title, arguments, criticality, write_request = row
 
             if command == AppServer.EXECUTE:
-                self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.dynamo_server.user, socket.gethostname(), (write_request != 0))
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+                with open(work_dir + '/log.out', 'a') as out:
+                    out.write('++++ %s: %s\n' % (timestamp, title))
+                    out.write('%s/%s %s\n\n' % (work_dir, title, arguments))
+
+                with open(work_dir + '/log.err', 'a') as out:
+                    out.write('++++ %s: %s\n' % (timestamp, title))
+                    out.write('%s/%s %s\n\n' % (work_dir, title, arguments))
+
+                app_id = self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.dynamo_server.user, socket.gethostname(), (write_request != 0))
+                cursor.execute('UPDATE `sequence` SET `app_id` = ? WHERE `id` = ?', (app_id, sid))
+                LOG.info('[Scheduler] Scheduled %s/%s %s (AID %s).', sequence_name, title, arguments, app_id)
 
             elif command == AppServer.WAIT:
                 time_wait = int(title)
@@ -489,7 +506,8 @@ class AppServer(object):
                 self._do_stop_sequence(sequence_name)
 
         except:
-            LOG.error('Failed to schedule line %d of sequence %s.', to_line, sequence_name)
+            exc_type, exc, _ = sys.exc_info()
+            LOG.error('[Scheduler] Failed to schedule line %d of sequence %s (%s: %s).', to_line, sequence_name, exc_type.__name__, str(exc))
 
         finally:
             if db is not None:

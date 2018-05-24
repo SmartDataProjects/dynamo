@@ -289,7 +289,7 @@ class DynamoServer(object):
                     self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_NOTFOUND})
                     continue
     
-                LOG.info('Found application %s from %s (write request: %s)', app['title'], app['user_name'], app['write_request'])
+                LOG.info('Found application %s from %s (AID %s, write request: %s)', app['title'], app['user_name'], app['appid'], app['write_request'])
 
                 is_local = (app['user_host'] == socket.gethostname())
     
