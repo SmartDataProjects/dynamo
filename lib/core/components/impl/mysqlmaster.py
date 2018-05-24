@@ -327,7 +327,7 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         self._server_id = 0
 
     def _connect(self): #override
-        self._mysql.query('LOCK TABLES `servers` WRITE')
+        self._mysql.lock_tables(write = ['servers'])
 
         if self.get_master_host() == 'localhost' or self.get_master_host() == socket.gethostname():
             # This is the master server; wipe the table clean
@@ -340,13 +340,13 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         # id of this server
         self._server_id = self._mysql.last_insert_id
 
-        self._mysql.query('UNLOCK TABLES')
+        self._mysql.unlock_tables()
 
     def lock(self): #override
-        self._mysql.query('LOCK TABLES `servers` WRITE, `applications` WRITE, `users` READ')
+        self._mysql.lock_tables(write = ['servers', 'applications'], read = ['users'])
 
     def unlock(self): #override
-        self._mysql.query('UNLOCK TABLES')
+        self._mysql.unlock_tables()
 
     def get_master_host(self): #override
         return self._mysql.hostname()
@@ -434,16 +434,16 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         self._mysql.query(sql, version, self._server_id)
 
     def get_store_config(self, hostname): #override
-        self._mysql.query('LOCK TABLES `servers` READ')
+        self._mysql.lock_tables(read = ['servers'])
         while self.get_status(hostname) == ServerManager.SRV_UPDATING:
             # need to get the version of the remote server when it's not updating
-            self._mysql.query('UNLOCK TABLES')
+            self._mysql.unlock_tables()
             time.sleep(2)
-            self._mysql.query('LOCK TABLES `servers` READ')
+            self._mysql.lock_tables(read = ['servers'])
         
         sql = 'SELECT `store_module`, `store_config`, `store_version` FROM `servers` WHERE `hostname` = %s'
         result = self._mysql.query(sql, hostname)
-        self._mysql.query('UNLOCK TABLES')
+        self._mysql.unlock_tables()
 
         if len(result) == 0:
             return None

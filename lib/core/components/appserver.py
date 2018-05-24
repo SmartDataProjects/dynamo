@@ -210,13 +210,23 @@ class AppServer(object):
             return False, ex.message
 
         for name, sequence in sequences.items():
+            existing = self.dynamo_server.manager.master.find_sequence(name)
+            if existing is not None:
+                _, reg_user, _, _ = existing
+                if reg_user != user:
+                    return False, 'Sequence %s is already created for user %s.' % (name, reg_user)
+
+                success, msg = self._delete_sequence(name, user)
+                if not success:
+                    return False, msg
+
             work_dir = self.scheduler_base + '/' + name
 
             if os.path.exists(work_dir):
                 try:
                     shutil.rmtree(work_dir)
                 except:
-                    return False, 'Failed to set up %s.' % name
+                    return False, 'Cannot delete existing directory %s.' % work_dir
 
             try:
                 os.makedirs(work_dir)
@@ -227,13 +237,13 @@ class AppServer(object):
                 with open(work_dir + '/log.err', 'w'):
                     pass
 
-            except:
+            except Exception as ex:
                 try:
                     shutil.rmtree(work_dir)
                 except:
                     pass
 
-                return False, 'Failed to set up %s.' % name
+                return False, 'Failed to set up %s (%s).' % (name, ex.message)
         
             for action in sequence:
                 if action[0] == AppServer.EXECUTE:
@@ -340,6 +350,8 @@ class AppServer(object):
         if restart:
             self._shift_sequence_to(name, 0)
 
+        LOG.info('[Scheduler] Starting sequence %s.', name)
+
         if not self.dynamo_server.manager.master.update_sequence(name, enabled = True):
             return False, 'Failed to start sequence %s.' % name
 
@@ -353,6 +365,8 @@ class AppServer(object):
 
         if not enabled:
             return True, ''
+
+        LOG.info('[Scheduler] Stopping sequence %s.', name)
 
         return self._do_stop_sequence(name)
 
@@ -379,6 +393,14 @@ class AppServer(object):
         A function to be run as a thread. Rotates through the scheduler sequence directories and execute whatever is up next.
         Perhaps we want an independent logger for this thread
         """
+
+        for sequence_name in self.dynamo_server.manager.master.get_enabled_sequences():
+            _, _, restart, _ = self.dynamo_server.manager.master.find_sequence(sequence_name)
+            if restart:
+                self._shift_sequence_to(sequence_name, 0)
+                LOG.info('[Scheduler] Starting sequence %s from line 0.', sequence_name)
+            else:
+                LOG.info('[Scheduler] Starting sequence %s.', sequence_name)
 
         while True:
             for sequence_name in self.dynamo_server.manager.master.get_enabled_sequences():
@@ -433,7 +455,9 @@ class AppServer(object):
 
                         else:
                             LOG.warning('[Scheduler] Application %s in sequence %s terminated with status %s.', title, sequence_name, ServerManager.application_status_name(app['status']))
-                            if criticality != AppServer.PASS:
+                            if criticality == AppServer.PASS:
+                                self._schedule_from_sequence(sequence_name, iline + 1)
+                            else:
                                 self._send_failure_notice(sequence_name, app)
 
                             if criticality == AppServer.REPEAT_SEQ:
@@ -458,6 +482,8 @@ class AppServer(object):
     def _schedule_from_sequence(self, sequence_name, iline):
         work_dir = self.scheduler_base + '/' + sequence_name
 
+        db = None
+
         try:
             row = self._shift_sequence_to(sequence_name, iline)
             if row is None:
@@ -466,6 +492,9 @@ class AppServer(object):
                 return
                 
             sid, iline, command, title, arguments, criticality, write_request = row
+
+            db = sqlite3.connect(work_dir + '/sequence.db')
+            cursor = db.cursor()
 
             if command == AppServer.EXECUTE:
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -491,6 +520,14 @@ class AppServer(object):
         except:
             exc_type, exc, _ = sys.exc_info()
             LOG.error('[Scheduler] Failed to schedule line %d of sequence %s (%s: %s).', iline, sequence_name, exc_type.__name__, str(exc))
+
+        finally:
+            if db is not None:
+                try:
+                    db.commit()
+                    db.close()
+                except:
+                    pass
 
     def _parse_sequence_def(self, path, user):
         app_paths = {} # {title: exec path}
@@ -619,22 +656,28 @@ class AppServer(object):
             max_line = cursor.fetchone()[0]
     
             iline %= (max_line + 1)
-    
-            cursor.execute('SELECT `id`, `line`, `command`, `title`, `arguments`, `criticality`, `write_request` FROM `sequence` ORDER BY `id`')
-            for row in cursor.fetchall():
-                if row[1] == iline:
-                    return row
-    
-                cursor.execute('DELETE FROM `sequence` WHERE `id` = ?', (row[0],))
-    
-                if not terminates:
-                    # this sequence is an infinite loop; move the entry to the bottom
-                    cursor.execute('INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `write_request`) VALUES (?, ?, ?, ?, ?, ?)', row)
-    
-            else:
-                # looped through??
-                return None
+            looped_once = False
+            
+            while True:
+                cursor.execute('SELECT `id`, `line`, `command`, `title`, `arguments`, `criticality`, `write_request` FROM `sequence` ORDER BY `id`')
+                for row in cursor.fetchall():
+                    if row[1] == iline:
+                        return row
+        
+                    cursor.execute('DELETE FROM `sequence` WHERE `id` = ?', (row[0],))
+        
+                    if not terminates:
+                        # this sequence is an infinite loop; move the entry to the bottom
+                        cursor.execute('INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `write_request`) VALUES (?, ?, ?, ?, ?, ?)', row)
 
+                db.commit()
+
+                if looped_once:
+                    return None
+
+                # we may be shifting to the row inserted just now
+                looped_once = True
+    
         except:
             LOG.error('Failed to shift sequence %s to line %d.', sequence_name, iline)
 
