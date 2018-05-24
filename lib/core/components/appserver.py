@@ -205,7 +205,7 @@ class AppServer(object):
         LOG.info('Parsing sequence definition %s', path)
 
         try:
-            sequences, app_paths = self._parse_sequence_def(path, user)
+            sequences, sequences_with_restart, app_paths = self._parse_sequence_def(path, user)
         except Exception as ex:
             return False, ex.message
 
@@ -287,7 +287,9 @@ class AppServer(object):
             db.commit()
             db.close()
 
-            self.dynamo_server.manager.master.register_sequence(name, user)
+            restart = (name in sequences_with_restart)
+
+            self.dynamo_server.manager.master.register_sequence(name, user, restart = restart)
 
         LOG.info('Added sequence(s) %s', ' '.join(sorted(sequences.keys())))
 
@@ -298,7 +300,7 @@ class AppServer(object):
         if sequence is None:
             raise Exception('Sequence %s does not exist.' % name)
 
-        name, reg_user, enabled = sequence
+        name, reg_user, restart, enabled = sequence
         if reg_user != user:
             raise Exception('Sequence %s is not registered for user %s.' % (name, user))
 
@@ -306,7 +308,7 @@ class AppServer(object):
 
     def _delete_sequence(self, name, user):
         try:
-            _, _, enabled = self._get_sequence(name, user)
+            _, _, _, enabled = self._get_sequence(name, user)
         except Exception as ex:
             return False, ex.message
 
@@ -328,21 +330,24 @@ class AppServer(object):
 
     def _start_sequence(self, name, user):
         try:
-            _, _, enabled = self._get_sequence(name, user)
+            _, _, restart, enabled = self._get_sequence(name, user)
         except Exception as ex:
             return False, ex.message
 
         if enabled:
             return True, ''
 
-        if not self.dynamo_server.manager.master.update_sequence(name, True):
+        if restart:
+            self._shift_sequence_to(name, 0)
+
+        if not self.dynamo_server.manager.master.update_sequence(name, enabled = True):
             return False, 'Failed to start sequence %s.' % name
 
         return True, ''
 
     def _stop_sequence(self, name, user):
         try:
-            _, _, enabled = self._get_sequence(name, user)
+            _, _, _, enabled = self._get_sequence(name, user)
         except Exception as ex:
             return False, ex.message
 
@@ -352,7 +357,7 @@ class AppServer(object):
         return self._do_stop_sequence(name)
 
     def _do_stop_sequence(self, name):
-        if not self.dynamo_server.manager.master.update_sequence(name, False):
+        if not self.dynamo_server.manager.master.update_sequence(name, enabled = False):
             return False, 'Failed to stop sequence %s.' % name
 
         # kill all running applications
@@ -450,36 +455,14 @@ class AppServer(object):
             # all sequences processed; now sleep for 10 seconds
             time.sleep(10)
 
-    def _schedule_from_sequence(self, sequence_name, to_line):
+    def _schedule_from_sequence(self, sequence_name, iline):
         work_dir = self.scheduler_base + '/' + sequence_name
 
-        db = None
         try:
-            db = sqlite3.connect(work_dir + '/sequence.db')
-            cursor = db.cursor()
-    
-            cursor.execute('SELECT COUNT(*) FROM `sequence` WHERE `command` = ?', (AppServer.TERMINATE,))
-            terminated = cursor.fetchone()[0]
-
-            cursor.execute('SELECT MAX(`line`) FROM `sequence`')
-            max_line = cursor.fetchone()[0]
-
-            to_line %= (max_line + 1)
-    
-            cursor.execute('SELECT `id`, `line`, `command`, `title`, `arguments`, `criticality`, `write_request` FROM `sequence` ORDER BY `id`')
-            for row in cursor.fetchall():
-                if row[1] == to_line:
-                    break
-
-                cursor.execute('DELETE FROM `sequence` WHERE `id` = ?', (row[0],))
-    
-                if not terminated:
-                    # this sequence is an infinite loop; move the entry to the bottom
-                    cursor.execute('INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `write_request`) VALUES (?, ?, ?, ?, ?, ?)', row)
-
-            else:
-                # looped through??
-                LOG.error('[Scheduler] Could not find line %d in sequence %s', to_line, sequence_name)
+            row = self._shift_sequence_to(sequence_name, iline)
+            if row is None:
+                LOG.error('[Scheduler] Could not find line %d in sequence %s', iline, sequence_name)
+                self._do_stop_sequence(sequence_name)
                 return
                 
             sid, iline, command, title, arguments, criticality, write_request = row
@@ -507,20 +490,13 @@ class AppServer(object):
 
         except:
             exc_type, exc, _ = sys.exc_info()
-            LOG.error('[Scheduler] Failed to schedule line %d of sequence %s (%s: %s).', to_line, sequence_name, exc_type.__name__, str(exc))
-
-        finally:
-            if db is not None:
-                try:
-                    db.commit()
-                    db.close()
-                except:
-                    pass
+            LOG.error('[Scheduler] Failed to schedule line %d of sequence %s (%s: %s).', iline, sequence_name, exc_type.__name__, str(exc))
 
     def _parse_sequence_def(self, path, user):
         app_paths = {} # {title: exec path}
         authorized_applications = set() # set of titles
         sequences = {} # {name: sequence}
+        sequences_with_restart = []
         sequence = None
 
         with open(path) as source:
@@ -565,11 +541,14 @@ class AppServer(object):
         
                 # Sequence definitions
                 # [SEQUENCE title]
-                matches = re.match('\[SEQUENCE\s(\S+)\]', line)
+                matches = re.match('\[SEQUENCE\s(\S+)\](\s+restart|)', line)
                 if matches:
                     # Sequence header
                     LOG.debug('New sequence %s (line %d)', matches.group(1), iline)
                     sequence = sequences[matches.group(1)] = []
+                    if matches.group(2).strip() == 'restart':
+                        sequences_with_restart.append(matches.group(1))
+
                     continue
 
                 # If the line is not an application or sequence definition, there needs to be an open sequence
@@ -622,23 +601,70 @@ class AppServer(object):
                 if line == 'TERMINATE':
                     sequence.append([AppServer.TERMINATE])
 
-        return sequences, app_paths
+        return sequences, sequences_with_restart, app_paths
+
+    def _shift_sequence_to(self, sequence_name, iline):
+        work_dir = self.scheduler_base + '/' + sequence_name
+
+        db = None
+
+        try:
+            db = sqlite3.connect(work_dir + '/sequence.db')
+            cursor = db.cursor()
+    
+            cursor.execute('SELECT COUNT(*) FROM `sequence` WHERE `command` = ?', (AppServer.TERMINATE,))
+            terminates = (cursor.fetchone()[0] != 0)
+    
+            cursor.execute('SELECT MAX(`line`) FROM `sequence`')
+            max_line = cursor.fetchone()[0]
+    
+            iline %= (max_line + 1)
+    
+            cursor.execute('SELECT `id`, `line`, `command`, `title`, `arguments`, `criticality`, `write_request` FROM `sequence` ORDER BY `id`')
+            for row in cursor.fetchall():
+                if row[1] == iline:
+                    return row
+    
+                cursor.execute('DELETE FROM `sequence` WHERE `id` = ?', (row[0],))
+    
+                if not terminates:
+                    # this sequence is an infinite loop; move the entry to the bottom
+                    cursor.execute('INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `write_request`) VALUES (?, ?, ?, ?, ?, ?)', row)
+    
+            else:
+                # looped through??
+                return None
+
+        except:
+            LOG.error('Failed to shift sequence %s to line %d.', sequence_name, iline)
+
+        finally:
+            if db is not None:
+                try:
+                    db.commit()
+                    db.close()
+                except:
+                    pass
 
     def _send_failure_notice(self, sequence_name, app):
         if not self.dynamo_server.notification_recipient:
             return
 
-        text = 'Message from dynamo-scheduled@%s:\n' % socket.gethostname()
-        text += 'Application %s of sequence %s failed.\n' % (app['title'], sequence_name)
-        text += 'Details:\n'
-        for key in sorted(app.keys()):
-            text += ' %s = %s\n' % (key, app[key])
+        try:
+            text = 'Message from dynamo-scheduled@%s:\n' % socket.gethostname()
+            text += 'Application %s of sequence %s failed.\n' % (app['title'], sequence_name)
+            text += 'Details:\n'
+            for key in sorted(app.keys()):
+                text += ' %s = %s\n' % (key, app[key])
+    
+            msg = MIMEText(text)
+            msg['Subject'] = '[Dynamo Scheduler] %s/%s failed' % (sequence_name, app['title'])
+            msg['From'] = 'dynamo@' + socket.gethostname()
+            msg['To'] = self.dynamo_server.notification_recipient
+    
+            mailserv = smtplib.SMTP('localhost')
+            mailserv.sendmail(msg['From'], [msg['To']], msg.as_string())
+            mailserv.quit()
 
-        msg = MIMEText(text)
-        msg['Subject'] = '[Dynamo Scheduler] %s/%s failed' % (sequence_name, app['title'])
-        msg['From'] = 'dynamo@' + socket.gethostname()
-        msg['To'] = self.dynamo_server.notification_recipient
-
-        mailserv = smtplib.SMTP('localhost')
-        mailserv.sendmail(msg['From'], [msg['To']], msg.as_string())
-        mailserv.quit()
+        except:
+            LOG.error('Failed to send a failure notice.')

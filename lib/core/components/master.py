@@ -194,11 +194,12 @@ class AppManager(object):
         """
         raise NotImplementedError('revoke_application_authorization')
 
-    def register_sequence(self, name, user):
+    def register_sequence(self, name, user, restart = False):
         """
         Register a scheduled sequence.
-        @param name  Name of the sequence
-        @param user  Name of the user
+        @param name    Name of the sequence
+        @param user    Name of the user
+        @param restart If True, sequence always starts from line 0
 
         @return True if success, False if not.
         """
@@ -209,14 +210,15 @@ class AppManager(object):
         Find a sequence with the given name.
         @param name  Name of the sequence
 
-        @return (name, user, enabled) or None
+        @return (name, user, restart, enabled) or None
         """
         raise NotImplementedError('find_sequence')
 
-    def update_sequence(self, name, enabled):
+    def update_sequence(self, name, restart = None, enabled = None):
         """
         Toggle the sequence state.
         @param name    Name of the sequence
+        @param restart True: sequence starts from line 0
         @param enabled True: sequence enabled, False: disabled
 
         @return True if success, False if not.
