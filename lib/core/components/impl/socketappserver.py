@@ -159,17 +159,6 @@ class SocketAppServer(AppServer):
 
         self._sock.listen(5)
 
-    def stop(self):
-        """Shut down the socket."""
-
-        self._running = False
-
-        try:
-            self._sock.shutdown(socket.SHUT_RDWR)
-            self._sock.close()
-        except:
-            pass
-
     def _accept_applications(self): #override
         while True:
             # blocks until there is a connection
@@ -191,6 +180,14 @@ class SocketAppServer(AppServer):
                 return
 
             thread.start_new_thread(self._process_application, (conn, addr))
+
+    def _stop_accepting(self): #override
+        """Shut down the socket."""
+        try:
+            self._sock.shutdown(socket.SHUT_RDWR)
+            self._sock.close()
+        except:
+            pass
 
     def _process_application(self, conn, addr):
         """
@@ -230,113 +227,74 @@ class SocketAppServer(AppServer):
 
             LOG.info('Accepted %s from %s:%s by %s' % (command, addr[0], addr[1], user_name))
 
-            if command == 'poll' or command == 'kill':
-                self._act_on_app(command, app_data['appid'], io)
-                return
+            def act_and_respond(resp):
+                success, msg = resp
+                if success:
+                    io.send('OK', msg)
+                else:
+                    io.send('failed', msg)
+                    
+                return resp
 
-            # new application - get the work area path
-            if 'path' in app_data:
-                # work area specified
-                workarea = app_data['path']
+            if command == 'poll':
+                act_and_respond(self._poll_app(app_data['appid']))
+
+            elif command == 'kill':
+                act_and_respond(self._kill_app(app_data['appid']))
+
+            elif command == 'add':
+                act_and_respond(self._add_sequences(app_data['schedule'], user_name))
+
+            elif command == 'remove':
+                act_and_respond(self._delete_sequence(app_data['sequence'], user_name))
+
+            elif command == 'start':
+                act_and_respond(self._start_sequence(app_data['sequence'], user_name))
+
+            elif command == 'stop':
+                act_and_respond(self._stop_sequence(app_data['sequence'], user_name))
+
             else:
-                workarea = self._make_workarea()
-                if not workarea:
-                    io.send('failed', 'Failed to create work area')
+                # new single application - get the work area path
+                if 'path' in app_data:
+                    # work area specified
+                    workarea = app_data['path']
+                else:
+                    workarea = self._make_workarea()
+                    if not workarea:
+                        io.send('failed', 'Failed to create work area')
+    
+                if command == 'submit':
+                    app_data['path'] = workarea
+                    app_data['user'] = user_name
+                    if io.host == 'localhost' or io.host == '127.0.0.1':
+                        app_data['host'] = socket.gethostname()
+                    else:
+                        app_data['host'] = io.host
 
-            if command == 'submit':
-                self._submit_app(app_data, user_name, workarea, io)
+                    success, msg = act_and_respond(self._schedule_app(app_data))
 
-            elif command == 'interact':
-                self._interact(workarea, io)
+                    if success and app_data['mode'] == 'synch':
+                        # synchronous execution = client watches the app run
+                        # client sends the socket address to connect stdout/err to
+                        port_data = io.recv()
+                        addr = (io.host, port_data['port'])
 
-                # cleanup
-                if 'path' not in app_data:
-                    shutil.rmtree(workarea)
+                        result = self._serve_synch_app(msg['appid'], msg['path'], addr)
+
+                        io.send('OK', result)
+
+                elif command == 'interact':
+                    self._interact(workarea, io)
+    
+                    # cleanup
+                    if 'path' not in app_data:
+                        shutil.rmtree(workarea)
 
         except:
             io.send('failed', sys.exc_info()[0].__name__ + ': ' + str(sys.exc_info()[1]))
         finally:
             conn.close()
-
-    def _act_on_app(self, command, app_id, io):
-        # query or operation on existing application
-
-        master = self.dynamo_server.manager.master
-
-        apps = master.get_applications(app_id = app_id)
-        if len(apps) == 0:
-            io.send('failed', 'Unknown appid %d' % app_id)
-            return
-
-        app = apps[0]
-
-        if command == 'kill':
-            if app['status'] == ServerManager.APP_NEW or app['status'] == ServerManager.APP_RUN:
-                master.update_application(app_id, status = ServerManager.APP_KILLED)
-                io.send('OK', {'result': 'success', 'detail': 'Task aborted.'})
-            else:
-                io.send('OK', {'result': 'noaction',
-                    'detail': 'Task already completed with status %s (exit code %s).' % \
-                    (ServerManager.application_status_name(app['status']), app['exit_code'])})
-        else:
-            app['status'] = ServerManager.application_status_name(app['status'])
-            io.send('OK', app)
-
-    def _submit_app(self, app_data, user, workarea, io):
-        # schedule the app on master
-        for key in ['title', 'args', 'write_request']:
-            if key not in app_data:
-                io.send('failed', 'Missing ' + key)
-                return
-
-        if 'exec_path' in app_data:
-            try:
-                shutil.copyfile(app_data['exec_path'], workarea + '/exec.py')
-            except Exception as exc:
-                io.send('failed', 'Could not copy executable %s to %s (%s)' % (app_data['exec_path'], workarea, str(exc)))
-                return
-
-            app_data.pop('exec_path')
-
-        elif 'exec' in app_data:
-            with open(workarea + '/exec.py', 'w') as out:
-                out.write(app_data['exec'])
-                
-            app_data.pop('exec')
-
-        app_data['path'] = workarea
-        app_data['user'] = user
-        if io.host == 'localhost' or io.host == '127.0.0.1':
-            app_data['host'] = socket.gethostname()
-        else:
-            app_data['host'] = io.host
-
-        mode = app_data.pop('mode')
-
-        app_id = self._schedule_app(mode, **app_data)
-
-        if mode == 'synch':
-            msg = self.wait_synch_app_queue(app_id)
-
-            if msg['status'] != ServerManager.APP_RUN:
-                # this app is not going to run
-                io.send('failed', {'status': ServerManager.application_status_name(msg['status'])})
-                return
-
-            io.send('OK', {'appid': app_id, 'path': msg['path'], 'pid': msg['pid']}) # msg['path'] should be == workarea
-
-            # synchronous execution = client watches the app run
-            # client sends the socket address to connect stdout/err to
-            port_data = io.recv()
-
-            addr = (io.host, port_data['port'])
-
-            result = self._serve_synch_app(app_id, msg['path'], addr)
-
-            io.send('OK', result)
-
-        else:
-            io.send('OK', {'appid': app_id, 'path': workarea})
 
     def _interact(self, workarea, io):
         io.send('OK')

@@ -7,5 +7,6 @@ CREATE TABLE `deletion_queue` (
   `start` bigint(20) DEFAULT NULL,
   `finish` bigint(20) unsigned DEFAULT NULL,
   `batchid` varchar(40) COLLATE latin1_general_cs DEFAULT NULL,
-  UNIQUE KEY `file` (`file`,`site`)
+  UNIQUE KEY `file` (`file`,`site`),
+  KEY `status` (`status`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

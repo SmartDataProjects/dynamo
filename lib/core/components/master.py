@@ -97,7 +97,7 @@ class Authorizer(object):
         raise NotImplementedError('list_authorized_users')
 
 
-class Scheduler(object):
+class AppManager(object):
     """
     Object responsible for scheduling applications.
     """
@@ -106,8 +106,8 @@ class Scheduler(object):
     def get_instance(module, config):
         import dynamo.core.components.impl as impl
         cls = getattr(impl, module)
-        if not issubclass(cls, Scheduler):
-            raise RuntimeError('%s is not a subclass of Scheduler' % module)
+        if not issubclass(cls, AppManager):
+            raise RuntimeError('%s is not a subclass of AppManager' % module)
 
         return cls(config)
 
@@ -139,12 +139,13 @@ class Scheduler(object):
         """
         raise NotImplementedError('get_next_application')
 
-    def get_applications(self, older_than = 0, has_path = True, app_id = None):
+    def get_applications(self, older_than = 0, status = None, app_id = None, path = None):
         """
         Get the list of application entries.
         @param older_than   Return only applications with UNIX time stamps older than the value
-        @param has_path     Return applications whose path is not NULL
+        @param status       Return only applications in the given status
         @param app_id       Return application with matching id.
+        @param path         Return application at the given path.
 
         @return [{appid, write_request, user_name, user_host, title, path, args, status, server, exit_code}]
         """
@@ -193,8 +194,52 @@ class Scheduler(object):
         """
         raise NotImplementedError('revoke_application_authorization')
 
+    def register_sequence(self, name, user):
+        """
+        Register a scheduled sequence.
+        @param name  Name of the sequence
+        @param user  Name of the user
 
-class MasterServer(Authorizer, Scheduler):
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('register_sequence')
+
+    def find_sequence(self, name):
+        """
+        Find a sequence with the given name.
+        @param name  Name of the sequence
+
+        @return (name, user, enabled) or None
+        """
+        raise NotImplementedError('find_sequence')
+
+    def update_sequence(self, name, enabled):
+        """
+        Toggle the sequence state.
+        @param name    Name of the sequence
+        @param enabled True: sequence enabled, False: disabled
+
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('update_sequence')
+
+    def delete_sequence(self, name):
+        """
+        Delete a registered sequence.
+        @param name    Name of the sequence
+
+        @return True if success, False if not.
+        """
+        raise NotImplementedError('delete_sequence')
+
+    def get_enabled_sequences(self):
+        """
+        @return [name]
+        """
+        raise NotImplementedError('get_enabled_sequences')
+
+
+class MasterServer(Authorizer, AppManager):
     """
     An interface to the master server that coordinates server activities.
     """
@@ -210,7 +255,7 @@ class MasterServer(Authorizer, Scheduler):
 
     def __init__(self, config):
         Authorizer.__init__(self, config)
-        Scheduler.__init__(self, config)
+        AppManager.__init__(self, config)
 
         self.connected = False
 

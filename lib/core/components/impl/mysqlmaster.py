@@ -2,7 +2,7 @@ import time
 import json
 import socket
 
-from dynamo.core.components.master import Authorizer, Scheduler, MasterServer
+from dynamo.core.components.master import Authorizer, AppManager, MasterServer
 from dynamo.core.manager import ServerManager
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration
@@ -95,9 +95,9 @@ class MySQLAuthorizer(Authorizer):
         return self._mysql.query(sql, *args)
 
 
-class MySQLScheduler(Scheduler):
+class MySQLAppManager(AppManager):
     def __init__(self, config):
-        Scheduler.__init__(self, config)
+        AppManager.__init__(self, config)
 
         if not hasattr(self, '_mysql'):
             db_params = Configuration(config.db_params)
@@ -105,22 +105,33 @@ class MySQLScheduler(Scheduler):
 
             self._mysql = MySQL(db_params)
 
-    def get_applications(self, older_than = 0, app_id = None): #override
+    def get_applications(self, older_than = 0, status = None, app_id = None, path = None): #override
         sql = 'SELECT `applications`.`id`, `applications`.`write_request`, `applications`.`title`, `applications`.`path`,'
         sql += ' `applications`.`args`, 0+`applications`.`status`, `applications`.`server`, `applications`.`exit_code`, `users`.`name`, `applications`.`user_host`'
         sql += ' FROM `applications` INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
 
         constraints = []
+        args = []
         if older_than > 0:
-            constraints.append('UNIX_TIMESTAMP(`applications`.`timestamp`) < %d' % older_than)
+            constraints.append('UNIX_TIMESTAMP(`applications`.`timestamp`) < %s')
+            args.append(older_than)
+        if status is not None:
+            constraints.append('`applications`.`status` = %s')
+            args.append(status)
         if app_id is not None:
-            constraints.append('`applications`.`id` = %d' % app_id)
+            constraints.append('`applications`.`id` = %s')
+            args.append(app_id)
+        if path is not None:
+            constraints.append('`applications`.`path` = %s')
+            args.append(path)
 
         if len(constraints) != 0:
             sql += ' WHERE ' + ' AND '.join(constraints)
 
+        args = tuple(args)
+
         applications = []
-        for aid, write, title, path, args, status, server, exit_code, uname, uhost in self._mysql.xquery(sql):
+        for aid, write, title, path, args, status, server, exit_code, uname, uhost in self._mysql.xquery(sql, *args):
             applications.append({
                 'appid': aid, 'write_request': (write == 1), 'user_name': uname,
                 'user_host': uhost, 'title': title, 'path': path, 'args': args,
@@ -259,11 +270,42 @@ class MySQLScheduler(Scheduler):
         deleted = self._mysql.query(sql, *args)
         return deleted != 0
 
+    def register_sequence(self, name, user): #override
+        sql = 'INSERT INTO `application_sequences` (`name`, `user_id`) SELECT %s, `id` FROM `users` WHERE `name` = %s'
+        inserted = self._mysql.query(sql, name, user)
+        return inserted != 0
 
-class MySQLMasterServer(MySQLAuthorizer, MySQLScheduler, MasterServer):
+    def find_sequence(self, name): #override
+        sql = 'SELECT u.`name`, s.`status` FROM `application_sequences` AS s'
+        sql += ' INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
+        sql += ' WHERE s.`name` = %s'
+
+        try:
+            user, status = self._mysql.query(sql, name)[0]
+        except IndexError:
+            return None
+
+        return (name, user, status == 'enabled')
+
+    def update_sequence(self, name, enabled): #override
+        sql = 'UPDATE `application_sequences` SET `status` = %s WHERE `name` = %s'
+        updated = self._mysql.query(sql, 'enabled' if enabled else 'disabled', name)
+        return updated != 0
+
+    def delete_sequence(self, name): #override
+        sql = 'DELETE FROM `application_sequences` WHERE `name` = %s'
+        deleted = self._mysql.query(sql, name)
+        return deleted != 0
+
+    def get_enabled_sequences(self): #override
+        sql = 'SELECT `name` FROM `application_sequences` WHERE `status` = \'enabled\''
+        return self._mysql.query(sql)
+
+
+class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
     def __init__(self, config):
         MySQLAuthorizer.__init__(self, config)
-        MySQLScheduler.__init__(self, config)
+        MySQLAppManager.__init__(self, config)
         MasterServer.__init__(self, config)
 
         self._server_id = 0
