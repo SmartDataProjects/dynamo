@@ -280,11 +280,12 @@ class MySQLAppManager(AppManager):
         sql += ' INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
         sql += ' WHERE s.`name` = %s'
 
-        result = self._mysql.query(sql, name)
-        if len(result) == 0:
+        try:
+            user, status = self._mysql.query(sql, name)[0]
+        except IndexError:
             return None
-            
-        return (name, result[0], result[1] == 'enabled')
+
+        return (name, user, status == 'enabled')
 
     def update_sequence(self, name, enabled): #override
         sql = 'UPDATE `application_sequences` SET `status` = %s WHERE `name` = %s'

@@ -349,7 +349,7 @@ class AppServer(object):
         if not enabled:
             return True, ''
 
-        self._do_stop_sequence(name)
+        return self._do_stop_sequence(name)
 
     def _do_stop_sequence(self, name):
         if not self.dynamo_server.manager.master.update_sequence(name, False):
