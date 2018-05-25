@@ -11,7 +11,7 @@ from dynamo.operation.copy import CopyInterface
 from dynamo.history.history import TransactionHistoryInterface
 from dynamo.utils.signaling import SignalBlocker
 import dynamo.dealer.plugins as dealer_plugins
-import dynamo.policy.producers as producers
+import dynamo.policy.producers as get_producers
 
 LOG = logging.getLogger(__name__)
 
@@ -142,29 +142,12 @@ class Dealer(object):
                     self._plugin_priorities.pop(plugin)
 
         # Set up dataset attribute providers
-        attrs_config = config.attrs
 
         attr_names = set()
         for plugin in self._plugin_priorities.keys():
             attr_names.update(plugin.required_attrs)
 
-        producer_names = set()
-        for attr_name in attr_names:
-            # Find the provider of each dataset attribute
-            producer_cls = ''
-            for cls in producers.producers[attr_name]:
-                if cls in attrs_config:
-                    if producer_cls:
-                        LOG.error('Attribute %s is provided by two producers: [%s %s]', attr_name, producer_cls, cls)
-                        LOG.error('Please fix the configuration so that each dataset attribute is provided by a unique producer.')
-                        raise ConfigurationError('Duplicate attribute producer')
-
-                    producer_cls = cls
-
-            producer_names.add(producer_cls)
-
-        for producer_cls in producer_names:
-            self._attr_producers.append(getattr(producers, producer_cls)(attrs_config[producer_cls]))
+        self.attr_producers = get_producers(attr_names, config.attrs).values()
 
     def _collect_requests(self, inventory):
         """
