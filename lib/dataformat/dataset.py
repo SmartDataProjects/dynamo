@@ -3,7 +3,7 @@ import copy
 import threading
 
 from exceptions import ObjectError
-from _namespace import set_dataset_types
+from _namespace import customize_dataset
 
 class Dataset(object):
     """Represents a dataset."""
@@ -225,4 +225,4 @@ class Dataset(object):
             else:
                 return None
 
-set_dataset_types(Dataset)
+customize_dataset(Dataset)

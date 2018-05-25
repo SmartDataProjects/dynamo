@@ -4,7 +4,7 @@ import threading
 import weakref
 
 from exceptions import ObjectError, IntegrityError
-from _namespace import Block_to_internal_name, Block_to_real_name, Block_to_full_name, Block_from_full_name
+from _namespace import customize_block
 
 class Block(object):
     """
@@ -284,8 +284,4 @@ class Block(object):
         self._size = other._size
         self._num_files = other._num_files
 
-
-Block.to_internal_name = Block_to_internal_name
-Block.to_real_name = Block_to_real_name
-Block.to_full_name = Block_to_full_name
-Block.from_full_name = Block_from_full_name
+customize_block(Block)

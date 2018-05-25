@@ -2,12 +2,15 @@ import time
 
 from exceptions import ObjectError
 from block import Block
+from _namespace import customize_blockreplica
 
 class BlockReplica(object):
     """Block placement at a site. Holds an attribute 'group' which can be None.
     BlockReplica size can be different from that of the Block."""
 
-    __slots__ = ['_block', '_site', 'group', 'is_complete', 'is_custodial', 'size', 'last_update', 'files']
+    __slots__ = ['_block', '_site', 'group', 'is_custodial', 'size', 'last_update', 'file_ids']
+
+    _use_file_ids = True
 
     @property
     def block(self):
@@ -17,11 +20,12 @@ class BlockReplica(object):
     def site(self):
         return self._site
 
-    def __init__(self, block, site, group, is_complete = False, is_custodial = False, size = -1, last_update = 0):
+    def __init__(self, block, site, group, is_custodial = False, size = -1, last_update = 0, file_ids = None):
+        # Creater of the object is responsible for making sure size and file_ids are consistent
+
         self._block = block
         self._site = site
         self.group = group
-        self.is_complete = is_complete
         self.is_custodial = is_custodial
         if size < 0 and type(block) is not str:
             self.size = block.size
@@ -29,26 +33,30 @@ class BlockReplica(object):
             self.size = size
         self.last_update = last_update
 
-        # set of File objects for incomplete replicas (not implemented)
-        self.files = None
+        # tuple of File ids for incomplete replicas (not implemented)
+        if file_ids is None:
+            self.file_ids = None
+        else:
+            # some iterable
+            self.file_ids = tuple(file_ids)
 
     def __str__(self):
-        return 'BlockReplica %s:%s (group=%s, is_complete=%s, size=%d, last_update=%s)' % \
+        return 'BlockReplica %s:%s (group=%s, size=%d, last_update=%s)' % \
             (self._site_name(), self._block_full_name(),
-                self._group_name(), self.is_complete, self.size,
+                self._group_name(), self.size,
                 time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)))
 
     def __repr__(self):
-        return 'BlockReplica(%s,%s,%s,%s,%s,%d,%d)' % \
+        return 'BlockReplica(%s,%s,%s,%s,%d,%d,%s)' % \
             (repr(self._block_full_name()), repr(self._site_name()), repr(self._group_name()), \
-            self.is_complete, self.is_custodial, self.size, self.last_update)
+             self.is_custodial, self.size, self.last_update, repr(self.file_ids))
 
     def __eq__(self, other):
         return self is other or \
             (self._block_full_name() == other._block_full_name() and self._site_name() == other._site_name() and \
             self._group_name() == other._group_name() and \
-            self.is_complete == other.is_complete and self.is_custodial == other.is_custodial and \
-            self.size == other.size and self.last_update == other.last_update)
+            self.is_custodial == other.is_custodial and self.size == other.size and \
+             self.last_update == other.last_update and self.file_ids == other.file_ids)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -60,10 +68,13 @@ class BlockReplica(object):
             raise ObjectError('Cannot copy a replica at %s into a replica at %s' % (other._site.name, self._site_name()))
 
         self.group = other.group
-        self.is_complete = other.is_complete
         self.is_custodial = other.is_custodial
         self.size = other.size
         self.last_update = other.last_update
+        if other.file_ids is None:
+            self.file_ids = None
+        else:
+            self.file_ids = tuple(other.file_ids)
 
     def embed_into(self, inventory, check = False):
         try:
@@ -86,7 +97,7 @@ class BlockReplica(object):
         replica = block.find_replica(site)
         updated = False
         if replica is None:
-            replica = BlockReplica(block, site, group, self.is_complete, self.is_custodial, self.size, self.last_update)
+            replica = BlockReplica(block, site, group, self.is_custodial, self.size, self.last_update, self.file_ids)
     
             dataset_replica = site.find_dataset_replica(dataset, must_find = True)
             dataset_replica.block_replicas.add(replica)
@@ -157,6 +168,16 @@ class BlockReplica(object):
 
     def delete_from(self, store):
         store.delete_blockreplica(self)
+
+    def is_complete(self):
+        return self.size == self.block.size
+
+    def files(self):
+        block_files = self.block.files
+        if self.file_ids is None:
+            return set(block_files)
+        else:
+            return set(f for f in block_files if f.id in self.file_ids)
 
     def _block_full_name(self):
         if type(self._block) is str:
