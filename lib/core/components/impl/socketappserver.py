@@ -249,10 +249,24 @@ class SocketAppServer(AppServer):
                 act_and_respond(self._delete_sequence(app_data['sequence'], user_name))
 
             elif command == 'start':
-                act_and_respond(self._start_sequence(app_data['sequence'], user_name))
+                if 'sequence' in app_data:
+                    act_and_respond(self._start_sequence(app_data['sequence'], user_name))
+                else:
+                    if user_name != self.dynamo_server.user:
+                        io.send('failed', 'Only the daemon user can start all sequences.')
+                        return
+
+                    act_and_respond(self._start_all_sequences())
 
             elif command == 'stop':
-                act_and_respond(self._stop_sequence(app_data['sequence'], user_name))
+                if 'sequence' in app_data:
+                    act_and_respond(self._stop_sequence(app_data['sequence'], user_name))
+                else:
+                    if user_name != self.dynamo_server.user:
+                        io.send('failed', 'Only the daemon user can stop all sequences.')
+                        return
+
+                    act_and_respond(self._stop_all_sequences())
 
             else:
                 # new single application - get the work area path

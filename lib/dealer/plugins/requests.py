@@ -49,7 +49,7 @@ class CopyRequestsHandler(BaseHandler):
 
         # re-request all new active copies
         if not self.read_only:
-            self.registry.query('LOCK TABLES `active_copies` WRITE', retries = 1)
+            self.registry.lock_tables(write = ['active_copies'], retries = 1)
 
         sql = 'SELECT `request_id`, `item`, `site` FROM `active_copies` WHERE `status` = \'new\''
         sql += ' ORDER BY `site`, `item`'
@@ -132,12 +132,12 @@ class CopyRequestsHandler(BaseHandler):
                 blocks.update(item)
 
         if not self.read_only:
-            self.registry.query('UNLOCK TABLES')
+            self.registry.unlock_tables()
 
         ## deal with new requests
 
         if not self.read_only:
-            self.registry.query('LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `copy_request_sites` AS s WRITE, `copy_request_items` AS i WRITE, `active_copies` WRITE, `active_copies` AS a WRITE')
+            self.registry.lock_tables(write = ['copy_requests', ('copy_requests', 'r'), ('copy_request_sites', 's'), ('copy_request_items', 'i'), 'active_copies', ('active_copies', 'a')])
 
         # group into (group, # copies, request count, request time, [list of sites], [list of items], [list of active transfers])
         grouped_requests = {} # {request_id: copy info}
@@ -441,7 +441,7 @@ class CopyRequestsHandler(BaseHandler):
                 self.registry.query('UPDATE `copy_requests` SET `status` = \'activated\' WHERE `id` = %s', request_id)
 
         if not self.read_only:
-            self.registry.query('UNLOCK TABLES')
+            self.registry.unlock_tables()
 
         # form the final proposal
         dealer_requests = []

@@ -13,10 +13,10 @@ class MySQLUpdateBoard(UpdateBoard):
         self._mysql = MySQL(db_params)
 
     def lock(self): #override
-        self._mysql.query('LOCK TABLES `inventory_updates` WRITE')
+        self._mysql.lock_tables(write = ['inventory_updates'])
 
     def unlock(self): #override
-        self._mysql.query('UNLOCK TABLES')
+        self._mysql.unlock_tables()
 
     def get_updates(self): #override
         return self._mysql.xquery('SELECT `cmd`, `obj` FROM `inventory_updates` ORDER BY `id`')
@@ -26,7 +26,7 @@ class MySQLUpdateBoard(UpdateBoard):
         self._mysql.query('ALTER TABLE `inventory_updates` AUTO_INCREMENT = 1')
 
     def write_updates(self, update_commands): #override
-        self._mysql.query('LOCK TABLES `inventory_updates` WRITE')
+        self._mysql.lock_tables(write = ['inventory_updates'])
 
         try:
             sql = 'INSERT INTO `inventory_updates` (`cmd`, `obj`) VALUES (%s, %s)'
@@ -38,7 +38,7 @@ class MySQLUpdateBoard(UpdateBoard):
                     self._mysql.query(sql, 'delete', sobj)
 
         finally:
-            self._mysql.query('UNLOCK TABLES')
+            self._mysql.unlock_tables()
 
     def disconnect(self):
         self._mysql.close()

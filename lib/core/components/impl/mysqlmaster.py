@@ -270,26 +270,42 @@ class MySQLAppManager(AppManager):
         deleted = self._mysql.query(sql, *args)
         return deleted != 0
 
-    def register_sequence(self, name, user): #override
-        sql = 'INSERT INTO `application_sequences` (`name`, `user_id`) SELECT %s, `id` FROM `users` WHERE `name` = %s'
-        inserted = self._mysql.query(sql, name, user)
+    def register_sequence(self, name, user, restart = False): #override
+        sql = 'INSERT INTO `application_sequences` (`name`, `user_id`, `restart`) SELECT %s, `id`, %s FROM `users` WHERE `name` = %s'
+        inserted = self._mysql.query(sql, name, 1 if restart else 0, user)
         return inserted != 0
 
     def find_sequence(self, name): #override
-        sql = 'SELECT u.`name`, s.`status` FROM `application_sequences` AS s'
+        sql = 'SELECT u.`name`, s.`restart`, s.`status` FROM `application_sequences` AS s'
         sql += ' INNER JOIN `users` AS u ON u.`id` = s.`user_id`'
         sql += ' WHERE s.`name` = %s'
 
         try:
-            user, status = self._mysql.query(sql, name)[0]
+            user, restart, status = self._mysql.query(sql, name)[0]
         except IndexError:
             return None
 
-        return (name, user, status == 'enabled')
+        return (name, user, (restart != 0), status == 'enabled')
 
-    def update_sequence(self, name, enabled): #override
-        sql = 'UPDATE `application_sequences` SET `status` = %s WHERE `name` = %s'
-        updated = self._mysql.query(sql, 'enabled' if enabled else 'disabled', name)
+    def update_sequence(self, name, restart = None, enabled = None): #override
+        if restart is None and enabled is None:
+            return True
+
+        changes = []
+        args = []
+
+        if restart is not None:
+            changes.append('`restart` = %s')
+            args.append(1 if restart else 0)
+        if enabled is not None:
+            changes.append('`status` = %s')
+            args.append('enabled' if enabled else 'disabled')
+
+        args.append(name)
+
+        sql = 'UPDATE `application_sequences` SET ' + ', '.join(changes) + ' WHERE `name` = %s'
+
+        updated = self._mysql.query(sql, *tuple(args))
         return updated != 0
 
     def delete_sequence(self, name): #override
@@ -297,8 +313,11 @@ class MySQLAppManager(AppManager):
         deleted = self._mysql.query(sql, name)
         return deleted != 0
 
-    def get_enabled_sequences(self): #override
-        sql = 'SELECT `name` FROM `application_sequences` WHERE `status` = \'enabled\''
+    def get_sequences(self, enabled_only = True): #override
+        sql = 'SELECT `name` FROM `application_sequences`'
+        if enabled_only:
+            sql += ' WHERE `status` = \'enabled\''
+
         return self._mysql.query(sql)
 
 
@@ -311,7 +330,7 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         self._server_id = 0
 
     def _connect(self): #override
-        self._mysql.query('LOCK TABLES `servers` WRITE')
+        self._mysql.lock_tables(write = ['servers'])
 
         if self.get_master_host() == 'localhost' or self.get_master_host() == socket.gethostname():
             # This is the master server; wipe the table clean
@@ -324,13 +343,13 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         # id of this server
         self._server_id = self._mysql.last_insert_id
 
-        self._mysql.query('UNLOCK TABLES')
+        self._mysql.unlock_tables()
 
     def lock(self): #override
-        self._mysql.query('LOCK TABLES `servers` WRITE, `applications` WRITE, `users` READ')
+        self._mysql.lock_tables(write = ['servers', 'applications'], read = ['users'])
 
     def unlock(self): #override
-        self._mysql.query('UNLOCK TABLES')
+        self._mysql.unlock_tables()
 
     def get_master_host(self): #override
         return self._mysql.hostname()
@@ -418,16 +437,16 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         self._mysql.query(sql, version, self._server_id)
 
     def get_store_config(self, hostname): #override
-        self._mysql.query('LOCK TABLES `servers` READ')
+        self._mysql.lock_tables(read = ['servers'])
         while self.get_status(hostname) == ServerManager.SRV_UPDATING:
             # need to get the version of the remote server when it's not updating
-            self._mysql.query('UNLOCK TABLES')
+            self._mysql.unlock_tables()
             time.sleep(2)
-            self._mysql.query('LOCK TABLES `servers` READ')
+            self._mysql.lock_tables(read = ['servers'])
         
         sql = 'SELECT `store_module`, `store_config`, `store_version` FROM `servers` WHERE `hostname` = %s'
         result = self._mysql.query(sql, hostname)
-        self._mysql.query('UNLOCK TABLES')
+        self._mysql.unlock_tables()
 
         if len(result) == 0:
             return None

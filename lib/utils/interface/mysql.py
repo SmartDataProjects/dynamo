@@ -444,6 +444,34 @@ class MySQL(object):
 
         return self.query(sql, *values)
 
+    def lock_tables(self, read = [], write = [], **kwd):
+        # limitation: can only lock within the same database
+        terms = []
+
+        for table in read:
+            if type(table) is tuple:
+                terms.append('`%s` AS %s READ' % table)
+            else:
+                terms.append('`%s` READ' % table)
+
+        for table in write:
+            if type(table) is tuple:
+                terms.append('`%s` AS %s WRITE' % table)
+            else:
+                terms.append('`%s` WRITE' % table)
+
+        sql = 'LOCK TABLES ' + ', '.join(terms)
+
+        # acquire thread lock so that other threads don't access the database while table locks are on
+        self._connection_lock.acquire()
+
+        self.query(sql, **kwd)
+
+    def unlock_tables(self):
+        self._connection_lock.release()
+
+        self.query('UNLOCK TABLES')
+
     def _execute_in_batches(self, execute, pool):
         """
         Execute the execute function in batches. Pool can be a list or a tuple that defines
