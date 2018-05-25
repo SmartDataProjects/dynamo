@@ -2,6 +2,8 @@ import fnmatch
 import re
 import logging
 
+from dynamo.utils.classutil import get_instance
+
 LOG = logging.getLogger(__name__)
 
 class SiteInfoSource(object):
@@ -11,14 +13,7 @@ class SiteInfoSource(object):
 
     @staticmethod
     def get_instance(module, config):
-        import dynamo.source.impl as impl
-        cls = getattr(impl, module)
-
-        if not issubclass(cls, SiteInfoSource):
-            raise RuntimeError('%s is not a subclass of SiteInfoSource' % module)
-
-        return cls(config)
-
+        return get_instance(SiteInfoSource, module, config)
 
     def __init__(self, config):
         if hasattr(config, 'include'):

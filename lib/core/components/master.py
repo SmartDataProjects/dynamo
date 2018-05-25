@@ -1,5 +1,7 @@
 import logging
 
+from dynamo.utils.classutil import get_instance
+
 LOG = logging.getLogger(__name__)
 
 class Authorizer(object):
@@ -12,12 +14,7 @@ class Authorizer(object):
 
     @staticmethod
     def get_instance(module, config):
-        import dynamo.core.components.impl as impl
-        cls = getattr(impl, module)
-        if not issubclass(cls, Authorizer):
-            raise RuntimeError('%s is not a subclass of Authorizer' % module)
-
-        return cls(config)
+        return get_instance(Authorizer, module, config)
 
     def __init__(self, config):
         pass
@@ -104,12 +101,7 @@ class AppManager(object):
 
     @staticmethod
     def get_instance(module, config):
-        import dynamo.core.components.impl as impl
-        cls = getattr(impl, module)
-        if not issubclass(cls, AppManager):
-            raise RuntimeError('%s is not a subclass of AppManager' % module)
-
-        return cls(config)
+        return get_instance(AppManager, module, config)
 
     def __init__(self, config):
         pass
@@ -248,12 +240,7 @@ class MasterServer(Authorizer, AppManager):
 
     @staticmethod
     def get_instance(module, config):
-        import dynamo.core.components.impl as impl
-        cls = getattr(impl, module)
-        if not issubclass(cls, MasterServer):
-            raise RuntimeError('%s is not a subclass of MasterServer' % module)
-
-        return cls(config)
+        return get_instance(MasterServer, module, config)
 
     def __init__(self, config):
         Authorizer.__init__(self, config)

@@ -1,7 +1,7 @@
 {
   "history.history:TransactionHistoryInterface": {
     "fullauth": {
-      "module": "MySQLHistory",
+      "module": "mysqlhistory:MySQLHistory",
       "config": {
         "db_params": {
           "user": "dynamo",
@@ -12,7 +12,7 @@
       }
     },
     "readonly": {
-      "module": "MySQLHistory",
+      "module": "mysqlhistory:MySQLHistory",
       "config": {
         "db_params": {
           "user": "dynamoread",

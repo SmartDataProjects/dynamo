@@ -22,8 +22,15 @@ class Detox(object):
         @param config      Configuration
         """
 
-        self.deletion_op = DeletionInterface.get_instance(config.deletion_op.module, config.deletion_op.config)
-        self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
+        if 'deletion_op' in config:
+            self.deletion_op = DeletionInterface.get_instance(config.deletion_op.module, config.deletion_op.config)
+        else:
+            self.deletion_op = DeletionInterface.get_instance()
+
+        if 'copy_op' in config:
+            self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
+        else:
+            self.copy_op = CopyInterface.get_instance()
 
         if 'history' in config:
             self.history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)

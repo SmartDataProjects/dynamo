@@ -22,7 +22,10 @@ class Dealer(object):
         @param config      Configuration
         """
 
-        self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
+        if 'copy_op' in config:
+            self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
+        else: # default setting
+            self.copy_op = CopyInterface.get_instance()
 
         if 'history' in config:
             self.history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
@@ -121,7 +124,9 @@ class Dealer(object):
         n_zero_prio = 0
         n_nonzero_prio = 0
         for name, spec in config.plugins.items():
-            plugin = getattr(dealer_plugins, spec.module)(spec.config)
+            modname, _, clsname = spec.module.partition(':')
+            cls = getattr(__import__('dynamo.dealer.plugins', globals(), locals(), [clsname]), clsname)
+            plugin = cls(spec.config)
             plugin.read_only = is_test_run
             self._plugin_priorities[plugin] = spec.priority
 
