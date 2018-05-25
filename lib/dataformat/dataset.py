@@ -3,6 +3,7 @@ import copy
 import threading
 
 from exceptions import ObjectError
+from _namespace import set_dataset_types
 
 class Dataset(object):
     """Represents a dataset."""
@@ -11,10 +12,6 @@ class Dataset(object):
         '_software_version_id', 'last_update', 'is_open',
         'blocks', 'replicas', 'attr']
 
-    # Enumerator for dataset type.
-    # Starting from 1 to play better with MySQL
-    _data_types = ['unknown', 'align', 'calib', 'cosmic', 'data', 'lumi', 'mc', 'raw', 'test']
-    TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, len(_data_types) + 1)
     _statuses = ['unknown', 'deleted', 'deprecated', 'invalid', 'production', 'valid', 'ignored']
     STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, len(_statuses) + 1)
 
@@ -227,3 +224,5 @@ class Dataset(object):
                 raise ObjectError('Could not find replica on %s of %s', str(site), self._name)
             else:
                 return None
+
+set_dataset_types(Dataset)
