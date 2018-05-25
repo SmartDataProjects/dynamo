@@ -654,6 +654,10 @@ class AppServer(object):
     
             cursor.execute('SELECT MAX(`line`) FROM `sequence`')
             max_line = cursor.fetchone()[0]
+
+            if max_line is None:
+                # the table has no entries!
+                raise RuntimeError('Sequence database has zero rows.')
     
             iline %= (max_line + 1)
             looped_once = False
@@ -678,8 +682,8 @@ class AppServer(object):
                 # we may be shifting to the row inserted just now
                 looped_once = True
     
-        except:
-            LOG.error('Failed to shift sequence %s to line %d.', sequence_name, iline)
+        except Exception as ex:
+            LOG.error('[Scheduler] Failed to shift sequence %s to line %d (%s: %s).', sequence_name, iline, type(ex).__name__, ex.message)
 
         finally:
             if db is not None:
