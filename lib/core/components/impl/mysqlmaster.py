@@ -141,7 +141,7 @@ class MySQLAppManager(AppManager):
         return applications
 
     def get_writing_process_id(self): #override
-        result = self._mysql.query('SELECT `id` FROM `applications` WHERE `write_request` = 1 AND `status` = \'run\'')
+        result = self._mysql.query('SELECT `id` FROM `applications` WHERE `write_request` = 1 AND `status` IN (\'assigned\', \'run\')')
         if len(result) == 0:
             return None
         else:

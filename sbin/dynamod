@@ -79,13 +79,16 @@ try:
     srv_thread.start()
     
     if config.web.enabled:
-        while server.inventory is None or not server.inventory.loaded:
+        while server.inventory is None:
             time.sleep(2)
+
+        with server.inventory_update_lock:
+            pass
 
         config.web.modules_config = Configuration(config.web.modules_config_path)
         config.web.pop('modules_config_path')
     
-        web = WebServer(config.web, server.inventory, server.manager.master.create_authorizer())
+        web = WebServer(config.web, server)
         web.start()
     
     else:

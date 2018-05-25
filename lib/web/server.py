@@ -18,11 +18,11 @@ LOG = logging.getLogger(__name__)
 class WebServer(object):
     User = collections.namedtuple('User', ['name', 'id', 'authlist'])
 
-    def __init__(self, config, inventory, authorizer):
+    def __init__(self, config, dynamo_server):
         self.socket = config.socket
         self.modules_config = config.modules_config.clone()
-        self.inventory = inventory
-        self.authorizer = authorizer
+        self.dynamo_server = dynamo_server
+        self.authorizer = dynamo_server.manager.master.create_authorizer()
 
         HTMLMixin.contents_path = config.contents_path
         # common mixin class used by all page-generating modules
@@ -111,7 +111,10 @@ class WebServer(object):
         caller = WebServer.User(user, user_id, authlist)
 
         try:
-            content = cls(self.modules_config).run(caller, request, self.inventory)
+            obj = cls(self.modules_config)
+            content = obj.run(caller, request, self.dynamo_server.inventory)
+            if obj.update_commands is not None:
+                self.dynamo_server.update_inventory(obj.update_commands)
         except exceptions.AuthorizationError:
             start_response('403 Forbidden', [('Content-Type', 'text/plain')])
             return 'User not authorized to perform the request.'

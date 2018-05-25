@@ -129,19 +129,19 @@ class ServerManager(object):
 
     def check_status(self):
         """
-        1. Check status as given by the local variable
-        2. Check connection to the master server
-        3. Check status as given in the master server list
-        (4. Back up the master server and user list to the local shadow)
+        1. Check connection to the master server
+        2. Update the status from the master server
         """
-        if self.status == ServerManager.SRV_ERROR:
-            raise RuntimeError('Server status is ERROR')
 
         if not self.master.check_connection():
             raise RuntimeError('Lost connection to master server')
 
-        if self.get_status() == ServerManager.SRV_OUTOFSYNC:
-            self.status = ServerManager.SRV_OUTOFSYNC
+        self.get_status()
+
+        if self.status == ServerManager.SRV_ERROR:
+            raise RuntimeError('Server status is ERROR')
+
+        elif self.status == ServerManager.SRV_OUTOFSYNC:
             raise OutOfSyncError('Server out of sync')
 
     def get_status(self, hostname = None):
@@ -154,9 +154,14 @@ class ServerManager(object):
             status = self.master.get_status(hostname)
 
         if status is None:
-            return None
+            status_val = None
         else:
-            return ServerManager.server_status_val(status)
+            status_val = ServerManager.server_status_val(status)
+
+        if hostname is None:
+            self.status = status_val
+
+        return status_val
 
     def count_servers(self, status):
         """
@@ -235,13 +240,14 @@ class ServerManager(object):
         """
         self.master.lock()
         try:
+            self.get_status()
+            
             # Cannot run a write process if
             #  . I am supposed to be updating my inventory
             #  . There is a server starting
             #  . There is already a write process
-            read_only = (self.get_status() == ServerManager.SRV_UPDATING) or \
-                (len(self.master.get_host_list(status = ServerManager.SRV_STARTING)) != 0) or \
-                (self.master.get_writing_process_id() is not None)
+            read_only = (len(self.master.get_host_list(status = ServerManager.SRV_STARTING)) != 0) or \
+                        (self.master.get_writing_process_id() is not None)
 
             app = self.master.get_next_application(read_only)
     
