@@ -60,6 +60,9 @@ class DynamoServer(object):
     
                 self.inventory_load_opts[objs] = (included, excluded)
 
+        ## Intra-process inventory update synchronization
+        self.inventory_update_lock = threading.Lock()
+
         ## Recipient of error message emails
         self.notification_recipient = config.notification_recipient
 
@@ -116,7 +119,8 @@ class DynamoServer(object):
             # Lock write activities by other servers
             self.manager.set_status(ServerManager.SRV_STARTING)
 
-            self.load_inventory()
+            with self.inventory_update_lock:
+                self.load_inventory()
 
             bconf = self.manager_config.board
             self.manager.master.advertise_board(bconf.module, bconf.config)
@@ -306,11 +310,13 @@ class DynamoServer(object):
                     writing_process = (app['appid'], queue)
                 else:
                     queue = None
-    
-                ## Step 3: Spawn a child process for the script
-                self.manager.master.update_application(app['appid'], status = ServerManager.APP_RUN)
-    
-                proc = self._start_subprocess(app, is_local, queue)
+
+                # Another thread (i.e. web) can be updating the inventory - need to place a lock before spawning a child process
+                with self.inventory_update_lock:
+                    ## Step 3: Spawn a child process for the script
+                    self.manager.master.update_application(app['appid'], status = ServerManager.APP_RUN)
+        
+                    proc = self._start_subprocess(app, is_local, queue)
                 
                 self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_RUN, 'path': app['path'], 'pid': proc.pid})
     
@@ -438,7 +444,7 @@ class DynamoServer(object):
                 if status == ServerManager.APP_RUN:
                     if read_state == 1:
                         # we would block signal here, but since we would be running this code in a subthread we don't have to
-                        self._update_inventory(update_commands)
+                        self.update_inventory(update_commands)
     
                     elif read_state == 2:
                         status = ServerManager.APP_FAILED
@@ -538,11 +544,12 @@ class DynamoServer(object):
             # Finally remove the entry
             self.manager.master.delete_application(app['appid'])
 
-    def _update_inventory(self, update_commands):
+    def update_inventory(self, update_commands):
         # My updates
         self.manager.set_status(ServerManager.SRV_UPDATING)
 
-        self._exec_updates(update_commands)
+        with self.inventory_update_lock:
+            self._exec_updates(update_commands)
 
         self.manager.set_status(ServerManager.SRV_ONLINE)
 

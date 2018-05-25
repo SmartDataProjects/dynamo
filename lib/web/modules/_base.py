@@ -1,3 +1,3 @@
 class WebModule(object):
     def __init__(self, config):
-        pass
+        self.update_commands = None
