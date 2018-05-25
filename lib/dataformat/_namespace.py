@@ -2,7 +2,7 @@
 
 from exceptions import ObjectError
 
-def set_dataset_types(Dataset):
+def customize_dataset(Dataset):
     # Enumerator for dataset type.
     # Starting from 1 to play better with MySQL enums
     Dataset._data_types = ['unknown', 'production', 'test']
@@ -29,3 +29,12 @@ def Block_from_full_name(full_name):
         raise ObjectError('Invalid block name %s' % full_name)
 
     return full_name[:delim], full_name[delim + 1:]
+
+def customize_block(Block):
+    Block.to_internal_name = Block_to_internal_name
+    Block.to_real_name = Block_to_real_name
+    Block.to_full_name = Block_to_full_name
+    Block.from_full_name = Block_from_full_name
+
+def customize_blockreplica(BlockReplica):
+    pass

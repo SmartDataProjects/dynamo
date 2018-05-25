@@ -91,7 +91,7 @@ class DirectRequestsHandler(BaseHandler):
                 inventory.store.load_replicas(dataset)
 
             try:
-                next(rep for rep in dataset.replicas if rep.is_complete and rep.site.name == target)
+                next(rep for rep in dataset.replicas if rep.is_complete() and rep.site.name == target)
             except StopIteration:
                 pass
             else:
@@ -119,7 +119,7 @@ class DirectRequestsHandler(BaseHandler):
                 inventory.store.load_replicas(dataset)
 
             #check that the full replicas exist anywhere
-            fullreps = filter(lambda rep: rep.is_complete, dataset.replicas)
+            fullreps = filter(lambda rep: rep.is_complete(), dataset.replicas)
             if len(fullreps) == 0:
                 logger.debug(item)
                 logger.debug(" no full replicas exist, ignoring")
