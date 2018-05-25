@@ -88,15 +88,3 @@ contents_path=/usr/local/dynamo/web
 
 # Path to the configuration file for web modules
 modules_config=/etc/dynamo/web_modules_config.json
-
-[scheduler]
-
-# Registry user name for scheduled executables
-user=dynamo
-
-# Scheduler work directory
-workdir=/var/spool/dynamo/scheduler
-
-# Sequence file for scheduler daemon
-sequence=cms.seq
-
