@@ -135,14 +135,26 @@ class DynamoServer(object):
         print 'Sequence(s) added:', ' '.join(response['sequence'])
 
     def start_sequence(self, sequence_name):
-        in_data = {'command': 'start', 'sequence': sequence_name}
+        in_data = {'command': 'start'}
+        if sequence_name:
+            in_data['sequence'] = sequence_name
+
         response = self.communicate(in_data)
-        print 'Started sequence', sequence_name
+        if sequence_name:
+            print 'Started sequence', sequence_name
+        else:
+            print 'Started sequences', response['sequences']
 
     def stop_sequence(self, sequence_name):
-        in_data = {'command': 'stop', 'sequence': sequence_name}
+        in_data = {'command': 'stop'}
+        if sequence_name:
+            in_data['sequence'] = sequence_name
+
         response = self.communicate(in_data)
-        print 'Stopped sequence', sequence_name
+        if sequence_name:
+            print 'Stopped sequence', sequence_name
+        else:
+            print 'Started sequences', response['sequences']
 
     def delete_sequence(self, sequence_name):
         in_data = {'command': 'remove', 'sequence': sequence_name}
@@ -404,8 +416,8 @@ if __name__ == '__main__':
     parser.add_argument('--poll', '-p', metavar = 'ID', dest = 'poll_appid', type = int, help = 'Just poll an existing application.')
     parser.add_argument('--kill', '-x', metavar = 'ID', dest = 'kill_appid', type = int, help = 'Abort an existing application.')
     parser.add_argument('--add-sequence', '-a', metavar = 'PATH', dest = 'add_sequence', help = 'Create and start new scheduled sequences.')
-    parser.add_argument('--start-sequence', '-q', metavar = 'PATH', dest = 'start_sequence', help = 'Start a stopped sequence.')
-    parser.add_argument('--stop-sequence', '-o', metavar = 'PATH', dest = 'stop_sequence', help = 'Stop a sequence.')
+    parser.add_argument('--start-sequence', '-q', metavar = 'PATH', dest = 'start_sequence', nargs = '?', help = 'Start a stopped sequence. Without argument, start all sequences.')
+    parser.add_argument('--stop-sequence', '-o', metavar = 'PATH', dest = 'stop_sequence', nargs = '?', help = 'Stop a sequence. Without argument, stop all sequences.')
     parser.add_argument('--delete-sequence', '-e', metavar = 'PATH', dest = 'delete_sequence', help = 'Delete a sequence from scheduler.')
     parser.add_argument('--cert', '-c', metavar = 'PATH', dest = 'certfile', help = 'Non-standard certificate file location.')
     parser.add_argument('--key', '-k', metavar = 'PATH', dest = 'keyfile', help = 'Non-standard key file location.')

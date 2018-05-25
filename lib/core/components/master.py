@@ -234,11 +234,11 @@ class AppManager(object):
         """
         raise NotImplementedError('delete_sequence')
 
-    def get_enabled_sequences(self):
+    def get_sequences(self, enabled_only = True):
         """
         @return [name]
         """
-        raise NotImplementedError('get_enabled_sequences')
+        raise NotImplementedError('get_sequences')
 
 
 class MasterServer(Authorizer, AppManager):

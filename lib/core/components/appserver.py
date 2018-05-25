@@ -207,7 +207,7 @@ class AppServer(object):
         try:
             sequences, sequences_with_restart, app_paths = self._parse_sequence_def(path, user)
         except Exception as ex:
-            return False, ex.message
+            return False, str(ex)
 
         for name, sequence in sequences.items():
             existing = self.dynamo_server.manager.master.find_sequence(name)
@@ -225,8 +225,8 @@ class AppServer(object):
             if os.path.exists(work_dir):
                 try:
                     shutil.rmtree(work_dir)
-                except:
-                    return False, 'Cannot delete existing directory %s.' % work_dir
+                except Exception as ex:
+                    return False, 'Cannot delete existing directory %s (%s).' % (work_dir, str(ex))
 
             try:
                 os.makedirs(work_dir)
@@ -243,7 +243,7 @@ class AppServer(object):
                 except:
                     pass
 
-                return False, 'Failed to set up %s (%s).' % (name, ex.message)
+                return False, 'Failed to set up %s (%s).' % (name, str(ex))
         
             for action in sequence:
                 if action[0] == AppServer.EXECUTE:
@@ -320,7 +320,7 @@ class AppServer(object):
         try:
             _, _, _, enabled = self._get_sequence(name, user)
         except Exception as ex:
-            return False, ex.message
+            return False, str(ex)
 
         if enabled:
             success, msg = self._do_stop_seqeunce(name)
@@ -333,35 +333,41 @@ class AppServer(object):
         if os.path.exists(self.scheduler_base + '/' + name):
             try:
                 shutil.rmtree(self.scheduler_base + '/' + name)
-            except:
-                return False, 'Failed to delete sequence %s.' % name
+            except Exception as ex:
+                return False, 'Failed to delete sequence %s (%s).' % (name, str(ex))
 
         return True, ''
 
     def _start_sequence(self, name, user):
         try:
-            _, _, restart, enabled = self._get_sequence(name, user)
+            _, _, _, enabled = self._get_sequence(name, user)
         except Exception as ex:
-            return False, ex.message
+            return False, str(ex)
 
         if enabled:
             return True, ''
 
-        if restart:
-            self._shift_sequence_to(name, 0)
-
         LOG.info('[Scheduler] Starting sequence %s.', name)
 
-        if not self.dynamo_server.manager.master.update_sequence(name, enabled = True):
-            return False, 'Failed to start sequence %s.' % name
+        return self._do_start_sequence(name)
 
-        return True, ''
+    def _start_all_sequences(self):
+        started = []
+        for sequence_name in self.dynamo_server.manager.master.get_sequences(enabled_only = False):
+            LOG.info('[Scheduler] Starting sequence %s.', sequence_name)
+            success, msg = self._do_start_sequence(sequence_name)
+            if success:
+                started.append(sequence_name)
+
+        LOG.info('[Scheduler] Started sequences %s.', ' '.join(started))
+
+        return True, {'sequences': started}
 
     def _stop_sequence(self, name, user):
         try:
             _, _, _, enabled = self._get_sequence(name, user)
         except Exception as ex:
-            return False, ex.message
+            return False, str(ex)
 
         if not enabled:
             return True, ''
@@ -369,6 +375,32 @@ class AppServer(object):
         LOG.info('[Scheduler] Stopping sequence %s.', name)
 
         return self._do_stop_sequence(name)
+
+    def _stop_all_sequences(self):
+        stopped = []
+        for sequence_name in self.dynamo_server.manager.master.get_sequences(enabled_only = True):
+            LOG.info('[Scheduler] Stopping sequence %s.', sequence_name)
+            success, msg = self._do_stop_sequence(sequence_name)
+            if success:
+                stopped.append(sequence_name)
+
+        LOG.info('[Scheduler] Stopped sequences %s.', ' '.join(stopped))
+
+        return True, {'sequences': stopped}
+
+    def _do_start_sequence(self, name):
+        _, _, restart, enabled = self.dynamo_server.manager.master.find_sequence(name)
+
+        if enabled:
+            return True, ''
+
+        if restart:
+            self._shift_sequence_to(name, 0)
+
+        if not self.dynamo_server.manager.master.update_sequence(name, enabled = True):
+            return False, 'Failed to start sequence %s.' % name
+
+        return True, ''
 
     def _do_stop_sequence(self, name):
         if not self.dynamo_server.manager.master.update_sequence(name, enabled = False):
@@ -383,8 +415,8 @@ class AppServer(object):
                 app = self._get_app(row[0])
                 if app is not None and app['status'] not in (ServerManager.APP_DONE, ServerManager.APP_FAILED, ServerManager.APP_KILLED):
                     self.dynamo_server.manager.master.update_application(row[0], status = ServerManager.APP_KILLED)
-        except:
-            return False, 'Failed to stop sequence %s.' % name
+        except Exception as ex:
+            return False, 'Failed to stop sequence %s (%s).' % (name, str(ex))
 
         return True, ''
 
@@ -394,7 +426,7 @@ class AppServer(object):
         Perhaps we want an independent logger for this thread
         """
 
-        for sequence_name in self.dynamo_server.manager.master.get_enabled_sequences():
+        for sequence_name in self.dynamo_server.manager.master.get_sequences(enabled_only = True):
             _, _, restart, _ = self.dynamo_server.manager.master.find_sequence(sequence_name)
             if restart:
                 self._shift_sequence_to(sequence_name, 0)
@@ -403,7 +435,7 @@ class AppServer(object):
                 LOG.info('[Scheduler] Starting sequence %s.', sequence_name)
 
         while True:
-            for sequence_name in self.dynamo_server.manager.master.get_enabled_sequences():
+            for sequence_name in self.dynamo_server.manager.master.get_sequences(enabled_only = True):
                 work_dir = self.scheduler_base + '/' + sequence_name
 
                 db = sqlite3.connect(work_dir + '/sequence.db')
@@ -412,9 +444,9 @@ class AppServer(object):
                     cursor.execute('SELECT `line`, `command`, `title`, `arguments`, `criticality`, `write_request`, `app_id` FROM `sequence` ORDER BY `id` LIMIT 1')
                     row = cursor.fetchone()
                     if row is None:
-                        raise Exception()
-                except:
-                    LOG.error('[Scheduler] Failed to fetch the current command for sequence %s.', sequence_name)
+                        raise RuntimeError('Sequence is empty')
+                except Exception as ex:
+                    LOG.error('[Scheduler] Failed to fetch the current command for sequence %s (%s).', sequence_name, str(ex))
                     continue
 
                 db.close()
@@ -672,7 +704,7 @@ class AppServer(object):
         
                     if not terminates:
                         # this sequence is an infinite loop; move the entry to the bottom
-                        cursor.execute('INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `write_request`) VALUES (?, ?, ?, ?, ?, ?)', row)
+                        cursor.execute('INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `write_request`) VALUES (?, ?, ?, ?, ?, ?)', row[1:])
 
                 db.commit()
 

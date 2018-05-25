@@ -313,8 +313,11 @@ class MySQLAppManager(AppManager):
         deleted = self._mysql.query(sql, name)
         return deleted != 0
 
-    def get_enabled_sequences(self): #override
-        sql = 'SELECT `name` FROM `application_sequences` WHERE `status` = \'enabled\''
+    def get_sequences(self, enabled_only = True): #override
+        sql = 'SELECT `name` FROM `application_sequences`'
+        if enabled_only:
+            sql += ' WHERE `status` = \'enabled\''
+
         return self._mysql.query(sql)
 
 
