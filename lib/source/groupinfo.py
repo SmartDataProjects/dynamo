@@ -1,3 +1,5 @@
+from dynamo.utils.classutil import get_instance
+
 class GroupInfoSource(object):
     """
     Interface specs for group information authority.
@@ -5,14 +7,7 @@ class GroupInfoSource(object):
 
     @staticmethod
     def get_instance(module, config):
-        import dynamo.source.impl as impl
-        cls = getattr(impl, module)
-
-        if not issubclass(cls, GroupInfoSource):
-            raise RuntimeError('%s is not a subclass of GroupInfoSource' % module)
-
-        return cls(config)
-
+        return get_instance(GroupInfoSource, module, config)
 
     def __init__(self, config):
         include = config.get('include', None)

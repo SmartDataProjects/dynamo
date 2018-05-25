@@ -1,4 +1,5 @@
 from dynamo.dataformat import Configuration
+from dynamo.utils.classutil import get_instance
 
 class DeletionInterface(object):
     """
@@ -6,15 +7,21 @@ class DeletionInterface(object):
     """
 
     @staticmethod
-    def get_instance(module, config):
-        import dynamo.operation.impl as impl
-        cls = getattr(impl, module)
+    def get_instance(module = None, config = None):
+        if module is None:
+            module = DeletionInterface._module
+        if config is None:
+            config = DeletionInterface._config
 
-        if not issubclass(cls, DeletionInterface):
-            raise RuntimeError('%s is not a subclass of DeletionInterface' % module)
+        return get_instance(DeletionInterface, module, config)
 
-        return cls(config)
+    _module = ''
+    _config = Configuration()
 
+    @staticmethod
+    def set_default(config):
+        DeletionInterface._module = config.module
+        DeletionInterface._config = config.config
 
     def __init__(self, config = None):
         config = Configuration(config)

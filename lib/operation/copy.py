@@ -1,4 +1,5 @@
 from dynamo.dataformat import Configuration
+from dynamo.utils.classutil import get_instance
 
 class CopyInterface(object):
     """
@@ -6,15 +7,21 @@ class CopyInterface(object):
     """
 
     @staticmethod
-    def get_instance(module, config = None):
-        import dynamo.operation.impl as impl
-        cls = getattr(impl, module)
+    def get_instance(module = None, config = None):
+        if module is None:
+            module = CopyInterface._module
+        if config is None:
+            config = CopyInterface._config
 
-        if not issubclass(cls, CopyInterface):
-            raise RuntimeError('%s is not a subclass of CopyInterface' % module)
+        return get_instance(CopyInterface, module, config)
 
-        return cls(config)
+    _module = ''
+    _config = Configuration()
 
+    @staticmethod
+    def set_default(config):
+        CopyInterface._module = config.module
+        CopyInterface._config = config.config
 
     def __init__(self, config = None):
         config = Configuration(config)

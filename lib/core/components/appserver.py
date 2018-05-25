@@ -14,6 +14,7 @@ import sqlite3
 from email.mime.text import MIMEText
 
 from dynamo.core.manager import ServerManager
+from dynamo.utils.classutil import get_instance
 
 LOG = logging.getLogger(__name__)
 
@@ -27,12 +28,7 @@ class AppServer(object):
 
     @staticmethod
     def get_instance(module, dynamo_server, config):
-        import dynamo.core.components.impl as impl
-        cls = getattr(impl, module)
-        if not issubclass(cls, AppServer):
-            raise RuntimeError('%s is not a subclass of AppServer' % module)
-
-        return cls(dynamo_server, config)
+        return get_instance(AppServer, module, dynamo_server, config)
 
     def __init__(self, dynamo_server, config):
         self.dynamo_server = dynamo_server

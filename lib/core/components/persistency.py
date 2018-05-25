@@ -2,6 +2,7 @@ import time
 import logging
 
 from dynamo.dataformat import Dataset
+from dynamo.utils.classutil import get_instance
 
 LOG = logging.getLogger(__name__)
 
@@ -14,12 +15,7 @@ class InventoryStore(object):
 
     @staticmethod
     def get_instance(module, config):
-        import dynamo.core.components.impl as impl
-        cls = getattr(impl, module)
-        if not issubclass(cls, InventoryStore):
-            raise RuntimeError('%s is not a subclass of InventoryStore' % module)
-
-        return cls(config)
+        return get_instance(InventoryStore, module, config)
 
     def __init__(self, config):
         pass
