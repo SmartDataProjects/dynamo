@@ -2,7 +2,7 @@ from exceptions import ObjectError
 from block import Block
 
 class File(object):
-    """Represents a file. Atomic unit of data, but not used in data management."""
+    """Represents a file. Atomic unit of data."""
 
     __slots__ = ['_lfn', '_block', 'id', 'size']
 
