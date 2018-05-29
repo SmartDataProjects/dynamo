@@ -22,6 +22,7 @@ class BlockReplica(object):
 
     def __init__(self, block, site, group, is_custodial = False, size = -1, last_update = 0, file_ids = None):
         # Creater of the object is responsible for making sure size and file_ids are consistent
+        # file_ids should be a tuple of (long) integers or LFN strings, latter in case where the file is not yet registered with the inventory
 
         self._block = block
         self._site = site
@@ -33,12 +34,19 @@ class BlockReplica(object):
             self.size = size
         self.last_update = last_update
 
-        # tuple of File ids for incomplete replicas (not implemented)
+        # tuple of file ids for incomplete replicas (not implemented)
         if file_ids is None:
             self.file_ids = None
         else:
             # some iterable
-            self.file_ids = tuple(file_ids)
+            tmplist = []
+            for fid in file_ids:
+                if type(fid) is str:
+                    tmplist.append(self._block.find_file(fid, must_find = True).id)
+                else:
+                    tmplist.append(fid)
+
+            self.file_ids = tuple(tmplist)
 
     def __str__(self):
         return 'BlockReplica %s:%s (group=%s, size=%d, last_update=%s)' % \
@@ -49,7 +57,7 @@ class BlockReplica(object):
     def __repr__(self):
         return 'BlockReplica(%s,%s,%s,%s,%d,%d,%s)' % \
             (repr(self._block_full_name()), repr(self._site_name()), repr(self._group_name()), \
-             self.is_custodial, self.size, self.last_update, repr(self.file_ids))
+            self.is_custodial, self.size, self.last_update, repr(self.file_ids))
 
     def __eq__(self, other):
         return self is other or \
