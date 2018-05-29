@@ -588,6 +588,10 @@ class DynamoServer(object):
         return has_update
 
     def _start_subprocess(self, app, is_local, queue):
+        # These objects can be garbage-collected as soon as this function returns.
+        # That doesn't cause a problem only because no shared resource (e.g. database connections)
+        # are instantiated in the constructor of these objects.
+        # We probably should have a more explicit safeguard mechanism.
         defaults_conf, inventory, authorizer = self.get_subprocess_args()
 
         proc_args = (app['path'], app['args'], is_local, defaults_conf, inventory, authorizer, queue)
