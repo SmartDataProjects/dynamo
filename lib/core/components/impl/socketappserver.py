@@ -12,7 +12,7 @@ import json
 import logging
 
 from dynamo.core.components.appserver import AppServer
-from dynamo.core.manager import ServerManager
+from dynamo.core.components.appmanager import AppManager
 import dynamo.core.serverutils as serverutils
 
 SERVER_PORT = 39626
@@ -350,7 +350,7 @@ class SocketAppServer(AppServer):
                 pass
             conn.close()
 
-        return {'status': ServerManager.application_status_name(msg['status']), 'exit_code': msg['exit_code']}
+        return {'status': AppManager.status_name(msg['status']), 'exit_code': msg['exit_code']}
 
 
 def run_interactive_through_socket(addr, workarea, defaults_config, inventory, authorizer):

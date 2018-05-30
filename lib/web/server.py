@@ -4,10 +4,12 @@ import re
 import traceback
 import json
 import logging
+import socket
 import collections
 from cgi import FieldStorage
-from flup.server.fcgi import WSGIServer
+from flup.server.fcgi_fork import WSGIServer
 
+import dynamo.core.serverutils as serverutils
 import dynamo.web.exceptions as exceptions
 # Actual modules imported at the bottom of this file
 from dynamo.web.modules import modules
@@ -22,7 +24,10 @@ class WebServer(object):
         self.socket = config.socket
         self.modules_config = config.modules_config.clone()
         self.dynamo_server = dynamo_server
-        self.authorizer = dynamo_server.manager.master.create_authorizer()
+
+        self.min_idle = config.min_idle
+        self.max_idle = config.max_idle
+        self.max_procs = config.max_procs
 
         HTMLMixin.contents_path = config.contents_path
         # common mixin class used by all page-generating modules
@@ -37,15 +42,31 @@ class WebServer(object):
         self.debug = config.get('debug', False)
 
     def start(self):
-        # Thread-based WSGI server
-        WSGIServer(self.main, bindAddress = self.socket, umask = 0).run()
+        # Preforked WSGI server
+        # Preforking = have at minimum min_idle and at maximum max_idle child processes listening to the out-facing port.
+        # There can be at most max_procs children. Each child process is single-use to ensure changes to shared resources (e.g. inventory)
+        # made in a child process does not affect the other processes.
+        prefork_config = {'minSpare': self.min_idle, 'maxSpare': self.max_idle, 'maxChildren': self.max_procs, 'maxRequests': 1}
+
+        wsgi = WSGIServer(self.main, environ = environ, bindAddress = self.socket, umask = 0, **prefork_config)
+
+        # flup WSGIServer child procs terminate with sys.exit, which involves garbage collection, which causes various shared resources
+        # to become unusable. Need to replace with no-cleanup version os._exit here.
+        sys.exit = os._exit
+
+        # run() returns True iff the process is interrupted with SIGHUP. We exploit this feature and raise SIGHUP from DynamoServer whenever
+        # there is an update to the inventory.
+        while wsgi.run():
+            pass
+
+        sys.exit = serverutils.sys_exit
 
     def main(self, environ, start_response):
         """
         WSGI callable. Steps:
         1. Determine protocol. If HTTPS, identify the user.
         2. If js or css is requested, respond.
-        3. Find the module class.
+        3. Find the module class and instantiate it.
         4. Parse the query string into a dictionary.
         5. Call the run() function of the module class.
         6. Respond.
@@ -58,14 +79,16 @@ class WebServer(object):
             authlist = []
 
         elif environ['REQUEST_SCHEME'] == 'https':
+            authorizer = self.dynamo_server.manager.master
+
             # Client DN must match a known user
             try:
-                user, user_id = self.identify_user(environ)
+                user, user_id = self.identify_user(environ, authorizer)
             except:
                 start_response('403 Forbidden', [('Content-Type', 'text/plain')])
                 return 'Unknown user.\nClient name: %s' % environ['SSL_CLIENT_S_DN']
 
-            authlist = self.authorizer.list_user_auth(user)
+            authlist = authorizer.list_user_auth(user)
 
         else:
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
@@ -103,18 +126,45 @@ class WebServer(object):
             start_response('404 Not Found', [('Content-Type', 'text/plain')])
             return 'Invalid request %s/%s.' % (module, command)
 
-        ## Step 4
-        # FieldStorage is a dict-like class that holds both GET and POST requests
-        request = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
-
-        ## Step 5
-        caller = WebServer.User(user, user_id, authlist)
-
         try:
             obj = cls(self.modules_config)
-            content = obj.run(caller, request, self.dynamo_server.inventory)
-            if obj.update_commands is not None:
-                self.dynamo_server.update_inventory(obj.update_commands)
+        except:
+            return self._internal_server_error(start_response)
+
+        if obj.write_enabled:
+            self.dynamo_server.manager.master.lock()
+
+            try:
+                if self.dynamo_server.manager.master.inhibit_write():
+                    # lock could not be acquired: cannot run an update task now
+                    start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
+                    return 'Server cannot execute %s/%s at the moment because the inventory is being updated.'
+                else:
+                    self.dynamo_server.manager.master.start_write_web(socket.gethostname())
+
+            except:
+                self.dynamo_server.manager.master.stop_write_web(socket.gethostname())
+
+            finally:
+                self.dynamo_server.manager.master.unlock()
+
+        try:
+            ## Step 4
+            # FieldStorage is a dict-like class that holds both GET and POST requests
+            request = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
+    
+            ## Step 5
+            caller = WebServer.User(user, user_id, authlist)
+
+            inventory = self.dynamo_server.inventory.create_proxy()
+            if obj.write_enabled:
+                inventory._update_commands = []
+
+            content = obj.run(caller, request, inventory)
+
+            if obj.write_enabled:
+                serverutils.send_updates(inventory, self.dynamo_server.inventory_update_queue)
+            
         except exceptions.AuthorizationError:
             start_response('403 Forbidden', [('Content-Type', 'text/plain')])
             return 'User not authorized to perform the request.'
@@ -131,16 +181,11 @@ class WebServer(object):
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
             return 'Server denied response due to: ' % ex.message
         except:
-            start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
-            if self.debug:
-                exc_type, exc, tb = sys.exc_info()
-                response = 'Caught exception %s while waiting for task to complete.\n' % exc_type.__name__
-                response += 'Traceback (most recent call last):\n'
-                response += ''.join(traceback.format_tb(tb)) + '\n'
-                response += '%s: %s\n' % (exc_type.__name__, str(exc))
-                return response
-            else:
-                return 'Exception: ' + str(sys.exc_info()[1])
+            return self._internal_server_error(start_response)
+
+        finally:
+            if obj.write_enabled:
+                self.dynamo_server.manager.master.stop_write_web(socket.gethostname())
 
         ## Step 6
         if mode == 'data':
@@ -158,7 +203,7 @@ class WebServer(object):
             start_response('200 OK', [('Content-Type', 'text/html')])
             return content
 
-    def identify_user(self, environ):
+    def identify_user(self, environ, authorizer):
         """Read the DN string in the environ and return (user name, user id)."""
         
         dn_string = environ['SSL_CLIENT_S_DN']
@@ -188,9 +233,21 @@ class WebServer(object):
             key, _, value = part.partition(' = ')
             dn += '/' + key + '=' + value
 
-        userinfo = self.authorizer.identify_user(dn = dn, with_id = True)
+        userinfo = authorizer.identify_user(dn = dn, with_id = True)
 
         if userinfo is None:
             raise RuntimeError()
 
         return userinfo
+
+    def _internal_server_error(self, start_fnc):
+        start_fnc('500 Internal Server Error', [('Content-Type', 'text/plain')])
+        if self.debug:
+            exc_type, exc, tb = sys.exc_info()
+            response = 'Caught exception %s while waiting for task to complete.\n' % exc_type.__name__
+            response += 'Traceback (most recent call last):\n'
+            response += ''.join(traceback.format_tb(tb)) + '\n'
+            response += '%s: %s\n' % (exc_type.__name__, str(exc))
+            return response
+        else:
+            return 'Exception: ' + str(sys.exc_info()[1])
