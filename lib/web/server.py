@@ -88,9 +88,11 @@ class WebServer(object):
             # Client DN must match a known user
             try:
                 user, user_id = self.identify_user(environ, authorizer)
-            except:
+            except exceptions.AuthorizationError:
                 start_response('403 Forbidden', [('Content-Type', 'text/plain')])
                 return 'Unknown user.\nClient name: %s\n' % environ['SSL_CLIENT_S_DN']
+            except:
+                return self._internal_server_error(start_response)
 
             authlist = authorizer.list_user_auth(user)
 
@@ -221,7 +223,7 @@ class WebServer(object):
                 break
 
             if end == 0:
-                raise RuntimeError()
+                raise exceptions.AuthorizationError()
 
             if dn_string[end - 1] == '\\':
                 # if this was an escaped comma, move ahead
@@ -237,10 +239,10 @@ class WebServer(object):
             key, _, value = part.partition(' = ')
             dn += '/' + key + '=' + value
 
-        userinfo = authorizer.identify_user(dn = dn, with_id = True)
+        userinfo = authorizer.identify_user(dn = dn, check_trunc = True, with_id = True)
 
         if userinfo is None:
-            raise RuntimeError()
+            raise exceptions.AuthorizationError()
 
         return userinfo
 

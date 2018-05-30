@@ -38,6 +38,11 @@ class DynamoServer(object):
         self.manager_config = config.manager.clone()
         self.manager = ServerManager(self.manager_config)
 
+        ## Shutdown flag
+        # Default is set. KeyboardInterrupt is raised when flag is cleared
+        self.shutdown_flag = threading.Event()
+        self.shutdown_flag.set()
+
         ## Application collection
         self.applications_config = config.applications.clone()
         if self.applications_config.enabled:
@@ -67,11 +72,6 @@ class DynamoServer(object):
 
         ## Recipient of error message emails
         self.notification_recipient = config.notification_recipient
-
-        ## Shutdown flag
-        # Default is set. KeyboardInterrupt is raised when flag is cleared
-        self.shutdown_flag = threading.Event()
-        self.shutdown_flag.set()
 
     def load_inventory(self):
         self.inventory = DynamoInventory(self.inventory_config)

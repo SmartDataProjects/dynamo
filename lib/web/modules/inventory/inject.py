@@ -1,6 +1,6 @@
 import json
 
-from dynamo.web.exceptions import IllFormedRequest
+from dynamo.web.exceptions import IllFormedRequest, AuthorizationError
 from dynamo.web.modules._base import WebModule
 import dynamo.dataformat as df
 
@@ -16,6 +16,9 @@ class InjectData(WebModule):
         The values must be lists of dicts, where each dict represents an object. Blocks should be listed
         within a dataset dict, Files within Blocks, and BlockReplicas within DatasetReplicas.
         """
+
+        if ('admin', 'inventory') not in caller.authlist:
+            raise AuthorizationError()
 
         try:
             data = json.loads(request['data'])
