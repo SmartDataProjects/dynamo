@@ -15,6 +15,8 @@ import dynamo.web.exceptions as exceptions
 from dynamo.web.modules import modules
 from dynamo.web.modules._html import HTMLMixin
 
+from dynamo.utils.transform import unicode2str
+
 LOG = logging.getLogger(__name__)
 
 class WebServer(object):
@@ -170,6 +172,8 @@ class WebServer(object):
                     return 'Could not parse input.\n'
 
                 request = dict((item.name, item.value) for item in fstorage.list)
+
+            unicode2str(request)
     
             ## Step 5
             caller = WebServer.User(user, user_id, authlist)

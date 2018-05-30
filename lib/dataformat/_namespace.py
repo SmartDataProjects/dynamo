@@ -31,10 +31,10 @@ def Block_from_full_name(full_name):
     return full_name[:delim], full_name[delim + 1:]
 
 def customize_block(Block):
-    Block.to_internal_name = Block_to_internal_name
-    Block.to_real_name = Block_to_real_name
-    Block.to_full_name = Block_to_full_name
-    Block.from_full_name = Block_from_full_name
+    Block.to_internal_name = staticmethod(Block_to_internal_name)
+    Block.to_real_name = staticmethod(Block_to_real_name)
+    Block.to_full_name = staticmethod(Block_to_full_name)
+    Block.from_full_name = staticmethod(Block_from_full_name)
 
 def customize_blockreplica(BlockReplica):
     pass
