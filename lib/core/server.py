@@ -400,7 +400,7 @@ class DynamoServer(object):
 
         self.inventory.init_store(module, config)
 
-    def _collect_processes(self, child_processes, writing_process):
+    def _collect_processes(self, child_processes):
         """
         Loop through child processes and make state machine transitions.
         Processes come in this function in status RUN or KILLED. It is also possible that
@@ -513,7 +513,7 @@ class DynamoServer(object):
 
     def _collect_updates_from_web(self):
         if self.manager.master.get_writing_process_id() != 0 or self.manager.master.get_writing_process_host() != socket.gethostname():
-            continue
+            return
 
         read_state, update_commands = self._collect_updates()
 

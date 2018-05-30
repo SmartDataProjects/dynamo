@@ -1,3 +1,5 @@
+import socket
+
 from dynamo.core.components.appmanager import AppManager
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration
