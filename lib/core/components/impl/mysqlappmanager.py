@@ -54,6 +54,13 @@ class MySQLAppManager(AppManager):
         else:
             return result[0]
 
+    def get_writing_process_host(self): #override
+        result = self._mysql.query('SELECT `server` FROM `applications` WHERE `write_request` = 1 AND `status` IN (\'assigned\', \'run\')')
+        if len(result) == 0:
+            return None
+        else:
+            return result[0]
+
     def schedule_application(self, title, path, args, user, host, write_request): #override
         result = self._mysql.query('SELECT `id` FROM `users` WHERE `name` = %s', user)
         if len(result) == 0:

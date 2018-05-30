@@ -148,10 +148,12 @@ class WebServer(object):
                     start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
                     return 'Server cannot execute %s/%s at the moment because the inventory is being updated.\n'
                 else:
-                    self.dynamo_server.manager.master.start_write_web(socket.gethostname())
+                    self.dynamo_server.manager.master.start_write_web()
+                    # stop is called from the DynamoServer upon successful inventory update
 
             except:
                 self.dynamo_server.manager.master.stop_write_web()
+                raise
 
             finally:
                 self.dynamo_server.manager.master.unlock()
@@ -210,10 +212,6 @@ class WebServer(object):
             return 'Server denied response due to: %s\n' % str(ex)
         except:
             return self._internal_server_error(start_response)
-
-        finally:
-            if obj.write_enabled:
-                self.dynamo_server.manager.master.stop_write_web()
 
         ## Step 6
         if mode == 'data':
