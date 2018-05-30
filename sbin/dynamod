@@ -73,18 +73,16 @@ try:
         os.seteuid(pwnam.pw_uid)
     except OSError:
         LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
+
+    # server.run can send a SIGHUP before the web server starts if inventory load is quick
+    # Need to start ignoring here already
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
     # Loop with server status check, update, and application execution (if enabled)
     srv_thread = threading.Thread(target = server.run)
     srv_thread.start()
     
     if config.web.enabled:
-        while server.inventory is None:
-            time.sleep(2)
-
-        with server.inventory_update_lock:
-            pass
-
         config.web.modules_config = Configuration(config.web.modules_config_path)
         config.web.pop('modules_config_path')
     
@@ -93,13 +91,12 @@ try:
     
     else:
         # WSGIServer intercepts INT, TERM, and HUP so we do the same here
-        # Convert SIGTERM into KeyboardInterrupt (SIGINT already is) and ignore SIGHUP (web server restarts itself with SIGHUP)
+        # HUP is already ignored above
+        # Convert SIGTERM into KeyboardInterrupt (SIGINT already is)
         from dynamo.utils.signaling import SignalConverter
         signal_converter = SignalConverter(logger = LOG)
         signal_converter.set(signal.SIGTERM)
 
-        signal.signal(signal.SIGHUP, signal.SIG_IGN)
-    
         # Now just wait for the signal
         signal.pause()
 

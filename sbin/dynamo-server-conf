@@ -102,6 +102,9 @@ if serve_web == 'true':
     web_conf['socket'] = source_conf.get('web', 'socket')
     web_conf['contents_path'] = source_conf.get('web', 'contents_path')
     web_conf['modules_config_path'] = source_conf.get('web', 'modules_config')
+    web_conf['min_idle'] = 1
+    web_conf['max_idle'] = 5
+    web_conf['max_procs'] = 10
 
 server_conf['notification_recipient'] = email
 server_conf['status_poll_interval'] = 1.0
