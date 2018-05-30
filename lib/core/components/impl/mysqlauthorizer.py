@@ -1,6 +1,10 @@
+import logging
+
 from dynamo.core.components.authorizer import Authorizer
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration
+
+LOG = logging.getLogger(__name__)
 
 class MySQLAuthorizer(Authorizer):
     def __init__(self, config):
@@ -19,9 +23,15 @@ class MySQLAuthorizer(Authorizer):
     def list_users(self):
         return self._mysql.query('SELECT `name`, `email`, `dn` FROM `users` ORDER BY `id`')
 
-    def identify_user(self, dn = '', name = '', with_id = False): #override
+    def identify_user(self, dn = '', check_trunc = False, name = '', with_id = False): #override
         if dn:
             result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `dn` = %s', dn)
+            if check_trunc and len(result) == 0:
+                while dn:
+                    dn = dn[:dn.rfind('/')]
+                    result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `dn` = %s', dn)
+                    if len(result) != 0:
+                        break
         else:
             result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `name` = %s', name)
 

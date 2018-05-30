@@ -31,11 +31,12 @@ class Authorizer(object):
         """
         raise NotImplementedError('list_users')
 
-    def identify_user(self, dn = '', name = '', with_id = False):
+    def identify_user(self, dn = '', check_trunc = False, name = '', with_id = False):
         """
         Translate the DN to user account name.
-        @param dn     Certificate Distinguished Name.
-        @param name   User name.
+        @param dn           Certificate Distinguished Name.
+        @param check_trunc  Retry progressively truncated DNs until a match is found.
+        @param name         User name.
         @param get_id If true, return a tuple (user name, user id)
 
         @return  User name string or (user name, user id). None if not identified
