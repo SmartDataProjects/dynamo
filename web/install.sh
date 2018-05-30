@@ -10,6 +10,32 @@ THISDIR=$(cd $(dirname $0); pwd)
 
 source $THISDIR/../utilities/shellutils.sh
 
+echo '########################################'
+echo '######  WEB SERVER CONFIGURATIONS ######'
+echo '########################################'
+
+require rpm -q lighttpd
+require rpm -q lighttpd-fastcgi
+if [[ $(getsebool httpd_setrlimit) =~ off ]]
+then
+  setsebool httpd_setrlimit 1
+fi
+
+if [[ $(uname -r) =~ el7 ]]
+then
+  LIGHTTPDCONF=/etc/sysconfig/lighttpd
+  if ! [ -e $LIGHTTPDCONF ] || ! grep -q OPENSSL_ALLOW_PROXY_CERTS $LIGHTTPDCONF
+  then
+    echo "OPENSSL_ALLOW_PROXY_CERTS=1" >> $LIGHTTPDCONF
+  fi
+else
+  LIGHTTPDINIT=/etc/init.d/lighttpd
+  if ! grep -q OPENSSL_ALLOW_PROXY_CERTS $LIGHTTPDINIT
+  then
+    sed -i '/lockfile=/a OPENSSL_ALLOW_PROXY_CERTS=1' $LIGHTTPDINIT
+  fi
+fi
+
 echo '#############################'
 echo '######  HTML TEMPLATES ######'
 echo '#############################'

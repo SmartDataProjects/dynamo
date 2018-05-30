@@ -200,8 +200,8 @@ class DynamoServer(object):
         if self.shutdown_flag.is_set():
             self.shutdown_flag.clear()
             state = self.shutdown_flag.wait(60)
-            if not state:
-                # timed out
+            if state is not None and not state:
+                # timed out (return value of wait() is False if timed out in python 2.7, but is always None in python 2.6)
                 LOG.warning('Shutdown timeout of 60 seconds have passed.')
 
         self.manager.disconnect()

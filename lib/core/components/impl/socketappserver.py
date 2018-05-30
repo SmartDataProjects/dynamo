@@ -29,6 +29,9 @@ DN_TRANSLATION = {
     'userId': 'UID'
 }
 
+# OpenSSL cannot authenticate with certificate proxies without this environment variable
+os.environ['OPENSSL_ALLOW_PROXY_CERTS'] = '1'
+
 LOG = logging.getLogger(__name__)
 
 class SocketIO(object):
@@ -118,9 +121,6 @@ class SocketAppServer(AppServer):
 
     def __init__(self, dynamo_server, config):
         AppServer.__init__(self, dynamo_server, config)
-
-        # OpenSSL cannot authenticate with certificate proxies without this environment variable
-        os.environ['OPENSSL_ALLOW_PROXY_CERTS'] = '1'
 
         if 'capath' in config:
             try:

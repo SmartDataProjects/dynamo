@@ -248,11 +248,12 @@ fi
 
 if [ $WEBSERVER ]
 then
-  require rpm -q lighttpd
-  require rpm -q lighttpd-fastcgi
-  if [[ $(getsebool httpd_setrlimit) =~ off ]]
+  $SOURCE/web/install.sh
+  if [ $? -ne 0 ]
   then
-    setsebool httpd_setrlimit 1
+    echo
+    echo "Web contents installation failed."
+    exit 1
   fi
 fi
 
