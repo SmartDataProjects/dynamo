@@ -156,7 +156,7 @@ class WebServer(object):
 
         try:
             ## Step 4
-            if environ['CONTENT_TYPE'] == 'applicationj/json':
+            if environ['CONTENT_TYPE'] == 'application/json':
                 try:
                     request = json.loads(environ['wsgi.input'].read())
                 except:

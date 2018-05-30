@@ -20,30 +20,22 @@ class InjectData(WebModule):
         if ('admin', 'inventory') not in caller.authlist:
             raise AuthorizationError()
 
-        if 'data' not in request:
-            raise MissingParameter('data')
-
-        try:
-            data = json.loads(request['data'])
-        except:
-            raise IllFormedRequest('data', request['data'])
-
-        if type(data) is not dict:
-            raise IllFormedRequest('data', request['data'], hint = '"data" must be a dict type')
+        if type(request) is not dict:
+            raise IllFormedRequest('request', type(request).__name__, hint = '"data" must be a dict type')
 
         counts = {}
 
-        if 'dataset' in data:
-            self._make_datasets(data['dataset'], inventory, counts)
+        if 'dataset' in request:
+            self._make_datasets(request['dataset'], inventory, counts)
 
-        if 'site' in data:
-            self._make_sites(data['site'], inventory, counts)
+        if 'site' in request:
+            self._make_sites(request['site'], inventory, counts)
 
-        if 'group' in data:
-            self._make_groups(data['group'], inventory, counts)
+        if 'group' in request:
+            self._make_groups(request['group'], inventory, counts)
 
-        if 'datasetreplica' in data:
-            self._make_datasetreplicas(data['datasetreplica'], inventory, counts)
+        if 'datasetreplica' in request:
+            self._make_datasetreplicas(request['datasetreplica'], inventory, counts)
 
         return counts
 
