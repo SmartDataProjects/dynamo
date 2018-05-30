@@ -32,10 +32,10 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
 
         self._mysql.unlock_tables()
 
-    def lock(self): #override
+    def _do_lock(self): #override
         self._mysql.lock_tables(write = ['servers', 'applications'], read = ['users'])
 
-    def unlock(self): #override
+    def _do_unlock(self): #override
         self._mysql.unlock_tables()
 
     def get_master_host(self): #override
@@ -261,6 +261,10 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
     def create_authorizer(self): #override
         config = Configuration(db_params = self._mysql.config())
         return MySQLAuthorizer(config)
+
+    def create_appmanager(self): #override
+        config = Configuration(db_params = self._mysql.config())
+        return MySQLAppManager(config)
 
     def check_connection(self): #override
         try:
