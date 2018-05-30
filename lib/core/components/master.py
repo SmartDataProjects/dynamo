@@ -183,6 +183,7 @@ class MasterServer(Authorizer, AppManager):
         return len(self.get_host_list(status = ServerHost.STAT_STARTING)) != 0 or \
             self.get_writing_process_id() is not None
 
+import types
 
 # Decorate all public methods of MasterServer with the lock
 def call_with_lock(mthd):
@@ -194,5 +195,7 @@ def call_with_lock(mthd):
     return wrapper
 
 for name in dir(MasterServer):
-    if not name.startswith('_') and callable(getattr(MasterServer, name)):
-        setattr(MasterServer, name, call_with_lock(getattr(MasterServer, name)))
+    if not name.startswith('_'):
+        mthd = getattr(MasterServer, name)
+        if callable(mthd) and not isinstance(mthd, types.FunctionType): # static methods are instances of FunctionType
+            setattr(MasterServer, name, call_with_lock(mthd))

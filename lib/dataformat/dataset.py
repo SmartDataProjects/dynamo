@@ -91,7 +91,7 @@ class Dataset(object):
     
         self._software_version_id = version.id
 
-    def __init__(self, name, status = STAT_UNKNOWN, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True, did = 0):
+    def __init__(self, name, status = 'unknown', data_type = 'unknown', software_version = None, last_update = 0, is_open = True, did = 0):
         self._name = name
         self.status = Dataset.status_val(status)
         self.data_type = Dataset.data_type_val(data_type)

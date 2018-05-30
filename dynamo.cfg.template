@@ -59,7 +59,7 @@ local_board_conf={"host": "localhost", "user": "dynamosrv"}
 enabled=true
 
 # AppServer class name
-server=SocketAppServer
+server=socketappserver:SocketAppServer
 
 # SocketAppServer server uses an OpenSSL socket to receive requests
 #  certfile: Server certificate (can be self-signed)

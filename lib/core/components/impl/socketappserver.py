@@ -14,6 +14,7 @@ import logging
 from dynamo.core.components.appserver import AppServer
 from dynamo.core.components.appmanager import AppManager
 import dynamo.core.serverutils as serverutils
+from dynamo.dataformat import ConfigurationError
 
 SERVER_PORT = 39626
 DN_TRANSLATION = {
@@ -122,8 +123,12 @@ class SocketAppServer(AppServer):
         os.environ['OPENSSL_ALLOW_PROXY_CERTS'] = '1'
 
         if 'capath' in config:
-            # capath only supported in SSLContext (pythonn 2.7)
-            context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+            try:
+                context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+            except AttributeError:
+                # capath only supported in SSLContext (pythonn 2.7)
+                raise ConfigurationError('AppServer configuration "capath" is available only in Python 2.7. Please use cafile instead.')
+
             context.load_cert_chain(config.certfile, keyfile = config.keyfile)
             context.load_verify_locations(capath = config.capath)
             context.verify_mode = ssl.CERT_REQUIRED
