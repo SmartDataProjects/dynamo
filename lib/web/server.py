@@ -158,6 +158,9 @@ class WebServer(object):
             ## Step 4
             # FieldStorage is a dict-like class that holds both GET and POST requests
             request = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
+            if request.list is None:
+                start_response('400 Bad Request', [('Content-Type', 'text/plain')])
+                return 'Could not parse input.\n'
     
             ## Step 5
             caller = WebServer.User(user, user_id, authlist)
