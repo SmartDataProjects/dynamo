@@ -14,6 +14,8 @@ from dynamo.core.inventory import DynamoInventory
 from dynamo.core.manager import ServerManager, OutOfSyncError
 import dynamo.core.serverutils as serverutils
 from dynamo.core.components.appserver import AppServer
+from dynamo.core.components.host import ServerHost
+from dynamo.core.components.appmanager import AppManager
 from dynamo.utils.log import log_exception
 
 LOG = logging.getLogger(__name__)
@@ -60,8 +62,8 @@ class DynamoServer(object):
     
                 self.inventory_load_opts[objs] = (included, excluded)
 
-        ## Intra-process inventory update synchronization
-        self.inventory_update_lock = threading.Lock()
+        ## Queue to send / receive inventory updates
+        self.inventory_update_queue = multiprocessing.Queue()
 
         ## Recipient of error message emails
         self.notification_recipient = config.notification_recipient
@@ -82,10 +84,10 @@ class DynamoServer(object):
         ## Write process is done.
         ## Other servers will not start a new write process while there is a server with status 'starting'.
         ## The only states the other running servers can be in are therefore 'updating' or 'online'
-        while self.manager.count_servers(ServerManager.SRV_UPDATING) != 0:
+        while self.manager.count_servers(ServerHost.STAT_UPDATING) != 0:
             time.sleep(2)
 
-        if self.manager.count_servers(ServerManager.SRV_ONLINE) == 0:
+        if self.manager.count_servers(ServerHost.STAT_ONLINE) == 0:
             # I am the first server to start the inventory - need to have a store.
             if not self.inventory.has_store:
                 raise RuntimeError('No persistent inventory storage is available.')
@@ -117,10 +119,9 @@ class DynamoServer(object):
         # Outer loop: restart the application server when the inventory goes out of synch
         while True:
             # Lock write activities by other servers
-            self.manager.set_status(ServerManager.SRV_STARTING)
+            self.manager.set_status(ServerHost.STAT_STARTING)
 
-            with self.inventory_update_lock:
-                self.load_inventory()
+            self.load_inventory()
 
             bconf = self.manager_config.board
             self.manager.master.advertise_board(bconf.module, bconf.config)
@@ -135,7 +136,7 @@ class DynamoServer(object):
                 self.manager.master.advertise_shadow(sconf.module, sconf.config)
 
             # We are ready to work
-            self.manager.set_status(ServerManager.SRV_ONLINE)
+            self.manager.set_status(ServerHost.STAT_ONLINE)
 
             try:
                 # Actual stuff happens here
@@ -166,7 +167,7 @@ class DynamoServer(object):
                 try:
                     self.manager.reset_status()
                 except:
-                    self.manager.status = ServerManager.SRV_INITIAL
+                    self.manager.status = ServerHost.STAT_INITIAL
    
             except:
                 log_exception(LOG)
@@ -206,8 +207,7 @@ class DynamoServer(object):
         self.manager.disconnect()
 
     def get_subprocess_args(self):
-        # Create a inventory proxy with a fresh connection to the store backend
-        # Otherwise my connection will be closed when the inventory is garbage-collected in the child process
+        # Create a inventory proxy with a fresh connection to the store backend to avoid the child closing the connection
         inventory_proxy = self.inventory.create_proxy()
 
         # Similarly pass a new Authorizer with a fresh connection
@@ -236,8 +236,8 @@ class DynamoServer(object):
 
         try:
             # There can only be one child process with write access at a time. We pass it a Queue to communicate back.
-            # writing_process is a tuple (proc, queue) when some process is writing
-            writing_process = (0, None)
+            # Process ID (within the MasterServer applications table) of the writing process
+            writing_process = None
     
             first_wait = True
             do_sleep = False
@@ -289,8 +289,8 @@ class DynamoServer(object):
 
                 if not os.path.exists(app['path'] + '/exec.py'):
                     LOG.info('Application %s from %s@%s (write request: %s) not found.', app['title'], app['user_name'], app['user_host'], app['write_request'])
-                    self.manager.master.update_application(app['appid'], status = ServerManager.APP_NOTFOUND)
-                    self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_NOTFOUND})
+                    self.manager.master.update_application(app['appid'], status = AppManager.STAT_NOTFOUND)
+                    self.appserver.notify_synch_app(app['appid'], {'status': AppManager.STAT_NOTFOUND})
                     continue
     
                 LOG.info('Found application %s from %s (AID %s, write request: %s)', app['title'], app['user_name'], app['appid'], app['write_request'])
@@ -302,23 +302,18 @@ class DynamoServer(object):
                         LOG.warning('Application %s from %s is not authorized for write access.', app['title'], app['user_name'])
                         # TODO send a message
     
-                        self.manager.master.update_application(app['appid'], status = ServerManager.APP_AUTHFAILED)
-                        self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_AUTHFAILED})
+                        self.manager.master.update_application(app['appid'], status = AppManager.STAT_AUTHFAILED)
+                        self.appserver.notify_synch_app(app['appid'], {'status': AppManager.STAT_AUTHFAILED})
                         continue
     
-                    queue = multiprocessing.Queue()
-                    writing_process = (app['appid'], queue)
-                else:
-                    queue = None
+                    writing_process = app['appid']
 
-                # Another thread (i.e. web) can be updating the inventory - need to place a lock before spawning a child process
-                with self.inventory_update_lock:
-                    ## Step 3: Spawn a child process for the script
-                    self.manager.master.update_application(app['appid'], status = ServerManager.APP_RUN)
-        
-                    proc = self._start_subprocess(app, is_local, queue)
+                ## Step 3: Spawn a child process for the script
+                self.manager.master.update_application(app['appid'], status = AppManager.STAT_RUN)
+
+                proc = self._start_subprocess(app, is_local)
                 
-                self.appserver.notify_synch_app(app['appid'], {'status': ServerManager.APP_RUN, 'path': app['path'], 'pid': proc.pid})
+                self.appserver.notify_synch_app(app['appid'], {'status': AppManager.STAT_RUN, 'path': app['path'], 'pid': proc.pid})
     
                 LOG.info('Started application %s (%s) from %s@%s (AID %d PID %d).', app['title'], app['path'], app['user_name'], app['user_host'], app['appid'], proc.pid)
     
@@ -335,9 +330,9 @@ class DynamoServer(object):
             else:
                 LOG.error('Exception (%s) in server process.', sys.exc_info()[0].__name__)
 
-            if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
+            if self.manager.status not in [ServerHost.STAT_OUTOFSYNC, ServerHost.STAT_ERROR]:
                 try:
-                    self.manager.set_status(ServerManager.SRV_ERROR)
+                    self.manager.set_status(ServerHost.STAT_ERROR)
                 except:
                     pass
 
@@ -356,7 +351,7 @@ class DynamoServer(object):
                 serverutils.killproc(proc, LOG)
 
                 try:
-                    self.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
+                    self.manager.master.update_application(app_id, status = AppManager.STAT_KILLED)
                 except:
                     pass
 
@@ -389,9 +384,9 @@ class DynamoServer(object):
         except:
             LOG.error('Exception in server process.')
 
-            if self.manager.status not in [ServerManager.SRV_OUTOFSYNC, ServerManager.SRV_ERROR]:
+            if self.manager.status not in [ServerHost.STAT_OUTOFSYNC, ServerHost.STAT_ERROR]:
                 try:
-                    self.manager.set_status(ServerManager.SRV_ERROR)
+                    self.manager.set_status(ServerHost.STAT_ERROR)
                 except:
                     pass
 
@@ -427,52 +422,52 @@ class DynamoServer(object):
 
             apps = self.manager.master.get_applications(app_id = app_id)
             if len(apps) == 0:
-                status = ServerManager.APP_KILLED
+                status = AppManager.STAT_KILLED
             else:
                 status = apps[0]['status']
 
             # Kill processes running for too long (timeout given in seconds)
             if time_start < time.time() - self.applications_config.timeout:
                 LOG.warning('Application %s timed out.', id_str)
-                status = ServerManager.APP_KILLED
+                status = AppManager.STAT_KILLED
 
-            if app_id == writing_process[0]:
+            if app_id == writing_process:
                 # If this is the writing process, read data from the queue
                 # read_state: 0 -> nothing written yet (process is running), 1 -> read OK, 2 -> failure
-                read_state, update_commands = self._collect_updates(writing_process[1])
+                read_state, update_commands = self._collect_updates()
 
-                if status == ServerManager.APP_RUN:
+                if status == AppManager.STAT_RUN:
                     if read_state == 1:
                         # we would block signal here, but since we would be running this code in a subthread we don't have to
                         self.update_inventory(update_commands)
     
                     elif read_state == 2:
-                        status = ServerManager.APP_FAILED
+                        status = AppManager.STAT_FAILED
                         serverutils.killproc(proc, LOG, 60)
 
                 # If the process is killed or updates are read, release the writing_process
-                if status != ServerManager.APP_RUN or read_state != 0:
-                    writing_process = (0, None)
+                if status != AppManager.STAT_RUN or read_state != 0:
+                    writing_process = None
 
-            if status == ServerManager.APP_KILLED and proc.is_alive():
+            if status == AppManager.STAT_KILLED and proc.is_alive():
                 LOG.warning('Terminating %s.', id_str)
                 serverutils.killproc(proc, LOG, 60)
 
             if proc.is_alive():
-                if status == ServerManager.APP_RUN:
+                if status == AppManager.STAT_RUN:
                     ichild += 1
                     continue
                 else:
                     # The process must be complete but did not join within 60 seconds
-                    LOG.error('Application %s is stuck (Status %s).', id_str, ServerManager.application_status_name(status))
+                    LOG.error('Application %s is stuck (Status %s).', id_str, AppManager.status_name(status))
             else:
-                if status == ServerManager.APP_RUN:
+                if status == AppManager.STAT_RUN:
                     if proc.exitcode == 0:
-                        status = ServerManager.APP_DONE
+                        status = AppManager.STAT_DONE
                     else:
-                        status = ServerManager.APP_FAILED
+                        status = AppManager.STAT_FAILED
 
-                LOG.info('Application %s completed (Exit code %d Status %s).', id_str, proc.exitcode, ServerManager.application_status_name(status))
+                LOG.info('Application %s completed (Exit code %d Status %s).', id_str, proc.exitcode, AppManager.status_name(status))
                
             child_processes.pop(ichild)
 
@@ -482,7 +477,7 @@ class DynamoServer(object):
 
         return writing_process
 
-    def _collect_updates(self, queue):
+    def _collect_updates(self):
         print_every = 100000
         updates_received = 0
         deletes_received = 0
@@ -494,7 +489,7 @@ class DynamoServer(object):
             try:
                 # Once we have an item sent, we'll read until the end (EOM).
                 # If the child dies in the middle of messaging, we get out of the while loop by timeout = 60
-                cmd, objstr = queue.get(block = reading, timeout = 60)
+                cmd, objstr = self.inventory_update_queue.get(block = reading, timeout = 60)
             except Queue.Empty:
                 if reading:
                     # The child process crashed or timed out
@@ -546,12 +541,11 @@ class DynamoServer(object):
 
     def update_inventory(self, update_commands):
         # My updates
-        self.manager.set_status(ServerManager.SRV_UPDATING)
+        self.manager.set_status(ServerHost.STAT_UPDATING)
 
-        with self.inventory_update_lock:
-            self._exec_updates(update_commands)
+        self._exec_updates(update_commands)
 
-        self.manager.set_status(ServerManager.SRV_ONLINE)
+        self.manager.set_status(ServerHost.STAT_ONLINE)
 
         # Others
         self.manager.send_updates(update_commands)
@@ -564,7 +558,7 @@ class DynamoServer(object):
         # update_commands is an iterator - cannot just do len()
         if has_update:
             # The server which sent the updates has set this server's status to updating
-            self.manager.set_status(ServerManager.SRV_ONLINE)
+            self.manager.set_status(ServerHost.STAT_ONLINE)
 
     def _exec_updates(self, update_commands):
         has_update = False
@@ -585,14 +579,22 @@ class DynamoServer(object):
         if has_update and self.inventory.has_store:
             self.manager.master.advertise_store_version(self.inventory.store_version())
 
+        # Signal web server to restart
+        os.kill(os.getpid(), signal.SIGHUP)
+
         return has_update
 
-    def _start_subprocess(self, app, is_local, queue):
+    def _start_subprocess(self, app, is_local):
         # These objects can be garbage-collected as soon as this function returns.
         # That doesn't cause a problem only because no shared resource (e.g. database connections)
         # are instantiated in the constructor of these objects.
         # We probably should have a more explicit safeguard mechanism.
         defaults_conf, inventory, authorizer = self.get_subprocess_args()
+
+        if app['write_request']:
+            queue = self.inventory_update_queue
+        else:
+            queue = None
 
         proc_args = (app['path'], app['args'], is_local, defaults_conf, inventory, authorizer, queue)
 

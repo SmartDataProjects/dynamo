@@ -13,7 +13,7 @@ import socket
 import sqlite3
 from email.mime.text import MIMEText
 
-from dynamo.core.manager import ServerManager
+from dynamo.core.components.appmanager import AppManager
 from dynamo.utils.classutil import get_instance
 
 LOG = logging.getLogger(__name__)
@@ -119,7 +119,7 @@ class AppServer(object):
         if app is None:
             return False, 'Unknown appid %d' % app_id
 
-        app['status'] = ServerManager.application_status_name(app['status'])
+        app['status'] = AppManager.status_name(app['status'])
         return True, app
 
     def _kill_app(self, app_id):
@@ -128,12 +128,12 @@ class AppServer(object):
         if app is None:
             return False, 'Unknown appid %d' % app_id
 
-        if app['status'] in (ServerManager.APP_NEW, ServerManager.APP_RUN):
-            self.dynamo_server.manager.master.update_application(app_id, status = ServerManager.APP_KILLED)
+        if app['status'] in (AppManager.STAT_NEW, AppManager.STAT_RUN):
+            self.dynamo_server.manager.master.update_application(app_id, status = AppManager.STAT_KILLED)
             return True, {'result': 'success', 'detail': 'Task aborted.'}
         else:
             return True, {'result': 'noaction', 'detail': 'Task already completed with status %s (exit code %s).' % \
-                          (ServerManager.application_status_name(app['status']), app['exit_code'])}
+                          (AppManager.status_name(app['status']), app['exit_code'])}
 
     def _get_app(self, app_id):
         apps = self.dynamo_server.manager.master.get_applications(app_id = app_id)
@@ -183,9 +183,9 @@ class AppServer(object):
         if mode == 'synch':
             msg = self.wait_synch_app_queue(app_id)
 
-            if msg['status'] != ServerManager.APP_RUN:
+            if msg['status'] != AppManager.STAT_RUN:
                 # this app is not going to run
-                return False, 'Application status: %s.' % ServerManager.application_status_name(msg['status'])
+                return False, 'Application status: %s.' % AppManager.status_name(msg['status'])
 
             return True, {'appid': app_id, 'path': msg['path'], 'pid': msg['pid']} # msg['path'] should be == workarea
         else:
@@ -409,8 +409,8 @@ class AppServer(object):
             cursor.execute('SELECT `app_id` FROM `sequence` WHERE `app_id` IS NOT NULL')
             for row in cursor.fetchall():
                 app = self._get_app(row[0])
-                if app is not None and app['status'] not in (ServerManager.APP_DONE, ServerManager.APP_FAILED, ServerManager.APP_KILLED):
-                    self.dynamo_server.manager.master.update_application(row[0], status = ServerManager.APP_KILLED)
+                if app is not None and app['status'] not in (AppManager.STAT_DONE, AppManager.STAT_FAILED, AppManager.STAT_KILLED):
+                    self.dynamo_server.manager.master.update_application(row[0], status = AppManager.STAT_KILLED)
         except Exception as ex:
             return False, 'Failed to stop sequence %s (%s).' % (name, str(ex))
 
@@ -462,7 +462,7 @@ class AppServer(object):
                         self._schedule_from_sequence(sequence_name, iline)
                         continue
 
-                    if app['status'] in (ServerManager.APP_NEW, ServerManager.APP_ASSIGNED, ServerManager.APP_RUN):
+                    if app['status'] in (AppManager.STAT_NEW, AppManager.STAT_ASSIGNED, AppManager.STAT_RUN):
                         continue
                     else:
                         try:
@@ -477,12 +477,12 @@ class AppServer(object):
                         except:
                             pass
 
-                        if app['status'] == ServerManager.APP_DONE:
+                        if app['status'] == AppManager.STAT_DONE:
                             LOG.info('[Scheduler] Application %s in sequence %s completed.', title, sequence_name)
                             self._schedule_from_sequence(sequence_name, iline + 1)
 
                         else:
-                            LOG.warning('[Scheduler] Application %s in sequence %s terminated with status %s.', title, sequence_name, ServerManager.application_status_name(app['status']))
+                            LOG.warning('[Scheduler] Application %s in sequence %s terminated with status %s.', title, sequence_name, AppManager.status_name(app['status']))
                             if criticality == AppServer.PASS:
                                 self._schedule_from_sequence(sequence_name, iline + 1)
                             else:
