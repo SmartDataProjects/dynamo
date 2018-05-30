@@ -235,10 +235,6 @@ class DynamoServer(object):
         LOG.info('Start polling for applications.')
 
         try:
-            # There can only be one child process with write access at a time. We pass it a Queue to communicate back.
-            # Process ID (within the MasterServer applications table) of the writing process
-            writing_process = None
-    
             first_wait = True
             do_sleep = False
             cleanup_timer = 0
@@ -253,7 +249,9 @@ class DynamoServer(object):
     
                 ## Step 5 (easier to do here because we use "continue"s)
                 LOG.debug('Collect processes')
-                writing_process = self._collect_processes(child_processes, writing_process)
+                self._collect_processes(child_processes)
+
+                self._collect_updates_from_web()
 
                 ## Step 6 (easier to do here because we use "continue"s)
                 cleanup_timer += 1
@@ -374,6 +372,8 @@ class DynamoServer(object):
     
                 ## Step 1
                 self._read_updates()
+
+                self._collect_updates_from_web()
     
                 ## Step 2
                 time.sleep(self.poll_interval)
@@ -414,6 +414,8 @@ class DynamoServer(object):
         is set to FAILED.
         """
 
+        writing_process = self.manager.master.get_writing_process_id()
+
         ichild = 0
         while ichild != len(child_processes):
             app_id, proc, user_name, user_host, path, time_start = child_processes[ichild]
@@ -445,10 +447,6 @@ class DynamoServer(object):
                         status = AppManager.STAT_FAILED
                         serverutils.killproc(proc, LOG, 60)
 
-                # If the process is killed or updates are read, release the writing_process
-                if status != AppManager.STAT_RUN or read_state != 0:
-                    writing_process = None
-
             if status == AppManager.STAT_KILLED and proc.is_alive():
                 LOG.warning('Terminating %s.', id_str)
                 serverutils.killproc(proc, LOG, 60)
@@ -474,8 +472,6 @@ class DynamoServer(object):
             self.appserver.notify_synch_app(app_id, {'status': status, 'exit_code': proc.exitcode})
 
             self.manager.master.update_application(app_id, status = status, exit_code = proc.exitcode)
-
-        return writing_process
 
     def _collect_updates(self):
         print_every = 100000
@@ -514,6 +510,17 @@ class DynamoServer(object):
 
                 if cmd == DynamoInventory.CMD_EOM:
                     return 1, update_commands
+
+    def _collect_updates_from_web(self):
+        if self.manager.master.get_writing_process_id() != 0 or self.manager.master.get_writing_process_host() != socket.gethostname():
+            continue
+
+        read_state, update_commands = self._collect_updates()
+
+        if read_state == 1:
+            self.update_inventory(update_commands)
+
+        self.manager.master.stop_write_web()
 
     def _cleanup(self):
         # retain_records_for given in days

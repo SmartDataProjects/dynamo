@@ -34,10 +34,15 @@ class AppManager(object):
 
     def get_writing_process_id(self):
         """
-        Return the id (within the applications table) of the writing process, or 0 if there is a
-        writing web interface.
+        Return the appid of the writing process, or 0 if there is a writing web interface.
         """
         raise NotImplementedError('get_writing_process_id')
+
+    def get_writing_process_host(self):
+        """
+        Return the host of the writing process or None.
+        """
+        raise NotImplementedError('get_writing_process_host')
 
     def schedule_application(self, title, path, args, user, host, write_request):
         """
