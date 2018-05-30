@@ -52,6 +52,9 @@ local_board=mysql
 # Configuration to be passed to $local_board/generate_local_board_conf.py
 local_board_conf={"host": "localhost", "user": "dynamosrv"}
 
+# Location of the partition definition
+partition_def=$(DYNAMO_BASE)/etc/default_partitions.txt
+
 [applications]
 ## Dynamo application server configuration
 

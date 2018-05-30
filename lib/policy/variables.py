@@ -23,8 +23,13 @@ class DatasetName(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.TEXT_TYPE, attr = 'name')
 
+        if Dataset._name_pattern is not None:
+            self.name_pattern = re.compile(Dataset._name_pattern)
+        else:
+            self.name_pattern = None
+
     def rhs_map(self, expr, is_re = False):
-        if not is_re and not re.match('/[^/]+/[^/]+/[^/]+', expr):
+        if not is_re and self.name_pattern is not None and not self.name_pattern.match(expr):
             raise InvalidExpression('Invalid dataset name ' + expr)
         
         if is_re:
