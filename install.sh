@@ -146,6 +146,10 @@ cp $SOURCE/sbin/* $INSTALL_PATH/sbin/
 chown root:$(id -gn $USER) $INSTALL_PATH/sbin/*
 chmod 754 $INSTALL_PATH/sbin/*
 
+cp $SOURCE/etc/default_partitions.txt $INSTALL_PATH/etc/
+chown root:$(id -gn $USER) $INSTALL_PATH/etc/default_partitions.txt
+chmod 644 $INSTALL_PATH/etc/default_partitions.txt
+
 echo " Done."
 echo
 

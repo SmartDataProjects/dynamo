@@ -72,6 +72,10 @@ class WebServer(object):
         6. Respond.
         """
 
+        if self.dynamo_server.inventory is None:
+            start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
+            return 'Server is starting. Please try again later.'
+
         ## Step 1
         if environ['REQUEST_SCHEME'] == 'http':
             # No auth
