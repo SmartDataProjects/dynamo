@@ -244,12 +244,11 @@ fi
 
 if [ $WEBSERVER ]
 then
-  $SOURCE/web/install.sh
-  if [ $? -ne 0 ]
+  require rpm -q lighttpd
+  require rpm -q lighttpd-fastcgi
+  if [[ $(getsebool httpd_setrlimit) =~ off ]]
   then
-    echo
-    echo "Web configuration failed."
-    exit 1
+    setsebool httpd_setrlimit 1
   fi
 fi
 

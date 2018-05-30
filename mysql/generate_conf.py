@@ -23,7 +23,7 @@ def generate_local_board_conf(conf_str):
         passwd = grants_conf[user]['passwd']
 
     board_conf = OD({
-        'module': 'MySQLUpdateBoard',
+        'module': 'mysqlboard:MySQLUpdateBoard',
         'config': OD()
     })
     
@@ -46,7 +46,7 @@ def generate_store_conf(conf_str):
     reader_conf = grants_conf[conf['reader']]
 
     store_conf = OD({
-        'module': 'MySQLInventoryStore',
+        'module': 'mysqlstore:MySQLInventoryStore',
         'config': OD(),
         'readonly_config': OD()
     })
@@ -87,7 +87,7 @@ def generate_master_conf(conf_str):
         passwd = grants_conf[user]['passwd']
 
     master_conf = OD({
-        'module': 'MySQLMasterServer',
+        'module': 'mysqlmaster:MySQLMasterServer',
         'config': OD()
     })
 
