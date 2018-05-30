@@ -10,7 +10,7 @@ class ListDatasets(WebModule):
     
         # collect information from the inventory and registry according to the requests
         if 'dataset' in request:
-            match_name = request.getvalue('dataset')
+            match_name = request['dataset']
             if '*' in match_name:
                 pattern = re.compile(fnmatch.translate(match_name))
                 for name in inventory.datasets.iterkeys():

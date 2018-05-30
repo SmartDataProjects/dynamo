@@ -10,7 +10,7 @@ class ListGroups(WebModule):
         response = []
 
         if 'group' in request:
-            match_name = request.getvalue('group')
+            match_name = request['group']
             if '*' in match_name:
                 pattern = re.compile(fnmatch.translate(match_name))
                 for name in sorted(inventory.groups.iterkeys()):
