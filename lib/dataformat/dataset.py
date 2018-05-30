@@ -26,6 +26,9 @@ class Dataset(object):
     _software_versions_byvalue = {}
     _software_version_lock = threading.Lock()
 
+    # Regular expression of the dataset name format, if there is any.
+    _name_pattern = None
+
     @staticmethod
     def data_type_name(arg):
         try:
