@@ -75,14 +75,7 @@ class BlockReplica(object):
         if self._site_name() != other._site_name():
             raise ObjectError('Cannot copy a replica at %s into a replica at %s' % (other._site.name, self._site_name()))
 
-        self.group = other.group
-        self.is_custodial = other.is_custodial
-        self.size = other.size
-        self.last_update = other.last_update
-        if other.file_ids is None:
-            self.file_ids = None
-        else:
-            self.file_ids = tuple(other.file_ids)
+        self._copy_no_check(other)
 
     def embed_into(self, inventory, check = False):
         try:
@@ -222,3 +215,13 @@ class BlockReplica(object):
             return self.group
         else:
             return self.group.name
+
+    def _copy_no_check(self):
+        self.group = other.group
+        self.is_custodial = other.is_custodial
+        self.size = other.size
+        self.last_update = other.last_update
+        if other.file_ids is None:
+            self.file_ids = None
+        else:
+            self.file_ids = tuple(other.file_ids)
