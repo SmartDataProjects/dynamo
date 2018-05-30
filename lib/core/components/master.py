@@ -1,5 +1,6 @@
 import multiprocessing
 import logging
+import types
 
 from dynamo.core.components.authorizer import Authorizer
 from dynamo.core.components.appmanager import AppManager
@@ -12,13 +13,29 @@ class MasterServer(Authorizer, AppManager):
     """
     An interface to the master server that coordinates server activities. The single instance of the MasterServer
     owned by the ServerManager (owned by DynamoServer) is used by DynamoServer, WebServer, and the subprocesses of the
-    WebServer. To avoid interference, all methods of the MasterServer is decorated with a locking mechanism. See
-    below the class definition.
+    WebServer. To avoid interference, all public methods of the instance of the MasterServer is decorated with a wrapper
+    that locks the execution.
     """
 
     @staticmethod
     def get_instance(module, config):
-        return get_instance(MasterServer, module, config)
+        instance = get_instance(MasterServer, module, config)
+
+        # Decorate all public methods of MasterServer with the lock
+        def make_wrapper(obj, mthd):
+            def wrapper(*args, **kwd):
+                with obj._master_server_lock:
+                    return mthd(*args, **kwd)
+        
+            return wrapper
+        
+        for name in dir(instance):
+            if not name.startswith('_'):
+                mthd = getattr(instance, name)
+                if callable(mthd) and not isinstance(mthd, types.FunctionType): # static methods are instances of FunctionType
+                    setattr(instance, name, make_wrapper(instance, mthd))
+
+        return instance
 
     def __init__(self, config):
         Authorizer.__init__(self, config)
@@ -40,10 +57,12 @@ class MasterServer(Authorizer, AppManager):
         LOG.info('Master host: %s', self.get_master_host())
 
     def lock(self):
-        raise NotImplementedError('lock')
+        self._master_server_lock.acquire()
+        self._do_lock()
 
     def unlock(self):
-        raise NotImplementedError('unlock')
+        self._do_unlock()
+        self._master_server_lock.release()
 
     def get_master_host(self):
         """
@@ -182,20 +201,3 @@ class MasterServer(Authorizer, AppManager):
     def inhibit_write(self):
         return len(self.get_host_list(status = ServerHost.STAT_STARTING)) != 0 or \
             self.get_writing_process_id() is not None
-
-import types
-
-# Decorate all public methods of MasterServer with the lock
-def call_with_lock(mthd):
-    def wrapper(*args, **kwd):
-        # args[0] is self
-        with args[0]._master_server_lock:
-            return mthd(*args, **kwd)
-
-    return wrapper
-
-for name in dir(MasterServer):
-    if not name.startswith('_'):
-        mthd = getattr(MasterServer, name)
-        if callable(mthd) and not isinstance(mthd, types.FunctionType): # static methods are instances of FunctionType
-            setattr(MasterServer, name, call_with_lock(mthd))
