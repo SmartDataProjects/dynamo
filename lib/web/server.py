@@ -176,10 +176,16 @@ class WebServer(object):
             return 'User not authorized to perform the request.\n'
         except exceptions.MissingParameter as ex:
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            return 'Missing required parameter "%s".\n' % ex.param_name
+            msg = 'Missing required parameter "%s"' % ex.param_name
+            if ex.context is not None:
+                msg += ' in %s' % ex.context
+            msg += '.\n'
+            return msg
         except exceptions.IllFormedRequest as ex:
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
             msg = 'Parameter "%s" has illegal value "%s".' % (ex.param_name, ex.value)
+            if ex.hint is not None:
+                msg += ' ' + ex.hint + '.'
             if ex.allowed is not None:
                 msg += ' Allowed values: [%s]' % ['"%s"' % v for v in ex.allowed]
             return msg + '\n'
@@ -199,7 +205,7 @@ class WebServer(object):
 
             data_str = json.dumps(content)
 
-            if 'callback' in request:
+            if request.has_key('callback'):
                 # JSONP request
                 return request.getvalue('callback') + '(' + data_str + ')'
             else:

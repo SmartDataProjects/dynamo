@@ -1,6 +1,6 @@
 import json
 
-from dynamo.web.exceptions import IllFormedRequest, AuthorizationError
+from dynamo.web.exceptions import MissingParameter, IllFormedRequest, AuthorizationError
 from dynamo.web.modules._base import WebModule
 import dynamo.dataformat as df
 
@@ -21,7 +21,7 @@ class InjectData(WebModule):
             raise AuthorizationError()
 
         if 'data' not in request:
-            raise IllFormedRequest('data', '_not_found_')
+            raise MissingParameter('data')
 
         try:
             data = json.loads(request['data'])
@@ -29,7 +29,7 @@ class InjectData(WebModule):
             raise IllFormedRequest('data', request['data'])
 
         if type(data) is not dict:
-            raise IllFormedRequest('data', request['data'])
+            raise IllFormedRequest('data', request['data'], hint = '"data" must be a dict type')
 
         counts = {}
 
@@ -54,7 +54,7 @@ class InjectData(WebModule):
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise IllFormedRequest('dataset', str(obj))
+                raise MissingParameter('name', context = str(obj))
 
             try:
                 blocks = obj.pop('blocks')
@@ -88,7 +88,7 @@ class InjectData(WebModule):
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise IllFormedRequest('site', str(obj))
+                raise MissingParameter('name', context = str(obj))
 
             try:
                 site = df.Site(name, **obj)
@@ -114,7 +114,7 @@ class InjectData(WebModule):
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise IllFormedRequest('group', str(obj))
+                raise MissingParameter('name', context = str(obj))
 
             try:
                 group = df.Group(name, **obj)
@@ -140,13 +140,13 @@ class InjectData(WebModule):
             try:
                 dataset_name = obj.pop('dataset')
             except KeyError:
-                raise IllFormedRequest('datasetreplica', str(obj))
+                raise MissingParameter('dataset', context = str(obj))
 
             try:
                 site_name = obj.pop('site')
             except KeyError:
                 obj['dataset'] = dataset_name
-                raise IllFormedRequest('datasetreplica', str(obj))
+                raise MissingParameter('site', context = str(obj))
 
             try:
                 blockreplicas = obj.pop('blockreplicas')
@@ -181,13 +181,13 @@ class InjectData(WebModule):
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise IllFormedRequest('block', str(obj))
+                raise MissingParameter('name', context = str(obj))
 
             try:
                 internal_name = df.Block.to_internal_name(name)
             except:
                 obj['name'] = name
-                raise IllFormedRequest('block', str(obj))
+                raise IllFormedRequest('block', str(obj), hint = 'Name does not match the format')
 
             try:
                 files = obj.pop('files')
@@ -226,7 +226,7 @@ class InjectData(WebModule):
             try:
                 lfn = obj.pop('name')
             except KeyError:
-                raise IllFormedRequest('file', str(obj))
+                raise MissingParameter('name', context = str(obj))
 
             try:
                 lfile = df.File(lfn, block = block, **obj)
@@ -259,7 +259,7 @@ class InjectData(WebModule):
             try:
                 block_name = obj.pop('block')
             except KeyError:
-                raise IllFormedRequest('blockreplica', str(obj))
+                raise MissingParameter('block', context = str(obj))
 
             block_internal_name = df.Block.to_internal_name(block_name)
 
@@ -267,7 +267,7 @@ class InjectData(WebModule):
 
             if block is None:
                 obj['block'] = block_name
-                raise IllFormedRequest('blockreplica', str(obj))
+                raise IllFormedRequest('blockreplica', str(obj), hint = 'Unknown block %s' % block_name)
 
             try:
                 group_name = obj.pop('group')
@@ -278,7 +278,7 @@ class InjectData(WebModule):
                 obj['group'] = inventory.groups[group_name]
             except KeyError:
                 obj['block'] = block_name
-                raise IllFormedRequest('blockreplica', str(obj))
+                raise IllFormedRequest('blockreplica', str(obj), hint = 'Unknown group %s' % group_name)
 
             try:
                 replica = df.BlockReplica(block, site, **obj)

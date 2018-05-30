@@ -1,13 +1,15 @@
 class MissingParameter(Exception):
     """Raise if request is missing a required parameter."""
-    def __init__(self, param_name):
+    def __init__(self, param_name, context = None):
         self.param_name = param_name
+        self.context = context
 
 class IllFormedRequest(Exception):
     """Raise if request parameter value does not conform to a format."""
-    def __init__(self, param_name, value, allowed = None):
+    def __init__(self, param_name, value, hint = None, allowed = None):
         self.param_name = param_name
         self.value = value
+        self.hint = hint
         self.allowed = allowed
 
 class AuthorizationError(Exception):
