@@ -156,11 +156,20 @@ class WebServer(object):
 
         try:
             ## Step 4
-            # FieldStorage is a dict-like class that holds both GET and POST requests
-            request = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
-            if request.list is None:
-                start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-                return 'Could not parse input.\n'
+            if environ['CONTENT_TYPE'] == 'applicationj/json':
+                try:
+                    request = json.loads(environ['wsgi.input'].read())
+                except:
+                    start_response('400 Bad Request', [('Content-Type', 'text/plain')])
+                    return 'Could not parse input.\n'
+            else:
+                # Use FieldStorage to parse URL-encoded GET and POST requests
+                fstorage = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
+                if fstorage.list is None:
+                    start_response('400 Bad Request', [('Content-Type', 'text/plain')])
+                    return 'Could not parse input.\n'
+
+                request = dict((item.name, item.value) for item in fstorage.list)
     
             ## Step 5
             caller = WebServer.User(user, user_id, authlist)
@@ -208,9 +217,9 @@ class WebServer(object):
 
             data_str = json.dumps(content)
 
-            if request.has_key('callback'):
+            if 'callback' in request:
                 # JSONP request
-                return request.getvalue('callback') + '(' + data_str + ')'
+                return request['callback'] + '(' + data_str + ')'
             else:
                 # Normal JSON
                 return data_str + '\n'

@@ -16,7 +16,7 @@ def filter_and_categorize(request, inventory, counts_only = False):
     # return {category: [(dataset_replica, [block_replica])]} or {category: [(dataset, replication)]} that match the filter
 
     try:
-        campaign = request.getvalue('campaign').strip()
+        campaign = request['campaign'].strip()
     except:
         campaign_pattern = None
     else:
@@ -26,7 +26,7 @@ def filter_and_categorize(request, inventory, counts_only = False):
             campaign_pattern = None
 
     try:
-        tier = request.getvalue('data_tier').strip()
+        tier = request['data_tier'].strip()
     except:
         tier_pattern = None
     else:
@@ -36,7 +36,7 @@ def filter_and_categorize(request, inventory, counts_only = False):
             tier_pattern = None
 
     try:
-        dataset = request.getvalue('dataset').strip()
+        dataset = request['dataset'].strip()
     except:
         dataset_pattern = None
     else:
@@ -46,7 +46,7 @@ def filter_and_categorize(request, inventory, counts_only = False):
             dataset_pattern = None
 
     try:
-        site = request.getvalue('site').strip()
+        site = request['site'].strip()
     except:
         site_pattern = None
     else:
@@ -56,7 +56,7 @@ def filter_and_categorize(request, inventory, counts_only = False):
             site_pattern = None
 
     groups = None
-    group_names = request.getvalue('group[]')
+    group_names = request['group[]']
     if group_names is not None:
         if type(group_names) is str:
             group_names = [group_names]
@@ -74,7 +74,7 @@ def filter_and_categorize(request, inventory, counts_only = False):
                     pass
 
     try:
-        list_by = request.getvalue('categories').strip()
+        list_by = request['categories'].strip()
     except:
         list_by = 'campaigns'
 

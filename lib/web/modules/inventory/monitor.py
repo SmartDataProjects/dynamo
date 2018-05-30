@@ -19,23 +19,23 @@ class DatasetStats(WebModule, HTMLMixin):
         repl = {}
 
         try:
-            repl['DATA_TYPE'] = request.getvalue('dataType').strip()
+            repl['DATA_TYPE'] = request['dataType'].strip()
         except:
             repl['DATA_TYPE'] = 'size'
 
         try:
-            repl['CATEGORIES'] = request.getvalue('categories').strip()
+            repl['CATEGORIES'] = request['categories'].strip()
         except:
             repl['CATEGORIES'] = 'campaigns'
 
         constraints = {}
         for key in ['campaign', 'dataTier', 'dataset', 'site']:
             try:
-                constraints[key] = request.getvalue(key).strip()
+                constraints[key] = request[key].strip()
             except:
                 pass
 
-        group = request.getvalue('group')
+        group = request['group']
         if type(group) is list:
             constraints['group'] = group
         elif type(group) is str:
