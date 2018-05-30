@@ -48,7 +48,7 @@ class WebServer(object):
         # made in a child process does not affect the other processes.
         prefork_config = {'minSpare': self.min_idle, 'maxSpare': self.max_idle, 'maxChildren': self.max_procs, 'maxRequests': 1}
 
-        wsgi = WSGIServer(self.main, environ = environ, bindAddress = self.socket, umask = 0, **prefork_config)
+        wsgi = WSGIServer(self.main, bindAddress = self.socket, umask = 0, **prefork_config)
 
         # flup WSGIServer child procs terminate with sys.exit, which involves garbage collection, which causes various shared resources
         # to become unusable. Need to replace with no-cleanup version os._exit here.
@@ -74,7 +74,7 @@ class WebServer(object):
 
         if self.dynamo_server.inventory is None:
             start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
-            return 'Server is starting. Please try again later.'
+            return 'Server is starting. Please try again later.\n'
 
         ## Step 1
         if environ['REQUEST_SCHEME'] == 'http':
@@ -90,13 +90,13 @@ class WebServer(object):
                 user, user_id = self.identify_user(environ, authorizer)
             except:
                 start_response('403 Forbidden', [('Content-Type', 'text/plain')])
-                return 'Unknown user.\nClient name: %s' % environ['SSL_CLIENT_S_DN']
+                return 'Unknown user.\nClient name: %s\n' % environ['SSL_CLIENT_S_DN']
 
             authlist = authorizer.list_user_auth(user)
 
         else:
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            return 'Only HTTP or HTTPS requests are allowed.'
+            return 'Only HTTP or HTTPS requests are allowed.\n'
 
         ## Step 2
         mode = environ['SCRIPT_NAME'].strip('/')
@@ -105,7 +105,7 @@ class WebServer(object):
                 source = open(HTMLMixin.contents_path + '/' + mode + environ['PATH_INFO'])
             except IOError:
                 start_response('404 Not Found', [('Content-Type', 'text/plain')])
-                return 'Invalid request %s%s.' % (mode + environ['PATH_INFO'])
+                return 'Invalid request %s%s.\n' % (mode + environ['PATH_INFO'])
             else:
                 content = source.read()
                 source.close()
@@ -115,12 +115,12 @@ class WebServer(object):
                     ctype = 'text/css'
 
                 start_response('200 OK', [('Content-Type', ctype)])
-                return content
+                return content + '\n'
 
         ## Step 3
         if mode != 'data' and mode != 'web':
             start_response('404 Not Found', [('Content-Type', 'text/plain')])
-            return 'Invalid request %s.' % mode
+            return 'Invalid request %s.\n' % mode
 
         module, _, command = environ['PATH_INFO'][1:].partition('/')
 
@@ -128,7 +128,7 @@ class WebServer(object):
             cls = modules[mode][module][command]
         except KeyError:
             start_response('404 Not Found', [('Content-Type', 'text/plain')])
-            return 'Invalid request %s/%s.' % (module, command)
+            return 'Invalid request %s/%s.\n' % (module, command)
 
         try:
             obj = cls(self.modules_config)
@@ -142,7 +142,7 @@ class WebServer(object):
                 if self.dynamo_server.manager.master.inhibit_write():
                     # lock could not be acquired: cannot run an update task now
                     start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
-                    return 'Server cannot execute %s/%s at the moment because the inventory is being updated.'
+                    return 'Server cannot execute %s/%s at the moment because the inventory is being updated.\n'
                 else:
                     self.dynamo_server.manager.master.start_write_web(socket.gethostname())
 
@@ -171,19 +171,19 @@ class WebServer(object):
             
         except exceptions.AuthorizationError:
             start_response('403 Forbidden', [('Content-Type', 'text/plain')])
-            return 'User not authorized to perform the request.'
+            return 'User not authorized to perform the request.\n'
         except exceptions.MissingParameter as ex:
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            return 'Missing required parameter "%s".' % ex.param_name
+            return 'Missing required parameter "%s".\n' % ex.param_name
         except exceptions.IllFormedRequest as ex:
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
             msg = 'Parameter "%s" has illegal value "%s".' % (ex.param_name, ex.value)
             if ex.allowed is not None:
                 msg += ' Allowed values: [%s]' % ['"%s"' % v for v in ex.allowed]
-            return msg
+            return msg + '\n'
         except exceptions.ResponseDenied as ex:
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            return 'Server denied response due to: ' % ex.message
+            return 'Server denied response due to: %s\n' % ex.message
         except:
             return self._internal_server_error(start_response)
 
@@ -202,7 +202,7 @@ class WebServer(object):
                 return request.getvalue('callback') + '(' + data_str + ')'
             else:
                 # Normal JSON
-                return data_str
+                return data_str + '\n'
         else:
             start_response('200 OK', [('Content-Type', 'text/html')])
             return content
@@ -254,4 +254,4 @@ class WebServer(object):
             response += '%s: %s\n' % (exc_type.__name__, str(exc))
             return response
         else:
-            return 'Exception: ' + str(sys.exc_info()[1])
+            return 'Exception: ' + str(sys.exc_info()[1]) + '\n'
