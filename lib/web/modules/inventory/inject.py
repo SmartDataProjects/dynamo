@@ -46,7 +46,7 @@ class InjectData(WebModule):
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise MissingParameter('name', context = str(obj))
+                raise MissingParameter('name', context = 'dataset ' + str(obj))
 
             try:
                 blocks = obj.pop('blocks')
@@ -69,7 +69,7 @@ class InjectData(WebModule):
                 num_datasets += 1
 
             if blocks is not None:
-                self._make_blocks(objects, embedded_clone, inventory, counts)
+                self._make_blocks(blocks, embedded_clone, inventory, counts)
 
         counts['datasets'] = num_datasets
 
@@ -80,7 +80,7 @@ class InjectData(WebModule):
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise MissingParameter('name', context = str(obj))
+                raise MissingParameter('name', context = 'site ' + str(obj))
 
             try:
                 site = df.Site(name, **obj)
@@ -106,7 +106,7 @@ class InjectData(WebModule):
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise MissingParameter('name', context = str(obj))
+                raise MissingParameter('name', context = 'group ' + str(obj))
 
             try:
                 group = df.Group(name, **obj)
@@ -132,13 +132,13 @@ class InjectData(WebModule):
             try:
                 dataset_name = obj.pop('dataset')
             except KeyError:
-                raise MissingParameter('dataset', context = str(obj))
+                raise MissingParameter('dataset', context = 'datasetreplica ' + str(obj))
 
             try:
                 site_name = obj.pop('site')
             except KeyError:
                 obj['dataset'] = dataset_name
-                raise MissingParameter('site', context = str(obj))
+                raise MissingParameter('site', context = 'datasetreplica ' + str(obj))
 
             try:
                 blockreplicas = obj.pop('blockreplicas')
@@ -166,20 +166,20 @@ class InjectData(WebModule):
 
         counts['datasetreplicas'] = num_datasetreplicas
 
-    def _make_blocks(self, objects, dataset, counts):
+    def _make_blocks(self, objects, dataset, inventory, counts):
         num_blocks = 0
 
         for obj in objects:
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise MissingParameter('name', context = str(obj))
+                raise MissingParameter('name', context = 'block ' + str(obj))
 
             try:
                 internal_name = df.Block.to_internal_name(name)
             except:
                 obj['name'] = name
-                raise IllFormedRequest('block', str(obj), hint = 'Name does not match the format')
+                raise IllFormedRequest('name', name, hint = 'Name does not match the format')
 
             try:
                 files = obj.pop('files')
@@ -193,13 +193,13 @@ class InjectData(WebModule):
                 raise IllFormedRequest('block', str(obj))
 
             existing = dataset.find_block(internal_name)
-            if existing == block:
-                continue
 
             if existing is None:
                 block._files = set()
                 dataset.blocks.add(block)
                 existing = block
+            elif existing == block:
+                continue
             else:
                 existing._copy_no_check(block)
 
@@ -207,7 +207,7 @@ class InjectData(WebModule):
             inventory.register_update(existing)
 
             if files is not None:
-                self._make_files(objects, existing, inventory, counts)
+                self._make_files(files, existing, inventory, counts)
 
         counts['blocks'] = num_blocks
 
@@ -218,7 +218,7 @@ class InjectData(WebModule):
             try:
                 lfn = obj.pop('name')
             except KeyError:
-                raise MissingParameter('name', context = str(obj))
+                raise MissingParameter('name', context = 'file ' + str(obj))
 
             try:
                 lfile = df.File(lfn, block = block, **obj)
@@ -227,12 +227,12 @@ class InjectData(WebModule):
                 raise IllFormedRequest('file', str(obj))
 
             existing = block.find_file(lfn)
-            if existing == lfile:
-                continue
 
             if existing is None:
                 block.files.add(lfile)
                 existing = lfile
+            elif existing == lfile:
+                continue
             else:
                 existing._copy_no_check(lfile)
 
@@ -251,7 +251,7 @@ class InjectData(WebModule):
             try:
                 block_name = obj.pop('block')
             except KeyError:
-                raise MissingParameter('block', context = str(obj))
+                raise MissingParameter('block', context = 'blockreplica ' + str(obj))
 
             block_internal_name = df.Block.to_internal_name(block_name)
 
@@ -280,14 +280,14 @@ class InjectData(WebModule):
                 raise IllFormedRequest('blockreplica', str(obj))
 
             existing = block.find_replica(site)
-            if existing == replica:
-                continue
 
             if existing is None:
                 dataset_replica.block_replicas.add(replica)
                 block.replicas.add(replica)
                 site.add_block_replica(replica)
                 existing = replica
+            elif existing == replica:
+                continue
             else:
                 existing._copy_no_check(replica)
 

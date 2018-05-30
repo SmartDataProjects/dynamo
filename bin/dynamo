@@ -39,7 +39,7 @@ class DynamoServer(object):
                 context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
             except AttributeError:
                 # python 2.6
-                self._conn = ssl.wrap_socket(socket.create_connection(addr), certfile = certfile, keyfile = keyfile)
+                self._conn = ssl.wrap_socket(socket.create_connection(addr), certfile = certfile, keyfile = keyfile, cert_reqs = ssl.CERT_NONE)
             else:
                 context.load_cert_chain(certfile, keyfile = keyfile)
                 context.verify_mode = ssl.CERT_NONE
