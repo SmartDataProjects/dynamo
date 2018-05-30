@@ -20,13 +20,16 @@ class InjectData(WebModule):
         if ('admin', 'inventory') not in caller.authlist:
             raise AuthorizationError()
 
+        if 'data' not in request:
+            raise IllFormedRequest('data', '_not_found_')
+
         try:
             data = json.loads(request['data'])
         except:
-            raise IllFormedRequest('Could not parse parameter \'data\' as JSON')
+            raise IllFormedRequest('data', request['data'])
 
         if type(data) is not dict:
-            raise IllFormedRequest('Parameter \'data\' must be a dictionary.')
+            raise IllFormedRequest('data', request['data'])
 
         counts = {}
 
@@ -51,7 +54,7 @@ class InjectData(WebModule):
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise IllFormedRequest('Parameter \'name\' missing for a dataset')
+                raise IllFormedRequest('dataset', str(obj))
 
             try:
                 blocks = obj.pop('blocks')
@@ -62,7 +65,7 @@ class InjectData(WebModule):
                 dataset = df.Dataset(name, **obj)
             except TypeError:
                 obj['name'] = name
-                raise IllFormedRequest(str(obj))
+                raise IllFormedRequest('dataset', str(obj))
 
             try:
                 embedded_clone, updated = dataset.embed_into(inventory, check = True)
@@ -85,13 +88,13 @@ class InjectData(WebModule):
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise IllFormedRequest('Parameter \'name\' missing for a site')
+                raise IllFormedRequest('site', str(obj))
 
             try:
                 site = df.Site(name, **obj)
             except TypeError:
                 obj['name'] = name
-                raise IllFormedRequest(str(obj))
+                raise IllFormedRequest('site', str(obj))
 
             try:
                 embedded_clone, updated = site.embed_into(inventory, check = True)
@@ -111,13 +114,13 @@ class InjectData(WebModule):
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise IllFormedRequest('Parameter \'name\' missing for a group')
+                raise IllFormedRequest('group', str(obj))
 
             try:
                 group = df.Group(name, **obj)
             except TypeError:
                 obj['name'] = name
-                raise IllFormedRequest(str(obj))
+                raise IllFormedRequest('group', str(obj))
 
             try:
                 embedded_clone, updated = group.embed_into(inventory, check = True)
@@ -137,17 +140,23 @@ class InjectData(WebModule):
             try:
                 dataset_name = obj.pop('dataset')
             except KeyError:
-                raise IllFormedRequest('Parameter \'dataset\' missing for a datasetreplica')
+                raise IllFormedRequest('datasetreplica', str(obj))
 
             try:
                 site_name = obj.pop('site')
             except KeyError:
-                raise IllFormedRequest('Parameter \'site\' missing for a datasetreplica')
+                obj['dataset'] = dataset_name
+                raise IllFormedRequest('datasetreplica', str(obj))
 
             try:
                 blockreplicas = obj.pop('blockreplicas')
             except KeyError:
                 blockreplicas = None
+
+            try:
+                group = obj.pop('group')
+            except KeyError:
+                group = None
 
             replica = df.DatasetReplica(dataset_name, site_name)
 
@@ -161,7 +170,7 @@ class InjectData(WebModule):
                 num_datasetreplicas += 1
 
             if blockreplicas is not None:
-                self._make_blockreplicas(blockreplicas, embedded_clone, inventory, counts)
+                self._make_blockreplicas(blockreplicas, group, embedded_clone, inventory, counts)
 
         counts['datasetreplicas'] = num_datasetreplicas
 
@@ -172,12 +181,13 @@ class InjectData(WebModule):
             try:
                 name = obj.pop('name')
             except KeyError:
-                raise IllFormedRequest('Parameter \'name\' missing for a block')
+                raise IllFormedRequest('block', str(obj))
 
             try:
                 internal_name = df.Block.to_internal_name(name)
             except:
-                raise IllFormedRequest('Invalid name \'%s\' for block' % name)
+                obj['name'] = name
+                raise IllFormedRequest('block', str(obj))
 
             try:
                 files = obj.pop('files')
@@ -188,7 +198,7 @@ class InjectData(WebModule):
                 block = df.Block(internal_name, dataset = dataset, **obj)
             except TypeError:
                 obj['name'] = name
-                raise IllFormedRequest(str(obj))
+                raise IllFormedRequest('block', str(obj))
 
             existing = dataset.find_block(internal_name)
             if existing == block:
@@ -216,13 +226,13 @@ class InjectData(WebModule):
             try:
                 lfn = obj.pop('name')
             except KeyError:
-                raise IllFormedRequest('Parameter \'name\' missing for a file')
+                raise IllFormedRequest('file', str(obj))
 
             try:
                 lfile = df.File(lfn, block = block, **obj)
             except TypeError:
                 obj['name'] = lfn
-                raise IllFormedRequest(str(obj))
+                raise IllFormedRequest('file', str(obj))
 
             existing = block.find_file(lfn)
             if existing == lfile:
@@ -239,7 +249,7 @@ class InjectData(WebModule):
 
         counts['files'] = num_files
 
-    def _make_blockreplicas(self, objects, dataset_replica, inventory, counts):
+    def _make_blockreplicas(self, objects, default_group, dataset_replica, inventory, counts):
         num_blockreplicas = 0
 
         dataset = dataset_replica.dataset
@@ -249,32 +259,33 @@ class InjectData(WebModule):
             try:
                 block_name = obj.pop('block')
             except KeyError:
-                raise IllFormedRequest('Parameter \'block\' missing for a blockreplica')
+                raise IllFormedRequest('blockreplica', str(obj))
 
             block_internal_name = df.Block.to_internal_name(block_name)
 
             block = dataset.find_block(block_internal_name)
 
             if block is None:
-                raise IllFormedRequest('Unknown block \'%s\'' % block_name)
+                obj['block'] = block_name
+                raise IllFormedRequest('blockreplica', str(obj))
 
             try:
                 group_name = obj.pop('group')
             except KeyError:
-                group_name = None
+                group_name = default_group
 
             try:
                 obj['group'] = inventory.groups[group_name]
             except KeyError:
-                raise IllFormedRequest('Unknown group \'%s\'' % group_name)
+                obj['block'] = block_name
+                raise IllFormedRequest('blockreplica', str(obj))
 
             try:
                 replica = df.BlockReplica(block, site, **obj)
             except TypeError:
                 obj['block'] = block_name
-                obj['site'] = dataset_replica.site.name
                 obj['group'] = group_name
-                raise IllFormedRequest(str(obj))
+                raise IllFormedRequest('blockreplica', str(obj))
 
             existing = block.find_replica(site)
             if existing == replica:
