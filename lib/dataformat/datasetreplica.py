@@ -1,5 +1,4 @@
 from exceptions import ObjectError
-from group import Group
 
 class DatasetReplica(object):
     """Represents a dataset replica. Just a container for block replicas."""
@@ -14,7 +13,7 @@ class DatasetReplica(object):
     def site(self):
         return self._site
 
-    def __init__(self, dataset, site, growing = True, group = Gruop.null_group):
+    def __init__(self, dataset, site, growing = False, group = None):
         self._dataset = dataset
         self._site = site
         self.growing = growing # if True, new block replica will be created whenever there is a new block of the dataset
@@ -180,7 +179,9 @@ class DatasetReplica(object):
             return self._site.name
 
     def _group_name(self):
-        if type(self.group) is str:
+        if self.group is None:
+            return None
+        elif type(self.group) is str:
             return self.group
         else:
             return self.group.name
