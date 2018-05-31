@@ -188,7 +188,7 @@ class BlockReplica(object):
 
     def _block_real_name(self):
         if type(self._block) is str:
-            return self._block[self._block.find('#') + 1:]
+            return Block.from_full_name(self._block)[1]
         else:
             return self._block.real_name()
 
@@ -200,7 +200,7 @@ class BlockReplica(object):
 
     def _dataset_name(self):
         if type(self._block) is str:
-            return self._block[:self._block.find('#')]
+            return Block.from_full_name(self._block)[0]
         else:
             return self._block.dataset.name
 
