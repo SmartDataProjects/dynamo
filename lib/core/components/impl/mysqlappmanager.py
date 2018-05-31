@@ -21,8 +21,8 @@ class MySQLAppManager(AppManager):
             # Inesrt with an implicit id first and update later
             sql = 'INSERT INTO `applications` (`write_request`, `title`, `path`, `status`, `user_id`, `user_host`)'
             sql += ' VALUES (1, \'wsgi\', \'\', \'done\', 0, \'\')'
-            insert_id = self._mysql.query(sql)
-            self._mysql.query('UPDATE `applications` SET `id` = 0 WHERE `id` = %s', insert_id)
+            self._mysql.query(sql)
+            self._mysql.query('UPDATE `applications` SET `id` = 0 WHERE `id` = %s', self._mysql.last_insert_id)
 
     def get_applications(self, older_than = 0, status = None, app_id = None, path = None): #override
         sql = 'SELECT `applications`.`id`, `applications`.`write_request`, `applications`.`title`, `applications`.`path`,'
