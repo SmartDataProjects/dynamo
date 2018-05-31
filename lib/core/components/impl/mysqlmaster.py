@@ -28,8 +28,6 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         # id of this server
         self._server_id = self._mysql.last_insert_id
 
-        self._mysql.unlock_tables()
-
     def _do_lock(self): #override
         self._mysql.lock_tables(write = ['servers', 'applications'], read = ['users'])
 
