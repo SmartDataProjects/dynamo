@@ -274,7 +274,7 @@ class MySQLInventoryStore(InventoryStore):
             id_block_map[block.id] = block
 
     def _load_replicas(self, inventory, id_group_map, id_site_map, id_dataset_map, id_block_maps, groups_tmp, sites_tmp, datasets_tmp):
-        sql = 'SELECT dr.`dataset_id`, dr.`site_id`, br.`block_id`, br.`group_id`,'
+        sql = 'SELECT dr.`dataset_id`, dr.`site_id`, dr.`growing`, dr.`group_id`, br.`block_id`, br.`group_id`,'
         sql += ' br.`is_complete`, br.`is_custodial`, UNIX_TIMESTAMP(br.`last_update`),'
         if BlockReplica._use_file_ids:
             sql += ' f.`id`, f.`size`'
@@ -312,9 +312,9 @@ class MySQLInventoryStore(InventoryStore):
         block_replica_complete = False
         for row in self._mysql.xquery(sql):
             if BlockReplica._use_file_ids:
-                dataset_id, site_id, block_id, group_id, b_is_complete, b_is_custodial, b_last_update, file_id, file_size = row
+                dataset_id, site_id, growing, d_group_id, block_id, b_group_id, b_is_complete, b_is_custodial, b_last_update, file_id, file_size = row
             else:
-                dataset_id, site_id, block_id, group_id, b_is_complete, b_is_custodial, b_last_update, b_size = row
+                dataset_id, site_id, growing, d_group_id, block_id, b_group_id, b_is_complete, b_is_custodial, b_last_update, b_size = row
 
             if dataset_id != _dataset_id:
                 _dataset_id = dataset_id
@@ -339,7 +339,9 @@ class MySQLInventoryStore(InventoryStore):
 
                 dataset_replica = DatasetReplica(
                     dataset,
-                    site
+                    site,
+                    (growing != 0),
+                    id_group_map[d_group_id]
                 )
 
             if block_id != _block_id:
@@ -364,7 +366,7 @@ class MySQLInventoryStore(InventoryStore):
                     block_replica_size = 0
                     del file_ids[:]
 
-                group = id_group_map[group_id]
+                group = id_group_map[b_group_id]
 
                 block_replica = BlockReplica(
                     block,
@@ -563,8 +565,8 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql.query('CREATE TABLE `dataset_replicas_tmp` LIKE `dataset_replicas`')
 
-        fields = ('dataset_id', 'site_id')
-        mapping = lambda replica: (replica.dataset.id, replica.site.id)
+        fields = ('dataset_id', 'site_id', 'growing', 'group_id')
+        mapping = lambda replica: (replica.dataset.id, replica.site.id, replica.growing, replica.group.id)
 
         num = self._mysql.insert_many('dataset_replicas_tmp', fields, mapping, replicas, do_update = False)
 
@@ -797,16 +799,18 @@ class MySQLInventoryStore(InventoryStore):
             yield File(lfn, block = block, size = size, fid = file_id)
 
     def _yield_dataset_replicas(self): #override
-        sql = 'SELECT d.`id`, d.`name`, s.`id`, s.`name` FROM `dataset_replicas` AS dr'
+        sql = 'SELECT d.`id`, d.`name`, s.`id`, s.`name`, dr.`growing`, g.`id`, g.`name` FROM `dataset_replicas` AS dr'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = dr.`dataset_id`'
         sql += ' INNER JOIN `sites` AS s ON s.`id` = dr.`site_id`'
+        sql += ' LEFT JOIN `groups` AS g ON g.`id` = dr.`group_id`'
         sql += ' ORDER BY d.`id`, s.`id`'
 
         sites = {}
+        groups = {}
 
         _dataset_id = 0
         dataset = None
-        for dataset_id, dataset_name, site_id, site_name in self._mysql.xquery(sql):
+        for dataset_id, dataset_name, site_id, site_name, growing, group_id, group_name in self._mysql.xquery(sql):
             if dataset_id != _dataset_id:
                 _dataset_id = dataset_id
                 dataset = Dataset(dataset_name, did = dataset_id)
@@ -816,7 +820,15 @@ class MySQLInventoryStore(InventoryStore):
             except KeyError:
                 site = sites[site_id] = Site(site_name, sid = site_id)
 
-            yield DatasetReplica(dataset, site)
+            if group_name is None:
+                group = Group.null_group
+            else:
+                try:
+                    group = groups[group_id]
+                except KeyError:
+                    group = groups[group_id] = Group(group_name, gid = group_id)
+
+            yield DatasetReplica(dataset, site, growing != 0, group)
 
     def _yield_block_replicas(self): #override
         sql = 'SELECT b.`id`, b.`name`, b.`size`, d.`id`, d.`name`, s.`id`, s.`name`, g.`name`, br.`group_id`,'
@@ -1074,8 +1086,8 @@ class MySQLInventoryStore(InventoryStore):
         if site_id == 0:
             return
 
-        fields = ('dataset_id', 'site_id')
-        self._mysql.insert_update('dataset_replicas', fields, dataset_id, site_id)
+        fields = ('dataset_id', 'site_id', 'growing', 'group_id')
+        self._mysql.insert_update('dataset_replicas', fields, dataset_id, site_id, dataset_replica.growing, dataset_replica.group.id)
 
     def delete_datasetreplica(self, dataset_replica): #override
         dataset_id = dataset_replica.dataset.id
