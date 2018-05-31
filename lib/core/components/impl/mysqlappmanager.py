@@ -14,6 +14,16 @@ class MySQLAppManager(AppManager):
 
             self._mysql = MySQL(db_params)
 
+        # make sure applications row with id 0 exists
+        count = self._mysql.query('SELECT COUNT(*) FROM `applications` WHERE `id` = 0')[0]
+        if count == 0:
+            # Cannot insert with id = 0 (will be interpreted as next auto_increment id unless server-wide setting is changed)
+            # Inesrt with an implicit id first and update later
+            sql = 'INSERT INTO `applications` (`write_request`, `title`, `path`, `status`, `user_id`, `user_host`)'
+            sql += ' VALUES (1, \'wsgi\', \'\', \'done\', 0, \'\')'
+            insert_id = self._mysql.query(sql)
+            self._mysql.query('UPDATE `applications` SET `id` = 0 WHERE `id` = %s', insert_id)
+
     def get_applications(self, older_than = 0, status = None, app_id = None, path = None): #override
         sql = 'SELECT `applications`.`id`, `applications`.`write_request`, `applications`.`title`, `applications`.`path`,'
         sql += ' `applications`.`args`, 0+`applications`.`status`, `applications`.`server`, `applications`.`exit_code`, `users`.`name`, `applications`.`user_host`'
@@ -126,14 +136,13 @@ class MySQLAppManager(AppManager):
         self._mysql.query('DELETE FROM `applications` WHERE `id` = %s', app_id)
 
     def start_write_web(self): #override
-        # Not the best practice - repurpose row 0 of the applications table
-        fields = ('id', 'write_request', 'title', 'path', 'status', 'server', 'user_id', 'user_host')
+        sql = 'UPDATE `applications` SET `status` = \'run\', `server` = %s, `user_host` = %s WHERE `id` = 0'
         host = socket.gethostname()
-        values = (0, 1, 'wsgi', '', 'run', host, 0, host)
-        self._mysql.insert_update('applications', fields, *values)
+        self._mysql.query(sql, host, host)
 
     def stop_write_web(self): #override
-        self.delete_application(0)
+        sql = 'UPDATE `applications` SET `status` = \'done\', `server` = \'\', `user_host` = \'\' WHERE `id` = 0'
+        self._mysql.query(sql)
 
     def check_application_auth(self, title, user, checksum): #override
         result = self._mysql.query('SELECT `id` FROM `users` WHERE `name` = %s', user)
