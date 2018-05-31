@@ -144,7 +144,8 @@ class WebServer(object):
 
             try:
                 if self.dynamo_server.manager.master.inhibit_write():
-                    # lock could not be acquired: cannot run an update task now
+                    # We need to give up here instead of waiting, because the web server processes will be flushed out as soon as
+                    # inventory is updated after the current writing process is done
                     start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
                     return 'Server cannot execute %s/%s at the moment because the inventory is being updated.\n'
                 else:
