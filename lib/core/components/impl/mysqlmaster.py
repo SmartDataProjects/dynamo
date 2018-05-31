@@ -262,10 +262,6 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         config = Configuration(db_params = self._mysql.config())
         return MySQLAuthorizer(config)
 
-    def create_appmanager(self): #override
-        config = Configuration(db_params = self._mysql.config())
-        return MySQLAppManager(config)
-
     def check_connection(self): #override
         try:
             self._mysql.query('SELECT 1')

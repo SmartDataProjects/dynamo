@@ -30,10 +30,12 @@ class MasterServer(Authorizer, AppManager):
             return wrapper
         
         for name in dir(instance):
-            if not name.startswith('_'):
-                mthd = getattr(instance, name)
-                if callable(mthd) and not isinstance(mthd, types.FunctionType): # static methods are instances of FunctionType
-                    setattr(instance, name, make_wrapper(instance, mthd))
+            if name == 'lock' or name == 'unlock' or name.startswith('_'):
+                continue
+
+            mthd = getattr(instance, name)
+            if callable(mthd) and not isinstance(mthd, types.FunctionType): # static methods are instances of FunctionType
+                setattr(instance, name, make_wrapper(instance, mthd))
 
         return instance
 
