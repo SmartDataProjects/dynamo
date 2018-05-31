@@ -53,10 +53,21 @@ class MasterServer(Authorizer, AppManager):
         """
         LOG.info('Connecting to master server')
 
-        self._connect()
+        self.lock()
+
+        try:
+            self._connect()
+    
+            master_host = self.get_master_host()
+            if master_host == 'localhost' or master_host == socket.gethostname():
+                # This is the master host; make sure there are no dangling web writes
+                self.stop_write_web()
+        finally:
+            self.unlock()
+
         self.connected = True
 
-        LOG.info('Master host: %s', self.get_master_host())
+        LOG.info('Master host: %s', master_host)
 
     def lock(self):
         self._master_server_lock.acquire()

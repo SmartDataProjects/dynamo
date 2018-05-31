@@ -17,8 +17,6 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         self._server_id = 0
 
     def _connect(self): #override
-        self._mysql.lock_tables(write = ['servers'])
-
         if self.get_master_host() == 'localhost' or self.get_master_host() == socket.gethostname():
             # This is the master server; wipe the table clean
             self._mysql.query('DELETE FROM `servers`')
