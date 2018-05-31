@@ -364,15 +364,19 @@ class Dealer(object):
                         if type(item) is Dataset:
                             dataset_sizes[item] = item.size
                             if approved:
-                                inventory.update(DatasetReplica(item, site))
-                                for block in item.blocks:
-                                    inventory.update(BlockReplica(block, site, group, size = 0))
+                                inventory.update(DatasetReplica(item, site, growing = True, group = group))
 
+                                for block in item.blocks:
+                                    block_replica = BlockReplica(block, site, group, size = 0)
+                                    if BlockReplica._use_file_ids:
+                                        block_replica.file_ids = (,)
+
+                                    inventory.update(block_replica)
                         else:
                             dataset_sizes[item.dataset] += item.size
                             if approved:
                                 if site.find_dataset_replica(item.dataset) is None:
-                                    inventory.update(DatasetReplica(item.dataset, site))
+                                    inventory.update(DatasetReplica(item.dataset, site, growing = False))
 
                                 inventory.update(BlockReplica(item, site, group, size = 0))
     
