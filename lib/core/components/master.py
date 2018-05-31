@@ -1,5 +1,6 @@
 import multiprocessing
 import logging
+import socket
 import types
 
 from dynamo.core.components.authorizer import Authorizer
@@ -61,7 +62,12 @@ class MasterServer(Authorizer, AppManager):
             master_host = self.get_master_host()
             if master_host == 'localhost' or master_host == socket.gethostname():
                 # This is the master host; make sure there are no dangling web writes
-                self.stop_write_web()
+                writing = self.get_writing_process_id()
+                if writing == 0:
+                    self.stop_write_web()
+                elif writing > 0:
+                    self.update_application(writing, status = AppManager.STAT_KILLED)
+                
         finally:
             self.unlock()
 
