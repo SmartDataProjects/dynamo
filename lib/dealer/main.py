@@ -229,8 +229,8 @@ class Dealer(object):
                     continue
 
                 dataset = item[0].dataset
-                name = dataset.name + '#'
-                name += ':'.join(block.real_name() for block in item)
+                block_names = ':'.join(block.real_name() for block in item)
+                name = Block.to_full_name(dataset.name, block_names)
 
             if dataset.status not in (Dataset.STAT_PRODUCTION, Dataset.STAT_VALID):
                 continue

@@ -17,14 +17,14 @@ def Block_to_real_name(name):
     return name
 
 def Block_to_full_name(dataset_name, block_real_name):
-    return dataset_name + '/' + block_real_name
+    return dataset_name + '#' + block_real_name
 
 def Block_from_full_name(full_name):
     """
     @param full_name   Full name of the block
     @return  (dataset name, block internal name)
     """
-    delim = full_name.find('/')
+    delim = full_name.find('#')
     if delim == -1:
         raise ObjectError('Invalid block name %s' % full_name)
 
