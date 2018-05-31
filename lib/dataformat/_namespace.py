@@ -2,13 +2,8 @@
 
 from exceptions import ObjectError
 
-def customize_dataset(Dataset):
-    # Enumerator for dataset type.
-    # Starting from 1 to play better with MySQL enums
-    Dataset._data_types = ['unknown', 'production', 'test']
-    for name, val in zip(Dataset._data_types, range(1, len(Dataset._data_types) + 1)):
-        # e.g. Dataset.TYPE_UNKNOWN = 1
-        setattr(Dataset, 'TYPE_' + name.upper(), val)
+def Dataset_format_software_version(value):
+    return value
 
 def Block_to_internal_name(name_str):
     return name_str
@@ -29,6 +24,16 @@ def Block_from_full_name(full_name):
         raise ObjectError('Invalid block name %s' % full_name)
 
     return full_name[:delim], full_name[delim + 1:]
+
+def customize_dataset(Dataset):
+    # Enumerator for dataset type.
+    # Starting from 1 to play better with MySQL enums
+    Dataset._data_types = ['unknown', 'production', 'test']
+    for name, val in zip(Dataset._data_types, range(1, len(Dataset._data_types) + 1)):
+        # e.g. Dataset.TYPE_UNKNOWN = 1
+        setattr(Dataset, 'TYPE_' + name.upper(), val)
+
+    Dataset.format_software_version = staticmethod(Dataset_format_software_version)
 
 def customize_block(Block):
     Block.to_internal_name = staticmethod(Block_to_internal_name)

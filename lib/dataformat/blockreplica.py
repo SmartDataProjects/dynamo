@@ -34,7 +34,7 @@ class BlockReplica(object):
             self.size = size
         self.last_update = last_update
 
-        # tuple of file ids for incomplete replicas (not implemented)
+        # tuple of file ids for incomplete replicas
         if file_ids is None:
             self.file_ids = None
         else:

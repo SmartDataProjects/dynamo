@@ -1,9 +1,10 @@
 from exceptions import ObjectError
+from group import Group
 
 class DatasetReplica(object):
     """Represents a dataset replica. Just a container for block replicas."""
 
-    __slots__ = ['_dataset', '_site', 'block_replicas']
+    __slots__ = ['_dataset', '_site', 'growing', 'group', 'block_replicas']
 
     @property
     def dataset(self):
@@ -13,20 +14,27 @@ class DatasetReplica(object):
     def site(self):
         return self._site
 
-    def __init__(self, dataset, site):
+    def __init__(self, dataset, site, growing = True, group = Gruop.null_group):
         self._dataset = dataset
         self._site = site
+        self.growing = growing # if True, new block replica will be created whenever there is a new block of the dataset
+        self.group = group # used only when growing
         self.block_replicas = set()
 
     def __str__(self):
-        return 'DatasetReplica %s:%s (%d block_replicas)' % \
-            (self._site_name(), self._dataset_name(), len(self.block_replicas))
+        if self.growing:
+            growing = 'True (%s)' % self._group_name()
+        else:
+            growing = 'False'
+
+        return 'DatasetReplica %s:%s (growing: %s, %d block_replicas)' % \
+            (self._site_name(), self._dataset_name(), growing, len(self.block_replicas))
 
     def __repr__(self):
-        return 'DatasetReplica(%s,%s)' % (repr(self._dataset_name()), repr(self._site_name()))
+        return 'DatasetReplica(%s,%s,%s,%s)' % (repr(self._dataset_name()), repr(self._site_name()), self.growing, repr(self._group_name()))
 
     def __eq__(self, other):
-        return self is other or (self._dataset_name() == other._dataset_name() and self._site_name() == other._site_name())
+        return self is other or (self._dataset_name() == other._dataset_name() and self._site_name() == other._site_name() and self.growing == other.growing and self.group == other.group)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -37,7 +45,8 @@ class DatasetReplica(object):
         if self._site_name() != other._site_name():
             raise ObjectError('Cannot copy a replica at %s into a replica at %s', other._site_name(), self._site_name())
 
-        # not doing anything, actually
+        self.growing = other.growing
+        self.group = other.group
 
     def embed_into(self, inventory, check = False):
         try:
@@ -169,3 +178,9 @@ class DatasetReplica(object):
             return self._site
         else:
             return self._site.name
+
+    def _group_name(self):
+        if type(self.group) is str:
+            return self.group
+        else:
+            return self.group.name

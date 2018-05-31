@@ -1,4 +1,4 @@
-import json
+import time
 
 from dynamo.web.exceptions import MissingParameter, IllFormedRequest, AuthorizationError
 from dynamo.web.modules._base import WebModule
@@ -49,9 +49,19 @@ class InjectData(WebModule):
                 raise MissingParameter('name', context = 'dataset ' + str(obj))
 
             try:
+                obj.pop('did')
+            except KeyError:
+                pass
+
+            try:
                 blocks = obj.pop('blocks')
             except KeyError:
                 blocks = None
+
+            try:
+                obj['software_version'] = Dataset.format_software_version(obj['software_version'])
+            except KeyError:
+                pass
 
             try:
                 dataset = df.Dataset(name, **obj)
@@ -83,6 +93,11 @@ class InjectData(WebModule):
                 raise MissingParameter('name', context = 'site ' + str(obj))
 
             try:
+                obj.pop('sid')
+            except KeyError:
+                pass
+
+            try:
                 site = df.Site(name, **obj)
             except TypeError:
                 obj['name'] = name
@@ -109,6 +124,11 @@ class InjectData(WebModule):
                 raise MissingParameter('name', context = 'group ' + str(obj))
 
             try:
+                obj.pop('gid')
+            except KeyError:
+                pass
+
+            try:
                 group = df.Group(name, **obj)
             except TypeError:
                 obj['name'] = name
@@ -130,27 +150,47 @@ class InjectData(WebModule):
 
         for obj in objects:
             try:
-                dataset_name = obj.pop('dataset')
+                dataset_name = obj['dataset']
             except KeyError:
                 raise MissingParameter('dataset', context = 'datasetreplica ' + str(obj))
+            else:
+                try:
+                    dataset = inventory.datasets[dataset_name]
+                except KeyError:
+                    raise IllFormedRequest('dataset', dataset_name, hint = 'Unknown dataset %s' % dataset_name)
 
             try:
-                site_name = obj.pop('site')
+                site_name = obj['site']
             except KeyError:
                 obj['dataset'] = dataset_name
                 raise MissingParameter('site', context = 'datasetreplica ' + str(obj))
+            else:
+                try:
+                    site = inventory.sites[site_name]
+                except KeyError:
+                    raise IllFormedRequest('site', site_name, hint = 'Unknown site %s' % site_name)
 
             try:
-                blockreplicas = obj.pop('blockreplicas')
+                group_name = obj['group']
+            except KeyError:
+                group = df.Group.null_group
+            else:
+                try:
+                    group = inventory.groups[group_name]
+                except KeyError:
+                    raise IllFormedRequest('group', group_name, hint = 'Unknown group %s' % group_name)
+
+            try:
+                growing = obj['growing']
+            except KeyError:
+                growing = True
+
+            try:
+                blockreplicas = obj['blockreplicas']
             except KeyError:
                 blockreplicas = None
 
-            try:
-                group = obj.pop('group')
-            except KeyError:
-                group = None
-
-            replica = df.DatasetReplica(dataset_name, site_name)
+            replica = df.DatasetReplica(dataset, site, growing = growing, group = group)
 
             try:
                 embedded_clone, updated = replica.embed_into(inventory, check = True)
@@ -162,7 +202,7 @@ class InjectData(WebModule):
                 num_datasetreplicas += 1
 
             if blockreplicas is not None:
-                self._make_blockreplicas(blockreplicas, group, embedded_clone, inventory, counts)
+                self._make_blockreplicas(blockreplicas, embedded_clone, inventory, counts)
 
         counts['datasetreplicas'] = num_datasetreplicas
 
@@ -197,6 +237,15 @@ class InjectData(WebModule):
             if existing is None:
                 block._files = set()
                 dataset.blocks.add(block)
+
+                for replica in dataset.replicas:
+                    if replica.growing:
+                        # For growing replicas, we automatically create new block replicas
+                        blockreplicas = [{'block': block.real_name(), 'site': replica.site.name, 'group': replica.group.name,
+                                          'size': 0, 'last_update': time.time(), 'file_ids': (,)}]
+
+                        self._make_blockreplicas(blockreplicas, replica, inventory, counts)
+
                 existing = block
             elif existing == block:
                 continue
@@ -209,7 +258,10 @@ class InjectData(WebModule):
             if files is not None:
                 self._make_files(files, existing, inventory, counts)
 
-        counts['blocks'] = num_blocks
+        try:
+            counts['blocks'] += num_blocks
+        except KeyError:
+            counts['blocks'] = num_blocks
 
     def _make_files(self, objects, block, inventory, counts):
         num_files = 0
@@ -239,9 +291,12 @@ class InjectData(WebModule):
             num_files += 1
             inventory.register_update(existing)
 
-        counts['files'] = num_files
+        try:
+            counts['files'] += num_files
+        except KeyError:
+            counts['files'] = num_files
 
-    def _make_blockreplicas(self, objects, default_group, dataset_replica, inventory, counts):
+    def _make_blockreplicas(self, objects, dataset_replica, inventory, counts):
         num_blockreplicas = 0
 
         dataset = dataset_replica.dataset
@@ -258,22 +313,20 @@ class InjectData(WebModule):
             block = dataset.find_block(block_internal_name)
 
             if block is None:
-                obj['block'] = block_name
-                raise IllFormedRequest('blockreplica', str(obj), hint = 'Unknown block %s' % block_name)
+                raise IllFormedRequest('block', block_name, hint = 'Unknown block %s' % block_name)
 
             try:
                 group_name = obj.pop('group')
             except KeyError:
-                group_name = default_group
+                group = dataset_replica.group
+            else:
+                try:
+                    group = inventory.groups[group_name]
+                except KeyError:
+                    raise IllFormedRequest('group', group_name, hint = 'Unknown group %s' % group_name)
 
             try:
-                obj['group'] = inventory.groups[group_name]
-            except KeyError:
-                obj['block'] = block_name
-                raise IllFormedRequest('blockreplica', str(obj), hint = 'Unknown group %s' % group_name)
-
-            try:
-                replica = df.BlockReplica(block, site, **obj)
+                replica = df.BlockReplica(block, site, group, **obj)
             except TypeError:
                 obj['block'] = block_name
                 obj['group'] = group_name
