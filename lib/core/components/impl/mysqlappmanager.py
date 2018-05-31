@@ -135,12 +135,12 @@ class MySQLAppManager(AppManager):
     def delete_application(self, app_id): #override
         self._mysql.query('DELETE FROM `applications` WHERE `id` = %s', app_id)
 
-    def start_write_web(self): #override
+    def start_write_web(self, host): #override
         sql = 'UPDATE `applications` SET `status` = \'run\', `server` = %s, `user_host` = %s WHERE `id` = 0'
-        host = socket.gethostname()
         self._mysql.query(sql, host, host)
 
     def stop_write_web(self): #override
+        # We don't actually use the host name because there is only one slot for web write anyway
         sql = 'UPDATE `applications` SET `status` = \'done\', `server` = \'\', `user_host` = \'\' WHERE `id` = 0'
         self._mysql.query(sql)
 

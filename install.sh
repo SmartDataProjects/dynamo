@@ -105,7 +105,6 @@ echo
 require mkdir -p $INSTALL_PATH
 require mkdir -p $INSTALL_PATH/python/site-packages/dynamo
 require mkdir -p $INSTALL_PATH/bin
-require mkdir -p $INSTALL_PATH/exec
 require mkdir -p $INSTALL_PATH/utilities
 require mkdir -p $INSTALL_PATH/sbin
 require mkdir -p $INSTALL_PATH/etc/profile.d
@@ -133,10 +132,6 @@ python -m compileall $INSTALL_PATH/python/site-packages/dynamo > /dev/null
 ### Install the executables ###
 
 cp $SOURCE/bin/dynamo /usr/local/bin/
-
-cp $SOURCE/exec/* $INSTALL_PATH/exec/
-chown $USER:$(id -gn $USER) $INSTALL_PATH/exec/*
-chmod 755 $INSTALL_PATH/exec/*
 
 cp $SOURCE/utilities/* $INSTALL_PATH/utilities/
 chown $USER:$(id -gn $USER) $INSTALL_PATH/utilities/*

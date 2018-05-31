@@ -95,9 +95,10 @@ class AppManager(object):
         """
         raise NotImplementedError('delete_application')
 
-    def start_write_web(self):
+    def start_write_web(self, host):
         """
         Web interfaces are not quite applications, but they require write locks too.
+        @param host   Host name of the web server
         """
         raise NotImplementedError('start_write_web')
 
