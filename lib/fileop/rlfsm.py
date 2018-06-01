@@ -1,0 +1,440 @@
+import os
+import collections
+import random
+import logging
+
+from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
+from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery, DirDeletionOperation
+from dynamo.dataformat import Configuration, Block, Site
+from dynamo.utils.interface.mysql import MySQL
+
+LOG = logging.getLogger(__name__)
+
+class RLFSM(object):
+    """
+    File operation manager using MySQL tables for queue bookkeeping. Also implies the
+    inventory backend is MySQL.
+    """
+
+    class Subscription(object):
+        __slots__ = ['id', 'file', 'destination', 'disk_sources', 'tape_sources', 'failed_sources']
+
+        def __init__(self, id, file, destination, disk_sources, tape_sources, failed_sources = None):
+            self.id = id
+            self.file = file
+            self.destination = destination
+            self.disk_sources = disk_sources
+            self.tape_sources = tape_sources
+            self.failed_sources = failed_sources
+
+    class TransferTask(object):
+        __slots__ = ['id', 'subscription', 'source']
+
+        def __init__(self, subscription, source):
+            self.id = None
+            self.subscription = subscription
+            self.source = source
+
+    class Desubscription(object):
+        __slots__ = ['id', 'file', 'site']
+
+        def __init__(self, id, file, site):
+            self.id = id
+            self.file = file
+            self.site = site
+
+    class DeletionTask(object):
+        __slots__ = ['id', 'desubscription']
+
+        def __init__(self, desubscription):
+            self.id = None
+            self.desubscription = desubscription
+
+
+    def __init__(self, config):
+        # Transfer protocol to use (necessary for LFN-to-PFN mapping)
+        self.protocol = config.protocol
+
+        # Handle to the registry DB
+        self.registry = MySQL(config.registry.db_params)
+
+        # Inventory DB name
+        self.inventory_db = config.inventory_db
+
+        # History DB name
+        self.history_db = config.history_db
+
+        # FileTransferOperation backend (can make it a map from (source, dest) to operator)
+        self.transfer_operation = FileTransferOperation.get_instance(config.transfer.module, config.transfer.config)
+
+        # QueryOperation backend
+        if 'transfer_query' in config:
+            self.transfer_query = FileTransferQuery.get_instance(config.transfer_query.module, config.transfer_query.config)
+        else:
+            self.transfer_query = self.transfer_operation
+
+        # FileDeletionOperation backend (can make it a map from dest to operator)
+        self.deletion_operation = FileDeletionOperation.get_instance(config.deletion.module, config.deletion.config)
+
+        # QueryOperation backend
+        if 'deletion_query' in config:
+            self.deletion_query = FileDeletionQuery.get_instance(config.deletion_query.module, config.deletion_query.config)
+        else:
+            self.deletion_query = self.deletion_operation
+
+    def update_subscription_status(self):
+        # TODO rewrite these horrible SQLs - should be able to decouple history DB from the rest
+
+        insert_file = 'INSERT INTO `{history}`.`files` (`name`)'
+        insert_file += ' SELECT f.`name` FROM `transfer_queue` AS q'
+        insert_file += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+        insert_file += ' INNER JOIN `{inventory}`.`files` AS f ON f.`id` = u.`file_id`'
+        insert_file += ' WHERE q.`id` = %s'
+        insert_file += ' ON DUPLICATE KEY UPDATE `files`=VALUES(`files`)'
+
+        insert_file = insert_file.format(history = self.history_db, inventory = self.inventory_db)
+
+        # sites have to be inserted to history already
+
+        insert_transfer = 'INSERT INTO `{history}`.`file_transfers` (`id`, `file_id`, `source_id`, `destination_id`, `exitcode`, `batch_id`, `created`, `completed`)'
+        insert_transfer += ' SELECT q.`id`, hf.`id`, hss.`id`, hsd.`id`, %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s) FROM `transfer_queue`'
+        insert_transfer += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+        insert_transfer += ' INNER JOIN `{inventory}`.`files` AS f ON f.`id` = u.`file_id`'
+        insert_transfer += ' INNER JOIN `{inventory}`.`sites` AS sd ON sd.`id` = u.`site_id`'
+        insert_transfer += ' INNER JOIN `{inventory}`.`sites` AS ss ON ss.`id` = q.`source`'
+        insert_transfer += ' INNER JOIN `{history}`.`files` AS hf ON hf.`name` = f.`name`'
+        insert_transfer += ' INNER JOIN `{history}`.`sites` AS hsd ON hsd.`name` = sd.`name`'
+        insert_transfer += ' INNER JOIN `{history}`.`sites` AS hss ON hss.`name` = ss.`name`'
+        insert_transfer += ' WHERE q.`id` = %s'
+
+        insert_transfer = insert_transfer.format(history = self.history_db, inventory = self.inventory_db)
+
+        insert_failure = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source`, `exitcode`)'
+        insert_failure += ' SELECT `id`, `subscription_id`, `source`, %s FROM `transfer_queue` WHERE `id` = %s'
+
+        update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s WHERE `id` = (SELECT `subscription_id` FROM `transfer_queue` WHERE `id` = %s)'
+
+        delete_failures = 'DELETE FROM `failed_transfers` WHERE `subscription_id` = (SELECT `subscription_id` FROM `transfer_queue` WHERE `id` = %s)'
+
+        delete_transfer = 'DELETE FROM `transfer_queue` WHERE `id` = %s'
+
+        sql = 'SELECT `id` FROM `transfer_batches`'
+        for batch_id in self.registry.query(sql):
+            transfer_results = self.transfer_query.get_status(batch_id)
+
+            for transfer_id, status, exitcode, finish_time in transfer_results:
+                if status not in (FileTransferQuery.STAT_DONE, FileTransferQuery.STAT_FAILED):
+                    continue
+
+                self.registry.query(insert_file, transfer_id)
+                self.registry.query(insert_transfer, exitcode, finish_time, transfer_id)
+
+                if status == FileTransferQuery.STAT_DONE:
+                    self.registry.query(update_subscription, 'done', transfer_id)
+                    self.registry.query(delete_failures, transfer_id)
+                else:
+                    self.registry.query(insert_failure, exitcode, transfer_id)
+                    self.registry.query(update_subscription, 'retry', transfer_id)
+
+                self.registry.query(delete_transfer, transfer_id)
+
+    def update_deletion_status(self):
+        insert_file = 'INSERT INTO `{history}`.`files` (`name`)'
+        insert_file += ' SELECT f.`name` FROM `deletion_queue` AS q'
+        insert_file += ' INNER JOIN `file_desubscriptions` AS u ON u.`id` = q.`desubscription_id`'
+        insert_file += ' INNER JOIN `{inventory}`.`files` AS f ON f.`id` = u.`file_id`'
+        insert_file += ' WHERE q.`id` = %s'
+        insert_file += ' ON DUPLICATE KEY UPDATE `files`=VALUES(`files`)'
+
+        insert_file = insert_file.format(history = self.history_db, inventory = self.inventory_db)
+
+        # sites have to be inserted to history already
+
+        insert_deletion = 'INSERT INTO `{history}`.`file_deletions` (`id`, `file_id`, `site_id`, `exitcode`, `batch_id`, `created`, `completed`)'
+        insert_deletion += ' SELECT q.`id`, hf.`id`, hs.`id`, %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s) FROM `deletion_queue`'
+        insert_deletion += ' INNER JOIN `file_desubscriptions` AS u ON u.`id` = q.`desubscription_id`'
+        insert_deletion += ' INNER JOIN `{inventory}`.`files` AS f ON f.`id` = u.`file_id`'
+        insert_deletion += ' INNER JOIN `{inventory}`.`sites` AS s ON s.`id` = u.`site_id`'
+        insert_deletion += ' INNER JOIN `{history}`.`files` AS hf ON hf.`name` = f.`name`'
+        insert_deletion += ' INNER JOIN `{history}`.`sites` AS hs ON hs.`name` = s.`name`'
+        insert_deletion += ' WHERE q.`id` = %s'
+
+        insert_deletion = insert_deletion.format(history = self.history_db, inventory = self.inventory_db)
+
+        get_desubscription = 'SELECT `desubscription_id` FROM `deletion_queue` WHERE `id` = %s'
+
+        update_desubscription = 'UPDATE `file_desubscriptions` SET `status` = %s WHERE `id` = %s'
+
+        delete_deletion = 'DELETE FROM `deletion_queue` WHERE `id` = %s'
+
+        completed_desubscriptions = []
+
+        sql = 'SELECT `id` FROM `deletion_batches`'
+        for batch_id in self.registry.query(sql):
+            deletion_results = self.deletion_query.get_status(batch_id)
+
+            for deletion_id, status, exitcode, finish_time in deletion_results:
+                if status not in (FileDeletionQuery.STAT_DONE, FileDeletionQuery.STAT_FAILED):
+                    continue
+
+                self.registry.query(insert_file, deletion_id)
+                self.registry.query(insert_deletion, exitcode, finish_time, deletion_id)
+
+                desubscription_id = self.registry.query(get_desubscription, deletion_id)[0]
+
+                if status == FileDeletionQuery.STAT_DONE:
+                    self.registry.query(update_desubscription, 'done', desubscription_id)
+                    completed_desubscriptions.append(desubscription_id)
+                else:
+                    self.registry.query(update_desubscription, 'retry', desubscription_id)
+
+                self.registry.query(delete_deletion, deletion_id)
+
+        return completed_desubscriptions
+
+    def get_subscriptions(self, inventory):
+        subscriptions = []
+
+        get_all = 'SELECT u.`id`, u.`status`, d.`name`, b.`name`, u.`file_id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
+        get_all += ' INNER JOIN `{inventory}`.`blocks` AS b ON b.`id` = u.`block_id`'
+        get_all += ' INNER JOIN `{inventory}`.`datasets` AS d ON d.`id` = b.`dataset_id`'
+        get_all += ' INNER JOIN `{inventory}`.`files` AS f ON f.`id` = u.`file_id`'
+        get_all += ' INNER JOIN `{inventory}`.`sites` AS s ON s.`id` = u.`site_id`'
+        get_all += ' WHERE u.`status` IN (\'new\', \'retry\')'
+        get_all += ' ORDER BY u.`dataset_id`, u.`block_id`, u.`site_id`'
+
+        get_all = get_all.format(inventory = self.inventory_db)
+
+        get_tried_sites = 'SELECT s.`name`, f.`exitcode` FROM `failed_transfers`'
+        get_tried_sites += ' INNER JOIN `{inventory}`.`sites` AS s ON s.`id` = f.`source`'
+        get_tried_sites += ' WHERE `subscription_id` = %s'
+
+        get_tried_sites = get_tried_sites.format(inventory = self.inventory_db)
+
+        _dataset_name = ''
+        _block_name = ''
+        _site_name = ''
+
+        dataset = None
+        block = None
+        destination = None
+
+        to_hold = []
+
+        for row in self.registry.query(get_all):
+            sub_id, status, dataset_name, block_name, file_id, file_name, site_name = row
+
+            if dataset_name != _dataset_name:
+                _dataset_name = dataset_name
+                # dataset must exist
+                dataset = inventory.datasets[dataset_name]
+
+                _block_name = ''
+
+            if block_name != _block_name:
+                _block_name = block_name
+                # block must exist
+                block = dataset.find_block(Block.to_internal_name(block_name), must_find = True)
+
+            if site_name != _site_name:
+                _site_name = site_name
+                # site must exist
+                destination = inventory.sites[site_name]
+
+            lfile = block.find_file(file_name, must_find = True)
+
+            disk_sources = []
+            tape_sources = []
+            for replica in block.replicas:
+                if replica.site == destination or replica.site.status != Site.STAT_READY:
+                    continue
+
+                if replica.file_ids is None or file_id in replica.file_ids:
+                    if replica.site.storage_type == Site.TYPE_DISK:
+                        disk_sources.append(replica.site)
+                    elif replica.site.storage_type == Site.TYPE_MSS:
+                        tape_sources.append(replica.site)
+
+            if len(disk_sources) + len(tape_sources) == 0:
+                LOG.warning('Transfer of %s to %s has no source.', file_name, site_name)
+                to_hold.append(sub_id)
+                continue
+
+            subscription = RLFSM.Subscription(sub_id, lfile, destination, disk_sources, tape_sources)
+
+            if status == 'retry':
+                subscription.failed_sources = {}
+                for source_name, exitcode in self.registry.query(get_tried_sites):
+                    source = inventory.sites[source_name]
+                    if source not in subscription.failed_sources:
+                        subscription.failed_sources[source] = [exitcode]
+                    else:
+                        subscription.failed_sources[source].append(exitcode)
+    
+            subscriptions.append(subscription)
+
+        self.registry.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\'', 'id', to_hold)
+
+        return subscriptions
+
+    def get_desubscriptions(self, inventory):
+        desubscriptions = []
+
+        get_all = 'SELECT u.`id`, u.`status`, d.`name`, b.`name`, u.`file_id`, f.`name`, s.`name` FROM `file_desubscriptions` AS u'
+        get_all += ' INNER JOIN `{inventory}`.`blocks` AS b ON b.`id` = u.`block_id`'
+        get_all += ' INNER JOIN `{inventory}`.`datasets` AS d ON d.`id` = b.`dataset_id`'
+        get_all += ' INNER JOIN `{inventory}`.`files` AS f ON f.`id` = u.`file_id`'
+        get_all += ' INNER JOIN `{inventory}`.`sites` AS s ON s.`id` = u.`site_id`'
+        get_all += ' WHERE u.`status` IN (\'new\', \'retry\')'
+        get_all += ' ORDER BY u.`dataset_id`, u.`block_id`, u.`site_id`'
+
+        get_all = get_all.format(inventory = self.inventory_db)
+
+        _dataset_name = ''
+        _block_name = ''
+        _site_name = ''
+
+        dataset = None
+        block = None
+        site = None
+
+        for row in self.registry.query(get_all):
+            desub_id, status, dataset_name, block_name, file_id, file_name, site_name = row
+
+            if dataset_name != _dataset_name:
+                _dataset_name = dataset_name
+                # dataset must exist
+                dataset = inventory.datasets[dataset_name]
+
+                _block_name = ''
+
+            if block_name != _block_name:
+                _block_name = block_name
+                # block must exist
+                block = dataset.find_block(Block.to_internal_name(block_name), must_find = True)
+
+            if site_name != _site_name:
+                _site_name = site_name
+                # site must exist
+                site = inventory.sites[site_name]
+
+            lfile = block.find_file(file_name, must_find = True)
+
+            desubscription = RLFSM.Desubscription(desub_id, lfile, site)
+    
+            desubscriptions.append(desubscription)
+
+        return desubscriptions
+
+    def select_source(self, subscriptions):
+        """
+        Intelligently select the best source for each subscription.
+        @param subscriptions  List of Subscription objects
+
+        @return  List of TransferTask objects
+        """
+
+        for subscription in subscriptions:
+            if len(subscription.disk_sources) == 0:
+                # intelligently random
+                source = random.choice(subscription.tape_sources)
+
+            elif len(subscription.disk_sources) == 1:
+                source = subscription.disk_sources[0]
+
+            else:
+                not_tried = set(subscription.disk_sources) - set(subscription.failed_sources.iterkeys())
+                if len(not_tried) != 0:
+                    # intelligently random again
+                    source = random.choice(not_tried)
+                else:
+                    # select the least failed site
+                    by_failure = sorted(subscription.disk_sources, key = lambda s: subscription.failed_sources[s])
+                    source = by_failure[0]
+            
+            tasks.append(RLFSM.TransferTask(subscription, source))
+
+        return tasks
+    
+    def set_dirclean_candidates(self, desubscription_ids, inventory):
+        site_dirs = {}
+
+        # Clean up directories of completed desubscriptions
+        sql = 'SELECT s.`name`, f.`name` FROM `file_desubscriptions` AS d'
+        sql += ' INNER JOIN `{inventory}`.`files` AS f ON f.`id` = d.`file_id`'
+        sql += ' INNER JOIN `{inventory}`.`sites` AS s ON s.`id` = d.`site_id`'
+        sql = sql.format(inventory = self.inventory_db)
+
+        for site_name, file_name in self.registry.execute_many(sql, 'd.`id`', desubscription_ids):
+            site = inventory.sites[site_name]
+
+            try:
+                dirs = site_dirs[site]
+            except KeyError:
+                dirs = site_dirs[site] = set()
+
+            dirs.add(os.path.dirname(file_name))
+
+        def get_entry():
+            for site, dirs in site_dirs.iteritems():
+                for directory in dirs:
+                    yield site.id, directory
+
+        fields = ('site_id', 'directory')
+        self.registry.insert_many('directory_cleaning_queue', fields, None, get_entry(), do_update = True)
+
+    def transfer_files(self, inventory):
+        self.update_subscription_status()
+
+        subscriptions = self.get_subscriptions(inventory)
+
+        tasks = self.select_source(subscriptions)
+
+        batches = self.transfer_operation.form_batches(tasks)
+
+        for batch_tasks in batches:
+            self.registry.query('INSERT INTO `transfer_batches`')
+            batch_id = self.registry.last_insert_id
+            
+            fields = ('subscription_id', 'source', 'batch_id')
+            mapping = lambda t: (t.subscription.id, t.source.id, batch_id)
+
+            self.registry.insert_many('transfer_queue', fields, mapping, batch_tasks)
+
+            # set the task ids
+            tasks_by_sub = dict((t.subscription.id, t) for t in batch_tasks)
+            for task_id, subscription_id in self.registry.xquery('SELECT `id`, `subscription_id` FROM `transfer_queue` WHERE `batch_id` = %s', batch_id):
+                tasks_by_sub[subscription_id].id = task_id
+            
+            self.transfer_operation.start_transfers(batch_id, batch_tasks)
+
+            self.registry.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\'', 'id', [t.subscription.id for t in batch_tasks])
+
+    def delete_files(self, inventory):
+        completed = self.update_deletion_status()
+
+        self.set_dirclean_candidates(completed, inventory)
+          
+        desubscriptions = self.get_desubscriptions(inventory)
+
+        tasks = [RLFSM.DeletionTask(d) for d in desubscriptions]
+
+        batches = self.deletion_operation.form_batches(tasks)
+
+        for batch_tasks in batches:
+            self.registry.query('INSERT INTO `deletion_batches`')
+            batch_id = self.registry.last_insert_id
+            
+            fields = ('desubscription_id', 'batch_id')
+            mapping = lambda t: (t.desubscription.id, batch_id)
+
+            self.registry.insert_many('deletion_queue', fields, mapping, batch_tasks)
+
+            # set the task ids
+            tasks_by_sub = dict((t.desubscription.id, t) for t in batch_tasks)
+            for task_id, desubscription_id in self.registry.xquery('SELECT `id`, `desubscription_id` FROM `deletion_queue` WHERE `batch_id` = %s', batch_id):
+                tasks_by_sub[desubscription_id].id = task_id
+            
+            self.deletion_operation.execute_deletions(batch_id, batch_tasks)
+
+            self.registry.execute_many('UPDATE `file_desubscriptions` SET `status` = \'inbatch\'', 'id', [t.desubscription.id for t in batch_tasks])
