@@ -11,6 +11,7 @@ libc = cdll.LoadLibrary("/lib64/libc.so.6") # will use glibc mount()
 
 from dynamo.core.inventory import DynamoInventory
 from dynamo.utils.log import log_exception
+from dynamo.utils.path import find_common_base
 
 BANNER = '''
 +++++++++++++++++++++++++++++++++++++
@@ -57,54 +58,9 @@ def umount(path):
     os.setegid(gid)
     os.seteuid(uid)
 
-def find_common_base(paths):
-    """
-    Find the "greatest common denominator" (shared base directories) of given paths. If the GCD of
-    two paths is /, the two are considered to not share any base.
-    @param paths    List of paths
-
-    @return list of shared base directories.
-    """
-
-    if len(paths) < 2:
-        return paths
-
-    base_directories = [os.path.realpath(paths[0])]
-
-    def compare_two(path1, path2):
-        parts1 = path1.split('/')[1:] # [0] is ''
-        parts2 = path2.split('/')[1:]
-
-        ip = 0
-        while ip < len(parts1) and ip < len(parts2):
-            if parts1[ip] != parts2[ip]:
-                break
-            ip += 1
-
-        return '/' + '/'.join(parts1[:ip])
-
-    for path in paths[1:]:
-        path = os.path.realpath(path)
-        
-        for ib, base in enumerate(list(base_directories)):
-            common = compare_two(base, path)
-
-            if common != '/':
-                base_directories[ib] = common
-                # no other entry in base_directories should have anything in common with path
-                break
-
-        else:
-            # no entry had a common base
-            base_directories.append(path)
-
-    return base_directories
-
-# Directories to bind-mount for read-only processes
-mountpoints = find_common_base(sys.path)
-
 def umountall(path):
-    for mount in mountpoints:
+    # Undo bindmounts done in pre_execution
+    for mount in find_common_base(map(os.path.realpath, sys.path)):
         umount(path + mount)
 
 def clean_remote_request(path):
@@ -254,7 +210,7 @@ def pre_execution(path, is_local, read_only, defaults_config, inventory, authori
     else:
         # Confine in a chroot jail
         # Allow access to directories in PYTHONPATH with bind mounts
-        for base in mountpoints:
+        for base in find_common_base(map(os.path.realpath, sys.path)):
             try:
                 os.makedirs(path + base)
             except OSError:

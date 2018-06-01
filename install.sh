@@ -58,6 +58,8 @@ WARNING=false
 require rpm -q python
 warnifnot rpm -q condor-python
 warnifnot rpm -q rrdtool-python
+warnifnot rpm -q python-fts
+warnifnot rpm -q python-requests
 require rpm -q sqlite
 if [ "$APPSERVER" = "true" ]
 then

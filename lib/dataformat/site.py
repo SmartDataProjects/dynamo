@@ -309,3 +309,10 @@ class Site(object):
                     site_partition.replicas[dataset_replica] = None
                 else:
                     site_partition.replicas[dataset_replica] = block_replicas
+
+    def to_pfn(self, lfn, protocol):
+        # for now return backend + lfn, need a proper mapping mechanism here
+        return self.backend + lfn
+
+    def to_lfn(self, pfn, protocol):
+        return pfn.replace(self.backend, '')
