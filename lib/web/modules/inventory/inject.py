@@ -245,7 +245,7 @@ class InjectData(WebModule):
                                           'size': 0, 'last_update': time.time()}]
 
                         if df.BlockReplica._use_file_ids:
-                            blockreplicas[0]['file_ids'] = (,)
+                            blockreplicas[0]['file_ids'] = tuple()
 
                         self._make_blockreplicas(blockreplicas, replica, inventory, counts)
 
