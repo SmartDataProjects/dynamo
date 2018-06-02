@@ -8,6 +8,6 @@ CREATE TABLE `file_transfers` (
   `created` datetime NOT NULL,
   `completed` datetime NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `transfer` (`file`, `source`, `destination`),
+  UNIQUE KEY `transfer` (`file_id`, `source_id`, `destination_id`),
   KEY `batch` (`batch_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

@@ -1,6 +1,7 @@
 import os
 import collections
 import random
+import time
 import logging
 
 from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
@@ -98,9 +99,12 @@ class RLFSM(object):
             else:
                 self.db.query('INSERT INTO `transfer_batches`')
                 batch_id = self.db.last_insert_id
+
+            # local time
+            now = time.strftime('%Y-%m-%d %H:%M:%S')
             
-            fields = ('subscription_id', 'source', 'batch_id')
-            mapping = lambda t: (t.subscription.id, t.source.id, batch_id)
+            fields = ('subscription_id', 'source', 'batch_id', 'created')
+            mapping = lambda t: (t.subscription.id, t.source.id, batch_id, now)
 
             if not self.dry_run:
                 self.db.insert_many('transfer_queue', fields, mapping, batch_tasks)
@@ -132,9 +136,12 @@ class RLFSM(object):
             else:
                 self.db.query('INSERT INTO `deletion_batches`')
                 batch_id = self.db.last_insert_id
+
+            # local time
+            now = time.strftime('%Y-%m-%d %H:%M:%S')
             
-            fields = ('subscription_id', 'batch_id')
-            mapping = lambda t: (t.subscription.id, batch_id)
+            fields = ('subscription_id', 'batch_id', 'created')
+            mapping = lambda t: (t.subscription.id, batch_id, now)
 
             if not self.dry_run:
                 self.db.insert_many('deletion_queue', fields, mapping, batch_tasks)
@@ -239,8 +246,11 @@ class RLFSM(object):
 
         site_id = block_replica.site.id
 
-        fields = ('file_id', 'site_id', 'delete')
-        mapping = lambda f: (f, site_id, 0)
+        # local time
+        now = time.strftime('%Y-%m-%d %H:%M:%S')
+
+        fields = ('file_id', 'site_id', 'delete', 'created')
+        mapping = lambda f: (f, site_id, 0, now)
 
         if not self.dry_run:
             self.db.insert_many('file_subscriptions', fields, mapping, missing_ids)
@@ -251,8 +261,11 @@ class RLFSM(object):
         """
         site_id = block_replica.site.id
 
-        fields = ('file_id', 'site_id', 'delete')
-        mapping = lambda f: (f, site_id, 1)
+        # local time
+        now = time.strftime('%Y-%m-%d %H:%M:%S')
+
+        fields = ('file_id', 'site_id', 'delete', 'created')
+        mapping = lambda f: (f, site_id, 1, now)
 
         if not self.dry_run:
             self.db.insert_many('file_subscriptions', fields, mapping, block_replica.file_ids)
