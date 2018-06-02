@@ -79,7 +79,172 @@ class RLFSM(object):
         else:
             self.deletion_query = self.deletion_operation
 
-    def update_subscription_status(self):
+        self.dry_run = config.get('dry_run', False)
+        self.transfer_operation.dry_run = self.dry_run
+        self.deletion_operation.dry_run = self.dry_run
+        
+    def transfer_files(self, inventory):
+        self._update_subscription_status()
+
+        subscriptions = self._get_subscriptions(inventory)
+
+        tasks = self._select_source(subscriptions)
+
+        batches = self._transfer_operation.form_batches(tasks)
+
+        for batch_tasks in batches:
+            if self.dry_run:
+                batch_id = 0
+            else:
+                self.db.query('INSERT INTO `transfer_batches`')
+                batch_id = self.db.last_insert_id
+            
+            fields = ('subscription_id', 'source', 'batch_id')
+            mapping = lambda t: (t.subscription.id, t.source.id, batch_id)
+
+            if not self.dry_run:
+                self.db.insert_many('transfer_queue', fields, mapping, batch_tasks)
+
+            # set the task ids
+            tasks_by_sub = dict((t.subscription.id, t) for t in batch_tasks)
+            for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `transfer_queue` WHERE `batch_id` = %s', batch_id):
+                tasks_by_sub[subscription_id].id = task_id
+            
+            self.transfer_operation.start_transfers(batch_id, batch_tasks)
+
+            if not self.dry_run:
+                self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\', `last_update` = NOW()', 'id', [t.subscription.id for t in batch_tasks])
+
+    def delete_files(self, inventory):
+        completed = self._update_deletion_status()
+
+        self._set_dirclean_candidates(completed, inventory)
+          
+        desubscriptions = self._get_desubscriptions(inventory)
+
+        tasks = [RLFSM.DeletionTask(d) for d in desubscriptions]
+
+        batches = self.deletion_operation.form_batches(tasks)
+
+        for batch_tasks in batches:
+            if self.dry_run:
+                batch_id = 0
+            else:
+                self.db.query('INSERT INTO `deletion_batches`')
+                batch_id = self.db.last_insert_id
+            
+            fields = ('subscription_id', 'batch_id')
+            mapping = lambda t: (t.subscription.id, batch_id)
+
+            if not self.dry_run:
+                self.db.insert_many('deletion_queue', fields, mapping, batch_tasks)
+
+            # set the task ids
+            tasks_by_sub = dict((t.subscription.id, t) for t in batch_tasks)
+            for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `deletion_queue` WHERE `batch_id` = %s', batch_id):
+                tasks_by_sub[subscription_id].id = task_id
+            
+            self.deletion_operation.execute_deletions(batch_id, batch_tasks)
+
+            if not self.dry_run:
+                self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\', `last_update` = NOW()', 'id', [t.subscription.id for t in batch_tasks])
+
+    def update_inventory(self, inventory):
+        ## List all subscriptions in block, site, time order
+        sql = 'SELECT u.`id`, u.`delete`, d.`name`, b.`name`, u.`file_id`, s.`name` FROM `file_subscriptions` AS u'
+        sql += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
+        sql += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
+        sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
+        sql += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
+        sql += ' WHERE u.`status` = \'done\''
+        sql += ' ORDER BY d.`id`, b.`id`, s.`id`, u.`last_update`'
+        
+        _dataset_name = ''
+        _block_name = ''
+        _site_name = ''
+        
+        dataset = None
+        block = None
+        site = None
+        replica = None
+        file_ids = None
+        
+        COPY = 0
+        DELETE = 1
+        
+        for sub_id, optype, dataset_name, block_name, file_id, site_name in self.db.xquery(sql):
+            if dataset_name != _dataset_name:
+                _dataset_name = dataset_name
+                # dataset must exist
+                dataset = inventory.datasets[dataset_name]
+        
+                _block_name = ''
+        
+            if block_name != _block_name:
+                _block_name = block_name
+                # block must exist
+                block = dataset.find_block(Block.to_internal_name(block_name), must_find = True)
+        
+            if site_name != _site_name:
+                _site_name = site_name
+                # site must exist
+                site = inventory.sites[site_name]
+        
+            if replica is None or replica.block != block or replica.site != site:
+                if replica is not None and file_ids != set(replica.file_ids):
+                    replica.file_ids = tuple(file_ids)
+                    inventory.register_update(replica)
+        
+                replica = block.find_replica(site)
+                file_ids = set(replica.file_ids)
+        
+            if optype == COPY:
+                file_ids.add(file_id)
+            elif optype == DELETE:
+                try:
+                    file_ids.remove(file_id)
+                except KeyError:
+                    pass
+        
+        if replica is not None:
+            if len(file_ids) == 0:
+                inventory.delete(replica)
+            elif file_ids != set(replica.file_ids):
+                replica.file_ids = tuple(file_ids)
+                inventory.register_update(replica)
+
+        if not self.dry_run:
+            # this is dangerous - what if inventory fails to update on the server side?
+            self.db.query('DELETE FROM `file_subscriptions` WHERE `status` = \'done\'')
+
+    def _subscribe_files(self, block_replica):
+        """
+        Make subscriptions of missing files in the block replica.
+        """
+        all_ids = set(f.id for f in block_replica.block.files)
+        missing_ids = all_ids - set(block_replica.file_ids)
+
+        site_id = block_replica.site.id
+
+        fields = ('file_id', 'site_id', 'delete')
+        mapping = lambda f: (f, site_id, 0)
+
+        if not self.dry_run:
+            self.db.insert_many('file_subscriptions', fields, mapping, missing_ids)
+
+    def _desubscribe_files(self, block_replica):
+        """
+        Book deletion of files in the block replica.
+        """
+        site_id = block_replica.site.id
+
+        fields = ('file_id', 'site_id', 'delete')
+        mapping = lambda f: (f, site_id, 1)
+
+        if not self.dry_run:
+            self.db.insert_many('file_subscriptions', fields, mapping, block_replica.file_ids)
+
+    def _update_subscription_status(self):
         insert_file = 'INSERT INTO `{history}`.`files` (`name`)'
         insert_file += ' SELECT f.`name` FROM `transfer_queue` AS q'
         insert_file += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
@@ -109,7 +274,7 @@ class RLFSM(object):
 
         get_subscription = 'SELECT `subscription_id` FROM `transfer_queue` WHERE `id` = %s'
 
-        update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s WHERE `id` = %s'
+        update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
 
         delete_failures = 'DELETE FROM `failed_transfers` WHERE `subscription_id` = %s'
 
@@ -123,21 +288,23 @@ class RLFSM(object):
                 if status not in (FileTransferQuery.STAT_DONE, FileTransferQuery.STAT_FAILED):
                     continue
 
-                self.db.query(insert_file, transfer_id)
-                self.db.query(insert_transfer, exitcode, finish_time, transfer_id)
+                if not self.dry_run:
+                    self.db.query(insert_file, transfer_id)
+                    self.db.query(insert_transfer, exitcode, finish_time, transfer_id)
 
                 subscription_id = self.db.query(get_subscription, transfer_id)[0]
 
-                if status == FileTransferQuery.STAT_DONE:
-                    self.db.query(update_subscription, 'done', subscription_id)
-                    self.db.query(delete_failures, subscription_id)
-                else:
-                    self.db.query(insert_failure, exitcode, transfer_id)
-                    self.db.query(update_subscription, 'retry', subscription_id)
+                if not self.dry_run:
+                    if status == FileTransferQuery.STAT_DONE:
+                        self.db.query(update_subscription, 'done', subscription_id)
+                        self.db.query(delete_failures, subscription_id)
+                    else:
+                        self.db.query(insert_failure, exitcode, transfer_id)
+                        self.db.query(update_subscription, 'retry', subscription_id)
+    
+                    self.db.query(delete_transfer, transfer_id)
 
-                self.db.query(delete_transfer, transfer_id)
-
-    def update_deletion_status(self):
+    def _update_deletion_status(self):
         insert_file = 'INSERT INTO `{history}`.`files` (`name`)'
         insert_file += ' SELECT f.`name` FROM `deletion_queue` AS q'
         insert_file += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
@@ -162,7 +329,7 @@ class RLFSM(object):
 
         get_subscription = 'SELECT `subscription_id` FROM `deletion_queue` WHERE `id` = %s'
 
-        update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s WHERE `id` = %s'
+        update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOw() WHERE `id` = %s'
 
         delete_deletion = 'DELETE FROM `deletion_queue` WHERE `id` = %s'
 
@@ -176,22 +343,26 @@ class RLFSM(object):
                 if status not in (FileDeletionQuery.STAT_DONE, FileDeletionQuery.STAT_FAILED):
                     continue
 
-                self.db.query(insert_file, deletion_id)
-                self.db.query(insert_deletion, exitcode, finish_time, deletion_id)
+                if not self.dry_run:
+                    self.db.query(insert_file, deletion_id)
+                    self.db.query(insert_deletion, exitcode, finish_time, deletion_id)
 
                 subscription_id = self.db.query(get_subscription, deletion_id)[0]
 
-                if status == FileDeletionQuery.STAT_DONE:
-                    self.db.query(update_subscription, 'done', subscription_id)
-                    completed_subscriptions.append(subscription_id)
-                else:
-                    self.db.query(update_subscription, 'retry', subscription_id)
+                if not self.dry_run:
+                    if status == FileDeletionQuery.STAT_DONE:
+                        self.db.query(update_subscription, 'done', subscription_id)
+                    else:
+                        self.db.query(update_subscription, 'retry', subscription_id)
+    
+                    self.db.query(delete_deletion, deletion_id)
 
-                self.db.query(delete_deletion, deletion_id)
+                if status == FileDeletionQuery.STAT_DONE:
+                    completed_subscriptions.append(subscription_id)
 
         return completed_subscriptions
 
-    def get_subscriptions(self, inventory):
+    def _get_subscriptions(self, inventory):
         subscriptions = []
 
         get_all = 'SELECT u.`id`, u.`status`, d.`name`, b.`name`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
@@ -268,11 +439,12 @@ class RLFSM(object):
     
             subscriptions.append(subscription)
 
-        self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\'', 'id', to_hold)
+        if not self.dry_run:
+            self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `last_update` = NOW()', 'id', to_hold)
 
         return subscriptions
 
-    def get_desubscriptions(self, inventory):
+    def _get_desubscriptions(self, inventory):
         desubscriptions = []
 
         get_all = 'SELECT u.`id`, u.`status`, d.`name`, b.`name`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
@@ -319,7 +491,7 @@ class RLFSM(object):
 
         return desubscriptions
 
-    def select_source(self, subscriptions):
+    def _select_source(self, subscriptions):
         """
         Intelligently select the best source for each subscription.
         @param subscriptions  List of Subscription objects
@@ -349,7 +521,7 @@ class RLFSM(object):
 
         return tasks
     
-    def set_dirclean_candidates(self, subscription_ids, inventory):
+    def _set_dirclean_candidates(self, subscription_ids, inventory):
         site_dirs = {}
 
         # Clean up directories of completed subscriptions
@@ -373,60 +545,5 @@ class RLFSM(object):
                     yield site.id, directory
 
         fields = ('site_id', 'directory')
-        self.db.insert_many('directory_cleaning_queue', fields, None, get_entry(), do_update = True)
-
-    def transfer_files(self, inventory):
-        self.update_subscription_status()
-
-        subscriptions = self.get_subscriptions(inventory)
-
-        tasks = self.select_source(subscriptions)
-
-        batches = self.transfer_operation.form_batches(tasks)
-
-        for batch_tasks in batches:
-            self.db.query('INSERT INTO `transfer_batches`')
-            batch_id = self.db.last_insert_id
-            
-            fields = ('subscription_id', 'source', 'batch_id')
-            mapping = lambda t: (t.subscription.id, t.source.id, batch_id)
-
-            self.db.insert_many('transfer_queue', fields, mapping, batch_tasks)
-
-            # set the task ids
-            tasks_by_sub = dict((t.subscription.id, t) for t in batch_tasks)
-            for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `transfer_queue` WHERE `batch_id` = %s', batch_id):
-                tasks_by_sub[subscription_id].id = task_id
-            
-            self.transfer_operation.start_transfers(batch_id, batch_tasks)
-
-            self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\'', 'id', [t.subscription.id for t in batch_tasks])
-
-    def delete_files(self, inventory):
-        completed = self.update_deletion_status()
-
-        self.set_dirclean_candidates(completed, inventory)
-          
-        desubscriptions = self.get_desubscriptions(inventory)
-
-        tasks = [RLFSM.DeletionTask(d) for d in desubscriptions]
-
-        batches = self.deletion_operation.form_batches(tasks)
-
-        for batch_tasks in batches:
-            self.db.query('INSERT INTO `deletion_batches`')
-            batch_id = self.db.last_insert_id
-            
-            fields = ('subscription_id', 'batch_id')
-            mapping = lambda t: (t.subscription.id, batch_id)
-
-            self.db.insert_many('deletion_queue', fields, mapping, batch_tasks)
-
-            # set the task ids
-            tasks_by_sub = dict((t.subscription.id, t) for t in batch_tasks)
-            for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `deletion_queue` WHERE `batch_id` = %s', batch_id):
-                tasks_by_sub[subscription_id].id = task_id
-            
-            self.deletion_operation.execute_deletions(batch_id, batch_tasks)
-
-            self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\'', 'id', [t.subscription.id for t in batch_tasks])
+        if not self.dry_run:
+            self.db.insert_many('directory_cleaning_queue', fields, None, get_entry(), do_update = True)
