@@ -4,5 +4,5 @@ CREATE TABLE `failed_transfers` (
   `source` int(11) unsigned NOT NULL,
   `exitcode` smallint(5) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `transfer` (`subscription_id`, `source`)
+  KEY `transfer` (`subscription_id`,`source`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
