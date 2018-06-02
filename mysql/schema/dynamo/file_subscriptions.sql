@@ -3,7 +3,7 @@ CREATE TABLE `file_subscriptions` (
   `file_id` bigint(20) unsigned NOT NULL,
   `site_id` int(11) unsigned NOT NULL,
   `status` enum('new','inbatch','done','retry','held') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'new',
-  `created` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `created` datetime NOT NULL,
   `last_update` datetime DEFAULT NULL,
   `delete` tinyint(1) unsigned NOT NULL,
   PRIMARY KEY (`id`),

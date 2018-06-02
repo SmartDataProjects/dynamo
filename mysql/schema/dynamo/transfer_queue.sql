@@ -3,7 +3,7 @@ CREATE TABLE `transfer_queue` (
   `subscription_id` bigint(20) unsigned NOT NULL,
   `source` int(11) unsigned NOT NULL,
   `batch_id` bigint(20) unsigned NOT NULL,
-  `created` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `created` datetime NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `transfer` (`subscription_id`),
   KEY `source` (`source`),
