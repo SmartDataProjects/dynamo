@@ -154,14 +154,14 @@ class AppServer(object):
         # schedule the app on master
         if 'exec_path' in app_data:
             try:
-                shutil.copyfile(app_data['exec_path'], workarea + '/exec.py')
+                shutil.copyfile(app_data['exec_path'], app_data['path'] + '/exec.py')
             except Exception as exc:
-                return False, 'Could not copy executable %s to %s (%s)' % (app_data['exec_path'], workarea, str(exc))
+                return False, 'Could not copy executable %s to %s (%s)' % (app_data['exec_path'], app_data['path'], str(exc))
 
             app_data.pop('exec_path')
 
         elif 'exec' in app_data:
-            with open(workarea + '/exec.py', 'w') as out:
+            with open(app_data['path'] + '/exec.py', 'w') as out:
                 out.write(app_data['exec'])
                 
             app_data.pop('exec')
@@ -189,7 +189,7 @@ class AppServer(object):
 
             return True, {'appid': app_id, 'path': msg['path'], 'pid': msg['pid']} # msg['path'] should be == workarea
         else:
-            return True, {'appid': app_id, 'path': workarea}
+            return True, {'appid': app_id, 'path': msg['path']}
 
     def _add_sequences(self, path, user):
         """
