@@ -9,6 +9,8 @@ class FileTransferOperation(object):
         # Number of files to process in single batch (Max used 4000)
         self.batch_size = config.batch_size
 
+        self.dry_run = config.get('dry_run', False)
+
     def form_batches(self, tasks):
         """
         Organize the transfer tasks into batches in whatever way preferrable to the system.

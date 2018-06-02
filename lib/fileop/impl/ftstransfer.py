@@ -33,11 +33,15 @@ class FTSFileTransfer(FileTransferOperation, FileTransferQuery, FTSInterface):
 
         job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = True, verify_checksum = False)
 
-        job_id = fts3.submit(context, job)
+        if self.dry_run:
+            job_id = 'test'
+        else:
+            job_id = fts3.submit(context, job)
 
         sql = 'INSERT INTO `fts_transfer_batches` (`batch_id`, `fts_server_id`, `job_id`)'
         sql += ' SELECT %s, `id`, %s FROM `fts_servers` WHERE `url` = %s'
-        self.mysql.query(sql, batch_id, job_id, self.fts_server)
+        if not self.dry_run:
+            self.mysql.query(sql, batch_id, job_id, self.fts_server)
 
         # list of file-level transfers (one-to-one with fts3.new_transfer)
         fts_files = fts3.get_job_status(context, job_id = job_id, list_files = True)['files']
@@ -45,7 +49,8 @@ class FTSFileTransfer(FileTransferOperation, FileTransferQuery, FTSInterface):
         fields = ('transfer_id', 'batch_id', 'fts_file_id')
         mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])
 
-        self.mysql.insert_many('fts_transfer_files', fields, mapping, fts_files)
+        if not self.dry_run:
+            self.mysql.insert_many('fts_transfer_files', fields, mapping, fts_files)
 
     def get_status(self, batch_id): #override
         return FTSInterface.get_status(self, batch_id, 'transfer')

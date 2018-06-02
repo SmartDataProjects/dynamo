@@ -30,11 +30,16 @@ class FTSFileDeletion(FileDeletionOperation, FileDeletionQuery):
 
         job = fts3.new_delete_job(pfn_to_task.keys())
 
-        job_id = fts3.submit(context, job)
+        if self.dry_run:
+            job_id = 'test'
+        else:
+            job_id = fts3.submit(context, job)
 
         sql = 'INSERT INTO `fts_deletion_batches` (`batch_id`, `fts_server_id`, `job_id`)'
         sql += ' SELECT %s, `id`, %s FROM `fts_servers` WHERE `url` = %s'
-        self.mysql.query(sql, batch_id, job_id, self.fts_server)
+
+        if not self.dry_run:
+            self.mysql.query(sql, batch_id, job_id, self.fts_server)
 
         # list of file-level deletions
         fts_dm = fts3.get_job_status(context, job_id = job_id, list_files = True)['dm']
@@ -42,7 +47,8 @@ class FTSFileDeletion(FileDeletionOperation, FileDeletionQuery):
         fields = ('deletion_id', 'batch_id', 'fts_file_id')
         mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])
 
-        self.mysql.insert_many('fts_deletion_files', fields, mapping, fts_files)
+        if not self.dry_run:
+            self.mysql.insert_many('fts_deletion_files', fields, mapping, fts_files)
 
     def get_status(self, batch_id):
         return FTSInterface.get_status(self, batch_id, 'deletion')

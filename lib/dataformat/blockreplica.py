@@ -159,7 +159,7 @@ class BlockReplica(object):
                 site_partition.replicas.pop(dataset_replica)
 
         dataset_replica.block_replicas.remove(self)
-        if unlink_dataset_replica and len(dataset_replica.block_replicas) == 0:
+        if unlink_dataset_replica and not dataset_replica.growing and len(dataset_replica.block_replicas) == 0:
             dataset_replica.unlink()
 
         self._block.replicas.remove(self)
