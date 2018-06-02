@@ -151,12 +151,11 @@ class RLFSM(object):
 
     def update_inventory(self, inventory):
         ## List all subscriptions in block, site, time order
-        sql = 'SELECT u.`id`, u.`delete`, d.`name`, b.`name`, u.`file_id`, s.`name` FROM `file_subscriptions` AS u'
+        sql = 'SELECT u.`id`, u.`status`, u.`delete`, d.`name`, b.`name`, u.`file_id`, s.`name` FROM `file_subscriptions` AS u'
         sql += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
         sql += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         sql += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
-        sql += ' WHERE u.`status` = \'done\''
         sql += ' ORDER BY d.`id`, b.`id`, s.`id`, u.`last_update`'
         
         _dataset_name = ''
@@ -168,11 +167,12 @@ class RLFSM(object):
         site = None
         replica = None
         file_ids = None
+        projected = set()
         
         COPY = 0
         DELETE = 1
         
-        for sub_id, optype, dataset_name, block_name, file_id, site_name in self.db.xquery(sql):
+        for sub_id, status, optype, dataset_name, block_name, file_id, site_name in self.db.xquery(sql):
             if dataset_name != _dataset_name:
                 _dataset_name = dataset_name
                 # dataset must exist
@@ -192,22 +192,35 @@ class RLFSM(object):
         
             if replica is None or replica.block != block or replica.site != site:
                 if replica is not None and file_ids != set(replica.file_ids):
-                    replica.file_ids = tuple(file_ids)
-                    inventory.register_update(replica)
-        
+                    if len(file_ids) == 0 and len(projected) == 0:
+                        inventory.delete(replica)
+                    elif file_ids != set(replica.file_ids):
+                        replica.file_ids = tuple(file_ids)
+                        inventory.register_update(replica)
+
                 replica = block.find_replica(site)
                 file_ids = set(replica.file_ids)
+                projected.clear()
         
             if optype == COPY:
-                file_ids.add(file_id)
+                if status == 'done':
+                    file_ids.add(file_id)
+                else:
+                    projected.add(file_id)
             elif optype == DELETE:
                 try:
-                    file_ids.remove(file_id)
+                    projected.remove(file_id)
                 except KeyError:
                     pass
+
+                if status == 'done':
+                    try:
+                        file_ids.remove(file_id)
+                    except KeyError:
+                        pass
         
         if replica is not None:
-            if len(file_ids) == 0:
+            if len(file_ids) == 0 and len(projected) == 0:
                 inventory.delete(replica)
             elif file_ids != set(replica.file_ids):
                 replica.file_ids = tuple(file_ids)
