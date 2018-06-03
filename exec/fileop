@@ -1,0 +1,217 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import multiprocessing
+
+def transfer(tasks, params):
+    """
+    @param tasks    [(task id, source pfn, dest pfn)]
+    @param params   GFAL2 transfer parameters
+    """
+
+    result = []
+
+    try:
+        context = gfal2.creat_context()
+    
+        sources = []
+        destinations = []
+        for task in tasks:
+            sources.append(task[1])
+            destinations.append(task[2])
+    
+        errors = context.filecopy(params, sources, destinations)
+
+        if errors is None:
+            # all succeeded
+            for task in tasks:
+                result.append((task[0], 0, None))
+        else:
+            for task, err in zip(tasks, errors):
+                if err is None:
+                    # this one was OK
+                    result.append((task[0], 0, None))
+                else:
+                    # this one was not
+                    result.append((task[0], err.code, err.message))
+    except:
+        # all failed
+        for task in tasks:
+            result.append((task[0], -1, ''))
+
+    return result
+
+
+def delete(tasks):
+    """
+    @param tasks   [(task id, pfn)]
+    """
+
+    result = []
+
+    try:
+        context = gfal2.creat_context()
+    
+        pfns = [task[1] for task in tasks]
+
+        errors = context.unlink(pfns)
+
+        if errors is None:
+            # all succeeded
+            for task in tasks::
+                result.append((task[0], 0, None))
+        else:
+            for task, err in zip(tasks, errors):
+                if err is None:
+                    # this one was OK
+                    result.append((task[0], 0, None))
+                else:
+                    # this one was not
+                    result.append((task[0], err.code, err.message))
+    except:
+        # all failed
+        for task in tasks:
+            result.append((task[0], -1, ''))
+
+    return result
+
+
+if __name__ == '__init__':
+    from argparse import ArgumentParser
+    
+    parser = ArgumentParser(description = 'Perform transfers and deletions.')
+    parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+    
+    args = parser.parse_args()
+    sys.argv = []
+    
+    ## Load the configuration
+    from dynamo.dataformat.configuration import Configuration
+    
+    config = Configuration(args.config)
+    
+    ## Set up logging (write to stdout & stderr)
+    from dynamo.core.executable import make_standard_logger, read_only, inventory
+    
+    LOG = make_standard_logger(config.log_level)
+    
+    ## Set up a handle to the DB
+    from dynamo.utils.interface.mysql import MySQL
+
+    db = MySQL(config.db_params)
+
+    ## Create a process pool
+    pool = multiprocessing.Pool(config.num_parallel_links)
+    results = []
+
+    ## Create deletion tasks (batched by site)
+    sql = 'LOCK TABLES `standalone_deletion_queue` WRITE,'
+    sql += ' `standalone_deletion_queue` AS a WRITE,'
+    sql += ' `deletion_queue` AS q READ,'
+    sql += ' `file_subscriptions` AS u READ,'
+    sql += ' `files` AS f READ,'
+    sql += ' `sites` AS s READ'
+    db.query(sql)
+
+    sql = 'SELECT q.`batch_id`, q.`id`, f.`name`, s.`name` FROM `standalone_deletion_queue` AS a'
+    sql += ' INNER JOIN `deletion_queue` AS q ON q.`id` = a.`id`'
+    sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+    sql += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
+    sql += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
+    sql += ' WHERE a.`status` = \'new\''
+    sql += ' ORDER BY q.`batch_id`'
+
+    _batch_id = 0
+    
+    for batch_id, tid, lfn, site_name from db.xquery(sql):
+        if batch_id != _batch_id:
+            if _batch_id != 0:
+                results.append(('delete', pool.apply_async(delete, (tasks,))))
+
+            _batch_id = batch_id
+            site = inventory.sites[site_name]
+            tasks = []
+
+        tasks.append((tid, site.to_pfn(lfn, 'gfal2')))
+
+    if _batch_id != 0:
+        results.append(('delete', pool.apply_async(delete, (tasks,))))
+
+    sql = 'UPDATE `standalone_deletion_queue` SET `status` = \'inprogress\' WHERE `status` = \'new\''
+    db.query(sql)
+
+    db.query('UNLOCK TABLES')
+
+    ## Create transfer tasks (batched by site)
+    sql = 'LOCK TABLES `standalone_transfer_queue` WRITE,'
+    sql += ' `standalone_transfer_queue` AS a WRITE,'
+    sql += ' `transfer_queue` AS q READ,'
+    sql += ' `file_subscriptions` AS u READ,'
+    sql += ' `files` AS f READ,'
+    sql += ' `sites` AS sd READ'
+    sql += ' `sites` AS ss READ'
+    db.query(sql)
+
+    sql = 'SELECT q.`batch_id`, q.`id`, f.`name`, ss.`name`, sd.`name` FROM `standalone_transfer_queue` AS a'
+    sql += ' INNER JOIN `transfer_queue` AS q ON q.`id` = a.`id`'
+    sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+    sql += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
+    sql += ' INNER JOIN `sites` AS sd ON sd.`id` = u.`site_id`'
+    sql += ' INNER JOIN `sites` AS ss ON ss.`id` = q.`source_id`'
+    sql += ' WHERE a.`status` = \'new\''
+    sql += ' ORDER BY q.`batch_id`'
+
+    transfer_params = gfal2.Gfal2Context.transfer_parameters()
+    transfer_params.create_parent = True
+    transfer_params.overwrite = True
+    transfer_params.checksum_check = True
+    transfer_params.nbstreams = config.transfer_nstreams
+    transfer_params.timeout = config.transfer_timeout # we probably want this to be file size dependent
+
+    _batch_id = 0
+    
+    for batch_id, tid, lfn, source_name, destination_name from db.xquery(sql):
+        if batch_id != _batch_id:
+            if _batch_id != 0:
+                results.append(('transfer', pool.apply_async(transfer, (tasks, transfer_params))))
+
+            _batch_id = batch_id
+            source = inventory.sites[source_name]
+            destination = inventory.sites[destination_name]
+            tasks = []
+
+        tasks.append((tid, source.to_pfn(lfn, 'gfal2'), destination.to_pfn(lfn, 'gfal2')))
+
+    if _batch_id != 0:
+        results.append(('transfer', pool.apply_async(transfer, (tasks, transfer_params))))
+
+    sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'inprogress\' WHERE `status` = \'new\''
+    db.query(sql)
+
+    db.query('UNLOCK TABLES')
+
+    ## Collect the results
+    while len(results) != 0:
+        ir = 0
+        while ir != len(results):
+            if not results[ir][1].ready():
+                ir += 1
+                continue
+
+            optype, result = results.pop(ir)
+    
+            if optype == 'delete':
+                table = 'standalone_deletion_queue'
+            else:
+                table = 'standalone_transfer_queue'
+
+            sql = 'UPDATE `{table}` SET `status` = %s, `exitcode` = %s, `finish_time` = NOW() WHERE `id` = %s'.format(table = table)
+
+            tasks = result.get()
+
+            for tid, exitcode, msg in tasks:
+                if exitcode == 0:
+                    db.query(sql, 'done', exitcode, tid)
+                else:
+                    db.query(sql, 'failed', exitcode, tid)

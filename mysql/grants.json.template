@@ -44,5 +44,23 @@
       ["INSERT, UPDATE, DELETE", "dynamoregister", "activity_lock"],
       ["SELECT", "dynamoserver", "users"]
     ]
+  },
+  "dynamofod": {
+    "passwd": "",
+    "hosts": ["localhost"],
+    "grants": [
+      ["SELECT, LOCK TABLES", "dynamo"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "transfer_%"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "failed_transfers"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "deletion_%"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "file_subscriptions"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "directory_cleaning_queue"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "fts_%"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "standalone_%"],
+      ["SELECT, LOCK TABLES", "dynamohistory"],
+      ["INSERT", "dynamohistory", "files"],
+      ["INSERT", "dynamohistory", "file_transfers"],
+      ["INSERT", "dynamohistory", "file_deletions"]
+    ]
   }
 }

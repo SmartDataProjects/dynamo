@@ -1,0 +1,24 @@
+{
+  "rlfsm": {
+    "protocol": "gfal2",
+    "db": {
+      "db_params": {
+        "db": "dynamo",
+        "user": "dynamofod",
+        "passwd": ""
+      },
+      "history": "dynamohistory"
+    },
+    "transfer": {
+      "module": "standalone:StandaloneFileOperation",
+      "config": {
+        "db_params": {
+          "db": "dynamo",
+          "user": "dynamofod",
+          "passwd": ""
+        }
+      }
+    }
+  },
+  "log_level": "info"
+}

@@ -125,8 +125,8 @@ class RLFSM(object):
                         task.subscription.file.lfn, task.source.name, task.subscription.destination.name)
 
                     if not self.dry_run:
-                        sql = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source`, `exitcode`)'
-                        sql += ' SELECT `id`, `subscription_id`, `source`, %s FROM `transfer_queue` WHERE `id` = %s'
+                        sql = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
+                        sql += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_queue` WHERE `id` = %s'
                         self.db.query(sql, -1, task.id)
     
                         sql = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
@@ -351,7 +351,7 @@ class RLFSM(object):
         insert_transfer += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         insert_transfer += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
         insert_transfer += ' INNER JOIN `sites` AS sd ON sd.`id` = u.`site_id`'
-        insert_transfer += ' INNER JOIN `sites` AS ss ON ss.`id` = q.`source`'
+        insert_transfer += ' INNER JOIN `sites` AS ss ON ss.`id` = q.`source_id`'
         insert_transfer += ' INNER JOIN `{history}`.`files` AS hf ON hf.`name` = f.`name`'
         insert_transfer += ' INNER JOIN `{history}`.`sites` AS hsd ON hsd.`name` = sd.`name`'
         insert_transfer += ' INNER JOIN `{history}`.`sites` AS hss ON hss.`name` = ss.`name`'
@@ -359,8 +359,8 @@ class RLFSM(object):
 
         insert_transfer = insert_transfer.format(history = self.history_db)
 
-        insert_failure = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source`, `exitcode`)'
-        insert_failure += ' SELECT `id`, `subscription_id`, `source`, %s FROM `transfer_queue` WHERE `id` = %s'
+        insert_failure = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
+        insert_failure += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_queue` WHERE `id` = %s'
 
         get_subscription = 'SELECT `subscription_id` FROM `transfer_queue` WHERE `id` = %s'
 
@@ -463,9 +463,9 @@ class RLFSM(object):
         get_all += ' WHERE u.`delete` = 0 AND u.`status` IN (\'new\', \'retry\')'
         get_all += ' ORDER BY d.`id`, b.`id`, s.`id`'
 
-        get_tried_sites = 'SELECT s.`name`, f.`exitcode` FROM `failed_transfers`'
-        get_tried_sites += ' INNER JOIN `sites` AS s ON s.`id` = f.`source`'
-        get_tried_sites += ' WHERE `subscription_id` = %s'
+        get_tried_sites = 'SELECT s.`name`, f.`exitcode` FROM `failed_transfers` AS f'
+        get_tried_sites += ' INNER JOIN `sites` AS s ON s.`id` = f.`source_id`'
+        get_tried_sites += ' WHERE f.`subscription_id` = %s'
 
         _dataset_name = ''
         _block_name = ''
