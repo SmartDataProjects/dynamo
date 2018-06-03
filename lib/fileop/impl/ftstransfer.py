@@ -31,15 +31,12 @@ class FTSFileTransfer(FileTransferOperation, FileTransferQuery, FTSInterface):
         if self.fts_server_id == 0:
             self.set_server_id()
 
-        # verify = False -> do not verify the server certificate
-        context = fts3.Context(self.fts_server, verify = False)
-
         job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = True, verify_checksum = False)
 
         if self.dry_run:
             job_id = 'test'
         else:
-            job_id = fts3.submit(context, job)
+            job_id = self.ftscall('submit', job)
 
         sql = 'INSERT INTO `fts_transfer_batches` (`batch_id`, `fts_server_id`, `job_id`)'
         sql += ' VALUES (%s, %s, %s)'
@@ -47,7 +44,7 @@ class FTSFileTransfer(FileTransferOperation, FileTransferQuery, FTSInterface):
             self.mysql.query(sql, batch_id, self.fts_server_id, job_id)
 
         # list of file-level transfers (one-to-one with fts3.new_transfer)
-        fts_files = fts3.get_job_status(context, job_id = job_id, list_files = True)['files']
+        fts_files = self.ftscall('get_job_status', job_id = job_id, list_files = True)['files']
 
         fields = ('transfer_id', 'batch_id', 'fts_file_id')
         mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])
