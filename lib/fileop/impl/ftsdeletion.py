@@ -3,7 +3,7 @@ import fts3.rest.client.easy as fts3
 from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery
 from dynamo.fileop.impl.fts import FTSInterface
 
-class FTSFileDeletion(FileDeletionOperation, FileDeletionQuery):
+class FTSFileDeletion(FileDeletionOperation, FileDeletionQuery, FTSInterface):
     def __init__(self, config):
         FileDeletionOperation.__init__(self, config)
         FileDeletionQuery.__init__(self, config)
@@ -28,15 +28,12 @@ class FTSFileDeletion(FileDeletionOperation, FileDeletionQuery):
         if self.fts_server_id == 0:
             self.set_server_id()
 
-        # verify = False -> do not verify the server certificate
-        context = fts3.Context(self.fts_server, verify = False)
-
         job = fts3.new_delete_job(pfn_to_task.keys())
 
         if self.dry_run:
             job_id = 'test'
         else:
-            job_id = fts3.submit(context, job)
+            job_id = self.ftscall('submit', job)
 
         sql = 'INSERT INTO `fts_deletion_batches` (`batch_id`, `fts_server_id`, `job_id`)'
         sql += ' VALUES (%s, %s, %s)'
@@ -45,7 +42,7 @@ class FTSFileDeletion(FileDeletionOperation, FileDeletionQuery):
             self.mysql.query(sql, batch_id, self.fts_server_id, job_id)
 
         # list of file-level deletions
-        fts_dm = fts3.get_job_status(context, job_id = job_id, list_files = True)['dm']
+        fts_dm = self.ftscall('get_job_status', job_id = job_id, list_files = True)['dm']
 
         fields = ('deletion_id', 'batch_id', 'fts_file_id')
         mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])

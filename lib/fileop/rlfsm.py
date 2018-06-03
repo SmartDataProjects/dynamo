@@ -91,7 +91,7 @@ class RLFSM(object):
 
         tasks = self._select_source(subscriptions)
 
-        batches = self._transfer_operation.form_batches(tasks)
+        batches = self.transfer_operation.form_batches(tasks)
 
         for batch_tasks in batches:
             if self.dry_run:
@@ -524,6 +524,8 @@ class RLFSM(object):
 
         @return  List of TransferTask objects
         """
+
+        tasks = []
 
         for subscription in subscriptions:
             if len(subscription.disk_sources) == 0:

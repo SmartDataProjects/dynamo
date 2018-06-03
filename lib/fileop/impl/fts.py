@@ -2,6 +2,7 @@ import time
 import calendar
 
 import fts3.rest.client.easy as fts3
+import fts3.rest.client.request as Request
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.fileop.transfer import FileTransferQuery
 from dynamo.fileop.deletion import FileDeletionQuery
@@ -23,6 +24,10 @@ class FTSInterface(object):
         # Cache the error messages
         self.error_messages = self.mysql.query('SELECT `code`, `message` FROM `fts_error_messages`')
 
+        # Reuse the context object
+        self.keep_context = config.get('keep_context', True)
+        self._context = None
+
         self.dry_run = False
 
     def form_batches(self, tasks): #override
@@ -42,9 +47,20 @@ class FTSInterface(object):
     
         return -1
 
-    def get_status(self, batch_id, optype):
-        context = fts3.Context(self.fts_server, verify = False)
+    def ftscall(self, method, *args, **kwd):
+        if self._context is None:
+            # request_class = Request -> use "requests"-based https call (instead of default PyCURL, which may not be able to handle proxy certificates depending on the cURL installation)
+            # verify = False -> do not verify the server certificate
+            context = fts3.Context(self.fts_server, request_class = Request, verify = False)
 
+            if self.keep_context:
+                self._context = context
+        else:
+            context = self._context
+
+        return getattr(fts3, method)(context, *args, **kwd)
+
+    def get_status(self, batch_id, optype):
         if self.fts_server_id == 0:
             self.set_server_id()
 
@@ -56,7 +72,7 @@ class FTSInterface(object):
         sql = 'SELECT `fts_file_id`, `{optype}_id` FROM `fts_{optype}_files` WHERE `batch_id` = %s'
         fts_to_queue = dict(self.mysql.xquery(sql.format(optype = optype), batch_id))
 
-        result = fts3.get_job_status(context, job_id = job_id, list_files = True)
+        result = self.ftscall('get_job_status', job_id = job_id, list_files = True)
 
         if optype == 'transfer':
             fts_files = result['files']
@@ -103,9 +119,10 @@ class FTSInterface(object):
         return status
 
     def set_server_id(self):
-        result = self.mysql.query('SELECT `id` FROM `fts_servers` WHERE `url` = %s')
-        if len(result) == 0 and not self.dry_run:
-            self.mysql.query('INSERT INTO `fts_servers` (`url`) VALUES (%s) ON DUPLICATE KEY UPDATE `url`=VALUES(`url`)', self.fts_server)
-            self.fts_server_id = self.mysql.last_insert_id
+        result = self.mysql.query('SELECT `id` FROM `fts_servers` WHERE `url` = %s', self.fts_server)
+        if len(result) == 0:
+            if not self.dry_run:
+                self.mysql.query('INSERT INTO `fts_servers` (`url`) VALUES (%s) ON DUPLICATE KEY UPDATE `url`=VALUES(`url`)', self.fts_server)
+                self.fts_server_id = self.mysql.last_insert_id
         else:
             self.fts_server_id = result[0]
