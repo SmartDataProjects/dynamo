@@ -12,7 +12,7 @@ from dynamo.utils.interface.mysql import MySQL
 
 LOG = logging.getLogger(__name__)
 
-class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOperation, FileDeletionQueue):
+class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOperation, FileDeletionQuery):
     def __init__(self, config):
         FileTransferOperation.__init__(self, config)
         FileTransferQuery.__init__(self, config)
