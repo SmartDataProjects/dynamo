@@ -20,10 +20,10 @@ from dynamo.core.executable import make_standard_logger, read_only, inventory
 
 LOG = make_standard_logger(config.log_level)
 
-## Set up a handle to the FOD
+## Set up a handle to the RLFSM
 from dynamo.fileop.rlfsm import RLFSM
 
-rlfsm = RLFSM(config.fod)
+rlfsm = RLFSM(config.rlfsm)
 
 if read_only:
     rlfsm.dry_run = True
