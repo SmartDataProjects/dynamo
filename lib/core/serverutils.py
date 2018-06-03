@@ -70,8 +70,6 @@ def clean_remote_request(path):
     proc.start()
     proc.join()
 
-sys_exit = sys.exit
-
 def run_script(path, args, is_local, defaults_config, inventory, authorizer, queue = None):
     """
     Main function for script execution.
@@ -90,15 +88,6 @@ def run_script(path, args, is_local, defaults_config, inventory, authorizer, que
     stderr = open(path + '/_stderr', 'a')
     sys.stdout = stdout
     sys.stderr = stderr
-
-    # sys.exit may be replaced to point to os._exit by the web server.
-    sys.exit = sys_exit
-    # Note:
-    # sys.exit raises a SystemExit exception, which in turn performs garbage collection. All "global" objects
-    # such as the inventory and the web server will in principle be deleted if this happens. This matters for
-    # e.g. inventory.store, whose __del__ will close the connection to the database for other processes too.
-    # However, SystemExit exception raised by this sys.exit in this subprocess is captured by multiprocessing.Popen
-    # and is turned into os._exit, which means no garbage collection is triggered.
 
     path = pre_execution(path, is_local, queue is None, defaults_config, inventory, authorizer)
 

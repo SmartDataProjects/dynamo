@@ -52,16 +52,19 @@ class WebServer(object):
 
         wsgi = WSGIServer(self.main, bindAddress = self.socket, umask = 0, **prefork_config)
 
-        # flup WSGIServer child procs terminate with sys.exit, which involves garbage collection, which causes various shared resources
-        # to become unusable. Need to replace with no-cleanup version os._exit here.
-        sys.exit = os._exit
+        while True:
+            try:
+                # run() returns True iff the process is interrupted with SIGHUP. We exploit this feature and raise SIGHUP from DynamoServer whenever
+                # there is an update to the inventory.
+                stopped_for_reset = wsgi.run()
+            except SystemExit as exc:
+                # Server subprocesses terminate with sys.exit and land here
+                # Because sys.exit performs garbage collection, which can disrupt shared resources (e.g. close connection to DB)
+                # we need to translate it to os._exit
+                os._exit(exc.code)
 
-        # run() returns True iff the process is interrupted with SIGHUP. We exploit this feature and raise SIGHUP from DynamoServer whenever
-        # there is an update to the inventory.
-        while wsgi.run():
-            pass
-
-        sys.exit = serverutils.sys_exit
+            if not stopped_for_reset:
+                break
 
     def main(self, environ, start_response):
         """

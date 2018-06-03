@@ -583,11 +583,12 @@ class DynamoServer(object):
                 if deleted_object is not None:
                     CHANGELOG.info('Deleting %s', str(deleted_object))
 
-        if has_update and self.inventory.has_store:
-            self.manager.master.advertise_store_version(self.inventory.store_version())
+        if has_update:
+            if self.inventory.has_store:
+                self.manager.master.advertise_store_version(self.inventory.store_version())
 
-        # Signal web server to restart
-        os.kill(os.getpid(), signal.SIGHUP)
+            # Signal web server to restart
+            os.kill(os.getpid(), signal.SIGHUP)
 
         return has_update
 
