@@ -4,7 +4,7 @@ import calendar
 import fts3.rest.client.easy as fts3
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.fileop.transfer import FileTransferQuery
-from dynamo.fileop.transfer import FileDeletionQuery
+from dynamo.fileop.deletion import FileDeletionQuery
 
 class FTSInterface(object):
     """
@@ -13,15 +13,17 @@ class FTSInterface(object):
 
     def __init__(self, config):
         self.fts_server = config.fts_server
-        self.mysql = MySQL(config.db_params)
+        self.fts_server_id = 0 # server id in the DB
 
-        self.mysql.query('INSERT INTO `fts_servers` (`url`) VALUES (%s) ON DUPLICATE KEY UPDATE `url`=VALUES(`url`)', self.fts_server)
+        self.mysql = MySQL(config.db_params)
 
         # Parameter "retry" for fts3.new_job
         self.fts_retry = config.fts_retry
 
         # Cache the error messages
         self.error_messages = self.mysql.query('SELECT `code`, `message` FROM `fts_error_messages`')
+
+        self.dry_run = False
 
     def form_batches(self, tasks): #override
         # FTS3 has no restriction on how to group the transfers
@@ -43,11 +45,13 @@ class FTSInterface(object):
     def get_status(self, batch_id, optype):
         context = fts3.Context(self.fts_server, verify = False)
 
-        sql = 'SELECT `job_id` FROM `fts_{optype}_batches` AS b'
-        sql += ' INNER JOIN `fts_servers` AS s ON s.`id` = b.`fts_server_id`'
-        sql += ' WHERE s.`name` = %s AND b.`batch_id` = %s'
+        if self.fts_server_id == 0:
+            self.set_server_id()
 
-        job_id = self.mysql.query(sql.format(optype = optype), self.fts_server, batch_id)[0]
+        sql = 'SELECT `job_id` FROM `fts_{optype}_batches`'
+        sql += ' WHERE `fts_server_id` = %s, `batch_id` = %s'
+
+        job_id = self.mysql.query(sql.format(optype = optype), self.fts_server_id, batch_id)[0]
 
         sql = 'SELECT `fts_file_id`, `{optype}_id` FROM `fts_{optype}_files` WHERE `batch_id` = %s'
         fts_to_queue = dict(self.mysql.xquery(sql.format(optype = optype), batch_id))
@@ -97,3 +101,11 @@ class FTSInterface(object):
             status.append((transfer_id, status, exitcode, finish_time))
 
         return status
+
+    def set_server_id(self):
+        result = self.mysql.query('SELECT `id` FROM `fts_servers` WHERE `url` = %s')
+        if len(result) == 0 and not self.dry_run:
+            self.mysql.query('INSERT INTO `fts_servers` (`url`) VALUES (%s) ON DUPLICATE KEY UPDATE `url`=VALUES(`url`)', self.fts_server)
+            self.fts_server_id = self.mysql.last_insert_id
+        else:
+            self.fts_server_id = result[0]
