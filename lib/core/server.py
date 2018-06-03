@@ -187,7 +187,7 @@ class DynamoServer(object):
         ## Check status (raises exception if error)
         self.manager.check_status()
     
-        if not self.inventory.check_store():
+        if self.inventory is not None and not self.inventory.check_store():
             # We lost connection to the remote persistency store. Try another server.
             # If there is no server to connect to, this method raises a RuntimeError
             self._setup_remote_store()

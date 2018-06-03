@@ -15,6 +15,7 @@ class FileDeletionOperation(object):
         """
         Organize the deletion tasks into batches in whatever way preferrable to the system.
         Tasks can be dropped; total number of tasks in the output can be smaller than the input.
+        RLFSM can decide to further break down the batch, if some files are failing.
         @params tasks  list of RLFSM.DeletionTask objects
 
         @return  List of lists of tasks
