@@ -28,6 +28,9 @@ class FTSFileTransfer(FileTransferOperation, FileTransferQuery, FTSInterface):
             # there should be only one task per destination pfn
             pfn_to_task[dest_pfn] = task
 
+        if self.fts_server_id == 0:
+            self.set_server_id()
+
         # verify = False -> do not verify the server certificate
         context = fts3.Context(self.fts_server, verify = False)
 
@@ -39,9 +42,9 @@ class FTSFileTransfer(FileTransferOperation, FileTransferQuery, FTSInterface):
             job_id = fts3.submit(context, job)
 
         sql = 'INSERT INTO `fts_transfer_batches` (`batch_id`, `fts_server_id`, `job_id`)'
-        sql += ' SELECT %s, `id`, %s FROM `fts_servers` WHERE `url` = %s'
+        sql += ' VALUES (%s, %s, %s)'
         if not self.dry_run:
-            self.mysql.query(sql, batch_id, job_id, self.fts_server)
+            self.mysql.query(sql, batch_id, self.fts_server_id, job_id)
 
         # list of file-level transfers (one-to-one with fts3.new_transfer)
         fts_files = fts3.get_job_status(context, job_id = job_id, list_files = True)['files']
