@@ -31,6 +31,9 @@ class FTSInterface(object):
         self.dry_run = False
 
     def form_batches(self, tasks): #override
+        if len(tasks) == 0:
+            return []
+
         # FTS3 has no restriction on how to group the transfers
         batches = [[]]
         for task in tasks:
