@@ -72,7 +72,10 @@ class RLFSM(object):
             self.transfer_query = self.transfer_operation
 
         # FileDeletionOperation backend (can make it a map from dest to operator)
-        self.deletion_operation = FileDeletionOperation.get_instance(config.deletion.module, config.deletion.config)
+        if 'deletion' in config:
+            self.deletion_operation = FileDeletionOperation.get_instance(config.deletion.module, config.deletion.config)
+        else:
+            self.deletion_operation = self.transfer_operation
 
         # QueryOperation backend
         if 'deletion_query' in config:
@@ -369,7 +372,7 @@ class RLFSM(object):
 
         sql = 'SELECT `id` FROM `transfer_batches`'
         for batch_id in self.db.query(sql):
-            transfer_results = self.transfer_query.get_status(batch_id)
+            transfer_results = self.transfer_query.get_transfer_status(batch_id)
 
             for transfer_id, status, exitcode, finish_time in transfer_results:
                 if status not in (FileTransferQuery.STAT_DONE, FileTransferQuery.STAT_FAILED):
@@ -424,7 +427,7 @@ class RLFSM(object):
 
         sql = 'SELECT `id` FROM `deletion_batches`'
         for batch_id in self.db.query(sql):
-            deletion_results = self.deletion_query.get_status(batch_id)
+            deletion_results = self.deletion_query.get_deletion_status(batch_id)
 
             for deletion_id, status, exitcode, finish_time in deletion_results:
                 if status not in (FileDeletionQuery.STAT_DONE, FileDeletionQuery.STAT_FAILED):

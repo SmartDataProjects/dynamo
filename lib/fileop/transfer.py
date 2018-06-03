@@ -6,8 +6,8 @@ class FileTransferOperation(object):
         return get_instance(FileTransferOperation, module, config)
 
     def __init__(self, config):
-        # Number of files to process in single batch (Max used 4000)
-        self.batch_size = config.batch_size
+        # Number of files to process in single batch
+        self.batch_size = config.get('batch_size', 1)
 
         self.dry_run = config.get('dry_run', False)
 
@@ -31,11 +31,27 @@ class FileTransferOperation(object):
         raise NotImplementedError('start_transfers')
 
 class FileTransferQuery(object):
+    _statuses = ['new', 'inprogress', 'done', 'failed']
+    STAT_NEW, STAT_INPROGRESS, STAT_DONE, STAT_FAILED = range(4)
+
     @staticmethod
     def get_instance(module, config):
         return get_instance(FileTransferQuery, module, config)
 
-    STAT_NEW, STAT_INPROGRESS, STAT_DONE, STAT_FAILED = range(4)
+    @staticmethod
+    def status_name(val):
+        try:
+            return FileTransferQuery._statuses[arg - 1]
+        except:
+            return arg
+
+    @staticmethod
+    def status_val(arg):
+        try:
+            return eval('FileTransferQuery.STAT_' + arg.upper())
+        except:
+            return arg
+
 
     def __init__(self, config):
         pass
