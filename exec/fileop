@@ -26,19 +26,19 @@ def transfer(tasks, params):
         if errors is None:
             # all succeeded
             for task in tasks:
-                result.append((task[0], 0, None))
+                result.append(task + (0, None))
         else:
             for task, err in zip(tasks, errors):
                 if err is None:
                     # this one was OK
-                    result.append((task[0], 0, None))
+                    result.append(task + (0, None))
                 else:
                     # this one was not
-                    result.append((task[0], err.code, err.message))
+                    result.append(task + (err.code, err.message))
     except:
         # all failed
         for task in tasks:
-            result.append((task[0], -1, ''))
+            result.append(task + (-1, ''))
 
     return result
 
@@ -59,20 +59,20 @@ def delete(tasks):
 
         if errors is None:
             # all succeeded
-            for task in tasks::
-                result.append((task[0], 0, None))
+            for task in tasks:
+                result.append(task + (0, None))
         else:
             for task, err in zip(tasks, errors):
                 if err is None:
                     # this one was OK
-                    result.append((task[0], 0, None))
+                    result.append(task + (0, None))
                 else:
                     # this one was not
-                    result.append((task[0], err.code, err.message))
+                    result.append(task + (err.code, err.message))
     except:
         # all failed
         for task in tasks:
-            result.append((task[0], -1, ''))
+            result.append(task + (-1, ''))
 
     return result
 
@@ -106,6 +106,8 @@ if __name__ == '__init__':
     results = []
 
     ## Create deletion tasks (batched by site)
+    LOG.info('Creating deletion tasks.')
+
     sql = 'LOCK TABLES `standalone_deletion_queue` WRITE,'
     sql += ' `standalone_deletion_queue` AS a WRITE,'
     sql += ' `deletion_queue` AS q READ,'
@@ -124,9 +126,10 @@ if __name__ == '__init__':
 
     _batch_id = 0
     
-    for batch_id, tid, lfn, site_name from db.xquery(sql):
+    for batch_id, tid, lfn, site_name in db.xquery(sql):
         if batch_id != _batch_id:
             if _batch_id != 0:
+                LOG.info('Deletion batch %d for %s (%d tasks)', _batch_id, site.name, len(tasks))
                 results.append(('delete', pool.apply_async(delete, (tasks,))))
 
             _batch_id = batch_id
@@ -136,6 +139,7 @@ if __name__ == '__init__':
         tasks.append((tid, site.to_pfn(lfn, 'gfal2')))
 
     if _batch_id != 0:
+        LOG.info('Deletion batch %d for %s (%d tasks)', _batch_id, site.name, len(tasks))
         results.append(('delete', pool.apply_async(delete, (tasks,))))
 
     sql = 'UPDATE `standalone_deletion_queue` SET `status` = \'inprogress\' WHERE `status` = \'new\''
@@ -144,6 +148,8 @@ if __name__ == '__init__':
     db.query('UNLOCK TABLES')
 
     ## Create transfer tasks (batched by site)
+    LOG.info('Creating transfer tasks.')
+
     sql = 'LOCK TABLES `standalone_transfer_queue` WRITE,'
     sql += ' `standalone_transfer_queue` AS a WRITE,'
     sql += ' `transfer_queue` AS q READ,'
@@ -171,9 +177,10 @@ if __name__ == '__init__':
 
     _batch_id = 0
     
-    for batch_id, tid, lfn, source_name, destination_name from db.xquery(sql):
+    for batch_id, tid, lfn, source_name, destination_name in db.xquery(sql):
         if batch_id != _batch_id:
             if _batch_id != 0:
+                LOG.info('Transfer batch %d for %s->%s (%d tasks)', _batch_id, source.name, destination.name, len(tasks))
                 results.append(('transfer', pool.apply_async(transfer, (tasks, transfer_params))))
 
             _batch_id = batch_id
@@ -184,6 +191,7 @@ if __name__ == '__init__':
         tasks.append((tid, source.to_pfn(lfn, 'gfal2'), destination.to_pfn(lfn, 'gfal2')))
 
     if _batch_id != 0:
+        LOG.info('Transfer batch %d for %s->%s (%d tasks)', _batch_id, source.name, destination.name, len(tasks))
         results.append(('transfer', pool.apply_async(transfer, (tasks, transfer_params))))
 
     sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'inprogress\' WHERE `status` = \'new\''
@@ -200,18 +208,27 @@ if __name__ == '__init__':
                 continue
 
             optype, result = results.pop(ir)
-    
-            if optype == 'delete':
-                table = 'standalone_deletion_queue'
-            else:
-                table = 'standalone_transfer_queue'
-
-            sql = 'UPDATE `{table}` SET `status` = %s, `exitcode` = %s, `finish_time` = NOW() WHERE `id` = %s'.format(table = table)
 
             tasks = result.get()
+    
+            if optype == 'delete':
+                sql = 'UPDATE `standalone_deletion_queue` SET `status` = %s, `exitcode` = %s, `finish_time` = NOW() WHERE `id` = %s'.format(table = table)
 
-            for tid, exitcode, msg in tasks:
-                if exitcode == 0:
-                    db.query(sql, 'done', exitcode, tid)
-                else:
-                    db.query(sql, 'failed', exitcode, tid)
+                for tid, pfn, exitcode, msg in tasks:
+                    if exitcode == 0:
+                        LOG.info('Success: delete %s', pfn)
+                        db.query(sql, 'done', exitcode, tid)
+                    else:
+                        LOG.info('Failed: delete %s (code %d, %s)', pfn, exitcode, msg)
+                        db.query(sql, 'failed', exitcode, tid)
+
+            else:
+                sql = 'UPDATE `standalone_transfer_queue` SET `status` = %s, `exitcode` = %s, `finish_time` = NOW() WHERE `id` = %s'.format(table = table)
+
+                for tid, src, dest, exitcode, msg in tasks:
+                    if exitcode == 0:
+                        LOG.info('Success: transfer %s -> $s', src, dest)
+                        db.query(sql, 'done', exitcode, tid)
+                    else:
+                        LOG.info('Failed: transfer %s -> $s (code %d, %s)', src, dest, exitcode, msg)
+                        db.query(sql, 'failed', exitcode, tid)

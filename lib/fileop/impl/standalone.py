@@ -8,7 +8,7 @@ from dynamo.utils.interface.mysql import MySQL
 
 LOG = logging.getLogger(__name__)
 
-class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOperation, FileDeletionQueue):
+class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOperation, FileDeletionQuery):
     """
     Interface to in-house transfer & deletion daemon using MySQL for bookkeeping.
     """
