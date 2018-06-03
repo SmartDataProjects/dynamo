@@ -2,7 +2,7 @@ import time
 import calendar
 
 import fts3.rest.client.easy as fts3
-import fts3.rest.client.request as Request
+from fts3.rest.client.request import Request
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.fileop.transfer import FileTransferQuery
 from dynamo.fileop.deletion import FileDeletionQuery

@@ -33,7 +33,20 @@ class FTSFileDeletion(FileDeletionOperation, FileDeletionQuery, FTSInterface):
         if self.dry_run:
             job_id = 'test'
         else:
-            job_id = self.ftscall('submit', job)
+            try:
+                job_id = self.ftscall('submit', job)
+            except:
+                exc_type, exc, tb = sys.exc_info()
+                LOG.error('Failed to submit deletion to FTS: Exception %s (%s)', exc_type.__name__, str(exc))
+                return False
+
+        # list of file-level deletions
+        try:
+            fts_dm = self.ftscall('get_job_status', job_id = job_id, list_files = True)['dm']
+        except:
+            exc_type, exc, tb = sys.exc_info()
+            LOG.error('Failed to status of job %s from FTS: Exception %s (%s)', job_id, exc_type.__name__, str(exc))
+            return False
 
         sql = 'INSERT INTO `fts_deletion_batches` (`batch_id`, `fts_server_id`, `job_id`)'
         sql += ' VALUES (%s, %s, %s)'
@@ -41,14 +54,13 @@ class FTSFileDeletion(FileDeletionOperation, FileDeletionQuery, FTSInterface):
         if not self.dry_run:
             self.mysql.query(sql, batch_id, self.fts_server_id, job_id)
 
-        # list of file-level deletions
-        fts_dm = self.ftscall('get_job_status', job_id = job_id, list_files = True)['dm']
-
         fields = ('deletion_id', 'batch_id', 'fts_file_id')
         mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])
 
         if not self.dry_run:
             self.mysql.insert_many('fts_deletion_files', fields, mapping, fts_files)
+
+        return True
 
     def get_status(self, batch_id):
         return FTSInterface.get_status(self, batch_id, 'deletion')
