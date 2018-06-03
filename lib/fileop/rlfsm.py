@@ -154,7 +154,7 @@ class RLFSM(object):
             start_transfers(batch_tasks)
 
     def delete_files(self, inventory):
-        def execute_deletions(tasks):
+        def start_deletions(tasks):
             if self.dry_run:
                 batch_id = 0
             else:
@@ -175,7 +175,7 @@ class RLFSM(object):
             for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `deletion_queue` WHERE `batch_id` = %s', batch_id):
                 tasks_by_sub[subscription_id].id = task_id
             
-            success = self.deletion_operation.execute_deletions(batch_id, tasks)
+            success = self.deletion_operation.start_deletions(batch_id, tasks)
 
             if success:
                 if not self.dry_run:
@@ -200,8 +200,8 @@ class RLFSM(object):
                     self.db.query('DELETE FROM `deletion_batches` WHERE `id` = %s', batch_id)
 
                 if len(tasks) > 1:
-                    execute_deletions(tasks[:len(tasks) / 2])
-                    execute_deletions(tasks[len(tasks) / 2:])
+                    start_deletions(tasks[:len(tasks) / 2])
+                    start_deletions(tasks[len(tasks) / 2:])
 
 
         completed = self._update_deletion_status()
@@ -215,7 +215,7 @@ class RLFSM(object):
         batches = self.deletion_operation.form_batches(tasks)
 
         for batch_tasks in batches:
-            execute_deletions(batch_tasks)
+            start_deletions(batch_tasks)
 
     def update_inventory(self, inventory):
         ## List all subscriptions in block, site, time order
