@@ -16,7 +16,10 @@ import dynamo.core.serverutils as serverutils
 from dynamo.core.components.appserver import AppServer
 from dynamo.core.components.host import ServerHost
 from dynamo.core.components.appmanager import AppManager
+from dynamo.web.server import WebServer
 from dynamo.utils.log import log_exception
+from dynamo.utils.signaling import SignalBlocker
+from dynamo.dataformat import Configuration
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
@@ -38,11 +41,6 @@ class DynamoServer(object):
         self.manager_config = config.manager.clone()
         self.manager = ServerManager(self.manager_config)
 
-        ## Shutdown flag
-        # Default is set. KeyboardInterrupt is raised when flag is cleared
-        self.shutdown_flag = threading.Event()
-        self.shutdown_flag.set()
-
         ## Application collection
         self.applications_config = config.applications.clone()
         if self.applications_config.enabled:
@@ -54,6 +52,15 @@ class DynamoServer(object):
                 # Some errors were observed when the timeout is too short
                 # (probably 1 second is enough - we just need to get through pre_execution)
                 self.applications_config.timeout = 60
+
+        ## Web server
+        if config.web.enabled:
+            config.web.modules_config = Configuration(config.web.modules_config_path)
+            config.web.pop('modules_config_path')
+    
+            self.webserver = WebServer(config.web, self)
+        else:
+            self.webserver = None
 
         ## Server status (and application) poll interval
         self.poll_interval = config.status_poll_interval
@@ -112,8 +119,7 @@ class DynamoServer(object):
 
     def run(self):
         """
-        Main body of the server, but mostly focuses on exception handling. dynamod runs this function
-        in a non-main thread.
+        Main body of the server, but mostly focuses on exception handling.
         """
 
         # Outer loop: restart the application server when the inventory goes out of synch
@@ -138,6 +144,9 @@ class DynamoServer(object):
             # We are ready to work
             self.manager.set_status(ServerHost.STAT_ONLINE)
 
+            if self.webserver:
+                self.webserver.start()
+
             try:
                 # Actual stuff happens here
                 # Both functions are infinite loops; the only way out is an exception (can be a peaceful KeyboardInterrupt)
@@ -148,9 +157,6 @@ class DynamoServer(object):
 
             except KeyboardInterrupt:
                 LOG.info('Server process was interrupted.')
-                # KeyboardInterrupt is raised when shutdown_flag is set
-                # Notify shutdown ready
-                self.shutdown_flag.set()
 
                 break
     
@@ -172,18 +178,16 @@ class DynamoServer(object):
             except:
                 log_exception(LOG)
                 LOG.error('Shutting down Dynamo.')
-                # Call sigint on myself to get out of the web server / signal.pause()
-                os.kill(os.getpid(), signal.SIGINT)
-                # Once this function returns, dynamod calls server.shutdown()
-                # If the flag is not cleared already, shutdown() will wait 60 seconds before timing out.
-                self.shutdown_flag.clear()
 
                 break
 
-    def check_status_and_connection(self):
-        if not self.shutdown_flag.is_set():
-            raise KeyboardInterrupt('Shutdown')
+            finally:
+                if self.webserver:
+                    self.webserver.stop()
 
+        self.manager.disconnect()
+
+    def check_status_and_connection(self):
         ## Check status (raises exception if error)
         self.manager.check_status()
     
@@ -191,20 +195,6 @@ class DynamoServer(object):
             # We lost connection to the remote persistency store. Try another server.
             # If there is no server to connect to, this method raises a RuntimeError
             self._setup_remote_store()
-
-    def shutdown(self):
-        # Called by dynamod
-        # Clears the flag so that check_status_and_connection raises a KeyboardInterrupt
-        LOG.info('Shutting down Dynamo server..')
-
-        if self.shutdown_flag.is_set():
-            self.shutdown_flag.clear()
-            state = self.shutdown_flag.wait(60)
-            if state is not None and not state:
-                # timed out (return value of wait() is False if timed out in python 2.7, but is always None in python 2.6)
-                LOG.warning('Shutdown timeout of 60 seconds have passed.')
-
-        self.manager.disconnect()
 
     def get_subprocess_args(self):
         # Create a inventory proxy with a fresh connection to the store backend to avoid the child closing the connection
@@ -320,6 +310,7 @@ class DynamoServer(object):
         except KeyboardInterrupt:
             if len(child_processes) != 0:
                 LOG.info('Terminating all child processes..')
+
             raise
 
         except:
@@ -440,7 +431,6 @@ class DynamoServer(object):
 
                 if status == AppManager.STAT_RUN:
                     if read_state == 1:
-                        # we would block signal here, but since we would be running this code in a subthread we don't have to
                         self.update_inventory(update_commands)
     
                     elif read_state == 2:
@@ -571,7 +561,8 @@ class DynamoServer(object):
         # My updates
         self.manager.set_status(ServerHost.STAT_UPDATING)
 
-        self._exec_updates(update_commands)
+        with SignalBlocker():
+            self._exec_updates(update_commands)
 
         self.manager.set_status(ServerHost.STAT_ONLINE)
 
@@ -608,8 +599,10 @@ class DynamoServer(object):
             if self.inventory.has_store:
                 self.manager.master.advertise_store_version(self.inventory.store_version())
 
-            # Signal web server to restart
-            os.kill(os.getpid(), signal.SIGHUP)
+            if self.webserver:
+                # Restart the web server so it gets the latest inventory image
+                self.webserver.stop()
+                self.webserver.start()
 
         return has_update
 
