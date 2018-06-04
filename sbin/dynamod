@@ -83,6 +83,12 @@ try:
     srv_thread.start()
     
     if config.web.enabled:
+        # flup preforkserver forgets to stop an alarm
+        def do_nothing_on_alarm(signum, frame):
+            pass
+
+        signal.signal(signal.SIGALRM, do_nothing_on_alarm)
+
         config.web.modules_config = Configuration(config.web.modules_config_path)
         config.web.pop('modules_config_path')
     
