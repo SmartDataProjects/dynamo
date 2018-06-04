@@ -252,6 +252,11 @@ class InjectData(WebModule):
 
             if block is None:
                 # new block
+
+                # size and num_files to be set through make_files
+                obj['size'] = 0
+                obj['num_files'] = 0
+
                 try:
                     new_block = df.Block(internal_name, dataset = dataset, **obj)
                 except TypeError as exc:
@@ -356,7 +361,7 @@ class InjectData(WebModule):
                     
                 # "origin" block replicas must always be full
                 obj['file_ids'] = None
-                obj['size'] = block.size
+                obj['size'] = -1 # will set size to block size
     
                 try:
                     new_replica = df.BlockReplica(block, site, group, **obj)
