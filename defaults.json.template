@@ -23,6 +23,50 @@
       }
     }
   },
+  "operation.copy:CopyInterface": {
+    "fullauth": {
+      "module": "fodcopy:FODCopyInterface",
+      "config": {
+        "fod": {
+          "db": {
+            "db_params": {
+              "user": "dynamofod",
+              "passwd": "",
+              "host": "localhost",
+              "db": "dynamo"
+            },
+            "history": "dynamohistory"
+          }
+        }
+      }
+    },
+    "readonly": {
+      "module": "dummycopy:DummyCopyInterface",
+      "config": {}
+    }
+  },
+  "operation.deletion:DeletionInterface": {
+    "fullauth": {
+      "module": "foddeletion:FODDeletionInterface",
+      "config": {
+        "fod": {
+          "db": {
+            "db_params": {
+              "user": "dynamofod",
+              "passwd": "",
+              "host": "localhost",
+              "db": "dynamo"
+            },
+            "history": "dynamohistory"
+          }
+        }
+      }
+    },
+    "readonly": {
+      "module": "dummydeletion:DummyDeletionInterface",
+      "config": {}
+    }
+  },
   "utils.interface.mysql:MySQL": {
     "fullauth": {
       "user": "dynamo",

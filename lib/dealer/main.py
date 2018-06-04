@@ -369,7 +369,7 @@ class Dealer(object):
                                 for block in item.blocks:
                                     block_replica = BlockReplica(block, site, group, size = 0)
                                     if BlockReplica._use_file_ids:
-                                        block_replica.file_ids = (,)
+                                        block_replica.file_ids = tuple()
 
                                     inventory.update(block_replica)
                         else:
