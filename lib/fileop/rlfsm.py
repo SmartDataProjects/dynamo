@@ -328,10 +328,13 @@ class RLFSM(object):
         """
         if block_replica.file_ids is None:
             # replica supposedly has all files
+            LOG.info('No files to subscribe for %s', str(block_replica))
             return
 
         all_ids = set(f.id for f in block_replica.block.files)
         missing_ids = all_ids - set(block_replica.file_ids)
+
+        LOG.info('Subscribing %d files from %s', len(missing_ids), str(block_replica))
 
         site_id = block_replica.site.id
 
@@ -354,6 +357,8 @@ class RLFSM(object):
             file_ids = (f.id for f in block_replica.block.files)
         else:
             file_ids = block_replica.file_ids
+
+        LOG.info('Desubscribing %d files from %s', len(file_ids), str(block_replica))
 
         # local time
         now = time.strftime('%Y-%m-%d %H:%M:%S')
