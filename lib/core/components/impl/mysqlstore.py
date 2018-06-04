@@ -1019,7 +1019,7 @@ class MySQLInventoryStore(InventoryStore):
             sql = 'DELETE FROM `{table}` WHERE `block_id` = %s AND `site_id` = %s'.format(table = table)
             self._mysql.query(sql, block_id, site_id)
         else:
-            if BlockReplica._use_file_ids:
+            if BlockReplica._use_file_ids and block_replica.file_ids is not None:
                 fields = ('block_id', 'site_id', 'file_id')
                 mapping = lambda fid: (block_id, site_id, fid)
                 self._mysql.insert_many('block_replica_files', fields, mapping, block_replica.file_ids)
