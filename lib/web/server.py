@@ -6,6 +6,7 @@ import json
 import logging
 import socket
 import collections
+import multiprocessing
 from cgi import FieldStorage
 from flup.server.fcgi_fork import WSGIServer
 
@@ -27,9 +28,14 @@ class WebServer(object):
         self.modules_config = config.modules_config.clone()
         self.dynamo_server = dynamo_server
 
-        self.min_idle = config.get('min_idle', 1)
-        self.max_idle = config.get('max_idle', 5)
-        self.max_procs = config.get('max_procs', 10)
+        # Preforked WSGI server
+        # Preforking = have at minimum min_idle and at maximum max_idle child processes listening to the out-facing port.
+        # There can be at most max_procs children. Each child process is single-use to ensure changes to shared resources (e.g. inventory)
+        # made in a child process does not affect the other processes.
+        prefork_config = {'minSpare': config.get('min_idle', 1), 'maxSpare': config.get('max_idle', 5), 'maxChildren': config.get('max_procs', 10), 'maxRequests': 1}
+        self.wsgi_server = WSGIServer(self.main, bindAddress = config.socket, umask = 0, **prefork_config)
+
+        self.server_proc = None
 
         HTMLMixin.contents_path = config.contents_path
         # common mixin class used by all page-generating modules
@@ -44,31 +50,34 @@ class WebServer(object):
         self.debug = config.get('debug', False)
 
     def start(self):
-        while self.dynamo_server.inventory is None or not self.dynamo_server.inventory.loaded:
-            # Server is starting
-            time.sleep(2)
+        if self.server_proc and self.server_proc.is_alive():
+            raise RuntimeError('Web server is already running')
 
-        # Preforked WSGI server
-        # Preforking = have at minimum min_idle and at maximum max_idle child processes listening to the out-facing port.
-        # There can be at most max_procs children. Each child process is single-use to ensure changes to shared resources (e.g. inventory)
-        # made in a child process does not affect the other processes.
-        prefork_config = {'minSpare': self.min_idle, 'maxSpare': self.max_idle, 'maxChildren': self.max_procs, 'maxRequests': 1}
+        self.server_proc = multiprocessing.Process(target = self._serve)
+        self.server_proc.daemon = True
+        self.server_proc.start()
 
-        wsgi = WSGIServer(self.main, bindAddress = self.socket, umask = 0, **prefork_config)
+        LOG.info('Started web server (PID %d).', self.server_proc.pid)
 
-        while True:
-            try:
-                # run() returns True iff the process is interrupted with SIGHUP. We exploit this feature and raise SIGHUP from DynamoServer whenever
-                # there is an update to the inventory.
-                stopped_for_reset = wsgi.run()
-            except SystemExit as exc:
-                # Server subprocesses terminate with sys.exit and land here
-                # Because sys.exit performs garbage collection, which can disrupt shared resources (e.g. close connection to DB)
-                # we need to translate it to os._exit
-                os._exit(exc.code)
+    def stop(self):
+        LOG.info('Stopping web server (PID %d).', self.server_proc.pid)
 
-            if not stopped_for_reset:
-                break
+        self.server_proc.terminate()
+        LOG.debug('Waiting for web server to join.')
+        self.server_proc.join()
+        LOG.debug('Web server joined.')
+
+        self.server_proc = None
+
+    def _serve(self):
+        try:
+            self.wsgi_server.run()
+        except SystemExit as exc:
+            LOG.debug('Web server subprocess %d exiting', os.getpid())
+            # Server subprocesses terminate with sys.exit and land here
+            # Because sys.exit performs garbage collection, which can disrupt shared resources (e.g. close connection to DB)
+            # we need to translate it to os._exit
+            os._exit(exc.code)
 
     def main(self, environ, start_response):
         """
@@ -164,7 +173,7 @@ class WebServer(object):
 
         try:
             ## Step 4
-            if environ['CONTENT_TYPE'] == 'application/json':
+            if 'CONTENT_TYPE' in environ and environ['CONTENT_TYPE'] == 'application/json':
                 try:
                     request = json.loads(environ['wsgi.input'].read())
                 except:
