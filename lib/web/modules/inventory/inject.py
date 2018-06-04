@@ -217,10 +217,9 @@ class InjectData(WebModule):
                 num_datasetreplicas += 1
 
             else:
-                if len(dataset.replicas) > 1 or next(dataset.replicas).site is not site:
+                replica = list(dataset.replicas)[0]
+                if len(dataset.replicas) > 1 or replica.site is not site:
                     raise InvalidRequest('Dataset %s already has a replica.' % dataset.name)
-
-                replica = next(dataset.replicas)
 
             if blockreplicas is not None:
                 self._make_blockreplicas(blockreplicas, replica, inventory, counts)
@@ -371,7 +370,7 @@ class InjectData(WebModule):
                 num_blockreplicas += 1
 
             else:
-                if len(block.replicas) > 1 or next(block.replicas).site is not site:
+                if len(block.replicas) > 1 or list(block.replicas)[0].site is not site:
                     raise InvalidRequest('Block %s already has a replica.' % block.full_name())                
 
         counts['blockreplicas'] = num_blockreplicas
