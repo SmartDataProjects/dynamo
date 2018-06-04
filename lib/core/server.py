@@ -517,7 +517,18 @@ class DynamoServer(object):
 
         read_state, update_commands = self._collect_updates()
 
-        if read_state == 1:
+        if read_state == 0:
+            pid = self.manager.master.get_web_write_process_id()
+            try:
+                os.kill(pid, 0) # poll the process
+            except OSError:
+                # no such process
+                pass
+            else:
+                # process is still running
+                return
+
+        elif read_state == 1:
             self.update_inventory(update_commands)
 
         self.manager.master.stop_write_web()

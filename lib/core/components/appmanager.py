@@ -44,6 +44,12 @@ class AppManager(object):
         """
         raise NotImplementedError('get_writing_process_host')
 
+    def get_web_write_process_id(self):
+        """
+        Return the PID of the web write process.
+        """
+        raise NotImplementedError('get_web_write_process_id')
+
     def schedule_application(self, title, path, args, user, host, write_request):
         """
         Schedule an application to the master server.
@@ -95,10 +101,11 @@ class AppManager(object):
         """
         raise NotImplementedError('delete_application')
 
-    def start_write_web(self, host):
+    def start_write_web(self, host, pid):
         """
         Web interfaces are not quite applications, but they require write locks too.
         @param host   Host name of the web server
+        @param pid    PID of the writing process
         """
         raise NotImplementedError('start_write_web')
 
