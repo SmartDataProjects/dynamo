@@ -68,7 +68,7 @@ class DynamoServer(object):
                 self.inventory_load_opts[objs] = (included, excluded)
 
         ## Queue to send / receive inventory updates
-        self.inventory_update_queue = multiprocessing.Queue()
+        self.inventory_update_queue = multiprocessing.JoinableQueue()
 
         ## Recipient of error message emails
         self.notification_recipient = config.notification_recipient
