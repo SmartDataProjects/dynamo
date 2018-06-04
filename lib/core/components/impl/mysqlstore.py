@@ -46,6 +46,9 @@ class MySQLInventoryStore(InventoryStore):
             else:
                 partitions[name] = Partition(name, condition = condition, pid = part_id)
 
+        for name in set(conditions.iterkeys()) - set(partitions.iterkeys()):
+            LOG.warning('Unknown partition %s defined in the conditions file', name)
+
         # set subpartitions for superpartitions
         for partition in partitions.itervalues():
             if partition._condition is not None:

@@ -11,7 +11,7 @@ from dynamo.operation.copy import CopyInterface
 from dynamo.history.history import TransactionHistoryInterface
 from dynamo.utils.signaling import SignalBlocker
 import dynamo.dealer.plugins as dealer_plugins
-import dynamo.policy.producers as get_producers
+from dynamo.policy.producers import get_producers
 
 LOG = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ class Dealer(object):
         n_nonzero_prio = 0
         for name, spec in config.plugins.items():
             modname, _, clsname = spec.module.partition(':')
-            cls = getattr(__import__('dynamo.dealer.plugins', globals(), locals(), [clsname]), clsname)
+            cls = getattr(__import__('dynamo.dealer.plugins.' + modname, globals(), locals(), [clsname]), clsname)
             plugin = cls(spec.config)
             plugin.read_only = is_test_run
             self._plugin_priorities[plugin] = spec.priority

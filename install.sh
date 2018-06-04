@@ -60,6 +60,7 @@ warnifnot rpm -q condor-python
 warnifnot rpm -q rrdtool-python
 warnifnot rpm -q python-fts
 warnifnot rpm -q python-requests
+warnifnot rpm -q pyliblzma
 require rpm -q sqlite
 if [ "$APPSERVER" = "true" ]
 then
