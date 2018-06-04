@@ -200,16 +200,14 @@ class InjectData(WebModule):
                         group = inventory.groups[group_name]
                     except KeyError:
                         raise InvalidRequest('Unknown group %s' % group_name)
-
-                # "origin" dataset replica cannot be growing
-                obj['growing'] = False
     
                 try:
                     blockreplicas = obj['blockreplicas']
                 except KeyError:
                     blockreplicas = None
-    
-                new_replica = df.DatasetReplica(dataset, site, growing = growing, group = group)
+
+                # "origin" dataset replica cannot be growing    
+                new_replica = df.DatasetReplica(dataset, site, growing = False, group = group)
     
                 try:
                     replica = inventory.update(new_replica)
