@@ -192,6 +192,7 @@ class WebServer(object):
 
             if obj.write_enabled:
                 serverutils.send_updates(inventory, self.dynamo_server.inventory_update_queue)
+                self.dynamo_server.inventory_update_queue.join()
             
         except exceptions.AuthorizationError:
             start_response('403 Forbidden', [('Content-Type', 'text/plain')])

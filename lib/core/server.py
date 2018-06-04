@@ -493,10 +493,15 @@ class DynamoServer(object):
                 else:
                     return 0, update_commands
             else:
+                self.inventory_update_queue.task_done()
+
                 reading = True # Now we have to read until the end - start blocking queue.get
 
                 if LOG.getEffectiveLevel() == logging.DEBUG:
-                    LOG.debug('From queue: %d %s', cmd, objstr)
+                    if cmd == DynamoInventory.CMD_UPDATE:
+                        LOG.debug('Update %d from queue: %s', updates_received, objstr)
+                    elif cmd == DynamoInventory.CMD_DELETE:
+                        LOG.debug('Delete %d from queue: %s', deletes_received, objstr)
 
                 if cmd == DynamoInventory.CMD_UPDATE:
                     updates_received += 1
@@ -532,7 +537,7 @@ class DynamoServer(object):
                 return
 
         elif read_state == 1:
-            LOG.debug('Updating the inventory.')
+            LOG.info('Updating the inventory with data sent from web.')
             self.update_inventory(update_commands)
 
         LOG.debug('Releasing write lock.')
