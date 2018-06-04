@@ -27,9 +27,9 @@ class WebServer(object):
         self.modules_config = config.modules_config.clone()
         self.dynamo_server = dynamo_server
 
-        self.min_idle = config.min_idle
-        self.max_idle = config.max_idle
-        self.max_procs = config.max_procs
+        self.min_idle = config.get('min_idle', 1)
+        self.max_idle = config.get('max_idle', 5)
+        self.max_procs = config.get('max_procs', 10)
 
         HTMLMixin.contents_path = config.contents_path
         # common mixin class used by all page-generating modules
@@ -152,7 +152,7 @@ class WebServer(object):
                     start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
                     return 'Server cannot execute %s/%s at the moment because the inventory is being updated.\n' % (module, command)
                 else:
-                    self.dynamo_server.manager.master.start_write_web(socket.gethostname())
+                    self.dynamo_server.manager.master.start_write_web(socket.gethostname(), os.getpid())
                     # stop is called from the DynamoServer upon successful inventory update
 
             except:

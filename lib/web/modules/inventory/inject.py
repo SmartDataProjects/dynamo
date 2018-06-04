@@ -1,9 +1,12 @@
 import time
+import logging
 
 from dynamo.web.exceptions import MissingParameter, IllFormedRequest, InvalidRequest, AuthorizationError
 from dynamo.web.modules._base import WebModule
 from dynamo.fileop.rlfsm import RLFSM
 import dynamo.dataformat as df
+
+LOG = logging.getLogger(__name__)
 
 class InjectData(WebModule):
     def __init__(self, config):

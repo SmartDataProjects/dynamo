@@ -73,6 +73,9 @@ class MySQLAppManager(AppManager):
         else:
             return result[0]
 
+    def get_web_write_process_id(self): #override
+        return self._mysql.query('SELECT `user_id` FROM `applications` WHERE `id` = 0')[0]
+
     def schedule_application(self, title, path, args, user, host, write_request): #override
         result = self._mysql.query('SELECT `id` FROM `users` WHERE `name` = %s', user)
         if len(result) == 0:
@@ -135,13 +138,14 @@ class MySQLAppManager(AppManager):
     def delete_application(self, app_id): #override
         self._mysql.query('DELETE FROM `applications` WHERE `id` = %s', app_id)
 
-    def start_write_web(self, host): #override
-        sql = 'UPDATE `applications` SET `status` = \'run\', `server` = %s, `user_host` = %s WHERE `id` = 0'
-        self._mysql.query(sql, host, host)
+    def start_write_web(self, host, pid): #override
+        # repurposing user_id for pid
+        sql = 'UPDATE `applications` SET `status` = \'run\', `server` = %s, `user_host` = %s, `user_id` = %s WHERE `id` = 0'
+        self._mysql.query(sql, host, host, pid)
 
     def stop_write_web(self): #override
         # We don't actually use the host name because there is only one slot for web write anyway
-        sql = 'UPDATE `applications` SET `status` = \'done\', `server` = \'\', `user_host` = \'\' WHERE `id` = 0'
+        sql = 'UPDATE `applications` SET `status` = \'done\', `server` = \'\', `user_host` = \'\', `user_id` = 0 WHERE `id` = 0'
         self._mysql.query(sql)
 
     def check_application_auth(self, title, user, checksum): #override
