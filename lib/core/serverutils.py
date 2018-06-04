@@ -305,6 +305,9 @@ def send_updates(inventory, queue):
     # Put end-of-message
     queue.put((DynamoInventory.CMD_EOM, None))
 
+    # Wait until all messages are received
+    queue.join()
+
 def post_execution(path, is_local):
     if not is_local:
         # jobs were confined in a chroot jail
