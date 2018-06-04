@@ -721,9 +721,9 @@ class MySQLInventoryStore(InventoryStore):
         columns = ', '.join('`%s`' % n for n in (('id',) + Dataset.SoftwareVersion.field_names))
         sql = 'SELECT {columns} FROM `software_versions`'.format(columns = columns)
 
-        for vid, cycle, major, minor, suffix in self._mysql.xquery(sql):
-            value = (cycle, major, minor, suffix)
-            version = Dataset.SoftwareVersion(value, vid)
+        for row in self._mysql.xquery(sql):
+            value = row[1:]
+            version = Dataset.SoftwareVersion(value, row[0])
             Dataset._software_versions_byid[vid] = version
             Dataset._software_versions_byvalue[value] = version
 
