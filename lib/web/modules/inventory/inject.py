@@ -320,7 +320,8 @@ class InjectData(WebModule):
     
                 num_files += 1
 
-        inventory.register_update(block)
+        if num_files != 0:
+            inventory.register_update(block)
 
         try:
             counts['files'] += num_files

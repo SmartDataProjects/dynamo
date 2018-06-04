@@ -295,6 +295,7 @@ def send_updates(inventory, queue):
             queue.put((cmd, objstr))
         except:
             sys.stderr.write('Exception while sending %s %s\n' % (DynamoInventory._cmd_str[cmd], objstr))
+            sys.stderr.flush()
             raise
 
     if nobj != 0:
