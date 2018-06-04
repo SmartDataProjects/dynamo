@@ -722,8 +722,9 @@ class MySQLInventoryStore(InventoryStore):
         sql = 'SELECT {columns} FROM `software_versions`'.format(columns = columns)
 
         for row in self._mysql.xquery(sql):
+            vid = row[0]
             value = row[1:]
-            version = Dataset.SoftwareVersion(value, row[0])
+            version = Dataset.SoftwareVersion(value, vid)
             Dataset._software_versions_byid[vid] = version
             Dataset._software_versions_byvalue[value] = version
 
