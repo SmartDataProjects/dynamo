@@ -1,6 +1,5 @@
 {
   "rlfsm": {
-    "protocol": "gfal2",
     "db": {
       "db_params": {
         "db": "dynamo",

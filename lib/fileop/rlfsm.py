@@ -53,9 +53,6 @@ class RLFSM(object):
 
 
     def __init__(self, config):
-        # Transfer protocol to use (necessary for LFN-to-PFN mapping)
-        self.protocol = config.protocol
-
         # Handle to the inventory DB
         self.db = MySQL(config.db.db_params)
 
@@ -63,7 +60,11 @@ class RLFSM(object):
         self.history_db = config.db.history
 
         # FileTransferOperation backend (can make it a map from (source, dest) to operator)
-        self.transfer_operation = FileTransferOperation.get_instance(config.transfer.module, config.transfer.config)
+        if 'transfer' in config:
+            self.transfer_operation = FileTransferOperation.get_instance(config.transfer.module, config.transfer.config)
+        else:
+            # if all you need to do is make subscriptions
+            self.transfer_operation = None
 
         # QueryOperation backend
         if 'transfer_query' in config:
