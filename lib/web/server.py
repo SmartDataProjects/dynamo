@@ -44,6 +44,10 @@ class WebServer(object):
         self.debug = config.get('debug', False)
 
     def start(self):
+        while self.dynamo_server.inventory is None or not self.dynamo_server.inventory.loaded:
+            # Server is starting
+            time.sleep(2)
+
         # Preforked WSGI server
         # Preforking = have at minimum min_idle and at maximum max_idle child processes listening to the out-facing port.
         # There can be at most max_procs children. Each child process is single-use to ensure changes to shared resources (e.g. inventory)
@@ -76,10 +80,6 @@ class WebServer(object):
         5. Call the run() function of the module class.
         6. Respond.
         """
-
-        if self.dynamo_server.inventory is None:
-            start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
-            return 'Server is starting. Please try again later.\n'
 
         ## Step 1
         if environ['REQUEST_SCHEME'] == 'http':

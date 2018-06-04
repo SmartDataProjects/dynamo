@@ -27,7 +27,7 @@ class InjectData(WebModule):
             raise AuthorizationError()
 
         if type(request) is not dict:
-            raise IllFormedRequest('request', type(request).__name__, hint = '"data" must be a dict type')
+            raise IllFormedRequest('request', type(request).__name__, hint = 'data must be a dict type')
 
         counts = {}
 
@@ -309,7 +309,7 @@ class InjectData(WebModule):
                     obj['name'] = lfn
                     raise IllFormedRequest('file', str(obj), hint = str(exc))
 
-                block.size += lfile.size
+                block.size += new_lfile.size
                 block.num_files += 1
                 inventory.update(block)
 
