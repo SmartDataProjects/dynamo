@@ -23,7 +23,7 @@ def Block_from_full_name(full_name):
     if delim == -1:
         raise ObjectError('Invalid block name %s' % full_name)
 
-    return full_name[:delim], full_name[delim + 1:]
+    return full_name[:delim], Block_to_internal_name(full_name[delim + 1:])
 
 def Site_to_pfn(self, lfn, protocol):
     return self.backend + lfn
