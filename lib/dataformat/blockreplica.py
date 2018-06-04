@@ -28,25 +28,32 @@ class BlockReplica(object):
         self._site = site
         self.group = group
         self.is_custodial = is_custodial
-        if size < 0 and type(block) is not str:
-            self.size = block.size
-        else:
-            self.size = size
         self.last_update = last_update
 
-        # tuple of file ids for incomplete replicas
-        if file_ids is None:
+        if size < 0 and type(block) is not str:
+            self.size = block.size
             self.file_ids = None
+        elif size == 0:
+            self.size = 0
+            if BlockReplica._use_file_ids:
+                self.file_ids = tuple()
+            else:
+                self.file_ids = None
         else:
-            # some iterable
-            tmplist = []
-            for fid in file_ids:
-                if type(fid) is str:
-                    tmplist.append(self._block.find_file(fid, must_find = True).id)
-                else:
-                    tmplist.append(fid)
+            self.size = size
 
-            self.file_ids = tuple(tmplist)
+            if file_ids is None or not BlockReplica._use_file_ids:
+                self.file_ids = None
+            else:
+                # some iterable
+                tmplist = []
+                for fid in file_ids:
+                    if type(fid) is str:
+                        tmplist.append(self._block.find_file(fid, must_find = True).id)
+                    else:
+                        tmplist.append(fid)
+    
+                self.file_ids = tuple(tmplist)
 
     def __str__(self):
         return 'BlockReplica %s:%s (group=%s, size=%d, last_update=%s)' % \
