@@ -188,13 +188,13 @@ class BlockReplica(object):
 
     def _block_real_name(self):
         if type(self._block) is str:
-            return Block.from_full_name(self._block)[1]
+            return Block.to_real_name(Block.from_full_name(self._block)[1])
         else:
             return self._block.real_name()
 
     def _block_name(self):
         if type(self._block) is str:
-            return Block.to_internal_name(self._block_real_name())
+            return Block.from_full_name(self._block)[1]
         else:
             return self._block.name
 

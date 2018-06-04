@@ -189,6 +189,11 @@ class InjectData(WebModule):
                 except KeyError:
                     raise InvalidRequest('Unknown site %s' % site_name)
 
+            try:
+                blockreplicas = obj['blockreplicas']
+            except KeyError:
+                blockreplicas = None
+
             if len(dataset.replicas) == 0:
                 # new replica
                 try:
@@ -201,11 +206,6 @@ class InjectData(WebModule):
                     except KeyError:
                         raise InvalidRequest('Unknown group %s' % group_name)
     
-                try:
-                    blockreplicas = obj['blockreplicas']
-                except KeyError:
-                    blockreplicas = None
-
                 # "origin" dataset replica cannot be growing    
                 new_replica = df.DatasetReplica(dataset, site, growing = False, group = group)
     

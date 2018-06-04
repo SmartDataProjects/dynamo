@@ -224,6 +224,29 @@ class RLFSM(object):
             start_deletions(batch_tasks)
 
     def update_inventory(self, inventory):
+        def update_replica(replica, file_ids, projected):
+            if replica is None:
+                return
+
+            if len(file_ids) == 0 and len(projected) == 0:
+                inventory.delete(replica)
+            else:
+                full_file_ids = set(f.id for f in replica.block.files)
+
+                if file_ids == full_file_ids:
+                    replica.file_ids = None
+                    inventory.register_update(replica)
+                else:
+                    if replica.file_ids is None:
+                        existing_file_ids = full_file_ids
+                    else:
+                        existing_file_ids = set(replica.file_ids)
+
+                    if file_ids != existing_file_ids:
+                        replica.file_ids = tuple(file_ids)
+                        inventory.register_update(replica)
+
+
         ## List all subscriptions in block, site, time order
         sql = 'SELECT u.`id`, u.`status`, u.`delete`, d.`name`, b.`name`, u.`file_id`, s.`name` FROM `file_subscriptions` AS u'
         sql += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
@@ -265,15 +288,15 @@ class RLFSM(object):
                 site = inventory.sites[site_name]
         
             if replica is None or replica.block != block or replica.site != site:
-                if replica is not None and file_ids != set(replica.file_ids):
-                    if len(file_ids) == 0 and len(projected) == 0:
-                        inventory.delete(replica)
-                    elif file_ids != set(replica.file_ids):
-                        replica.file_ids = tuple(file_ids)
-                        inventory.register_update(replica)
+                # check updates for previous replica
+                update_replica(replica, file_ids, projected)
 
                 replica = block.find_replica(site)
-                file_ids = set(replica.file_ids)
+                if replica.file_ids is None:
+                    file_ids = set(f.id for f in block.files)
+                else:
+                    file_ids = set(replica.file_ids)
+
                 projected.clear()
         
             if optype == COPY:
@@ -292,13 +315,8 @@ class RLFSM(object):
                         file_ids.remove(file_id)
                     except KeyError:
                         pass
-        
-        if replica is not None:
-            if len(file_ids) == 0 and len(projected) == 0:
-                inventory.delete(replica)
-            elif file_ids != set(replica.file_ids):
-                replica.file_ids = tuple(file_ids)
-                inventory.register_update(replica)
+
+        update_replica(replica, file_ids, projected)
 
         if not self.dry_run:
             # this is dangerous - what if inventory fails to update on the server side?
@@ -308,6 +326,10 @@ class RLFSM(object):
         """
         Make subscriptions of missing files in the block replica.
         """
+        if block_replica.file_ids is None:
+            # replica supposedly has all files
+            return
+
         all_ids = set(f.id for f in block_replica.block.files)
         missing_ids = all_ids - set(block_replica.file_ids)
 
@@ -328,6 +350,11 @@ class RLFSM(object):
         """
         site_id = block_replica.site.id
 
+        if block_replica.file_ids is None:
+            file_ids = (f.id for f in block_replica.block.files)
+        else:
+            file_ids = block_replica.file_ids
+
         # local time
         now = time.strftime('%Y-%m-%d %H:%M:%S')
 
@@ -335,7 +362,7 @@ class RLFSM(object):
         mapping = lambda f: (f, site_id, 1, now)
 
         if not self.dry_run:
-            self.db.insert_many('file_subscriptions', fields, mapping, block_replica.file_ids)
+            self.db.insert_many('file_subscriptions', fields, mapping, file_ids)
 
     def _update_subscription_status(self):
         insert_file = 'INSERT INTO `{history}`.`files` (`name`)'
