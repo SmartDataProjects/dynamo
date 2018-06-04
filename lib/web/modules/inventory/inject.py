@@ -380,7 +380,10 @@ class InjectData(WebModule):
                 if len(block.replicas) > 1 or list(block.replicas)[0].site is not site:
                     raise InvalidRequest('Block %s already has a replica.' % block.full_name())                
 
-        counts['blockreplicas'] = num_blockreplicas
+        try:
+            counts['blockreplicas'] += num_blockreplicas
+        except KeyError:
+            counts['blockreplicas'] = num_blockreplicas
 
 # exported to __init__.py
 export_data = {'inject': InjectData}
