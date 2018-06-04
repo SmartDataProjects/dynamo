@@ -78,15 +78,15 @@ class InjectData(WebModule):
                     pass
     
                 try:
-                    obj['software_version'] = Dataset.format_software_version(obj['software_version'])
+                    obj['software_version'] = df.Dataset.format_software_version(obj['software_version'])
                 except KeyError:
                     pass
     
                 try:
                     new_dataset = df.Dataset(name, **obj)
-                except TypeError:
+                except TypeError as exc:
                     obj['name'] = name
-                    raise IllFormedRequest('dataset', str(obj))
+                    raise IllFormedRequest('dataset', str(obj), hint = str(exc))
     
                 try:
                     dataset = inventory.update(new_dataset)
@@ -120,9 +120,9 @@ class InjectData(WebModule):
     
                 try:
                     new_site = df.Site(name, **obj)
-                except TypeError:
+                except TypeError as exc:
                     obj['name'] = name
-                    raise IllFormedRequest('site', str(obj))
+                    raise IllFormedRequest('site', str(obj), hint = str(exc))
     
                 try:
                     inventory.update(new_site)
@@ -151,9 +151,9 @@ class InjectData(WebModule):
     
                 try:
                     new_group = df.Group(name, **obj)
-                except TypeError:
+                except TypeError as exc:
                     obj['name'] = name
-                    raise IllFormedRequest('group', str(obj))
+                    raise IllFormedRequest('group', str(obj), hint = str(exc))
     
                 try:
                     inventory.update(new_group)
@@ -257,9 +257,9 @@ class InjectData(WebModule):
                 # new block
                 try:
                     new_block = df.Block(internal_name, dataset = dataset, **obj)
-                except TypeError:
+                except TypeError as exc:
                     obj['name'] = name
-                    raise IllFormedRequest('block', str(obj))
+                    raise IllFormedRequest('block', str(obj), hint = str(exc))
 
                 block = inventory.update(new_block)
     
@@ -305,9 +305,9 @@ class InjectData(WebModule):
                 # new file
                 try:
                     new_lfile = df.File(lfn, block = block, **obj)
-                except TypeError:
+                except TypeError as exc:
                     obj['name'] = lfn
-                    raise IllFormedRequest('file', str(obj))
+                    raise IllFormedRequest('file', str(obj), hint = str(exc))
 
                 block.size += lfile.size
                 block.num_files += 1
@@ -363,10 +363,10 @@ class InjectData(WebModule):
     
                 try:
                     new_replica = df.BlockReplica(block, site, group, **obj)
-                except TypeError:
+                except TypeError as exc:
                     obj['block'] = block_name
                     obj['group'] = group_name
-                    raise IllFormedRequest('blockreplica', str(obj))
+                    raise IllFormedRequest('blockreplica', str(obj), hint = str(exc))
 
                 inventory.update(new_replica)
 
