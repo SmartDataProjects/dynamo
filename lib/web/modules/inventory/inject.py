@@ -271,10 +271,6 @@ class InjectData(WebModule):
                     if replica.growing:
                         # For growing replicas, we automatically create new block replicas
                         blockreplica = {'block': block.real_name(), 'site': replica.site.name, 'group': replica.group.name, 'size': 0, 'last_update': time.time()}
-
-                        if df.BlockReplica._use_file_ids:
-                            blockreplica['file_ids'] = tuple()
-
                         self._make_blockreplicas([blockreplica], replica, inventory, counts)
 
                 num_blocks += 1

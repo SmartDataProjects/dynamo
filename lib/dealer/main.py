@@ -367,11 +367,7 @@ class Dealer(object):
                                 inventory.update(DatasetReplica(item, site, growing = True, group = group))
 
                                 for block in item.blocks:
-                                    block_replica = BlockReplica(block, site, group, size = 0)
-                                    if BlockReplica._use_file_ids:
-                                        block_replica.file_ids = tuple()
-
-                                    inventory.update(block_replica)
+                                    inventory.update(BlockReplica(block, site, group, size = 0))
                         else:
                             dataset_sizes[item.dataset] += item.size
                             if approved:
