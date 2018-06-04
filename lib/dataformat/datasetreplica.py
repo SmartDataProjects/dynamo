@@ -39,7 +39,7 @@ class DatasetReplica(object):
         return 'DatasetReplica(%s,%s,%s,%s)' % (repr(self._dataset_name()), repr(self._site_name()), self.growing, repr(self._group_name()))
 
     def __eq__(self, other):
-        return self is other or (self._dataset_name() == other._dataset_name() and self._site_name() == other._site_name() and self.growing == other.growing and self.group == other.group)
+        return self is other or (self._dataset_name() == other._dataset_name() and self._site_name() == other._site_name() and self.growing == other.growing and self._group_name() == other._group_name())
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -64,11 +64,19 @@ class DatasetReplica(object):
         except KeyError:
             raise ObjectError('Unknown site %s', self._site_name())
 
+        if self._group_name() is not None:
+            try:
+                group = inventory.groups[self._group_name()]
+            except KeyError:
+                raise ObjectError('Unknown group %s' % (self._group_name()))
+        else:
+            group = None
+
         replica = dataset.find_replica(site)
         updated = False
 
         if replica is None:
-            replica = DatasetReplica(dataset, site)
+            replica = DatasetReplica(dataset, site, self.growing, group)
     
             dataset.replicas.add(replica)
             site.add_dataset_replica(replica, add_block_replicas = False)
@@ -79,6 +87,10 @@ class DatasetReplica(object):
             pass
         else:
             replica.copy(self)
+            if type(self.group) is str or self.group is None:
+                # can happen if self is an unlinked clone
+                replica.group = group
+
             updated = True
 
         if check:

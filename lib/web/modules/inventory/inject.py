@@ -313,13 +313,14 @@ class InjectData(WebModule):
 
                 block.size += new_lfile.size
                 block.num_files += 1
-                inventory.update(block)
 
                 lfile = inventory.update(new_lfile)
 
                 added_new_file = True
     
                 num_files += 1
+
+        inventory.register_update(block)
 
         try:
             counts['files'] += num_files
