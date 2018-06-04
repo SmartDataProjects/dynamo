@@ -1,6 +1,10 @@
+import logging
+
 from dynamo.operation.copy import CopyInterface
 from dynamo.dataformat import DatasetReplica
 from dynamo.fileop.rlfsm import RLFSM
+
+LOG = logging.getLogger(__name__)
 
 class FODCopyInterface(CopyInterface):
     """
@@ -17,6 +21,8 @@ class FODCopyInterface(CopyInterface):
         Note: FOD does not have a concept of operation id.
         """
 
+        LOG.info('Scheduling copy of %s using RLFSM', str(replica))
+
         if type(replica) is DatasetReplica:
             for block_replica in replica.block_replicas:
                 self.rlfsm.subscribe_files(block_replica)
@@ -28,6 +34,8 @@ class FODCopyInterface(CopyInterface):
             return {0: (True, replica.site, [replica.block])}
 
     def schedule_copies(self, replica_list, comments = ''): #override
+        LOG.info('Scheduling copy of %d replicas using RLFSM', len(replica_list))
+
         items_by_site = {}
         for replica in replica_list:
             if replica.site not in items_by_site:
@@ -35,10 +43,12 @@ class FODCopyInterface(CopyInterface):
 
             if type(replica) is DatasetReplica:
                 for block_replica in replica.block_replicas:
+                    LOG.debug('Subscribing files for %s', str(block_replica))
                     self.rlfsm.subscribe_files(block_replica)
 
                 items_by_site[replica.site].append(replica.dataset)
             else:
+                LOG.debug('Subscribing files for %s', str(replica))
                 self.rlfsm.subscribe_files(replica)
 
                 items_by_site[replica.site].append(replica.block)

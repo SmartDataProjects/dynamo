@@ -1,6 +1,10 @@
+import logging
+
 from dynamo.operation.deletion import DeletionInterface
 from dynamo.dataformat import DatasetReplica
 from dynamo.fileop.rlfsm import RLFSM
+
+LOG = logging.getLogger(__name__)
 
 class FODDeletionInterface(DeletionInterface):
     """
@@ -17,6 +21,8 @@ class FODDeletionInterface(DeletionInterface):
         Note: FOD does not have a concept of operation id.
         """
 
+        LOG.info('Scheduling deletion of %s using RLFSM', str(replica))
+
         if type(replica) is DatasetReplica:
             for block_replica in replica.block_replicas:
                 self.rlfsm.desubscribe_files(block_replica)
@@ -28,6 +34,8 @@ class FODDeletionInterface(DeletionInterface):
             return {0: (True, replica.site, [replica.block])}
 
     def schedule_deletions(self, replica_list, comments = ''): #override
+        LOG.info('Scheduling deletion of %d replicas using RLFSM', len(replica_list))
+
         items_by_site = {}
         for replica in replica_list:
             if replica.site not in items_by_site:
