@@ -7,6 +7,5 @@ CREATE TABLE `blocks` (
   `is_open` tinyint(1) NOT NULL,
   `last_update` datetime NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `name` (`name`),
-  KEY `datasets` (`dataset_id`)
+  UNIQUE KEY `full_name` (`dataset_id`,`name`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;
