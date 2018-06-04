@@ -150,7 +150,7 @@ class WebServer(object):
                     # We need to give up here instead of waiting, because the web server processes will be flushed out as soon as
                     # inventory is updated after the current writing process is done
                     start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
-                    return 'Server cannot execute %s/%s at the moment because the inventory is being updated.\n'
+                    return 'Server cannot execute %s/%s at the moment because the inventory is being updated.\n' % (module, command)
                 else:
                     self.dynamo_server.manager.master.start_write_web(socket.gethostname())
                     # stop is called from the DynamoServer upon successful inventory update

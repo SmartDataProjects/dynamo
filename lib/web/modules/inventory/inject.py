@@ -1,13 +1,16 @@
 import time
 
-from dynamo.web.exceptions import MissingParameter, IllFormedRequest, AuthorizationError
+from dynamo.web.exceptions import MissingParameter, IllFormedRequest, InvalidRequest, AuthorizationError
 from dynamo.web.modules._base import WebModule
+from dynamo.fileop.rlfsm import RLFSM
 import dynamo.dataformat as df
 
 class InjectData(WebModule):
     def __init__(self, config):
         WebModule.__init__(self, config)
         self.write_enabled = True
+
+        self.rlfsm = RLFSM(config.rlfsm)
 
     def run(self, caller, request, inventory):
         """
@@ -26,7 +29,9 @@ class InjectData(WebModule):
         counts = {}
 
         if 'dataset' in request:
-            self._make_datasets(request['dataset'], inventory, counts)
+            blocks_with_new_file = self._make_datasets(request['dataset'], inventory, counts)
+        else:
+            blocks_with_new_file = []
 
         if 'site' in request:
             self._make_sites(request['site'], inventory, counts)
@@ -37,10 +42,17 @@ class InjectData(WebModule):
         if 'datasetreplica' in request:
             self._make_datasetreplicas(request['datasetreplica'], inventory, counts)
 
+        # Do this here to minimize the risk of creating invalid subscriptions
+        for block in blocks_with_new_file:
+            for replica in block.replicas:
+                self.rlfsm.subscribe_files(replica)
+
         return counts
 
     def _make_datasets(self, objects, inventory, counts):
         num_datasets = 0
+
+        blocks_with_new_file = []
 
         for obj in objects:
             try:
@@ -49,39 +61,43 @@ class InjectData(WebModule):
                 raise MissingParameter('name', context = 'dataset ' + str(obj))
 
             try:
-                obj.pop('did')
-            except KeyError:
-                pass
-
-            try:
                 blocks = obj.pop('blocks')
             except KeyError:
                 blocks = None
 
             try:
-                obj['software_version'] = Dataset.format_software_version(obj['software_version'])
+                dataset = inventory.datasets[name]
             except KeyError:
-                pass
-
-            try:
-                dataset = df.Dataset(name, **obj)
-            except TypeError:
-                obj['name'] = name
-                raise IllFormedRequest('dataset', str(obj))
-
-            try:
-                embedded_clone, updated = dataset.embed_into(inventory, check = True)
-            except:
-                raise RuntimeError('Inventory update failed')
+                # new dataset
+                try:
+                    obj.pop('did')
+                except KeyError:
+                    pass
     
-            if updated:
-                inventory.register_update(embedded_clone)
+                try:
+                    obj['software_version'] = Dataset.format_software_version(obj['software_version'])
+                except KeyError:
+                    pass
+    
+                try:
+                    new_dataset = df.Dataset(name, **obj)
+                except TypeError:
+                    obj['name'] = name
+                    raise IllFormedRequest('dataset', str(obj))
+    
+                try:
+                    dataset = inventory.update(new_dataset)
+                except:
+                    raise RuntimeError('Inventory update failed')
+
                 num_datasets += 1
 
             if blocks is not None:
-                self._make_blocks(blocks, embedded_clone, inventory, counts)
+                blocks_with_new_file.extend(self._make_blocks(blocks, dataset, inventory, counts))
 
         counts['datasets'] = num_datasets
+
+        return blocks_with_new_file
 
     def _make_sites(self, objects, inventory, counts):
         num_sites = 0
@@ -92,24 +108,24 @@ class InjectData(WebModule):
             except KeyError:
                 raise MissingParameter('name', context = 'site ' + str(obj))
 
-            try:
-                obj.pop('sid')
-            except KeyError:
-                pass
-
-            try:
-                site = df.Site(name, **obj)
-            except TypeError:
-                obj['name'] = name
-                raise IllFormedRequest('site', str(obj))
-
-            try:
-                embedded_clone, updated = site.embed_into(inventory, check = True)
-            except:
-                raise RuntimeError('Inventory update failed')
+            if name not in inventory.sites:
+                # new site
+                try:
+                    obj.pop('sid')
+                except KeyError:
+                    pass
     
-            if updated:
-                inventory.register_update(embedded_clone)
+                try:
+                    new_site = df.Site(name, **obj)
+                except TypeError:
+                    obj['name'] = name
+                    raise IllFormedRequest('site', str(obj))
+    
+                try:
+                    inventory.update(new_site)
+                except:
+                    raise RuntimeError('Inventory update failed')
+        
                 num_sites += 1
 
         counts['sites'] = num_sites
@@ -123,24 +139,24 @@ class InjectData(WebModule):
             except KeyError:
                 raise MissingParameter('name', context = 'group ' + str(obj))
 
-            try:
-                obj.pop('gid')
-            except KeyError:
-                pass
-
-            try:
-                group = df.Group(name, **obj)
-            except TypeError:
-                obj['name'] = name
-                raise IllFormedRequest('group', str(obj))
-
-            try:
-                embedded_clone, updated = group.embed_into(inventory, check = True)
-            except:
-                raise RuntimeError('Inventory update failed')
+            if name not in inventory.groups:
+                # new group
+                try:
+                    obj.pop('gid')
+                except KeyError:
+                    pass
     
-            if updated:
-                inventory.register_update(embedded_clone)
+                try:
+                    new_group = df.Group(name, **obj)
+                except TypeError:
+                    obj['name'] = name
+                    raise IllFormedRequest('group', str(obj))
+    
+                try:
+                    inventory.update(new_group)
+                except:
+                    raise RuntimeError('Inventory update failed')
+
                 num_groups += 1
 
         counts['groups'] = num_groups
@@ -157,7 +173,7 @@ class InjectData(WebModule):
                 try:
                     dataset = inventory.datasets[dataset_name]
                 except KeyError:
-                    raise IllFormedRequest('dataset', dataset_name, hint = 'Unknown dataset %s' % dataset_name)
+                    raise InvalidRequest('Unknown dataset %s' % dataset_name)
 
             try:
                 site_name = obj['site']
@@ -168,46 +184,52 @@ class InjectData(WebModule):
                 try:
                     site = inventory.sites[site_name]
                 except KeyError:
-                    raise IllFormedRequest('site', site_name, hint = 'Unknown site %s' % site_name)
+                    raise InvalidRequest('Unknown site %s' % site_name)
 
-            try:
-                group_name = obj['group']
-            except KeyError:
-                group = df.Group.null_group
-            else:
+            if len(dataset.replicas) == 0:
+                # new replica
                 try:
-                    group = inventory.groups[group_name]
+                    group_name = obj['group']
                 except KeyError:
-                    raise IllFormedRequest('group', group_name, hint = 'Unknown group %s' % group_name)
+                    group = df.Group.null_group
+                else:
+                    try:
+                        group = inventory.groups[group_name]
+                    except KeyError:
+                        raise InvalidRequest('Unknown group %s' % group_name)
 
-            try:
-                growing = obj['growing']
-            except KeyError:
-                growing = True
-
-            try:
-                blockreplicas = obj['blockreplicas']
-            except KeyError:
-                blockreplicas = None
-
-            replica = df.DatasetReplica(dataset, site, growing = growing, group = group)
-
-            try:
-                embedded_clone, updated = replica.embed_into(inventory, check = True)
-            except:
-                raise RuntimeError('Inventory update failed')
+                # "origin" dataset replica cannot be growing
+                obj['growing'] = False
     
-            if updated:
-                inventory.register_update(embedded_clone)
+                try:
+                    blockreplicas = obj['blockreplicas']
+                except KeyError:
+                    blockreplicas = None
+    
+                new_replica = df.DatasetReplica(dataset, site, growing = growing, group = group)
+    
+                try:
+                    replica = inventory.update(new_replica)
+                except:
+                    raise RuntimeError('Inventory update failed')
+        
                 num_datasetreplicas += 1
 
+            else:
+                if len(dataset.replicas) > 1 or next(dataset.replicas).site is not site:
+                    raise InvalidRequest('Dataset %s already has a replica.' % dataset.name)
+
+                replica = next(dataset.replicas)
+
             if blockreplicas is not None:
-                self._make_blockreplicas(blockreplicas, embedded_clone, inventory, counts)
+                self._make_blockreplicas(blockreplicas, replica, inventory, counts)
 
         counts['datasetreplicas'] = num_datasetreplicas
 
     def _make_blocks(self, objects, dataset, inventory, counts):
         num_blocks = 0
+
+        blocks_with_new_file = []
 
         for obj in objects:
             try:
@@ -226,48 +248,47 @@ class InjectData(WebModule):
             except KeyError:
                 files = None
 
-            try:
-                block = df.Block(internal_name, dataset = dataset, **obj)
-            except TypeError:
-                obj['name'] = name
-                raise IllFormedRequest('block', str(obj))
+            block = dataset.find_block(internal_name)
 
-            existing = dataset.find_block(internal_name)
+            if block is None:
+                # new block
+                try:
+                    new_block = df.Block(internal_name, dataset = dataset, **obj)
+                except TypeError:
+                    obj['name'] = name
+                    raise IllFormedRequest('block', str(obj))
 
-            if existing is None:
+                block = inventory.update(new_block)
+    
                 block._files = set()
-                dataset.blocks.add(block)
 
                 for replica in dataset.replicas:
                     if replica.growing:
                         # For growing replicas, we automatically create new block replicas
-                        blockreplicas = [{'block': block.real_name(), 'site': replica.site.name, 'group': replica.group.name,
-                                          'size': 0, 'last_update': time.time()}]
+                        blockreplica = {'block': block.real_name(), 'site': replica.site.name, 'group': replica.group.name, 'size': 0, 'last_update': time.time()}
 
                         if df.BlockReplica._use_file_ids:
-                            blockreplicas[0]['file_ids'] = tuple()
+                            blockreplica['file_ids'] = tuple()
 
-                        self._make_blockreplicas(blockreplicas, replica, inventory, counts)
+                        self._make_blockreplicas([blockreplica], replica, inventory, counts)
 
-                existing = block
-            elif existing == block:
-                continue
-            else:
-                existing._copy_no_check(block)
-
-            num_blocks += 1
-            inventory.register_update(existing)
+                num_blocks += 1
 
             if files is not None:
-                self._make_files(files, existing, inventory, counts)
+                added_new_file = self._make_files(files, block, inventory, counts)
+                if added_new_file:
+                    blocks_with_new_file.append(block)
 
         try:
             counts['blocks'] += num_blocks
         except KeyError:
             counts['blocks'] = num_blocks
 
+        return blocks_with_new_file
+
     def _make_files(self, objects, block, inventory, counts):
         num_files = 0
+        added_new_file = False
 
         for obj in objects:
             try:
@@ -275,29 +296,32 @@ class InjectData(WebModule):
             except KeyError:
                 raise MissingParameter('name', context = 'file ' + str(obj))
 
-            try:
-                lfile = df.File(lfn, block = block, **obj)
-            except TypeError:
-                obj['name'] = lfn
-                raise IllFormedRequest('file', str(obj))
+            lfile = block.find_file(lfn)
 
-            existing = block.find_file(lfn)
+            if lfile is None:
+                # new file
+                try:
+                    new_lfile = df.File(lfn, block = block, **obj)
+                except TypeError:
+                    obj['name'] = lfn
+                    raise IllFormedRequest('file', str(obj))
 
-            if existing is None:
-                block.files.add(lfile)
-                existing = lfile
-            elif existing == lfile:
-                continue
-            else:
-                existing._copy_no_check(lfile)
+                block.size += lfile.size
+                block.num_files += 1
+                inventory.update(block)
 
-            num_files += 1
-            inventory.register_update(existing)
+                lfile = inventory.update(new_lfile)
+
+                added_new_file = True
+    
+                num_files += 1
 
         try:
             counts['files'] += num_files
         except KeyError:
             counts['files'] = num_files
+
+        return added_new_file
 
     def _make_blockreplicas(self, objects, dataset_replica, inventory, counts):
         num_blockreplicas = 0
@@ -316,42 +340,40 @@ class InjectData(WebModule):
             block = dataset.find_block(block_internal_name)
 
             if block is None:
-                raise IllFormedRequest('block', block_name, hint = 'Unknown block %s' % block_name)
+                raise InvalidRequest('Unknown block %s' % block_name)
 
-            try:
-                group_name = obj.pop('group')
-            except KeyError:
-                group = dataset_replica.group
-            else:
+            if len(block.replicas) == 0:
+                # new replica
                 try:
-                    group = inventory.groups[group_name]
+                    group_name = obj.pop('group')
                 except KeyError:
-                    raise IllFormedRequest('group', group_name, hint = 'Unknown group %s' % group_name)
+                    group = dataset_replica.group
+                else:
+                    try:
+                        group = inventory.groups[group_name]
+                    except KeyError:
+                        raise InvalidRequest('Unknown group %s' % group_name)
+                    
+                # "origin" block replicas must always be full
+                obj['file_ids'] = None
+                obj['size'] = block.size
+    
+                try:
+                    new_replica = df.BlockReplica(block, site, group, **obj)
+                except TypeError:
+                    obj['block'] = block_name
+                    obj['group'] = group_name
+                    raise IllFormedRequest('blockreplica', str(obj))
 
-            try:
-                replica = df.BlockReplica(block, site, group, **obj)
-            except TypeError:
-                obj['block'] = block_name
-                obj['group'] = group_name
-                raise IllFormedRequest('blockreplica', str(obj))
+                inventory.update(new_replica)
 
-            existing = block.find_replica(site)
+                num_blockreplicas += 1
 
-            if existing is None:
-                dataset_replica.block_replicas.add(replica)
-                block.replicas.add(replica)
-                site.add_block_replica(replica)
-                existing = replica
-            elif existing == replica:
-                continue
             else:
-                existing._copy_no_check(replica)
-
-            num_blockreplicas += 1
-            inventory.register_update(existing)
+                if len(block.replicas) > 1 or next(block.replicas).site is not site:
+                    raise InvalidRequest('Block %s already has a replica.' % block.full_name())                
 
         counts['blockreplicas'] = num_blockreplicas
-        
 
 # exported to __init__.py
 export_data = {'inject': InjectData}

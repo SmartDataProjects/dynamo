@@ -513,7 +513,7 @@ class MySQLInventoryStore(InventoryStore):
 
         num = self._mysql.insert_many('datasets_tmp', fields, mapping, get_dataset(), do_update = False)
 
-        fields = ('id', 'cycle', 'major', 'minor', 'suffix')
+        fields = ('id',) + Dataset.SoftwareVersion.field_names
         mapping = lambda v: (v.id,) + v.value
 
         self._mysql.insert_many('software_versions_tmp', fields, mapping, software_versions, do_update = False)
@@ -718,7 +718,8 @@ class MySQLInventoryStore(InventoryStore):
 
         Dataset._software_versions_byvalue = {}
 
-        sql = 'SELECT `id`, `cycle`, `major`, `minor`, `suffix` FROM `software_versions`'
+        columns = ', '.join('`%s`' % n for n in (('id',) + Dataset.SoftwareVersion.field_names))
+        sql = 'SELECT {columns} FROM `software_versions`'.format(columns = columns)
 
         for vid, cycle, major, minor, suffix in self._mysql.xquery(sql):
             value = (cycle, major, minor, suffix)
@@ -1059,7 +1060,9 @@ class MySQLInventoryStore(InventoryStore):
             sql = 'SELECT COUNT(*) FROM `software_versions` WHERE `id` = %s'
             known_id = (self._mysql.query(sql, dataset._software_version_id)[0] == 1)
             if not known_id:
-                sql = 'INSERT INTO `software_versions` (`id`, `cycle`, `major`, `minor`, `suffix`) VALUES (%s, %s, %s, %s, %s)'
+                columns = ', '.join('`%s`' % n for n in (('id',) + Dataset.SoftwareVersion.field_names))
+                placeholders = ', '.join(['%s'] * (1 + len(Dataset.SoftwareVersion.field_names)))
+                sql = 'INSERT INTO `software_versions` ({columns}) VALUES ({placeholders})'.format(columns = columns, placeholders = placeholders)
                 software_version_id = self._mysql.query(sql, dataset._software_version_id, *dataset.software_version)
             
         fields = ('name', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
