@@ -36,6 +36,8 @@ dealer_config.test_run = args.test_run
 
 dealer = Dealer(dealer_config)
 
+LOG.info('Dealer instance using %s for copy', type(dealer.copy_op).__name__)
+
 if read_only:
     dealer.copy_op.dry_run = True
     dealer.history.read_only = True

@@ -1,5 +1,9 @@
+import logging
+
 from dynamo.operation.deletion import DeletionInterface
 from dynamo.dataformat import DatasetReplica
+
+LOG = logging.getLogger(__name__)
 
 class DummyDeletionInterface(DeletionInterface):
     """
@@ -10,12 +14,16 @@ class DummyDeletionInterface(DeletionInterface):
         DeletionInterface.__init__(self, config)
 
     def schedule_deletion(self, replica, comments = ''): #override
+        LOG.info('Ignoring deletion schedule of %s', str(replica))
+
         if type(replica) is DatasetReplica:
             return {0: (True, replica.site, [replica.dataset])}
         else:
             return {0: (True, replica.site, [replica.block])}
 
     def schedule_copies(self, replica_list, comments = ''): #override
+        LOG.info('Ignoring deletion schedule of %d replicas', len(replica_list))
+
         items_by_site = {}
         for replica in replica_list:
             if replica.site not in items_by_site:
