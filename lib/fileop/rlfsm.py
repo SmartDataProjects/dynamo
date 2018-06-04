@@ -85,8 +85,10 @@ class RLFSM(object):
             self.deletion_query = self.deletion_operation
 
         self.dry_run = config.get('dry_run', False)
-        self.transfer_operation.dry_run = self.dry_run
-        self.deletion_operation.dry_run = self.dry_run
+        if self.transfer_operation:
+            self.transfer_operation.dry_run = self.dry_run
+        if self.deletion_operation:
+            self.deletion_operation.dry_run = self.dry_run
         
     def transfer_files(self, inventory):
         def start_transfers(tasks):
