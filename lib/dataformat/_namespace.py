@@ -39,6 +39,8 @@ def customize_dataset(Dataset):
         # e.g. Dataset.TYPE_UNKNOWN = 1
         setattr(Dataset, 'TYPE_' + name.upper(), val)
 
+    Dataset.SoftwareVersion.field_names = ('version')
+
     Dataset.format_software_version = staticmethod(Dataset_format_software_version)
 
 def customize_block(Block):

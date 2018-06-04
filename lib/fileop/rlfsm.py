@@ -301,7 +301,7 @@ class RLFSM(object):
             # this is dangerous - what if inventory fails to update on the server side?
             self.db.query('DELETE FROM `file_subscriptions` WHERE `status` = \'done\'')
 
-    def _subscribe_files(self, block_replica):
+    def subscribe_files(self, block_replica):
         """
         Make subscriptions of missing files in the block replica.
         """
@@ -319,7 +319,7 @@ class RLFSM(object):
         if not self.dry_run:
             self.db.insert_many('file_subscriptions', fields, mapping, missing_ids)
 
-    def _desubscribe_files(self, block_replica):
+    def desubscribe_files(self, block_replica):
         """
         Book deletion of files in the block replica.
         """
