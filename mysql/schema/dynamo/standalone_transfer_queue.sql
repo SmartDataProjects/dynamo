@@ -1,5 +1,7 @@
 CREATE TABLE `standalone_transfer_queue` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `source` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
+  `destination` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `status` enum('new','inprogress','done','failed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'new',
   `exitcode` smallint(5) unsigned DEFAULT NULL,
   `finish_time` datetime DEFAULT NULL,

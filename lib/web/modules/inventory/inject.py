@@ -252,6 +252,7 @@ class InjectData(WebModule):
 
             if block is None:
                 # new block
+                new_block = True
 
                 # size and num_files to be set through make_files
                 obj['size'] = 0
@@ -275,9 +276,12 @@ class InjectData(WebModule):
 
                 num_blocks += 1
 
+            else:
+                new_block = False
+
             if files is not None:
                 added_new_file = self._make_files(files, block, inventory, counts)
-                if added_new_file:
+                if added_new_file and not new_block:
                     blocks_with_new_file.append(block)
 
         try:
