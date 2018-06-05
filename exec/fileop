@@ -2,13 +2,25 @@
 
 import os
 import sys
+import gfal2
 import multiprocessing
 
-def transfer(tasks, params):
+def transfer(tasks, params_config):
     """
-    @param tasks    [(task id, source pfn, dest pfn)]
-    @param params   GFAL2 transfer parameters
+    @param tasks           [(task id, source pfn, dest pfn)]
+    @param params_config   Dict to set GFAL2 transfer parameters
     """
+
+    params = gfal2.Gfal2Context.transfer_parameters()
+    # Create parent directories at the destination
+    params.create_parent = True
+    # Overwrite the destination if file already exists (otherwise throws an error)
+    params.overwrite = True
+    # Perform a crc32 checksum validation between the source and destination
+    # Other available checksum algorithms: adler32, md5
+    params.set_checksum(gfal2.checksum_mode.both, 'crc32')
+    params.nbstreams = params_config['transfer_nstreams']
+    params.timeout = params_config['transfer_timeout'] # we probably want this to be file size dependent
 
     result = []
 
@@ -143,6 +155,11 @@ if __name__ == '__main__':
     ## Create transfer tasks (batched by site)
     LOG.info('Creating transfer tasks.')
 
+    params_config = {
+        'transfer_nstreams': config['transfer_nstreams'],
+        'transfer_timeout': config['transfer_timeout']
+    }
+
     sql = 'LOCK TABLES `standalone_transfer_queue` WRITE,'
     sql += ' `standalone_transfer_queue` AS a WRITE,'
     sql += ' `transfer_queue` AS q READ'
@@ -153,20 +170,13 @@ if __name__ == '__main__':
     sql += ' WHERE a.`status` = \'new\''
     sql += ' ORDER BY q.`batch_id`'
 
-    transfer_params = gfal2.Gfal2Context.transfer_parameters()
-    transfer_params.create_parent = True
-    transfer_params.overwrite = True
-    transfer_params.checksum_check = True
-    transfer_params.nbstreams = config.transfer_nstreams
-    transfer_params.timeout = config.transfer_timeout # we probably want this to be file size dependent
-
     _batch_id = 0
     
     for batch_id, tid, source, destination in db.xquery(sql):
         if batch_id != _batch_id:
             if _batch_id != 0:
                 LOG.info('Transfer batch %d (%d tasks)', _batch_id, len(tasks))
-                results.append(('transfer', pool.apply_async(transfer, (tasks, transfer_params))))
+                results.append(('transfer', pool.apply_async(transfer, (tasks, params_config))))
 
             _batch_id = batch_id
             tasks = []
@@ -175,7 +185,7 @@ if __name__ == '__main__':
 
     if _batch_id != 0:
         LOG.info('Transfer batch %d (%d tasks)', _batch_id, len(tasks))
-        results.append(('transfer', pool.apply_async(transfer, (tasks, transfer_params))))
+        results.append(('transfer', pool.apply_async(transfer, (tasks, params_config))))
 
     sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'inprogress\' WHERE `status` = \'new\''
     db.query(sql)
@@ -195,7 +205,7 @@ if __name__ == '__main__':
             tasks = result.get()
     
             if optype == 'delete':
-                sql = 'UPDATE `standalone_deletion_queue` SET `status` = %s, `exitcode` = %s, `finish_time` = NOW() WHERE `id` = %s'.format(table = table)
+                sql = 'UPDATE `standalone_deletion_queue` SET `status` = %s, `exitcode` = %s, `finish_time` = NOW() WHERE `id` = %s'
 
                 for tid, pfn, exitcode, msg in tasks:
                     if exitcode == 0:
@@ -206,7 +216,7 @@ if __name__ == '__main__':
                         db.query(sql, 'failed', exitcode, tid)
 
             else:
-                sql = 'UPDATE `standalone_transfer_queue` SET `status` = %s, `exitcode` = %s, `finish_time` = NOW() WHERE `id` = %s'.format(table = table)
+                sql = 'UPDATE `standalone_transfer_queue` SET `status` = %s, `exitcode` = %s, `finish_time` = NOW() WHERE `id` = %s'
 
                 for tid, src, dest, exitcode, msg in tasks:
                     if exitcode == 0:
