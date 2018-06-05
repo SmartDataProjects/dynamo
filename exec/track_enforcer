@@ -67,6 +67,7 @@ def create_rrd(path):
 
     rrdtool.create(path, '--start', str(start), '--step', str(interval),
                    'DS:missing:GAUGE:%d:0:U' % (interval * 800),
+                   'DS:enroute:GAUGE:%d:0:U' % (interval * 800),
                    'DS:there:GAUGE:%d:0:U' % (interval * 800),
                    'RRA:LAST:0:1:%i' % 28400)
 
@@ -110,7 +111,7 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
         lasttime = 0
             
     if not read_only and timestamp != lasttime:
-        rrdtool.update(rrd_file, '%d:%i:%i' % (timestamp, still_missing + en_route, already_there))
+        rrdtool.update(rrd_file, '%d:%i:%i:%i' % (timestamp, still_missing, en_route, already_there))
 
 if not read_only:
     target_dir = config.rrd_publish_target + '/monitoring_enforcer'

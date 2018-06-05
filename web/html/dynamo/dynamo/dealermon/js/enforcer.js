@@ -91,6 +91,7 @@ function drawStatus(data) {
 
     var times = []; 
     var missing = []; 
+    var enroute = []; 
     var there = []; 
     var considered_sites = [];
     var considered_backends = [];
@@ -99,6 +100,7 @@ function drawStatus(data) {
     var title = "";
     var line_number = "";
     var last_missing = 0;
+    var last_enroute = 0;
     var last_there = 0;
 
     for(var i = 0 in data) {
@@ -118,6 +120,7 @@ function drawStatus(data) {
         for (var j in obj['data']){
 	    times = obj['data'][j].date;
 	    missing = obj['data'][j].missing;
+	    enroute = obj['data'][j].enroute;
 	    there = obj['data'][j].there;
 	    considered_sites = obj['data'][j].sites;
 	    considered_backends = obj['data'][j].backends;
@@ -126,20 +129,28 @@ function drawStatus(data) {
 	    counter += 1;
         }
 	last_missing = missing[missing.length-1];
+	last_enroute = enroute[enroute.length-1];
 	last_there = there[there.length-1];
     }
   
     while (times[0]<times[times.length-1]-5*24*60*60*1.02){
         times.splice(0,1);
         missing.splice(0,1);
+        enroute.splice(0,1);
         there.splice(0,1);
+    }
+
+    var missing_and_subscribed = [];
+
+    for (var i = 0; i < missing.length; i++){
+	missing_and_subscribed.push(missing[i]+enroute[i]);
     }
 
 
     var state = [
 	    {
-		x: ["Missing", "There"],
-		y: [last_missing,last_there],
+		x: ["Missing", "Subscribed" ,"Complete"],
+		y: [last_missing,last_enroute,last_there],
 		type: 'bar',
 		marker: {
 		    color: 'rgba(58,200,225,.5)',
@@ -169,7 +180,7 @@ function drawStatus(data) {
     var trend = [
 	    {
 		x: times_converted,
-		y: missing,
+		y: missing_and_subscribed,
 		type: 'scatter',
 		mode: 'lines',
 		name: 'hv',
@@ -193,7 +204,7 @@ function drawStatus(data) {
 	    }
 	},
 	yaxis: {
-	    title: 'Datasets missing',
+	    title: 'Not complete',
 	    titlefont: {
 		size: 18,
 		color: '#7f7f7f'
