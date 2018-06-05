@@ -123,6 +123,8 @@ class RLFSM(object):
             if success:
                 if not self.dry_run:
                     self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\', `last_update` = NOW()', 'id', [t.subscription.id for t in tasks])
+
+                return 1, len(tasks)
             else:
                 if len(tasks) == 1:
                     task = tasks[0]
@@ -145,9 +147,17 @@ class RLFSM(object):
                     self.db.query('DELETE FROM `transfer_queue` WHERE `batch_id` = %s', batch_id)
                     self.db.query('DELETE FROM `transfer_batches` WHERE `id` = %s', batch_id)
 
+                num_batches, num_tasks = 0, 0
+
                 if len(tasks) > 1:
-                    start_transfers(tasks[:len(tasks) / 2])
-                    start_transfers(tasks[len(tasks) / 2:])
+                    nb, nt = start_transfers(tasks[:len(tasks) / 2])
+                    num_batches += nb
+                    num_tasks += nt
+                    nb, nt = start_transfers(tasks[len(tasks) / 2:])
+                    num_batches += nb
+                    num_tasks += nt
+
+                return num_batches, num_tasks
 
 
         LOG.info('Fetching subscription status from the file operation agent.')
@@ -156,15 +166,20 @@ class RLFSM(object):
         LOG.info('Collecting new transfer subscriptions.')
         subscriptions = self._get_subscriptions(inventory)
 
-        LOG.info('Identifying source sites for all transfers.')
+        LOG.info('Identifying source sites for %d transfers.', len(subscriptions))
         tasks = self._select_source(subscriptions)
 
-        LOG.info('Organizing the transfers into batches.')
+        LOG.info('Organizing %d transfers into batches.', len(tasks))
         batches = self.transfer_operation.form_batches(tasks)
 
         LOG.info('Issuing transfer tasks.')
+        num_batches, num_tasks = 0, 0
         for batch_tasks in batches:
-            start_transfers(batch_tasks)
+            nb, nt = start_transfers(batch_tasks)
+            num_batches += nb
+            num_tasks += nt
+
+        LOG.info('Issued %d transfer tasks in %d batches.', num_tasks, num_batches)
 
     def delete_files(self, inventory):
         def start_deletions(tasks):
@@ -194,6 +209,8 @@ class RLFSM(object):
                 if not self.dry_run:
                     self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\', `last_update` = NOW()', 'id', [t.desubscription.id for t in tasks])
 
+                return 1, len(tasks)
+
             else:
                 if len(tasks) == 1:
                     task = tasks[0]
@@ -212,9 +229,16 @@ class RLFSM(object):
                     self.db.query('DELETE FROM `deletion_queue` WHERE `batch_id` = %s', batch_id)
                     self.db.query('DELETE FROM `deletion_batches` WHERE `id` = %s', batch_id)
 
+                num_batches, num_tasks = 0, 0
                 if len(tasks) > 1:
-                    start_deletions(tasks[:len(tasks) / 2])
-                    start_deletions(tasks[len(tasks) / 2:])
+                    nb, nt = start_deletions(tasks[:len(tasks) / 2])
+                    num_batches += nb
+                    num_tasks += nt
+                    nb, nt = start_deletions(tasks[len(tasks) / 2:])
+                    num_batches += nb
+                    num_tasks += nt
+
+                return num_batches, num_tasks
 
 
         LOG.info('Fetching deletion status from the file operation agent.')
@@ -232,8 +256,13 @@ class RLFSM(object):
         batches = self.deletion_operation.form_batches(tasks)
 
         LOG.info('Issuing deletion tasks.')
+        num_batches, num_tasks = 0, 0
         for batch_tasks in batches:
-            start_deletions(batch_tasks)
+            nb, nt = start_deletions(batch_tasks)
+            num_batches += nb
+            num_tasks += nt
+
+        LOG.info('Issued %d deletion tasks in %d batches.', num_tasks, num_batches)
 
     def update_inventory(self, inventory):
         def update_replica(replica, file_ids, projected):
