@@ -4,6 +4,7 @@ import random
 import time
 import logging
 
+from dynamo.fileop.base import FileQuery
 from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
 from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery, DirDeletionOperation
 from dynamo.dataformat import Configuration, Block, Site
@@ -161,7 +162,7 @@ class RLFSM(object):
 
 
         LOG.info('Fetching subscription status from the file operation agent.')
-        self._update_subscription_status()
+        self._update_status('transfer')
 
         LOG.info('Collecting new transfer subscriptions.')
         subscriptions = self._get_subscriptions(inventory)
@@ -242,7 +243,7 @@ class RLFSM(object):
 
 
         LOG.info('Fetching deletion status from the file operation agent.')
-        completed = self._update_deletion_status()
+        completed = self._update_status('deletion')
 
         LOG.info('Recording candidates for empty directories.')
         self._set_dirclean_candidates(completed, inventory)
@@ -410,146 +411,102 @@ class RLFSM(object):
         if not self.dry_run:
             self.db.insert_many('file_subscriptions', fields, mapping, file_ids)
 
-    def _update_subscription_status(self):
-        insert_file = 'INSERT INTO `{history}`.`files` (`name`)'
-        insert_file += ' SELECT f.`name` FROM `transfer_queue` AS q'
+    def _update_status(self, optype):
+        insert_file = 'INSERT INTO `{history}`.`files` (`name`, `size`)'
+        insert_file += ' SELECT f.`name`, f.`size` FROM `transfer_queue` AS q'
         insert_file += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         insert_file += ' INNER JOIN .`files` AS f ON f.`id` = u.`file_id`'
         insert_file += ' WHERE u.`delete` = 0 AND q.`id` = %s'
-        insert_file += ' ON DUPLICATE KEY UPDATE `files`=VALUES(`files`)'
+        insert_file += ' ON DUPLICATE KEY UPDATE `size`=VALUES(`size`)'
 
         insert_file = insert_file.format(history = self.history_db)
 
         # sites have to be inserted to history already
 
-        insert_transfer = 'INSERT INTO `{history}`.`file_transfers` (`id`, `file_id`, `source_id`, `destination_id`, `exitcode`, `batch_id`, `created`, `completed`)'
-        insert_transfer += ' SELECT q.`id`, hf.`id`, hss.`id`, hsd.`id`, %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s) FROM `transfer_queue`'
-        insert_transfer += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
-        insert_transfer += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
-        insert_transfer += ' INNER JOIN `sites` AS sd ON sd.`id` = u.`site_id`'
-        insert_transfer += ' INNER JOIN `sites` AS ss ON ss.`id` = q.`source_id`'
-        insert_transfer += ' INNER JOIN `{history}`.`files` AS hf ON hf.`name` = f.`name`'
-        insert_transfer += ' INNER JOIN `{history}`.`sites` AS hsd ON hsd.`name` = sd.`name`'
-        insert_transfer += ' INNER JOIN `{history}`.`sites` AS hss ON hss.`name` = ss.`name`'
-        insert_transfer += ' WHERE u.`delete` = 0 AND q.`id` = %s'
+        if optype == 'transfer':
+            table_name = 'file_transfers'
+            site_fields = '`source_id`, `destination_id`'
+            site_values = 'hss.`id`, hsd.`id`'
+            site_joins = ' INNER JOIN `sites` AS sd ON sd.`id` = u.`site_id` INNER JOIN `sites` AS ss ON ss.`id` = q.`source_id`'
+            site_joins += ' INNER JOIN `{history}`.`sites` AS hsd ON hsd.`name` = sd.`name` INNER JOIN `{history}`.`sites` AS hss ON hss.`name` = ss.`name`'
+            delete_val = '0'
+        else:
+            table_name = 'file_deletions'
+            site_fields = '`site_id`'
+            site_values = 'hs.`id`'
+            site_joins = ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
+            site_joins += ' INNER JOIN `{history}`.`sites` AS hs ON hs.`name` = s.`name`'
+            delete_val = '1'
 
-        insert_transfer = insert_transfer.format(history = self.history_db)
+        insert_history = 'INSERT INTO `{history}`.`{table}`'
+        insert_history += ' (`id`, `file_id`, ' + site_fields + ', `exitcode`, `batch_id`, `created`, `started`, `finished`, `completed`)'
+        insert_history += ' SELECT q.`id`, hf.`id`, ' + site_values + ', %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s), FROM_UNIXTIME(%s), NOW()'
+        insert_history += ' FROM `transfer_queue` AS q'
+        insert_history += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+        insert_history += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
+        insert_history += ' INNER JOIN `{history}`.`files` AS hf ON hf.`name` = f.`name`'
+        insert_history += site_joins
+        insert_history += ' WHERE u.`delete` = ' + delete_val + ' AND q.`id` = %s'
 
-        insert_failure = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
-        insert_failure += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_queue` WHERE `id` = %s'
+        insert_history = insert_history.format(history = self.history_db, table = table_name)
 
-        get_subscription = 'SELECT `subscription_id` FROM `transfer_queue` WHERE `id` = %s'
+        if optype == 'transfer':
+            insert_failure = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
+            insert_failure += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_queue` WHERE `id` = %s'
+            delete_failures = 'DELETE FROM `failed_transfers` WHERE `subscription_id` = %s'
+
+        get_subscription = 'SELECT `subscription_id` FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
 
         update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
 
-        delete_failures = 'DELETE FROM `failed_transfers` WHERE `subscription_id` = %s'
-
-        delete_transfer = 'DELETE FROM `transfer_queue` WHERE `id` = %s'
-
-        num_success = 0
-        num_failure = 0
-
-        sql = 'SELECT `id` FROM `transfer_batches`'
-        for batch_id in self.db.query(sql):
-            transfer_results = self.transfer_query.get_transfer_status(batch_id)
-
-            for transfer_id, status, exitcode, finish_time in transfer_results:
-                if status == FileTransferQuery.STAT_DONE:
-                    num_success += 1
-                elif status == FileTransferQuery.STAT_FAILED:
-                    num_failure += 1
-                else:
-                    continue
-
-                if not self.dry_run:
-                    # Archive the file name to history DB (if not yet there)
-                    self.db.query(insert_file, transfer_id)
-                    # Archive the transfer to history DB
-                    self.db.query(insert_transfer, exitcode, finish_time, transfer_id)
-
-                subscription_id = self.db.query(get_subscription, transfer_id)[0]
-
-                if not self.dry_run:
-                    if status == FileTransferQuery.STAT_DONE:
-                        LOG.debug('Transfer subscription %d completed.', subscription_id)
-                        self.db.query(update_subscription, 'done', subscription_id)
-                        # Delete entries from failed_transfers table
-                        self.db.query(delete_failures, subscription_id)
-                    else:
-                        LOG.debug('Transfer subscription %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
-                        # Insert entry to failed_transfers table
-                        self.db.query(insert_failure, exitcode, transfer_id)
-                        self.db.query(update_subscription, 'retry', subscription_id)
-    
-                    self.db.query(delete_transfer, transfer_id)
-
-        LOG.info('Archived file transfers: %d succeeded, %d failed.', num_success, num_failure)
-
-    def _update_deletion_status(self):
-        insert_file = 'INSERT INTO `{history}`.`files` (`name`)'
-        insert_file += ' SELECT f.`name` FROM `deletion_queue` AS q'
-        insert_file += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
-        insert_file += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
-        insert_file += ' WHERE u.`delete` = 1 AND q.`id` = %s'
-        insert_file += ' ON DUPLICATE KEY UPDATE `files`=VALUES(`files`)'
-
-        insert_file = insert_file.format(history = self.history_db)
-
-        # sites have to be inserted to history already
-
-        insert_deletion = 'INSERT INTO `{history}`.`file_deletions` (`id`, `file_id`, `site_id`, `exitcode`, `batch_id`, `created`, `completed`)'
-        insert_deletion += ' SELECT q.`id`, hf.`id`, hs.`id`, %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s) FROM `deletion_queue`'
-        insert_deletion += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
-        insert_deletion += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
-        insert_deletion += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
-        insert_deletion += ' INNER JOIN `{history}`.`files` AS hf ON hf.`name` = f.`name`'
-        insert_deletion += ' INNER JOIN `{history}`.`sites` AS hs ON hs.`name` = s.`name`'
-        insert_deletion += ' WHERE u.`delete` = 1 AND q.`id` = %s'
-
-        insert_deletion = insert_deletion.format(history = self.history_db)
-
-        get_subscription = 'SELECT `subscription_id` FROM `deletion_queue` WHERE `id` = %s'
-
-        update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOw() WHERE `id` = %s'
-
-        delete_deletion = 'DELETE FROM `deletion_queue` WHERE `id` = %s'
+        delete_queue = 'DELETE FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
 
         completed_subscriptions = []
         num_success = 0
         num_failure = 0
 
-        sql = 'SELECT `id` FROM `deletion_batches`'
-        for batch_id in self.db.query(sql):
-            deletion_results = self.deletion_query.get_deletion_status(batch_id)
+        if optype == 'transfer':
+            get_results = lambda batch_id: self.transfer_query.get_transfer_status(batch_id)
+        else:
+            get_results = lambda batch_id: self.deletion_query.get_deletion_status(batch_id)
 
-            for deletion_id, status, exitcode, finish_time in deletion_results:
-                if status == FileDeletionQuery.STAT_DONE:
+        for batch_id in self.db.query('SELECT `id` FROM `{op}_batches`'.format(op = optype)):
+            results = get_results(batch_id)
+
+            for task_id, status, exitcode, start_time, finish_time in results:
+                if status == query_cls.STAT_DONE:
                     num_success += 1
-                elif status == FileDeletionQuery.STAT_FAILED:
+                elif status == query_cls.STAT_FAILED:
                     num_failure += 1
                 else:
                     continue
 
                 if not self.dry_run:
-                    self.db.query(insert_file, deletion_id)
-                    self.db.query(insert_deletion, exitcode, finish_time, deletion_id)
+                    self.db.query(insert_file, task_id)
+                    self.db.query(insert_history, exitcode, start_time, finish_time, task_id)
 
-                subscription_id = self.db.query(get_subscription, deletion_id)[0]
+                subscription_id = self.db.query(get_subscription, task_id)[0]
 
                 if not self.dry_run:
-                    if status == FileDeletionQuery.STAT_DONE:
-                        LOG.debug('Deletion %d completed.', subscription_id)
+                    if status == FileQuery.STAT_DONE:
+                        LOG.debug('Subscription %d completed.', optype, subscription_id)
                         self.db.query(update_subscription, 'done', subscription_id)
+                        if optype == 'transfer':
+                            # Delete entries from failed_transfers table
+                            self.db.query(delete_failures, subscription_id)
                     else:
-                        LOG.debug('Deletion %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
+                        LOG.debug('Subscription %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
                         self.db.query(update_subscription, 'retry', subscription_id)
+                        if optype == 'transfer':
+                            # Insert entry to failed_transfers table
+                            self.db.query(insert_failure, exitcode, task_id)
     
-                    self.db.query(delete_deletion, deletion_id)
+                    self.db.query(delete_queue, task_id)
 
-                if status == FileDeletionQuery.STAT_DONE:
+                if status == FileQuery.STAT_DONE:
                     completed_subscriptions.append(subscription_id)
 
-        LOG.info('Archived file deletions: %d succeeded, %d failed.', num_success, num_failure)
+        LOG.info('Archived file %s: %d succeeded, %d failed.', optype, num_success, num_failure)
 
         return completed_subscriptions
 

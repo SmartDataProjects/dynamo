@@ -1,26 +1,13 @@
+from dynamo.fileop.base import FileOperation, FileQuery
 from dynamo.utils.classutil import get_instance
 
-class FileDeletionOperation(object):
+class FileDeletionOperation(FileOperation):
     @staticmethod
     def get_instance(module, config):
         return get_instance(FileDeletionOperation, module, config)
 
     def __init__(self, config):
-        # Number of files to process in single batch
-        self.batch_size = config.get('batch_size', 1)
-
-        self.dry_run = config.get('dry_run', False)
-
-    def form_batches(self, tasks):
-        """
-        Organize the deletion tasks into batches in whatever way preferrable to the system.
-        Tasks can be dropped; total number of tasks in the output can be smaller than the input.
-        RLFSM can decide to further break down the batch, if some files are failing.
-        @params tasks  list of RLFSM.DeletionTask objects
-
-        @return  List of lists of tasks
-        """
-        raise NotImplementedError('form_batches')
+        FileOperation.__init__(self, config)
 
     def start_deletions(self, batch_id, batch_tasks):
         """
@@ -46,37 +33,10 @@ class DirDeletionOperation(object):
         """
         raise NotImplementedError('execute')
 
-class FileDeletionQuery(object):
-    _statuses = ['new', 'inprogress', 'done', 'failed']
-    STAT_NEW, STAT_INPROGRESS, STAT_DONE, STAT_FAILED = range(4)
-
+class FileDeletionQuery(FileQuery):
     @staticmethod
     def get_instance(module, config):
         return get_instance(FileDeletionQuery, module, config)
 
-    @staticmethod
-    def status_name(val):
-        try:
-            return FileDeletionQuery._statuses[arg - 1]
-        except:
-            return arg
-
-    @staticmethod
-    def status_val(arg):
-        try:
-            return eval('FileDeletionQuery.STAT_' + arg.upper())
-        except:
-            return arg
-
-
     def __init__(self, config):
-        pass
-
-    def get_status(self, batch_id):
-        """
-        Query the deletion system about tasks in the given batch id.
-        @param batch_id   Integer
-
-        @return  [(deletion_id, status, exit code, finish time (UNIX))]
-        """
-        raise NotImplementedError('get_status')
+        FileQuery.__init__(self, config)

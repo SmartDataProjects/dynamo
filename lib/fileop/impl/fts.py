@@ -6,6 +6,7 @@ import logging
 import fts3.rest.client.easy as fts3
 from fts3.rest.client.request import Request
 
+from dynamo.fileop.base import FileQuery
 from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
 from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery
 from dynamo.utils.interface.mysql import MySQL
@@ -95,7 +96,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if self.server_id == 0:
             self._set_server_id()
 
-        return self._get_status(batch_id, 'transfer')
+        return self._get_status(batch_id, 'deletion')
 
     def _ftscall(self, method, *args, **kwd):
         if self._context is None:
@@ -163,18 +164,10 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         if optype == 'transfer':
             fts_files = result['files']
-            done = FileTransferQuery.STAT_DONE
-            failed = FileTransferQuery.STAT_FAILED
-            new = FileTransferQuery.STAT_NEW
-            inprogress = FileTransferQuery.STAT_INPROGRESS
         else:
             fts_files = result['dm']
-            done = FileDeletionQuery.STAT_DONE
-            failed = FileDeletionQuery.STAT_FAILED
-            new = FileDeletionQuery.STAT_NEW
-            inprogress = FileDeletionQuery.STAT_INPROGRESS
 
-        status = []
+        results = []
 
         for fts_file in fts_files:
             try:
@@ -185,29 +178,33 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             state = fts_file['file_state']
 
             if state == 'FINISHED':
-                status = done
+                status = FileQuery.STAT_DONE
                 exitcode = 0
+                start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
                 finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
             elif state == 'FAILED':
-                status = failed
+                status = FileQuery.STAT_FAILED
                 exitcode = -1
                 for code, msg in self.error_messages:
                     if msg in reason:
                         exitcode = code
                         break
+                start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
                 finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
             elif state == 'SUBMITTED':
-                status = new
+                status = FileQuery.STAT_NEW
                 exitcode = None
+                start_time = None
                 finish_time = None
             else:
-                status = inprogress
+                status = FileQuery.STAT_INPROGRESS
                 exitcode = None
+                start_time = None
                 finish_time = None
 
-            status.append((task_id, status, exitcode, finish_time))
+            results.append((task_id, status, exitcode, start_time, finish_time))
 
-        return status
+        return results
 
     def _set_server_id(self):
         result = self.mysql.query('SELECT `id` FROM `fts_servers` WHERE `url` = %s', self.server_url)
