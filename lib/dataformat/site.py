@@ -78,8 +78,7 @@ class Site(object):
 
         self.host = other.host
         self.storage_type = other.storage_type
-        # Temporarily commenting out to not overwrite what Max collected
-        # self.backend = other.backend
+        self.backend = other.backend
         self.status = other.status
 
     def embed_into(self, inventory, check = False):
