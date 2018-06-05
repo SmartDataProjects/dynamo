@@ -2,6 +2,7 @@ import sys
 import collections
 import logging
 
+from dynamo.fileop.base import FileQuery
 from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
 from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery
 from dynamo.utils.interface.mysql import MySQL
@@ -75,27 +76,32 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         return True
 
     def get_transfer_status(self, batch_id): #override
-        return self._get_status(batch_id, 'transfer', FileTransferQuery)
+        return self._get_status(batch_id, 'transfer')
 
     def get_deletion_status(self, batch_id): #override
-        return self._get_status(batch_id, 'deletion', FileDeletionQuery)
+        return self._get_status(batch_id, 'deletion')
 
-    def _get_status(self, batch_id, optype, cls):
-        sql = 'SELECT q.`id`, a.`status`, a.`exitcode`, a.`finish_time` FROM `standalone_{op}_queue` AS a'
-        sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'
-        sql += ' WHERE q.`batch_id` = %s'
-
+    def _get_status(self, batch_id, optype):
+        sql = 'LOCK TABLES `standalone_{op}_queue` AS a WRITE, `{op}_queue` AS q READ'
         sql = sql.format(op = optype)
 
-        result = [(i, cls.status_val(s), c, t) for (i, s, c, t) in self.db.xquery(sql, batch_id)]
+        self.db.query(sql)
+
+        sql = 'SELECT q.`id`, a.`status`, a.`exitcode`, UNIX_TIMESTAMP(a.`start_time`), UNIX_TIMESTAMP(a.`finish_time`) FROM `standalone_{op}_queue` AS a'
+        sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'
+        sql += ' WHERE q.`batch_id` = %s'
+        sql = sql.format(op = optype)
+
+        result = [(i, FileQuery.status_val(s), c, t, f) for (i, s, c, t, f) in self.db.xquery(sql, batch_id)]
 
         # Delete failed and done entries
         sql = 'DELETE FROM a USING `standalone_{op}_queue` AS a'
         sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'
         sql += ' WHERE q.`batch_id` = %s AND a.`status` IN (\'done\', \'failed\')'
-
         sql = sql.format(op = optype)
 
         self.db.query(sql, batch_id)
+
+        self.db.query('UNLOCK TABLES')
 
         return result
