@@ -77,7 +77,7 @@ def delete(tasks):
     return result
 
 
-if __name__ == '__init__':
+if __name__ == '__main__':
     from argparse import ArgumentParser
     
     parser = ArgumentParser(description = 'Perform transfers and deletions.')
@@ -92,7 +92,7 @@ if __name__ == '__init__':
     config = Configuration(args.config)
     
     ## Set up logging (write to stdout & stderr)
-    from dynamo.core.executable import make_standard_logger, read_only, inventory
+    from dynamo.core.executable import make_standard_logger
     
     LOG = make_standard_logger(config.log_level)
     
@@ -110,36 +110,29 @@ if __name__ == '__init__':
 
     sql = 'LOCK TABLES `standalone_deletion_queue` WRITE,'
     sql += ' `standalone_deletion_queue` AS a WRITE,'
-    sql += ' `deletion_queue` AS q READ,'
-    sql += ' `file_subscriptions` AS u READ,'
-    sql += ' `files` AS f READ,'
-    sql += ' `sites` AS s READ'
+    sql += ' `deletion_queue` AS q READ'
     db.query(sql)
 
-    sql = 'SELECT q.`batch_id`, q.`id`, f.`name`, s.`name` FROM `standalone_deletion_queue` AS a'
+    sql = 'SELECT q.`batch_id`, q.`id`, a.`file` FROM `standalone_deletion_queue` AS a'
     sql += ' INNER JOIN `deletion_queue` AS q ON q.`id` = a.`id`'
-    sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
-    sql += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
-    sql += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
     sql += ' WHERE a.`status` = \'new\''
     sql += ' ORDER BY q.`batch_id`'
 
     _batch_id = 0
     
-    for batch_id, tid, lfn, site_name in db.xquery(sql):
+    for batch_id, tid, lfn, pfn in db.xquery(sql):
         if batch_id != _batch_id:
             if _batch_id != 0:
-                LOG.info('Deletion batch %d for %s (%d tasks)', _batch_id, site.name, len(tasks))
+                LOG.info('Deletion batch %d (%d tasks)', _batch_id, len(tasks))
                 results.append(('delete', pool.apply_async(delete, (tasks,))))
 
             _batch_id = batch_id
-            site = inventory.sites[site_name]
             tasks = []
 
-        tasks.append((tid, site.to_pfn(lfn, 'gfal2')))
+        tasks.append((tid, pfn))
 
     if _batch_id != 0:
-        LOG.info('Deletion batch %d for %s (%d tasks)', _batch_id, site.name, len(tasks))
+        LOG.info('Deletion batch %d (%d tasks)', _batch_id, len(tasks))
         results.append(('delete', pool.apply_async(delete, (tasks,))))
 
     sql = 'UPDATE `standalone_deletion_queue` SET `status` = \'inprogress\' WHERE `status` = \'new\''
@@ -152,19 +145,11 @@ if __name__ == '__init__':
 
     sql = 'LOCK TABLES `standalone_transfer_queue` WRITE,'
     sql += ' `standalone_transfer_queue` AS a WRITE,'
-    sql += ' `transfer_queue` AS q READ,'
-    sql += ' `file_subscriptions` AS u READ,'
-    sql += ' `files` AS f READ,'
-    sql += ' `sites` AS sd READ'
-    sql += ' `sites` AS ss READ'
+    sql += ' `transfer_queue` AS q READ'
     db.query(sql)
 
-    sql = 'SELECT q.`batch_id`, q.`id`, f.`name`, ss.`name`, sd.`name` FROM `standalone_transfer_queue` AS a'
+    sql = 'SELECT q.`batch_id`, q.`id`, a.`source`, a.`destination` FROM `standalone_transfer_queue` AS a'
     sql += ' INNER JOIN `transfer_queue` AS q ON q.`id` = a.`id`'
-    sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
-    sql += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
-    sql += ' INNER JOIN `sites` AS sd ON sd.`id` = u.`site_id`'
-    sql += ' INNER JOIN `sites` AS ss ON ss.`id` = q.`source_id`'
     sql += ' WHERE a.`status` = \'new\''
     sql += ' ORDER BY q.`batch_id`'
 
@@ -177,21 +162,19 @@ if __name__ == '__init__':
 
     _batch_id = 0
     
-    for batch_id, tid, lfn, source_name, destination_name in db.xquery(sql):
+    for batch_id, tid, source, destination in db.xquery(sql):
         if batch_id != _batch_id:
             if _batch_id != 0:
-                LOG.info('Transfer batch %d for %s->%s (%d tasks)', _batch_id, source.name, destination.name, len(tasks))
+                LOG.info('Transfer batch %d (%d tasks)', _batch_id, len(tasks))
                 results.append(('transfer', pool.apply_async(transfer, (tasks, transfer_params))))
 
             _batch_id = batch_id
-            source = inventory.sites[source_name]
-            destination = inventory.sites[destination_name]
             tasks = []
 
-        tasks.append((tid, source.to_pfn(lfn, 'gfal2'), destination.to_pfn(lfn, 'gfal2')))
+        tasks.append((tid, source, destination))
 
     if _batch_id != 0:
-        LOG.info('Transfer batch %d for %s->%s (%d tasks)', _batch_id, source.name, destination.name, len(tasks))
+        LOG.info('Transfer batch %d (%d tasks)', _batch_id, len(tasks))
         results.append(('transfer', pool.apply_async(transfer, (tasks, transfer_params))))
 
     sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'inprogress\' WHERE `status` = \'new\''

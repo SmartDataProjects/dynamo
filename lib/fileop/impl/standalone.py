@@ -42,26 +42,39 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
             return by_endpoint.values()
 
     def start_transfers(self, batch_id, batch_tasks): #override
-        self._start(batch_id, 'transfer')
+        fields = ('id', 'source', 'destination')
+        def mapping(task):
+            lfn = task.subscription.file.lfn
+            return (
+                task.id,
+                task.source.to_pfn(lfn, 'gfal2'),
+                task.subscription.destination.to_pfn(lfn, 'gfal2')
+            )
+
+        if not self.dry_run:
+            self.db.insert_many('standalone_transfer_queue', fields, mapping, batch_tasks)
+
+        return True
 
     def start_deletions(self, batch_id, batch_tasks): #override
-        self._start(batch_id, 'deletion')
+        fields = ('id', 'file')
+        def mapping(task):
+            lfn = task.subscription.file.lfn
+            return (
+                task.id,
+                task.desubscription.site.to_pfn(lfn, 'gfal2')
+            )
+
+        if not self.dry_run:
+            self.db.insert_many('standalone_deletion_queue', fields, mapping, batch_tasks)
+
+        return True
 
     def get_transfer_status(self, batch_id): #override
         self._get_status(batch_id, 'transfer', FileTransferQuery)
 
     def get_deletion_status(self, batch_id): #override
         self._get_status(batch_id, 'deletion', FileDeletionQuery)
-
-    def _start(self, batch_id, optype):
-        sql = 'INSERT INTO `standalone_{op}_queue` (`id`)'
-        sql += ' SELECT `id` FROM `{op}_queue` WHERE `batch_id` = %s'
-        
-        sql = sql.format(op = optype)
-
-        self.db.query(sql, batch_id)
-
-        return True
 
     def _get_status(self, batch_id, optype, cls):
         sql = 'SELECT q.`id`, a.`status`, a.`exitcode`, a.`finish_time` FROM `standalone_{op}_queue` AS a'
