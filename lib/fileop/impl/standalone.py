@@ -54,6 +54,8 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         if not self.dry_run:
             self.db.insert_many('standalone_transfer_queue', fields, mapping, batch_tasks)
 
+        LOG.debug('Inserted %d entries to standalone_transfer_queue for batch %d.', len(batch_tasks), batch_id)
+
         return True
 
     def start_deletions(self, batch_id, batch_tasks): #override
@@ -68,17 +70,19 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         if not self.dry_run:
             self.db.insert_many('standalone_deletion_queue', fields, mapping, batch_tasks)
 
+        LOG.debug('Inserted %d entries to standalone_deletion_queue for batch %d.', len(batch_tasks), batch_id)
+
         return True
 
     def get_transfer_status(self, batch_id): #override
-        self._get_status(batch_id, 'transfer', FileTransferQuery)
+        return self._get_status(batch_id, 'transfer', FileTransferQuery)
 
     def get_deletion_status(self, batch_id): #override
-        self._get_status(batch_id, 'deletion', FileDeletionQuery)
+        return self._get_status(batch_id, 'deletion', FileDeletionQuery)
 
     def _get_status(self, batch_id, optype, cls):
         sql = 'SELECT q.`id`, a.`status`, a.`exitcode`, a.`finish_time` FROM `standalone_{op}_queue` AS a'
-        sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'.format(op = optype)
+        sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'
         sql += ' WHERE q.`batch_id` = %s'
 
         sql = sql.format(op = optype)
@@ -86,8 +90,12 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         result = [(i, cls.status_val(s), c, t) for (i, s, c, t) in self.db.xquery(sql, batch_id)]
 
         # Delete failed and done entries
-        sql = 'DELETE FROM s USING `standalone_{op}_queue` AS a'
-        sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'.format(op = optype)
+        sql = 'DELETE FROM a USING `standalone_{op}_queue` AS a'
+        sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'
         sql += ' WHERE q.`batch_id` = %s AND a.`status` IN (\'done\', \'failed\')'
 
-        self.db.query(sql)
+        sql = sql.format(op = optype)
+
+        self.db.query(sql, batch_id)
+
+        return result

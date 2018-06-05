@@ -32,6 +32,11 @@ if read_only:
 
 ## Start main
 
+LOG.info('Checking and executing new file transfer subscriptions.')
 rlfsm.transfer_files(inventory)
+
+LOG.info('Checking and executing new file deletion subscriptions.')
 rlfsm.delete_files(inventory)
+
+LOG.info('Updating the inventory.')
 rlfsm.update_inventory(inventory)

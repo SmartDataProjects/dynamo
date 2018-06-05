@@ -96,14 +96,16 @@ class RLFSM(object):
             if self.dry_run:
                 batch_id = 0
             else:
-                self.db.query('INSERT INTO `transfer_batches`')
+                self.db.query('INSERT INTO `transfer_batches` (`id`) VALUES (0)')
                 batch_id = self.db.last_insert_id
+
+            LOG.debug('New transfer batch %d for %d files.', batch_id, len(tasks))
 
             # local time
             now = time.strftime('%Y-%m-%d %H:%M:%S')
 
             # need to create the transfer tasks first to have ids assigned
-            fields = ('subscription_id', 'source', 'batch_id', 'created')
+            fields = ('subscription_id', 'source_id', 'batch_id', 'created')
             mapping = lambda t: (t.subscription.id, t.source.id, batch_id, now)
 
             if not self.dry_run:
@@ -148,14 +150,19 @@ class RLFSM(object):
                     start_transfers(tasks[len(tasks) / 2:])
 
 
+        LOG.info('Fetching subscription status from the file operation agent.')
         self._update_subscription_status()
 
+        LOG.info('Collecting new transfer subscriptions.')
         subscriptions = self._get_subscriptions(inventory)
 
+        LOG.info('Identifying source sites for all transfers.')
         tasks = self._select_source(subscriptions)
 
+        LOG.info('Organizing the transfers into batches.')
         batches = self.transfer_operation.form_batches(tasks)
 
+        LOG.info('Issuing transfer tasks.')
         for batch_tasks in batches:
             start_transfers(batch_tasks)
 
@@ -164,7 +171,7 @@ class RLFSM(object):
             if self.dry_run:
                 batch_id = 0
             else:
-                self.db.query('INSERT INTO `deletion_batches`')
+                self.db.query('INSERT INTO `deletion_batches` (`id`) VALUES (0)')
                 batch_id = self.db.last_insert_id
 
             # local time
@@ -210,16 +217,21 @@ class RLFSM(object):
                     start_deletions(tasks[len(tasks) / 2:])
 
 
+        LOG.info('Fetching deletion status from the file operation agent.')
         completed = self._update_deletion_status()
 
+        LOG.info('Recording candidates for empty directories.')
         self._set_dirclean_candidates(completed, inventory)
-          
+
+        LOG.info('Collecting new deletion subscriptions.')
         desubscriptions = self._get_desubscriptions(inventory)
 
         tasks = [RLFSM.DeletionTask(d) for d in desubscriptions]
 
+        LOG.info('Organizing the deletions into batches.')
         batches = self.deletion_operation.form_batches(tasks)
 
+        LOG.info('Issuing deletion tasks.')
         for batch_tasks in batches:
             start_deletions(batch_tasks)
 
@@ -405,29 +417,44 @@ class RLFSM(object):
 
         delete_transfer = 'DELETE FROM `transfer_queue` WHERE `id` = %s'
 
+        num_success = 0
+        num_failure = 0
+
         sql = 'SELECT `id` FROM `transfer_batches`'
         for batch_id in self.db.query(sql):
             transfer_results = self.transfer_query.get_transfer_status(batch_id)
 
             for transfer_id, status, exitcode, finish_time in transfer_results:
-                if status not in (FileTransferQuery.STAT_DONE, FileTransferQuery.STAT_FAILED):
+                if status == FileTransferQuery.STAT_DONE:
+                    num_success += 1
+                elif status == FileTransferQuery.STAT_FAILED:
+                    num_failure += 1
+                else:
                     continue
 
                 if not self.dry_run:
+                    # Archive the file name to history DB (if not yet there)
                     self.db.query(insert_file, transfer_id)
+                    # Archive the transfer to history DB
                     self.db.query(insert_transfer, exitcode, finish_time, transfer_id)
 
                 subscription_id = self.db.query(get_subscription, transfer_id)[0]
 
                 if not self.dry_run:
                     if status == FileTransferQuery.STAT_DONE:
+                        LOG.debug('Transfer subscription %d completed.', subscription_id)
                         self.db.query(update_subscription, 'done', subscription_id)
+                        # Delete entries from failed_transfers table
                         self.db.query(delete_failures, subscription_id)
                     else:
+                        LOG.debug('Transfer subscription %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
+                        # Insert entry to failed_transfers table
                         self.db.query(insert_failure, exitcode, transfer_id)
                         self.db.query(update_subscription, 'retry', subscription_id)
     
                     self.db.query(delete_transfer, transfer_id)
+
+        LOG.info('Archived file transfers: %d succeeded, %d failed.', num_success, num_failure)
 
     def _update_deletion_status(self):
         insert_file = 'INSERT INTO `{history}`.`files` (`name`)'
@@ -459,13 +486,19 @@ class RLFSM(object):
         delete_deletion = 'DELETE FROM `deletion_queue` WHERE `id` = %s'
 
         completed_subscriptions = []
+        num_success = 0
+        num_failure = 0
 
         sql = 'SELECT `id` FROM `deletion_batches`'
         for batch_id in self.db.query(sql):
             deletion_results = self.deletion_query.get_deletion_status(batch_id)
 
             for deletion_id, status, exitcode, finish_time in deletion_results:
-                if status not in (FileDeletionQuery.STAT_DONE, FileDeletionQuery.STAT_FAILED):
+                if status == FileDeletionQuery.STAT_DONE:
+                    num_success += 1
+                elif status == FileDeletionQuery.STAT_FAILED:
+                    num_failure += 1
+                else:
                     continue
 
                 if not self.dry_run:
@@ -476,14 +509,18 @@ class RLFSM(object):
 
                 if not self.dry_run:
                     if status == FileDeletionQuery.STAT_DONE:
+                        LOG.debug('Deletion %d completed.', subscription_id)
                         self.db.query(update_subscription, 'done', subscription_id)
                     else:
+                        LOG.debug('Deletion %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
                         self.db.query(update_subscription, 'retry', subscription_id)
     
                     self.db.query(delete_deletion, deletion_id)
 
                 if status == FileDeletionQuery.STAT_DONE:
                     completed_subscriptions.append(subscription_id)
+
+        LOG.info('Archived file deletions: %d succeeded, %d failed.', num_success, num_failure)
 
         return completed_subscriptions
 
