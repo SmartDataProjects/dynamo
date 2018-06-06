@@ -33,6 +33,12 @@ class MySQLInventoryStore(InventoryStore):
         return MySQLInventoryStore(config)
 
     def get_partitions(self, conditions):
+        partition_names = set(self._mysql.query('SELECT `name` FROM `partitions`'))
+
+        for name in set(conditions.iterkeys()) - partition_names:
+            LOG.warning('Creating new partition %s defined in the conditions file.', name)
+            self._mysql.query('INSERT INTO `partitions` (`name`) VALUES (%s)', name)
+
         partitions = {}
         for part_id, name in self._mysql.query('SELECT `id`, `name` FROM `partitions`'):
             try:
@@ -45,9 +51,6 @@ class MySQLInventoryStore(InventoryStore):
                 partitions[name] = Partition(name, pid = part_id)
             else:
                 partitions[name] = Partition(name, condition = condition, pid = part_id)
-
-        for name in set(conditions.iterkeys()) - set(partitions.iterkeys()):
-            LOG.warning('Unknown partition %s defined in the conditions file', name)
 
         # set subpartitions for superpartitions
         for partition in partitions.itervalues():
