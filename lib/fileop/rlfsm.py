@@ -389,27 +389,20 @@ class RLFSM(object):
         if not self.dry_run:
             self.db.insert_many('file_subscriptions', fields, mapping, missing_ids)
 
-    def desubscribe_files(self, block_replica):
+    def desubscribe_files(self, site, files):
         """
-        Book deletion of files in the block replica.
+        Book deletion of files at the site.
         """
-        site_id = block_replica.site.id
-
-        if block_replica.file_ids is None:
-            file_ids = (f.id for f in block_replica.block.files)
-        else:
-            file_ids = block_replica.file_ids
-
-        LOG.info('Desubscribing %d files from %s', len(file_ids), str(block_replica))
+        LOG.info('Desubscribing %d files from %s', len(files), site.name)
 
         # local time
         now = time.strftime('%Y-%m-%d %H:%M:%S')
 
         fields = ('file_id', 'site_id', 'delete', 'created')
-        mapping = lambda f: (f, site_id, 1, now)
+        mapping = lambda f: (f.id, site.id, 1, now)
 
         if not self.dry_run:
-            self.db.insert_many('file_subscriptions', fields, mapping, file_ids)
+            self.db.insert_many('file_subscriptions', fields, mapping, files)
 
     def _update_status(self, optype):
         insert_file = 'INSERT INTO `{history}`.`files` (`name`, `size`)'

@@ -17,7 +17,7 @@ class InjectData(WebModule):
 
     def run(self, caller, request, inventory):
         """
-        Inject data into inventory with a JSON (request field 'data'). Data must be a dict.
+        Inject data into inventory with a JSON (sent via POST). Data must be a dict.
         The top level keys must be "dataset", "site", "group", or "datasetreplica".
         The values must be lists of dicts, where each dict represents an object. Blocks should be listed
         within a dataset dict, Files within Blocks, and BlockReplicas within DatasetReplicas.
@@ -269,7 +269,10 @@ class InjectData(WebModule):
                     obj['name'] = name
                     raise IllFormedRequest('block', str(obj), hint = str(exc))
 
-                block = inventory.update(new_block)
+                try:
+                    block = inventory.update(new_block)
+                except:
+                    raise RuntimeError('Inventory update failed')
     
                 block._files = set()
 
@@ -298,7 +301,6 @@ class InjectData(WebModule):
 
     def _make_files(self, objects, block, new_block, inventory, counts):
         num_files = 0
-        added_new_file = False
 
         block_replicas = {}
 
@@ -343,7 +345,10 @@ class InjectData(WebModule):
                 block.size += new_lfile.size
                 block.num_files += 1
 
-                lfile = inventory.update(new_lfile)
+                try:
+                    lfile = inventory.update(new_lfile)
+                except:
+                    raise RuntimeError('Inventory update failed')
 
                 if not new_block:
                     block_replica.size += lfile.size
@@ -352,23 +357,24 @@ class InjectData(WebModule):
                         pass
                     else:
                         block_replica.file_ids += (lfile.lfn,)
-
-                added_new_file = True
     
                 num_files += 1
 
         if num_files != 0:
             inventory.register_update(block)
 
-        for block_replica in block_replicas.itervalues():
-            inventory.update(block_replica)
+        try:
+            for block_replica in block_replicas.itervalues():
+                inventory.update(block_replica)
+        except:
+            raise RuntimeError('Inventory update failed')
 
         try:
             counts['files'] += num_files
         except KeyError:
             counts['files'] = num_files
 
-        return added_new_file
+        return num_files != 0
 
     def _make_blockreplicas(self, objects, dataset_replica, inventory, counts):
         num_blockreplicas = 0
@@ -415,7 +421,10 @@ class InjectData(WebModule):
                     obj['group'] = group_name
                     raise IllFormedRequest('blockreplica', str(obj), hint = str(exc))
 
-                inventory.update(new_replica)
+                try:
+                    inventory.update(new_replica)
+                except:
+                    raise RuntimeError('Inventory update failed')
 
                 num_blockreplicas += 1
 
