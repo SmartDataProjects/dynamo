@@ -384,7 +384,7 @@ class InjectData(WebModule):
 
         for obj in objects:
             try:
-                block_name = obj.pop('block')
+                block_name = obj['block']
             except KeyError:
                 raise MissingParameter('block', context = 'blockreplica ' + str(obj))
 
@@ -400,7 +400,7 @@ class InjectData(WebModule):
             if block_replica is None:
                 # new replica
                 try:
-                    group_name = obj.pop('group')
+                    group_name = obj['group']
                 except KeyError:
                     group = dataset_replica.group
                 else:
@@ -409,16 +409,33 @@ class InjectData(WebModule):
                     except KeyError:
                         raise InvalidRequest('Unknown group %s' % group_name)
 
+                kwd = {}
+                
+                if 'is_custodial' in obj:
+                    kwd['is_custodial'] = obj['is_custodial']
+
+                if 'last_update' in obj:
+                    kwd['last_update'] = obj['last_update']
+
                 if len(block.replicas) == 0:
                     # "origin" block replicas must always be full
-                    obj['file_ids'] = None
-                    obj['size'] = -1 # will set size to block size
-    
+                    kwd['file_ids'] = None
+                    kwd['size'] = -1 # will set size to block size
+                else:
+                    if 'files' in obj:
+                        kwd['file_ids'] = obj['files']
+                        size = 0
+                        for lfn in obj['files']:
+                            lfile = block.find_file(lfn)
+                            if lfile is None:
+                                raise InvalidRequest('Unknown file %s' % lfn)
+                            size += lfile.size
+
+                        kwd['size'] = size
+
                 try:
-                    new_replica = df.BlockReplica(block, site, group, **obj)
+                    new_replica = df.BlockReplica(block, site, group, **kwd)
                 except TypeError as exc:
-                    obj['block'] = block_name
-                    obj['group'] = group_name
                     raise IllFormedRequest('blockreplica', str(obj), hint = str(exc))
 
                 try:
