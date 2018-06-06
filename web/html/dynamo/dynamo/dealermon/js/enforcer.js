@@ -140,12 +140,18 @@ function drawStatus(data) {
         there.splice(0,1);
     }
 
+
+    main_url = "http://dynamo.mit.edu/dynamo/dealermon/monitoring_enforcer/RULE_STATUS.csv"
+    urls = []
+    urls.push(main_url.replace("RULE",title).replace("STATUS","missing"))
+    urls.push(main_url.replace("RULE",title).replace("STATUS","enroute"))
+    urls.push(window.location.href);
+
     var missing_and_subscribed = [];
 
     for (var i = 0; i < missing.length; i++){
 	missing_and_subscribed.push(missing[i]+enroute[i]);
     }
-
 
     var state = [
 	    {
@@ -173,7 +179,16 @@ function drawStatus(data) {
 	}
     };
 
+    var bars = document.getElementById('Bars');
+
     Plotly.newPlot('Bars', state, layout1);
+
+    bars.on('plotly_click', function(data){
+            if(data.points.length === 1) {
+                var link = urls[data.points[0].pointNumber];
+                window.open(link,"_blank");
+            }
+        });
 
     times_converted = times.map(timeConverter);
 
