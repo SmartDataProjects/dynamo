@@ -1,6 +1,6 @@
 CREATE TABLE `sites` (
   `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
+  `name` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   `host` varchar(256) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   `storage_type` enum('disk','mss','buffer','unknown') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'unknown',
   `backend` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,

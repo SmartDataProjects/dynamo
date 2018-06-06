@@ -3,57 +3,17 @@ import threading
 import socket
 import hashlib
 
-from dynamo.core.components.master import MasterServer
+from dynamo.core.components.host import ServerHost
+from dynamo.core.components.master import MasterServer, AppManager
 from dynamo.core.components.board import UpdateBoard
 
 class OutOfSyncError(Exception):
     pass
 
-class ServerHost(object):
-    def __init__(self, hostname):
-        self.hostname = hostname
-        self.status = 'initial'
-        self.has_store = False
-        self.board = None
-
-
 class ServerManager(object):
     """
     Manager for the application and updates table and the connections to other servers.
     """
-
-    _server_statuses = ['initial', 'starting', 'online', 'updating', 'outofsync']
-    SRV_INITIAL, SRV_STARTING, SRV_ONLINE, SRV_UPDATING, SRV_ERROR, SRV_OUTOFSYNC = range(1, 7)
-    _application_statuses = ['new', 'assigned', 'run', 'done', 'notfound', 'authfailed', 'failed', 'killed']
-    APP_NEW, APP_ASSIGNED, APP_RUN, APP_DONE, APP_NOTFOUND, APP_AUTHFAILED, APP_FAILED, APP_KILLED = range(1, 9)
-
-    @staticmethod
-    def server_status_name(arg):
-        try:
-            return ServerManager._server_statuses[arg - 1]
-        except:
-            return arg
-
-    @staticmethod
-    def server_status_val(arg):
-        try:
-            return eval('ServerManager.SRV_' + arg.upper())
-        except:
-            return arg
-
-    @staticmethod
-    def application_status_name(arg):
-        try:
-            return ServerManager._application_statuses[arg - 1]
-        except:
-            return arg
-
-    @staticmethod
-    def application_status_val(arg):
-        try:
-            return eval('ServerManager.APP_' + arg.upper())
-        except:
-            return arg
 
     def __init__(self, config):
         # Create a master server interface
@@ -63,6 +23,8 @@ class ServerManager(object):
 
         if self.master_host != 'localhost' and self.master_host != socket.gethostname():
             # Interface to the master server local shadow
+            # When the master server dies, this host can become the next master. Need to have
+            # data copied locally in preparation.
             self.shadow = MasterServer.get_instance(config.shadow.module, config.shadow.config)
         else:
             self.shadow = None
@@ -78,7 +40,7 @@ class ServerManager(object):
 
         self.hostname = socket.gethostname()
         
-        self.status = ServerManager.SRV_INITIAL
+        self.status = ServerHost.STAT_INITIAL
 
         # Heartbeat is sent in a separate thread
         self.heartbeat = threading.Thread(target = self.send_heartbeat)
@@ -94,8 +56,8 @@ class ServerManager(object):
             # this host
             self.master.lock()
             try:
-                if self.get_status() == ServerManager.SRV_OUTOFSYNC:
-                    self.status = ServerManager.SRV_OUTOFSYNC
+                if self.get_status() == ServerHost.STAT_OUTOFSYNC:
+                    self.status = ServerHost.STAT_OUTOFSYNC
                     raise OutOfSyncError('Server out of sync')
     
                 self.master.set_status(status, self.hostname)
@@ -116,32 +78,32 @@ class ServerManager(object):
         self.master.lock()
         try:
             # first check that we are out of sync
-            if self.get_status() != ServerManager.SRV_OUTOFSYNC:
+            if self.get_status() != ServerHost.STAT_OUTOFSYNC:
                 raise RuntimeError('reset_status called when status is not outofsync')
 
             # then reset
-            self.master.set_status(ServerManager.SRV_INITIAL, self.hostname)
+            self.master.set_status(ServerHost.STAT_INITIAL, self.hostname)
 
         finally:
             self.master.unlock()
 
-        self.status = ServerManager.SRV_INITIAL
+        self.status = ServerHost.STAT_INITIAL
 
     def check_status(self):
         """
-        1. Check status as given by the local variable
-        2. Check connection to the master server
-        3. Check status as given in the master server list
-        (4. Back up the master server and user list to the local shadow)
+        1. Check connection to the master server
+        2. Update the status from the master server
         """
-        if self.status == ServerManager.SRV_ERROR:
-            raise RuntimeError('Server status is ERROR')
 
         if not self.master.check_connection():
             raise RuntimeError('Lost connection to master server')
 
-        if self.get_status() == ServerManager.SRV_OUTOFSYNC:
-            self.status = ServerManager.SRV_OUTOFSYNC
+        self.get_status()
+
+        if self.status == ServerHost.STAT_ERROR:
+            raise RuntimeError('Server status is ERROR')
+
+        elif self.status == ServerHost.STAT_OUTOFSYNC:
             raise OutOfSyncError('Server out of sync')
 
     def get_status(self, hostname = None):
@@ -154,9 +116,14 @@ class ServerManager(object):
             status = self.master.get_status(hostname)
 
         if status is None:
-            return None
+            status_val = None
         else:
-            return ServerManager.server_status_val(status)
+            status_val = ServerHost.status_val(status)
+
+        if hostname is None:
+            self.status = status_val
+
+        return status_val
 
     def count_servers(self, status):
         """
@@ -203,7 +170,7 @@ class ServerManager(object):
         """
 
         while True:
-            if self.status != ServerManager.SRV_INITIAL:
+            if self.status != ServerHost.STAT_INITIAL:
                 self.master.send_heartbeat()
 
                 if self.shadow is not None:
@@ -217,7 +184,7 @@ class ServerManager(object):
         """
         if not self.shadow:
             # Master server was local
-            raise RuntimeError('Cannot reconnect to local master server.')
+            raise RuntimeError('Cannot reconnect to local master server shadow.')
 
         module, config = self.shadow.get_next_master(self.master_host)
         
@@ -239,16 +206,14 @@ class ServerManager(object):
             #  . I am supposed to be updating my inventory
             #  . There is a server starting
             #  . There is already a write process
-            read_only = (self.get_status() == ServerManager.SRV_UPDATING) or \
-                (len(self.master.get_host_list(status = ServerManager.SRV_STARTING)) != 0) or \
-                (self.master.get_writing_process_id() is not None)
+            read_only = self.master.inhibit_write()
 
             app = self.master.get_next_application(read_only)
     
             if app is None:
                 return None
             else:
-                self.master.update_application(app['appid'], status = ServerManager.APP_ASSIGNED, hostname = self.hostname)
+                self.master.update_application(app['appid'], status = AppManager.STAT_ASSIGNED, hostname = self.hostname)
                 return app
 
         finally:
@@ -261,7 +226,7 @@ class ServerManager(object):
         applications = self.master.get_applications(app_id = app_id)
         if len(applications) == 0:
             # We assume the application was killed an removed
-            return ServerManager.EXC_KILLED
+            return AppManager.STAT_KILLED
         else:
             return applications[0]['status']
 
@@ -305,7 +270,7 @@ class ServerManager(object):
                 if not server.has_store:
                     continue
 
-                if server.status == ServerManager.SRV_ONLINE:
+                if server.status == ServerHost.STAT_ONLINE:
                     # store_config = (module, config, version)
                     store_config = self.master.get_store_config(server.hostname)
                     if store_config is None:
@@ -313,13 +278,13 @@ class ServerManager(object):
 
                     return (server.hostname,) + store_config
                     
-                elif server.status == ServerManager.SRV_UPDATING:
+                elif server.status == ServerHost.STAT_UPDATING:
                     is_updating = True
 
             if is_updating:
                 time.sleep(5)
             else:
-                self.set_status(ServerManager.SRV_ERROR)
+                self.set_status(ServerHost.STAT_ERROR)
                 raise RuntimeError('Could not find a remote persistency store to connect to.')
 
     def register_remote_store(self, hostname):
@@ -350,7 +315,7 @@ class ServerManager(object):
                 self.other_servers[hostname] = server
 
             server.has_store = (has_store != 0)
-            server.status = ServerManager.server_status_val(status)
+            server.status = ServerHost.status_val(status)
 
             known_hosts.add(hostname)
 
@@ -383,16 +348,16 @@ class ServerManager(object):
                     # all processed, we are done
                     break
 
-                if server.status == ServerManager.SRV_ONLINE:
+                if server.status == ServerHost.STAT_ONLINE:
                     processed.add(server.hostname)
 
-                    self.set_status(ServerManager.SRV_UPDATING, server.hostname)
+                    self.set_status(ServerHost.STAT_UPDATING, server.hostname)
                     try:
                         server.board.write_updates(update_commands)
                     except:
-                        self.set_status(ServerManager.SRV_OUTOFSYNC, server.hostname)
+                        self.set_status(ServerHost.STAT_OUTOFSYNC, server.hostname)
 
-                elif server.status == ServerManager.SRV_UPDATING:
+                elif server.status == ServerHost.STAT_UPDATING:
                     # this server is still processing updates from the previous write process
                     continue
 

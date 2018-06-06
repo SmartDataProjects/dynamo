@@ -1,6 +1,7 @@
 import logging
 
 from dynamo.dataformat import Configuration, HistoryRecord
+from dynamo.utils.classutil import get_instance
 
 LOG = logging.getLogger(__name__)
 
@@ -11,19 +12,12 @@ class TransactionHistoryInterface(object):
 
     @staticmethod
     def get_instance(module = None, config = None):
-        import dynamo.history.impl as impl
         if module is None:
-            cls = getattr(impl, TransactionHistoryInterface._module)
-        else:            
-            cls = getattr(impl, module)
-
-        if not issubclass(cls, TransactionHistoryInterface):
-            raise RuntimeError('%s is not a subclass of TransactionHistoryInterface' % module)
-
+            module = TransactionHistoryInterface._module
         if config is None:
             config = TransactionHistoryInterface._config
 
-        return cls(config)
+        return get_instance(TransactionHistoryInterface, module, config)
 
     # defaults
     _module = ''

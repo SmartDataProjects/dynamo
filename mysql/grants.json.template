@@ -44,5 +44,31 @@
       ["INSERT, UPDATE, DELETE", "dynamoregister", "activity_lock"],
       ["SELECT", "dynamoserver", "users"]
     ]
+  },
+  "dynamofod": {
+    "passwd": "",
+    "hosts": ["localhost"],
+    "grants": [
+      ["SELECT, LOCK TABLES", "dynamo"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "transfer_batches"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "transfer_queue"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "failed_transfers"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "deletion_batches"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "deletion_queue"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "file_subscriptions"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "directory_cleaning_queue"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "fts_servers"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "fts_error_messages"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "fts_transfer_batches"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "fts_transfer_files"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "fts_deletion_batches"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "fts_deletion_files"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "standalone_transfer_queue"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "standalone_deletion_queue"],
+      ["SELECT, LOCK TABLES", "dynamohistory"],
+      ["INSERT, UPDATE", "dynamohistory", "files"],
+      ["INSERT", "dynamohistory", "file_transfers"],
+      ["INSERT", "dynamohistory", "file_deletions"]
+    ]
   }
 }

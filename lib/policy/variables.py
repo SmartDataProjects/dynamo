@@ -23,8 +23,13 @@ class DatasetName(DatasetAttr):
     def __init__(self):
         DatasetAttr.__init__(self, Attr.TEXT_TYPE, attr = 'name')
 
+        if Dataset._name_pattern is not None:
+            self.name_pattern = re.compile(Dataset._name_pattern)
+        else:
+            self.name_pattern = None
+
     def rhs_map(self, expr, is_re = False):
-        if not is_re and not re.match('/[^/]+/[^/]+/[^/]+', expr):
+        if not is_re and self.name_pattern is not None and not self.name_pattern.match(expr):
             raise InvalidExpression('Invalid dataset name ' + expr)
         
         if is_re:
@@ -182,7 +187,7 @@ class ReplicaIsLastSource(BlockReplicaAttr):
         BlockReplicaAttr.__init__(self, Attr.BOOL_TYPE)
 
     def _get(self, replica):
-        if not replica.is_complete:
+        if not replica.is_complete():
             return False
 
         transfer_ongoing = False
@@ -190,7 +195,7 @@ class ReplicaIsLastSource(BlockReplicaAttr):
             if other_replica is replica:
                 continue
 
-            if other_replica.is_complete:
+            if other_replica.is_complete():
                 site = other_replica.site
                 if site.storage_type == Site.TYPE_DISK and site.status == Site.STAT_READY:
                     return False
@@ -231,7 +236,7 @@ class BlockNumFullDiskCopy(BlockReplicaAttr):
     def _get(self, replica):
         num = 0
         for rep in replica.block.replicas:
-            if rep.is_complete:
+            if rep.is_complete():
                 num += 1
     
         return num
@@ -242,7 +247,7 @@ class BlockReplicaOnTape(BlockReplicaAttr):
 
     def _get(self, replica):
         for rep in replica.block.replicas:
-            if rep.site.storage_type == Site.TYPE_MSS and rep.is_complete:
+            if rep.site.storage_type == Site.TYPE_MSS and rep.is_complete():
                 return True
 
         return False

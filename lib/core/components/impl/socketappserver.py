@@ -12,8 +12,9 @@ import json
 import logging
 
 from dynamo.core.components.appserver import AppServer
-from dynamo.core.manager import ServerManager
+from dynamo.core.components.appmanager import AppManager
 import dynamo.core.serverutils as serverutils
+from dynamo.dataformat import ConfigurationError
 
 SERVER_PORT = 39626
 DN_TRANSLATION = {
@@ -27,6 +28,9 @@ DN_TRANSLATION = {
     'domainComponent': 'DC',
     'userId': 'UID'
 }
+
+# OpenSSL cannot authenticate with certificate proxies without this environment variable
+os.environ['OPENSSL_ALLOW_PROXY_CERTS'] = '1'
 
 LOG = logging.getLogger(__name__)
 
@@ -118,12 +122,13 @@ class SocketAppServer(AppServer):
     def __init__(self, dynamo_server, config):
         AppServer.__init__(self, dynamo_server, config)
 
-        # OpenSSL cannot authenticate with certificate proxies without this environment variable
-        os.environ['OPENSSL_ALLOW_PROXY_CERTS'] = '1'
-
         if 'capath' in config:
-            # capath only supported in SSLContext (pythonn 2.7)
-            context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+            try:
+                context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+            except AttributeError:
+                # capath only supported in SSLContext (pythonn 2.7)
+                raise ConfigurationError('AppServer configuration "capath" is available only in Python 2.7. Please use cafile instead.')
+
             context.load_cert_chain(config.certfile, keyfile = config.keyfile)
             context.load_verify_locations(capath = config.capath)
             context.verify_mode = ssl.CERT_REQUIRED
@@ -207,15 +212,12 @@ class SocketAppServer(AppServer):
 
             LOG.debug('New application request from %s:%s by %s' % (addr[0], addr[1], user_cert_data['subject']))
 
-            for dkey in ['subject', 'issuer']:
-                dn = ''
-                for rdn in user_cert_data[dkey]:
-                    dn += '/' + '+'.join('%s=%s' % (DN_TRANSLATION[key], value) for key, value in rdn)
+            dn = ''
+            for rdn in user_cert_data['subject']:
+                dn += '/' + '+'.join('%s=%s' % (DN_TRANSLATION[key], value) for key, value in rdn)
 
-                user_name = master.identify_user(dn = dn)
-                if user_name is not None:
-                    break
-            else:
+            user_name = master.identify_user(dn = dn, check_trunc = True)
+            if user_name is None:
                 io.send('failed', 'Unidentified user DN %s' % dn)
                 return
 
@@ -350,7 +352,7 @@ class SocketAppServer(AppServer):
                 pass
             conn.close()
 
-        return {'status': ServerManager.application_status_name(msg['status']), 'exit_code': msg['exit_code']}
+        return {'status': AppManager.status_name(msg['status']), 'exit_code': msg['exit_code']}
 
 
 def run_interactive_through_socket(addr, workarea, defaults_config, inventory, authorizer):

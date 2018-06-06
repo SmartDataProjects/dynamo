@@ -4,6 +4,7 @@ import threading
 import weakref
 
 from exceptions import ObjectError, IntegrityError
+from _namespace import customize_block
 
 class Block(object):
     """
@@ -16,33 +17,6 @@ class Block(object):
     _files_cache_lock = threading.Lock()
     _MAX_FILES_CACHE_DEPTH = 100
     _inventory_store = None
-
-    @staticmethod
-    def to_internal_name(name_str):
-        # block name format: [8]-[4]-[4]-[4]-[12] where [n] is an n-digit hex.
-        return long(name_str.replace('-', ''), 16)
-
-    @staticmethod
-    def to_real_name(name):
-        full_string = hex(name).replace('0x', '')[:-1] # last character is 'L'
-        if len(full_string) < 32:
-            full_string = '0' * (32 - len(full_string)) + full_string
-
-        return full_string[:8] + '-' + full_string[8:12] + '-' + full_string[12:16] + '-' + full_string[16:20] + '-' + full_string[20:]        
-
-    @staticmethod
-    def to_full_name(dataset_name, block_real_name):
-        return dataset_name + '#' + block_real_name
-
-    @staticmethod
-    def from_full_name(full_name):
-        # return dataset name, block internal name
-
-        delim = full_name.find('#')
-        if delim == -1:
-            raise ObjectError('Invalid block name %s' % full_name)
-
-        return full_name[:delim], Block.to_internal_name(full_name[delim + 1:])
 
     @property
     def name(self):
@@ -309,3 +283,5 @@ class Block(object):
 
         self._size = other._size
         self._num_files = other._num_files
+
+customize_block(Block)

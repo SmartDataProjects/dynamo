@@ -42,7 +42,7 @@ def dataset_already_exists(dataset, site, group):
 def block_already_exists(block, site, group):
     level = 0
     replica = site.find_block_replica(block)
-    if replica is not None and replica.is_complete:
+    if replica is not None and replica.is_complete():
         level = 1
         if replica.group == group:
             level = 2
@@ -55,7 +55,7 @@ def blocks_already_exist(blocks, site, group):
 
     for block in blocks:
         replica = site.find_block_replica(block)
-        if replica is None or not replica.is_complete:
+        if replica is None or not replica.is_complete():
             complete_at_site = False
         elif replica.group != group:
             owned_at_site = False

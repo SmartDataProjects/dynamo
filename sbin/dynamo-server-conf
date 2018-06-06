@@ -64,7 +64,7 @@ server_conf['user'] = server_user
 
 server_conf['inventory'] = OD()
 server_conf['inventory']['persistency'] = generators[persistency_mod].generate_store_conf(persistency_conf_args)
-server_conf['inventory']['partition_def_path'] = '$(DYNAMO_POLICIES)/partitions.txt'
+server_conf['inventory']['partition_def_path'] = source_conf.get('server', 'partition_def')
 
 server_conf['manager'] = OD()
 server_conf['manager']['master'] = generators[master_mod].generate_master_conf(master_conf_args)
@@ -102,6 +102,9 @@ if serve_web == 'true':
     web_conf['socket'] = source_conf.get('web', 'socket')
     web_conf['contents_path'] = source_conf.get('web', 'contents_path')
     web_conf['modules_config_path'] = source_conf.get('web', 'modules_config')
+    web_conf['min_idle'] = 1
+    web_conf['max_idle'] = 5
+    web_conf['max_procs'] = 10
 
 server_conf['notification_recipient'] = email
 server_conf['status_poll_interval'] = 1.0

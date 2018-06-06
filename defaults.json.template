@@ -1,38 +1,84 @@
 {
   "history.history:TransactionHistoryInterface": {
     "fullauth": {
-      "module": "MySQLHistory",
+      "module": "mysqlhistory:MySQLHistory",
       "config": {
         "db_params": {
-          "user": "dynamo",
-          "passwd": "",
-          "host": "localhost",
           "db": "dynamohistory"
         }
       }
     },
     "readonly": {
-      "module": "MySQLHistory",
+      "module": "mysqlhistory:MySQLHistory",
       "config": {
         "db_params": {
-          "user": "dynamoread",
-          "passwd": "",
-          "host": "localhost",
           "db": "dynamohistory"
         }
       }
     }
   },
-  "utils.interface.mysql:MySQL": {
+  "operation.copy:CopyInterface": {
     "fullauth": {
-      "user": "dynamo",
-      "passwd": "",
-      "host": "localhost"
+      "module": "fodcopy:FODCopyInterface",
+      "config": {
+        "fod": {
+          "db": {
+            "db_params": {
+              "user": "dynamofod",
+              "db": "dynamo"
+            },
+            "history": "dynamohistory"
+          }
+        }
+      }
     },
     "readonly": {
-      "user": "dynamoread",
-      "passwd": "",
-      "host": "localhost"
+      "module": "dummycopy:DummyCopyInterface",
+      "config": {}
+    }
+  },
+  "operation.deletion:DeletionInterface": {
+    "fullauth": {
+      "module": "foddeletion:FODDeletionInterface",
+      "config": {
+        "fod": {
+          "db": {
+            "db_params": {
+              "user": "dynamofod",
+              "db": "dynamo"
+            },
+            "history": "dynamohistory"
+          }
+        }
+      }
+    },
+    "readonly": {
+      "module": "dummydeletion:DummyDeletionInterface",
+      "config": {}
+    }
+  },
+  "utils.interface.mysql:MySQL": {
+    "fullauth": {
+      "default_user": "dynamo",
+      "params": {
+        "dynamo": {
+          "passwd": "",
+          "host": "localhost"
+        },
+        "dynamofod": {
+          "passwd": "",
+          "host": "localhost"
+        }
+      }
+    },
+    "readonly": {
+      "default_user": "dynamoread",
+      "params": {
+        "dynamoread": {
+          "passwd": "",
+          "host": "localhost"
+        }
+      }
     }
   },
   "utils.interface.webservice:HTTPSCertKeyHandler": {

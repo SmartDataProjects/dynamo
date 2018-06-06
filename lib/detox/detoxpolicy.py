@@ -4,7 +4,7 @@ from dynamo.dataformat import ConfigurationError
 import dynamo.policy.variables as variables
 import dynamo.policy.attrs as attrs
 import dynamo.policy.predicates as predicates
-import dynamo.policy.producers as producers
+import dynamo.policy.producers as get_producers
 from dynamo.detox.conditions import ReplicaCondition, SiteCondition
 from dynamo.detox.sort import SortKey
 
@@ -220,28 +220,7 @@ class DetoxPolicy(object):
 
         attr_names.update(self.candidate_sort_key.required_attrs)
 
-        producer_names = set()
-        for attr_name in attr_names:
-            # Find the provider of each dataset attribute
-            producer_cls = ''
-            for cls in producers.producers[attr_name]:
-                if cls in attrs_config:
-                    if producer_cls:
-                        LOG.error('Attribute %s is provided by two producers: [%s %s]', attr_name, producer_cls, cls)
-                        LOG.error('Please fix the configuration so that each dataset attribute is provided by a unique producer.')
-                        raise ConfigurationError('Duplicate attribute producer')
-
-                    producer_cls = cls
-
-            if producer_cls == '':
-                LOG.error('Attribute %s is not provided by any producer.', attr_name)
-                LOG.error('Please fix the configuration so that each dataset attribute is provided by a unique producer.')
-                raise ConfigurationError('Invalid attribute name')
-                
-            producer_names.add(producer_cls)
-
-        for producer_cls in producer_names:
-            self.attr_producers.append(getattr(producers, producer_cls)(attrs_config[producer_cls]))
+        self.attr_producers = get_producers(attr_names, attrs_config).values()
 
         LOG.info('Policy stack for %s: %d lines using dataset attr producers [%s]', \
             self.partition_name, len(self.policy_lines), ' '.join(type(p).__name__ for p in self.attr_producers))

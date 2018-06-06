@@ -3,6 +3,7 @@ import fnmatch
 import re
 
 from dynamo.dataformat import Configuration
+from dynamo.utils.classutil import get_instance
 
 LOG = logging.getLogger(__name__ )
 
@@ -13,14 +14,7 @@ class ReplicaInfoSource(object):
 
     @staticmethod
     def get_instance(module, config):
-        import dynamo.source.impl as impl
-        cls = getattr(impl, module)
-
-        if not issubclass(cls, ReplicaInfoSource):
-            raise RuntimeError('%s is not a subclass of ReplicaInfoSource' % module)
-
-        return cls(config)
-
+        return get_instance(ReplicaInfoSource, module, config)
 
     def __init__(self, config = None):
         config = Configuration(config)

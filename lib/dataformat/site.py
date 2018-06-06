@@ -78,8 +78,7 @@ class Site(object):
 
         self.host = other.host
         self.storage_type = other.storage_type
-        # Temporarily commenting out to not overwrite what Max collected
-        # self.backend = other.backend
+        self.backend = other.backend
         self.status = other.status
 
     def embed_into(self, inventory, check = False):
@@ -309,3 +308,10 @@ class Site(object):
                     site_partition.replicas[dataset_replica] = None
                 else:
                     site_partition.replicas[dataset_replica] = block_replicas
+
+    def to_pfn(self, lfn, protocol):
+        # for now return backend + lfn, need a proper mapping mechanism here
+        return self.backend + lfn
+
+    def to_lfn(self, pfn, protocol):
+        return pfn.replace(self.backend, '')

@@ -27,6 +27,7 @@ ARCHIVE_PATH=$($READCONF paths.archive_path)
 SPOOL_PATH=$($READCONF paths.spool_path)
 LOG_PATH=$($READCONF paths.log_path)
 POLICY_PATH=$($READCONF paths.policy_path)
+CLIENT_PATH=$($READCONF paths.client_path)
 WEBSERVER=$($READCONF web.enabled)
 APPSERVER=$($READCONF applications.enabled)
 SERVER_DB=$($READCONF server.store)
@@ -58,6 +59,9 @@ WARNING=false
 require rpm -q python
 warnifnot rpm -q condor-python
 warnifnot rpm -q rrdtool-python
+warnifnot rpm -q python-fts
+warnifnot rpm -q python-requests
+warnifnot rpm -q pyliblzma
 require rpm -q sqlite
 if [ "$APPSERVER" = "true" ]
 then
@@ -104,7 +108,6 @@ echo
 
 require mkdir -p $INSTALL_PATH
 require mkdir -p $INSTALL_PATH/python/site-packages/dynamo
-require mkdir -p $INSTALL_PATH/bin
 require mkdir -p $INSTALL_PATH/exec
 require mkdir -p $INSTALL_PATH/utilities
 require mkdir -p $INSTALL_PATH/sbin
@@ -132,7 +135,7 @@ python -m compileall $INSTALL_PATH/python/site-packages/dynamo > /dev/null
 
 ### Install the executables ###
 
-cp $SOURCE/bin/dynamo /usr/local/bin/
+cp $SOURCE/bin/dynamo $CLIENT_PATH/
 
 cp $SOURCE/exec/* $INSTALL_PATH/exec/
 chown $USER:$(id -gn $USER) $INSTALL_PATH/exec/*
@@ -145,6 +148,10 @@ chmod 755 $INSTALL_PATH/utilities/*
 cp $SOURCE/sbin/* $INSTALL_PATH/sbin/
 chown root:$(id -gn $USER) $INSTALL_PATH/sbin/*
 chmod 754 $INSTALL_PATH/sbin/*
+
+cp $SOURCE/etc/default_partitions.txt $INSTALL_PATH/etc/
+chown root:$(id -gn $USER) $INSTALL_PATH/etc/default_partitions.txt
+chmod 644 $INSTALL_PATH/etc/default_partitions.txt
 
 echo " Done."
 echo
@@ -248,7 +255,7 @@ then
   if [ $? -ne 0 ]
   then
     echo
-    echo "Web configuration failed."
+    echo "Web contents installation failed."
     exit 1
   fi
 fi

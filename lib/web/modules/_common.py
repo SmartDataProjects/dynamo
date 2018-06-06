@@ -3,7 +3,7 @@ import dynamo.web.exceptions as exceptions
 _yes = ['true', '1', 'y', 'yes']
 _no = ['false', '0', 'n', 'no']
 def yesno(request, name, default = True):
-    req = request.getvalue(name)
+    req = request[name]
     if req is None:
         return default
 
@@ -13,4 +13,4 @@ def yesno(request, name, default = True):
     elif req in _no:
         return False
     else:
-        raise exceptions.IllFormedRequest(name, request.getvalue(name), allowed = _yes + _no)
+        raise exceptions.IllFormedRequest(name, request[name], allowed = _yes + _no)

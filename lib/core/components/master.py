@@ -1,259 +1,44 @@
+import multiprocessing
 import logging
+import socket
+import types
+
+from dynamo.core.components.authorizer import Authorizer
+from dynamo.core.components.appmanager import AppManager
+from dynamo.core.components.host import ServerHost
+from dynamo.utils.classutil import get_instance
 
 LOG = logging.getLogger(__name__)
 
-class Authorizer(object):
-    """
-    Interface to provide read-only user authorization routines of the master server
-    without exposing the server itself.
-    Authorizer and MasterServer are used from multiple threads. The methods should
-    therefore be implemented as stateless as possible.
-    """
-
-    @staticmethod
-    def get_instance(module, config):
-        import dynamo.core.components.impl as impl
-        cls = getattr(impl, module)
-        if not issubclass(cls, Authorizer):
-            raise RuntimeError('%s is not a subclass of Authorizer' % module)
-
-        return cls(config)
-
-    def __init__(self, config):
-        pass
-
-    def user_exists(self, name):
-        """
-        Check if a user exists.
-        @param name  User name
-        
-        @return boolean
-        """
-        raise NotImplementedError('user_exists')
-
-    def list_users(self):
-        """
-        @return  [(name, dn, email)]
-        """
-        raise NotImplementedError('list_users')
-
-    def identify_user(self, dn = '', name = '', with_id = False):
-        """
-        Translate the DN to user account name.
-        @param dn     Certificate Distinguished Name.
-        @param name   User name.
-        @param get_id If true, return a tuple (user name, user id)
-
-        @return  User name string or (user name, user id). None if not identified
-        """
-        raise NotImplementedError('identify_user')
-
-    def identify_role(self, name, with_id = False):
-        """
-        Check if a role exists.
-        @param name  Role name
-        
-        @return  Role name string or (role name, role id). None if not identified
-        """
-        raise NotImplementedError('identify_role')
-
-    def list_roles(self):
-        """
-        @return  List of role names
-        """
-        raise NotImplementedError('list_roles')
-
-    def list_authorization_targets(self):
-        """
-        @return List of authorization targets.
-        """
-        raise NotImplementedError('list_authorization_targets')
-
-    def check_user_auth(self, user, role, target):
-        """
-        Check the authorization on target for (user, role)
-        @param user    User name.
-        @param role    Role (role) name user is acting in. If None, authorize the user under all roles.
-        @param target  Authorization target. If None, authorize the user for all targets.
-
-        @return boolean
-        """
-        raise NotImplementedError('check_user_auth')
-
-    def list_user_auth(self, user):
-        """
-        @param user    User name.
-        
-        @return [(role, target)]
-        """
-        raise NotImplementedError('list_user_auth')
-
-    def list_authorized_users(self, target):
-        """
-        @param target Authorization target. Pass None to get the list of users authorized for all targets.
-
-        @return List of (user name, role name) authorized for the target.
-        """
-        raise NotImplementedError('list_authorized_users')
-
-
-class AppManager(object):
-    """
-    Object responsible for scheduling applications.
-    """
-
-    @staticmethod
-    def get_instance(module, config):
-        import dynamo.core.components.impl as impl
-        cls = getattr(impl, module)
-        if not issubclass(cls, AppManager):
-            raise RuntimeError('%s is not a subclass of AppManager' % module)
-
-        return cls(config)
-
-    def __init__(self, config):
-        pass
-
-    def get_writing_process_id(self):
-        raise NotImplementedError('get_writing_process_id')
-
-    def schedule_application(self, title, path, args, user, host, write_request):
-        """
-        Schedule an application to the master server.
-        @param title          Application title.
-        @param path           Application path.
-        @param args           Arguments to the application
-        @param user           User name of the requester
-        @param host           Host name of the requester
-        @param write_request  Boolean
-
-        @return application id
-        """
-        raise NotImplementedError('schedule_application')
-
-    def get_next_application(self, read_only):
-        """
-        @param read_only    Limit to read_only applications
-        
-        @return {appid, write_request, user_name, user_host, title, path, args} or None
-        """
-        raise NotImplementedError('get_next_application')
-
-    def get_applications(self, older_than = 0, status = None, app_id = None, path = None):
-        """
-        Get the list of application entries.
-        @param older_than   Return only applications with UNIX time stamps older than the value
-        @param status       Return only applications in the given status
-        @param app_id       Return application with matching id.
-        @param path         Return application at the given path.
-
-        @return [{appid, write_request, user_name, user_host, title, path, args, status, server, exit_code}]
-        """
-        raise NotImplementedError('get_applications')
-
-    def update_application(self, app_id, **kwd):
-        """
-        Set the application status.
-        
-        @param app_id    Application id
-        @param kwd       Keyword argument can be status, hostname, exit_code, or path.
-        """
-        raise NotImplementedError('update_application')
-
-    def delete_application(self, app_id):
-        """
-        Delete the application record.
-        
-        @param app_id    Application id
-        """
-        raise NotImplementedError('delete_application')
-
-    def check_application_auth(self, title, user, checksum):
-        raise NotImplementedError('check_application_auth')
-
-    def list_authorized_applications(self, titles = None, users = None, checksums = None):
-        """
-        Return the list of authorized applications.
-        @param title      If given as a list of strings, limit to applications with given titles.
-        @param users      If given as a list of strings, limit to applications authorized under given users.
-        @param checksums  If given as a list of strings, limit to applications with given checksums.
-        """
-        raise NotImplementedError('list_authorized_applications')
-
-    def authorize_application(self, title, checksum, user = None):
-        """
-        Authorize an application. If user = None, authorize for everyone.
-        @return True if success, False if not.
-        """
-        raise NotImplementedError('authorize_application')
-
-    def revoke_application_authorization(self, title, user = None):
-        """
-        Revoke an app auth.
-        @return True if success, False if not.
-        """
-        raise NotImplementedError('revoke_application_authorization')
-
-    def register_sequence(self, name, user, restart = False):
-        """
-        Register a scheduled sequence.
-        @param name    Name of the sequence
-        @param user    Name of the user
-        @param restart If True, sequence always starts from line 0
-
-        @return True if success, False if not.
-        """
-        raise NotImplementedError('register_sequence')
-
-    def find_sequence(self, name):
-        """
-        Find a sequence with the given name.
-        @param name  Name of the sequence
-
-        @return (name, user, restart, enabled) or None
-        """
-        raise NotImplementedError('find_sequence')
-
-    def update_sequence(self, name, restart = None, enabled = None):
-        """
-        Toggle the sequence state.
-        @param name    Name of the sequence
-        @param restart True: sequence starts from line 0
-        @param enabled True: sequence enabled, False: disabled
-
-        @return True if success, False if not.
-        """
-        raise NotImplementedError('update_sequence')
-
-    def delete_sequence(self, name):
-        """
-        Delete a registered sequence.
-        @param name    Name of the sequence
-
-        @return True if success, False if not.
-        """
-        raise NotImplementedError('delete_sequence')
-
-    def get_sequences(self, enabled_only = True):
-        """
-        @return [name]
-        """
-        raise NotImplementedError('get_sequences')
-
-
 class MasterServer(Authorizer, AppManager):
     """
-    An interface to the master server that coordinates server activities.
+    An interface to the master server that coordinates server activities. The single instance of the MasterServer
+    owned by the ServerManager (owned by DynamoServer) is used by DynamoServer, WebServer, and the subprocesses of the
+    WebServer. To avoid interference, all public methods of the instance of the MasterServer is decorated with a wrapper
+    that locks the execution.
     """
 
     @staticmethod
     def get_instance(module, config):
-        import dynamo.core.components.impl as impl
-        cls = getattr(impl, module)
-        if not issubclass(cls, MasterServer):
-            raise RuntimeError('%s is not a subclass of MasterServer' % module)
+        instance = get_instance(MasterServer, module, config)
 
-        return cls(config)
+        # Decorate all public methods of MasterServer with the lock
+        def make_wrapper(obj, mthd):
+            def wrapper(*args, **kwd):
+                with obj._master_server_lock:
+                    return mthd(*args, **kwd)
+        
+            return wrapper
+        
+        for name in dir(instance):
+            if name == 'lock' or name == 'unlock' or name.startswith('_'):
+                continue
+
+            mthd = getattr(instance, name)
+            if callable(mthd) and not isinstance(mthd, types.FunctionType): # static methods are instances of FunctionType
+                setattr(instance, name, make_wrapper(instance, mthd))
+
+        return instance
 
     def __init__(self, config):
         Authorizer.__init__(self, config)
@@ -261,22 +46,42 @@ class MasterServer(Authorizer, AppManager):
 
         self.connected = False
 
+        self._master_server_lock = multiprocessing.RLock()
+
     def connect(self):
         """
         Connect to the master server.
         """
         LOG.info('Connecting to master server')
 
-        self._connect()
+        self.lock()
+
+        try:
+            self._connect()
+    
+            master_host = self.get_master_host()
+            if master_host == 'localhost' or master_host == socket.gethostname():
+                # This is the master host; make sure there are no dangling web writes
+                writing = self.get_writing_process_id()
+                if writing == 0:
+                    self.stop_write_web()
+                elif writing > 0:
+                    self.update_application(writing, status = AppManager.STAT_KILLED)
+                
+        finally:
+            self.unlock()
+
         self.connected = True
 
-        LOG.info('Master host: %s', self.get_master_host())
+        LOG.info('Master host: %s', master_host)
 
     def lock(self):
-        raise NotImplementedError('lock')
+        self._master_server_lock.acquire()
+        self._do_lock()
 
     def unlock(self):
-        raise NotImplementedError('unlock')
+        self._do_unlock()
+        self._master_server_lock.release()
 
     def get_master_host(self):
         """
@@ -293,7 +98,7 @@ class MasterServer(Authorizer, AppManager):
     def get_host_list(self, status = None, detail = False):
         """
         Get data for all servers connected to this master server.
-        @param status   Limit to servers in the given status
+        @param status   Limit to servers in the given status (ServerHost.STAT_*)
         @param detail   boolean
         
         @return If detail = True, list of full info. If detail = False, [(hostname, status, has_store)]
@@ -411,3 +216,7 @@ class MasterServer(Authorizer, AppManager):
 
     def disconnect(self):
         raise NotImplementedError('disconnect')
+
+    def inhibit_write(self):
+        return len(self.get_host_list(status = ServerHost.STAT_STARTING)) != 0 or \
+            self.get_writing_process_id() is not None

@@ -1,11 +1,12 @@
 {
-  "registry": {
-  },
-  "history": {
-  },  
-  "inventory": {
-    "monitor": {
-      "body_html": "inventory/monitor.html"
+  "rlfsm": {
+    "db": {
+      "db_params": {
+        "db": "dynamo",
+        "user": "dynamofod",
+        "passwd": ""
+      },
+      "history": "dynamohistory"
     }
   }
 }

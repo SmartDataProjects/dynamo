@@ -19,6 +19,9 @@ archive_path=/local/data/dynamo
 # Location of the policy package
 policy_path=/usr/local/dynamo-policies
 
+# Location of the client executable
+client_path=/usr/local/bin
+
 [server]
 ## Dynamo server configuration
 
@@ -52,6 +55,9 @@ local_board=mysql
 # Configuration to be passed to $local_board/generate_local_board_conf.py
 local_board_conf={"host": "localhost", "user": "dynamosrv"}
 
+# Location of the partition definition
+partition_def=$(DYNAMO_BASE)/etc/default_partitions.txt
+
 [applications]
 ## Dynamo application server configuration
 
@@ -59,7 +65,7 @@ local_board_conf={"host": "localhost", "user": "dynamosrv"}
 enabled=true
 
 # AppServer class name
-server=SocketAppServer
+server=socketappserver:SocketAppServer
 
 # SocketAppServer server uses an OpenSSL socket to receive requests
 #  certfile: Server certificate (can be self-signed)

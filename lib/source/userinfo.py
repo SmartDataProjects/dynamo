@@ -1,3 +1,5 @@
+from dynamo.utils.classutil import get_instance
+
 class UserInfoSource(object):
     """
     Interface specs for user data authority.
@@ -5,14 +7,7 @@ class UserInfoSource(object):
 
     @staticmethod
     def get_instance(module, config):
-        import dynamo.source.impl as impl
-        cls = getattr(impl, module)
-
-        if not issubclass(cls, UserInfoSource):
-            raise RuntimeError('%s is not a subclass of UserInfoSource' % module)
-
-        return cls(config)
-
+        return get_instance(UserInfoSource, module, config)
         
     def __init__(self, config):
         pass

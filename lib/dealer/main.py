@@ -11,7 +11,7 @@ from dynamo.operation.copy import CopyInterface
 from dynamo.history.history import TransactionHistoryInterface
 from dynamo.utils.signaling import SignalBlocker
 import dynamo.dealer.plugins as dealer_plugins
-import dynamo.policy.producers as producers
+from dynamo.policy.producers import get_producers
 
 LOG = logging.getLogger(__name__)
 
@@ -22,7 +22,10 @@ class Dealer(object):
         @param config      Configuration
         """
 
-        self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
+        if 'copy_op' in config:
+            self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
+        else: # default setting
+            self.copy_op = CopyInterface.get_instance()
 
         if 'history' in config:
             self.history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
@@ -121,7 +124,9 @@ class Dealer(object):
         n_zero_prio = 0
         n_nonzero_prio = 0
         for name, spec in config.plugins.items():
-            plugin = getattr(dealer_plugins, spec.module)(spec.config)
+            modname, _, clsname = spec.module.partition(':')
+            cls = getattr(__import__('dynamo.dealer.plugins.' + modname, globals(), locals(), [clsname]), clsname)
+            plugin = cls(spec.config)
             plugin.read_only = is_test_run
             self._plugin_priorities[plugin] = spec.priority
 
@@ -137,29 +142,12 @@ class Dealer(object):
                     self._plugin_priorities.pop(plugin)
 
         # Set up dataset attribute providers
-        attrs_config = config.attrs
 
         attr_names = set()
         for plugin in self._plugin_priorities.keys():
             attr_names.update(plugin.required_attrs)
 
-        producer_names = set()
-        for attr_name in attr_names:
-            # Find the provider of each dataset attribute
-            producer_cls = ''
-            for cls in producers.producers[attr_name]:
-                if cls in attrs_config:
-                    if producer_cls:
-                        LOG.error('Attribute %s is provided by two producers: [%s %s]', attr_name, producer_cls, cls)
-                        LOG.error('Please fix the configuration so that each dataset attribute is provided by a unique producer.')
-                        raise ConfigurationError('Duplicate attribute producer')
-
-                    producer_cls = cls
-
-            producer_names.add(producer_cls)
-
-        for producer_cls in producer_names:
-            self._attr_producers.append(getattr(producers, producer_cls)(attrs_config[producer_cls]))
+        self.attr_producers = get_producers(attr_names, config.attrs).values()
 
     def _collect_requests(self, inventory):
         """
@@ -241,8 +229,8 @@ class Dealer(object):
                     continue
 
                 dataset = item[0].dataset
-                name = dataset.name + '#'
-                name += ':'.join(block.real_name() for block in item)
+                block_names = ':'.join(block.real_name() for block in item)
+                name = Block.to_full_name(dataset.name, block_names)
 
             if dataset.status not in (Dataset.STAT_PRODUCTION, Dataset.STAT_VALID):
                 continue
@@ -376,15 +364,15 @@ class Dealer(object):
                         if type(item) is Dataset:
                             dataset_sizes[item] = item.size
                             if approved:
-                                inventory.update(DatasetReplica(item, site))
+                                inventory.update(DatasetReplica(item, site, growing = True, group = group))
+
                                 for block in item.blocks:
                                     inventory.update(BlockReplica(block, site, group, size = 0))
-
                         else:
                             dataset_sizes[item.dataset] += item.size
                             if approved:
                                 if site.find_dataset_replica(item.dataset) is None:
-                                    inventory.update(DatasetReplica(item.dataset, site))
+                                    inventory.update(DatasetReplica(item.dataset, site, growing = False))
 
                                 inventory.update(BlockReplica(item, site, group, size = 0))
     

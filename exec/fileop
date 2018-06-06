@@ -1,0 +1,273 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import time
+import threading
+import multiprocessing
+import multiprocessing.managers
+import logging
+import tempfile
+import gfal2
+
+def transfer(src_pfn, dest_pfn, params_config):
+    try:
+        params = gfal2.Gfal2Context.transfer_parameters()
+        # Create parent directories at the destination
+        params.create_parent = True
+        # Overwrite the destination if file already exists (otherwise throws an error)
+        params.overwrite = True
+        params.set_checksum(*params_config['checksum'])
+        params.timeout = params_config['transfer_timeout'] # we probably want this to be file size dependent
+    
+    except Exception as exc:
+        # multiprocessing pool cannot handle certain exceptions - convert to string
+        raise Exception(str(exc))
+
+    def docopy(params, src_pfn, dest_pfn):
+        gfal2.creat_context().filecopy(params, src_pfn, dest_pfn)
+
+    return gfal_exec(docopy, (params, src_pfn, dest_pfn))
+
+def delete(pfn):
+    def dodelete(pfn):
+        gfal2.creat_context().unlink(pfn)
+
+    return gfal_exec(dodelete, (pfn,))
+
+def gfal_exec(func, args):
+    start_time = 0
+    finish_time = 0
+    log = ''
+
+    for attempt in xrange(5):
+        # redirect stdio and stderr to a temporary file
+        stream = tempfile.TemporaryFile() 
+        stdout_fileno = sys.stdout.fileno()
+        stderr_fileno = sys.stderr.fileno()
+        stdout_copy = os.dup(stdout_fileno)
+        stderr_copy = os.dup(stderr_fileno)
+        os.dup2(stream.fileno(), stdout_fileno)
+        os.dup2(stream.fileno(), stderr_fileno)
+    
+        try:
+            gfal2.set_verbose(gfal2.verbose_level.verbose)
+
+            start_time = int(time.time())
+
+            func(*args)
+
+            finish_time = int(time.time())
+        
+        except gfal2.GError as err:
+            exitcode, msg = err.code, err.message
+
+            if err.code == 70:
+                continue
+    
+        else:
+            exitcode, msg = 0, ''
+    
+        finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
+
+            stream.seek(0)
+            log_tmp = stream.read().strip()
+
+            os.dup2(stdout_copy, stdout_fileno)
+            os.dup2(stderr_copy, stderr_fileno)
+
+        # give a nice indent to each line
+        log = ''.join('  %s\n' % line for line in log_tmp.split('\n'))
+    
+        stream.close()
+
+        break
+
+    # all three variables would be defined even when all attempts are exhausted
+    return exitcode, start_time, finish_time, msg, log
+
+def batch_transfer(batch_id, tasks, params_config, pool_size, db):
+    LOG.info('Transfer batch %d (%d tasks)', batch_id, len(tasks))
+
+    pool = multiprocessing.Pool(pool_size)
+    results = []
+
+    for tid, src_pfn, dest_pfn in tasks:
+        LOG.debug('Transfer %s->%s', src_pfn, dest_pfn)
+        results.append((tid, src_pfn, dest_pfn, pool.apply_async(transfer, (src_pfn, dest_pfn, params_config))))
+
+    pool.close()
+
+    db.execute_many('UPDATE `standalone_transfer_queue` SET `status` = \'inprogress\'', 'id', [r[0] for r in results])
+
+    collect_results('transfer', results, db)
+
+    pool.join()
+
+def batch_delete(batch_id, tasks, pool_size, db):
+    LOG.info('Deletion batch %d (%d tasks)', batch_id, len(tasks))
+
+    pool = multiprocessing.Pool(pool_size)
+    results = []
+
+    for tid, pfn in tasks:
+        LOG.debug('Deletion %s', pfn)
+        results.append((tid, pfn, pool.apply_async(delete, (pfn,))))
+
+    pool.close()
+
+    db.execute_many('UPDATE `standalone_deletion_queue` SET `status` = \'inprogress\'', 'id', [r[0] for r in results])
+
+    collect_results('deletion', results, db)
+
+    pool.join()
+
+def start_batch_transfer(batch_id, tasks, params_config, pool_size, db, threads):
+    thread = threading.Thread(target = batch_transfer, args = (batch_id, tasks, params_config, pool_size, db), name = 'transfer_%d' % batch_id)
+    thread.start()
+    threads.append(thread)
+
+def start_batch_delete(batch_id, tasks, pool_size, db, threads):
+    thread = threading.Thread(target = batch_delete, args = (batch_id, tasks, pool_size, db), name = 'deletion_%d' % batch_id)
+    thread.start()
+    threads.append(thread)
+
+def collect_results(optype, results, db):
+    sql = 'UPDATE `standalone_{op}_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'.format(op = optype)
+
+    delim = '--------------'
+
+    while len(results) != 0:
+        ir = 0
+        while ir != len(results):
+            if not results[ir][-1].ready():
+                ir += 1
+                continue
+
+            result_tuple = results.pop(ir)
+    
+            if optype == 'transfer':
+                tid, src, dest, result = result_tuple
+                exitcode, start_time, finish_time, msg, log = result.get()
+    
+                if exitcode == 0:
+                    LOG.info('Transfer success (%d seconds)\n%s -> %s\n%s\n%s%s', finish_time - start_time, src, dest, delim, log, delim)
+                    status = 'done'
+                else:
+                    LOG.info('Transfer failure (%d seconds, code %d: %s)\n%s -> %s\n%s\n%s%s', finish_time - start_time, exitcode, msg, src, dest, delim, log, delim)
+                    status = 'failed'
+
+            else:
+                tid, pfn, result = result_tuple
+                exitcode, start_time, finish_time, msg, log = result.get()
+    
+                if exitcode == 0:
+                    LOG.info('Deletion success (%d seconds)\n%s\n%s\n%s%s', finish_time - start_time, pfn, delim, log, delim)
+                    status = 'done'
+                else:
+                    LOG.info('Deletion failure (%d seconds, code %d: %s)\n%s\n%s\n%s%s', finish_time - start_time, exitcode, msg, pfn, delim, log, delim)
+                    status = 'failed'
+
+            db.query(sql, status, exitcode, start_time, finish_time, tid)
+
+        if ir != 0:
+            time.sleep(5)
+
+
+if __name__ == '__main__':
+    from argparse import ArgumentParser
+    
+    parser = ArgumentParser(description = 'Perform transfers and deletions.')
+    parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+    
+    args = parser.parse_args()
+    sys.argv = []
+    
+    ## Load the configuration
+    from dynamo.dataformat.configuration import Configuration
+    
+    config = Configuration(args.config)
+
+    # We probably want to make this link specific (which means we'll have to create a new table that records the site names for each batch)
+    pool_size = config.num_parallel_links
+    checksum_algo = config.get('checksum', '')
+
+    if 'gfal2_verbosity' in config:
+        gfal2.set_verbose(getattr(gfal2.verbose_level, config.gfal2_verbosity.lower()))
+
+    ## Set up logging (write to stdout & stderr)
+    from dynamo.core.executable import make_standard_logger
+    
+    LOG = make_standard_logger(config.log_level)
+    
+    ## Set up a handle to the DB
+    from dynamo.utils.interface.mysql import MySQL
+
+    db = MySQL(config.db_params)
+
+    ## Collect threads
+    threads = []
+
+    ## Create deletion tasks (batched by site)
+    LOG.info('Creating deletion tasks.')
+
+    sql = 'SELECT q.`batch_id`, q.`id`, a.`file` FROM `standalone_deletion_queue` AS a'
+    sql += ' INNER JOIN `deletion_queue` AS q ON q.`id` = a.`id`'
+    sql += ' WHERE a.`status` = \'new\''
+    sql += ' ORDER BY q.`batch_id`'
+
+    _batch_id = 0
+    
+    for batch_id, tid, lfn, pfn in db.xquery(sql):
+        if batch_id != _batch_id:
+            if _batch_id != 0:
+                start_batch_delete(_batch_id, tasks, pool_size, db, threads)
+
+            _batch_id = batch_id
+            tasks = []
+
+        tasks.append((tid, pfn))
+
+    if _batch_id != 0:
+        start_batch_delete(_batch_id, tasks, pool_size, db, threads)
+
+    ## Create transfer tasks (batched by site)
+    LOG.info('Creating transfer tasks.')
+
+    params_config = {
+        'transfer_nstreams': config['transfer_nstreams'],
+        'transfer_timeout': config['transfer_timeout']
+    }
+
+    if checksum_algo:
+        # Available checksum algorithms: crc32, adler32, md5
+        params_config['checksum'] = (gfal2.checksum_mode.both, checksum_algo, '')
+    else:
+        params_config['checksum'] = (gfal2.checksum_mode.none, '', '')
+
+    sql = 'SELECT q.`batch_id`, q.`id`, a.`source`, a.`destination` FROM `standalone_transfer_queue` AS a'
+    sql += ' INNER JOIN `transfer_queue` AS q ON q.`id` = a.`id`'
+    sql += ' WHERE a.`status` = \'new\''
+    sql += ' ORDER BY q.`batch_id`'
+
+    _batch_id = 0
+    all_tasks = []
+    
+    for batch_id, tid, source, destination in db.xquery(sql):
+        if batch_id != _batch_id:
+            if _batch_id != 0:
+                start_batch_transfer(_batch_id, tasks, params_config, pool_size, db, threads)
+
+            _batch_id = batch_id
+            tasks = []
+
+        tasks.append((tid, source, destination))
+        all_tasks.append(tid)
+
+    if _batch_id != 0:
+        start_batch_transfer(_batch_id, tasks, params_config, pool_size, db, threads)
+
+    for thread in threads:
+        thread.join()

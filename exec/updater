@@ -1,0 +1,42 @@
+#!/usr/bin/env python
+
+import os
+import sys
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Update subscriptions.')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+
+args = parser.parse_args()
+sys.argv = []
+
+## Load the configuration
+from dynamo.dataformat.configuration import Configuration
+
+config = Configuration(args.config)
+
+## Set up logging (write to stdout & stderr)
+from dynamo.core.executable import make_standard_logger, read_only, inventory
+
+LOG = make_standard_logger(config.log_level)
+
+## Set up a handle to the RLFSM
+from dynamo.fileop.rlfsm import RLFSM
+
+rlfsm = RLFSM(config.rlfsm)
+
+if read_only:
+    rlfsm.dry_run = True
+    rlfsm.transfer_operation.dry_run = True
+    rlfsm.deletion_operation.dry_run = True
+
+## Start main
+
+LOG.info('Checking and executing new file transfer subscriptions.')
+rlfsm.transfer_files(inventory)
+
+LOG.info('Checking and executing new file deletion subscriptions.')
+rlfsm.delete_files(inventory)
+
+LOG.info('Updating the inventory.')
+rlfsm.update_inventory(inventory)

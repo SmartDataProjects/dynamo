@@ -3,6 +3,7 @@ import copy
 import threading
 
 from exceptions import ObjectError
+from _namespace import customize_dataset
 
 class Dataset(object):
     """Represents a dataset."""
@@ -11,16 +12,14 @@ class Dataset(object):
         '_software_version_id', 'last_update', 'is_open',
         'blocks', 'replicas', 'attr']
 
-    # Enumerator for dataset type.
-    # Starting from 1 to play better with MySQL
-    _data_types = ['unknown', 'align', 'calib', 'cosmic', 'data', 'lumi', 'mc', 'raw', 'test']
-    TYPE_UNKNOWN, TYPE_ALIGN, TYPE_CALIB, TYPE_COSMIC, TYPE_DATA, TYPE_LUMI, TYPE_MC, TYPE_RAW, TYPE_TEST = range(1, len(_data_types) + 1)
     _statuses = ['unknown', 'deleted', 'deprecated', 'invalid', 'production', 'valid', 'ignored']
     STAT_UNKNOWN, STAT_DELETED, STAT_DEPRECATED, STAT_INVALID, STAT_PRODUCTION, STAT_VALID, STAT_IGNORED = range(1, len(_statuses) + 1)
 
     class SoftwareVersion(object):
         __slots__ = ['id', 'value']
-    
+
+        #field_names = ... defined in _namespace
+
         def __init__(self, value, vid = 0):
             self.id = vid
             self.value = value
@@ -28,6 +27,9 @@ class Dataset(object):
     _software_versions_byid = []
     _software_versions_byvalue = {}
     _software_version_lock = threading.Lock()
+
+    # Regular expression of the dataset name format, if there is any.
+    _name_pattern = None
 
     @staticmethod
     def data_type_name(arg):
@@ -94,7 +96,7 @@ class Dataset(object):
     
         self._software_version_id = version.id
 
-    def __init__(self, name, status = STAT_UNKNOWN, data_type = TYPE_UNKNOWN, software_version = None, last_update = 0, is_open = True, did = 0):
+    def __init__(self, name, status = 'unknown', data_type = 'unknown', software_version = None, last_update = 0, is_open = True, did = 0):
         self._name = name
         self.status = Dataset.status_val(status)
         self.data_type = Dataset.data_type_val(data_type)
@@ -227,3 +229,5 @@ class Dataset(object):
                 raise ObjectError('Could not find replica on %s of %s', str(site), self._name)
             else:
                 return None
+
+customize_dataset(Dataset)
