@@ -474,9 +474,9 @@ class RLFSM(object):
             results = get_results(batch_id)
 
             for task_id, status, exitcode, start_time, finish_time in results:
-                if status == query_cls.STAT_DONE:
+                if status == FileQuery.STAT_DONE:
                     num_success += 1
-                elif status == query_cls.STAT_FAILED:
+                elif status == FileQuery.STAT_FAILED:
                     num_failure += 1
                 else:
                     continue
