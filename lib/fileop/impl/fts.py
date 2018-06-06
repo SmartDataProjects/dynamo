@@ -69,7 +69,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = True, verify_checksum = False)
 
-        return self._submit_job(job, 'transfer', batch_id)
+        return self._submit_job(job, 'transfer', batch_id, pfn_to_task)
 
     def start_deletions(self, batch_id, batch_tasks): #override
         pfn_to_task = {}
@@ -147,13 +147,13 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])
 
         if not self.dry_run:
-            self.mysql.insert_many('fts_' optype + '_files', fields, mapping, fts_files)
+            self.mysql.insert_many('fts_' + optype + '_files', fields, mapping, fts_files)
 
         return True
 
     def _get_status(self, batch_id, optype):
         sql = 'SELECT `job_id` FROM `fts_{optype}_batches`'
-        sql += ' WHERE `fts_server_id` = %s, `batch_id` = %s'
+        sql += ' WHERE `fts_server_id` = %s AND `batch_id` = %s'
 
         job_id = self.mysql.query(sql.format(optype = optype), self.server_id, batch_id)[0]
 
