@@ -5,6 +5,8 @@ CREATE TABLE `file_deletions` (
   `exitcode` smallint(5) unsigned NOT NULL,
   `batch_id` bigint(20) unsigned NOT NULL,
   `created` datetime NOT NULL,
+  `started` datetime NOT NULL,
+  `finished` datetime NOT NULL,
   `completed` datetime NOT NULL,
   PRIMARY KEY (`id`),
   KEY `deletion` (`file_id`,`site_id`),

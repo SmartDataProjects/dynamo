@@ -250,7 +250,7 @@ if __name__ == '__main__':
     sql = 'SELECT q.`batch_id`, q.`id`, a.`source`, a.`destination` FROM `standalone_transfer_queue` AS a'
     sql += ' INNER JOIN `transfer_queue` AS q ON q.`id` = a.`id`'
     sql += ' WHERE a.`status` = \'new\''
-    sql += ' ORDER BY q.`batch_id` LIMIT 20'
+    sql += ' ORDER BY q.`batch_id`'
 
     _batch_id = 0
     all_tasks = []
