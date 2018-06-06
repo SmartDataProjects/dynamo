@@ -67,9 +67,9 @@ class EnforcerInterface(object):
 
             target_num = rule.num_copies
 
-            already_there = 0
-            en_route = 0
-            still_missing = 0
+            already_there = []
+            en_route = {}
+            still_missing = {}
 
             if target_num > len(destination_sites):
                 # This is never fulfilled - cap
@@ -113,9 +113,9 @@ class EnforcerInterface(object):
                                 num_incomplete += 1
 
                     if num_complete >= target_num:
-                        already_there += 1
+                        already_there.append(replica.dataset.name)
                     elif num_complete + num_incomplete >= target_num:
-                        en_route += 1
+                        en_route[replica.dataset.name + "__" + site.name] = str(replica.size(physical = True)) + "__" + str(replica.size(physical = False))
                     else:
                         # create a request
 
@@ -123,7 +123,7 @@ class EnforcerInterface(object):
                         if len(site_candidates) != 0:
                             # can be 0 if the dataset has copies in other partitions
 
-                            still_missing += 1
+                            still_missing[replica.dataset.name] = replica.dataset.size
 
                             if not self.write_rrds:
                                 target_site = random.choice(list(site_candidates))

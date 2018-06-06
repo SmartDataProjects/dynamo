@@ -67,6 +67,7 @@ def create_rrd(path):
 
     rrdtool.create(path, '--start', str(start), '--step', str(interval),
                    'DS:missing:GAUGE:%d:0:U' % (interval * 800),
+                   'DS:enroute:GAUGE:%d:0:U' % (interval * 800),
                    'DS:there:GAUGE:%d:0:U' % (interval * 800),
                    'RRA:LAST:0:1:%i' % 28400)
 
@@ -110,7 +111,30 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
         lasttime = 0
             
     if not read_only and timestamp != lasttime:
-        rrdtool.update(rrd_file, '%d:%i:%i' % (timestamp, still_missing + en_route, already_there))
+        rrdtool.update(rrd_file, '%d:%i:%i:%i' % (timestamp, len(still_missing), len(en_route), already_there))
+
+        enroute_csv = rrd_dir + '/%s_enroute.csv' % rule_name 
+        with open(enroute_csv,'w') as csvfile:
+            fieldnames = ['replica', 'site', 'there', 'total']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            
+            writer.writeheader()
+            for key, value in en_route.items():
+                replica = key.split('__')[0]
+                site = key.split('__')[1]
+                size_there = int(value.split('__')[0])
+                size_total = int(value.split('__')[1])
+                writer.writerow({'replica': replica, 'site': site, 'there': size_there, 'total': size_total})
+
+        missing_csv = rrd_dir + '/%s_missing.csv' % rule_name 
+        with open(missing_csv,'w') as csvfile:
+            fieldnames = ['replica', 'size']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            
+            writer.writeheader()
+            for key, value in still_missing.items():
+                writer.writerow({'replica': key, 'size': value})
+
 
 if not read_only:
     target_dir = config.rrd_publish_target + '/monitoring_enforcer'
@@ -121,5 +145,5 @@ if not read_only:
         pass
     
     for entry in os.listdir(rrd_dir):
-        if entry.endswith('.rrd'):
+        if entry.endswith('.rrd') or entry.endswith('.csv'):
             shutil.copy(rrd_dir + '/' + entry, target_dir + '/' + entry)
