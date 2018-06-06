@@ -20,6 +20,13 @@ class BlockReplica(object):
     def site(self):
         return self._site
 
+    @property
+    def num_files(self):
+        if self.file_ids is None:
+            return self.block.num_files
+        else:
+            return len(self.file_ids)
+
     def __init__(self, block, site, group, is_custodial = False, size = -1, last_update = 0, file_ids = None):
         # Creater of the object is responsible for making sure size and file_ids are consistent
         # file_ids should be a tuple of (long) integers or LFN strings, latter in case where the file is not yet registered with the inventory
@@ -206,6 +213,8 @@ class BlockReplica(object):
         else:
             self.file_ids = tuple(file_ids)
 
+        self.size += lfile.size
+
     def delete_file(self, lfile):
         # Note: cannot be used with a file that is just created - it doesn't have an ID until it's registered with the inventory store!
 
@@ -221,6 +230,7 @@ class BlockReplica(object):
         file_ids.remove(lfile.id)
 
         self.file_ids = tuple(file_ids)
+        self.size -= lfile.size
 
     def _block_full_name(self):
         if type(self._block) is str:
