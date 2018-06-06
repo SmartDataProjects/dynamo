@@ -45,7 +45,10 @@ class MySQL(object):
         else:
             user = MySQL._default_user
 
-        self._connection_parameters = dict(MySQL._default_parameters[user])
+        try:
+            self._connection_parameters = dict(MySQL._default_parameters[user])
+        except KeyError:
+            self._connection_parameters = {'user': user}
 
         if 'config_file' in config and 'config_group' in config:
             parser = ConfigParser()
