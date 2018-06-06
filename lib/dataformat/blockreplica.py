@@ -187,6 +187,41 @@ class BlockReplica(object):
         else:
             return set(f for f in block_files if f.id in self.file_ids)
 
+    def add_file(self, lfile):
+        # Note: cannot be used with a file that is just created - it doesn't have an ID until it's registered with the inventory store!
+
+        if lfile.block != self.block:
+            raise ObjectError('Cannot add file %s (block %s) to %s', lfile.lfn, lfile.block.full_name(), str(self))
+
+        if self.file_ids is None:
+            # This was a full replica. A new file was added to the block. The replica remains full.
+            return
+        else:
+            file_ids = set(self.file_ids)
+
+        file_ids.add(lfile.id)
+
+        if len(file_ids) == self.block.num_files:
+            self.file_ids = None
+        else:
+            self.file_ids = tuple(file_ids)
+
+    def delete_file(self, lfile):
+        # Note: cannot be used with a file that is just created - it doesn't have an ID until it's registered with the inventory store!
+
+        if lfile.block != self.block:
+            raise ObjectError('Cannot delete file %s (block %s) from %s', lfile.lfn, lfile.block.full_name(), str(self))
+
+        if self.file_ids is None:
+            file_ids = [f.id for f in self.block.files]
+        else:
+            file_ids = list(self.file_ids)
+
+        # Let remove() raise ValueError if the file id is not found
+        file_ids.remove(lfile.id)
+
+        self.file_ids = tuple(file_ids)
+
     def _block_full_name(self):
         if type(self._block) is str:
             return self._block

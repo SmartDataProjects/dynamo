@@ -194,7 +194,9 @@ class InjectData(WebModule):
             except KeyError:
                 blockreplicas = None
 
-            if len(dataset.replicas) == 0:
+            replica = site.find_datast_replica(dataset)
+
+            if replica is None:
                 # new replica
                 try:
                     group_name = obj['group']
@@ -205,9 +207,17 @@ class InjectData(WebModule):
                         group = inventory.groups[group_name]
                     except KeyError:
                         raise InvalidRequest('Unknown group %s' % group_name)
-    
-                # "origin" dataset replica cannot be growing    
-                new_replica = df.DatasetReplica(dataset, site, growing = False, group = group)
+
+                if len(dataset.replicas) == 0:
+                    # "origin" dataset replica cannot be growing
+                    growing = False
+                else:
+                    try:
+                        growing = obj['growing']
+                    except KeyError:
+                        growing = True
+                    
+                new_replica = df.DatasetReplica(dataset, site, growing = growing, group = group)
     
                 try:
                     replica = inventory.update(new_replica)
@@ -215,11 +225,6 @@ class InjectData(WebModule):
                     raise RuntimeError('Inventory update failed')
         
                 num_datasetreplicas += 1
-
-            else:
-                replica = list(dataset.replicas)[0]
-                if len(dataset.replicas) > 1 or replica.site is not site:
-                    raise InvalidRequest('Dataset %s already has a replica.' % dataset.name)
 
             if blockreplicas is not None:
                 self._make_blockreplicas(blockreplicas, replica, inventory, counts)
@@ -280,7 +285,7 @@ class InjectData(WebModule):
                 new_block = False
 
             if files is not None:
-                added_new_file = self._make_files(files, block, inventory, counts)
+                added_new_file = self._make_files(files, block, new_block, inventory, counts)
                 if added_new_file and not new_block:
                     blocks_with_new_file.append(block)
 
@@ -291,9 +296,11 @@ class InjectData(WebModule):
 
         return blocks_with_new_file
 
-    def _make_files(self, objects, block, inventory, counts):
+    def _make_files(self, objects, block, new_block, inventory, counts):
         num_files = 0
         added_new_file = False
+
+        block_replicas = {}
 
         for obj in objects:
             try:
@@ -311,10 +318,40 @@ class InjectData(WebModule):
                     obj['name'] = lfn
                     raise IllFormedRequest('file', str(obj), hint = str(exc))
 
+                if not new_block:
+                    # when adding a file to an existing block, we need to specify where the file can be found
+                    # otherwise subscriptions made for other replicas will never complete
+                    try:
+                        site_name = obj['site']
+                    except KeyError:
+                        raise MissingParameter('site', context = 'file ' + str(obj))
+
+                    try:
+                        block_replica = block_replicas[site_name]
+                    except KeyError:
+                        try:
+                            site = inventory.sites[site_name]
+                        except KeyError:
+                            raise InvalidRequest('Unknown site %s' % site_name)
+                        
+                        block_replica = block.find_replica(site)
+                        if block_replica is None:
+                            raise InvalidRequest('Block %s does not have a replica at %s' % (block.full_name(), site_name))
+
+                        block_replicas[site_name] = block_replica
+
                 block.size += new_lfile.size
                 block.num_files += 1
 
                 lfile = inventory.update(new_lfile)
+
+                if not new_block:
+                    block_replica.size += lfile.size
+
+                    if block_replica.file_ids is None:
+                        pass
+                    else:
+                        block_replica.file_ids += (lfile.lfn,)
 
                 added_new_file = True
     
@@ -322,6 +359,9 @@ class InjectData(WebModule):
 
         if num_files != 0:
             inventory.register_update(block)
+
+        for block_replica in block_replicas.itervalues():
+            inventory.update(block_replica)
 
         try:
             counts['files'] += num_files
@@ -349,7 +389,9 @@ class InjectData(WebModule):
             if block is None:
                 raise InvalidRequest('Unknown block %s' % block_name)
 
-            if len(block.replicas) == 0:
+            block_replica = block.find_replica(site)
+
+            if block_replica is None:
                 # new replica
                 try:
                     group_name = obj.pop('group')
@@ -360,10 +402,11 @@ class InjectData(WebModule):
                         group = inventory.groups[group_name]
                     except KeyError:
                         raise InvalidRequest('Unknown group %s' % group_name)
-                    
-                # "origin" block replicas must always be full
-                obj['file_ids'] = None
-                obj['size'] = -1 # will set size to block size
+
+                if len(block.replicas) == 0:
+                    # "origin" block replicas must always be full
+                    obj['file_ids'] = None
+                    obj['size'] = -1 # will set size to block size
     
                 try:
                     new_replica = df.BlockReplica(block, site, group, **obj)
@@ -375,10 +418,6 @@ class InjectData(WebModule):
                 inventory.update(new_replica)
 
                 num_blockreplicas += 1
-
-            else:
-                if len(block.replicas) > 1 or list(block.replicas)[0].site is not site:
-                    raise InvalidRequest('Block %s already has a replica.' % block.full_name())                
 
         try:
             counts['blockreplicas'] += num_blockreplicas
