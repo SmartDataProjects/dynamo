@@ -4,9 +4,6 @@
       "module": "mysqlhistory:MySQLHistory",
       "config": {
         "db_params": {
-          "user": "dynamo",
-          "passwd": "",
-          "host": "localhost",
           "db": "dynamohistory"
         }
       }
@@ -15,9 +12,6 @@
       "module": "mysqlhistory:MySQLHistory",
       "config": {
         "db_params": {
-          "user": "dynamoread",
-          "passwd": "",
-          "host": "localhost",
           "db": "dynamohistory"
         }
       }
@@ -31,8 +25,6 @@
           "db": {
             "db_params": {
               "user": "dynamofod",
-              "passwd": "",
-              "host": "localhost",
               "db": "dynamo"
             },
             "history": "dynamohistory"
@@ -53,8 +45,6 @@
           "db": {
             "db_params": {
               "user": "dynamofod",
-              "passwd": "",
-              "host": "localhost",
               "db": "dynamo"
             },
             "history": "dynamohistory"
@@ -69,14 +59,26 @@
   },
   "utils.interface.mysql:MySQL": {
     "fullauth": {
-      "user": "dynamo",
-      "passwd": "",
-      "host": "localhost"
+      "default_user": "dynamo",
+      "params": {
+        "dynamo": {
+          "passwd": "",
+          "host": "localhost"
+        },
+        "dynamofod": {
+          "passwd": "",
+          "host": "localhost"
+        }
+      }
     },
     "readonly": {
-      "user": "dynamoread",
-      "passwd": "",
-      "host": "localhost"
+      "default_user": "dynamoread",
+      "params": {
+        "dynamoread": {
+          "passwd": "",
+          "host": "localhost"
+        }
+      }
     }
   },
   "utils.interface.webservice:HTTPSCertKeyHandler": {

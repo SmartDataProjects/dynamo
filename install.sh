@@ -27,6 +27,7 @@ ARCHIVE_PATH=$($READCONF paths.archive_path)
 SPOOL_PATH=$($READCONF paths.spool_path)
 LOG_PATH=$($READCONF paths.log_path)
 POLICY_PATH=$($READCONF paths.policy_path)
+CLIENT_PATH=$($READCONF paths.client_path)
 WEBSERVER=$($READCONF web.enabled)
 APPSERVER=$($READCONF applications.enabled)
 SERVER_DB=$($READCONF server.store)
@@ -107,7 +108,6 @@ echo
 
 require mkdir -p $INSTALL_PATH
 require mkdir -p $INSTALL_PATH/python/site-packages/dynamo
-require mkdir -p $INSTALL_PATH/bin
 require mkdir -p $INSTALL_PATH/exec
 require mkdir -p $INSTALL_PATH/utilities
 require mkdir -p $INSTALL_PATH/sbin
@@ -135,7 +135,7 @@ python -m compileall $INSTALL_PATH/python/site-packages/dynamo > /dev/null
 
 ### Install the executables ###
 
-cp $SOURCE/bin/dynamo /usr/local/bin/
+cp $SOURCE/bin/dynamo $CLIENT_PATH/
 
 cp $SOURCE/exec/* $INSTALL_PATH/exec/
 chown $USER:$(id -gn $USER) $INSTALL_PATH/exec/*

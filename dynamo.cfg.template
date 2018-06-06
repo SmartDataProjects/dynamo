@@ -19,6 +19,9 @@ archive_path=/local/data/dynamo
 # Location of the policy package
 policy_path=/usr/local/dynamo-policies
 
+# Location of the client executable
+client_path=/usr/local/bin
+
 [server]
 ## Dynamo server configuration
 
