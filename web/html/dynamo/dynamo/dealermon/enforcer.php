@@ -12,6 +12,7 @@ function single_rrd_to_array($rrd,$rrdpath){
 
 
   $there_entries = array();
+  $enroute_entries = array();
   $missing_entries = array();
   $time_entries = array();
 
@@ -24,11 +25,17 @@ function single_rrd_to_array($rrd,$rrdpath){
   {
     array_push($missing_entries,$value); 
   }
+  foreach ( $dump["data"]["enroute"] as $key => $value )
+  {
+    array_push($enroute_entries,$value);
+  }
+  $last_enroute = array_pop($enroute_entries); 
   $last_there = array_pop($there_entries);
   $last_missing = array_pop($missing_entries);
   $last_time = array_pop($time_entries);
 
   while(count($missing_entries)!=0 and is_nan($missing_entries[0])){
+    $enroute_missing = array_shift($enroute_entries);
     $first_missing = array_shift($missing_entries);
     $first_there = array_shift($there_entries);
     $first_time = array_shift($time_entries);
@@ -39,6 +46,7 @@ function single_rrd_to_array($rrd,$rrdpath){
   $rrd_array = array(
                      $time_entries,
                      $missing_entries,
+                     $enroute_entries,
                      $there_entries,
                      );
 
@@ -186,7 +194,7 @@ if ( (isset($_REQUEST['getStatus']) && $_REQUEST['getStatus'])){
       $siteinfo = array('rule' => str_replace('.rrd','',$file)."_".$line_number, 'data' => array());
             
       $rrd_info = single_rrd_to_array($file,__DIR__ . "/monitoring_enforcer/");
-      $siteinfo['data'][] = array('date' => $rrd_info[0], 'missing' => $rrd_info[1], 'there' => $rrd_info[2], 'sites' => $considered_sites, 'backends' => $considered_backends, 'lat' => $considered_lat, 'long' => $considered_long);
+      $siteinfo['data'][] = array('date' => $rrd_info[0], 'missing' => $rrd_info[1], 'enroute' => $rrd_info[2], 'there' => $rrd_info[3], 'sites' => $considered_sites, 'backends' => $considered_backends, 'lat' => $considered_lat, 'long' => $considered_long);
       $status_array[] = $siteinfo;
 	
     }
