@@ -111,7 +111,7 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
         lasttime = 0
             
     if not read_only and timestamp != lasttime:
-        rrdtool.update(rrd_file, '%d:%i:%i:%i' % (timestamp, len(still_missing), len(en_route), already_there))
+        rrdtool.update(rrd_file, '%d:%i:%i:%i' % (timestamp, len(still_missing), len(en_route), len(already_there)))
 
         enroute_csv = rrd_dir + '/%s_enroute.csv' % rule_name 
         with open(enroute_csv,'w') as csvfile:
