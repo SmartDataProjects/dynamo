@@ -104,13 +104,17 @@ class RLFSM(object):
         if self.main_cycle is not None:
             return
 
-        self.main_cycle = threading.Thread(target = self._run_cycle, title = 'FOM', args = (inventory,))
+        self.main_cycle = threading.Thread(target = self._run_cycle, name = 'FOM', args = (inventory,))
         self.main_cycle.start()
+
+        LOG.info('Started file operations manager.')
 
     def stop(self):
         """
         Stop the file operations management cycle.
         """
+
+        LOG.info('Stopping file operations manager.')
 
         self.cycle_stop.set()
         self.main_cycle.join()
@@ -132,31 +136,31 @@ class RLFSM(object):
         @param inventory   The inventory.
         """
 
-        LOG.info('Fetching subscription status from the file operation agent.')
+        LOG.debug('Fetching subscription status from the file operation agent.')
         self._update_status('transfer')
 
         if self.cycle_stop.is_set():
             return
 
-        LOG.info('Collecting new transfer subscriptions.')
+        LOG.debug('Collecting new transfer subscriptions.')
         subscriptions = self._get_subscriptions(inventory)
 
         if self.cycle_stop.is_set():
             return
 
-        LOG.info('Identifying source sites for %d transfers.', len(subscriptions))
+        LOG.debug('Identifying source sites for %d transfers.', len(subscriptions))
         tasks = self._select_source(subscriptions)
 
         if self.cycle_stop.is_set():
             return
 
-        LOG.info('Organizing %d transfers into batches.', len(tasks))
+        LOG.debug('Organizing %d transfers into batches.', len(tasks))
         batches = self.transfer_operation.form_batches(tasks)
 
         if self.cycle_stop.is_set():
             return
 
-        LOG.info('Issuing transfer tasks.')
+        LOG.debug('Issuing transfer tasks.')
         num_batches, num_tasks = 0, 0
         for batch_tasks in batches:
             nb, nt = self._start_transfers(batch_tasks)
@@ -165,7 +169,10 @@ class RLFSM(object):
             if self.cycle_stop.is_set():
                 break
 
-        LOG.info('Issued %d transfer tasks in %d batches.', num_tasks, num_batches)
+        if num_tasks != 0:
+            LOG.info('Issued %d transfer tasks in %d batches.', num_tasks, num_batches)
+        else:
+            LOG.debug('Issued %d transfer tasks in %d batches.', num_tasks, num_batches)
 
     def delete_files(self, inventory):
         """
@@ -180,16 +187,16 @@ class RLFSM(object):
         @param inventory   The inventory.
         """
 
-        LOG.info('Fetching deletion status from the file operation agent.')
+        LOG.debug('Fetching deletion status from the file operation agent.')
         completed = self._update_status('deletion')
 
-        LOG.info('Recording candidates for empty directories.')
+        LOG.debug('Recording candidates for empty directories.')
         self._set_dirclean_candidates(completed, inventory)
 
         if self.cycle_stop.is_set():
             return
 
-        LOG.info('Collecting new deletion subscriptions.')
+        LOG.debug('Collecting new deletion subscriptions.')
         desubscriptions = self._get_desubscriptions(inventory)
 
         if self.cycle_stop.is_set():
@@ -197,13 +204,13 @@ class RLFSM(object):
 
         tasks = [RLFSM.DeletionTask(d) for d in desubscriptions]
 
-        LOG.info('Organizing the deletions into batches.')
+        LOG.debug('Organizing the deletions into batches.')
         batches = self.deletion_operation.form_batches(tasks)
 
         if self.cycle_stop.is_set():
             return
 
-        LOG.info('Issuing deletion tasks.')
+        LOG.debug('Issuing deletion tasks.')
         num_batches, num_tasks = 0, 0
         for batch_tasks in batches:
             nb, nt = self._start_deletions(batch_tasks)
@@ -211,8 +218,11 @@ class RLFSM(object):
             num_tasks += nt
             if self.cycle_stop.is_set():
                 break
-
-        LOG.info('Issued %d deletion tasks in %d batches.', num_tasks, num_batches)
+    
+        if num_tasks != 0:
+            LOG.info('Issued %d deletion tasks in %d batches.', num_tasks, num_batches)
+        else:
+            LOG.debug('Issued %d deletion tasks in %d batches.', num_tasks, num_batches)
 
     def update_inventory(self, inventory):
         def update_replica(replica, file_ids, projected):
@@ -358,19 +368,19 @@ class RLFSM(object):
             if self.cycle_stop.is_set():
                 return
     
-            LOG.info('Checking and executing new file transfer subscriptions.')
+            LOG.debug('Checking and executing new file transfer subscriptions.')
             self.transfer_files(inventory)
     
             if self.cycle_stop.is_set():
                 return
     
-            LOG.info('Checking and executing new file deletion subscriptions.')
+            LOG.debug('Checking and executing new file deletion subscriptions.')
             self.delete_files(inventory)
 
             if self.cycle_stop.is_set():
                 return
 
-            time.sleep(5)
+            time.sleep(30)
 
     def _update_status(self, optype):
         # insert queries all have ON DUPLICATE key to make sure we can restart in case of a crash
@@ -478,7 +488,10 @@ class RLFSM(object):
                 if self.cycle_stop.is_set():
                     break
 
-        LOG.info('Archived file %s: %d succeeded, %d failed.', optype, num_success, num_failure)
+        if num_success + num_failure != 0:
+            LOG.info('Archived file %s: %d succeeded, %d failed.', optype, num_success, num_failure)
+        else:
+            LOG.debug('Archived file %s: %d succeeded, %d failed.', optype, num_success, num_failure)
 
         return completed_subscriptions
 
@@ -550,7 +563,7 @@ class RLFSM(object):
 
             if status == 'retry':
                 subscription.failed_sources = {}
-                for source_name, exitcode in self.db.query(get_tried_sites):
+                for source_name, exitcode in self.db.query(get_tried_sites, sub_id):
                     source = inventory.sites[source_name]
                     if source not in subscription.failed_sources:
                         subscription.failed_sources[source] = [exitcode]
