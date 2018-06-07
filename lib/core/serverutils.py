@@ -188,8 +188,11 @@ def pre_execution(path, is_local, read_only, defaults_config, inventory, authori
             except KeyError:
                 continue
         else:
-            # security measure
-            del config['fullauth']
+            try:
+                # security measure
+                del config['fullauth']
+            except KeyError:
+                pass
 
         modname, clsname = key.split(':')
         module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
