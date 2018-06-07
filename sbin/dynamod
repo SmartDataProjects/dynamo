@@ -51,8 +51,6 @@ changelog.critical(main.serverutils.BANNER)
 
 log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
 
-## Start the server
-
 from dynamo.utils.log import log_exception
 
 # Convert SIGTERM and SIGHUP into KeyboardInterrupt (SIGINT already is)
@@ -63,6 +61,7 @@ signal_converter.set(signal.SIGHUP)
 
 server = None
 
+## Start the server
 try:
     ## Take actions that need privileged access (e.g. read private keys) here before we switch euid
     server = main.DynamoServer(config)

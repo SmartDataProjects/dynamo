@@ -127,6 +127,8 @@ if serve_fileop == 'true':
         transfer_conf['module'] = 'fts:FTSFileOperation'
         transfer_conf['config']['batch_size'] = 4000
 
+    server_conf['file_operations']['daemon'] = json.loads(source_conf.get('file_operations', 'fod_conf'))
+
 server_conf['notification_recipient'] = email
 server_conf['status_poll_interval'] = 1.0
 

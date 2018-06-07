@@ -305,6 +305,29 @@ else
   chmod +x /etc/init.d/dynamod
 fi
 
+FILEOP_ENABLED=$($READCONF file_operations.enabled)
+FILEOP_BACKEND=$($READCONF file_operations.backend)
+
+if [ $FILEOP_ENABLED = 'true' ] && [ $FILEOP_BACKEND = "standalone" ]
+then
+  if [[ $(uname -r) =~ el7 ]]
+  then
+    # systemd daemon
+    cp $SOURCE/daemon/dynamo-fileopd.systemd /usr/lib/systemd/system/dynamo-fileopd.service
+    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /usr/lib/systemd/system/dynamo-fileopd.service
+  
+    # environment file for the daemon
+    ENV=/etc/sysconfig/dynamo-fileopd
+    echo "PYTHONPATH=$INSTALL_PATH/python/site-packages" >> $ENV
+  
+    systemctl daemon-reload
+  else
+    cp $SOURCE/daemon/dynamo-fileopd.sysv /etc/init.d/dynamo-fileopd
+    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamo-fileopd
+    chmod +x /etc/init.d/dynamo-fileopd
+  fi
+fi
+
 echo " Done."
 echo
 
