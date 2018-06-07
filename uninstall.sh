@@ -4,13 +4,81 @@ echo "Uninstalling dynamo."
 
 export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
 
-source $SOURCE/config.sh
+### Read the config ###
 
-rm -rf $INSTALL_PATH
+INSTALL_CONF=$1
+[ -z "$INSTALL_CONF" ] && INSTALL_CONF=$SOURCE/dynamo.cfg
 
-rm -rf $SCHEDULER_PATH
+if ! [ -e $INSTALL_CONF ]
+then
+  echo
+  echo "$INSTALL_CONF does not exist."
+  exit 1
+fi
 
+source $SOURCE/utilities/shellutils.sh
+
+READCONF="$SOURCE/utilities/readconf -I $INSTALL_CONF"
+
+INSTALL_PATH=$($READCONF paths.dynamo_base)
+CONFIG_PATH=$($READCONF paths.config_path)
+ARCHIVE_PATH=$($READCONF paths.archive_path)
+SPOOL_PATH=$($READCONF paths.spool_path)
+LOG_PATH=$($READCONF paths.log_path)
+POLICY_PATH=$($READCONF paths.policy_path)
+CLIENT_PATH=$($READCONF paths.client_path)
+WEBSERVER=$($READCONF web.enabled)
+APPSERVER=$($READCONF applications.enabled)
+FILEOP=$($READCONF file_operations.enabled)
+
+### Delete files ###
+
+if [[ $(uname -r) =~ el7 ]]
+then
+  systemctl stop dynamod
+  systemctl disable dynamod
+
+  rm /usr/lib/systemd/system/dynamod.service
+  rm /etc/sysconfig/dynamod
+else
+  service stop dynamod
+  chkconfig dynamod off
+
+  rm /etc/init.d/dynamod
+fi
+
+FILEOP_BACKEND=$($READCONF file_operations.backend)
+
+if [ "$FILEOP" = "true" ] && [ "$FILEOP_BACKEND" = "standalone" ]
+then
+  systemctl stop dynamo-fileopd
+  systemctl disable dynamo-fileopd
+
+  rm /usr/lib/systemd/system/dynamo-fileopd.service
+  rm /etc/sysconfig/dynamo-fileopd
+else
+  service stop dynamo-fileopd
+  chkconfig dynamo-fileopd off
+
+  rm /etc/init.d/dynamo-fileopd
+fi
+
+rm -rf $INSTAL_PATH
 rm -rf $SPOOL_PATH
+rm -rf $POLICY_PATH
+rm $CLIENT_PATH/dynamo
+
+if [ "$WEBSERVER" = "true" ]
+then
+  CONTENTS_PATH=$($READCONF web.contents_path)
+  rm -rf $CONTENTS_PATH
+fi
+
+# NRPE PLUGINS
+if [ -d /usr/lib64/nagios/plugins ]
+then
+  rm /usr/lib64/nagios/plugins/check_dynamo.sh
+fi
 
 echo "The following elements are not deleted:"
 echo " . DB tables"
@@ -18,38 +86,3 @@ echo " . $CONFIG_PATH"
 echo " . $LOG_PATH"
 echo " . $ARCHIVE_PATH"
 echo " . crontab (if any entries were made)"
-
-if [ $WEB_PATH ]
-then
-  export WEB_PATH
-  $SOURCE/web/uninstall.sh
-fi
-
-if [ $DAEMONS -eq 1 ]
-then
-  if [[ $(uname -r) =~ el7 ]]
-  then
-    systemctl stop dynamod
-    systemctl disable dynamod
-    systemctl stop dynamo-scheduled
-    systemctl disable dynamo-scheduled
-
-    rm /usr/lib/systemd/system/dynamod.service
-    rm /usr/lib/systemd/system/dynamo-scheduled.service
-    rm /etc/sysconfig/dynamod
-  else
-    service stop dynamod
-    chkconfig dynamod off
-    service stop dynamo-scheduled
-    chkconfig dynamo-scheduled off
-
-    rm /etc/init.d/dynamod
-    rm /etc/init.d/dynamo-scheduled
-  fi
-
-  # NRPE PLUGINS
-  if [ -d /usr/lib64/nagios/plugins ]
-  then
-    rm /usr/lib64/nagios/plugins/check_dynamo.sh
-  fi
-fi

@@ -30,6 +30,7 @@ POLICY_PATH=$($READCONF paths.policy_path)
 CLIENT_PATH=$($READCONF paths.client_path)
 WEBSERVER=$($READCONF web.enabled)
 APPSERVER=$($READCONF applications.enabled)
+FILEOP=$($READCONF file_operations.enabled)
 SERVER_DB=$($READCONF server.store)
 
 ### Stop the daemons first ###
@@ -305,10 +306,9 @@ else
   chmod +x /etc/init.d/dynamod
 fi
 
-FILEOP_ENABLED=$($READCONF file_operations.enabled)
 FILEOP_BACKEND=$($READCONF file_operations.backend)
 
-if [ $FILEOP_ENABLED = 'true' ] && [ $FILEOP_BACKEND = "standalone" ]
+if [ "$FILEOP" = "true" ] && [ "$FILEOP_BACKEND" = "standalone" ]
 then
   if [[ $(uname -r) =~ el7 ]]
   then
