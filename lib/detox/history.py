@@ -97,10 +97,10 @@ class DetoxHistory(object):
 
         # Insert full data into a temporary table with site and dataset names
         sql = 'CREATE TEMPORARY TABLE `replicas_tmp` ('
-        sql += '`site` varchar(32) NOT NULL,'
+        sql += '`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,'
         sql += '`dataset` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,'
         sql += '`size` bigint(20) unsigned NOT NULL,'
-        sql += '`decision` enum(\'delete\',\'keep\',\'protect\') NOT NULL,'
+        sql += '`decision` enum(\'delete\',\'keep\',\'protect\') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,'
         sql += '`condition` int(10) unsigned NOT NULL,'
         sql += 'KEY `site_dataset` (`site`,`dataset`)'
         sql += ')'
@@ -218,8 +218,8 @@ class DetoxHistory(object):
 
         # Insert full data into a temporary table with site and dataset names
         sql = 'CREATE TEMPORARY TABLE `sites_tmp` ('
-        sql += '`site` varchar(32) NOT NULL,'
-        sql += '`status` enum(\'ready\',\'waitroom\',\'morgue\',\'unknown\') NOT NULL,'
+        sql += '`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,'
+        sql += '`status` enum(\'ready\',\'waitroom\',\'morgue\',\'unknown\') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,'
         sql += '`quota` int(10) NOT NULL,'
         sql += 'KEY `site` (`site`)'
         sql += ')'

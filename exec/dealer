@@ -25,14 +25,15 @@ from dynamo.core.executable import make_standard_logger, read_only
 
 LOG = make_standard_logger(config.log_level)
 
-## Run the main detox object
+## Configure
 from dynamo.dealer.main import Dealer
 from dynamo.core.executable import inventory
 
-LOG.info('Starting Dealer.')
-
 dealer_config = config.dealer
 dealer_config.test_run = args.test_run
+
+## Run the main program
+LOG.info('Starting Dealer.')
 
 dealer = Dealer(dealer_config)
 

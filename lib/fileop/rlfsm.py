@@ -343,30 +343,20 @@ class RLFSM(object):
             # this is dangerous - what if inventory fails to update on the server side?
             self.db.delete_many('file_subscriptions', 'id', done_ids)
 
-    def subscribe_files(self, block_replica):
+    def subscribe_files(self, site, files):
         """
         Make subscriptions of missing files in the block replica.
         """
-        if block_replica.file_ids is None:
-            # replica supposedly has all files
-            LOG.info('No files to subscribe for %s', str(block_replica))
-            return
-
-        all_ids = set(f.id for f in block_replica.block.files)
-        missing_ids = all_ids - set(block_replica.file_ids)
-
-        LOG.info('Subscribing %d files from %s', len(missing_ids), str(block_replica))
-
-        site_id = block_replica.site.id
+        LOG.info('Subscribing %d files to %s', len(files), str(site))
 
         # local time
         now = time.strftime('%Y-%m-%d %H:%M:%S')
 
         fields = ('file_id', 'site_id', 'delete', 'created')
-        mapping = lambda f: (f, site_id, 0, now)
+        mapping = lambda f: (f.id, site.id, 0, now)
 
         if not self.dry_run:
-            self.db.insert_many('file_subscriptions', fields, mapping, missing_ids)
+            self.db.insert_many('file_subscriptions', fields, mapping, files)
 
     def desubscribe_files(self, site, files):
         """

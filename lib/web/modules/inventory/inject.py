@@ -47,8 +47,9 @@ class InjectData(WebModule):
 
         # Do this here to minimize the risk of creating invalid subscriptions
         for block in blocks_with_new_file:
+            all_files = block.files
             for replica in block.replicas:
-                self.rlfsm.subscribe_files(replica)
+                self.rlfsm.subscribe_files(replica.site, all_files - replica.files())
 
         return counts
 

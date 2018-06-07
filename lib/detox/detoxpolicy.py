@@ -4,7 +4,7 @@ from dynamo.dataformat import ConfigurationError
 import dynamo.policy.variables as variables
 import dynamo.policy.attrs as attrs
 import dynamo.policy.predicates as predicates
-import dynamo.policy.producers as get_producers
+from dynamo.policy.producers import get_producers
 from dynamo.detox.conditions import ReplicaCondition, SiteCondition
 from dynamo.detox.sort import SortKey
 
