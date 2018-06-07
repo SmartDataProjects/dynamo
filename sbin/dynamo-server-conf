@@ -110,8 +110,9 @@ if serve_applications == 'true':
             raise
 
     if serve_fileop == 'true':
+        transfer_conf = OD()
+
         backend = source_conf.get('file_operations', 'backend')
-        transfer_conf = app_conf['defaults']['fileop.transfer:FileTransferOperation'] = OD()
         if backend == 'standalone':
             transfer_conf['module'] = 'standalone:StandaloneFileOperation'
             transfer_conf['config'] = OD({'db_params': server_conf['file_operations']['db_params']})
@@ -120,6 +121,8 @@ if serve_applications == 'true':
             transfer_conf['module'] = 'fts:FTSFileOperation'
             transfer_conf['config'] = OD(source_conf.get('file_operations', 'fod_conf'))
             transfer_conf['config']['batch_size'] = 4000
+
+        app_conf['defaults']['fileop.transfer:FileTransferOperation'] = OD({'fullauth': transfer_conf})
 
     app_conf['timeout'] = 7200
     app_conf['retain_records_for'] = 7

@@ -116,6 +116,7 @@ class WebServer(object):
 
         ## Step 2
         mode = environ['SCRIPT_NAME'].strip('/')
+
         if mode == 'js' or mode == 'css':
             try:
                 source = open(HTMLMixin.contents_path + '/' + mode + environ['PATH_INFO'])

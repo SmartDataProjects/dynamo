@@ -10,8 +10,8 @@ class DatasetStats(WebModule, HTMLMixin):
         WebModule.__init__(self, config)
         HTMLMixin.__init__(self, 'Dynamo dataset statistics', config.inventory.monitor.body_html)
 
-        self.stylesheets = ['/css/inventory.css']
-        self.scripts = ['/js/utils.js', '/js/inventory.js']
+        self.stylesheets = ['/css/inventory/monitor.css']
+        self.scripts = ['/js/utils.js', '/js/inventory/monitor.js']
         self.header_script = '$(document).ready(function() { initPage(\'{DATA_TYPE}\', \'{CATEGORIES}\', {CONSTRAINTS}); });'
 
     def run(self, caller, request, inventory):

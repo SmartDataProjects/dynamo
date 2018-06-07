@@ -1,5 +1,6 @@
 from dynamo.fileop.base import FileOperation, FileQuery
 from dynamo.utils.classutil import get_instance
+from dynamo.dataformat import Configuration
 
 class FileTransferOperation(FileOperation):
 

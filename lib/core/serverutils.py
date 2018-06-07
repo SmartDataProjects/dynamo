@@ -183,7 +183,10 @@ def pre_execution(path, is_local, read_only, defaults_config, inventory, authori
             else:
                 myconf = config['fullauth']
         except KeyError:
-            myconf = config['all']
+            try:
+                myconf = config['all']
+            except KeyError:
+                continue
         else:
             # security measure
             del config['fullauth']

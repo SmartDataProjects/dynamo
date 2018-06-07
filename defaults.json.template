@@ -38,12 +38,14 @@
     }
   },
   "fileop.rlfsm:RLFSM": {
-    "db": {
-      "db_params": {
-        "db": "dynamo",
-        "user": "dynamofod"
-      },
-      "history": "dynamohistory"
+    "fullauth": {
+      "db": {
+        "db_params": {
+          "db": "dynamo",
+          "user": "dynamofod"
+        },
+        "history": "dynamohistory"
+      }
     }
   },
   "utils.interface.mysql:MySQL": {
