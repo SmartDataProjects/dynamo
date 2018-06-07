@@ -105,6 +105,7 @@ def batch_transfer(batch_id, tasks, params_config, max_concurrent, db, stop_flag
     collect_results('transfer', results, db, stop_flag)
 
     if stop_flag.is_set():
+        LOG.info('Terminating transfer batch %d', batch_id)
         pool.terminate()
 
     pool.join()
@@ -124,6 +125,7 @@ def batch_delete(batch_id, tasks, max_concurrent, db, stop_flag):
     collect_results('deletion', results, db, stop_flag)
 
     if stop_flag.is_set():
+        LOG.info('Terminating deletion batch %d', batch_id)
         pool.terminate()
 
     pool.join()
