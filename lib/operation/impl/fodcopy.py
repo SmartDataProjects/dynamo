@@ -13,7 +13,7 @@ class FODCopyInterface(CopyInterface):
 
     def __init__(self, config = None):
         CopyInterface.__init__(self, config)
-        self.rlfsm = RLFSM(config.fod)
+        self.rlfsm = RLFSM(config.get('fod', None))
 
     def schedule_copy(self, replica, comments = ''): #override
         """

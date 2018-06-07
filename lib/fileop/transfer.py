@@ -2,9 +2,24 @@ from dynamo.fileop.base import FileOperation, FileQuery
 from dynamo.utils.classutil import get_instance
 
 class FileTransferOperation(FileOperation):
+
     @staticmethod
-    def get_instance(module, config):
+    def get_instance(module = None, config = None):
+        if module is None:
+            module = FileTransferOperation._module
+        if config is None:
+            config = FileTransferOperation._config
+
         return get_instance(FileTransferOperation, module, config)
+    
+    # defaults
+    _module = ''
+    _config = Configuration()
+
+    @staticmethod
+    def set_default(config):
+        FileTransferOperation._module = config.module
+        FileTransferOperation._config = config.config
 
     def __init__(self, config):
         FileOperation.__init__(self, config)

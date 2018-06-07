@@ -53,7 +53,16 @@ class RLFSM(object):
             self.desubscription = desubscription
 
 
-    def __init__(self, config):
+    _config = {}
+
+    @staticmethod
+    def set_default(config):
+        RLFSM._config = Configuration(config)
+
+    def __init__(self, config = None):
+        if config is None:
+            config = RLFSM._config
+
         # Handle to the inventory DB
         self.db = MySQL(config.db.db_params)
 
@@ -62,26 +71,26 @@ class RLFSM(object):
 
         # FileTransferOperation backend (can make it a map from (source, dest) to operator)
         if 'transfer' in config:
-            self.transfer_operation = FileTransferOperation.get_instance(config.transfer.module, config.transfer.config)
+            self.transfer_operation = FileTransferOperation.get_instance(config.transfer.get('module', None), config.transfer.get('config', None))
         else:
             # if all you need to do is make subscriptions
             self.transfer_operation = None
 
         # QueryOperation backend
         if 'transfer_query' in config:
-            self.transfer_query = FileTransferQuery.get_instance(config.transfer_query.module, config.transfer_query.config)
+            self.transfer_query = FileTransferQuery.get_instance(config.transfer_query.get('module', None), config.transfer_query.get('config', None))
         else:
             self.transfer_query = self.transfer_operation
 
         # FileDeletionOperation backend (can make it a map from dest to operator)
         if 'deletion' in config:
-            self.deletion_operation = FileDeletionOperation.get_instance(config.deletion.module, config.deletion.config)
+            self.deletion_operation = FileDeletionOperation.get_instance(config.deletion.get('module', None), config.deletion.get('config', None))
         else:
             self.deletion_operation = self.transfer_operation
 
         # QueryOperation backend
         if 'deletion_query' in config:
-            self.deletion_query = FileDeletionQuery.get_instance(config.deletion_query.module, config.deletion_query.config)
+            self.deletion_query = FileDeletionQuery.get_instance(config.deletion_query.get('module', None), config.deletion_query.get('config', None))
         else:
             self.deletion_query = self.deletion_operation
 

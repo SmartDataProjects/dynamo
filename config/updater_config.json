@@ -4,7 +4,6 @@
       "db_params": {
         "db": "dynamo",
         "user": "dynamofod",
-        "passwd": ""
       },
       "history": "dynamohistory"
     },
