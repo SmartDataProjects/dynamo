@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Detox</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <link href="css/dynamo.css" rel="stylesheet">
+    <link href="css/detox.css" rel="stylesheet">
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
+    <script type="text/javascript" src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+    <script type="text/javascript" src="js/spin.min.js"></script>
+    <script type="text/javascript" src="js/utils.js"></script>
+    <script type="text/javascript" src="js/detox.js"></script>
+    <script type="text/javascript">
+      $(document).ready(function() {
+      initPage(${CYCLE_NUMBER}, ${PARTITION});
+      });
+    </script>
+  </head>
+  <body>
+    <header id="header">
+      <h1 id="pageTitle">Detox deletion results</h1>
+      <div id="cycle">
+        <h2 id="cycleHeader"></h2>
+        <div id="cycleComments"></div>
+        <nav id="cycles">
+          Cycle: 
+          <span id="previous">Previous</span>
+          <span id="next">Next</span>
+          <input type="text" id="jumpInput" size="10" onkeypress="if (event.keyCode == 13) loadSummary(this.value, currentPartition, currentNorm)"><input type="button" value="Go" onclick="loadSummary($('#jumpInput').val(), currentPartition, currentNorm)"> <br>
+          PhEDEx request: <input type="text" id="phedexReqInput" size="10" onkeypress="if (event.keyCode == 13) loadSummary(findCycleFromRequest(this.value), currentPartition, currentNorm)"><input type="button" value="Go" onclick="loadSummary(findCycleFromRequest($('#phedexReqInput').val()), currentPartition, currentNorm)">
+        </nav>
+      </div>
+    </header>
+    <main id="main">
+      <nav id="datasetSearchNav">
+        <div id="datasetsOnDisplay"></div>
+        <div class="datasetSearchIndex">Find dataset: </div><div class="datasetSearchInputs"><input type="text" class="datasetSearch" id="newDatasetSearch" onkeypress="if (event.keyCode == 13) findDataset();"> <input type="button" value="Search" onclick="findDataset()" class="datasetSearchButton"></div>
+        </div>
+      </nav>
+      <nav id="partitions">
+      </nav>
+      <div id="contents">
+        <section id="summary">
+          <div id="summaryGraphBox">
+          </div>
+        </section>
+        <section id="deletionDetails">
+          <h3>Get details:</h3>
+          <ul>
+            <li><span id="download">Download deletion list</span></li>
+            <li><span id="phedex">PhEDEx requests page</span></li>
+          </ul>
+        </section>
+        <section id="details">
+        </section>
+      </div>
+    </main>
+    <footer id="footer">
+    </footer>
+  </body>
+</html>
