@@ -101,6 +101,7 @@ class EnforcerInterface(object):
 
                     num_complete = 0
                     num_incomplete = 0
+                    data_incomplete = {}
 
                     for other_replica in dataset.replicas:
                         if other_replica is replica:
@@ -111,11 +112,13 @@ class EnforcerInterface(object):
                                 num_complete += 1
                             else:
                                 num_incomplete += 1
+                                data_incomplete[other_replica.site.name] = str(other_replica.size(physical = True)) + "__" + str(other_replica.size(physical = False))
 
                     if num_complete >= target_num:
                         already_there.append(replica.dataset.name)
                     elif num_complete + num_incomplete >= target_num:
-                        en_route[replica.dataset.name + "__" + site.name] = str(replica.size(physical = True)) + "__" + str(replica.size(physical = False))
+                        for key, value in data_incomplete.items():
+                            en_route[replica.dataset.name + "__" + key] = value
                     else:
                         # create a request
 
