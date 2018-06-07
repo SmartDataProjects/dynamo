@@ -56,22 +56,26 @@ def filter_and_categorize(request, inventory, counts_only = False):
             site_pattern = None
 
     groups = None
-    group_names = request['group[]']
-    if group_names is not None:
-        if type(group_names) is str:
-            group_names = [group_names]
-
-        if len(group_names) != 0:
-            groups = set()
-
-            for group_name in group_names:
-                if group_name == 'None':
-                    group_name = None
-
-                try:
-                    groups.add(inventory.groups[group_name])
-                except KeyError:
-                    pass
+    try:
+        group_names = request['group[]']
+    except:
+        pass
+    else:
+        if group_names is not None:
+            if type(group_names) is str:
+                group_names = [group_names]
+    
+            if len(group_names) != 0:
+                groups = set()
+    
+                for group_name in group_names:
+                    if group_name == 'None':
+                        group_name = None
+    
+                    try:
+                        groups.add(inventory.groups[group_name])
+                    except KeyError:
+                        pass
 
     try:
         list_by = request['categories'].strip()

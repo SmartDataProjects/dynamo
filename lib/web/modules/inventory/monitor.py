@@ -12,23 +12,20 @@ class DatasetStats(WebModule, HTMLMixin):
 
         self.stylesheets = ['/css/inventory/monitor.css']
         self.scripts = ['/js/utils.js', '/js/inventory/monitor.js']
-        self.header_script = '$(document).ready(function() { initPage(\'{DATA_TYPE}\', \'{CATEGORIES}\', {CONSTRAINTS}); });'
 
         self.default_constraints = config.inventory.monitor.default_constraints
 
     def run(self, caller, request, inventory):
         # Parse GET and POST requests and set the defaults
-        repl = {}
+        try:
+            data_type = request['dataType'].strip()
+        except:
+            data_type = 'size'
 
         try:
-            repl['DATA_TYPE'] = request['dataType'].strip()
+            categories = request['categories'].strip()
         except:
-            repl['DATA_TYPE'] = 'size'
-
-        try:
-            repl['CATEGORIES'] = request['categories'].strip()
-        except:
-            repl['CATEGORIES'] = 'campaigns'
+            categories = 'campaigns'
 
         constraints = {}
         for key in ['campaign', 'dataTier', 'dataset', 'site']:
@@ -50,7 +47,9 @@ class DatasetStats(WebModule, HTMLMixin):
         if len(constraints) == 0:
             constraints = self.default_constraints
 
-        repl['CONSTRAINTS'] = json.dumps(constraints)
+        self.header_script = '$(document).ready(function() { initPage(\'%s\', \'%s\', %s); });' % (data_type, categories, json.dumps(constraints))
+
+        repl = {}
 
         if yesno(request, 'physical', True):
             repl['PHYSICAL_CHECKED'] = ' checked="checked"'
