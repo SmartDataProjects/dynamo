@@ -41,7 +41,7 @@
     "db": {
       "db_params": {
         "db": "dynamo",
-        "user": "dynamofod",
+        "user": "dynamofod"
       },
       "history": "dynamohistory"
     }

@@ -271,9 +271,9 @@ then
   CONTENTS_PATH=$($READCONF web.contents_path)
   mkdir -p $CONTENTS_PATH
   
-  cp -r $THISDIR/html $CONTENTS_PATH/html
-  cp -r $THISDIR/js $CONTENTS_PATH/js
-  cp -r $THISDIR/css $CONTENTS_PATH/css
+  cp -r $SOURCE/web/html $CONTENTS_PATH/html
+  cp -r $SOURCE/web/js $CONTENTS_PATH/js
+  cp -r $SOURCE/web/css $CONTENTS_PATH/css
 fi
 
 ### Install the daemons ###

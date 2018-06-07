@@ -31,10 +31,12 @@ class Namespace(object):
 
 generators = {}
 
+install_source_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
 for mod in [persistency_mod, master_mod, shadow_mod, local_board_mod]:
     if mod not in generators:
         generators[mod] = Namespace()
-        conf_gen_script = mod + '/generate_conf.py'
+        conf_gen_script = install_source_path + '/' + mod + '/generate_conf.py'
         execfile(conf_gen_script, {'__file__': os.path.realpath(conf_gen_script), '__namespace__': generators[mod]})
 
 # Write JSON from a dictionary with indentation. From dataformat.configuration.
@@ -113,9 +115,11 @@ if serve_applications == 'true':
         if backend == 'standalone':
             transfer_conf['module'] = 'standalone:StandaloneFileOperation'
             transfer_conf['config'] = OD({'db_params': server_conf['file_operations']['db_params']})
+            transfer_conf['config']['batch_size'] = 200
         elif backend == 'fts':
             transfer_conf['module'] = 'fts:FTSFileOperation'
             transfer_conf['config'] = OD(source_conf.get('file_operations', 'fod_conf'))
+            transfer_conf['config']['batch_size'] = 4000
 
     app_conf['timeout'] = 7200
     app_conf['retain_records_for'] = 7
