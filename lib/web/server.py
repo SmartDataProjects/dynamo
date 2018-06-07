@@ -122,7 +122,7 @@ class WebServer(object):
                 source = open(HTMLMixin.contents_path + '/' + mode + environ['PATH_INFO'])
             except IOError:
                 start_response('404 Not Found', [('Content-Type', 'text/plain')])
-                return 'Invalid request %s%s.\n' % (mode + environ['PATH_INFO'])
+                return 'Invalid request %s%s.\n' % (mode, environ['PATH_INFO'])
             else:
                 content = source.read()
                 source.close()

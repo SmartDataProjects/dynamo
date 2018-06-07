@@ -52,12 +52,12 @@ class DatasetStats(WebModule, HTMLMixin):
 
         repl['CONSTRAINTS'] = json.dumps(constraints)
 
-        if yesno(request, 'physical'):
-            repl['PHYSICAL_CHECKED'] = 'checked="checked"'
+        if yesno(request, 'physical', True):
+            repl['PHYSICAL_CHECKED'] = ' checked="checked"'
             repl['PROJECTED_CHECKED'] = ''
         else:
             repl['PHYSICAL_CHECKED'] = ''
-            repl['PROJECTED_CHECKED'] = 'checked="checked"'
+            repl['PROJECTED_CHECKED'] = ' checked="checked"'
 
         return self.form_html(repl)
 

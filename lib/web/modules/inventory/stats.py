@@ -243,7 +243,7 @@ class SiteUsageListing(WebModule):
         @return {'dataType': 'usage', 'content': [{'site': site_name, 'usage': [{key: key_name, size: size}]}]}
         """
 
-        if yesno(request, 'physical'):
+        if yesno(request, 'physical', True):
             get_size = lambda bl: sum(br.size for br in bl)
         else:
             get_size = lambda bl: sum(br.block.size for br in bl)
