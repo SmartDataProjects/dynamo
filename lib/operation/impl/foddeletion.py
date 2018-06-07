@@ -13,7 +13,7 @@ class FODDeletionInterface(DeletionInterface):
 
     def __init__(self, config = None):
         DeletionInterface.__init__(self, config)
-        self.rlfsm = RLFSM(config.get('fod', None))
+        self.rlfsm = RLFSM(config.fod)
 
     def schedule_deletion(self, replica, comments = ''): #override
         """

@@ -104,7 +104,12 @@ enabled=true
 
 # File operation methods (standalone: direct gfal-* calls, fts: through FTS)
 backend=standalone
+#backend=fts
 
-# Configuration JSON for the File Operation Daemon
-fod_conf={"host": "localhost", "user": "dynamofod", "num_parallel_links": 20, "transfer_timeout": 3600}
-#fod_conf={"fts_server": "https://fts3.example.com:8446", "fts_retry": 3, "db_params": {"user": "dynamofod", "db": "dynamo"}}
+# Configuration JSON for the File Operations Manager
+fom_conf={"db": {"user": "dynamofod"}, "transfer": {}}
+#fom_conf={"db": {"user": "dynamofod"}, "transfer": {"fts_server": "https://fts3.example.com:8446", "fts_retry": 3}}
+
+# Configuration JSON for the File Operations Daemon (empty if backend=fts)
+fod_conf={"num_parallel_links": 20, "transfer_timeout": 3600}
+#fod_conf={}

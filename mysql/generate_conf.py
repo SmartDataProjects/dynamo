@@ -100,40 +100,48 @@ def generate_master_conf(conf_str):
 
     return master_conf
 
-def generate_fod_conf(conf_str):
+def generate_fom_conf(conf_str):
     conf = json.loads(conf_str)
 
     with open(thisdir + '/grants.json') as source:
         grants_conf = json.load(source)
 
-    if 'host' not in conf:
+    try:
+        host = conf['db']['host']
+    except KeyError:
         host = 'localhost'
-    else:
-        host = conf['host']
 
-    user = conf['user']
-    if 'passwd' in conf:
-        passwd = conf['passwd']
-    else:
+    user = conf['db']['user']
+
+    try:
+        passwd = conf['db']['passwd']
+    except KeyError:
         passwd = grants_conf[user]['passwd']
 
-    fod_conf = OD({
-        'num_parallel_links': conf['num_parallel_links'],
-        'transfer_timeout': conf['transfer_timeout'],
-        'db_params': {
-            'host': host,
-            'user': user,
-            'passwd': passwd,
-            'db': 'dynamo'
-        }
+    fom_conf = OD({'db': OD()})
+
+    fom_conf['db']['db_params'] = OD({
+        'host': host,
+        'user': user,
+        'passwd': passwd,
+        'db': 'dynamo'
+    })
+    fom_conf['db']['history'] = 'dynamohistory'
+
+    fom_conf['transfer'] = OD('config': OD(conf['transfer']))
+    fom_conf['transfer']['config']['db_params'] = OD({
+        'host': host,
+        'user': user,
+        'passwd': passwd,
+        'db': 'dynamo'
     })
 
-    return fod_conf
+    return fom_conf
 
 try:
     __namespace__.generate_store_conf = generate_store_conf
     __namespace__.generate_master_conf = generate_master_conf
     __namespace__.generate_local_board_conf = generate_local_board_conf
-    __namespace__.generate_fod_conf = generate_fod_conf
+    __namespace__.generate_fom_conf = generate_fom_conf
 except NameError:
     pass

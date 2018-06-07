@@ -74,6 +74,7 @@ server_conf['manager']['master'] = generators[master_mod].generate_master_conf(m
 server_conf['manager']['shadow'] = generators[shadow_mod].generate_master_conf(shadow_conf_args)
 server_conf['manager']['board'] = generators[local_board_mod].generate_local_board_conf(local_board_conf_args)
 
+## WebServer
 server_conf['web'] = OD()
 server_conf['web']['enabled'] = (serve_web == 'true')
 
@@ -86,9 +87,7 @@ if serve_web == 'true':
     web_conf['max_idle'] = 5
     web_conf['max_procs'] = 10
 
-if serve_fileop == 'true' and source_conf.get('file_operations', 'backend') == 'standalone':
-    server_conf['file_operations'] = generators['mysql'].generate_fod_conf(source_conf.get('file_operations', 'fod_conf'))
-
+## AppServer and application defaults
 server_conf['applications'] = OD()
 server_conf['applications']['enabled'] = (serve_applications == 'true')
 
@@ -109,23 +108,24 @@ if serve_applications == 'true':
             sys.stderr.write('Failed to parse %s\n' % defaults_path)
             raise
 
-    if serve_fileop == 'true':
-        transfer_conf = OD()
-
-        backend = source_conf.get('file_operations', 'backend')
-        if backend == 'standalone':
-            transfer_conf['module'] = 'standalone:StandaloneFileOperation'
-            transfer_conf['config'] = OD({'db_params': server_conf['file_operations']['db_params']})
-            transfer_conf['config']['batch_size'] = 200
-        elif backend == 'fts':
-            transfer_conf['module'] = 'fts:FTSFileOperation'
-            transfer_conf['config'] = OD(source_conf.get('file_operations', 'fod_conf'))
-            transfer_conf['config']['batch_size'] = 4000
-
-        app_conf['defaults']['fileop.transfer:FileTransferOperation'] = OD({'fullauth': transfer_conf})
-
     app_conf['timeout'] = 7200
     app_conf['retain_records_for'] = 7
+
+## RLFSM
+server_conf['file_operations'] = OD()
+server_conf['file_operations']['enabled'] = (serve_fileop == 'true')
+
+if serve_fileop == 'true':
+    server_conf['file_operations']['manager'] = generators['mysql'].generate_fom_conf(source_conf.get('file_operations', 'fom_conf'))
+    transfer_conf = server_conf['file_operations']['manager']['transfer']
+
+    backend = source_conf.get('file_operations', 'backend')
+    if backend == 'standalone':
+        transfer_conf['module'] = 'standalone:StandaloneFileOperation'
+        transfer_conf['config']['batch_size'] = 200
+    elif backend == 'fts':
+        transfer_conf['module'] = 'fts:FTSFileOperation'
+        transfer_conf['config']['batch_size'] = 4000
 
 server_conf['notification_recipient'] = email
 server_conf['status_poll_interval'] = 1.0

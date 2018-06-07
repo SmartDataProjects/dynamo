@@ -40,3 +40,20 @@ class FileDeletionQuery(FileQuery):
 
     def __init__(self, config):
         FileQuery.__init__(self, config)
+
+    def get_deletion_status(self, batch_id):
+        """
+        Query the external agent about tasks in the given batch id.
+        @param batch_id   Integer id of the deletion task batch.
+
+        @return  [(task_id, status, exit code, start time (UNIX), finish time (UNIX))]
+        """
+        raise NotImplementedError('get_transfer_status')
+
+    def forget_deletion_status(self, batch_id, task_id):
+        """
+        Delete the internal record (if there is any) of the specific task.
+        @param batch_id  Integer id of the deletion task batch.
+        @param task_id   Integer id of the deletion task.
+        """
+        raise NotImplementedError('fotget_transfer_status')

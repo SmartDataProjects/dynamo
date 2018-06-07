@@ -81,27 +81,21 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
     def get_deletion_status(self, batch_id): #override
         return self._get_status(batch_id, 'deletion')
 
+    def forget_transfer_status(self, batch_id, task_id): #override
+        return self._forget_status(batch_id, task_id, 'transfer')
+
+    def forget_deletion_status(self, batch_id, task_id): #override
+        return self._forget_status(batch_id, task_id, 'deletion')
+
     def _get_status(self, batch_id, optype):
-        sql = 'LOCK TABLES `standalone_{op}_queue` AS a WRITE, `{op}_queue` AS q READ'
-        sql = sql.format(op = optype)
-
-        self.db.query(sql)
-
         sql = 'SELECT q.`id`, a.`status`, a.`exitcode`, UNIX_TIMESTAMP(a.`start_time`), UNIX_TIMESTAMP(a.`finish_time`) FROM `standalone_{op}_queue` AS a'
         sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'
         sql += ' WHERE q.`batch_id` = %s'
         sql = sql.format(op = optype)
 
-        result = [(i, FileQuery.status_val(s), c, t, f) for (i, s, c, t, f) in self.db.xquery(sql, batch_id)]
+        return [(i, FileQuery.status_val(s), c, t, f) for (i, s, c, t, f) in self.db.xquery(sql, batch_id)]
 
-        # Delete failed and done entries
-        sql = 'DELETE FROM a USING `standalone_{op}_queue` AS a'
-        sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'
-        sql += ' WHERE q.`batch_id` = %s AND a.`status` IN (\'done\', \'failed\')'
+    def _forget_status(self, batch_id, task_id, optype):
+        sql = 'DELETE FROM `standalone_{op}_queue` WHERE `id` = %s'
         sql = sql.format(op = optype)
-
-        self.db.query(sql, batch_id)
-
-        self.db.query('UNLOCK TABLES')
-
-        return result
+        self.db.query(sql, task_id)

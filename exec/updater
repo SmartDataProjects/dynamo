@@ -27,16 +27,7 @@ rlfsm = RLFSM(config.rlfsm)
 
 if read_only:
     rlfsm.dry_run = True
-    rlfsm.transfer_operation.dry_run = True
-    rlfsm.deletion_operation.dry_run = True
 
-## Start main
-
-LOG.info('Checking and executing new file transfer subscriptions.')
-rlfsm.transfer_files(inventory)
-
-LOG.info('Checking and executing new file deletion subscriptions.')
-rlfsm.delete_files(inventory)
-
+## Run
 LOG.info('Updating the inventory.')
 rlfsm.update_inventory(inventory)
