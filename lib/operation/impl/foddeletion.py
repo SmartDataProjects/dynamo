@@ -13,7 +13,7 @@ class FODDeletionInterface(DeletionInterface):
 
     def __init__(self, config = None):
         DeletionInterface.__init__(self, config)
-        self.rlfsm = RLFSM(config.fod)
+        self.rlfsm = RLFSM(config.get('fod', None))
 
     def schedule_deletion(self, replica, comments = ''): #override
         """
@@ -25,11 +25,11 @@ class FODDeletionInterface(DeletionInterface):
 
         if type(replica) is DatasetReplica:
             for block_replica in replica.block_replicas:
-                self.rlfsm.desubscribe_files(block_replica)
+                self.rlfsm.desubscribe_files(block_replica.site, block_replica.files())
 
             return {0: (True, replica.site, [replica.dataset])}
         else:
-            self.rlfsm.desubscribe_files(replica)
+            self.rlfsm.desubscribe_files(replica.site, replica.files())
 
             return {0: (True, replica.site, [replica.block])}
 
@@ -43,11 +43,11 @@ class FODDeletionInterface(DeletionInterface):
 
             if type(replica) is DatasetReplica:
                 for block_replica in replica.block_replicas:
-                    self.rlfsm.desubscribe_files(block_replica)
+                    self.rlfsm.desubscribe_files(block_replica.site, block_replica.files())
 
                 items_by_site[replica.site].append(replica.dataset)
             else:
-                self.rlfsm.desubscribe_files(replica)
+                self.rlfsm.desubscribe_files(replica.site, replica.files())
 
                 items_by_site[replica.site].append(replica.block)
 

@@ -20,17 +20,7 @@
   "operation.copy:CopyInterface": {
     "fullauth": {
       "module": "fodcopy:FODCopyInterface",
-      "config": {
-        "fod": {
-          "db": {
-            "db_params": {
-              "user": "dynamofod",
-              "db": "dynamo"
-            },
-            "history": "dynamohistory"
-          }
-        }
-      }
+      "config": {}
     },
     "readonly": {
       "module": "dummycopy:DummyCopyInterface",
@@ -40,21 +30,31 @@
   "operation.deletion:DeletionInterface": {
     "fullauth": {
       "module": "foddeletion:FODDeletionInterface",
-      "config": {
-        "fod": {
-          "db": {
-            "db_params": {
-              "user": "dynamofod",
-              "db": "dynamo"
-            },
-            "history": "dynamohistory"
-          }
-        }
-      }
+      "config": {}
     },
     "readonly": {
       "module": "dummydeletion:DummyDeletionInterface",
       "config": {}
+    }
+  },
+  "fileop.rlfsm:RLFSM": {
+    "fullauth": {
+      "db": {
+        "db_params": {
+          "db": "dynamo",
+          "user": "dynamofod"
+        },
+        "history": "dynamohistory"
+      }
+    },
+    "readonly": {
+      "db": {
+        "db_params": {
+          "db": "dynamo",
+          "user": "dynamoread"
+        },
+        "history": "dynamohistory"
+      }
     }
   },
   "utils.interface.mysql:MySQL": {

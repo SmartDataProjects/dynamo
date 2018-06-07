@@ -116,12 +116,13 @@ class WebServer(object):
 
         ## Step 2
         mode = environ['SCRIPT_NAME'].strip('/')
+
         if mode == 'js' or mode == 'css':
             try:
                 source = open(HTMLMixin.contents_path + '/' + mode + environ['PATH_INFO'])
             except IOError:
                 start_response('404 Not Found', [('Content-Type', 'text/plain')])
-                return 'Invalid request %s%s.\n' % (mode + environ['PATH_INFO'])
+                return 'Invalid request %s%s.\n' % (mode, environ['PATH_INFO'])
             else:
                 content = source.read()
                 source.close()
@@ -200,7 +201,8 @@ class WebServer(object):
             content = obj.run(caller, request, inventory)
 
             if obj.write_enabled:
-                serverutils.send_updates(inventory, self.dynamo_server.inventory_update_queue)
+                # TODO make web server log to a separate file
+                serverutils.send_updates(inventory, self.dynamo_server.inventory_update_queue, silent = True)
             
         except exceptions.AuthorizationError:
             start_response('403 Forbidden', [('Content-Type', 'text/plain')])
@@ -281,12 +283,12 @@ class WebServer(object):
 
     def _internal_server_error(self, start_fnc):
         start_fnc('500 Internal Server Error', [('Content-Type', 'text/plain')])
+        exc_type, exc, tb = sys.exc_info()
         if self.debug:
-            exc_type, exc, tb = sys.exc_info()
             response = 'Caught exception %s while waiting for task to complete.\n' % exc_type.__name__
             response += 'Traceback (most recent call last):\n'
             response += ''.join(traceback.format_tb(tb)) + '\n'
             response += '%s: %s\n' % (exc_type.__name__, str(exc))
             return response
         else:
-            return 'Exception: ' + str(sys.exc_info()[1]) + '\n'
+            return 'Internal server error! (' + exc_type.__name__ + ': ' + str(exc) + ')\n'

@@ -122,21 +122,25 @@ class SocketAppServer(AppServer):
     def __init__(self, dynamo_server, config):
         AppServer.__init__(self, dynamo_server, config)
 
-        if 'capath' in config:
-            try:
-                context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-            except AttributeError:
-                # capath only supported in SSLContext (pythonn 2.7)
-                raise ConfigurationError('AppServer configuration "capath" is available only in Python 2.7. Please use cafile instead.')
+        try:
+            context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        except AttributeError:
+            # python 2.6
+            if os.path.isdir(config.capath):
+                raise ConfigurationError('AppServer configuration parameter "capath" must point to a single file.')
 
-            context.load_cert_chain(config.certfile, keyfile = config.keyfile)
-            context.load_verify_locations(capath = config.capath)
-            context.verify_mode = ssl.CERT_REQUIRED
-            self._sock = context.wrap_socket(socket.socket(socket.AF_INET), server_side = True)
-        else:
             self._sock = ssl.wrap_socket(socket.socket(socket.AF_INET), server_side = True,
                 certfile = config.certfile, keyfile = config.keyfile,
-                cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.cafile)
+                cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.capath)
+        else:
+            # python 2.7
+            context.load_cert_chain(config.certfile, keyfile = config.keyfile)
+            if os.path.isdir(config.capath):
+                context.load_verify_locations(capath = config.capath)
+            else:
+                context.load_verify_locations(cafile = config.capath)
+            context.verify_mode = ssl.CERT_REQUIRED
+            self._sock = context.wrap_socket(socket.socket(socket.AF_INET), server_side = True)
 
         # allow reconnect to the same port even when it is in TIME_WAIT
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

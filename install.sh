@@ -30,6 +30,7 @@ POLICY_PATH=$($READCONF paths.policy_path)
 CLIENT_PATH=$($READCONF paths.client_path)
 WEBSERVER=$($READCONF web.enabled)
 APPSERVER=$($READCONF applications.enabled)
+FILEOP=$($READCONF file_operations.enabled)
 SERVER_DB=$($READCONF server.store)
 
 ### Stop the daemons first ###
@@ -37,8 +38,10 @@ SERVER_DB=$($READCONF server.store)
 if [[ $(uname -r) =~ el7 ]]
 then
   systemctl stop dynamod 2>/dev/null
+  [ "$FILEOP" = "true" ] && systemctl stop dynamo-fileopd 2> /dev/null
 else
   service dynamod stop 2>/dev/null
+  [ "$FILEOP" = "true" ] && service dynamo-fileopd stop 2> /dev/null
 fi
 
 echo
@@ -54,28 +57,31 @@ echo
 
 echo "-> Checking dependencies.."
 
+REQUIRED="python sqlite"
+
+if [ "$APPSERVER" = "true" ]
+then
+  if [[ $(uname -r) =~ el7 ]]
+  then
+    REQUIRED="$REQUIRED openssl-libs"
+  else
+    REQUIRED="$REQUIRED openssl"
+  fi
+fi
+if [ "$WEBSERVER" = "true" ]
+then
+  REQUIRED="$REQUIRED python-flup"
+fi
+
+require rpm -q $REQUIRED
+
 WARNING=false
 
-require rpm -q python
 warnifnot rpm -q condor-python
 warnifnot rpm -q rrdtool-python
 warnifnot rpm -q python-fts
 warnifnot rpm -q python-requests
 warnifnot rpm -q pyliblzma
-require rpm -q sqlite
-if [ "$APPSERVER" = "true" ]
-then
-  if [[ $(uname -r) =~ el7 ]]
-  then
-    require rpm -q openssl-libs
-  else
-    require rpm -q openssl
-  fi
-fi
-if [ "$WEBSERVER" = "true" ]
-then
-  require rpm -q python-flup
-fi
 
 if $WARNING
 then
@@ -107,24 +113,24 @@ fi
 echo
 
 require mkdir -p $INSTALL_PATH
-require mkdir -p $INSTALL_PATH/python/site-packages/dynamo
-require mkdir -p $INSTALL_PATH/exec
-require mkdir -p $INSTALL_PATH/utilities
-require mkdir -p $INSTALL_PATH/sbin
-require mkdir -p $INSTALL_PATH/etc/profile.d
-chown -R $USER:$(id -gn $USER) $INSTALL_PATH
+mkdir -p $INSTALL_PATH/python/site-packages/dynamo
+mkdir -p $INSTALL_PATH/exec
+mkdir -p $INSTALL_PATH/utilities
+mkdir -p $INSTALL_PATH/sbin
+mkdir -p $INSTALL_PATH/etc/profile.d
+require chown -R $USER:$(id -gn $USER) $INSTALL_PATH
 
 require mkdir -p $CONFIG_PATH
 
 require mkdir -p $LOG_PATH
-chown $USER:$(id -gn $USER) $LOG_PATH
+require chown $USER:$(id -gn $USER) $LOG_PATH
 
 require mkdir -p $ARCHIVE_PATH
-chown $USER:$(id -gn $USER) $ARCHIVE_PATH
+require chown $USER:$(id -gn $USER) $ARCHIVE_PATH
 
-mkdir -p $SPOOL_PATH
-chown $USER:$(id -gn $USER) $SPOOL_PATH
-chmod 777 $SPOOL_PATH
+require mkdir -p $SPOOL_PATH
+require chown $USER:$(id -gn $USER) $SPOOL_PATH
+require chmod 777 $SPOOL_PATH
 
 ### Install python libraries ###
 
@@ -251,13 +257,26 @@ fi
 
 if [ $WEBSERVER ]
 then
-  $SOURCE/web/install.sh
-  if [ $? -ne 0 ]
+  echo '########################################'
+  echo '######  WEB SERVER CONFIGURATIONS ######'
+  echo '########################################'
+  
+  if which getsebool > /dev/null 2>&1 && [[ $(getsebool httpd_setrlimit) =~ off ]]
   then
-    echo
-    echo "Web contents installation failed."
-    exit 1
+    setsebool httpd_setrlimit 1
   fi
+  
+  echo '#############################'
+  echo '######  HTML TEMPLATES ######'
+  echo '#############################'
+  echo
+  
+  CONTENTS_PATH=$($READCONF web.contents_path)
+  mkdir -p $CONTENTS_PATH
+  
+  cp -r $SOURCE/web/html $CONTENTS_PATH/html
+  cp -r $SOURCE/web/js $CONTENTS_PATH/js
+  cp -r $SOURCE/web/css $CONTENTS_PATH/css
 fi
 
 ### Install the daemons ###
@@ -287,6 +306,28 @@ else
   cp $SOURCE/daemon/dynamod.sysv /etc/init.d/dynamod
   sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamod
   chmod +x /etc/init.d/dynamod
+fi
+
+FILEOP_BACKEND=$($READCONF file_operations.backend)
+
+if [ "$FILEOP" = "true" ] && [ "$FILEOP_BACKEND" = "standalone" ]
+then
+  if [[ $(uname -r) =~ el7 ]]
+  then
+    # systemd daemon
+    cp $SOURCE/daemon/dynamo-fileopd.systemd /usr/lib/systemd/system/dynamo-fileopd.service
+    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /usr/lib/systemd/system/dynamo-fileopd.service
+  
+    # environment file for the daemon
+    ENV=/etc/sysconfig/dynamo-fileopd
+    echo "PYTHONPATH=$INSTALL_PATH/python/site-packages" >> $ENV
+  
+    systemctl daemon-reload
+  else
+    cp $SOURCE/daemon/dynamo-fileopd.sysv /etc/init.d/dynamo-fileopd
+    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamo-fileopd
+    chmod +x /etc/init.d/dynamo-fileopd
+  fi
 fi
 
 echo " Done."

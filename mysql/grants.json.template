@@ -25,9 +25,6 @@
       ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_requests"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_request_items"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "active_deletions"],
-      ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_queue"],
-      ["INSERT, UPDATE, DELETE", "dynamoregister", "transfer_queue"],
-      ["INSERT, UPDATE, DELETE", "dynamoregister", "stage_queue"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "detox_locks"],
       ["SELECT", "dynamoserver", "users"]
     ]
@@ -65,10 +62,12 @@
       ["INSERT, UPDATE, DELETE", "dynamo", "fts_deletion_files"],
       ["INSERT, UPDATE, DELETE", "dynamo", "standalone_transfer_queue"],
       ["INSERT, UPDATE, DELETE", "dynamo", "standalone_deletion_queue"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "standalone_transfer_batches"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "standalone_deletion_batches"],
       ["SELECT, LOCK TABLES", "dynamohistory"],
       ["INSERT, UPDATE", "dynamohistory", "files"],
-      ["INSERT", "dynamohistory", "file_transfers"],
-      ["INSERT", "dynamohistory", "file_deletions"]
+      ["INSERT, UPDATE", "dynamohistory", "file_transfers"],
+      ["INSERT, UPDATE", "dynamohistory", "file_deletions"]
     ]
   }
 }

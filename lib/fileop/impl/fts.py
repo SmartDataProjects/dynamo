@@ -98,6 +98,12 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         return self._get_status(batch_id, 'deletion')
 
+    def forget_transfer_status(self, batch_id, task_id): #override
+        return self._forget_status(batch_id, task_id, 'transfer')
+
+    def forget_deletion_status(self, batch_id, task_id): #override
+        return self._forget_status(batch_id, task_id, 'deletion')
+
     def _ftscall(self, method, *args, **kwd):
         if self._context is None:
             # request_class = Request -> use "requests"-based https call (instead of default PyCURL, which may not be able to handle proxy certificates depending on the cURL installation)
@@ -205,6 +211,18 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             results.append((task_id, status, exitcode, start_time, finish_time))
 
         return results
+
+    def _forget_status(self, batch_id, task_id, optype):
+        if self.dry_run:
+            return
+
+        sql = 'DELETE FROM `fts_{optype}_files` WHERE `{optype}_id` = %s'
+        self.mysql.query(sql.format(optype = optype), task_id)
+
+        sql = 'SELECT COUNT(*) FROM `fts_{optype}_files` WHERE `batch_id` = %s'
+        if self.mysql.query(sql.format(optype = optype), batch_id)[0] == 0:
+            sql = 'DELETE FROM `fts_{optype}_batches` WHERE `batch_id` = %s'
+            self.mysql.query(sql.format(optype = optype), batch_id)
 
     def _set_server_id(self):
         result = self.mysql.query('SELECT `id` FROM `fts_servers` WHERE `url` = %s', self.server_url)

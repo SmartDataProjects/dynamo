@@ -37,12 +37,3 @@ class FileQuery(object):
 
     def __init__(self, config):
         pass
-
-    def get_status(self, batch_id):
-        """
-        Query the external system about tasks in the given batch id.
-        @param batch_id   Integer
-
-        @return  [(task_id, status, exit code, start time (UNIX), finish time (UNIX))]
-        """
-        raise NotImplementedError('get_status')

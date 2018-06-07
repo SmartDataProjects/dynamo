@@ -5,7 +5,7 @@ class FileTransferOperation(FileOperation):
     @staticmethod
     def get_instance(module, config):
         return get_instance(FileTransferOperation, module, config)
-
+    
     def __init__(self, config):
         FileOperation.__init__(self, config)
 
@@ -24,3 +24,20 @@ class FileTransferQuery(FileQuery):
 
     def __init__(self, config):
         FileQuery.__init__(self, config)
+
+    def get_transfer_status(self, batch_id):
+        """
+        Query the external agent about tasks in the given batch id.
+        @param batch_id   Integer id of the transfer task batch.
+
+        @return  [(task_id, status, exit code, start time (UNIX), finish time (UNIX))]
+        """
+        raise NotImplementedError('get_transfer_status')
+
+    def forget_transfer_status(self, batch_id, task_id):
+        """
+        Delete the internal record (if there is any) of the specific task.
+        @param batch_id  Integer id of the transfer task batch.
+        @param task_id   Integer id of the transfer task.
+        """
+        raise NotImplementedError('fotget_transfer_status')

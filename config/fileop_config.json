@@ -5,7 +5,6 @@
     "passwd": ""
   },
   "num_parallel_links": 20,
-  "transfer_nstreams": 16,
   "transfer_timeout": 3600,
   "log_level": "info"
 }

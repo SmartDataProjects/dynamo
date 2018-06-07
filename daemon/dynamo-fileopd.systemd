@@ -1,0 +1,11 @@
+[Unit]
+Description=Dynamo File Operations Daemon
+
+[Service]
+PIDFile=/var/run/dynamo-fileopd.pid
+EnvironmentFile=/etc/sysconfig/dynamo-fileopd
+ExecStart=_INSTALLPATH_/sbin/dynamo-fileopd
+ExecReload=/bin/kill -TERM $MAINPID
+RestartSec=5
+KillMode=process
+Restart=on-failure

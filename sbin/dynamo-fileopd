@@ -1,0 +1,384 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import pwd
+import time
+import threading
+import signal
+import multiprocessing
+import logging
+import logging.handlers
+import tempfile
+import gfal2
+
+def transfer(src_pfn, dest_pfn, params_config):
+    try:
+        context = gfal2.creat_context()
+    except Exception as exc:
+        # multiprocessing pool cannot handle certain exceptions - convert to string
+        raise Exception(str(exc))
+
+    try:
+        context.stat(dest_pfn)
+    except gfal2.GError as err:
+        if err.code == 2:
+            # file doesn't exist at destination
+            pass
+        else:
+            raise Exception(str(err))
+    except Exception as exc:
+        raise Exception(str(exc))
+    else:
+        return 0, int(time.time()), int(time.time()), 'Destination file exists', ''
+
+    try:
+        params = gfal2.Gfal2Context.transfer_parameters()
+        # Create parent directories at the destination
+        params.create_parent = True
+        # Overwrite the destination if file already exists (otherwise throws an error)
+        params.overwrite = True
+        params.set_checksum(*params_config['checksum'])
+        params.timeout = params_config['transfer_timeout'] # we probably want this to be file size dependent
+    
+    except Exception as exc:
+        # multiprocessing pool cannot handle certain exceptions - convert to string
+        raise Exception(str(exc))
+
+    def docopy(params, src_pfn, dest_pfn):
+        context.filecopy(params, src_pfn, dest_pfn)
+
+    return gfal_exec(docopy, (params, src_pfn, dest_pfn))
+
+def delete(pfn):
+    def dodelete(pfn):
+        gfal2.creat_context().unlink(pfn)
+
+    return gfal_exec(dodelete, (pfn,))
+
+def gfal_exec(func, args):
+    start_time = 0
+    finish_time = 0
+    log = ''
+
+    for attempt in xrange(5):
+        # redirect stdout and stderr to a temporary file
+        stream = tempfile.TemporaryFile() 
+        stdout_fileno = sys.stdout.fileno()
+        stderr_fileno = sys.stderr.fileno()
+        stdout_copy = os.dup(stdout_fileno)
+        stderr_copy = os.dup(stderr_fileno)
+        os.dup2(stream.fileno(), stdout_fileno)
+        os.dup2(stream.fileno(), stderr_fileno)
+    
+        try:
+            gfal2.set_verbose(gfal2.verbose_level.verbose)
+
+            start_time = int(time.time())
+
+            func(*args)
+
+            finish_time = int(time.time())
+        
+        except gfal2.GError as err:
+            exitcode, msg = err.code, err.message
+
+            if err.code == 70:
+                continue
+    
+        else:
+            exitcode, msg = 0, ''
+    
+        finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
+
+            stream.seek(0)
+            log_tmp = stream.read().strip()
+
+            os.dup2(stdout_copy, stdout_fileno)
+            os.dup2(stderr_copy, stderr_fileno)
+
+        # give a nice indent to each line
+        log = ''.join('  %s\n' % line for line in log_tmp.split('\n'))
+    
+        stream.close()
+
+        break
+
+    # all three variables would be defined even when all attempts are exhausted
+    return exitcode, start_time, finish_time, msg, log
+
+class PoolManager(object):
+    def __init__(self, name, db, stop_flag, max_concurrent):
+        self.name = name
+        self.db = db
+        self.stop_flag = stop_flag
+
+        self._pool = multiprocessing.Pool(max_concurrent)
+        self._results = []
+        self._collector_thread = None
+        self._closed = False
+
+    def ready_for_recycle(self):
+        if self._closed:
+            return True
+
+        if self._collector_thread is None:
+            return True
+
+        if self._collector_thread.is_alive():
+            return False
+
+        if self.stop_flag.is_set():
+            LOG.warning('Terminating pool %s' % self.name)
+            self._pool.terminate()
+
+        self._pool.close()
+        self._pool.join()
+
+        self._collector_thread.join()
+
+        self._closed = True
+
+        return True
+
+    def start_collector(self):
+        self._collector_thread = threading.Thread(target = self.collect_results, name = self.name)
+        self._collector_thread.start()
+
+    def collect_results(self):
+        while len(self._results) != 0:
+            ir = 0
+            while ir != len(self._results):
+                if self.stop_flag.is_set():
+                    return
+    
+                if not self._results[ir][-1].ready():
+                    ir += 1
+                    continue
+    
+                self.process_result(self._results.pop(ir))
+    
+            is_set = stop_flag.wait(5)
+            if is_set: # True if Python 2.7 + flag is set
+                return
+
+class TransferPoolManager(PoolManager):
+    def __init__(self, name, db, stop_flag, max_concurrent, params_config):
+        PoolManager.__init__(self, name, db, stop_flag, max_concurrent)
+        self.params_config = params_config
+
+    def add_task(self, tid, src_pfn, dest_pfn):
+        if self._closed:
+            raise RuntimeError('PoolManager %s is closed' % self.name)
+
+        LOG.debug('Transfer %s->%s', src_pfn, dest_pfn)
+        self._results.append((tid, src_pfn, dest_pfn, self._pool.apply_async(transfer, (src_pfn, dest_pfn, self.params_config))))
+        if self._collector_thread is None:
+            self.start_collector()
+
+    def process_result(self, result_tuple):
+        delim = '--------------'
+        sql = 'UPDATE `standalone_transfer_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'
+
+        tid, src, dest, result = result_tuple
+        exitcode, start_time, finish_time, msg, log = result.get()
+        
+        if exitcode == 0:
+            LOG.info('Transfer success (%d seconds)\n%s -> %s\n%s\n%s%s', finish_time - start_time, src, dest, delim, log, delim)
+            status = 'done'
+        else:
+            LOG.info('Transfer failure (%d seconds, code %d: %s)\n%s -> %s\n%s\n%s%s', finish_time - start_time, exitcode, msg, src, dest, delim, log, delim)
+            status = 'failed'
+
+        self.db.query(sql, status, exitcode, start_time, finish_time, tid)
+
+class DeletionPoolManager(PoolManager):
+    def __init__(self, name, db, stop_flag, max_concurrent):
+        PoolManager.__init__(self, name, db, stop_flag, max_concurrent)
+
+    def add_task(self, tid, pfn):
+        if self._closed:
+            raise RuntimeError('PoolManager %s is closed' % self.name)
+
+        LOG.debug('Deletion %s', pfn)
+        self._results.append((tid, pfn, self._pool.apply_async(delete, (pfn,))))
+        if self._collector_thread is None:
+            self.start_collector()
+
+    def process_result(self, result_tuple):
+        delim = '--------------'
+        sql = 'UPDATE `standalone_deletion_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'
+
+        tid, pfn, result = result_tuple
+        exitcode, start_time, finish_time, msg, log = result.get()
+        
+        if exitcode == 0:
+            LOG.info('Deletion success (%d seconds)\n%s\n%s\n%s%s', finish_time - start_time, pfn, delim, log, delim)
+            status = 'done'
+        else:
+            LOG.info('Deletion failure (%d seconds, code %d: %s)\n%s\n%s\n%s%s', finish_time - start_time, exitcode, msg, pfn, delim, log, delim)
+            status = 'failed'
+
+        self.db.query(sql, status, exitcode, start_time, finish_time, tid)
+
+
+if __name__ == '__main__':
+    ## Read server config (should be readable only to root)
+    from dynamo.dataformat import Configuration
+    import dynamo.core.server as main
+    
+    try:
+        config_path = os.environ['DYNAMO_SERVER_CONFIG']
+    except KeyError:
+        config_path = '/etc/dynamo/server_config.json'
+    
+    config = Configuration(config_path)
+    
+    ## Set up logging (write to stderr unless path is given)
+    log_level = getattr(logging, config.logging.level.upper())
+    log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
+    
+    LOG = logging.getLogger()
+    LOG.setLevel(log_level)
+    if config.logging.get('path', ''):
+        log_handler = logging.handlers.RotatingFileHandler(config.logging.path + '/fod.log', maxBytes = 10000000, backupCount = 100)
+    else:
+        log_handler = logging.StreamHandler()
+    LOG.addHandler(log_handler)
+    
+    ## Print some nice banner before we start logging with the timestamp format
+    LOG.critical(main.serverutils.BANNER)
+    
+    log_handler.setFormatter(logging.Formatter(fmt = log_format))
+
+    from dynamo.utils.log import log_exception
+
+    ## Set the effective user id to config.user
+    try:
+        pwnam = pwd.getpwnam(config.user)
+        os.setegid(pwnam.pw_gid)
+        os.seteuid(pwnam.pw_uid)
+    except OSError:
+        LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
+
+    ## File operations config
+    fileop_config = config.file_operations
+    
+    ## Set up operational parameters
+    # We probably want to make this link specific (which means we'll have to create a new table that records the site names for each batch)
+    max_concurrent = fileop_config.daemon.max_parallel_links
+    checksum_algo = fileop_config.daemon.get('checksum', '')
+    transfer_timeout = fileop_config.daemon.transfer_timeout
+
+    if 'gfal2_verbosity' in fileop_config.daemon:
+        gfal2.set_verbose(getattr(gfal2.verbose_level, fileop_config.daemon.gfal2_verbosity.lower()))
+
+    params_config = {
+        'transfer_nstreams': 1,
+        'transfer_timeout': transfer_timeout
+    }
+
+    if checksum_algo:
+        # Available checksum algorithms: crc32, adler32, md5
+        params_config['checksum'] = (gfal2.checksum_mode.both, checksum_algo, '')
+    else:
+        params_config['checksum'] = (gfal2.checksum_mode.none, '', '')
+
+    ## Set up a handle to the DB
+    from dynamo.utils.interface.mysql import MySQL
+
+    db = MySQL(fileop_config.manager.db.db_params)
+   
+    ## Convert SIGTERM and SIGHUP into KeyboardInterrupt (SIGINT already is)
+    from dynamo.utils.signaling import SignalConverter
+    signal_converter = SignalConverter(logger = LOG)
+    signal_converter.set(signal.SIGTERM)
+    signal_converter.set(signal.SIGHUP)
+
+    ## Collect PoolManagers
+    managers = {}
+
+    stop_flag = threading.Event()
+
+    def get_transfer_manager(src, dest):
+        try:
+            return managers[(src, dest)]
+        except KeyError:
+            managers[(src, dest)] = TransferPoolManager('%s-%s' % (src, dest), db, stop_flag, max_concurrent, params_config)
+            return managers[(src, dest)]
+
+    def get_deletion_manager(site):
+        try:
+            return managers[site]
+        except KeyError:
+            managers[site] = DeletionPoolManager(site, db, stop_flag, max_concurrent)
+            return managers[site]
+
+    ## Start loop
+    try:
+        while True:
+            ## Create deletion tasks (batched by site)
+            LOG.info('Creating deletion tasks.')
+        
+            sql = 'SELECT q.`id`, a.`file`, b.`site` FROM `standalone_deletion_queue` AS a'
+            sql += ' INNER JOIN `deletion_queue` AS q ON q.`id` = a.`id`'
+            sql += ' INNER JOIN `standalone_deletion_batches` AS b ON b.`batch_id` = q.`batch_id`'
+            sql += ' WHERE a.`status` = \'new\''
+            sql += ' ORDER BY b.`site`, q.`id`'
+        
+            _site = ''
+            for tid, pfn, site in db.xquery(sql):
+                if site != _site:
+                    _site = site
+                    pool_manager = get_deletion_manager(site)
+
+                pool_manager.add_task(tid, pfn)
+
+            ## Create transfer tasks (batched by site)
+            LOG.info('Creating transfer tasks.')
+        
+            sql = 'SELECT q.`id`, a.`source`, a.`destination`, b.`source_site`, b.`destination_site` FROM `standalone_transfer_queue` AS a'
+            sql += ' INNER JOIN `transfer_queue` AS q ON q.`id` = a.`id`'
+            sql += ' INNER JOIN `standalone_transfer_batches` AS b ON b.`batch_id` = q.`batch_id`'
+            sql += ' WHERE a.`status` = \'new\''
+            sql += ' ORDER BY b.`source_site`, b.`destination_site`, q.`id`'
+        
+            _link = None
+            for tid, src_pfn, dest_pfn, ssite, dsite in db.xquery(sql):
+                if (ssite, dsite) != _link:
+                    _link = (ssite, dsite)
+                    pool_manager = get_transfer_manager(ssite, dsite)
+        
+                pool_manager.add_task(tid, src_pfn, dest_pfn)
+        
+            ## Recycle threads
+            for key, manager in managers.items():
+                if manager.ready_for_recycle():
+                    managers.pop(key)
+
+            time.sleep(30)
+
+    except KeyboardInterrupt:
+        pass
+
+    except:
+        log_exception(LOG)
+
+    finally:
+        stop_flag.set()
+
+    while True:
+        # PoolManagers will terminate automatically once stop_flag is set
+        for key, manager in managers.items():
+            if manager.ready_for_recycle():
+                managers.pop(key)
+
+        if len(managers) != 0:
+            LOG.info('Number of pools: %d', len(managers))
+            time.sleep(1)
+        else:
+            break
+
+    LOG.info('dynamo-fileopd terminated.')

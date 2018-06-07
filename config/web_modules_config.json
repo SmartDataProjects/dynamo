@@ -8,5 +8,11 @@
       },
       "history": "dynamohistory"
     }
-  }
+  },
+  "inventory": {
+    "monitor": {
+      "body_html": "inventory/monitor.html",
+      "default_constraints": {}
+    }
+  }  
 }

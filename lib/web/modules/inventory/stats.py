@@ -56,22 +56,26 @@ def filter_and_categorize(request, inventory, counts_only = False):
             site_pattern = None
 
     groups = None
-    group_names = request['group[]']
-    if group_names is not None:
-        if type(group_names) is str:
-            group_names = [group_names]
-
-        if len(group_names) != 0:
-            groups = set()
-
-            for group_name in group_names:
-                if group_name == 'None':
-                    group_name = None
-
-                try:
-                    groups.add(inventory.groups[group_name])
-                except KeyError:
-                    pass
+    try:
+        group_names = request['group[]']
+    except:
+        pass
+    else:
+        if group_names is not None:
+            if type(group_names) is str:
+                group_names = [group_names]
+    
+            if len(group_names) != 0:
+                groups = set()
+    
+                for group_name in group_names:
+                    if group_name == 'None':
+                        group_name = None
+    
+                    try:
+                        groups.add(inventory.groups[group_name])
+                    except KeyError:
+                        pass
 
     try:
         list_by = request['categories'].strip()
@@ -243,7 +247,7 @@ class SiteUsageListing(WebModule):
         @return {'dataType': 'usage', 'content': [{'site': site_name, 'usage': [{key: key_name, size: size}]}]}
         """
 
-        if yesno(request, 'physical'):
+        if yesno(request, 'physical', True):
             get_size = lambda bl: sum(br.size for br in bl)
         else:
             get_size = lambda bl: sum(br.block.size for br in bl)
