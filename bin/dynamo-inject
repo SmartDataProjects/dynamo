@@ -1,0 +1,50 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import requests
+import socket
+import json
+import time
+
+CERT = '/tmp/x509up_u%d' % os.getuid()
+
+def inject(host, jsondata):
+    session = requests.Session()
+
+    headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
+
+    requests.packages.urllib3.disable_warnings()
+
+    while True:
+        print 'request'
+        response = session.request(
+            method = 'POST', url = 'https://%s/data/inventory/inject' % host,
+            data = jsondata, headers = headers, verify = False,
+            timeout = 600, cert = (CERT, CERT))
+        print 'response'
+
+        if response.status_code == 200:
+            return json.loads(response.text)
+        elif response.status_code == 503:
+            print 'Server is unavailable:', response.text
+            time.sleep(2)
+            continue
+        else:
+            raise RuntimeError(response.text)
+
+if __name__ == '__main__':
+
+    from argparse import ArgumentParser
+    
+    parser = ArgumentParser(description = 'Inject data to Dynamo inventory.')
+    parser.add_argument('json', metavar = 'JSON', help = 'JSON file describing the data to be injected.')
+    parser.add_argument('--host', '-o', metavar = 'HOST', default = socket.gethostname(), help = 'Host name of the dynamo server (ex. example.com).')
+
+    args = parser.parse_args()
+    sys.argv = []
+
+    with open(args.json) as source:
+        jsondata = source.read()
+
+    inject(args.host, jsondata)

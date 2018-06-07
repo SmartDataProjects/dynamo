@@ -104,15 +104,16 @@ enabled=true
 
 # File operation methods (standalone: direct gfal-* calls, fts: through FTS)
 backend=standalone
-#backend=fts
 
 # Configuration JSON for the File Operations Manager
 fom_conf={"db": {"user": "dynamofod"}, "transfer": {}}
-#fom_conf={"db": {"user": "dynamofod"}, "transfer": {"fts_server": "https://fts3.example.com:8446", "fts_retry": 3}}
 
 # Configuration JSON for the File Operations Daemon (empty if backend=fts)
-#  max_batches: Maximum number of concurrent batches, where a batch corresponds to tasks sharing a source and a destination (target site for deletions)
 #  max_parallel_links: Maximum number of concurrent operations within each batch
 #  transfer_timeout: Timeout for individual transfers (seconds)
 fod_conf={"max_parallel_links": 20, "transfer_timeout": 3600}
+
+# Alternative file operations configuration
+#backend=fts
+#fom_conf={"db": {"user": "dynamofod"}, "transfer": {"fts_server": "https://fts3.example.com:8446", "fts_retry": 3}}
 #fod_conf={}
