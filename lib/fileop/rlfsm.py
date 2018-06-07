@@ -53,8 +53,17 @@ class RLFSM(object):
             self.id = None
             self.desubscription = desubscription
 
+    # default config
+    _config = ''
 
-    def __init__(self, config):
+    @staticmethod
+    def set_default(config):
+        RLFSM._config = Configuration(config)
+
+    def __init__(self, config = None):
+        if config is None:
+            config = RLFSM._config
+
         # Handle to the inventory DB
         self.db = MySQL(config.db.db_params)
 

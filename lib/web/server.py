@@ -201,7 +201,8 @@ class WebServer(object):
             content = obj.run(caller, request, inventory)
 
             if obj.write_enabled:
-                serverutils.send_updates(inventory, self.dynamo_server.inventory_update_queue)
+                # TODO make web server log to a separate file
+                serverutils.send_updates(inventory, self.dynamo_server.inventory_update_queue, silent = True)
             
         except exceptions.AuthorizationError:
             start_response('403 Forbidden', [('Content-Type', 'text/plain')])

@@ -8,6 +8,7 @@ import threading
 import signal
 import multiprocessing
 import logging
+import logging.handlers
 import tempfile
 import gfal2
 
@@ -89,7 +90,7 @@ def gfal_exec(func, args):
     # all three variables would be defined even when all attempts are exhausted
     return exitcode, start_time, finish_time, msg, log
 
-def batch_transfer(batch_id, tasks, max_concurrent, max_concurrent, db, stop_flag):
+def batch_transfer(batch_id, tasks, params_config, max_concurrent, db, stop_flag):
     LOG.info('Transfer batch %d (%d tasks)', batch_id, len(tasks))
 
     pool = multiprocessing.Pool(max_concurrent)

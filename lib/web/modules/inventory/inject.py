@@ -194,7 +194,7 @@ class InjectData(WebModule):
             except KeyError:
                 blockreplicas = None
 
-            replica = site.find_datast_replica(dataset)
+            replica = site.find_dataset_replica(dataset)
 
             if replica is None:
                 # new replica

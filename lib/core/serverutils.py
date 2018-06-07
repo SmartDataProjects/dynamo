@@ -281,18 +281,19 @@ def pre_execution(path, is_local, read_only, defaults_config, inventory, authori
 
     return path
 
-def send_updates(inventory, queue):
+def send_updates(inventory, queue, silent = False):
     if queue is None:
         return
 
     # Collect updates if write-enabled
 
     nobj = len(inventory._update_commands)
-    sys.stderr.write('Sending %d updated objects to the server process.\n' % nobj)
-    sys.stderr.flush()
+    if not silent:
+        sys.stderr.write('Sending %d updated objects to the server process.\n' % nobj)
+        sys.stderr.flush()
     wm = 0.
     for iobj, (cmd, objstr) in enumerate(inventory._update_commands):
-        if float(iobj) / nobj * 100. > wm:
+        if not silent and float(iobj) / nobj * 100. > wm:
             sys.stderr.write(' %.0f%%..' % (float(iobj) / nobj * 100.))
             sys.stderr.flush()
             wm += 5.
@@ -300,11 +301,12 @@ def send_updates(inventory, queue):
         try:
             queue.put((cmd, objstr))
         except:
-            sys.stderr.write('Exception while sending %s %s\n' % (DynamoInventory._cmd_str[cmd], objstr))
-            sys.stderr.flush()
+            if not silent:
+                sys.stderr.write('Exception while sending %s %s\n' % (DynamoInventory._cmd_str[cmd], objstr))
+                sys.stderr.flush()
             raise
 
-    if nobj != 0:
+    if not silent and nobj != 0:
         sys.stderr.write(' 100%.\n')
         sys.stderr.flush()
     
