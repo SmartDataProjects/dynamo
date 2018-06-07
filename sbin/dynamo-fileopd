@@ -147,7 +147,7 @@ def collect_results(optype, results, db, stop_flag):
         ir = 0
         while ir != len(results):
             if stop_flag.is_set():
-                break
+                return
 
             if not results[ir][-1].ready():
                 ir += 1
@@ -179,11 +179,9 @@ def collect_results(optype, results, db, stop_flag):
 
             db.query(sql, status, exitcode, start_time, finish_time, tid)
 
-        if stop_flag.is_set():
-            break
-
-        if ir != 0:
-            time.sleep(5)
+        is_set = stop_flag.wait(5)
+        if is_set: # True if Python 2.7 + flag is set
+            return
 
 
 if __name__ == '__main__':
