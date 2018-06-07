@@ -41,7 +41,7 @@ then
   rm /usr/lib/systemd/system/dynamod.service
   rm /etc/sysconfig/dynamod
 else
-  service stop dynamod
+  service dynamod stop
   chkconfig dynamod off
 
   rm /etc/init.d/dynamod
@@ -51,16 +51,19 @@ FILEOP_BACKEND=$($READCONF file_operations.backend)
 
 if [ "$FILEOP" = "true" ] && [ "$FILEOP_BACKEND" = "standalone" ]
 then
-  systemctl stop dynamo-fileopd
-  systemctl disable dynamo-fileopd
-
-  rm /usr/lib/systemd/system/dynamo-fileopd.service
-  rm /etc/sysconfig/dynamo-fileopd
-else
-  service stop dynamo-fileopd
-  chkconfig dynamo-fileopd off
-
-  rm /etc/init.d/dynamo-fileopd
+  if [[ $(uname -r) =~ el7 ]]
+  then
+    systemctl stop dynamo-fileopd
+    systemctl disable dynamo-fileopd
+  
+    rm /usr/lib/systemd/system/dynamo-fileopd.service
+    rm /etc/sysconfig/dynamo-fileopd
+  else
+    service dynamo-fileopd stop
+    chkconfig dynamo-fileopd off
+  
+    rm /etc/init.d/dynamo-fileopd
+  fi
 fi
 
 rm -rf $INSTAL_PATH

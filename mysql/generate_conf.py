@@ -22,17 +22,9 @@ def generate_local_board_conf(conf_str):
     else:
         passwd = grants_conf[user]['passwd']
 
-    board_conf = OD({
-        'module': 'mysqlboard:MySQLUpdateBoard',
-        'config': OD()
-    })
+    board_conf = OD([('module', 'mysqlboard:MySQLUpdateBoard'), ('config', OD())])
     
-    board_conf['config']['db_params'] = OD({
-        'host': host,
-        'user': user,
-        'passwd': passwd,
-        'db': 'dynamoserver'
-    })
+    board_conf['config']['db_params'] = OD([('host', host), ('user', user), ('passwd', passwd), ('db', 'dynamoserver')])
 
     return board_conf
 
@@ -45,27 +37,23 @@ def generate_store_conf(conf_str):
     server_conf = grants_conf[conf['server']]
     reader_conf = grants_conf[conf['reader']]
 
-    store_conf = OD({
-        'module': 'mysqlstore:MySQLInventoryStore',
-        'config': OD(),
-        'readonly_config': OD()
-    })
+    store_conf = OD([('module', 'mysqlstore:MySQLInventoryStore'), ('config', OD()), ('readonly_config', OD())])
 
-    store_conf['config']['db_params'] = OD({
-        'host': 'localhost',
-        'db': 'dynamo',
-        'reuse_connection': True,
-        'user': conf['server'],
-        'passwd': server_conf['passwd']
-    })
+    store_conf['config']['db_params'] = OD([
+        ('host', 'localhost'),
+        ('db', 'dynamo'),
+        ('reuse_connection', True),
+        ('user', conf['server']),
+        ('passwd', server_conf['passwd'])
+    ])
 
-    store_conf['readonly_config']['db_params'] = OD({
-        'host': 'localhost',
-        'db': 'dynamo',
-        'reuse_connection': True,
-        'user': conf['reader'],
-        'passwd': reader_conf['passwd']
-    })
+    store_conf['readonly_config']['db_params'] = OD([
+        ('host', 'localhost'),
+        ('db', 'dynamo'),
+        ('reuse_connection', True),
+        ('user', conf['reader']),
+        ('passwd', reader_conf['passwd'])
+    ])
 
     return store_conf
 
@@ -86,17 +74,17 @@ def generate_master_conf(conf_str):
     else:
         passwd = grants_conf[user]['passwd']
 
-    master_conf = OD({
-        'module': 'mysqlmaster:MySQLMasterServer',
-        'config': OD()
-    })
+    master_conf = OD([
+        ('module', 'mysqlmaster:MySQLMasterServer'),
+        ('config', OD())
+    ])
 
-    master_conf['config']['db_params'] = OD({
-        'host': host,
-        'user': user,
-        'passwd': passwd,
-        'db': 'dynamoserver'
-    })
+    master_conf['config']['db_params'] = OD([
+        ('host', host),
+        ('user', user),
+        ('passwd', passwd),
+        ('db', 'dynamoserver')
+    ])
 
     return master_conf
 
@@ -120,21 +108,21 @@ def generate_fom_conf(conf_str):
 
     fom_conf = OD({'db': OD()})
 
-    fom_conf['db']['db_params'] = OD({
-        'host': host,
-        'user': user,
-        'passwd': passwd,
-        'db': 'dynamo'
-    })
+    fom_conf['db']['db_params'] = OD([
+        ('host', host),
+        ('user', user),
+        ('passwd', passwd),
+        ('db', 'dynamo')
+    ])
     fom_conf['db']['history'] = 'dynamohistory'
 
-    fom_conf['transfer'] = OD('config': OD(conf['transfer']))
-    fom_conf['transfer']['config']['db_params'] = OD({
-        'host': host,
-        'user': user,
-        'passwd': passwd,
-        'db': 'dynamo'
-    })
+    fom_conf['transfer'] = OD({'config': OD(conf['transfer'])})
+    fom_conf['transfer']['config']['db_params'] = OD([
+        ('host', host),
+        ('user', user),
+        ('passwd', passwd),
+        ('db', 'dynamo')
+    ])
 
     return fom_conf
 
