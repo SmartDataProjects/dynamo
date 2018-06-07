@@ -14,6 +14,25 @@ import gfal2
 
 def transfer(src_pfn, dest_pfn, params_config):
     try:
+        context = gfal2.creat_context()
+    except Exception as exc:
+        # multiprocessing pool cannot handle certain exceptions - convert to string
+        raise Exception(str(exc))
+
+    try:
+        context.stat(dest_pfn)
+    except gfal2.GError as err:
+        if err.code == 2:
+            # file doesn't exist at destination
+            pass
+        else:
+            raise Exception(str(err))
+    except Exception as exc:
+        raise Exception(str(exc))
+    else:
+        return 0, int(time.time()), int(time.time()), 'Destination file exists', ''
+
+    try:
         params = gfal2.Gfal2Context.transfer_parameters()
         # Create parent directories at the destination
         params.create_parent = True
@@ -27,7 +46,7 @@ def transfer(src_pfn, dest_pfn, params_config):
         raise Exception(str(exc))
 
     def docopy(params, src_pfn, dest_pfn):
-        gfal2.creat_context().filecopy(params, src_pfn, dest_pfn)
+        context.filecopy(params, src_pfn, dest_pfn)
 
     return gfal_exec(docopy, (params, src_pfn, dest_pfn))
 
