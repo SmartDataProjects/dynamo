@@ -213,6 +213,9 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         return results
 
     def _forget_status(self, batch_id, task_id, optype):
+        if self.dry_run:
+            return
+
         sql = 'DELETE FROM `fts_{optype}_files` WHERE `{optype}_id` = %s'
         self.mysql.query(sql.format(optype = optype), task_id)
 

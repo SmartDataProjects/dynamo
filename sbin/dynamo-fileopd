@@ -90,100 +90,118 @@ def gfal_exec(func, args):
     # all three variables would be defined even when all attempts are exhausted
     return exitcode, start_time, finish_time, msg, log
 
-def batch_transfer(batch_id, tasks, params_config, max_concurrent, db, stop_flag):
-    LOG.info('Transfer batch %d (%d tasks)', batch_id, len(tasks))
+class PoolManager(object):
+    def __init__(self, name, db, stop_flag, max_concurrent):
+        self.name = name
+        self.db = db
+        self.stop_flag = stop_flag
 
-    pool = multiprocessing.Pool(max_concurrent)
-    results = []
+        self._pool = multiprocessing.Pool(max_concurrent)
+        self._results = []
+        self._collector_thread = None
+        self._closed = False
 
-    for tid, src_pfn, dest_pfn in tasks:
-        LOG.debug('Transfer %s->%s', src_pfn, dest_pfn)
-        results.append((tid, src_pfn, dest_pfn, pool.apply_async(transfer, (src_pfn, dest_pfn, params_config))))
+    def ready_for_recycle(self):
+        if self._closed:
+            return True
 
-    pool.close()
+        if self._collector_thread is None:
+            return True
 
-    collect_results('transfer', results, db, stop_flag)
+        if self._collector_thread.is_alive():
+            return False
 
-    if stop_flag.is_set():
-        LOG.info('Terminating transfer batch %d', batch_id)
-        pool.terminate()
+        if self.stop_flag.is_set():
+            self._pool.terminate()
 
-    pool.join()
+        self._pool.close()
+        self._pool.join()
 
-def batch_delete(batch_id, tasks, max_concurrent, db, stop_flag):
-    LOG.info('Deletion batch %d (%d tasks)', batch_id, len(tasks))
+        self._collector_thread.join()
 
-    pool = multiprocessing.Pool(max_concurrent)
-    results = []
+        self._closed = True
 
-    for tid, pfn in tasks:
-        LOG.debug('Deletion %s', pfn)
-        results.append((tid, pfn, pool.apply_async(delete, (pfn,))))
+        return True
 
-    pool.close()
+    def start_collector(self):
+        self._collector_thread = threading.Thread(target = self.collect_results, name = self.name)
+        self._collector_thread.start()
 
-    collect_results('deletion', results, db, stop_flag)
-
-    if stop_flag.is_set():
-        LOG.info('Terminating deletion batch %d', batch_id)
-        pool.terminate()
-
-    pool.join()
-
-def start_batch_transfer(batch_id, tasks, params_config, max_concurrent, db, stop_flag, threads):
-    thread = threading.Thread(target = batch_transfer, args = (batch_id, tasks, params_config, max_concurrent, db, stop_flag), name = 'transfer_%d' % batch_id)
-    thread.start()
-    threads.append(thread)
-
-def start_batch_delete(batch_id, tasks, max_concurrent, db, stop_flag, threads):
-    thread = threading.Thread(target = batch_delete, args = (batch_id, tasks, max_concurrent, db, stop_flag), name = 'deletion_%d' % batch_id)
-    thread.start()
-    threads.append(thread)
-
-def collect_results(optype, results, db, stop_flag):
-    sql = 'UPDATE `standalone_{op}_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'.format(op = optype)
-
-    delim = '--------------'
-
-    while len(results) != 0:
-        ir = 0
-        while ir != len(results):
-            if stop_flag.is_set():
+    def collect_results(self):
+        while len(self._results) != 0:
+            ir = 0
+            while ir != len(self._results):
+                if self.stop_flag.is_set():
+                    return
+    
+                if not self._results[ir][-1].ready():
+                    ir += 1
+                    continue
+    
+                self.process_result(self._results.pop(ir))
+    
+            is_set = stop_flag.wait(5)
+            if is_set: # True if Python 2.7 + flag is set
                 return
 
-            if not results[ir][-1].ready():
-                ir += 1
-                continue
+class TransferPoolManager(PoolManager):
+    def __init__(self, name, stop_flag, max_concurrent, params_config):
+        PoolManager.__init__(self, name, stop_flag, max_concurrent)
+        self.params_config = params_config
 
-            result_tuple = results.pop(ir)
-    
-            if optype == 'transfer':
-                tid, src, dest, result = result_tuple
-                exitcode, start_time, finish_time, msg, log = result.get()
-    
-                if exitcode == 0:
-                    LOG.info('Transfer success (%d seconds)\n%s -> %s\n%s\n%s%s', finish_time - start_time, src, dest, delim, log, delim)
-                    status = 'done'
-                else:
-                    LOG.info('Transfer failure (%d seconds, code %d: %s)\n%s -> %s\n%s\n%s%s', finish_time - start_time, exitcode, msg, src, dest, delim, log, delim)
-                    status = 'failed'
+    def add_task(self, tid, src_pfn, dest_pfn):
+        if self._closed:
+            raise RuntimeError('PoolManager %s is closed' % self.name)
 
-            else:
-                tid, pfn, result = result_tuple
-                exitcode, start_time, finish_time, msg, log = result.get()
-    
-                if exitcode == 0:
-                    LOG.info('Deletion success (%d seconds)\n%s\n%s\n%s%s', finish_time - start_time, pfn, delim, log, delim)
-                    status = 'done'
-                else:
-                    LOG.info('Deletion failure (%d seconds, code %d: %s)\n%s\n%s\n%s%s', finish_time - start_time, exitcode, msg, pfn, delim, log, delim)
-                    status = 'failed'
+        LOG.debug('Transfer %s->%s', src_pfn, dest_pfn)
+        self._results.append((tid, src_pfn, dest_pfn, self._pool.apply_async(transfer, (src_pfn, dest_pfn, self.params_config))))
+        if self._collector_thread is None:
+            self.start_collector()
 
-            db.query(sql, status, exitcode, start_time, finish_time, tid)
+    def process_result(self, result_tuple):
+        delim = '--------------'
+        sql = 'UPDATE `standalone_transfer_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'
 
-        is_set = stop_flag.wait(5)
-        if is_set: # True if Python 2.7 + flag is set
-            return
+        tid, src, dest, result = result_tuple
+        exitcode, start_time, finish_time, msg, log = result.get()
+        
+        if exitcode == 0:
+            LOG.info('Transfer success (%d seconds)\n%s -> %s\n%s\n%s%s', finish_time - start_time, src, dest, delim, log, delim)
+            status = 'done'
+        else:
+            LOG.info('Transfer failure (%d seconds, code %d: %s)\n%s -> %s\n%s\n%s%s', finish_time - start_time, exitcode, msg, src, dest, delim, log, delim)
+            status = 'failed'
+
+        self.db.query(sql, status, exitcode, start_time, finish_time, tid)
+
+class DeletionPoolManager(PoolManager):
+    def __init__(self, name, stop_flag, max_concurrent):
+        PoolManager.__init__(self, name, stop_flag, max_concurrent)
+
+    def add_task(self, tid, pfn):
+        if self._closed:
+            raise RuntimeError('PoolManager %s is closed' % self.name)
+
+        LOG.debug('Deletion %s', pfn)
+        self._results.append((tid, pfn, self._pool.apply_async(delete, (pfn,))))
+        if self._collector_thread is None:
+            self.start_collector()
+
+    def process_result(self, result_tuple):
+        delim = '--------------'
+        sql = 'UPDATE `standalone_deletion_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'
+
+        tid, pfn, result = result_tuple
+        exitcode, start_time, finish_time, msg, log = result.get()
+        
+        if exitcode == 0:
+            LOG.info('Deletion success (%d seconds)\n%s\n%s\n%s%s', finish_time - start_time, pfn, delim, log, delim)
+            status = 'done'
+        else:
+            LOG.info('Deletion failure (%d seconds, code %d: %s)\n%s\n%s\n%s%s', finish_time - start_time, exitcode, msg, pfn, delim, log, delim)
+            status = 'failed'
+
+        self.db.query(sql, status, exitcode, start_time, finish_time, tid)
 
 
 if __name__ == '__main__':
@@ -237,7 +255,16 @@ if __name__ == '__main__':
     if 'gfal2_verbosity' in fileop_config.daemon:
         gfal2.set_verbose(getattr(gfal2.verbose_level, fileop_config.daemon.gfal2_verbosity.lower()))
 
-    max_batches = fileop_config.daemon.max_batches
+    params_config = {
+        'transfer_nstreams': 1,
+        'transfer_timeout': transfer_timeout
+    }
+
+    if checksum_algo:
+        # Available checksum algorithms: crc32, adler32, md5
+        params_config['checksum'] = (gfal2.checksum_mode.both, checksum_algo, '')
+    else:
+        params_config['checksum'] = (gfal2.checksum_mode.none, '', '')
 
     ## Set up a handle to the DB
     from dynamo.utils.interface.mysql import MySQL
@@ -250,10 +277,24 @@ if __name__ == '__main__':
     signal_converter.set(signal.SIGTERM)
     signal_converter.set(signal.SIGHUP)
 
-    ## Collect threads
-    threads = []
+    ## Collect PoolManagers
+    managers = {}
 
     stop_flag = threading.Event()
+
+    def get_transfer_manager(src, dest):
+        try:
+            return managers[(src, dest)]
+        except KeyError:
+            managers[(src, dest)] = TransferPoolManager('%s-%s' % (src, dest), stop_flag, max_concurrent, params_config)
+            return managers[(src, dest)]
+
+    def get_deletion_manager(site):
+        try:
+            return managers[site]
+        except KeyError:
+            managers[site] = DeletionPoolManager(site, stop_flag, max_concurrent)
+            return managers[site]
 
     ## Start loop
     try:
@@ -261,98 +302,61 @@ if __name__ == '__main__':
             ## Create deletion tasks (batched by site)
             LOG.info('Creating deletion tasks.')
         
-            sql = 'SELECT q.`batch_id`, q.`id`, a.`file` FROM `standalone_deletion_queue` AS a'
+            sql = 'SELECT q.`id`, a.`file`, b.`site` FROM `standalone_deletion_queue` AS a'
             sql += ' INNER JOIN `deletion_queue` AS q ON q.`id` = a.`id`'
+            sql += ' INNER JOIN `standalone_deletion_batches` AS b ON b.`batch_id` = q.`batch_id`'
             sql += ' WHERE a.`status` = \'new\''
-            sql += ' ORDER BY q.`batch_id`'
+            sql += ' ORDER BY b.`site`, q.`id`'
         
-            _batch_id = 0
-            
-            for batch_id, tid, lfn, pfn in db.xquery(sql):
-                if batch_id != _batch_id:
-                    if _batch_id != 0:
-                        start_batch_delete(_batch_id, tasks, max_concurrent, db, stop_flag, threads)
-        
-                    _batch_id = batch_id
-                    tasks = []
-        
-                tasks.append((tid, pfn))
-        
-            if _batch_id != 0:
-                start_batch_delete(_batch_id, tasks, max_concurrent, db, stop_flag, threads)
-        
+            _site = ''
+            for tid, pfn, site in db.xquery(sql):
+                if site != _site:
+                    _site = site
+                    pool_manager = get_deletion_manager(site)
+
+                pool_manager.add_task(tid, pfn)
+
             ## Create transfer tasks (batched by site)
             LOG.info('Creating transfer tasks.')
         
-            params_config = {
-                'transfer_nstreams': 1,
-                'transfer_timeout': transfer_timeout
-            }
-        
-            if checksum_algo:
-                # Available checksum algorithms: crc32, adler32, md5
-                params_config['checksum'] = (gfal2.checksum_mode.both, checksum_algo, '')
-            else:
-                params_config['checksum'] = (gfal2.checksum_mode.none, '', '')
-        
-            sql = 'SELECT q.`batch_id`, q.`id`, a.`source`, a.`destination` FROM `standalone_transfer_queue` AS a'
+            sql = 'SELECT q.`id`, a.`source`, a.`destination`, b.`source_site`, b.`destination_site` FROM `standalone_transfer_queue` AS a'
             sql += ' INNER JOIN `transfer_queue` AS q ON q.`id` = a.`id`'
+            sql += ' INNER JOIN `standalone_transfer_batches` AS b ON b.`batch_id` = q.`batch_id`'
             sql += ' WHERE a.`status` = \'new\''
-            sql += ' ORDER BY q.`batch_id`'
+            sql += ' ORDER BY b.`source_site`, b.`destination_site`, q.`id`'
         
-            _batch_id = 0
-            
-            for batch_id, tid, source, destination in db.xquery(sql):
-                if batch_id != _batch_id:
-                    if _batch_id != 0:
-                        start_batch_transfer(_batch_id, tasks, params_config, max_concurrent, db, stop_flag, threads)
+            _link = None
+            for tid, src_pfn, dest_pfn, ssite, dsite in db.xquery(sql):
+                if (ssite, dsite) != _link:
+                    _link = (ssite, dsite)
+                    pool_manager = get_transfer_manager(ssite, dsite)
         
-                    _batch_id = batch_id
-                    tasks = []
+                pool_manager.add_task(tid, src_pfn, dest_pfn)
         
-                tasks.append((tid, source, destination))
-        
-            if _batch_id != 0:
-                start_batch_transfer(_batch_id, tasks, params_config, max_concurrent, db, stop_flag, threads)
-
-            ## Collect terminated threads
-            while True:
-                ith = 0
-                while ith != len(threads):
-                    thread = threads[ith]
-                    if thread.is_alive():
-                        ith += 1
-                    else:
-                        thread.join()
-                        threads.pop(ith)
-
-                LOG.info('Number of batches: %d', len(threads))
-                if len(threads) >= max_batches:
-                    LOG.info('Waiting 10 seconds..')
-                    time.sleep(10)
-                else:
-                    break
+            ## Recycle threads
+            for key, manager in managers.items():
+                if manager.ready_for_recycle():
+                    managers.pop(key)
 
             time.sleep(30)
 
     except KeyboardInterrupt:
-        stop_flag.set()
-        
+        pass
+
     except:
         log_exception(LOG)
 
-    while True:
-        ith = 0
-        while ith != len(threads):
-            thread = threads[ith]
-            if thread.is_alive():
-                ith += 1
-            else:
-                thread.join()
-                threads.pop(ith)
+    finally:
+        stop_flag.set()
 
-        if len(threads) != 0:
-            LOG.info('Number of batches: %d', len(threads))
+    while True:
+        # PoolManagers will terminate automatically once stop_flag is set
+        for key, manager in managers.items():
+            if manager.ready_for_recycle():
+                managers.pop(key)
+
+        if len(managers) != 0:
+            LOG.info('Number of pools: %d', len(managers))
             time.sleep(1)
         else:
             break

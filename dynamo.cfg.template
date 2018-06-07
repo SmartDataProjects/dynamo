@@ -114,5 +114,5 @@ fom_conf={"db": {"user": "dynamofod"}, "transfer": {}}
 #  max_batches: Maximum number of concurrent batches, where a batch corresponds to tasks sharing a source and a destination (target site for deletions)
 #  max_parallel_links: Maximum number of concurrent operations within each batch
 #  transfer_timeout: Timeout for individual transfers (seconds)
-fod_conf={"max_batches": 20, "max_parallel_links": 20, "transfer_timeout": 3600}
+fod_conf={"max_parallel_links": 20, "transfer_timeout": 3600}
 #fod_conf={}
