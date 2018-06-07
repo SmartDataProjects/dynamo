@@ -2,10 +2,11 @@
 
 import os
 import sys
+import pwd
 import time
 import threading
+import signal
 import multiprocessing
-import multiprocessing.managers
 import logging
 import tempfile
 import gfal2
@@ -209,6 +210,14 @@ if __name__ == '__main__':
 
     from dynamo.utils.log import log_exception
 
+    ## Set the effective user id to config.user
+    try:
+        pwnam = pwd.getpwnam(config.user)
+        os.setegid(pwnam.pw_gid)
+        os.seteuid(pwnam.pw_uid)
+    except OSError:
+        LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
+
     ## File operations config
     fileop_config = config.file_operations
     
@@ -317,20 +326,28 @@ if __name__ == '__main__':
                 else:
                     break
 
+            time.sleep(30)
+
     except KeyboardInterrupt:
         stop_flag.set()
+        
+    except:
+        log_exception(LOG)
 
-        while True:
-            ith = 0
-            while ith != len(threads):
-                thread = threads[ith]
-                if thread.is_alive():
-                    ith += 1
-                else:
-                    thread.join()
-                    threads.pop(ith)
-
-            if len(threads) != 0:
-                LOG.info('Number of batches: %d', len(threads))
+    while True:
+        ith = 0
+        while ith != len(threads):
+            thread = threads[ith]
+            if thread.is_alive():
+                ith += 1
             else:
-                break
+                thread.join()
+                threads.pop(ith)
+
+        if len(threads) != 0:
+            LOG.info('Number of batches: %d', len(threads))
+            time.sleep(1)
+        else:
+            break
+
+    LOG.info('dynamo-fileopd terminated.')
