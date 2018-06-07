@@ -241,10 +241,13 @@ class RLFSM(object):
             if len(file_ids) == 0 and len(projected) == 0:
                 inventory.delete(replica)
             else:
-                full_file_ids = set(f.id for f in replica.block.files)
+                all_files = replica.block.files
+                full_file_ids = set(f.id for f in all_files)
 
                 if file_ids == full_file_ids:
                     replica.file_ids = None
+                    replica.size = sum(f.size for f in all_files)
+                    replica.last_update = int(time.time())
                     inventory.register_update(replica)
                 else:
                     if replica.file_ids is None:
@@ -254,6 +257,8 @@ class RLFSM(object):
 
                     if file_ids != existing_file_ids:
                         replica.file_ids = tuple(file_ids)
+                        replica.size = sum(f.size for f in all_files if f.id in file_ids)
+                        replica.last_update = int(time.time())
                         inventory.register_update(replica)
 
 
@@ -278,6 +283,8 @@ class RLFSM(object):
         
         COPY = 0
         DELETE = 1
+
+        done_ids = []
         
         for sub_id, status, optype, dataset_name, block_name, file_id, site_name in self.db.xquery(sql):
             if dataset_name != _dataset_name:
@@ -326,11 +333,15 @@ class RLFSM(object):
                     except KeyError:
                         pass
 
+            if status == 'done':
+                done_ids.append(sub_id)
+
         update_replica(replica, file_ids, projected)
 
         if not self.dry_run:
+            # remove subscription entries with status 'done'
             # this is dangerous - what if inventory fails to update on the server side?
-            self.db.query('DELETE FROM `file_subscriptions` WHERE `status` = \'done\'')
+            self.db.delete_many('file_subscriptions', 'id', done_ids)
 
     def subscribe_files(self, block_replica):
         """
@@ -428,7 +439,7 @@ class RLFSM(object):
         insert_history += ' INNER JOIN `{history}`.`files` AS hf ON hf.`name` = f.`name`'
         insert_history += site_joins
         insert_history += ' WHERE u.`delete` = ' + delete_val + ' AND q.`id` = %s'
-        insert_history += ' ON DUPLICATE_KEY UPDATE `id`=VALUES(`id`)'
+        insert_history += ' ON DUPLICATE KEY UPDATE `id`=VALUES(`id`)'
 
         insert_history = insert_history.format(history = self.history_db, table = table_name)
 
@@ -450,10 +461,10 @@ class RLFSM(object):
 
         if optype == 'transfer':
             get_results = self.transfer_query.get_transfer_status
-            acknowlege_result = self.transfer_query.forget_transfer_status
+            acknowledge_result = self.transfer_query.forget_transfer_status
         else:
             get_results = self.deletion_query.get_deletion_status
-            acknowlege_result = self.deletion_query.forget_deletion_status
+            acknowledge_result = self.deletion_query.forget_deletion_status
 
         for batch_id in self.db.query('SELECT `id` FROM `{op}_batches`'.format(op = optype)):
             results = get_results(batch_id)

@@ -5,7 +5,7 @@ import sys
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update subscriptions.')
-parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', help = 'Configuration JSON.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -18,12 +18,12 @@ config = Configuration(args.config)
 ## Set up logging (write to stdout & stderr)
 from dynamo.core.executable import make_standard_logger, read_only, inventory
 
-LOG = make_standard_logger(config.log_level)
+LOG = make_standard_logger(config.get('log_level', 'info'))
 
 ## Set up a handle to the RLFSM
 from dynamo.fileop.rlfsm import RLFSM
 
-rlfsm = RLFSM(config.rlfsm)
+rlfsm = RLFSM(config.get('rlfsm', None))
 
 if read_only:
     rlfsm.dry_run = True

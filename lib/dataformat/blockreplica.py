@@ -76,8 +76,8 @@ class BlockReplica(object):
     def __eq__(self, other):
         return self is other or \
             (self._block_full_name() == other._block_full_name() and self._site_name() == other._site_name() and \
-            self._group_name() == other._group_name() and \
-            self.is_custodial == other.is_custodial and self.size == other.size and \
+             self._group_name() == other._group_name() and \
+             self.is_custodial == other.is_custodial and self.size == other.size and \
              self.last_update == other.last_update and self.file_ids == other.file_ids)
 
     def __ne__(self, other):
@@ -268,7 +268,7 @@ class BlockReplica(object):
         else:
             return self.group.name
 
-    def _copy_no_check(self):
+    def _copy_no_check(self, other):
         self.group = other.group
         self.is_custodial = other.is_custodial
         self.size = other.size

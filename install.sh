@@ -38,8 +38,10 @@ SERVER_DB=$($READCONF server.store)
 if [[ $(uname -r) =~ el7 ]]
 then
   systemctl stop dynamod 2>/dev/null
+  [ "$FILEOP" = "true" ] && systemctl stop dynamo-fileopd 2> /dev/null
 else
   service dynamod stop 2>/dev/null
+  [ "$FILEOP" = "true" ] && service dynamo-fileopd stop 2> /dev/null
 fi
 
 echo

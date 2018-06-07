@@ -46,6 +46,15 @@
         },
         "history": "dynamohistory"
       }
+    },
+    "readonly": {
+      "db": {
+        "db_params": {
+          "db": "dynamo",
+          "user": "dynamoread"
+        },
+        "history": "dynamohistory"
+      }
     }
   },
   "utils.interface.mysql:MySQL": {

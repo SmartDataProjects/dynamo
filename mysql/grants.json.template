@@ -64,8 +64,8 @@
       ["INSERT, UPDATE, DELETE", "dynamo", "standalone_deletion_queue"],
       ["SELECT, LOCK TABLES", "dynamohistory"],
       ["INSERT, UPDATE", "dynamohistory", "files"],
-      ["INSERT", "dynamohistory", "file_transfers"],
-      ["INSERT", "dynamohistory", "file_deletions"]
+      ["INSERT, UPDATE", "dynamohistory", "file_transfers"],
+      ["INSERT, UPDATE", "dynamohistory", "file_deletions"]
     ]
   }
 }

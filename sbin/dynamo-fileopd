@@ -43,7 +43,7 @@ def gfal_exec(func, args):
     log = ''
 
     for attempt in xrange(5):
-        # redirect stdio and stderr to a temporary file
+        # redirect stdout and stderr to a temporary file
         stream = tempfile.TemporaryFile() 
         stdout_fileno = sys.stdout.fileno()
         stderr_fileno = sys.stderr.fileno()
@@ -104,6 +104,9 @@ def batch_transfer(batch_id, tasks, params_config, max_concurrent, db, stop_flag
 
     collect_results('transfer', results, db, stop_flag)
 
+    if stop_flag.is_set():
+        pool.terminate()
+
     pool.join()
 
 def batch_delete(batch_id, tasks, max_concurrent, db, stop_flag):
@@ -119,6 +122,9 @@ def batch_delete(batch_id, tasks, max_concurrent, db, stop_flag):
     pool.close()
 
     collect_results('deletion', results, db, stop_flag)
+
+    if stop_flag.is_set():
+        pool.terminate()
 
     pool.join()
 
