@@ -62,6 +62,8 @@
       ["INSERT, UPDATE, DELETE", "dynamo", "fts_deletion_files"],
       ["INSERT, UPDATE, DELETE", "dynamo", "standalone_transfer_queue"],
       ["INSERT, UPDATE, DELETE", "dynamo", "standalone_deletion_queue"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "standalone_transfer_batches"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "standalone_deletion_batches"],
       ["SELECT, LOCK TABLES", "dynamohistory"],
       ["INSERT, UPDATE", "dynamohistory", "files"],
       ["INSERT, UPDATE", "dynamohistory", "file_transfers"],

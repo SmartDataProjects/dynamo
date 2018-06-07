@@ -61,6 +61,6 @@ class FODCopyInterface(CopyInterface):
             return
 
         all_files = block_replica.block.files
-        missing_files = all_ids - block_replica.files()
+        missing_files = all_files - block_replica.files()
 
         self.rlfsm.subscribe_files(block_replica.site, missing_files)

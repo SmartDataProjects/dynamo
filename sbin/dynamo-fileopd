@@ -131,6 +131,7 @@ class PoolManager(object):
             return False
 
         if self.stop_flag.is_set():
+            LOG.warning('Terminating pool %s' % self.name)
             self._pool.terminate()
 
         self._pool.close()
@@ -164,8 +165,8 @@ class PoolManager(object):
                 return
 
 class TransferPoolManager(PoolManager):
-    def __init__(self, name, stop_flag, max_concurrent, params_config):
-        PoolManager.__init__(self, name, stop_flag, max_concurrent)
+    def __init__(self, name, db, stop_flag, max_concurrent, params_config):
+        PoolManager.__init__(self, name, db, stop_flag, max_concurrent)
         self.params_config = params_config
 
     def add_task(self, tid, src_pfn, dest_pfn):
@@ -194,8 +195,8 @@ class TransferPoolManager(PoolManager):
         self.db.query(sql, status, exitcode, start_time, finish_time, tid)
 
 class DeletionPoolManager(PoolManager):
-    def __init__(self, name, stop_flag, max_concurrent):
-        PoolManager.__init__(self, name, stop_flag, max_concurrent)
+    def __init__(self, name, db, stop_flag, max_concurrent):
+        PoolManager.__init__(self, name, db, stop_flag, max_concurrent)
 
     def add_task(self, tid, pfn):
         if self._closed:
@@ -305,14 +306,14 @@ if __name__ == '__main__':
         try:
             return managers[(src, dest)]
         except KeyError:
-            managers[(src, dest)] = TransferPoolManager('%s-%s' % (src, dest), stop_flag, max_concurrent, params_config)
+            managers[(src, dest)] = TransferPoolManager('%s-%s' % (src, dest), db, stop_flag, max_concurrent, params_config)
             return managers[(src, dest)]
 
     def get_deletion_manager(site):
         try:
             return managers[site]
         except KeyError:
-            managers[site] = DeletionPoolManager(site, stop_flag, max_concurrent)
+            managers[site] = DeletionPoolManager(site, db, stop_flag, max_concurrent)
             return managers[site]
 
     ## Start loop
