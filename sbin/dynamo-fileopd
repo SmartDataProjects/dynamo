@@ -89,10 +89,10 @@ def gfal_exec(func, args):
     # all three variables would be defined even when all attempts are exhausted
     return exitcode, start_time, finish_time, msg, log
 
-def batch_transfer(batch_id, tasks, params_config, pool_size, db, stop_flag):
+def batch_transfer(batch_id, tasks, max_concurrent, max_concurrent, db, stop_flag):
     LOG.info('Transfer batch %d (%d tasks)', batch_id, len(tasks))
 
-    pool = multiprocessing.Pool(pool_size)
+    pool = multiprocessing.Pool(max_concurrent)
     results = []
 
     for tid, src_pfn, dest_pfn in tasks:
@@ -105,10 +105,10 @@ def batch_transfer(batch_id, tasks, params_config, pool_size, db, stop_flag):
 
     pool.join()
 
-def batch_delete(batch_id, tasks, pool_size, db, stop_flag):
+def batch_delete(batch_id, tasks, max_concurrent, db, stop_flag):
     LOG.info('Deletion batch %d (%d tasks)', batch_id, len(tasks))
 
-    pool = multiprocessing.Pool(pool_size)
+    pool = multiprocessing.Pool(max_concurrent)
     results = []
 
     for tid, pfn in tasks:
@@ -121,13 +121,13 @@ def batch_delete(batch_id, tasks, pool_size, db, stop_flag):
 
     pool.join()
 
-def start_batch_transfer(batch_id, tasks, params_config, pool_size, db, stop_flag, threads):
-    thread = threading.Thread(target = batch_transfer, args = (batch_id, tasks, params_config, pool_size, db, stop_flag), name = 'transfer_%d' % batch_id)
+def start_batch_transfer(batch_id, tasks, params_config, max_concurrent, db, stop_flag, threads):
+    thread = threading.Thread(target = batch_transfer, args = (batch_id, tasks, params_config, max_concurrent, db, stop_flag), name = 'transfer_%d' % batch_id)
     thread.start()
     threads.append(thread)
 
-def start_batch_delete(batch_id, tasks, pool_size, db, stop_flag, threads):
-    thread = threading.Thread(target = batch_delete, args = (batch_id, tasks, pool_size, db, stop_flag), name = 'deletion_%d' % batch_id)
+def start_batch_delete(batch_id, tasks, max_concurrent, db, stop_flag, threads):
+    thread = threading.Thread(target = batch_delete, args = (batch_id, tasks, max_concurrent, db, stop_flag), name = 'deletion_%d' % batch_id)
     thread.start()
     threads.append(thread)
 
@@ -223,7 +223,7 @@ if __name__ == '__main__':
     
     ## Set up operational parameters
     # We probably want to make this link specific (which means we'll have to create a new table that records the site names for each batch)
-    pool_size = fileop_config.daemon.max_parallel_links
+    max_concurrent = fileop_config.daemon.max_parallel_links
     checksum_algo = fileop_config.daemon.get('checksum', '')
     transfer_timeout = fileop_config.daemon.transfer_timeout
 
@@ -264,7 +264,7 @@ if __name__ == '__main__':
             for batch_id, tid, lfn, pfn in db.xquery(sql):
                 if batch_id != _batch_id:
                     if _batch_id != 0:
-                        start_batch_delete(_batch_id, tasks, pool_size, db, stop_flag, threads)
+                        start_batch_delete(_batch_id, tasks, max_concurrent, db, stop_flag, threads)
         
                     _batch_id = batch_id
                     tasks = []
@@ -272,7 +272,7 @@ if __name__ == '__main__':
                 tasks.append((tid, pfn))
         
             if _batch_id != 0:
-                start_batch_delete(_batch_id, tasks, pool_size, db, stop_flag, threads)
+                start_batch_delete(_batch_id, tasks, max_concurrent, db, stop_flag, threads)
         
             ## Create transfer tasks (batched by site)
             LOG.info('Creating transfer tasks.')
@@ -298,7 +298,7 @@ if __name__ == '__main__':
             for batch_id, tid, source, destination in db.xquery(sql):
                 if batch_id != _batch_id:
                     if _batch_id != 0:
-                        start_batch_transfer(_batch_id, tasks, params_config, pool_size, db, stop_flag, threads)
+                        start_batch_transfer(_batch_id, tasks, params_config, max_concurrent, db, stop_flag, threads)
         
                     _batch_id = batch_id
                     tasks = []
@@ -306,7 +306,7 @@ if __name__ == '__main__':
                 tasks.append((tid, source, destination))
         
             if _batch_id != 0:
-                start_batch_transfer(_batch_id, tasks, params_config, pool_size, db, stop_flag, threads)
+                start_batch_transfer(_batch_id, tasks, params_config, max_concurrent, db, stop_flag, threads)
 
             ## Collect terminated threads
             while True:

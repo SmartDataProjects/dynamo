@@ -366,21 +366,20 @@ class RLFSM(object):
     def _run_cycle(self, inventory):
         while True:
             if self.cycle_stop.is_set():
-                return
+                break
     
             LOG.debug('Checking and executing new file transfer subscriptions.')
             self.transfer_files(inventory)
     
             if self.cycle_stop.is_set():
-                return
+                break
     
             LOG.debug('Checking and executing new file deletion subscriptions.')
             self.delete_files(inventory)
 
-            if self.cycle_stop.is_set():
-                return
-
-            time.sleep(30)
+            is_set = self.cycle_stop.wait(30)
+            if is_set: # is true if in Python 2.7 and the flag is set
+                break
 
     def _update_status(self, optype):
         # insert queries all have ON DUPLICATE key to make sure we can restart in case of a crash

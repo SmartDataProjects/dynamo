@@ -282,12 +282,12 @@ class WebServer(object):
 
     def _internal_server_error(self, start_fnc):
         start_fnc('500 Internal Server Error', [('Content-Type', 'text/plain')])
+        exc_type, exc, tb = sys.exc_info()
         if self.debug:
-            exc_type, exc, tb = sys.exc_info()
             response = 'Caught exception %s while waiting for task to complete.\n' % exc_type.__name__
             response += 'Traceback (most recent call last):\n'
             response += ''.join(traceback.format_tb(tb)) + '\n'
             response += '%s: %s\n' % (exc_type.__name__, str(exc))
             return response
         else:
-            return 'Exception: ' + str(sys.exc_info()[1]) + '\n'
+            return 'Internal server error! (' + exc_type.__name__ + ': ' + str(exc) + ')\n'

@@ -7,12 +7,14 @@ import dynamo.web.exceptions as exceptions
 
 class DatasetStats(WebModule, HTMLMixin):
     def __init__(self, config):
-        WebModule.__init__(self, config)
+        WebModule.__init__(self, config) 
         HTMLMixin.__init__(self, 'Dynamo dataset statistics', config.inventory.monitor.body_html)
 
         self.stylesheets = ['/css/inventory/monitor.css']
         self.scripts = ['/js/utils.js', '/js/inventory/monitor.js']
         self.header_script = '$(document).ready(function() { initPage(\'{DATA_TYPE}\', \'{CATEGORIES}\', {CONSTRAINTS}); });'
+
+        self.default_constraints = config.inventory.monitor.default_constraints
 
     def run(self, caller, request, inventory):
         # Parse GET and POST requests and set the defaults
@@ -34,15 +36,19 @@ class DatasetStats(WebModule, HTMLMixin):
                 constraints[key] = request[key].strip()
             except:
                 pass
-
-        group = request['group']
-        if type(group) is list:
-            constraints['group'] = group
-        elif type(group) is str:
-            constraints['group'] = group.strip().split(',')
+                
+        try:
+            group = request['group']
+        except KeyError:
+            pass
+        else:
+            if type(group) is list:
+                constraints['group'] = group
+            elif type(group) is str:
+                constraints['group'] = group.strip().split(',')
 
         if len(constraints) == 0:
-            constraints['group'] = ['AnalysisOps']
+            constraints = self.default_constraints
 
         repl['CONSTRAINTS'] = json.dumps(constraints)
 
