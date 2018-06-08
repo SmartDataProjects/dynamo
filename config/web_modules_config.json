@@ -10,8 +10,8 @@
     }
   },
   "inventory": {
-    "monitor": {
-      "body_html": "inventory/monitor.html",
+    "stats": {
+      "body_html": "inventory/stats.html",
       "default_constraints": {}
     }
   }  

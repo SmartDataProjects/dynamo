@@ -1,12 +1,11 @@
 import re
 import math
-import logging
+import json
 
 from dynamo.web.modules._base import WebModule
+from dynamo.web.modules._html import HTMLMixin
 from dynamo.web.modules._common import yesno
 import dynamo.web.exceptions as exceptions
-
-LOG = logging.getLogger(__name__)
 
 def campaign_name(dataset):
     sd = dataset.name[dataset.name.find('/', 1) + 1:dataset.name.rfind('/')]
@@ -288,8 +287,73 @@ class SiteUsageListing(WebModule):
 
         return {'dataType': 'usage', 'content': content, 'keys': sorted(all_replicas.keys())}
 
+
+class InventoryStats(WebModule, HTMLMixin):
+    """
+    The original inventory monitor showing various inventory statistics.
+    """
+
+    def __init__(self, config):
+        WebModule.__init__(self, config) 
+        HTMLMixin.__init__(self, 'Dynamo inventory statistics', config.inventory.stats.body_html)
+
+        self.stylesheets = ['/css/inventory/stats.css']
+        self.scripts = ['/js/utils.js', '/js/inventory/stats.js']
+
+        self.default_constraints = config.inventory.monitor.default_constraints
+
+    def run(self, caller, request, inventory):
+        # Parse GET and POST requests and set the defaults
+        try:
+            data_type = request['dataType'].strip()
+        except:
+            data_type = 'size'
+
+        try:
+            categories = request['categories'].strip()
+        except:
+            categories = 'campaigns'
+
+        constraints = {}
+        for key in ['campaign', 'dataTier', 'dataset', 'site']:
+            try:
+                constraints[key] = request[key].strip()
+            except:
+                pass
+                
+        try:
+            group = request['group']
+        except KeyError:
+            pass
+        else:
+            if type(group) is list:
+                constraints['group'] = group
+            elif type(group) is str:
+                constraints['group'] = group.strip().split(',')
+
+        if len(constraints) == 0:
+            constraints = self.default_constraints
+
+        self.header_script = '$(document).ready(function() { initPage(\'%s\', \'%s\', %s); });' % (data_type, categories, json.dumps(constraints))
+
+        repl = {}
+
+        if yesno(request, 'physical', True):
+            repl['PHYSICAL_CHECKED'] = ' checked="checked"'
+            repl['PROJECTED_CHECKED'] = ''
+        else:
+            repl['PHYSICAL_CHECKED'] = ''
+            repl['PROJECTED_CHECKED'] = ' checked="checked"'
+
+        return self.form_html(repl)
+
+
 export_data = {
     'stats/size': TotalSizeListing,
     'stats/replication': ReplicationFactorListing,
     'stats/usage': SiteUsageListing
+}
+
+export_web = {
+    'stats': InventoryStats
 }
