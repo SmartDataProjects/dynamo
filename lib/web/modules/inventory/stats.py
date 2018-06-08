@@ -9,7 +9,17 @@ from dynamo.web.modules._common import yesno
 import dynamo.web.exceptions as exceptions
 from dynamo.dataformat import Dataset, Site, Group
 
+from _customize import customize_stats
+
 class InventoryStatCategories(object):
+    """
+    Just a holder for available data categorization. Specify
+    (category_name, (category_title, target, mapping))
+    where target is either Dataset, Site, or Group and mapping is a function that takes an instance of the
+    target class and returns a value to be used for categorization.
+    Categories can be made specific to the Dynamo instance using _customize.customize_stats.
+    """
+
     categories = collections.OrderedDict([
         ('data_type', ('Dataset type', Dataset, lambda d: Dataset.data_type_name(d.data_type))),
         ('dataset_status', ('Dataset status', Dataset, lambda d: Dataset.status_name(d.status))),
@@ -19,6 +29,8 @@ class InventoryStatCategories(object):
         ('site_status', ('Site status', Site, lambda s: Site.status_name(s.status))),
         ('group', ('Group name', Group, lambda g: g.name))
     ])
+
+customize_stats(InventoryStatCategories)
 
 def passes_constraints(item, constraints):
     if len(constraints) == 0:
