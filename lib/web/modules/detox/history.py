@@ -1,6 +1,10 @@
 import os
+import fnmatch
+import re
 
+from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._mysqlhistory import MySQLHistoryMixin
+from dynamo.web.modules._common import yesno
 import dynamo.web.exceptions as exceptions
 from dynamo.detox.history import DetoxHistoryBase
 from dynamo.dataformat import Configuration
@@ -210,6 +214,23 @@ class DetoxCycleSummary(DetoxHistoryCached):
         return data
 
 
+class DetoxCycleDump(DetoxHistoryCached):
+    # TODO allow modules to set content type
+
+    def run(self, caller, request, inventory):
+        try:
+            cycle = int(request['cycle'])
+        except KeyError:
+            self.get_latest_cycle()
+        else:
+            self.get_cycle(cycle)
+
+        decisions = self.detox_history.get_deletion_decisions(self.cycle, size_only = True)
+
+        
+
+
+
 class DetoxSiteDetail(DetoxHistoryCached):
     def run(self, caller, request, inventory):
         try:
@@ -219,8 +240,10 @@ class DetoxSiteDetail(DetoxHistoryCached):
         else:
             self.get_cycle(cycle)
 
-        # let it raise
-        sname = request['site']
+        try:
+            sname = request['site']
+        except KeyError:
+            raise exceptions.MissingParameter('site')
 
         data = {'content': {'name': sname, 'datasets': []}, 'conditions': {}}
 
@@ -257,17 +280,63 @@ class DetoxDatasetSearch(DetoxHistoryCached):
         else:
             self.get_cycle(cycle)
 
-        datasets = request['datasets']
+        try:
+            pattern_strings = request['datasets']
+        except KeyError:
+            raise exceptions.MissingParameter('datasets')
 
-        return datasets
+        data = {'results': [], 'conditions': {}}
+        conditions = data['conditions']
 
+        decisions = self.detox_history.get_deletion_decisions(self.cycle, size_only = True)
+
+        multi_action = {}
+        for site_name, site_decisions in decisions.iteritems():
+            ma = multi_action[site_name] = set()
+            _dataset_name = ''
+            for dataset_name in sorted(d[0] for d in site_decisions):
+                if dataset_name == _dataset_name:
+                    ma.add(dataset_name)
+    
+                _dataset_name = dataset_name
+
+        for pattern in pattern_strings:
+            if '*' not in pattern and '?' not in pattern:
+                match = lambda d: d == pattern
+            else:
+                regex = re.compile(fnmatch.translate(pattern))
+                match = lambda d: regex.match(d)
+
+            site_data = []
+
+            for site_name, site_decisions in decisions.iteritems():
+                site_datasets = []
+                ma = multi_action[site_name]
+    
+                for dataset_name, replica_size, decision, condition_id, condition_text in site_decisions:
+                    if not match(dataset_name):
+                        continue
+    
+                    if dataset_name in ma:
+                        decision += ' *'
+    
+                    site_datasets.append({'name': dataset_name, 'size': replica_size * 1.e-9, 'decision': decision, 'conditionId': condition_id})
+                    if condition_id not in conditions:
+                        conditions[condition_id] = condition_text
+
+                if len(site_datasets) != 0:
+                    site_data.append({'name': site_name, 'datasets': site_datasets})
+    
+            data['results'].append({'pattern': pattern, 'siteData': site_data})
+                        
+        return data
 
 export_data = {
-    'detox/partitions': DetoxPartitions,
-    'detox/cycles': DetoxCycles,
-    'detox/summary': DetoxCycleSummary,
-    'detox/sitedetail': DetoxSiteDetail,
-    'detox/datasets': DetoxDatasetSearch
+    'partitions': DetoxPartitions,
+    'cycles': DetoxCycles,
+    'summary': DetoxCycleSummary,
+    'sitedetail': DetoxSiteDetail,
+    'datasets': DetoxDatasetSearch
 }
 
 def test(cls):
@@ -278,5 +347,5 @@ def test(cls):
 
     return init
 
-for key, cls in export_data.values():
+for key, cls in export_data.items():
     export_data[key.replace('detox', 'detox/test')] = test(cls)

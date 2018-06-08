@@ -78,39 +78,26 @@ def filter_and_categorize(request, inventory, counts_only = False):
             constraints = group_constraints
 
         try:
-            const_str = request[category].strip()
+            const_req = request[category]
         except KeyError:
-            const_str = None
+            const_req = None
 
-        if const_str:
-            if const_str == 'None':
-                constraints[category] = None
-            else:
-                constraints[category] = re.compile(const_str)
-            break
-
-        try:
-            const_list = request[category + '[]']
-            if type(const_list) is str: # if there is only one item given
-                const_list = const_list.strip()
-        except KeyError:
-            const_list = ''
-
-        if len(const_list) != 0:
-            constraints[category] = []
-
-            if type(const_list) is list:
-                for const_str in const_list:
-                    if const_str == 'None':
-                        constraints[category].append(None)
-                    else:
-                        constraints[category].append(re.compile(const_str))
-    
-            elif type(const_list) is str:
-                if const_list == 'None':
-                    constraints[category].append(None)
+        if const_req:
+            if type(const_req) is str:
+                if const_req == 'None':
+                    constraints[category] = None
                 else:
-                    constraints[category].append(re.compile(const_list))
+                    constraints[category] = re.compile(const_req)
+
+            elif type(const_req) is list:
+                if len(const_req) != 0:
+                    constraints[category] = []
+
+                    for const_str in const_req:
+                        if const_str == 'None':
+                            constraints[category].append(None)
+                        else:
+                            constraints[category].append(re.compile(const_str))
 
     try:
         list_by = request['list_by'].strip()
@@ -346,10 +333,7 @@ class InventoryStats(WebModule, HTMLMixin):
             try:
                 constraint = request[key]
             except KeyError:
-                try:
-                    constraint = request[key + '[]']
-                except KeyError:
-                    continue
+                continue
 
             if type(constraint) is str:
                 constraint = constraint.strip()

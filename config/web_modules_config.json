@@ -1,7 +1,7 @@
 {
   "archive_path": "$(DYNAMO_ARCHIVE)",
   "spool_path": "$(DYNAMO_SPOOL)",
-  "history" {
+  "history": {
     "user": "dynamoread",
     "passwd": "",
     "db": "dynamohistory"
@@ -22,6 +22,8 @@
     }
   },
   "detox": {
+    "default_partition": "Default",
+    "monitored_partitions": ["Default"],
     "cache_db": "dynamohistory_cache"
   }
 }

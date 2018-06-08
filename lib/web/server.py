@@ -187,7 +187,16 @@ class WebServer(object):
                     start_response('400 Bad Request', [('Content-Type', 'text/plain')])
                     return 'Could not parse input.\n'
 
-                request = dict((item.name, item.value) for item in fstorage.list)
+                request = {}
+                for item in fstorage.list:
+                    if item.name.endswith('[]'):
+                        key = item.name[:-2]
+                        try:
+                            request[key].append(item.value)
+                        except KeyError:
+                            request[key] = [item.value]
+                    else:
+                        request[item.name] = item.value
 
             unicode2str(request)
     

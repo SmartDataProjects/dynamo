@@ -89,9 +89,9 @@ class DetoxHistoryBase(object):
             return product
 
         else:
-            # return {site_name: [(dataset_name, size, decision, reason)]}
+            # return {site_name: [(dataset_name, size, decision, condition_id, reason)]}
 
-            query = 'SELECT s.`name`, d.`name`, r.`size`, r.`decision`, p.`text` FROM `{0}`.`{1}` AS r'.format(self.cache_db, table_name)
+            query = 'SELECT s.`name`, d.`name`, r.`size`, r.`decision`, p.`id`, p.`text` FROM `{0}`.`{1}` AS r'.format(self.cache_db, table_name)
             query += ' INNER JOIN `{0}`.`sites` AS s ON s.`id` = r.`site_id`'.format(self.history_db)
             query += ' INNER JOIN `{0}`.`datasets` AS d ON d.`id` = r.`dataset_id`'.format(self.history_db)
             query += ' LEFT JOIN `{0}`.`policy_conditions` AS p ON p.`id` = r.`condition`'.format(self.history_db)
@@ -101,13 +101,13 @@ class DetoxHistoryBase(object):
 
             _site_name = ''
 
-            for site_name, dataset_name, size, decision, reason in self._mysql.xquery(query):
+            for site_name, dataset_name, size, decision, cid, reason in self._mysql.xquery(query):
                 if site_name != _site_name:
                     product[site_name] = []
                     current = product[site_name]
                     _site_name = site_name
                 
-                current.append((dataset_name, size, decision, reason))
+                current.append((dataset_name, size, decision, cid, reason))
 
             return product
 

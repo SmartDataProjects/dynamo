@@ -1006,6 +1006,8 @@ function findDataset()
         'dataType': 'json',
         'async': false
     };
+
+    $.ajax(jaxData);
 }
 
 function removeDataset(displayBox)
@@ -1027,21 +1029,24 @@ function removeDataset(displayBox)
     spinner.spin();
     $('#summaryGraphBox').append($(spinner.el));
 
-    var inputData = {
-        'command': 'searchDataset',
-        'cycleNumber': currentCycle,
-        'datasetNames': datasetNames
-    };
-
-    $.get(window.location.href, inputData, function (data, textStatus, jqXHR) {
+    var jaxData = {
+        'url': dataPath + '/datasets',
+        'data': {'cycle': cycleNumber, 'datasets': datasetNames},
+        'success': function (data, textStatus, jqXHR) {
             for (var cid in data.conditions) {
                 if (!(cid in conditionTexts))
                     conditionTexts[cid] = data.conditions[cid];
             }
 
+            inputBox.val('');
             displayDatasetSearch(data.results);
             spinner.stop();
-    }, 'json');
+        },
+        'dataType': 'json',
+        'async': false
+    };
+
+    $.ajax(jaxData);
 }
 
 function downloadList()
@@ -1051,19 +1056,4 @@ function downloadList()
     url += '&cycleNumber=' + currentCycle;
     
     window.location = url;
-}
-
-function findCycleFromRequest(reqid)
-{
-    var inputData = {
-        'command': 'findCycle'
-    };
-
-    var cycle = currentCycle;
-
-    $.get(window.location.href, inputData, function (data, textStatus, jqXHR) {
-            cycle = data.cycle;
-    }, 'json');
-
-    return cycle;
 }
