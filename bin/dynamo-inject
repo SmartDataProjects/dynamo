@@ -7,20 +7,23 @@ import socket
 import json
 import time
 
-CERT = '/tmp/x509up_u%d' % os.getuid()
-
-def inject(host, jsondata):
+def inject(host, cert, key, jsondata, delete = False):
     session = requests.Session()
 
     headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
 
     requests.packages.urllib3.disable_warnings()
 
+    if delete:
+        url = 'https://%s/data/inventory/delete' % host
+    else:
+        url = 'https://%s/data/inventory/inject' % host
+
     for attempt in xrange(5):
         response = session.request(
-            method = 'POST', url = 'https://%s/data/inventory/inject' % host,
+            method = 'POST', url = url,
             data = jsondata, headers = headers, verify = False,
-            timeout = 600, cert = (CERT, CERT))
+            timeout = 600, cert = (cert, key))
 
         if response.status_code == 200:
             return json.loads(response.text)
@@ -32,17 +35,29 @@ def inject(host, jsondata):
             raise RuntimeError(response.text)
 
 if __name__ == '__main__':
-
     from argparse import ArgumentParser
+
+    PROXY = '/tmp/x509up_u%d' % os.getuid()
     
     parser = ArgumentParser(description = 'Inject data to Dynamo inventory.')
-    parser.add_argument('json', metavar = 'JSON', help = 'JSON file describing the data to be injected.')
-    parser.add_argument('--host', '-o', metavar = 'HOST', default = socket.gethostname(), help = 'Host name of the dynamo server (ex. example.com).')
+    parser.add_argument('json', metavar = 'JSON', help = 'JSON file describing the data to be injected. If the file name is "-", read from standard input.')
+    parser.add_argument('--delete', '-d', action = 'store_true', dest = 'delete', help = 'Invalidate the data instead of injecting.')
+    parser.add_argument('--host', '-o', metavar = 'HOST', dest = 'host', default = socket.gethostname(), help = 'Host name of the dynamo server (ex. example.com).')
+    parser.add_argument('--cert', '-c', metavar = 'CERT', dest = 'cert', default = PROXY, help = 'User certificate location.')
+    parser.add_argument('--key', '-k', metavar = 'KEY', dest = 'key', default = PROXY, help = 'User certificate key location.')
 
     args = parser.parse_args()
     sys.argv = []
 
-    with open(args.json) as source:
-        jsondata = source.read()
+    if args.json.strip() == '-':
+        jsondata = ''
+        while True:
+            line = sys.stdline()
+            if not line:
+                break
+            jsondata += line
+    else:
+        with open(args.json) as source:
+            jsondata = source.read()
 
-    print inject(args.host, jsondata)
+    print inject(args.host, args.cert, args.key, jsondata, args.delete)
