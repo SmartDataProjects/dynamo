@@ -11,6 +11,7 @@ import logging
 import logging.handlers
 import tempfile
 import gfal2
+import cStringIO
 
 # Need to define the signal converter globally so that subprocesses can unset blocking
 from dynamo.utils.signaling import SignalConverter
@@ -51,14 +52,12 @@ def gfal_exec(func, args):
     log = ''
 
     for attempt in xrange(5):
-        # redirect stdout and stderr to a temporary file
-        stream = tempfile.TemporaryFile() 
-        stdout_fileno = sys.stdout.fileno()
-        stderr_fileno = sys.stderr.fileno()
-        stdout_copy = os.dup(stdout_fileno)
-        stderr_copy = os.dup(stderr_fileno)
-        os.dup2(stream.fileno(), stdout_fileno)
-        os.dup2(stream.fileno(), stderr_fileno)
+        # gfal2 knows to write to the logger. Redirect to StringIO and dump the full log at the end.
+        stream = cStringIO.StringIO()
+        LOG.handlers.pop()
+        handler = logging.StreamHandler(stream)
+        LOG.addHandler(handler)
+        handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
 
         start_time = int(time.time())
     
@@ -90,14 +89,7 @@ def gfal_exec(func, args):
             exitcode, msg = 0, ''
     
         finally:
-            sys.stdout.flush()
-            sys.stderr.flush()
-
-            stream.seek(0)
-            log_tmp = stream.read().strip()
-
-            os.dup2(stdout_copy, stdout_fileno)
-            os.dup2(stderr_copy, stderr_fileno)
+            log_tmp = stream.getvalue().strip()
 
         # give a nice indent to each line
         log = ''.join('  %s\n' % line for line in log_tmp.split('\n'))
