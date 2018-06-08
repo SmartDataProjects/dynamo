@@ -12,26 +12,15 @@ import logging.handlers
 import tempfile
 import gfal2
 
+# Need to define the signal converter globally so that subprocesses can unset blocking
+from dynamo.utils.signaling import SignalConverter
+signal_converter = SignalConverter()
+
+def unblock_signal():
+    signal_converter.unset(signal.SIGTERM)
+    signal_converter.unset(signal.SIGHUP)
+
 def transfer(src_pfn, dest_pfn, params_config):
-    try:
-        context = gfal2.creat_context()
-    except Exception as exc:
-        # multiprocessing pool cannot handle certain exceptions - convert to string
-        raise Exception(str(exc))
-
-    try:
-        context.stat(dest_pfn)
-    except gfal2.GError as err:
-        if err.code == 2:
-            # file doesn't exist at destination
-            pass
-        else:
-            raise Exception(str(err))
-    except Exception as exc:
-        raise Exception(str(exc))
-    else:
-        return 0, int(time.time()), int(time.time()), 'Destination file exists', ''
-
     try:
         params = gfal2.Gfal2Context.transfer_parameters()
         # Create parent directories at the destination
@@ -46,7 +35,7 @@ def transfer(src_pfn, dest_pfn, params_config):
         raise Exception(str(exc))
 
     def docopy(params, src_pfn, dest_pfn):
-        context.filecopy(params, src_pfn, dest_pfn)
+        gfal2.creat_context().filecopy(params, src_pfn, dest_pfn)
 
     return gfal_exec(docopy, (params, src_pfn, dest_pfn))
 
@@ -70,11 +59,11 @@ def gfal_exec(func, args):
         stderr_copy = os.dup(stderr_fileno)
         os.dup2(stream.fileno(), stdout_fileno)
         os.dup2(stream.fileno(), stderr_fileno)
+
+        start_time = int(time.time())
     
         try:
             gfal2.set_verbose(gfal2.verbose_level.verbose)
-
-            start_time = int(time.time())
 
             func(*args)
 
@@ -84,7 +73,18 @@ def gfal_exec(func, args):
             exitcode, msg = err.code, err.message
 
             if err.code == 70:
+                # port bind failure - seems to be an artefact of using multiple gfal-copy in parallel
+                # usually it finds a good port after a retry
                 continue
+
+            elif err.code == 17:
+                # for a transfer task, 17 means that file exists at the destination - should check file size and checksum with
+                # context.stat(dest_pfn)
+                # for a deletion task, hopefully 17 is not used..
+                return 0, start_time, int(time.time()), 'Destination file exists', ''
+
+        except Exception as exc:
+            exitcode, msg = -1, str(exc)
     
         else:
             exitcode, msg = 0, ''
@@ -115,7 +115,7 @@ class PoolManager(object):
         self.db = db
         self.stop_flag = stop_flag
 
-        self._pool = multiprocessing.Pool(max_concurrent)
+        self._pool = multiprocessing.Pool(max_concurrent, initializer = unblock_signal)
         self._results = []
         self._collector_thread = None
         self._closed = False
@@ -173,7 +173,10 @@ class TransferPoolManager(PoolManager):
         if self._closed:
             raise RuntimeError('PoolManager %s is closed' % self.name)
 
-        LOG.debug('Transfer %s->%s', src_pfn, dest_pfn)
+        sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'queued\' WHERE `id` = %s'
+        self.db.query(sql, tid)
+
+        LOG.info('%s: Transfer %s->%s', self.name, src_pfn, dest_pfn)
         self._results.append((tid, src_pfn, dest_pfn, self._pool.apply_async(transfer, (src_pfn, dest_pfn, self.params_config))))
         if self._collector_thread is None:
             self.start_collector()
@@ -186,10 +189,10 @@ class TransferPoolManager(PoolManager):
         exitcode, start_time, finish_time, msg, log = result.get()
         
         if exitcode == 0:
-            LOG.info('Transfer success (%d seconds)\n%s -> %s\n%s\n%s%s', finish_time - start_time, src, dest, delim, log, delim)
+            LOG.info('%s: Transfer success (%d seconds)\n%s -> %s\n%s\n%s%s', self.name, finish_time - start_time, src, dest, delim, log, delim)
             status = 'done'
         else:
-            LOG.info('Transfer failure (%d seconds, code %d: %s)\n%s -> %s\n%s\n%s%s', finish_time - start_time, exitcode, msg, src, dest, delim, log, delim)
+            LOG.info('%s: Transfer failure (%d seconds, code %d: %s)\n%s -> %s\n%s\n%s%s', self.name, finish_time - start_time, exitcode, msg, src, dest, delim, log, delim)
             status = 'failed'
 
         self.db.query(sql, status, exitcode, start_time, finish_time, tid)
@@ -202,7 +205,10 @@ class DeletionPoolManager(PoolManager):
         if self._closed:
             raise RuntimeError('PoolManager %s is closed' % self.name)
 
-        LOG.debug('Deletion %s', pfn)
+        sql = 'UPDATE `standalone_deletion_queue` SET `status` = \'queued\' WHERE `id` = %s'
+        self.db.query(sql, tid)
+
+        LOG.info('%s: Deletion %s', self.name, pfn)
         self._results.append((tid, pfn, self._pool.apply_async(delete, (pfn,))))
         if self._collector_thread is None:
             self.start_collector()
@@ -215,10 +221,10 @@ class DeletionPoolManager(PoolManager):
         exitcode, start_time, finish_time, msg, log = result.get()
         
         if exitcode == 0:
-            LOG.info('Deletion success (%d seconds)\n%s\n%s\n%s%s', finish_time - start_time, pfn, delim, log, delim)
+            LOG.info('%s: Deletion success (%d seconds)\n%s\n%s\n%s%s', self.name, finish_time - start_time, pfn, delim, log, delim)
             status = 'done'
         else:
-            LOG.info('Deletion failure (%d seconds, code %d: %s)\n%s\n%s\n%s%s', finish_time - start_time, exitcode, msg, pfn, delim, log, delim)
+            LOG.info('%s: Deletion failure (%d seconds, code %d: %s)\n%s\n%s\n%s%s', self.name, finish_time - start_time, exitcode, msg, pfn, delim, log, delim)
             status = 'failed'
 
         self.db.query(sql, status, exitcode, start_time, finish_time, tid)
@@ -292,8 +298,7 @@ if __name__ == '__main__':
     db = MySQL(fileop_config.manager.db.db_params)
    
     ## Convert SIGTERM and SIGHUP into KeyboardInterrupt (SIGINT already is)
-    from dynamo.utils.signaling import SignalConverter
-    signal_converter = SignalConverter(logger = LOG)
+    signal_converter._logger = LOG
     signal_converter.set(signal.SIGTERM)
     signal_converter.set(signal.SIGHUP)
 
@@ -318,6 +323,12 @@ if __name__ == '__main__':
 
     ## Start loop
     try:
+        # If the previous cycle ended with a crash, there may be some dangling tasks in the queued state
+        sql = 'UPDATE `standalone_deletion_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+        db.query(sql)
+        sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+        db.query(sql)
+
         while True:
             ## Create deletion tasks (batched by site)
             LOG.info('Creating deletion tasks.')
@@ -329,7 +340,7 @@ if __name__ == '__main__':
             sql += ' ORDER BY b.`site`, q.`id`'
         
             _site = ''
-            for tid, pfn, site in db.xquery(sql):
+            for tid, pfn, site in db.query(sql):
                 if site != _site:
                     _site = site
                     pool_manager = get_deletion_manager(site)
@@ -346,7 +357,7 @@ if __name__ == '__main__':
             sql += ' ORDER BY b.`source_site`, b.`destination_site`, q.`id`'
         
             _link = None
-            for tid, src_pfn, dest_pfn, ssite, dsite in db.xquery(sql):
+            for tid, src_pfn, dest_pfn, ssite, dsite in db.query(sql):
                 if (ssite, dsite) != _link:
                     _link = (ssite, dsite)
                     pool_manager = get_transfer_manager(ssite, dsite)
@@ -368,6 +379,15 @@ if __name__ == '__main__':
 
     finally:
         stop_flag.set()
+
+        try:
+            # try to clean up
+            sql = 'UPDATE `standalone_deletion_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+            db.query(sql)
+            sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+            db.query(sql)
+        except:
+            pass
 
     while True:
         # PoolManagers will terminate automatically once stop_flag is set

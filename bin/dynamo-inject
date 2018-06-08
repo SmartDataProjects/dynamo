@@ -16,13 +16,11 @@ def inject(host, jsondata):
 
     requests.packages.urllib3.disable_warnings()
 
-    while True:
-        print 'request'
+    for attempt in xrange(5):
         response = session.request(
             method = 'POST', url = 'https://%s/data/inventory/inject' % host,
             data = jsondata, headers = headers, verify = False,
             timeout = 600, cert = (CERT, CERT))
-        print 'response'
 
         if response.status_code == 200:
             return json.loads(response.text)
@@ -47,4 +45,4 @@ if __name__ == '__main__':
     with open(args.json) as source:
         jsondata = source.read()
 
-    inject(args.host, jsondata)
+    print inject(args.host, jsondata)

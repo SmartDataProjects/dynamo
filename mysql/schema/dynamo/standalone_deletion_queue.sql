@@ -1,7 +1,7 @@
 CREATE TABLE `standalone_deletion_queue` (
   `id` bigint(20) unsigned NOT NULL,
   `file` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
-  `status` enum('new','done','failed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'new',
+  `status` enum('new','queued','done','failed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'new',
   `exitcode` smallint(5) unsigned DEFAULT NULL,
   `start_time` datetime DEFAULT NULL,
   `finish_time` datetime DEFAULT NULL,
