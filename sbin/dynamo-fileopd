@@ -321,9 +321,14 @@ if __name__ == '__main__':
         sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
         db.query(sql)
 
+        deletion_first_wait = True
+        transfer_first_wait = True
+
         while True:
             ## Create deletion tasks (batched by site)
-            LOG.info('Creating deletion tasks.')
+            if deletion_first_wait:
+                LOG.info('Creating deletion tasks.')
+                deletion_first_wait = False
         
             sql = 'SELECT q.`id`, a.`file`, b.`site` FROM `standalone_deletion_queue` AS a'
             sql += ' INNER JOIN `deletion_queue` AS q ON q.`id` = a.`id`'
@@ -339,9 +344,13 @@ if __name__ == '__main__':
 
                 pool_manager.add_task(tid, pfn)
 
+                deletion_first_wait = True
+
             ## Create transfer tasks (batched by site)
-            LOG.info('Creating transfer tasks.')
-        
+            if transfer_first_wait:
+                LOG.info('Creating transfer tasks.')
+                transfer_first_wait = False
+
             sql = 'SELECT q.`id`, a.`source`, a.`destination`, b.`source_site`, b.`destination_site` FROM `standalone_transfer_queue` AS a'
             sql += ' INNER JOIN `transfer_queue` AS q ON q.`id` = a.`id`'
             sql += ' INNER JOIN `standalone_transfer_batches` AS b ON b.`batch_id` = q.`batch_id`'
@@ -355,6 +364,8 @@ if __name__ == '__main__':
                     pool_manager = get_transfer_manager(ssite, dsite)
         
                 pool_manager.add_task(tid, src_pfn, dest_pfn)
+
+                transfer_first_wait = True
         
             ## Recycle threads
             for key, manager in managers.items():

@@ -123,5 +123,5 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'
         sql += ' WHERE q.`batch_id` = %s'
         if self.db.query(sql.format(op = optype), batch_id)[0] == 0:
-            sql = 'DELETE FROM `standalone_{op}_batches` WHERE `batch_id` = %s`'
+            sql = 'DELETE FROM `standalone_{op}_batches` WHERE `batch_id` = %s'
             self.db.query(sql.format(op = optype), batch_id)

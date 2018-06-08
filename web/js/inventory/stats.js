@@ -89,7 +89,7 @@ function handleError(jqXHR, textStatus, errorThrown) {
   $('#error').html(msg);
 }
 
-function initPage(statistic, categories, constraints) {
+function initPage(statistic, list_by, constraints) {
   var ajaxInput = {
     'url': '/data/inventory/groups',
     'success': function (data, textStatus, jqXHR) { setGroups(data); },
@@ -103,7 +103,7 @@ function initPage(statistic, categories, constraints) {
   $('#statistic > option[value="' + statistic + '"]')
     .attr('selected', true);
 
-  $('#categories > option[value="' + categories + '"]')
+  $('#list_by > option[value="' + list_by + '"]')
     .attr('selected', true);
 
   for (var c in constraints) {
@@ -116,7 +116,7 @@ function initPage(statistic, categories, constraints) {
   }
 
   $('#statistic').change(limitOptions);
-  $('#categories').change(limitOptions);
+  $('#list_by').change(limitOptions);
   $('.constraint').change(limitOptions);
 
   $(document).ajaxStart(function () {
@@ -140,17 +140,17 @@ function initPage(statistic, categories, constraints) {
 
 function limitOptions() {
   // do not allow datasets view unless some constraints are set
-  $('#categories > option[value="datasets"]')
+  $('#list_by > option[value="datasets"]')
     .attr('disabled', $('#campaign').val() == '' && $('#dataset').val() == '' && $('#site').val() == '');
 
   var statistic = $('#statistic').val();
 
   if (statistic == 'replication' || statistic == 'usage') {
-    var selected = $('#categories :selected').get(0);
+    var selected = $('#list_by :selected').get(0);
     if (selected.value == 'sites')
-      selected = $('#categories :first').get(0);
+      selected = $('#list_by :first').get(0);
         
-    $('#categories > option[value="sites"]')
+    $('#list_by > option[value="sites"]')
       .attr('selected', false)
       .attr('disabled', true);
         
@@ -165,7 +165,7 @@ function limitOptions() {
     selected.selected = true;
   }
   else {
-    $('#categories > option[value="sites"]')
+    $('#list_by > option[value="sites"]')
       .attr('disabled', false);
     $('#site')
       .attr('value', '')
@@ -528,7 +528,7 @@ function loadData() {
   var statistic = $('#statistic').val();
 
   var inputData = {
-    'categories': $('#categories').val(),
+    'list_by': $('#list_by').val(),
     'physical': $('.physical:checked').val(),
     'group': []
   };
@@ -557,7 +557,7 @@ function getData() {
   var statistic = $('#statistic').val();
 
   var url = '/data/inventory/stats/' + statistic
-  url += '?categories=' + $('#categories').val();
+  url += '?list_by=' + $('#list_by').val();
   url += '&physical=' + $('.physical:checked').val();
 
   d3.select('#constraintsRight').selectAll('input.constraint')

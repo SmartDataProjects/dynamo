@@ -315,7 +315,7 @@ class InventoryStats(WebModule, HTMLMixin):
         self.stylesheets = ['/css/inventory/stats.css']
         self.scripts = ['/js/utils.js', '/js/inventory/stats.js']
 
-        self.default_constraints = config.inventory.monitor.default_constraints
+        self.default_constraints = config.inventory.stats.default_constraints
 
     def run(self, caller, request, inventory):
         # Parse GET and POST requests and set the defaults
@@ -351,7 +351,7 @@ class InventoryStats(WebModule, HTMLMixin):
 
         # HTML formatting
 
-        self.header_script = '$(document).ready(function() { initPage(\'%s\', \'%s\', %s); });' % (statistic, categories, json.dumps(constraints))
+        self.header_script = '$(document).ready(function() { initPage(\'%s\', \'%s\', %s); });' % (statistic, list_by, json.dumps(constraints))
 
         repl = {}
 
