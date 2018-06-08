@@ -5,7 +5,7 @@
               Show:
             </div>
             <div style="height:30px;">
-              <select id="dataType" name="dataType">
+              <select id="statistic" name="statistic">
                 <option value="size">Total size</option>
                 <option value="replication">Average replication</option>
                 <option value="usage">Site usage</option>
@@ -14,11 +14,7 @@
             <div style="height:30px;margin-left:10px;">for each</div>
             <div style="height:30px;">
               <select id="categories" name="categories">
-                <option value="campaigns">Campaign</option>
-                <option value="dataTiers">Data tier</option>
-                <option value="datasets">Dataset</option>
-                <option value="sites">Site</option>
-                <option value="groups">Group</option>
+                {CATEGORIES}
               </select>
             </div>
             <div style="height:60px;margin-top:10px;">
@@ -31,17 +27,10 @@
               Limit to:
             </div>
             <div id="constraintsLeft">
-              <div class="constraintType">Campaign</div>
-              <div class="constraintType">Data tier</div>
-              <div class="constraintType">Dataset</div>
-              <div class="constraintType">Site</div>
-              <div class="constraintType">Group</div>
+              {CONSTRAINT_TYPES}
             </div>
             <div id="constraintsRight">
-              <div class="constraintInput"> = <input class="constraint" type="text" id="campaign" name="campaign"></div>
-              <div class="constraintInput"> = <input class="constraint" type="text" id="dataTier" name="dataTier"></div>
-              <div class="constraintInput"> = <input class="constraint" type="text" id="dataset" name="dataset"></div>
-              <div class="constraintInput"> = <input class="constraint" type="text" id="site" name="site"></div>
+              {CONSTRAINT_INPUTS}
               <div> = <select class="constraint" style="vertical-align:text-top;" id="group" name="group" multiple="multiple"></select></div>
             </div>
           </div>
