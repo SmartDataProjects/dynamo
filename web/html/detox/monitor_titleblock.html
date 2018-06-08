@@ -1,0 +1,12 @@
+
+      <div id="cycle">
+        <h2 id="cycleHeader"></h2>
+        <div id="cycleComments"></div>
+        <nav id="cycles">
+          Cycle: 
+          <span id="previous">Previous</span>
+          <span id="next">Next</span>
+          <input type="text" id="jumpInput" size="10" onkeypress="if (event.keyCode == 13) loadSummary(this.value, currentPartition, currentNorm)">
+          <input type="button" value="Go" onclick="loadSummary($('#jumpInput').val(), currentPartition, currentNorm)">
+        </nav>
+      </div>

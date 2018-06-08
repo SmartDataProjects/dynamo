@@ -1,0 +1,302 @@
+#header {
+    height: 130px;
+}
+
+#partitionName {
+    float: left;
+}
+
+#cycle {
+    width: 55%;
+    height: 100%;
+    float: right;
+}
+
+#cycleHeader {
+    font-size: 25px;
+    width: 100%;
+    height: 30%;
+    text-align: right;
+    margin: 0 0 0 0;
+}
+
+#cycleComments {
+    width: 100%;
+    height: 30%;
+    text-align: right;
+    margin: 0 0 0 0;
+}    
+
+#cycles {
+    width: 100%;
+    height: 40%;
+    float:right;
+    text-align: right;
+}
+
+div.cycleLink {
+    float: right;
+    width: 15%;
+}
+
+#cycleJump {
+    float: right;
+    width: 70%;
+}
+
+#main {
+    margin-top: 10px;
+    width: 100%;
+}
+
+#datasetSearchNav {
+    margin-left: 65%;
+    width: 35%;
+    height: 35px;
+    text-align: right;
+}
+
+div.datasetSearchIndex {
+    width: 20%;
+    height: 25px;
+    float: left;
+}
+
+div.datasetSearchInputs {
+    width: 80%;
+    height: 25px;
+    float: left;
+}
+
+.datasetSearch {
+    width: 80%;
+    height: 18px;
+    text-align: left;
+    font-size: 16px;
+}
+
+.datasetSearchButton {
+    width: 15%;
+    height: 22px;
+}
+
+#partitions {
+    clear: both;
+    width: 100%;
+    height: 38px;
+    overflow: visible;
+}
+
+#partitions .partitionTab {
+    background-color: #cccccc;
+    width: 148px;
+    height: 20px;
+    float: left;
+    text-align: center;
+    text-decoration: underline;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border-width: 2px 0 0 2px;
+    border-style: solid;
+    border-color: #999999;
+    margin-bottom: 2px;
+    cursor: pointer;
+}
+
+#partitions div.selected {
+    background-color: white;
+    text-decoration: none;
+    padding-bottom: 10px;
+    margin-bottom: 0;
+    cursor: auto;
+}
+
+#partitions div.last {
+    border-right: 2px solid #999999;
+}
+
+#contents {
+    width: 100%;
+    border-width: 2px 2px 2px 2px;
+    border-style: solid;
+    border-color: #999999;
+}
+
+#summary {
+    margin: 0 5% 0 5%;
+    width: 90%;
+    height: 800px;
+}
+
+#summaryGraphBox {
+    width: 100%;
+    height: 100%;
+}
+
+rect.outline {
+    stroke: black;
+    stroke-width: 0.1
+}
+
+rect.protect, circle.protect {
+    fill: #4444ff;
+}
+
+rect.keep, circle.keep {
+    fill: #44ff44;
+}
+
+rect.delete, circle.delete {
+    fill: #88ffff;
+}
+
+rect.protectPrev, circle.protectPrev {
+    fill: #aaaaff;
+}
+
+rect.keepPrev, circle.keepPrev {
+    fill: #aaffaa;
+}
+
+line.refMarker {
+    stroke-width: 0.2;
+}
+
+line.refMarker.quota {
+    stroke: black;
+}
+
+line.refMarker.trigger {
+    stroke: darkorange;
+}
+
+line.refMarker.target {
+    stroke: silver;
+}
+
+.graphAxis {
+    stroke: black;
+    stroke-width: 0.5;
+}
+
+#deletionDetails {
+    width: 90%;
+    margin: 20px 5% 20px 5%;
+    border-top: 2px solid #999999;
+}
+
+.sitePanel {
+    width: 25%;
+    height: 400px;
+    float: left;
+}
+
+.sitePanel.even {
+    background-color: #eeeeee;
+}
+
+.sitePanel.odd {
+    background-color: white;
+}
+
+.panelTitle {
+    width: 100%;
+    height: 25px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: 500;
+    margin: 0 0 0 0;
+    padding: 10px 0 10px 0;
+}
+
+.graph {
+    width: 250px;
+    height: 350px;
+    margin-left: 25px;
+}
+
+article.siteDetails {
+    margin: 0 5% 0 5%;
+    width: 90%;
+    border-top: 2px solid #999999;
+    margin-bottom: 20px;
+}
+
+h3.siteName {
+    text-align: left;
+    font-size: 18px;
+    font-weight: 500;
+    margin: 0 0 0 0;
+    padding: 10px 0 10px 0;
+    width: 90%;
+    height: 30px;
+    float: left;
+}
+
+.toTop {
+    width: 10%;
+    height: 30px;
+    margin: 0 0 0 0;
+    padding: 10px 0 10px 0;
+    float: left;
+    text-align: right;
+    cursor: pointer;
+}
+
+.siteTableBox {
+    clear: both;
+    width: 100%;
+    border: 1px solid black;
+}
+
+.siteTable {
+    width: 100%;
+    font-size: 12px;
+}
+
+.siteTable thead,
+.siteTable tbody {
+    display: block;
+    width: 100%;
+}
+
+.siteTable tbody {
+    border-top: 2px solid black;
+}
+
+.siteTable tr {
+    display: block;
+    width: 100%;
+    height: 40px;
+}
+
+.siteTable th,
+.siteTable td
+{
+    height: 40px;
+    border-right: 1px solid #999999;
+    padding: 0;
+}
+
+.siteTable th {
+    background-color: #a31f34;
+    color: white;
+}
+
+.siteTable th.sortable {
+    cursor: pointer;
+}
+
+.siteTable th:last-child,
+.siteTable td:last-child
+{
+    border-right: none;
+}
+
+.siteTable tr.odd {
+    background-color: #c2c0bf;
+}
+
+#footer {
+    width: 100%;
+}
