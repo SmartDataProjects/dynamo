@@ -1,51 +1,31 @@
-import json
-
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._html import HTMLMixin
 from dynamo.web.modules._common import yesno
 import dynamo.web.exceptions as exceptions
 
-class DatasetStats(WebModule, HTMLMixin):
+class DetoxMonitor(WebModule, HTMLMixin):
     def __init__(self, config):
         WebModule.__init__(self, config)
-        HTMLMixin.__init__(self, 'Dynamo Detox monitor', config.detox.monitor.body_html)
+        HTMLMixin.__init__(self, 'Detox deletion results', 'detox/monitor.html')
 
-        self.stylesheets = ['/css/inventory.css']
-        self.scripts = ['/js/utils.js', '/js/detox.js']
-        self.header_script = '$(document).ready(function() { initPage(\'{DATA_TYPE}\', \'{CATEGORIES}\', {CONSTRAINTS}); });'
+        self.stylesheets = ['/css/detox/monitor.css']
+        self.scripts = ['/js/utils.js', '/js/detox/monitor.js']
+        
+        with open(HTMLMixin.contents_path + '/html/detox/monitor_titleblock.html') as source:
+            self.titleblock = source.read()
 
     def run(self, caller, request, inventory):
         # Parse GET and POST requests and set the defaults
+
+
+
+        # HTML formatting
+
+        self.header_script = '$(document).ready(function() { initPage(${CYCLE_NUMBER}, ${PARTITION}); });'
+
         repl = {}
 
-        try:
-            repl['DATA_TYPE'] = request['dataType'].strip()
-        except:
-            repl['DATA_TYPE'] = 'size'
-
-        try:
-            repl['CATEGORIES'] = request['categories'].strip()
-        except:
-            repl['CATEGORIES'] = 'campaigns'
-
-        constraints = {}
-        for key in ['campaign', 'dataTier', 'dataset', 'site']:
-            try:
-                constraints[key] = request[key].strip()
-            except:
-                pass
-
-        group = request['group']
-        if type(group) is list:
-            constraints['group'] = group
-        elif type(group) is str:
-            constraints['group'] = group.strip().split(',')
-
-        if len(constraints) == 0:
-            constraints['group'] = ['AnalysisOps']
-
-        repl['CONSTRAINTS'] = json.dumps(constraints)
-
+ 
         if yesno(request, 'physical'):
             repl['PHYSICAL_CHECKED'] = 'checked="checked"'
             repl['PROJECTED_CHECKED'] = ''
@@ -55,7 +35,6 @@ class DatasetStats(WebModule, HTMLMixin):
 
         return self.form_html(repl)
 
-
 export_web = {
-    'datasets': DatasetStats
+    '': DetoxMonitor
 }

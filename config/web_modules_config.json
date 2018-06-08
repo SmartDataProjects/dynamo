@@ -1,4 +1,11 @@
 {
+  "archive_path": "$(DYNAMO_ARCHIVE)",
+  "spool_path": "$(DYNAMO_SPOOL)",
+  "history" {
+    "user": "dynamoread",
+    "passwd": "",
+    "db": "dynamohistory"
+  },
   "rlfsm": {
     "db": {
       "db_params": {
@@ -11,8 +18,10 @@
   },
   "inventory": {
     "stats": {
-      "body_html": "inventory/stats.html",
       "default_constraints": {}
     }
-  }  
+  },
+  "detox": {
+    "cache_db": "dynamohistory_cache"
+  }
 }

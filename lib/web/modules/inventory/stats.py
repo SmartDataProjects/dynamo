@@ -322,7 +322,7 @@ class InventoryStats(WebModule, HTMLMixin):
 
     def __init__(self, config):
         WebModule.__init__(self, config) 
-        HTMLMixin.__init__(self, 'Dynamo inventory statistics', config.inventory.stats.body_html)
+        HTMLMixin.__init__(self, 'Dynamo inventory statistics', 'inventory/stats.html')
 
         self.stylesheets = ['/css/inventory/stats.css']
         self.scripts = ['/js/utils.js', '/js/inventory/stats.js']
