@@ -225,7 +225,7 @@ class DeletionPoolManager(PoolManager):
 if __name__ == '__main__':
     ## Read server config (should be readable only to root)
     from dynamo.dataformat import Configuration
-    import dynamo.core.server as main
+    from dynamo.core.serverutils import BANNER
     
     try:
         config_path = os.environ['DYNAMO_SERVER_CONFIG']
@@ -247,7 +247,7 @@ if __name__ == '__main__':
     LOG.addHandler(log_handler)
     
     ## Print some nice banner before we start logging with the timestamp format
-    LOG.critical(main.serverutils.BANNER)
+    LOG.critical(BANNER)
     
     log_handler.setFormatter(logging.Formatter(fmt = log_format))
 

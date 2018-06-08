@@ -534,7 +534,7 @@ function loadData() {
   };
 
   d3.select('#constraintsRight').selectAll('input.constraint')
-    .each(function (elem) { inputData[elem.name] = elem.value; });
+    .each(function () { inputData[this.name] = this.value; });
 
   var groups = $('#group :selected').get();
   for (var g in groups)
@@ -561,7 +561,7 @@ function getData() {
   url += '&physical=' + $('.physical:checked').val();
 
   d3.select('#constraintsRight').selectAll('input.constraint')
-    .each(function (elem) { url += '&' + elem.name + '=' + elem.value; });
+    .each(function () { url += '&' + this.name + '=' + this.value; });
 
   var groups = $('#group :selected').get();
   if (groups.length != 0) {

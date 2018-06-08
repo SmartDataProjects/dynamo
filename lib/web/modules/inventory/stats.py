@@ -11,12 +11,12 @@ from dynamo.dataformat import Dataset, Site, Group
 
 class InventoryStatCategories(object):
     categories = collections.OrderedDict([
-        ('data_type', ('Dataset type', Dataset, lambda d: d.data_type)),
-        ('dataset_status', ('Dataset status', Dataset, lambda d: d.status)),
+        ('data_type', ('Dataset type', Dataset, lambda d: Dataset.data_type_name(d.data_type))),
+        ('dataset_status', ('Dataset status', Dataset, lambda d: Dataset.status_name(d.status))),
         ('dataset_software_version', ('Dataset software version', Dataset, lambda d: d.software_version)),
         ('dataset', ('Dataset name', Dataset, lambda d: d.name)),
         ('site', ('Site name', Site, lambda s: s.name)),
-        ('site_status', ('Site status', Site, lambda s: s.name)),
+        ('site_status', ('Site status', Site, lambda s: Site.status_name(s.status))),
         ('group', ('Group name', Group, lambda g: g.name))
     ])
 
@@ -57,7 +57,7 @@ def filter_and_categorize(request, inventory, counts_only = False):
     site_constraints = {}
     group_constraints = {}
 
-    for category, (_, target, _) in InventoryStatCategories.categories.keys():
+    for category, (_, target, _) in InventoryStatCategories.categories.iteritems():
         if target is Dataset:
             constraints = dataset_constraints
         elif target is Site:
