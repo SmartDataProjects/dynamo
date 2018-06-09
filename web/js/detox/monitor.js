@@ -49,24 +49,24 @@ function initPage(cycleNumber, partitionId)
     var partitionCall = $.ajax(partitionInput);
 
     // initialize the page when both requests return
-    $.when(cycleCall, partitionCall).then(function (cycleData, partitionData) {
-        currentCycle = cycleData[0].cycle;
+    $.when(cycleCall, partitionCall).then(function (cycleResult, partitionResult) {
+        currentCycle = cycleResult[0][0].cycle;
         if (cycleNumber == 0) {
             latestCycle = currentCycle;
 
             // should this partition be monitored?
-            for (var x in partitionData) {
-                if (partitionData[x].id == partitionId) {
-                    if (partitionData[x].monitored)
+            for (var x in partitionResult[0]) {
+                if (partitionResult[0][x].id == partitionId) {
+                    if (partitionResult[0][x].monitored)
                         setInterval(checkUpdates, 300000);
                     break;
                 }
             }
         }
 
-        setPartitions(partitionData);
+        setPartitions(partitionResult[0]);
         
-        loadSummary(cycleNumber, partitionId, currentNorm);
+        loadSummary(currentCycle, partitionId, currentNorm);
     });
 }
 
@@ -109,7 +109,7 @@ function processUpdates(cycleData)
     }
 
     latestCycle = cycleData['cycle'];
-    d3.select('#cycleHeader').append('div')
+    d3.select('#cycleAlert')
         .text('New cycle ' + latestCycle + ' is available')
         .style({'cursor': 'pointer', 'font-size': '18px'})
         .on('click', function () { window.location.assign(window.location.protocol + '//' + window.location.hostname + window.location.pathname + '?partition_id=' + currentPartition); });

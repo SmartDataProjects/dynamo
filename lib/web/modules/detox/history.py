@@ -82,7 +82,7 @@ class DetoxPartitions(DetoxHistory):
     def __init__(self, config):
         DetoxHistory.__init__(self, config)
 
-        self.excluded_partitions = config.detox.history.get('excluded_partitions', [])
+        self.excluded_partitions = config.detox.get('excluded_partitions', [])
 
     def run(self, caller, request, inventory):
         sql = 'SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `cycles`'
@@ -107,7 +107,8 @@ class DetoxCycles(DetoxHistory):
     def run(self, caller, request, inventory):
         if 'partition_id' in request:
             self.partition_id = int(request['partition_id'])
-        else:
+
+        if self.partition_id == 0:
             self.from_partition()
 
         if ('cycle' in request and request['cycle'] == '0') or ('latest' in request and yesno(request, 'latest')):
@@ -192,7 +193,7 @@ class DetoxCycleSummary(DetoxHistoryCached):
         total = {'quota': 0., 'protect': 0., 'keep': 0., 'delete': 0., 'protect_prev': 0., 'keep_prev': 0.}
         
         for sname in sorted(siteinfo.iterkeys()):
-            sid, status, quota = siteinfo[sname]
+            status, quota = siteinfo[sname]
 
             if status in ('morgue', 'waitroom'):
                 status_bit = 0
@@ -203,11 +204,11 @@ class DetoxCycleSummary(DetoxHistoryCached):
                 'name': sname,
                 'quota': quota,
                 'status': status_bit,
-                'protect': decisions[sname]['protect'],
-                'keep': decisions[sname]['keep'],
-                'delete': decisions[sname]['delete'],
-                'protect_prev': prev_decisions[sname]['protect'],
-                'keep_prev': prev_decisions[sname]['keep']
+                'protect': decisions[sname][0],
+                'keep': decisions[sname][2],
+                'delete': decisions[sname][1],
+                'protect_prev': prev_decisions[sname][0],
+                'keep_prev': prev_decisions[sname][2]
             })
 
             for key in total.iterkeys():
@@ -304,6 +305,9 @@ class DetoxDatasetSearch(DetoxHistoryCached):
                 match = lambda d: regex.match(d)
 
             site_data = []
+            protect_total = 0.
+            keep_total = 0.
+            delete_total = 0.
 
             for site_name, site_decisions in decisions.iteritems():
                 site_datasets = []
@@ -312,6 +316,13 @@ class DetoxDatasetSearch(DetoxHistoryCached):
                 for dataset_name, replica_size, decision, condition_id, condition_text in site_decisions:
                     if not match(dataset_name):
                         continue
+
+                    if decision == 'protect':
+                        protect_total += replica_size * 1.e-9
+                    elif decision == 'keep':
+                        keep_total += replica_size * 1.e-9
+                    elif decision == 'delete':
+                        delete_total += replica_size * 1.e-9
     
                     if dataset_name in ma:
                         decision += ' *'
@@ -322,9 +333,11 @@ class DetoxDatasetSearch(DetoxHistoryCached):
 
                 if len(site_datasets) != 0:
                     site_data.append({'name': site_name, 'datasets': site_datasets})
+
+            site_data.append({'name': 'Total', 'protect': protect_total, 'keep': keep_total, 'delete': delete_total})
     
             data['results'].append({'pattern': pattern, 'site_data': site_data})
-                        
+
         return data
 
 export_data = {

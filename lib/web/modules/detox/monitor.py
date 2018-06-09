@@ -4,7 +4,7 @@ from dynamo.web.modules._mysqlhistory import MySQLHistoryMixin
 from dynamo.web.modules._common import yesno
 import dynamo.web.exceptions as exceptions
 
-class DetoxMonitor(WebModule, HTMLMixin):
+class DetoxMonitor(WebModule, MySQLHistoryMixin, HTMLMixin):
     def __init__(self, config):
         WebModule.__init__(self, config)
         MySQLHistoryMixin.__init__(self, config)
@@ -16,6 +16,8 @@ class DetoxMonitor(WebModule, HTMLMixin):
         with open(HTMLMixin.contents_path + '/html/detox/monitor_titleblock.html') as source:
             self.titleblock = source.read()
 
+        self.default_partition = config.detox.default_partition
+
     def run(self, caller, request, inventory):
         # Parse GET and POST requests and set the defaults
         if 'cycle' in request:
@@ -23,16 +25,18 @@ class DetoxMonitor(WebModule, HTMLMixin):
         else:
             cycle = 0
 
+        partition_id = 0
         if 'partition' in request:
             try:
                 partition_id = self.history.query('SELECT `id` FROM `partitions` WHERE `name` = %s', request['partition'])[0]
             except IndexError:
-                partition_id = 0
-        else:
-            partition_id = 0
+                pass
 
         if 'partition_id' in request:
             partition_id = request['partition_id']
+
+        if partition_id == 0:
+            partition_id = self.history.query('SELECT `id` FROM `partitions` WHERE `name` = %s', self.default_partition)[0]
 
         # HTML formatting
 
