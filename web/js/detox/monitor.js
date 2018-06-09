@@ -32,7 +32,7 @@ function initPage(cycleNumber, partitionId)
     // confirm the specified cycle or get the latest
     var cycleInput = {
         'url': dataPath + '/cycles',
-        'data': {'partitionId': partitionId, 'cycle': cycleNumber},
+        'data': {'partition_id': partitionId, 'cycle': cycleNumber},
         'dataType': 'json',
         'async': true
     };
@@ -56,7 +56,7 @@ function initPage(cycleNumber, partitionId)
 
             // should this partition be monitored?
             for (var x in partitionData) {
-                if (partitionData[x]['id'] == partitionId) {
+                if (partitionData[x].id == partitionId) {
                     if (partitionData[x].monitored)
                         setInterval(checkUpdates, 300000);
                     break;
@@ -77,7 +77,7 @@ function checkUpdates()
 
     var jaxData = {
         'url': dataPath + '/cycles',
-        'data': {'partitionId': partitionId, 'cycle': 0},
+        'data': {'partition_id': partitionId, 'cycle': 0},
         'success': function (cycleData, textStatus, jqXHR) { processUpdates(cycleData); },
         'dataType': 'json',
         'async': false
@@ -94,7 +94,7 @@ function setPartitions(data)
         .enter().append('div').classed('partitionTab', true)
         .text(function (d) { return d.name; })
         .attr('id', function (d) { return 'partition' + d.id; })
-        .on('click', function (d) { window.location.assign(window.location.protocol + '//' + window.location.hostname + window.location.pathname + '?partitionId=' + d.id); });
+        .on('click', function (d) { window.location.assign(window.location.protocol + '//' + window.location.hostname + window.location.pathname + '?partition_id=' + d.id); });
 
     partitionsNav.select(':last-child').classed('last', true);
 }
@@ -112,7 +112,7 @@ function processUpdates(cycleData)
     d3.select('#cycleHeader').append('div')
         .text('New cycle ' + latestCycle + ' is available')
         .style({'cursor': 'pointer', 'font-size': '18px'})
-        .on('click', function () { window.location.assign(window.location.protocol + '//' + window.location.hostname + window.location.pathname + '?partitionId=' + currentPartition); });
+        .on('click', function () { window.location.assign(window.location.protocol + '//' + window.location.hostname + window.location.pathname + '?partition_id=' + currentPartition); });
 }
 
 function setupSiteDetails(siteData)
@@ -236,9 +236,9 @@ function sortTableBy(siteName, column, direction)
 function displaySummary(data)
 {
     var cycleHeader = d3.select('#cycleHeader');
-    cycleHeader.append('span').text('Cycle ' + data.cycleNumber + ' (Policy ');
-    if (data.cyclePolicy != '') {
-        cycleHeader.append('span').text(data.cyclePolicy)
+    cycleHeader.append('span').text('Cycle ' + data.cycle + ' (Policy ');
+    if (data.cycle_policy != '') {
+        cycleHeader.append('span').text(data.cycle_policy)
             .classed('clickable', true)
             .on('click', function () { window.open('https://github.com/SmartDataProjects/dynamo-policies/blob/' + this.textContent + '/detox/' + currentPartitionName + '.txt'); });
     }
@@ -246,10 +246,10 @@ function displaySummary(data)
         cycleHeader.append('span').text('unknown');
     }
     var local = new Date(); // add the timezone offset to the unix timestamp to get at UTC
-    var timestamp = new Date((data.cycleTimestamp + local.getTimezoneOffset() * 60) * 1000);
+    var timestamp = new Date((data.cycle_timestamp + local.getTimezoneOffset() * 60) * 1000);
     cycleHeader.append('span').text(', ' + d3.time.format('%Y-%m-%d %H:%M:%S UTC')(timestamp) + ')');
 
-    if (data.cycleTimestamp < (local.getTime() / 1000 - 3600 * 18))
+    if (data.cycle_timestamp < (local.getTime() / 1000 - 3600 * 18))
         cycleHeader.style('color', 'red');
 
     d3.select('#cycleComments')
@@ -273,10 +273,10 @@ function displaySummary(data)
         .style({'width': '100%', 'height': '100%'});
 
     var xmapping = d3.scale.ordinal()
-        .domain(data.siteData.map(function (v) { return v.name; }))
+        .domain(data.site_data.map(function (v) { return v.name; }))
         .rangePoints([0, gxnorm(summary.xmax)], 1);
 
-    var xspace = gxnorm(summary.xmax / data.siteData.length);
+    var xspace = gxnorm(summary.xmax / data.site_data.length);
 
     // global variable
     summary.yscale = d3.scale.linear();
@@ -301,8 +301,8 @@ function displaySummary(data)
         .attr({'fill': 'black', 'cx': gxnorm(summary.xorigin + 2), 'r': 0.6});
 
     var onlyAbsolute = false;
-    for (var s in data.siteData) {
-        if (data.siteData[s].quota <= 0) {
+    for (var s in data.site_data) {
+        if (data.site_data[s].quota <= 0) {
             currentNorm = "absolute";
             titleRelative.style('fill', '#808080');
             selectRelative.attr('stroke', '#808080');
@@ -334,7 +334,7 @@ function displaySummary(data)
                 .attr('onclick', 'loadSummary(currentCycle, currentPartition, \'relative\');');
         }
 
-        summary.yscale.domain([0, d3.max(data.siteData, function (d) { return Math.max(d.protect + d.keep + d.delete, d.protectPrev + d.keepPrev, d.quota) / 1000.; }) * 1.1])
+        summary.yscale.domain([0, d3.max(data.site_data, function (d) { return Math.max(d.protect + d.keep + d.delete, d.protect_prev + d.keep_prev, d.quota) / 1000.; }) * 1.1])
             .range([summary.ymax, 0]);
 
         ynorm = function (value, quota) { return (summary.ymax - summary.yscale(value)) / 1000.; }
@@ -355,8 +355,8 @@ function displaySummary(data)
         .call(xaxis);
 
     var siteStatus = {};
-    for (var s in data.siteData)
-        siteStatus[data.siteData[s].name] = data.siteData[s].status;
+    for (var s in data.site_data)
+        siteStatus[data.site_data[s].name] = data.site_data[s].status;
 
     gxaxis.selectAll('.tick text')
         .attr({'font-size': 2, 'dx': gxnorm(-0.2), 'dy': -1.4, 'transform': 'rotate(300 0,0)'})
@@ -419,7 +419,7 @@ function displaySummary(data)
             .attr('y2', function (d) { return -ynorm(d * 1000., 1.0); });
 
         var refMarkers = content.selectAll('.refMarkers')
-            .data(data.siteData)
+            .data(data.site_data)
             .enter()
             .append('g').classed('refMarkers', true)
             .attr('transform', function (d) { return 'translate(' + xmapping(d.name) + ',0)'; })
@@ -442,7 +442,7 @@ function displaySummary(data)
     }
 
     var barPrev = content.selectAll('.barPrev')
-        .data(data.siteData)
+        .data(data.site_data)
         .enter()
         .append('g').classed('barPrev', true)
         .attr('transform', function (d) { return 'translate(' + (xmapping(d.name) - xspace * 0.325) + ',0)'; })
@@ -450,25 +450,25 @@ function displaySummary(data)
         .style('cursor', 'pointer');
 
     barPrev.append('rect').classed('protectPrev barComponent', true)
-        .attr('transform', function (d) { return 'translate(0,-' + ynorm(d.protectPrev, d.quota) + ')'; })
-        .attr('height', function (d) { return ynorm(d.protectPrev, d.quota)})
+        .attr('transform', function (d) { return 'translate(0,-' + ynorm(d.protect_prev, d.quota) + ')'; })
+        .attr('height', function (d) { return ynorm(d.protect_prev, d.quota)})
         .each(function (d) {
                 if (d.quota <= 0)
                     return;
 
-                if (d.protectPrev > d.quota)
+                if (d.protect_prev > d.quota)
                     this.style.fill = '#ff8888';
-                else if (d.protectPrev > d.quota * 0.9)
+                else if (d.protect_prev > d.quota * 0.9)
                     this.style.fill = '#ffbb88';
             });
 
     barPrev.append('rect').classed('keepPrev barComponent', true)
-        .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d.protectPrev, d.quota) + ynorm(d.keepPrev, d.quota)) + ')'; })
-        .attr('height', function (d) { return ynorm(d.keepPrev, d.quota); });
+        .attr('transform', function (d) { return 'translate(0,-' + (ynorm(d.protect_prev, d.quota) + ynorm(d.keep_prev, d.quota)) + ')'; })
+        .attr('height', function (d) { return ynorm(d.keep_prev, d.quota); });
 
     // global variable
     summary.bars = content.selectAll('.barNew')
-        .data(data.siteData)
+        .data(data.site_data)
         .enter().append('g').classed('barNew', true)
         .attr('transform', function (d) { return 'translate(' + (xmapping(d.name) + xspace * 0.025) + ',0)'; })
         .attr('onclick', function (d) { return 'd3.select(\'#' + d.name + '\').node().scrollIntoView();'; })
@@ -499,7 +499,7 @@ function displaySummary(data)
         .attr('width', xspace * 0.3);
 
     content.selectAll('.siteMask')
-        .data(data.siteData)
+        .data(data.site_data)
         .enter().append('g').classed('siteMask', true)
         .attr('transform', function (d) { return 'translate(' + (xmapping(d.name) - xspace * 0.325) + ',0)'; })
         .each(function (d) {
@@ -549,12 +549,12 @@ function displaySummary(data)
     var total_deleted = 0;
     var total_kept = 0;
     var total_protected = 0;
-    for (var x in data.siteData) {
-        if (data.siteData[x].name == 'Total')
+    for (var x in data.site_data) {
+        if (data.site_data[x].name == 'Total')
             continue;
-        total_deleted += data.siteData[x].delete;
-        total_kept += data.siteData[x].keep;
-        total_protected += data.siteData[x].protect;
+        total_deleted += data.site_data[x].delete;
+        total_kept += data.site_data[x].keep;
+        total_protected += data.site_data[x].protect;
     }
     var title_deleted = 'Deleted (';
     var title_kept = 'Kept (';
@@ -631,7 +631,7 @@ function addTableRows(table, tbodyClass, data)
         .style('width', (tableWidth * 0.05 - 1) + 'px')
         .text(function (d) { return d.decision; });
     row.append('td').classed('reasonCol', true)
-        .text(function (d) { if ('reason' in d) return d.reason; else return conditionTexts[d.conditionId]; });
+        .text(function (d) { if ('reason' in d) return d.reason; else return conditionTexts[d.condition_id]; });
 
     return tbody;
 }
@@ -678,7 +678,7 @@ function displayDatasetSearch(data)
     var deleteOffsets = [];
 
     for (var ipat in data) {
-        var siteData = data[ipat].siteData;
+        var siteData = data[ipat].site_data;
 
         var protectOffsetsNext = [];
         var keepOffsetsNext = [];
@@ -901,12 +901,12 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
         'url': dataPath + '/summary',
         'data': {'cycle': cycleNumber},
         'success': function (data, textStatus, jqXHR) {
-            nextCycle = data.nextCycle;
-            previousCycle = data.previousCycle;
+            nextCycle = data.next_cycle;
+            previousCycle = data.previous_cycle;
             displaySummary(data);
             setDetailsLink(data);
             spinner.stop();
-            setupSiteDetails(data.siteData.slice(1)); // 0th element is Total
+            setupSiteDetails(data.site_data.slice(1)); // 0th element is Total
         },
         'dataType': 'json',
         'async': false
@@ -929,8 +929,8 @@ function setDetailsLink(data)
 {
     var hasDelete = false;
 
-    for (var x in data.siteData) {
-        if (data.siteData[x].delete != 0.) {
+    for (var x in data.site_data) {
+        if (data.site_data[x].delete != 0.) {
             hasDelete = true;
             break;
         }

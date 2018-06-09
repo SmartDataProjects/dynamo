@@ -265,7 +265,7 @@ class DetoxHistory(DetoxHistoryBase):
     """
 
     def __init__(self, config):
-        DetoxHistoryBase.__init__(config)
+        DetoxHistoryBase.__init__(self, config)
         self._mysql = MySQL(config.get('db_params', None))
 
         self.read_only = False

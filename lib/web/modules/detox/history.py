@@ -22,7 +22,6 @@ class DetoxHistory(WebModule, MySQLHistoryMixin):
 
         self.operation = 'deletion'
 
-        self.partition = ''
         self.partition_id = 0
         self.cycle = 0
         self.policy_version = ''
@@ -32,8 +31,6 @@ class DetoxHistory(WebModule, MySQLHistoryMixin):
     def from_partition(self, name = ''):
         if not name:
             name = self.default_partition
-        else:
-            self.partition = name
 
         try:
             self.partition_id = self.history.query('SELECT `id` FROM `partitions` WHERE `name` = %s', name)[0]
@@ -95,14 +92,14 @@ class DetoxPartitions(DetoxHistory):
 
 class DetoxCycles(DetoxHistory):
     def run(self, caller, request, inventory):
-        if 'partitionId' in request:
-            self.partition_id = int(request['partitionId'])
+        if 'partition_id' in request:
+            self.partition_id = int(request['partition_id'])
         else:
             self.from_partition()
 
-        if ('cycle' in request and request['cycle'] == '0') or ('latest' in request and yesno(request['latest'])):
+        if ('cycle' in request and request['cycle'] == '0') or ('latest' in request and yesno(request, 'latest')):
             self.get_latest_cycle()
-            return [{'cycle': self.cycle, 'partitionId': self.partition_id, 'policy_version': self.policy_version, 'comment': self.comment, 'timestamp': self.timestamp}]
+            return [{'cycle': self.cycle, 'partition_id': self.partition_id, 'policy_version': self.policy_version, 'comment': self.comment, 'timestamp': self.timestamp}]
 
         elif 'cycle' in request:
             cycle = int(request['cycle'])
@@ -112,7 +109,7 @@ class DetoxCycles(DetoxHistory):
             if self.cycle != cycle:
                 self.get_latest_cycle()
 
-            return [{'cycle': self.cycle, 'partitionId': self.partition_id, 'policy_version': self.policy_version, 'comment': self.comment, 'timestamp': self.timestamp}]
+            return [{'cycle': self.cycle, 'partition_id': self.partition_id, 'policy_version': self.policy_version, 'comment': self.comment, 'timestamp': self.timestamp}]
 
         else:
             sql = 'SELECT `id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `cycles`'
@@ -120,7 +117,7 @@ class DetoxCycles(DetoxHistory):
 
             data = []
             for cycle, policy_version, comment, timestamp in self.history.xquery(sql, self.partition_id, self.operation):
-                data.append({'cycle': cycle, 'partitionId': self.partition_id, 'policy_version': policy_version, 'comment': comment, 'timestamp': timestamp})
+                data.append({'cycle': cycle, 'partition_id': self.partition_id, 'policy_version': policy_version, 'comment': comment, 'timestamp': timestamp})
 
             return data
 
@@ -155,36 +152,36 @@ class DetoxCycleSummary(DetoxHistoryCached):
 
         data = {
             'operation': self.operation,
-            'cycleNumber': self.cycle,
-            'cyclePolicy': self.policy_version,
+            'cycle': self.cycle,
+            'cycle_policy': self.policy_version,
             'comment': self.comment,
-            'cycleTimestamp': self.timestamp,
+            'cycle_timestamp': self.timestamp,
             'partition': self.partition_id,
-            'siteData': []
+            'site_data': []
         }
 
         sql = 'SELECT `id` FROM `cycles` WHERE `id` < %s AND `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\''
         sql += ' AND `operation` = %s ORDER BY `id` DESC LIMIT 1'
         try:
-            data['previousCycle'] = self.history.query(sql, self.cycle, self.partition_id, self.operation)[0]
+            data['previous_cycle'] = self.history.query(sql, self.cycle, self.partition_id, self.operation)[0]
         except IndexError:
-            data['previousCycle'] = 0
+            data['previous_cycle'] = 0
 
         sql = 'SELECT `id` FROM `cycles` WHERE `id` > %s AND `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\''
         sql += ' AND `operation` = %s ORDER BY `id` ASC LIMIT 1'
         try:
-            data['nextCycle'] = self.history.query(sql, self.cycle, self.partition_id, self.operation)[0]
+            data['next_cycle'] = self.history.query(sql, self.cycle, self.partition_id, self.operation)[0]
         except IndexError:
-            data['nextCycle'] = 0
+            data['next_cycle'] = 0
 
         ## Now get the site data
-        site_data = data['siteData']
+        site_data = data['site_data']
 
         siteinfo = self.detox_history.get_sites(self.cycle, skip_unused = True)
         decisions = self.detox_history.get_deletion_decisions(self.cycle, size_only = True)
-        prev_decisions = self.detox_history.get_deletion_decisions(data['previousCycle'], size_only = True)
+        prev_decisions = self.detox_history.get_deletion_decisions(data['previous_cycle'], size_only = True)
 
-        total = {'quota': 0., 'protect': 0., 'keep': 0., 'delete': 0., 'protectPrev': 0., 'keepPrev': 0.}
+        total = {'quota': 0., 'protect': 0., 'keep': 0., 'delete': 0., 'protect_prev': 0., 'keep_prev': 0.}
         
         for sname in sorted(siteinfo.iterkeys()):
             sid, status, quota = siteinfo[sname]
@@ -201,8 +198,8 @@ class DetoxCycleSummary(DetoxHistoryCached):
                 'protect': decisions[sname]['protect'],
                 'keep': decisions[sname]['keep'],
                 'delete': decisions[sname]['delete'],
-                'protectPrev': prev_decisions[sname]['protect'],
-                'keepPrev': prev_decisions[sname]['keep']
+                'protect_prev': prev_decisions[sname]['protect'],
+                'keep_prev': prev_decisions[sname]['keep']
             })
 
             for key in total.iterkeys():
@@ -270,7 +267,7 @@ class DetoxSiteDetail(DetoxHistoryCached):
             if dataset_name in multi_action:
                 decision += ' *'
 
-            dataset_list.append({'name': dataset_name, 'size': replica_size * 1.e-9, 'decision': decision, 'conditionId': condition_id})
+            dataset_list.append({'name': dataset_name, 'size': replica_size * 1.e-9, 'decision': decision, 'condition_id': condition_id})
             if condition_id not in conditions:
                 conditions[condition_id] = condition_text
 
@@ -333,7 +330,7 @@ class DetoxDatasetSearch(DetoxHistoryCached):
                 if len(site_datasets) != 0:
                     site_data.append({'name': site_name, 'datasets': site_datasets})
     
-            data['results'].append({'pattern': pattern, 'siteData': site_data})
+            data['results'].append({'pattern': pattern, 'site_data': site_data})
                         
         return data
 
@@ -355,4 +352,4 @@ def test(cls):
     return init
 
 for key, cls in export_data.items():
-    export_data[key.replace('detox', 'detox/test')] = test(cls)
+    export_data['test/' + key] = test(cls)
