@@ -22,7 +22,7 @@ class HTMLMixin(object):
         with open(HTMLMixin.contents_path + '/html/' + body_path) as source:
             self.body_html = source.read()
 
-    def form_html(self, repl):
+    def form_html(self, repl = {}):
         """
         Combine header, body, footer and perform string replacements.
         """

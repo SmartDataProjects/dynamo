@@ -64,6 +64,19 @@ class DetoxHistory(WebModule, MySQLHistoryMixin):
         self.comment = result[0][2]
         self.timestamp = result[0][3]
 
+    def get_partition_and_cycle(self, request):
+        if 'partition_id' in request:
+            self.partition_id = int(request['partition_id'])
+        else:
+            self.from_partition()
+
+        try:
+            cycle = int(request['cycle'])
+        except KeyError:
+            self.get_latest_cycle()
+        else:
+            self.get_cycle(cycle)
+
 
 class DetoxPartitions(DetoxHistory):
     def __init__(self, config):
@@ -143,12 +156,7 @@ class DetoxHistoryCached(DetoxHistory):
 
 class DetoxCycleSummary(DetoxHistoryCached):
     def run(self, caller, request, inventory):
-        try:
-            cycle = int(request['cycle'])
-        except KeyError:
-            self.get_latest_cycle()
-        else:
-            self.get_cycle(cycle)
+        self.get_partition_and_cycle(request)
 
         data = {
             'operation': self.operation,
@@ -217,12 +225,7 @@ class DetoxCycleDump(DetoxHistoryCached, FileDownloadMixin):
         DetoxHistoryCached.__init__(self, config)
 
     def run(self, caller, request, inventory):
-        try:
-            cycle = int(request['cycle'])
-        except KeyError:
-            self.get_latest_cycle()
-        else:
-            self.get_cycle(cycle)
+        self.get_partition_and_cycle(request)
 
         decisions = self.detox_history.get_deletion_decisions(self.cycle, size_only = False, decisions = ['delete'])
 
@@ -236,12 +239,7 @@ class DetoxCycleDump(DetoxHistoryCached, FileDownloadMixin):
 
 class DetoxSiteDetail(DetoxHistoryCached):
     def run(self, caller, request, inventory):
-        try:
-            cycle = int(request['cycle'])
-        except KeyError:
-            self.get_latest_cycle()
-        else:
-            self.get_cycle(cycle)
+        self.get_partition_and_cycle(request)
 
         try:
             sname = request['site']
@@ -276,12 +274,7 @@ class DetoxSiteDetail(DetoxHistoryCached):
 
 class DetoxDatasetSearch(DetoxHistoryCached):
     def run(self, caller, request, inventory):
-        try:
-            cycle = int(request['cycle'])
-        except KeyError:
-            self.get_latest_cycle()
-        else:
-            self.get_cycle(cycle)
+        self.get_partition_and_cycle(request)
 
         try:
             pattern_strings = request['datasets']
