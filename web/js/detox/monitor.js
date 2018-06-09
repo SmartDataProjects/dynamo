@@ -1051,9 +1051,6 @@ function removeDataset(displayBox)
 
 function downloadList()
 {
-    var url = window.location.href.split('?')[0];
-    url += '?command=dumpDeletions';
-    url += '&cycleNumber=' + currentCycle;
-    
+    var url = window.location.protocol + '//' + window.location.hostname + dataPath + '/dump?cycle=' + currentCycle;
     window.location = url;
 }

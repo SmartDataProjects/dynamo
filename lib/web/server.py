@@ -148,11 +148,11 @@ class WebServer(object):
             return 'Invalid request %s/%s.\n' % (module, command)
 
         try:
-            obj = cls(self.modules_config)
+            provider = cls(self.modules_config)
         except:
             return self._internal_server_error(start_response)
 
-        if obj.write_enabled:
+        if provider.write_enabled:
             self.dynamo_server.manager.master.lock()
 
             try:
@@ -204,12 +204,12 @@ class WebServer(object):
             caller = WebServer.User(user, user_id, authlist)
 
             inventory = self.dynamo_server.inventory.create_proxy()
-            if obj.write_enabled:
+            if provider.write_enabled:
                 inventory._update_commands = []
 
-            content = obj.run(caller, request, inventory)
+            content = provider.run(caller, request, inventory)
 
-            if obj.write_enabled:
+            if provider.write_enabled:
                 # TODO make web server log to a separate file
                 serverutils.send_updates(inventory, self.dynamo_server.inventory_update_queue, silent = True)
             
@@ -238,9 +238,10 @@ class WebServer(object):
             return self._internal_server_error(start_response)
 
         ## Step 6
-        if mode == 'data':
-            start_response('200 OK', [('Content-Type', 'application/json')])
+        headers = [('Content-Type', provider.content_type)] + provider.additional_headers
+        start_response('200 OK', headers)
 
+        if mode == 'data' and provider.content_type == 'application/json':
             data_str = json.dumps(content)
 
             if 'callback' in request:
@@ -250,7 +251,6 @@ class WebServer(object):
                 # Normal JSON
                 return data_str + '\n'
         else:
-            start_response('200 OK', [('Content-Type', 'text/html')])
             return content
 
     def identify_user(self, environ, authorizer):

@@ -4,6 +4,7 @@ import re
 
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._mysqlhistory import MySQLHistoryMixin
+from dynamo.web.modules._filedownload import FileDownloadMixin
 from dynamo.web.modules._common import yesno
 import dynamo.web.exceptions as exceptions
 from dynamo.detox.history import DetoxHistoryBase
@@ -214,8 +215,9 @@ class DetoxCycleSummary(DetoxHistoryCached):
         return data
 
 
-class DetoxCycleDump(DetoxHistoryCached):
-    # TODO allow modules to set content type
+class DetoxCycleDump(DetoxHistoryCached, FileDownloadMixin):
+    def __init__(self, config):
+        DetoxHistoryCached.__init__(self, config)
 
     def run(self, caller, request, inventory):
         try:
@@ -225,10 +227,14 @@ class DetoxCycleDump(DetoxHistoryCached):
         else:
             self.get_cycle(cycle)
 
-        decisions = self.detox_history.get_deletion_decisions(self.cycle, size_only = True)
+        decisions = self.detox_history.get_deletion_decisions(self.cycle, size_only = False, decisions = ['delete'])
 
-        
+        dump = ''
+        for site_name, site_decisions in decisions.iteritems():
+            for dataset_name, replica_size, decision, condition_id, condition_text in site_decisions:
+                dump += '%s\t%s\t%.2f\n' % (site_name, dataset_name, replica_size * 1.e-9)
 
+        return self.export_content(dump, 'deletions_%d.txt' % self.cycle)
 
 
 class DetoxSiteDetail(DetoxHistoryCached):
@@ -288,7 +294,7 @@ class DetoxDatasetSearch(DetoxHistoryCached):
         data = {'results': [], 'conditions': {}}
         conditions = data['conditions']
 
-        decisions = self.detox_history.get_deletion_decisions(self.cycle, size_only = True)
+        decisions = self.detox_history.get_deletion_decisions(self.cycle, size_only = False)
 
         multi_action = {}
         for site_name, site_decisions in decisions.iteritems():
@@ -336,7 +342,8 @@ export_data = {
     'cycles': DetoxCycles,
     'summary': DetoxCycleSummary,
     'sitedetail': DetoxSiteDetail,
-    'datasets': DetoxDatasetSearch
+    'datasets': DetoxDatasetSearch,
+    'dump': DetoxCycleDump
 }
 
 def test(cls):

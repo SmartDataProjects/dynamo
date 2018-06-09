@@ -4,6 +4,8 @@ class HTMLMixin(object):
     footer_html = None
 
     def __init__(self, title, body_path):
+        # Mixin must be >=2nd inheritance to overwrite WebModule's content_type
+        self.content_type = 'text/html'
         # Page title
         self.title = title
         # List of additional CSS

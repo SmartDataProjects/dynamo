@@ -1,6 +1,8 @@
 class WebModule(object):
     def __init__(self, config):
         self.write_enabled = False
+        self.content_type = 'application/json'
+        self.additional_headers = []
 
     def run(self, caller, request, inventory):
         """

@@ -48,10 +48,11 @@ class DetoxHistoryBase(object):
 
         return sites_dict
 
-    def get_deletion_decisions(self, cycle_number, size_only = True):
+    def get_deletion_decisions(self, cycle_number, size_only = True, decisions = None):
         """
         @param cycle_number   Cycle number
         @param size_only      Boolean
+        @param decisions      If a list, limit to specified decisions
         
         @return If size_only = True: a dict {site: (protect_size, delete_size, keep_size)}
                 If size_only = False: a massive dict {site: [(dataset, size, decision, reason)]}
@@ -71,7 +72,10 @@ class DetoxHistoryBase(object):
             query += ' WHERE r.`decision` LIKE %s'
             query += ' GROUP BY r.`site_id`'
 
-            for decision in ['protect', 'delete', 'keep']:
+            if type(decisions) is not list:
+                decisions = ['protect', 'delete', 'keep']
+
+            for decision in decisions:
                 volumes[decision] = dict(self._mysql.xquery(query, decision))
                 sites.update(set(volumes[decision].iterkeys()))
                
@@ -95,6 +99,8 @@ class DetoxHistoryBase(object):
             query += ' INNER JOIN `{0}`.`sites` AS s ON s.`id` = r.`site_id`'.format(self.history_db)
             query += ' INNER JOIN `{0}`.`datasets` AS d ON d.`id` = r.`dataset_id`'.format(self.history_db)
             query += ' LEFT JOIN `{0}`.`policy_conditions` AS p ON p.`id` = r.`condition`'.format(self.history_db)
+            if type(decisions) is list:
+                query += ' WHERE r.`decision` IN (%s)' % ','.join('\'%s\'' % d for d in decisions)
             query += ' ORDER BY s.`name` ASC, r.`size` DESC'
 
             product = {}
