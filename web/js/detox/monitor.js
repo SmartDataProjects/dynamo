@@ -952,7 +952,7 @@ function loadSiteTable(name)
 
     var jaxData = {
         'url': dataPath + '/sitedetail',
-        'data': {'cycle': cycleNumber, 'site': name},
+        'data': {'cycle': currentCycle, 'site': name},
         'success': function (data, textStatus, jqXHR) {
             for (var cid in data.conditions) {
                 if (!(cid in conditionTexts))
@@ -992,7 +992,7 @@ function findDataset()
 
     var jaxData = {
         'url': dataPath + '/datasets',
-        'data': {'cycle': cycleNumber, 'datasets': datasetNames},
+        'data': {'cycle': currentCycle, 'datasets': datasetNames},
         'success': function (data, textStatus, jqXHR) {
             for (var cid in data.conditions) {
                 if (!(cid in conditionTexts))
@@ -1031,7 +1031,7 @@ function removeDataset(displayBox)
 
     var jaxData = {
         'url': dataPath + '/datasets',
-        'data': {'cycle': cycleNumber, 'datasets': datasetNames},
+        'data': {'cycle': currentCycle, 'datasets': datasetNames},
         'success': function (data, textStatus, jqXHR) {
             for (var cid in data.conditions) {
                 if (!(cid in conditionTexts))
