@@ -28,8 +28,8 @@ class Dataset(object):
     _software_versions_byvalue = {}
     _software_version_lock = threading.Lock()
 
-    # Regular expression of the dataset name format, if there is any.
-    _name_pattern = None
+    # Regular expression object (from re.compile) of the dataset name format, if there is any.
+    name_pattern = None
 
     @staticmethod
     def data_type_name(arg):
@@ -97,6 +97,9 @@ class Dataset(object):
         self._software_version_id = version.id
 
     def __init__(self, name, status = 'unknown', data_type = 'unknown', software_version = None, last_update = 0, is_open = True, did = 0):
+        if Dataset.name_pattern is not None and not Dataset.name_pattern.match(name):
+            raise ObjectError('Invalid dataset name %s' % name)
+            
         self._name = name
         self.status = Dataset.status_val(status)
         self.data_type = Dataset.data_type_val(data_type)

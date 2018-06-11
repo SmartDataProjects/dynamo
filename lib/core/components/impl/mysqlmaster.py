@@ -254,10 +254,6 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
 
         return deleted != 0
 
-    def create_authorizer(self): #override
-        config = Configuration(db_params = self._mysql.config())
-        return MySQLAuthorizer(config)
-
     def check_connection(self): #override
         try:
             self._mysql.query('SELECT 1')

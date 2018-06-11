@@ -90,6 +90,8 @@ class WebServer(object):
         6. Respond.
         """
 
+        authorizer = None
+
         ## Step 1
         if environ['REQUEST_SCHEME'] == 'http':
             # No auth
@@ -97,7 +99,7 @@ class WebServer(object):
             authlist = []
 
         elif environ['REQUEST_SCHEME'] == 'https':
-            authorizer = self.dynamo_server.manager.master
+            authorizer = self.dynamo_server.manager.master.create_authorizer()
 
             # Client DN must match a known user
             try:
@@ -172,6 +174,12 @@ class WebServer(object):
             finally:
                 self.dynamo_server.manager.master.unlock()
 
+        if provider.require_authorizer:
+            if authorizer is None:
+                authorizer = self.dynamo_server.manager.master.create_authorizer()
+
+            provider.authorizer = authorizer
+
         try:
             ## Step 4
             if 'CONTENT_TYPE' in environ and environ['CONTENT_TYPE'] == 'application/json':
@@ -219,6 +227,13 @@ class WebServer(object):
         except exceptions.MissingParameter as ex:
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
             msg = 'Missing required parameter "%s"' % ex.param_name
+            if ex.context is not None:
+                msg += ' in %s' % ex.context
+            msg += '.\n'
+            return msg
+        except exceptions.ExtraParameter as ex:
+            start_response('400 Bad Request', [('Content-Type', 'text/plain')])
+            msg = 'Parameter "%s" not expected' % ex.param_name
             if ex.context is not None:
                 msg += ' in %s' % ex.context
             msg += '.\n'

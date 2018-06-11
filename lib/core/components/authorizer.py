@@ -90,3 +90,10 @@ class Authorizer(object):
         @return List of (user name, role name) authorized for the target.
         """
         raise NotImplementedError('list_authorized_users')
+
+    def create_authorizer(self):
+        """
+        Clone self with fresh connections.
+        @return A new authorizer instance with a fresh connection
+        """
+        raise NotImplementedError('create_authorizer')

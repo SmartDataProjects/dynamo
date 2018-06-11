@@ -18,6 +18,9 @@ class Block(object):
     _MAX_FILES_CACHE_DEPTH = 100
     _inventory_store = None
 
+    # Regular expression object (from re.compile) of the block name format, if there is any.
+    name_pattern = None
+
     @property
     def name(self):
         return self._name
@@ -54,7 +57,11 @@ class Block(object):
         if internal_name:
             self._name = name
         else:
+            if Block.name_pattern is not None and not Block.name_pattern.match(name):
+                raise ObjectError('Invalid block name %s' % name)
+
             self._name = Block.to_internal_name(name)
+
         self._dataset = dataset
         self._size = size
         self._num_files = num_files

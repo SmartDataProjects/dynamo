@@ -99,3 +99,6 @@ class MySQLAuthorizer(Authorizer):
         
         return self._mysql.query(sql, *args)
 
+    def create_authorizer(self): #override
+        config = Configuration(db_params = self._mysql.config())
+        return MySQLAuthorizer(config)

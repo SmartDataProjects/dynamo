@@ -199,12 +199,6 @@ class MasterServer(Authorizer, AppManager):
         """
         raise NotImplementedError('revoke_user_authorization')
 
-    def create_authorizer(self):
-        """
-        @return A new authorizer instance with a fresh connection
-        """
-        raise NotImplementedError('create_authorizer')
-
     def check_connection(self):
         """
         @return  True if connection is OK, False if not

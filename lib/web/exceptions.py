@@ -4,6 +4,12 @@ class MissingParameter(Exception):
         self.param_name = param_name
         self.context = context
 
+class ExtraParameter(Exception):
+    """Raise if there is an excess parameter."""
+    def __init__(self, param_name, context = None):
+        self.param_name = param_name
+        self.context = context
+
 class IllFormedRequest(Exception):
     """Raise if a request parameter value does not conform to a format."""
     def __init__(self, param_name, value, hint = None, allowed = None):
