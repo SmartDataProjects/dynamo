@@ -1,4 +1,3 @@
-import multiprocessing
 import logging
 import socket
 import types
@@ -20,33 +19,13 @@ class MasterServer(Authorizer, AppManager):
 
     @staticmethod
     def get_instance(module, config):
-        instance = get_instance(MasterServer, module, config)
-
-        # Decorate all public methods of MasterServer with the lock
-        def make_wrapper(obj, mthd):
-            def wrapper(*args, **kwd):
-                with obj._master_server_lock:
-                    return mthd(*args, **kwd)
-
-            return wrapper
-        
-        for name in dir(instance):
-            if name == 'lock' or name == 'unlock' or name.startswith('_'):
-                continue
-
-            mthd = getattr(instance, name)
-            if callable(mthd) and not isinstance(mthd, types.FunctionType): # static methods are instances of FunctionType
-                setattr(instance, name, make_wrapper(instance, mthd))
-
-        return instance
+        return get_instance(MasterServer, module, config)
 
     def __init__(self, config):
         Authorizer.__init__(self, config)
         AppManager.__init__(self, config)
 
         self.connected = False
-
-        self._master_server_lock = multiprocessing.RLock()
 
     def connect(self):
         """
@@ -76,12 +55,10 @@ class MasterServer(Authorizer, AppManager):
         LOG.info('Master host: %s', master_host)
 
     def lock(self):
-        self._master_server_lock.acquire()
         self._do_lock()
 
     def unlock(self):
         self._do_unlock()
-        self._master_server_lock.release()
 
     def get_master_host(self):
         """

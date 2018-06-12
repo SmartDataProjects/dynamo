@@ -24,9 +24,8 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         else:
             self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
 
-        self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
         # id of this server
-        self._server_id = self._mysql.last_insert_id
+        self._server_id = self._mysql.insert_get_id('servers', columns = ('hostname', 'last_heartbeat'), values = (socket.gethostname(), MySQL.bare('NOW()')))
 
     def _do_lock(self): #override
         self._mysql.lock_tables(write = ['servers', 'applications'], read = ['users'])
@@ -121,15 +120,19 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
 
     def get_store_config(self, hostname): #override
         self._mysql.lock_tables(read = ['servers'])
-        while self.get_status(hostname) == ServerHost.STAT_UPDATING:
-            # need to get the version of the remote server when it's not updating
+
+        try:
+            while self.get_status(hostname) == ServerHost.STAT_UPDATING:
+                # need to get the version of the remote server when it's not updating
+                self._mysql.unlock_tables()
+                time.sleep(2)
+                self._mysql.lock_tables(read = ['servers'])
+            
+            sql = 'SELECT `store_module`, `store_config`, `store_version` FROM `servers` WHERE `hostname` = %s'
+            result = self._mysql.query(sql, hostname)
+
+        finally:
             self._mysql.unlock_tables()
-            time.sleep(2)
-            self._mysql.lock_tables(read = ['servers'])
-        
-        sql = 'SELECT `store_module`, `store_config`, `store_version` FROM `servers` WHERE `hostname` = %s'
-        result = self._mysql.query(sql, hostname)
-        self._mysql.unlock_tables()
 
         if len(result) == 0:
             return None

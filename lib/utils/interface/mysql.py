@@ -36,6 +36,13 @@ class MySQL(object):
     @staticmethod
     def escape_string(string):
         return MySQLdb.escape_string(string)
+
+    class bare(object):
+        """
+        Pass bare(string) as column values to bypass formatting in insert_get_id (support will be expanded to other methods).
+        """
+        def __init__(self, value):
+            self.value = value
     
     def __init__(self, config = None):
         config = Configuration(config)
@@ -227,6 +234,45 @@ class MySQL(object):
                 self._connection = None
 
             self._connection_lock.release()
+
+    def insert_get_id(self, table, columns = None, values = None, select = None, db = None, **kwd):
+        """
+        Auto-form an INSERT statement, execute it under a lock and return the last_insert_id.
+        @param table    Table name without reverse-quotes.
+        @param columns  If an iterable, column names to insert to. If None, insert filling all columns is assumed.
+        @param values   If an iterable, column values to insert. Either values or select must be None.
+        @param select   If 
+        """
+
+        args = []
+
+        sql = 'INSERT INTO `%s`' % table
+        if columns is not None:
+            # has to be some iterable
+            sql += ' (%s)' % ','.join('`%s`' % c for c in columns)
+
+        if values is not None:
+            values_list = ''
+            for v in values:
+                if type(v) is MySQL.bare:
+                    values_list.append(v.value)
+                else:
+                    values_list.append('%s')
+                    args.append(v)
+
+            sql += ' VALUES (%s)' % ','.join(values_list)
+
+        elif select is not None:
+            sql += ' ' + select
+
+        with self._connection_lock:
+            inserted = self.query(sql, *tuple(args), **kwd)
+            if type(inserted) is list:
+                raise RuntimeError('Non-insert query executed in insert_get_id')
+            elif inserted != 1:
+                raise RuntimeError('More than one row inserted in insert_get_id')
+
+            return self.last_insert_id
 
     def xquery(self, sql, *args):
         """

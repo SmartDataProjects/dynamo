@@ -16,13 +16,15 @@ class MySQLAppManager(AppManager):
 
         # make sure applications row with id 0 exists
         count = self._mysql.query('SELECT COUNT(*) FROM `applications` WHERE `id` = 0')[0]
+
         if count == 0:
             # Cannot insert with id = 0 (will be interpreted as next auto_increment id unless server-wide setting is changed)
             # Inesrt with an implicit id first and update later
-            sql = 'INSERT INTO `applications` (`write_request`, `title`, `path`, `status`, `user_id`, `user_host`)'
-            sql += ' VALUES (1, \'wsgi\', \'\', \'done\', 0, \'\')'
-            self._mysql.query(sql)
-            self._mysql.query('UPDATE `applications` SET `id` = 0 WHERE `id` = %s', self._mysql.last_insert_id)
+            columns = ('write_request', 'title', 'path', 'status', 'user_id', 'user_host')
+            values = (1, 'wsgi', '', 'done', 0, '')
+            insert_id = self._mysql.insert_get_id('applications', columns = columns, values = values)
+
+            self._mysql.query('UPDATE `applications` SET `id` = 0 WHERE `id` = %s', insert_id)
 
     def get_applications(self, older_than = 0, status = None, app_id = None, path = None): #override
         sql = 'SELECT `applications`.`id`, `applications`.`write_request`, `applications`.`title`, `applications`.`path`,'
@@ -83,10 +85,9 @@ class MySQLAppManager(AppManager):
         else:
             user_id = result[0]
 
-        sql = 'INSERT INTO `applications` (`write_request`, `title`, `path`, `args`, `user_id`, `user_host`) VALUES (%s, %s, %s, %s, %s, %s)'
-        self._mysql.query(sql, write_request, title, path, args, user_id, host)
-
-        return self._mysql.last_insert_id
+        columns = ('write_request', 'title', 'path', 'args', 'user_id', 'user_host')
+        values = (write_request, title, path, args, user_id, host)
+        return self._mysql.insert_get_id('applications', columns = columns, values = values)
 
     def get_next_application(self, read_only): #override
         sql = 'SELECT `applications`.`id`, `write_request`, `title`, `path`, `args`, `users`.`name`, `user_host` FROM `applications`'
@@ -258,4 +259,3 @@ class MySQLAppManager(AppManager):
             sql += ' WHERE `status` = \'enabled\''
 
         return self._mysql.query(sql)
-
