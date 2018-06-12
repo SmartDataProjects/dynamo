@@ -57,7 +57,7 @@ def blocks_already_exist(blocks, site, group):
         replica = site.find_block_replica(block)
         if replica is None or not replica.is_complete:
             complete_at_site = False
-        if replica.group != group:
+        elif replica.group != group:
             owned_at_site = False
 
     if complete_at_site:
