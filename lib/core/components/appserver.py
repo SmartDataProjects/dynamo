@@ -319,7 +319,7 @@ class AppServer(object):
             return False, str(ex)
 
         if enabled:
-            success, msg = self._do_stop_seqeunce(name)
+            success, msg = self._do_stop_sequence(name)
             if not success:
                 return False, msg
 

@@ -525,10 +525,10 @@ class DynamoServer(object):
 
         read_state, update_commands = self._collect_updates()
 
+        pid = self.manager.master.get_web_write_process_id()
+
         if read_state == 0:
             LOG.debug('No updates received from the web process.')
-
-            pid = self.manager.master.get_web_write_process_id()
             try:
                 os.kill(pid, 0) # poll the process
             except OSError:
@@ -614,8 +614,7 @@ class DynamoServer(object):
 
             if self.webserver:
                 # Restart the web server so it gets the latest inventory image
-                self.webserver.stop()
-                self.webserver.start()
+                self.webserver.restart()
 
         return has_update
 

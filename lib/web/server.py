@@ -13,7 +13,7 @@ from flup.server.fcgi_fork import WSGIServer
 import dynamo.core.serverutils as serverutils
 import dynamo.web.exceptions as exceptions
 # Actual modules imported at the bottom of this file
-from dynamo.web.modules import modules
+from dynamo.web.modules import modules, load_modules
 from dynamo.web.modules._html import HTMLMixin
 
 from dynamo.utils.transform import unicode2str
@@ -36,6 +36,8 @@ class WebServer(object):
         self.wsgi_server = WSGIServer(self.main, bindAddress = config.socket, umask = 0, **prefork_config)
 
         self.server_proc = None
+
+        self.active_count = multiprocessing.Value('I', 0, lock = True)
 
         HTMLMixin.contents_path = config.contents_path
         # common mixin class used by all page-generating modules
@@ -62,12 +64,58 @@ class WebServer(object):
     def stop(self):
         LOG.info('Stopping web server (PID %d).', self.server_proc.pid)
 
+        while self.active_count.value != 0:
+            time.sleep(0.2)
+
         self.server_proc.terminate()
         LOG.debug('Waiting for web server to join.')
         self.server_proc.join()
         LOG.debug('Web server joined.')
 
         self.server_proc = None
+
+    def restart(self):
+        LOG.info('Restarting web server (PID %d).', self.server_proc.pid)
+
+        # Replace the active_count by a temporary object (won't be visible from subprocs)
+        main_active_count = self.active_count
+        self.active_count = multiprocessing.Value('I', 0, lock = True)
+
+        # A new WSGI server will overtake the socket. New requests will be handled by interim_server
+        LOG.debug('Starting a temporary web server.')
+        interim_server = multiprocessing.Process(target = self._serve)
+        interim_server.daemon = True
+        interim_server.start()
+
+        # Reswap
+        interim_active_count = self.active_count
+        self.active_count = main_active_count
+
+        # Drain and stop the main server
+        LOG.debug('Waiting for web server to drain.')
+        while self.active_count.value != 0:
+            time.sleep(0.2)
+
+        self.server_proc.terminate()
+        LOG.debug('Waiting for web server to join.')
+        self.server_proc.join()
+        LOG.debug('Web server joined.')
+
+        # Start the main server
+        self.server_proc = multiprocessing.Process(target = self._serve)
+        self.server_proc.daemon = True
+        self.server_proc.start()
+
+        LOG.info('Started web server (PID %d).', self.server_proc.pid)
+
+        # Drain and stop the temporary server
+        LOG.debug('Waiting for temporary web server to drain.')
+        while interim_active_count.value != 0:
+            time.sleep(0.2)
+
+        LOG.debug('Stopping the temporary web server.')
+        interim_server.terminate()
+        interim_server.join()
 
     def _serve(self):
         try:
@@ -80,8 +128,18 @@ class WebServer(object):
             os._exit(exc.code)
 
     def main(self, environ, start_response):
+        with self.active_count.get_lock():
+            self.active_count.value += 1
+
+        try:
+            return self._main(environ, start_response)
+        finally:
+            with self.active_count.get_lock():
+                self.active_count.value -= 1
+
+    def _main(self, environ, start_response):
         """
-        WSGI callable. Steps:
+        Body of the WSGI callable. Steps:
         1. Determine protocol. If HTTPS, identify the user.
         2. If js or css is requested, respond.
         3. Find the module class and instantiate it.
@@ -146,8 +204,13 @@ class WebServer(object):
         try:
             cls = modules[mode][module][command]
         except KeyError:
-            start_response('404 Not Found', [('Content-Type', 'text/plain')])
-            return 'Invalid request %s/%s.\n' % (module, command)
+            # Was a new module added perhaps?
+            load_modules()
+            try: # again
+                cls = modules[mode][module][command]
+            except KeyError:
+                start_response('404 Not Found', [('Content-Type', 'text/plain')])
+                return 'Invalid request %s/%s.\n' % (module, command)
 
         try:
             provider = cls(self.modules_config)
