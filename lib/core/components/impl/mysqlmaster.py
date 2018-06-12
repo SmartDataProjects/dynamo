@@ -6,6 +6,7 @@ from dynamo.core.components.master import MasterServer
 from dynamo.core.components.host import ServerHost
 from .mysqlauthorizer import MySQLAuthorizer
 from .mysqlappmanager import MySQLAppManager
+from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration
 
 class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):

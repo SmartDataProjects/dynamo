@@ -252,7 +252,7 @@ class MySQL(object):
             sql += ' (%s)' % ','.join('`%s`' % c for c in columns)
 
         if values is not None:
-            values_list = ''
+            values_list = []
             for v in values:
                 if type(v) is MySQL.bare:
                     values_list.append(v.value)

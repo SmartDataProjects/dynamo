@@ -64,12 +64,25 @@ class WebServer(object):
     def stop(self):
         LOG.info('Stopping web server (PID %d).', self.server_proc.pid)
 
-        while self.active_count.value != 0:
-            time.sleep(0.2)
-
         self.server_proc.terminate()
         LOG.debug('Waiting for web server to join.')
-        self.server_proc.join()
+        self.server_proc.join(5)
+
+        if self.server_proc.is_alive():
+            # SIGTERM got ignored
+            LOG.info('Web server failed to stop. Sending KILL signal..')
+            try:
+                os.kill(self.server_proc.pid, signal.SIGKILL)
+            except:
+                pass
+
+            self.server_proc.join(5)
+
+            if self.server_proc.is_alive():
+                LOG.warning('Web server (PID %d) is stuck.', self.server_proc.pid)
+                self.server_proc = None
+                return
+
         LOG.debug('Web server joined.')
 
         self.server_proc = None
@@ -78,44 +91,25 @@ class WebServer(object):
         LOG.info('Restarting web server (PID %d).', self.server_proc.pid)
 
         # Replace the active_count by a temporary object (won't be visible from subprocs)
-        main_active_count = self.active_count
+        old_active_count = self.active_count
         self.active_count = multiprocessing.Value('I', 0, lock = True)
 
-        # A new WSGI server will overtake the socket. New requests will be handled by interim_server
-        LOG.debug('Starting a temporary web server.')
-        interim_server = multiprocessing.Process(target = self._serve)
-        interim_server.daemon = True
-        interim_server.start()
-
-        # Reswap
-        interim_active_count = self.active_count
-        self.active_count = main_active_count
+        # A new WSGI server will overtake the socket. New requests will be handled by new_server_proc
+        LOG.debug('Starting new web server.')
+        new_server_proc = multiprocessing.Process(target = self._serve)
+        new_server_proc.daemon = True
+        new_server_proc.start()
 
         # Drain and stop the main server
         LOG.debug('Waiting for web server to drain.')
-        while self.active_count.value != 0:
+        while old_active_count.value != 0:
             time.sleep(0.2)
 
-        self.server_proc.terminate()
-        LOG.debug('Waiting for web server to join.')
-        self.server_proc.join()
-        LOG.debug('Web server joined.')
+        self.stop()
 
-        # Start the main server
-        self.server_proc = multiprocessing.Process(target = self._serve)
-        self.server_proc.daemon = True
-        self.server_proc.start()
+        self.server_proc = new_server_proc
 
         LOG.info('Started web server (PID %d).', self.server_proc.pid)
-
-        # Drain and stop the temporary server
-        LOG.debug('Waiting for temporary web server to drain.')
-        while interim_active_count.value != 0:
-            time.sleep(0.2)
-
-        LOG.debug('Stopping the temporary web server.')
-        interim_server.terminate()
-        interim_server.join()
 
     def _serve(self):
         try:

@@ -444,7 +444,7 @@ class DynamoServer(object):
 
                 if status == AppManager.STAT_RUN:
                     if read_state == 1:
-                        self.update_inventory(update_commands)
+                        self._update_inventory(update_commands)
     
                     elif read_state == 2:
                         status = AppManager.STAT_FAILED
@@ -541,7 +541,7 @@ class DynamoServer(object):
 
         elif read_state == 1:
             LOG.info('Updating the inventory with data sent from web.')
-            self.update_inventory(update_commands)
+            self._update_inventory(update_commands)
 
         LOG.debug('Releasing write lock.')
         self.manager.master.stop_write_web()
@@ -570,7 +570,7 @@ class DynamoServer(object):
             # Finally remove the entry
             self.manager.master.delete_application(app['appid'])
 
-    def update_inventory(self, update_commands):
+    def _update_inventory(self, update_commands):
         # My updates
         self.manager.set_status(ServerHost.STAT_UPDATING)
 
