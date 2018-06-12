@@ -140,7 +140,7 @@ class MySQLAppManager(AppManager):
 
     def start_write_web(self, host, pid): #override
         # repurposing user_id for pid
-        sql = 'UPDATE `applications` SET `status` = \'run\', `server` = %s, `user_host` = %s, `user_id` = %s WHERE `id` = 0'
+        sql = 'UPDATE `applications` SET `status` = \'run\', `server` = %s, `user_host` = %s, `user_id` = %s, `timestamp` = NOW() WHERE `id` = 0'
         self._mysql.query(sql, host, host, pid)
 
     def stop_write_web(self): #override

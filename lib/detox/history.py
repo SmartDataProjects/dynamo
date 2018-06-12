@@ -95,7 +95,7 @@ class DetoxHistoryBase(object):
         else:
             # return {site_name: [(dataset_name, size, decision, condition_id, reason)]}
 
-            query = 'SELECT s.`name`, d.`name`, r.`size`, r.`decision`, p.`id`, p.`text` FROM `{0}`.`{1}` AS r'.format(self.cache_db, table_name)
+            query = 'SELECT s.`name`, d.`name`, r.`size`, r.`decision`, r.`condition`, p.`text` FROM `{0}`.`{1}` AS r'.format(self.cache_db, table_name)
             query += ' INNER JOIN `{0}`.`sites` AS s ON s.`id` = r.`site_id`'.format(self.history_db)
             query += ' INNER JOIN `{0}`.`datasets` AS d ON d.`id` = r.`dataset_id`'.format(self.history_db)
             query += ' LEFT JOIN `{0}`.`policy_conditions` AS p ON p.`id` = r.`condition`'.format(self.history_db)
@@ -126,7 +126,7 @@ class DetoxHistoryBase(object):
 
         table_name = 'replicas_%d' % cycle_number
 
-        query = 'SELECT d.`name`, r.`size`, r.`decision`, p.`id`, p.`text` FROM `{0}`.`{1}` AS r'.format(self.cache_db, table_name)
+        query = 'SELECT d.`name`, r.`size`, r.`decision`, r.`condition`, p.`text` FROM `{0}`.`{1}` AS r'.format(self.cache_db, table_name)
         query += ' INNER JOIN `{0}`.`sites` AS s ON s.`id` = r.`site_id`'.format(self.history_db)
         query += ' INNER JOIN `{0}`.`datasets` AS d ON d.`id` = r.`dataset_id`'.format(self.history_db)
         query += ' LEFT JOIN `{0}`.`policy_conditions` AS p ON p.`id` = r.`condition`'.format(self.history_db)

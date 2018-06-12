@@ -27,7 +27,7 @@ class MasterServer(Authorizer, AppManager):
             def wrapper(*args, **kwd):
                 with obj._master_server_lock:
                     return mthd(*args, **kwd)
-        
+
             return wrapper
         
         for name in dir(instance):

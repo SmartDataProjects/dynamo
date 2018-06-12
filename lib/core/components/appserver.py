@@ -280,14 +280,14 @@ class AppServer(object):
                     sql += ' VALUES (?, ?, ?, ?, ?, ?)'
                     cursor.execute(sql, (iline,) + action)
 
-                elif action[1] == AppServer.WAIT:
+                elif action[0] == AppServer.WAIT:
                     sql = 'INSERT INTO `sequence` (`line`, `command`, `title`)'
-                    sql += ' VALUES (?, ?)'
+                    sql += ' VALUES (?, ?, ?)'
                     cursor.execute(sql, (iline, action[0], str(action[1])))
 
-                elif action[1] == AppServer.TERMINATE:
+                elif action[0] == AppServer.TERMINATE:
                     sql = 'INSERT INTO `sequence` (`line`, `command`)'
-                    sql += ' VALUES (?)'
+                    sql += ' VALUES (?, ?)'
                     cursor.execute(sql, (iline, action[0]))
 
             db.commit()

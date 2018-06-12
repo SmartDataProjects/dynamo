@@ -247,7 +247,7 @@ class DetoxSiteDetail(DetoxHistoryCached):
         except KeyError:
             raise exceptions.MissingParameter('site')
 
-        data = {'content': {'name': sname, 'datasets': []}, 'conditions': {}}
+        data = {'content': {'name': sname, 'datasets': []}, 'conditions': {0: 'No policy match'}}
 
         decisions = self.detox_history.get_site_deletion_decisions(self.cycle, sname)
 
@@ -282,7 +282,7 @@ class DetoxDatasetSearch(DetoxHistoryCached):
         except KeyError:
             raise exceptions.MissingParameter('datasets')
 
-        data = {'results': [], 'conditions': {}}
+        data = {'results': [], 'conditions': {0: 'No policy match'}}
         conditions = data['conditions']
 
         decisions = self.detox_history.get_deletion_decisions(self.cycle, size_only = False)
