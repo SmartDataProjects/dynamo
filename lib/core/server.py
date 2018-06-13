@@ -42,6 +42,9 @@ class DynamoServer(object):
         self.manager_config = config.manager.clone()
         self.manager = ServerManager(self.manager_config)
 
+        ## Modules defaults config
+        self.defaults_config = config.defaults
+
         ## Application collection
         self.applications_config = config.applications.clone()
         if self.applications_config.enabled:
@@ -210,13 +213,13 @@ class DynamoServer(object):
             self._setup_remote_store()
 
     def get_subprocess_args(self):
-        # Create a inventory proxy with a fresh connection to the store backend to avoid the child closing the connection
+        # Create an inventory proxy with a fresh connection to the store backend to avoid the child closing the connection
         inventory_proxy = self.inventory.create_proxy()
 
         # Similarly pass a new Authorizer with a fresh connection
         authorizer = self.manager.master.create_authorizer()
 
-        return self.applications_config.defaults, inventory_proxy, authorizer
+        return inventory_proxy, authorizer
 
     def _run_application_cycles(self):
         """
@@ -623,14 +626,16 @@ class DynamoServer(object):
         # That doesn't cause a problem only because no shared resource (e.g. database connections)
         # are instantiated in the constructor of these objects.
         # We probably should have a more explicit safeguard mechanism.
-        defaults_conf, inventory, authorizer = self.get_subprocess_args()
+        inventory, authorizer = self.get_subprocess_args()
 
         if app['write_request']:
             queue = self.inventory_update_queue
         else:
             queue = None
 
-        proc_args = (app['path'], app['args'], is_local, defaults_conf, inventory, authorizer, queue)
+        # TODO we should probably not pass all of this through a pipe to the subprocess but rather have run_script
+        # back as a DynamoServer method and inherit memory from the main process
+        proc_args = (app['path'], app['args'], is_local, self.defaults_config, inventory, authorizer, queue)
 
         proc = multiprocessing.Process(target = serverutils.run_script, name = app['title'], args = proc_args)
         proc.daemon = True

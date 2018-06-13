@@ -68,6 +68,10 @@
         "dynamofod": {
           "passwd": "",
           "host": "localhost"
+        },
+        "dynamoread": {
+          "passwd": "",
+          "host": "localhost"
         }
       }
     },

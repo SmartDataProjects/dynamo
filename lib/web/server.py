@@ -112,6 +112,23 @@ class WebServer(object):
         LOG.info('Started web server (PID %d).', self.server_proc.pid)
 
     def _serve(self):
+        # Set up module defaults
+        # Using the same piece of code as serverutils, but only picking up fullauth or all configurations
+        for key, config in self.dynamo_server.defaults_config.items():
+            try:
+                myconf = config['fullauth']
+            except KeyError:
+                try:
+                    myconf = config['all']
+                except KeyError:
+                    continue
+    
+            modname, clsname = key.split(':')
+            module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
+            cls = getattr(module, clsname)
+    
+            cls.set_default(myconf)
+
         try:
             self.wsgi_server.run()
         except SystemExit as exc:

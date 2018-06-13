@@ -13,7 +13,8 @@ class InjectData(WebModule):
         WebModule.__init__(self, config)
         self.write_enabled = True
 
-        self.rlfsm = RLFSM(config.rlfsm)
+        # using default settings
+        self.rlfsm = RLFSM()
 
     def run(self, caller, request, inventory):
         """

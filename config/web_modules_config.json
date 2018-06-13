@@ -3,23 +3,11 @@
   "spool_path": "$(DYNAMO_SPOOL)",
   "history": {
     "user": "dynamoread",
-    "passwd": "",
     "db": "dynamohistory"
   },
   "registry": {
     "user": "dynamo",
-    "passwd": "",
     "db": "dynamoregister"
-  },
-  "rlfsm": {
-    "db": {
-      "db_params": {
-        "db": "dynamo",
-        "user": "dynamofod",
-        "passwd": ""
-      },
-      "history": "dynamohistory"
-    }
   },
   "inventory": {
     "stats": {
