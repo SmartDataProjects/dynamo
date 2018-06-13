@@ -260,7 +260,12 @@ class MakeCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
                     raise InvalidRequest('Invalid request id %d' % self.request['request_id'])
 
                 existing = self.existing[self.request['request_id']]
-                if existing.status != 'new':
+                if existing.status == 'new':
+                    pass
+                elif existing.status == 'cancelled':
+                    # I guess I can reuse a cancelled request
+                    existing.status = 'new'
+                else:
                     raise InvalidRequest('Request %d is already activated and therefore cannot be updated' % self.request['request_id'])
 
                 # update the existing request
@@ -313,7 +318,7 @@ class MakeCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
         if 'status' in self.request:
             existing.status = self.request['status']
 
-        sql = 'UPDATE `copy_requests` SET `group` = %s, `num_copies` = %s, `status` = %s, `last_request_time` = NOW() WHERE `request_id` = %s'
+        sql = 'UPDATE `copy_requests` SET `group` = %s, `num_copies` = %s, `status` = %s, `last_request_time` = NOW() WHERE `id` = %s'
         self.registry.query(sql, existing.group, existing.n, existing.status, existing.request_id)
 
         return {existing.request_id: existing}
@@ -352,7 +357,7 @@ class CancelCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
             existing = self.existing[self.request['request_id']]
             if existing.status == 'new':
                 existing.status = 'cancelled'
-                sql = 'UPDATE `copy_requests` SET `status` = \'cancelled\' WHERE `request_id` = %s'
+                sql = 'UPDATE `copy_requests` SET `status` = \'cancelled\' WHERE `id` = %s'
                 self.registry.query(sql, existing.request_id)
 
             elif existing.status == 'cancelled':
