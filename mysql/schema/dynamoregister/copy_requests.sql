@@ -6,7 +6,7 @@ CREATE TABLE `copy_requests` (
   `first_request_time` datetime NOT NULL,
   `last_request_time` datetime NOT NULL,
   `request_count` int(10) unsigned NOT NULL DEFAULT '1',
-  `status` enum('new','activated','updated','completed','rejected','cancelled') NOT NULL DEFAULT 'new',
+  `status` enum('new','activated','completed','rejected','cancelled') NOT NULL DEFAULT 'new',
   `rejection_reason` text CHARACTER SET latin1 COLLATE latin1_general_cs,
   PRIMARY KEY (`id`),
   KEY `user` (`user_id`),

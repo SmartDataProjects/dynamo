@@ -35,7 +35,7 @@ class CopyRequestsHandler(BaseHandler):
     def get_requests(self, inventory, history, policy): # override
         """
         1. Request all active transfers in new state (these were not queued in the last cycle)
-        2. Find all transfer requests with status new or updated.
+        2. Find all transfer requests with status new.
         3. Decide whether to accept the request. Set status accordingly.
         4. Find the destinations if wildcard was used.
         """
@@ -139,37 +139,29 @@ class CopyRequestsHandler(BaseHandler):
         if not self.read_only:
             self.registry.lock_tables(write = ['copy_requests', ('copy_requests', 'r'), ('copy_request_sites', 's'), ('copy_request_items', 'i'), 'active_copies', ('active_copies', 'a')])
 
-        # group into (group, # copies, request count, request time, [list of sites], [list of items], [list of active transfers])
+        # group into (group, # copies, request count, request time, [list of sites], [list of items])
         grouped_requests = {} # {request_id: copy info}
 
         sql = 'SELECT `id`, `group`, `num_copies`, `request_count`, `first_request_time` FROM `copy_requests`'
-        sql += ' WHERE `status` = \'new\' OR `status` = \'updated\''
+        sql += ' WHERE `status` = \'new\''
 
         for request_id, group_name, num_copies, request_count, request_time in self.registry.xquery(sql):
             if request_id not in grouped_requests:
-                grouped_requests[request_id] = (group_name, num_copies, request_count, request_time, [], [], [])
+                grouped_requests[request_id] = (group_name, num_copies, request_count, request_time, [], [])
 
         sql = 'SELECT s.`request_id`, s.`site` FROM `copy_request_sites` AS s'
         sql += ' INNER JOIN `copy_requests` AS r ON r.`id` = s.`request_id`'
-        sql += ' WHERE r.`status` = \'new\' OR r.`status` = \'updated\''
+        sql += ' WHERE r.`status` = \'new\''
 
         for request_id, site_name in self.registry.xquery(sql):
             grouped_requests[request_id][4].append(site_name)
 
         sql = 'SELECT i.`request_id`, i.`item` FROM `copy_request_items` AS i'
         sql += ' INNER JOIN `copy_requests` AS r ON r.`id` = i.`request_id`'
-        sql += ' WHERE r.`status` = \'new\' OR r.`status` = \'updated\''
+        sql += ' WHERE r.`status` = \'new\''
 
         for request_id, item_name in self.registry.xquery(sql):
             grouped_requests[request_id][5].append(item_name)
-
-        # active copies should only exist for updated requests, but we query status = new just in case
-        sql = 'SELECT a.`request_id`, a.`item`, a.`site` FROM `active_copies` AS a'
-        sql += ' INNER JOIN `copy_requests` AS r ON r.`id` = a.`request_id`'
-        sql += ' WHERE r.`status` = \'new\' OR r.`status` = \'updated\''
-
-        for request_id, item_name, site_name in self.registry.xquery(sql):
-            grouped_requests[request_id][6].append((item_name, site_name))
 
         def activate(request_id, item, site, status):
             if self.read_only:
@@ -194,7 +186,7 @@ class CopyRequestsHandler(BaseHandler):
             self.registry.query(sql, reason, request_id)
 
         # loop over requests and find items and destinations
-        for request_id, (group_name, num_copies, request_count, request_time, site_names, item_names, active_copies) in grouped_requests.iteritems():
+        for request_id, (group_name, num_copies, request_count, request_time, site_names, item_names) in grouped_requests.iteritems():
             try:
                 group = inventory.groups[group_name]
             except KeyError:
@@ -325,9 +317,6 @@ class CopyRequestsHandler(BaseHandler):
                     # make one copy at each site
 
                     for destination in sites:
-                        if copy_activated_at(item, destination, active_copies):
-                            continue
-    
                         if already_exists(item, destination, group) == 2:
                             completed_requests.append((item, destination))
                         else:
@@ -356,10 +345,6 @@ class CopyRequestsHandler(BaseHandler):
                     for destination, exists in sites_and_existence:
                         if num_new == 0:
                             break
-
-                        if copy_activated_at(item, destination, active_copies):
-                            num_new -= 1
-                            continue
 
                         # consider copies proposed by other requests as complete
                         try:
@@ -471,16 +456,3 @@ class CopyRequestsHandler(BaseHandler):
             # active copies with block name
             self.registry.query(sql, Block.to_full_name(replica.dataset.name, '%'), replica.site.name)
 
-
-def copy_activated_at(item, destination, active_copies):
-    # skip already activated requests
-    if type(item) is Dataset:
-        return (item.name, destination.name) in active_copies
-    else:
-        # if there is at least one active copy of any of the blocks, this request must be active
-        block_names = set(block.full_name() for block in item)
-        for it, st in active_copies:
-            if st == destination.name and it in block_names:
-                return True
-
-        return False

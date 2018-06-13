@@ -23,25 +23,24 @@ class MySQLAuthorizer(Authorizer):
     def list_users(self):
         return self._mysql.query('SELECT `name`, `email`, `dn` FROM `users` ORDER BY `id`')
 
-    def identify_user(self, dn = '', check_trunc = False, name = '', with_id = False): #override
+    def identify_user(self, dn = '', check_trunc = False, name = '', uid = None, with_id = False): #override
         if dn:
-            result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `dn` = %s', dn)
+            result = self._mysql.query('SELECT `name`, `id`, `dn` FROM `users` WHERE `dn` = %s', dn)
             if check_trunc and len(result) == 0:
                 while dn:
                     dn = dn[:dn.rfind('/')]
                     result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `dn` = %s', dn)
                     if len(result) != 0:
                         break
+        elif name:
+            result = self._mysql.query('SELECT `name`, `id`, `dn` FROM `users` WHERE `name` = %s', name)
         else:
-            result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `name` = %s', name)
+            result = self._mysql.query('SELECT `name`, `id`, `dn` FROM `users` WHERE `id` = %s', uid)
 
         if len(result) == 0:
             return None
         else:
-            if with_id:
-                return (result[0][0], int(result[0][1]))
-            else:
-                return result[0][0]
+            return (result[0][0], int(result[0][1]), result[0][2])
 
     def identify_role(self, name, with_id = False): #override
         try:

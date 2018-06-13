@@ -355,12 +355,12 @@ class WebServer(object):
             key, _, value = part.partition(' = ')
             dn += '/' + key + '=' + value
 
-        userinfo = authorizer.identify_user(dn = dn, check_trunc = True, with_id = True)
+        userinfo = authorizer.identify_user(dn = dn, check_trunc = True)
 
         if userinfo is None:
             raise exceptions.AuthorizationError()
 
-        return userinfo
+        return userinfo[:2]
 
     def _internal_server_error(self, start_fnc):
         start_fnc('500 Internal Server Error', [('Content-Type', 'text/plain')])
