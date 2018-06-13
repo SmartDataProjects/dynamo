@@ -108,7 +108,11 @@ class Dealer(object):
         copy_list = []
         for (site, dataset), blocks in unique_map.iteritems():
             if blocks == dataset.blocks:
-                copy_list.append(DatasetReplica(dataset, site, growing = True, group = group))
+                replica = DatasetReplica(dataset, site, growing = True, group = group)
+                for block in blocks:
+                    replica.block_replicas.add(BlockReplica(block, site, group, size = 0))
+
+                copy_list.append(replica)
             else:
                 for block in blocks:
                     copy_list.append(BlockReplica(block, site, group, size = 0))
