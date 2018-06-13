@@ -357,6 +357,8 @@ class Dealer(object):
 
             LOG.info('Scheduling copy of %d replicas to %s.', len(replicas), site.name)
 
+            now = time.time()
+
             with signal_blocker:
                 copy_mapping = self.copy_op.schedule_copies(replicas, comments = comment)
         
@@ -373,13 +375,13 @@ class Dealer(object):
                                 inventory.update(DatasetReplica(item, site, growing = True, group = group))
 
                                 for block in item.blocks:
-                                    inventory.update(BlockReplica(block, site, group, size = 0))
+                                    inventory.update(BlockReplica(block, site, group, size = 0, last_update = now))
                         else:
                             dataset_sizes[item.dataset] += item.size
                             if approved:
                                 if site.find_dataset_replica(item.dataset) is None:
                                     inventory.update(DatasetReplica(item.dataset, site, growing = False))
 
-                                inventory.update(BlockReplica(item, site, group, size = 0))
+                                inventory.update(BlockReplica(item, site, group, size = 0, last_update = now))
     
                     self.history.make_copy_entry(cycle_number, site, copy_id, approved, dataset_sizes.items())
