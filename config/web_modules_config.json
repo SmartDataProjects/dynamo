@@ -6,6 +6,11 @@
     "passwd": "",
     "db": "dynamohistory"
   },
+  "registry": {
+    "user": "dynamo",
+    "passwd": "",
+    "db": "dynamoregister"
+  },
   "rlfsm": {
     "db": {
       "db_params": {
@@ -19,6 +24,11 @@
   "inventory": {
     "stats": {
       "default_constraints": {}
+    }
+  },
+  "request": {
+    "copy": {
+      "default_group": "analysis"
     }
   },
   "detox": {

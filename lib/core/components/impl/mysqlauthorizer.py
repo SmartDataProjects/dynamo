@@ -29,7 +29,7 @@ class MySQLAuthorizer(Authorizer):
             if check_trunc and len(result) == 0:
                 while dn:
                     dn = dn[:dn.rfind('/')]
-                    result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `dn` = %s', dn)
+                    result = self._mysql.query('SELECT `name`, `id`, `dn` FROM `users` WHERE `dn` = %s', dn)
                     if len(result) != 0:
                         break
         elif name:

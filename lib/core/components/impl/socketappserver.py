@@ -9,6 +9,7 @@ import shutil
 import code
 import ssl
 import json
+import traceback
 import logging
 
 from dynamo.core.components.appserver import AppServer
@@ -312,7 +313,10 @@ class SocketAppServer(AppServer):
                         shutil.rmtree(workarea)
 
         except:
-            io.send('failed', sys.exc_info()[0].__name__ + ': ' + str(sys.exc_info()[1]))
+            exc_type, exc, tb = sys.exc_info()
+            msg = '\n' + ''.join(traceback.format_tb(tb)) + '\n'
+            msg += '%s: %s' % (exc_type.__name__, str(exc))
+            io.send('failed', msg)
         finally:
             conn.close()
 

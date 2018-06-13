@@ -67,7 +67,7 @@ class CopyRequestMixin(UserDataMixin):
         if len(excess) != 0:
             raise ExtraParameter(list(excess)[0])
 
-        for key in requred_fields:
+        for key in required_fields:
             if key not in request:
                 raise MissingParameter(key)
 
@@ -104,20 +104,21 @@ class CopyRequestMixin(UserDataMixin):
         # We check the site, group, and item names but not use their ids in the table.
         # The only reason for this would be to make the registry not dependent on specific inventory store technology.
 
-        for item in self.request['item']:
-            if item in inventory.datasets:
-                # OK this is a known dataset
-                continue
-
-            try:
-                dataset_name, block_name = df.Block.from_full_name(item)
-            except df.ObjectError:
-                raise InvalidRequest('Invalid item name %s' % item)
-
-            try:
-                inventory.datasets[dataset_name].find_block(block_name, must_find = True)
-            except:
-                raise InvalidRequest('Invalid block name %s' % item)
+        if 'item' in self.request:
+            for item in self.request['item']:
+                if item in inventory.datasets:
+                    # OK this is a known dataset
+                    continue
+    
+                try:
+                    dataset_name, block_name = df.Block.from_full_name(item)
+                except df.ObjectError:
+                    raise InvalidRequest('Invalid item name %s' % item)
+    
+                try:
+                    inventory.datasets[dataset_name].find_block(block_name, must_find = True)
+                except:
+                    raise InvalidRequest('Invalid block name %s' % item)
 
         if 'site' in self.request:
             for site in self.request['site']:
@@ -142,25 +143,25 @@ class CopyRequestMixin(UserDataMixin):
                 self.user_info_cache[uname] = result[1:] # id, dn
                 self.user_info_cache[result[1]] = (uname, result[2]) # name, dn
 
-        for status in self.request['status']:
-            if status not in ('new', 'activated', 'completed', 'rejected', 'cancelled'):
-                raise InvalidRequest('Invalid status value %s' % status)
+        if 'status' in self.request:
+            for status in self.request['status']:
+                if status not in ('new', 'activated', 'completed', 'rejected', 'cancelled'):
+                    raise InvalidRequest('Invalid status value %s' % status)
 
-    def load_existing(self, by_id = False, lock = False):
+    def lock_tables(self):
+        # Caller of this function is responsible for unlocking
+        # Non-aliased locks are for insert & update statements later
+        tables = ['`copy_requests` AS r', '`copy_requests`', '`active_copies` AS a', '`active_copies`']
+        if 'item' in self.request or 'site' in self.request:
+            tables.extend(['`copy_request_items` AS i', '`copy_request_items`', '`copy_request_sites` AS s', '`copy_request_sites`'])
+
+        self.registry.lock_tables(tables)
+
+    def load_existing(self, by_id = False):
         """
         Find an existing copy request from values in self.request and set self.existing.
         If request_id is set but no existing record is found, raises an InvalidRequest error.
         """
-
-        if lock:
-            # Caller of this function is responsible for unlocking
-            # Non-aliased locks are for insert & update statements later
-            tables = ['`copy_requests` AS r', '`copy_requests`', '`active_copies` AS a', '`active_copies`']
-            if 'item' in self.request or 'site' in self.request:
-                tables.extend(['`copy_request_items` AS i', '`copy_request_items`', '`copy_request_sites` AS s', '`copy_request_sites`'])
-
-            self.registry.lock_tables(tables)
-
         constraints = []
         args = []
         if 'request_id' in self.request:
@@ -195,7 +196,7 @@ class CopyRequestMixin(UserDataMixin):
         sql += ' ORDER BY r.`id`'
 
         _rid = 0
-        for rid, group, n, status, first_request, last_request, count, reason, user_id, a_item, a_site, a_status, a_update in self.register.xquery(sql, *tuple(args)):
+        for rid, group, n, status, first_request, last_request, count, reason, user_id, a_item, a_site, a_status, a_update in self.registry.xquery(sql, *tuple(args)):
             if rid != _rid:
                 _rid = rid
 
@@ -228,6 +229,8 @@ class CopyRequestMixin(UserDataMixin):
             for rid, item in self.registry.xquery(sql):
                 requests[rid].items.append(item)
 
+        return requests
+
 
 class MakeCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
     def __init__(self, config):
@@ -235,14 +238,17 @@ class MakeCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
         MySQLRegistryMixin.__init__(self, config)
         CopyRequestMixin.__init__(self)
 
-        self.default_group = config.request.copy.default_group
+        # config.request.copy points to the "copy" method of dict
+        self.default_group = config['request']['copy']['default_group']
 
     def run(self, caller, request, inventory):
         self.parse_input(request, inventory, ('request_id', 'item', 'site', 'group', 'n'))
-        
+
+        self.lock_tables()
+
         try:
             if 'request_id' in self.request:
-                self.load_existing(by_id = True, lock = True)
+                self.load_existing(by_id = True)
                 if len(self.existing) == 0:
                     raise InvalidRequest('Invalid request id %d' % self.request['request_id'])
 
@@ -328,9 +334,11 @@ class CancelCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
 
     def run(self, caller, request, inventory):
         self.parse_input(request, inventory, ('request_id'), ('request_id'))
+
+        self.lock_tables()
         
         try:
-            self.load_existing(by_id = True, lock = True)
+            self.load_existing(by_id = True)
             if len(self.existing) == 0:
                 raise InvalidRequest('Invalid request id %d' % self.request['request_id'])
                 
