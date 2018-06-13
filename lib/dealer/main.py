@@ -95,21 +95,27 @@ class Dealer(object):
 
         # We don't care about individual plugins any more - flatten the copy list
         # Resolve potential overlaps (one plugin can request a part of dataset requested by another)
-        # by making everything into dataset replicas
         # Group is fixed for a single run() for now, so there is no problem of overwriting ownerships
-        unique_map = {}
+        unique_map = {} # {(site, dataset): set(block)}
         for plugin, replicas in copy_list.iteritems():
             for replica in replicas:
                 try:
-                    unique_map[(replica.site, replica.dataset)].block_replicas.update(replica.block_replicas)
+                    unique_map[(replica.site, replica.dataset)].update(br.block for br in replica.block_replicas)
                 except KeyError:
-                    unique_map[(replica.site, replica.dataset)] = replica
+                    unique_map[(replica.site, replica.dataset)] = set(br.block for br in replica.block_replicas)
 
-        unique_replicas = unique_map.values()
+        # Remake replica objects
+        copy_list = []
+        for (site, dataset), blocks in unique_map.iteritems():
+            if blocks == dataset.blocks:
+                copy_list.append(DatasetReplica(dataset, site, growing = True, group = group))
+            else:
+                for block in blocks:
+                    copy_list.append(BlockReplica(block, site, group, size = 0))
 
         LOG.info('Committing copy.')
         comment = 'Dynamo -- Automatic replication request for %s partition.' % partition.name
-        self._commit_copies(cycle_number, inventory, unique_replicas, comment)
+        self._commit_copies(cycle_number, inventory, copy_list, comment)
 
         self.history.close_copy_cycle(cycle_number)
 
@@ -303,7 +309,7 @@ class Dealer(object):
                 blocks = item
                 dataset = blocks[0].dataset
 
-            new_replica = DatasetReplica(dataset, destination)
+            new_replica = DatasetReplica(dataset, destination, group = group)
             for block in blocks:
                 new_replica.block_replicas.add(BlockReplica(block, destination, group, size = 0))
 
@@ -334,7 +340,7 @@ class Dealer(object):
         """
         @param cycle_number  Cycle number.
         @param inventory     Dynamo inventory.
-        @param copy_list     List of dataset replicas.
+        @param copy_list     List of dataset or block replicas
         @param comment       Comment to be passed to the copy interface.
         """
 
