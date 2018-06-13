@@ -519,7 +519,7 @@ function loadData() {
     inputData.group.push(groups[g].value);
 
   var ajaxInput = {
-    'url': dataPath + '/stats/' + statistic,
+    'url': dataPath + '/inventory/stats/' + statistic,
     'success': function (data, textStatus, jqXHR) { displayData(data.data); },
     'error': handleError,
     'dataType': 'json',
@@ -534,7 +534,7 @@ function getData() {
 
   var statistic = $('#statistic').val();
 
-  var url =window.location.protocol + '//' + window.location.hostname + dataPath + '/stats/' + statistic;
+  var url = window.location.protocol + '//' + window.location.hostname + dataPath + '/inventory/stats/' + statistic;
   url += '?list_by=' + $('#list_by').val();
   url += '&physical=' + $('.physical:checked').val();
 

@@ -29,7 +29,7 @@ function initPage(cycleNumber, partitionId)
 {
     // confirm the specified cycle or get the latest
     var cycleInput = {
-        'url': dataPath + '/cycles',
+        'url': dataPath + '/detox/cycles',
         'data': {'partition_id': partitionId, 'cycle': cycleNumber},
         'dataType': 'json',
         'async': true
@@ -38,7 +38,7 @@ function initPage(cycleNumber, partitionId)
     var cycleCall = $.ajax(cycleInput);
 
     var partitionInput = {
-        'url': dataPath + '/partitions',
+        'url': dataPath + '/detox/partitions',
         'data': {},
         'dataType': 'json',
         'async': true
@@ -77,7 +77,7 @@ function checkUpdates()
         return;
 
     var jaxData = {
-        'url': dataPath + '/cycles',
+        'url': dataPath + '/detox/cycles',
         'data': {'partition_id': partitionId, 'cycle': 0},
         'success': function (cycleResponse, textStatus, jqXHR) { processUpdates(cycleResponse.data); },
         'dataType': 'json',
@@ -899,7 +899,7 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
     $(box.node()).append($(spinner.el));
 
     var jaxData = {
-        'url': dataPath + '/summary',
+        'url': dataPath + '/detox/summary',
         'data': {'cycle': cycleNumber},
         'success': function (response, textStatus, jqXHR) {
             $('#error').html('');
@@ -955,7 +955,7 @@ function loadSiteTable(name)
     $('#' + name + ' .siteTableBox').append($(spinner.el));
 
     var jaxData = {
-        'url': dataPath + '/sitedetail',
+        'url': dataPath + '/detox/sitedetail',
         'data': {'cycle': currentCycle, 'site': name},
         'success': function (response, textStatus, jqXHR) {
             $('#error').html('');
@@ -998,7 +998,7 @@ function findDataset()
     $('#summaryGraphBox').append($(spinner.el));
 
     var jaxData = {
-        'url': dataPath + '/datasets',
+        'url': dataPath + '/detox/datasets',
         'data': {'cycle': currentCycle, 'datasets': datasetNames},
         'success': function (response, textStatus, jqXHR) {
             $('#error').html('');
@@ -1040,7 +1040,7 @@ function removeDataset(displayBox)
     $('#summaryGraphBox').append($(spinner.el));
 
     var jaxData = {
-        'url': dataPath + '/datasets',
+        'url': dataPath + '/detox/datasets',
         'data': {'cycle': currentCycle, 'datasets': datasetNames},
         'success': function (response, textStatus, jqXHR) {
             $('#error').html('');

@@ -33,5 +33,5 @@ function handleError(jqXHR, textStatus, errorThrown) {
 }
 
 // global constant
-var dataPath = window.location.pathname.replace('web', 'data');
-
+// only works if there is no '/web/' in server root
+var dataPath = window.location.pathname.substring(0, window.location.pathname.indexOf('/web/')) + '/data';
