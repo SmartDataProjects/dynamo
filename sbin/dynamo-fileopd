@@ -27,7 +27,7 @@ def transfer(src_pfn, dest_pfn, params_config):
         # Create parent directories at the destination
         params.create_parent = True
         # Overwrite the destination if file already exists (otherwise throws an error)
-        params.overwrite = True
+        params.overwrite = params_config['overwrite']
         params.set_checksum(*params_config['checksum'])
         params.timeout = params_config['transfer_timeout'] # we probably want this to be file size dependent
     
@@ -269,13 +269,15 @@ if __name__ == '__main__':
     max_concurrent = fileop_config.daemon.max_parallel_links
     checksum_algo = fileop_config.daemon.get('checksum', '')
     transfer_timeout = fileop_config.daemon.transfer_timeout
+    overwrite = fileop_config.daemon.get('overwrite', False)
 
     if 'gfal2_verbosity' in fileop_config.daemon:
         gfal2.set_verbose(getattr(gfal2.verbose_level, fileop_config.daemon.gfal2_verbosity.lower()))
 
     params_config = {
         'transfer_nstreams': 1,
-        'transfer_timeout': transfer_timeout
+        'transfer_timeout': transfer_timeout,
+        'overwrite': overwrite
     }
 
     if checksum_algo:
