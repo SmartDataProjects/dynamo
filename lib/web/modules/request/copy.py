@@ -56,6 +56,8 @@ class CopyRequestMixin(UserDataMixin):
         self.request = {}
         self.existing = {}
 
+        self.user_info_cache = {} # {name: (id, dn), id: (name, dn)}
+
     def parse_input(self, request, inventory, allowed_fields, required_fields = tuple()):
         # Check we have the right request fields
 
@@ -132,15 +134,13 @@ class CopyRequestMixin(UserDataMixin):
 
         # Minor security concern: do we want to expose the user list this way?
         if 'user' in self.request:
-            if 'user_id' not in self.request:
-                self.request['user_id'] = {}
-
             for uname in self.request['user']:
-                result = self.authorizer.identify_user(name = uname, with_id = True)
+                result = self.authorizer.identify_user(name = uname)
                 if result is None:
                     raise InvalidRequest('Invalid user name %s' % uname)
 
-                self.request['user_id'][result[1]] = uname
+                self.user_info_cache[uname] = result[1:] # id, dn
+                self.user_info_cache[result[1]] = (uname, result[2]) # name, dn
 
         for status in self.request['status']:
             if status not in ('new', 'activated', 'completed', 'rejected', 'cancelled'):
@@ -174,8 +174,8 @@ class CopyRequestMixin(UserDataMixin):
                 # limit to live requests
                 constraints.append('r.`status` IN (\'new\', \'activated\')')
     
-            if 'user_id' in self.request:
-                constraints.append('r.`user_id` IN (%s)' % ','.join('%d' % d for d in self.request['user_id'].iterkeys()))
+            if 'user' in self.request:
+                constraints.append('r.`user_id` IN (%s)' % ','.join('%d' % self.user_info_cache[user][0] for user in self.request['user']))
     
             if 'item' in self.request or 'site' in self.request:
                 self.make_temp_table()
@@ -194,22 +194,20 @@ class CopyRequestMixin(UserDataMixin):
             sql += ' WHERE ' + ' AND '.join(constraints)
         sql += ' ORDER BY r.`id`'
 
-        users = {}
-
         _rid = 0
-        for rid, group, n, status, first_request, last_request, count, reason, user_id, a_item, a_site, a_status, a_update from self.register.xquery(sql, *tuple(args)):
+        for rid, group, n, status, first_request, last_request, count, reason, user_id, a_item, a_site, a_status, a_update in self.register.xquery(sql, *tuple(args)):
             if rid != _rid:
                 _rid = rid
 
                 try:
-                    user, dn = users[user_id]
+                    user, dn = self.user_info_cache[user_id]
                 except KeyError:
                     result = self.authorizer.identify_user(uid = user_id)
                     if result is None:
                         user = None
                         dn = None
                     else:
-                        user, dn = result
+                        user, dn = self.user_info_cache[user_id] = (result[0], result[2])
 
                 request = requests[rid] = CopyRequest(rid, group, n, status, first_request, last_request, count, reason, user, dn)
 

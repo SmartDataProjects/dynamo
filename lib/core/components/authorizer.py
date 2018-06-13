@@ -38,18 +38,17 @@ class Authorizer(object):
         @param check_trunc  Retry progressively truncated DNs until a match is found.
         @param name         User name.
         @param uid          User id.
-        @param get_id If true, return a tuple (user name, user id)
 
         @return  (user name, user id, user dn) or None if not identified
         """
         raise NotImplementedError('identify_user')
 
-    def identify_role(self, name, with_id = False):
+    def identify_role(self, name):
         """
         Check if a role exists.
         @param name  Role name
         
-        @return  Role name string or (role name, role id). None if not identified
+        @return  (role name, role id) or None if not identified
         """
         raise NotImplementedError('identify_role')
 

@@ -220,7 +220,7 @@ class SocketAppServer(AppServer):
             for rdn in user_cert_data['subject']:
                 dn += '/' + '+'.join('%s=%s' % (DN_TRANSLATION[key], value) for key, value in rdn)
 
-            user_name = master.identify_user(dn = dn, check_trunc = True)
+            user_name, _, _ = master.identify_user(dn = dn, check_trunc = True)
             if user_name is None:
                 io.send('failed', 'Unidentified user DN %s' % dn)
                 return
