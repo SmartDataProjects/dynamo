@@ -8,47 +8,54 @@ from dynamo.web.modules._mysqlregistry import MySQLRegistryMixin
 from dynamo.web.modules._userdata import UserDataMixin
 import dynamo.dataformat as df
 
+class CopyRequest(object):
+    """
+    Utility class to carry around all relevant information about a request.
+    """
+
+    def __init__(self, request_id, group, n, status, first_request, last_request, request_count, reject_reason, user, user_dn):
+        self.request_id = request_id
+        self.group = group
+        self.n = n
+        self.status = status
+        self.first_request = first_request
+        self.last_request = last_request
+        self.request_count = request_count
+        self.reject_reason = reject_reason
+        self.user = user
+        self.user_dn = user_dn
+        self.sites = []
+        self.items = []
+        self.active_copies = None
+
+    def to_dict(self):
+        d = {'request_id': self.request_id,
+             'item': self.items,
+             'site': self.sites,
+             'group': self.group,
+             'n': self.n,
+             'status': self.status,
+             'first_request': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(self.first_request)),
+             'last_request': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(self.last_request)),
+             'request_count': self.request_count,
+             'user': self.user,
+             'dn': self.user_dn
+        }
+
+        if self.status == 'rejected':
+            d['reason'] = self.reject_reason
+        elif self.status in ('activated', 'completed'):
+            active = d['copy'] = []
+            # active_copies must be non-null
+            for item, site, status, update in self.active_copies:
+                active.append({'item': item, 'site': site, 'status': status, 'updated': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(update))})
+        
+        return d
+
 class CopyRequestMixin(UserDataMixin):
-    class CopyRequest(object):
-        def __init__(self, request_id, group, n, status, first_request, last_request, request_count, reject_reason, user, user_dn):
-            self.request_id = request_id
-            self.group = group
-            self.n = n
-            self.status = status
-            self.first_request = first_request
-            self.last_request = last_request
-            self.request_count = request_count
-            self.reject_reason = reject_reason
-            self.user = user
-            self.user_dn = user_dn
-            self.sites = []
-            self.items = []
-            self.active_copies = None
-
-        def to_dict(self):
-            d = {'request_id': self.request_id,
-                 'item': self.items,
-                 'site': self.sites,
-                 'group': self.group,
-                 'n': self.n,
-                 'status': self.status,
-                 'first_request': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(self.first_request)),
-                 'last_request': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(self.last_request)),
-                 'request_count': self.request_count,
-                 'user': self.user,
-                 'dn': self.user_dn
-            }
-
-            if self.status == 'rejected':
-                d['reason'] = self.reject_reason
-            elif self.status in ('activated', 'completed'):
-                active = d['copy'] = []
-                # active_copies must be non-null
-                for item, site, status, update in self.active_copies:
-                    active.append({'item': item, 'site': site, 'status': status, 'updated': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(update))})
-            
-            return json.dumps(d)
-
+    """
+    A mixin defining methods common to Make, Poll, and Cancel.
+    """
 
     def __init__(self):
         UserDataMixin.__init__(self)
@@ -151,9 +158,9 @@ class CopyRequestMixin(UserDataMixin):
     def lock_tables(self):
         # Caller of this function is responsible for unlocking
         # Non-aliased locks are for insert & update statements later
-        tables = ['`copy_requests` AS r', '`copy_requests`', '`active_copies` AS a', '`active_copies`']
+        tables = [('copy_requests', 'r'), 'copy_requests', ('active_copies', 'a'), 'active_copies']
         if 'item' in self.request or 'site' in self.request:
-            tables.extend(['`copy_request_items` AS i', '`copy_request_items`', '`copy_request_sites` AS s', '`copy_request_sites`'])
+            tables.extend([('copy_request_items', 'i'), 'copy_request_items', ('copy_request_sites', 's'), 'copy_request_sites'])
 
         self.registry.lock_tables(tables)
 
@@ -225,7 +232,7 @@ class CopyRequestMixin(UserDataMixin):
                 requests[rid].sites.append(site)
     
             # get the items
-            sql = 'SELECT i.`request_id`, i.`site` FROM `copy_request_items` AS i WHERE i.`request_id` IN (%s)' %  ','.join('%d' % d for d in requests.iterkeys())
+            sql = 'SELECT i.`request_id`, i.`item` FROM `copy_request_items` AS i WHERE i.`request_id` IN (%s)' %  ','.join('%d' % d for d in requests.iterkeys())
             for rid, item in self.registry.xquery(sql):
                 requests[rid].items.append(item)
 
@@ -306,7 +313,7 @@ class MakeCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
         if 'status' in self.request:
             existing.status = self.request['status']
 
-        sql = 'UPDATE `copy_requests` SET `group` = %s, `num_copies` = %s, `status` = %s WHERE `request_id` = %s'
+        sql = 'UPDATE `copy_requests` SET `group` = %s, `num_copies` = %s, `status` = %s, `last_request_time` = NOW() WHERE `request_id` = %s'
         self.registry.query(sql, existing.group, existing.n, existing.status, existing.request_id)
 
         return {existing.request_id: existing}
@@ -333,7 +340,7 @@ class CancelCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
         CopyRequestMixin.__init__(self)
 
     def run(self, caller, request, inventory):
-        self.parse_input(request, inventory, ('request_id'), ('request_id'))
+        self.parse_input(request, inventory, ('request_id',), ('request_id',))
 
         self.lock_tables()
         

@@ -278,34 +278,10 @@ class WebServer(object):
                 # TODO make web server log to a separate file
                 serverutils.send_updates(inventory, self.dynamo_server.inventory_update_queue, silent = True)
             
-        except exceptions.AuthorizationError:
-            start_response('403 Forbidden', [('Content-Type', 'text/plain')])
-            return 'User not authorized to perform the request.\n'
-        except exceptions.MissingParameter as ex:
+        except (exceptions.AuthorizationError, exceptions.ResponseDenied, exceptions.MissingParameter,
+                exceptions.ExtraParameter, exceptions.IllFormedRequest, exceptions.InvalidRequest) as ex:
             start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            msg = 'Missing required parameter "%s"' % ex.param_name
-            if ex.context is not None:
-                msg += ' in %s' % ex.context
-            msg += '.\n'
-            return msg
-        except exceptions.ExtraParameter as ex:
-            start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            msg = 'Parameter "%s" not expected' % ex.param_name
-            if ex.context is not None:
-                msg += ' in %s' % ex.context
-            msg += '.\n'
-            return msg
-        except exceptions.IllFormedRequest as ex:
-            start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            msg = 'Parameter "%s" has illegal value "%s".' % (ex.param_name, ex.value)
-            if ex.hint is not None:
-                msg += ' ' + ex.hint + '.'
-            if ex.allowed is not None:
-                msg += ' Allowed values: [%s]' % ['"%s"' % v for v in ex.allowed]
-            return msg + '\n'
-        except exceptions.ResponseDenied as ex:
-            start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            return 'Server denied response due to: %s\n' % str(ex)
+            return str(ex)
         except:
             return self._internal_server_error(start_response)
 
