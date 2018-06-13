@@ -25,8 +25,6 @@ var datasetSearchColors = [
     '#0066ff'
 ];
 
-var dataPath = window.location.pathname.replace('web', 'data');
-
 function initPage(cycleNumber, partitionId)
 {
     // confirm the specified cycle or get the latest
@@ -50,21 +48,24 @@ function initPage(cycleNumber, partitionId)
 
     // initialize the page when both requests return
     $.when(cycleCall, partitionCall).then(function (cycleResult, partitionResult) {
-        currentCycle = cycleResult[0][0].cycle;
+        var cycleData = cycleResult[0].data;
+        var partitionData = partitionResult[0].data;
+
+        currentCycle = cycleData[0].cycle;
         if (cycleNumber == 0) {
             latestCycle = currentCycle;
 
             // should this partition be monitored?
-            for (var x in partitionResult[0]) {
-                if (partitionResult[0][x].id == partitionId) {
-                    if (partitionResult[0][x].monitored)
+            for (var x in partitionData) {
+                if (partitionData[x].id == partitionId) {
+                    if (partitionResult[0].data[x].monitored)
                         setInterval(checkUpdates, 300000);
                     break;
                 }
             }
         }
 
-        setPartitions(partitionResult[0]);
+        setPartitions(partitionData);
         
         loadSummary(currentCycle, partitionId, currentNorm);
     });
@@ -78,7 +79,7 @@ function checkUpdates()
     var jaxData = {
         'url': dataPath + '/cycles',
         'data': {'partition_id': partitionId, 'cycle': 0},
-        'success': function (cycleData, textStatus, jqXHR) { processUpdates(cycleData); },
+        'success': function (cycleResponse, textStatus, jqXHR) { processUpdates(cycleResponse.data); },
         'dataType': 'json',
         'async': false
     };
@@ -900,7 +901,9 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
     var jaxData = {
         'url': dataPath + '/summary',
         'data': {'cycle': cycleNumber},
-        'success': function (data, textStatus, jqXHR) {
+        'success': function (response, textStatus, jqXHR) {
+            $('#error').html('');
+            var data = response.data;
             nextCycle = data.next_cycle;
             previousCycle = data.previous_cycle;
             displaySummary(data);
@@ -909,6 +912,7 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
             setupSiteDetails(data.site_data.slice(1)); // 0th element is Total
         },
         'dataType': 'json',
+        'error': handleError,
         'async': false
     }
 
@@ -953,7 +957,9 @@ function loadSiteTable(name)
     var jaxData = {
         'url': dataPath + '/sitedetail',
         'data': {'cycle': currentCycle, 'site': name},
-        'success': function (data, textStatus, jqXHR) {
+        'success': function (response, textStatus, jqXHR) {
+            $('#error').html('');
+            var data = response.data;
             for (var cid in data.conditions) {
                 if (!(cid in conditionTexts))
                     conditionTexts[cid] = data.conditions[cid];
@@ -963,6 +969,7 @@ function loadSiteTable(name)
             spinner.stop();
         },
         'dataType': 'json',
+        'error': handleError,
         'async': false
     };
 
@@ -993,7 +1000,9 @@ function findDataset()
     var jaxData = {
         'url': dataPath + '/datasets',
         'data': {'cycle': currentCycle, 'datasets': datasetNames},
-        'success': function (data, textStatus, jqXHR) {
+        'success': function (response, textStatus, jqXHR) {
+            $('#error').html('');
+            var data = response.data;
             for (var cid in data.conditions) {
                 if (!(cid in conditionTexts))
                     conditionTexts[cid] = data.conditions[cid];
@@ -1004,6 +1013,7 @@ function findDataset()
             spinner.stop();
         },
         'dataType': 'json',
+        'error': handleError,
         'async': false
     };
 
@@ -1032,7 +1042,9 @@ function removeDataset(displayBox)
     var jaxData = {
         'url': dataPath + '/datasets',
         'data': {'cycle': currentCycle, 'datasets': datasetNames},
-        'success': function (data, textStatus, jqXHR) {
+        'success': function (response, textStatus, jqXHR) {
+            $('#error').html('');
+            var data = response.data;
             for (var cid in data.conditions) {
                 if (!(cid in conditionTexts))
                     conditionTexts[cid] = data.conditions[cid];
@@ -1043,6 +1055,7 @@ function removeDataset(displayBox)
             spinner.stop();
         },
         'dataType': 'json',
+        'error': handleError,
         'async': false
     };
 

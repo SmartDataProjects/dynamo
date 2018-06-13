@@ -67,32 +67,10 @@ var colors = [
 
 var loading = new Spinner({'scale': 5, 'corners': 0, 'width': 2});
 
-function handleError(jqXHR, textStatus, errorThrown) {
-  var msg = 'Error fetching data: ';
-  switch (jqXHR.status) {
-  case 400:
-    msg += 'Bad HTTP request';
-    break;
-  case 403:
-    msg += 'Permission denied';
-    break;
-  case 404:
-    msg += 'Not found';
-    break;
-  case 500:
-    msg += 'Internal server error';
-    break;
-  default:
-    msg += 'Unknown error';
-    break;
-  }
-  $('#error').html(msg);
-}
-
 function initPage(statistic, list_by, constraints) {
   var ajaxInput = {
-    'url': '/data/inventory/groups',
-    'success': function (data, textStatus, jqXHR) { setGroups(data); },
+    'url': dataPath + '/inventory/groups',
+    'success': function (data, textStatus, jqXHR) { setGroups(data.data); },
     'error': handleError,
     'dataType': 'json',
     'async': false
@@ -541,8 +519,8 @@ function loadData() {
     inputData.group.push(groups[g].value);
 
   var ajaxInput = {
-    'url': '/data/inventory/stats/' + statistic,
-    'success': function (data, textStatus, jqXHR) { displayData(data); },
+    'url': dataPath + '/stats/' + statistic,
+    'success': function (data, textStatus, jqXHR) { displayData(data.data); },
     'error': handleError,
     'dataType': 'json',
     'async': true,
@@ -556,7 +534,7 @@ function getData() {
 
   var statistic = $('#statistic').val();
 
-  var url = '/data/inventory/stats/' + statistic
+  var url =window.location.protocol + '//' + window.location.hostname + dataPath + '/stats/' + statistic;
   url += '?list_by=' + $('#list_by').val();
   url += '&physical=' + $('.physical:checked').val();
 
