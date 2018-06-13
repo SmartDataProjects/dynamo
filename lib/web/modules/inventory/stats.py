@@ -38,7 +38,7 @@ def passes_constraints(item, constraints):
 
     for category, pattern in constraints.iteritems():
         valuemap = InventoryStatCategories.categories[category][2]
-        value = keymap(item)
+        value = valuemap(item)
 
         if type(pattern) is list:
             # ORed list
