@@ -22,7 +22,9 @@ class MasterServer(Authorizer, AppManager):
     def get_instance(module, config):
         instance = get_instance(MasterServer, module, config)
 
-        # Decorate all public methods of MasterServer with the lock
+        # Decorate all public methods of MasterServer with the lock. Without this, the lock() method is meaningless.
+        # Subclasses may have its own lock placed on the actual shared resource (e.g. database) by _do_lock, in which
+        # case this class-level lock is redundant.
         def make_wrapper(obj, mthd):
             def wrapper(*args, **kwd):
                 with obj._master_server_lock:

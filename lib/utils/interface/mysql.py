@@ -3,7 +3,7 @@ import sys
 import logging
 import time
 import re
-import threading
+import multiprocessing
 from ConfigParser import ConfigParser
 
 import MySQLdb
@@ -77,7 +77,7 @@ class MySQL(object):
         self._connection = None
 
         # Avoid interference in case the module is used from multiple threads
-        self._connection_lock = threading.RLock()
+        self._connection_lock = multiprocessing.RLock()
         
         # Use with care! A deadlock can occur when another session tries to lock a table used by a session with
         # reuse_connection = True
@@ -524,9 +524,9 @@ class MySQL(object):
         self.query(sql, **kwd)
 
     def unlock_tables(self):
-        self._connection_lock.release()
-
         self.query('UNLOCK TABLES')
+
+        self._connection_lock.release()
 
     def _execute_in_batches(self, execute, pool):
         """
