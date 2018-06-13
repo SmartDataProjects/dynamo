@@ -23,6 +23,8 @@ class EnforcerRule(object):
         for cond_text in config.replicas:
             self.target_replicas.append(Condition(cond_text, replica_variables))
 
+        self.destination_group_name = config.get('destination_group', '')
+
         self.protect = config.get('protect', False)
 
 
@@ -40,14 +42,15 @@ class EnforcerInterface(object):
 
         # Enforcer policies
         self.rules = {}
-        for rule_name, rule in policy_conf.rules.iteritems():
-            self.rules[rule_name] = EnforcerRule(rule)
+        for rule_name, rule_conf in policy_conf.rules.iteritems():
+            rule = EnforcerRule(rule_conf)
+            if not rule.destination_group_name:
+                rule.destination_group_name = policy_conf.default_destination_group
+
+            self.rules[rule_name] = rule
 
         # If True, report_back returns a list to be fed to RRD writing
         self.write_rrds = config.get('write_rrds', False)
-
-        # Not considering datasets larger than this value.
-        self.max_dataset_size = config.get('max_dataset_size', 0.) * 1.e+12
 
     def report_back(self, inventory):
         """
@@ -65,11 +68,14 @@ class EnforcerInterface(object):
             destination_sites = self.get_destination_sites(rule_name, inventory, partition)
             source_sites = self.get_source_sites(rule_name, inventory, partition)
 
+            destination_group = inventory.groups[rule.destination_group_name]
+
             target_num = rule.num_copies
 
-            already_there = []
-            en_route = {}
-            still_missing = {}
+            if self.write_rrds:
+                already_there = []
+                en_route = {}
+                still_missing = {}
 
             if target_num > len(destination_sites):
                 # This is never fulfilled - cap
@@ -81,16 +87,14 @@ class EnforcerInterface(object):
             # [target_num] copy in destination_sites
 
             for site in source_sites:
-                for replica in site.partitions[partition].replicas.iterkeys():
+                site_partition = site.partitions[partition]
+                for replica in site_partition.replicas.iterkeys():
                     dataset = replica.dataset
 
                     if dataset in checked_datasets:
                         continue
 
                     checked_datasets.add(dataset)
-
-                    if dataset.size > self.max_dataset_size:
-                        continue
 
                     for condition in rule.target_replicas:
                         if condition.match(replica):
@@ -102,43 +106,78 @@ class EnforcerInterface(object):
                     num_complete = 0
                     num_incomplete = 0
                     data_incomplete = {}
+                    can_be_flipped = []
 
-                    for other_replica in dataset.replicas:
-                        if other_replica is replica:
+                    for replica in dataset.replicas:
+                        if replica.site not in destination_sites:
                             continue
 
-                        if other_replica.site in destination_sites:
-                            if other_replica.is_complete():
-                                num_complete += 1
-                            else:
-                                num_incomplete += 1
-                                data_incomplete[other_replica.site.name] = str(other_replica.size(physical = True)) + "__" + str(other_replica.size(physical = False))
+                        try:
+                            blockreps_in_partition = site_partition.replicas[replica]
+                        except KeyError:
+                            continue
+
+                        if blockreps_in_partition is not None:
+                            # skip replicas not fully in partition
+                            continue
+
+                        owners = set(b.group for b in replica.block_replicas)
+
+                        if not (len(owners) == 1 and list(owners)[0] is destination_group):
+                            # should not count replicas not owned by the target group
+                            can_be_flipped.append(replica)
+                            continue
+
+                        if replica.is_full():
+                            num_complete += 1
+                        else:
+                            num_incomplete += 1
+                            data_incomplete[replica.site.name] = str(replica.size(physical = True)) + "__" + str(replica.size(physical = False))
 
                     if num_complete >= target_num:
-                        already_there.append(replica.dataset.name)
+                        if self.write_rrds:
+                            already_there.append(dataset.name)
                     elif num_complete + num_incomplete >= target_num:
-                        for key, value in data_incomplete.items():
-                            en_route[replica.dataset.name + "__" + key] = value
+                        if self.write_rrds:
+                            for key, value in data_incomplete.items():
+                                en_route[dataset.name + "__" + key] = value
                     else:
-                        # create a request
-
                         site_candidates = destination_sites - set(r.site for r in dataset.replicas if r.is_full())
-                        if len(site_candidates) != 0:
-                            # can be 0 if the dataset has copies in other partitions
+                        if len(site_candidates) == 0 and len(can_be_flipped) == 0:
+                            # site_candidates can be 0 if the dataset has copies in other partitions
+                            # we have nowhere to request copy to
+                            continue
 
-                            still_missing[replica.dataset.name] = replica.dataset.size
+                        if self.write_rrds:
+                            still_missing[dataset.name] = dataset.size
+                        else:
+                            site_candidates = list(site_candidates)
+                            random.shuffle(site_candidates)
 
-                            if not self.write_rrds:
-                                target_site = random.choice(list(site_candidates))
+                            request_sites = []
+                            while num_complete + num_incomplete + len(request_sites) < target_num:
+                                # create a request
     
-                                LOG.debug('Enforcer rule %s requesting %s at %s', rule_name, dataset.name, target_site.name)
-                                product.append((dataset, target_site))
+                                # prioritize the replicas where we can just flip the ownership
+                                if len(can_be_flipped) != 0:
+                                    replica = can_be_flipped.pop()
+                                    request_sites.append(replica.site)
+                                    continue
+
+                                if len(site_candidates) == 0:
+                                    break
+
+                                request_sites.append(site_candidates.pop())
+
+                            for site in request_sites:
+                                LOG.debug('Enforcer rule %s requesting %s at %s', rule_name, dataset.name, site.name)
+                                product.append((dataset, site))
 
             if self.write_rrds:
                 product.append((rule_name, already_there, en_route, still_missing))
 
         if not self.write_rrds:
-            # randomize requests
+            # product is ordered by site - randomize requests
             random.shuffle(product)
 
         return product
