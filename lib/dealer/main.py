@@ -372,16 +372,39 @@ class Dealer(object):
                         if type(item) is Dataset:
                             dataset_sizes[item] = item.size
                             if approved:
-                                inventory.update(DatasetReplica(item, site, growing = True, group = group))
+                                existing_replica = site.find_dataset_replica(item)
+                                if existing_replica is None:
+                                    inventory.update(DatasetReplica(item, site, growing = True, group = group))
+                                    for block in item.blocks:
+                                        inventory.update(BlockReplica(block, site, group, size = 0, last_update = now))
 
-                                for block in item.blocks:
-                                    inventory.update(BlockReplica(block, site, group, size = 0, last_update = now))
-                        else:
+                                else:
+                                    # group reassignment
+                                    existing_replica.growing = True
+                                    existing_replica.group = group
+                                    inventory.register_update(existing_replica)
+                                    for block in item.blocks:
+                                        block_replica = existing_replica.find_block_replica(block)
+                                        if block_replica is None:
+                                            inventory.update(BlockReplica(block, site, group, size = 0, last_update = now))
+                                        elif block_replica.group != group:
+                                            block_replica.group = group
+                                            block_replica.last_update = now
+                                            inventory.register_update(block_replica)
+
+                        else: # Block
                             dataset_sizes[item.dataset] += item.size
                             if approved:
-                                if site.find_dataset_replica(item.dataset) is None:
+                                existing_replica = site.find_dataset_replica(item.dataset)
+                                if existing_replica is None:
                                     inventory.update(DatasetReplica(item.dataset, site, growing = False))
 
-                                inventory.update(BlockReplica(item, site, group, size = 0, last_update = now))
+                                block_replica = existing_replica.find_block_replica(item)
+                                if block_replica is None:
+                                    inventory.update(BlockReplica(item, site, group, size = 0, last_update = now))
+                                elif block_replica.group != group:
+                                    block_replica.group = group
+                                    block_replica.last_update = now
+                                    inventory.register_update(block_replica)
     
                     self.history.make_copy_entry(cycle_number, site, copy_id, approved, dataset_sizes.items())
