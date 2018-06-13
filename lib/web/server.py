@@ -126,12 +126,48 @@ class WebServer(object):
             self.active_count.value += 1
 
         try:
-            return self._main(environ, start_response)
+            self.code = 200 # HTTP response code
+            self.content_type = 'application/json' # content type string
+            self.headers = [] # list of header tuples
+            self.callback = None # set to callback function name if this is a JSONP request
+            self.message = '' # string
+
+            content = self._main(environ)
+
+            # Maybe we can use some standard library?
+            if self.code == 200:
+                status = 'OK'
+            elif self.code == 400:
+                status = 'Bad Request'
+            elif self.code == 403:
+                status = 'Forbidden'
+            elif self.code == 404:
+                status = 'Not Found'
+            elif self.code == 500:
+                status = 'Internal Server Error'
+            elif self.code == 503:
+                status = 'Service Unavailable'
+
+            if self.content_type == 'application/json':
+                json_data = {'result': status, 'message': self.message}
+                if content is not None:
+                    json_data['data'] = content
+
+                content = json.dumps(json_data)
+                if self.callback is not None:
+                    content = self.callback + '(' + content + ')'
+
+            headers = [('Content-Type', self.content_type)] + self.headers
+
+            start_response('%d %s' % (self.code, status), headers)
+
+            return content + '\n'
+
         finally:
             with self.active_count.get_lock():
                 self.active_count.value -= 1
 
-    def _main(self, environ, start_response):
+    def _main(self, environ):
         """
         Body of the WSGI callable. Steps:
         1. Determine protocol. If HTTPS, identify the user.
@@ -157,16 +193,18 @@ class WebServer(object):
             try:
                 user, user_id = self.identify_user(environ, authorizer)
             except exceptions.AuthorizationError:
-                start_response('403 Forbidden', [('Content-Type', 'text/plain')])
-                return 'Unknown user.\nClient name: %s\n' % environ['SSL_CLIENT_S_DN']
+                self.code = 403
+                self.message = 'Unknown user. Client name: %s' % environ['SSL_CLIENT_S_DN']
+                return 
             except:
-                return self._internal_server_error(start_response)
+                return self._internal_server_error()
 
             authlist = authorizer.list_user_auth(user)
 
         else:
-            start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            return 'Only HTTP or HTTPS requests are allowed.\n'
+            self.code = 400
+            self.message = 'Only HTTP or HTTPS requests are allowed.'
+            return
 
         ## Step 2
         mode = environ['SCRIPT_NAME'].strip('/')
@@ -175,23 +213,25 @@ class WebServer(object):
             try:
                 source = open(HTMLMixin.contents_path + '/' + mode + environ['PATH_INFO'])
             except IOError:
-                start_response('404 Not Found', [('Content-Type', 'text/plain')])
+                self.code = 404
+                self.content_type = 'text/plain'
                 return 'Invalid request %s%s.\n' % (mode, environ['PATH_INFO'])
             else:
-                content = source.read()
-                source.close()
                 if mode == 'js':
-                    ctype = 'text/javascript'
+                    self.content_type = 'text/javascript'
                 else:
-                    ctype = 'text/css'
+                    self.content_type = 'text/css'
 
-                start_response('200 OK', [('Content-Type', ctype)])
-                return content + '\n'
+                content = source.read() + '\n'
+                source.close()
+
+                return content
 
         ## Step 3
         if mode != 'data' and mode != 'web':
-            start_response('404 Not Found', [('Content-Type', 'text/plain')])
-            return 'Invalid request %s.\n' % mode
+            self.code = 404
+            self.message = 'Invalid request %s.' % mode
+            return
 
         module, _, command = environ['PATH_INFO'][1:].partition('/')
 
@@ -203,13 +243,14 @@ class WebServer(object):
             try: # again
                 cls = modules[mode][module][command]
             except KeyError:
-                start_response('404 Not Found', [('Content-Type', 'text/plain')])
-                return 'Invalid request %s/%s.\n' % (module, command)
+                self.code = 404
+                self.message = 'Invalid request %s/%s.' % (module, command)
+                return
 
         try:
             provider = cls(self.modules_config)
         except:
-            return self._internal_server_error(start_response)
+            return self._internal_server_error()
 
         if provider.write_enabled:
             self.dynamo_server.manager.master.lock()
@@ -218,8 +259,9 @@ class WebServer(object):
                 if self.dynamo_server.manager.master.inhibit_write():
                     # We need to give up here instead of waiting, because the web server processes will be flushed out as soon as
                     # inventory is updated after the current writing process is done
-                    start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
-                    return 'Server cannot execute %s/%s at the moment because the inventory is being updated.\n' % (module, command)
+                    self.code = 503
+                    self.message = 'Server cannot execute %s/%s at the moment because the inventory is being updated.' % (module, command)
+                    return
                 else:
                     self.dynamo_server.manager.master.start_write_web(socket.gethostname(), os.getpid())
                     # stop is called from the DynamoServer upon successful inventory update
@@ -243,14 +285,16 @@ class WebServer(object):
                 try:
                     request = json.loads(environ['wsgi.input'].read())
                 except:
-                    start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-                    return 'Could not parse input.\n'
+                    self.code = 400
+                    self.message = 'Could not parse input.'
+                    return
             else:
                 # Use FieldStorage to parse URL-encoded GET and POST requests
                 fstorage = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
                 if fstorage.list is None:
-                    start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-                    return 'Could not parse input.\n'
+                    self.code = 400
+                    self.message = 'Could not parse input.'
+                    return 
 
                 request = {}
                 for item in fstorage.list:
@@ -280,26 +324,19 @@ class WebServer(object):
             
         except (exceptions.AuthorizationError, exceptions.ResponseDenied, exceptions.MissingParameter,
                 exceptions.ExtraParameter, exceptions.IllFormedRequest, exceptions.InvalidRequest) as ex:
-            start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            return str(ex)
+            self.code = 400
+            self.message = str(ex)
+            return
         except:
-            return self._internal_server_error(start_response)
+            return self._internal_server_error()
 
         ## Step 6
-        headers = [('Content-Type', provider.content_type)] + provider.additional_headers
-        start_response('200 OK', headers)
+        self.content_type = provider.content_type
+        self.headers = provider.additional_headers
+        if 'callback' in request:
+            self.callback = request['callback']
 
-        if mode == 'data' and provider.content_type == 'application/json':
-            data_str = json.dumps(content)
-
-            if 'callback' in request:
-                # JSONP request
-                return request['callback'] + '(' + data_str + ')'
-            else:
-                # Normal JSON
-                return data_str + '\n'
-        else:
-            return content
+        return content
 
     def identify_user(self, environ, authorizer):
         """Read the DN string in the environ and return (user name, user id)."""
@@ -338,8 +375,10 @@ class WebServer(object):
 
         return userinfo[:2]
 
-    def _internal_server_error(self, start_fnc):
-        start_fnc('500 Internal Server Error', [('Content-Type', 'text/plain')])
+    def _internal_server_error(self):
+        self.code = 500
+        self.content_type = 'text/plain'
+
         exc_type, exc, tb = sys.exc_info()
         if self.debug:
             response = 'Caught exception %s while waiting for task to complete.\n' % exc_type.__name__

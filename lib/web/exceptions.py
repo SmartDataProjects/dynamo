@@ -54,7 +54,10 @@ class IllFormedRequest(Exception):
 class InvalidRequest(Exception):
     """Raise if the request values are invalid."""
     def __str__(self):
-        return self.message + '.\n'
+        if len(self.args) != 0:
+            return self.args[0] + '.\n'
+        else:
+            return 'InvalidRequest\n'
 
 class AuthorizationError(Exception):
     """Raise if the user is not authorized for the request."""
