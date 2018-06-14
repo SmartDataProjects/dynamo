@@ -48,6 +48,9 @@ class ObjectRepository(object):
     def clear_update(self):
         pass
 
+    def make_object(self, repstr):
+        return eval('df.' + repstr)
+
 
 class DynamoInventoryProxy(ObjectRepository):
     """Inventory object used by Dynamo applications"""
@@ -225,9 +228,6 @@ class DynamoInventory(ObjectRepository):
         LOG.info('Data is loaded to memory. %d groups, %d sites, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.groups), len(self.sites), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
         self.loaded = True
-
-    def make_object(self, repstr):
-        return eval('df.' + repstr)
 
     def _load_partitions(self):
         """Load partition data from a text table."""

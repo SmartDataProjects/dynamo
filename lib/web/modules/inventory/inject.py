@@ -459,7 +459,7 @@ class InjectData(InjectDataBase, MySQLRegistryMixin):
         self.inject_queue = []
 
     def _update(self, inventory, obj):
-        embedded_clone, updated = obj.embed_into(self, check = True)
+        embedded_clone, updated = obj.embed_into(inventory, check = True)
         if updated:
             self.inject_queue.append(embedded_clone)
 

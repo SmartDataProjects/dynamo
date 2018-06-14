@@ -325,9 +325,9 @@ class SocketAppServer(AppServer):
         port_data = io.recv()
         addr = (io.host, port_data['port'])
 
-        defaults_config, inventory, authorizer = self.dynamo_server.get_subprocess_args()
+        inventory, authorizer = self.dynamo_server.get_subprocess_args()
 
-        args = (addr, workarea, defaults_config, inventory, authorizer)
+        args = (addr, workarea, self.dynamo_server.defaults_config, inventory, authorizer)
         proc = multiprocessing.Process(target = run_interactive_through_socket, name = 'interactive', args = args)
         proc.start()
         proc.join()

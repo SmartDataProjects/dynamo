@@ -28,7 +28,7 @@
       ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_request_sites"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "active_deletions"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "detox_locks"],
-      ["INSERT, UPDATE, DELETE", "dynamoregister", "data_injections"],
+      ["INSERT, UPDATE, DELETE, ALTER", "dynamoregister", "data_injections"],
       ["SELECT", "dynamoserver", "users"]
     ]
   },

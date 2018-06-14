@@ -28,6 +28,43 @@ rlfsm = RLFSM(config.get('rlfsm', None))
 if read_only:
     rlfsm.dry_run = True
 
+## Set up a handle to the registry
+from dynamo.utils.interface.mysql import MySQL
+
+registry = MySQL(config.registry)
+
+import dynamo.dataformat as df
+
 ## Run
-LOG.info('Updating the inventory.')
+LOG.info('Updating the inventory from injections.')
+
+if not read_only:
+    registry.lock_tables(write = ['data_injections'])
+
+n_injected = 0
+n_deleted = 0
+
+for cmd, objstr in registry.xquery('SELECT `cmd`, `obj` FROM `data_injections` ORDER BY `id`'):
+    obj = eval('df.' + objstr)
+#    obj = inventory.make_object(objstr)
+
+    if cmd == 'update':
+        inventory.update(obj)
+        n_injected += 1
+    elif cmd == 'delete':
+        inventory.delete(obj)
+        n_deleted += 1
+
+if not read_only:
+    registry.query('DELETE FROM `data_injections`')
+    registry.query('ALTER TABLE `data_injections` AUTO_INCREMENT = 1')
+
+    registry.unlock_tables()
+
+LOG.info('Injected %d objects and deleted %d objects.', n_injected, n_deleted)
+
+LOG.info('Updating the inventory from transfers and deletions.')
+
 rlfsm.update_inventory(inventory)
+
+LOG.info('Inventory update completed.')
