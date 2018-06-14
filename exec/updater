@@ -33,8 +33,6 @@ from dynamo.utils.interface.mysql import MySQL
 
 registry = MySQL(config.registry)
 
-import dynamo.dataformat as df
-
 ## Run
 LOG.info('Updating the inventory from injections.')
 
@@ -45,8 +43,7 @@ n_injected = 0
 n_deleted = 0
 
 for cmd, objstr in registry.xquery('SELECT `cmd`, `obj` FROM `data_injections` ORDER BY `id`'):
-    obj = eval('df.' + objstr)
-#    obj = inventory.make_object(objstr)
+    obj = inventory.make_object(objstr)
 
     if cmd == 'update':
         inventory.update(obj)

@@ -15,7 +15,6 @@ class InjectDataBase(WebModule):
 
     def __init__(self, config):
         WebModule.__init__(self, config)
-        self.write_enabled = True
 
     def run(self, caller, request, inventory):
         """
@@ -495,6 +494,8 @@ class InjectDataSync(InjectDataBase):
         # using RLFSM to update the subscriptions
         # we use the default settings
         self.rlfsm = RLFSM()
+
+        self.write_enabled = True
 
     def _update(self, inventory, obj):
         if type(obj) is df.File:
