@@ -60,31 +60,29 @@
   "utils.interface.mysql:MySQL": {
     "fullauth": {
       "default_user": "dynamo",
+      "scratch_db": "dynamo_tmp",
       "params": {
         "dynamo": {
           "passwd": "",
-          "host": "localhost",
-          "scratch_db": "dynamo_tmp"
+          "host": "localhost"
         },
         "dynamofod": {
           "passwd": "",
-          "host": "localhost",
-          "scratch_db": "dynamo_tmp"
+          "host": "localhost"
         },
         "dynamoread": {
           "passwd": "",
-          "host": "localhost",
-          "scratch_db": "dynamo_tmp"
+          "host": "localhost"
         }
       }
     },
     "readonly": {
       "default_user": "dynamoread",
+      "scratch_db": "dynamo_tmp",
       "params": {
         "dynamoread": {
           "passwd": "",
-          "host": "localhost",
-          "scratch_db": "dynamo_tmp"
+          "host": "localhost"
         }
       }
     }

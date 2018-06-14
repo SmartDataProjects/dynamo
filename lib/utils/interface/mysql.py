@@ -23,12 +23,14 @@ LOG = logging.getLogger(__name__)
 class MySQL(object):
     """Generic thread-safe MySQL interface (for an interface)."""
 
-    _default_user = ''
+    _default_config = None
     _default_parameters = {'': {}} # {user: config}
 
     @staticmethod
     def set_default(config):
-        MySQL._default_user = config.default_user
+        MySQL._default_config = Configuration(config)
+        MySQL._default_config.pop('params')
+
         for user, params in config.params.items():
             MySQL._default_parameters[user] = dict(params)
             MySQL._default_parameters[user]['user'] = user
@@ -45,12 +47,13 @@ class MySQL(object):
             self.value = value
     
     def __init__(self, config = None):
-        config = Configuration(config)
+        if config is None:
+            config = MySQL._default_config
 
         if 'user' in config:
             user = config.user
         else:
-            user = MySQL._default_user
+            user = config.default_user
 
         try:
             self._connection_parameters = dict(MySQL._default_parameters[user])
