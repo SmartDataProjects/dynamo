@@ -11,7 +11,12 @@ def requestcopy(host, cert, key, items, sites, n = 1):
 
     url = 'https://%s/data/request/copy' % host
 
-    data = {'item': items, 'site': sites, 'n': n}
+    data = []
+    for item in items:
+        data.append(('item[]', item))
+    for site in sites:
+        data.append(('site[]', site))
+    data.append(('n', n))
 
     for attempt in xrange(5):
         response = requests.request('POST', url = url, data = data, verify = False, timeout = 600, cert = (cert, key))
@@ -30,17 +35,17 @@ def pollcopy(host, cert, key, rid = None, items = None, sites = None, statuses =
 
     url = 'https://%s/data/request/pollcopy' % host
 
-    data = {}
+    data = []
     if rid is not None:
-        data['request_id'] = rid
+        data.append(('request_id', rid))
     if items is not None:
-        data['item'] = items
+        data.extend(('item[]', item) for item in items)
     if sites is not None:
-        data['site'] = sites
+        data.extend(('site[]', site) for site in sites)
     if statuses is not None:
-        data['status'] = statuses
+        data.extend(('status[]', status) for status in statuses)
     if users is not None:
-        data['user'] = users
+        data.extend(('user[]', user) for user in users)
 
     if len(data) == 0:
         raise RuntimeError('No selection specified')
