@@ -3,22 +3,23 @@ import logging
 
 from dynamo.web.exceptions import MissingParameter, IllFormedRequest, InvalidRequest, AuthorizationError
 from dynamo.web.modules._base import WebModule
-from dynamo.fileop.rlfsm import RLFSM
+from dynamo.web.modules._mysqlregistry import MySQLRegistryMixin
 import dynamo.dataformat as df
 
 LOG = logging.getLogger(__name__)
 
-class InjectData(WebModule):
+class InjectDataBase(WebModule):
+    """
+    Parse a JSON uploaded by the user and form injection instructions.
+    """
+
     def __init__(self, config):
         WebModule.__init__(self, config)
         self.write_enabled = True
 
-        # using default settings
-        self.rlfsm = RLFSM()
-
     def run(self, caller, request, inventory):
         """
-        Inject data into inventory with a JSON (sent via POST). Data must be a dict.
+        Create injection instructions from a JSON (sent via POST). Data must be a dict.
         The top level keys must be "dataset", "site", "group", or "datasetreplica".
         The values must be lists of dicts, where each dict represents an object. Blocks should be listed
         within a dataset dict, Files within Blocks, and BlockReplicas within DatasetReplicas.
@@ -30,12 +31,14 @@ class InjectData(WebModule):
         if type(request) is not dict:
             raise IllFormedRequest('request', type(request).__name__, hint = 'data must be a dict type')
 
+        self._initialize()
+
         counts = {}
 
+        # blocks_with_new_file list used in the synchronous version of this class
+
         if 'dataset' in request:
-            blocks_with_new_file = self._make_datasets(request['dataset'], inventory, counts)
-        else:
-            blocks_with_new_file = []
+            self._make_datasets(request['dataset'], inventory, counts)
 
         if 'site' in request:
             self._make_sites(request['site'], inventory, counts)
@@ -46,18 +49,18 @@ class InjectData(WebModule):
         if 'datasetreplica' in request:
             self._make_datasetreplicas(request['datasetreplica'], inventory, counts)
 
-        # Do this here to minimize the risk of creating invalid subscriptions
-        for block in blocks_with_new_file:
-            all_files = block.files
-            for replica in block.replicas:
-                self.rlfsm.subscribe_files(replica.site, all_files - replica.files())
-
+        self._finalize()
+        
         return counts
+
+    def _initialize(self):
+        pass
+
+    def _finalize(self):
+        pass
 
     def _make_datasets(self, objects, inventory, counts):
         num_datasets = 0
-
-        blocks_with_new_file = []
 
         for obj in objects:
             try:
@@ -91,18 +94,16 @@ class InjectData(WebModule):
                     raise IllFormedRequest('dataset', str(obj), hint = str(exc))
     
                 try:
-                    dataset = inventory.update(new_dataset)
+                    dataset = self._update(inventory, new_dataset)
                 except:
                     raise RuntimeError('Inventory update failed')
 
                 num_datasets += 1
 
             if blocks is not None:
-                blocks_with_new_file.extend(self._make_blocks(blocks, dataset, inventory, counts))
+                self._make_blocks(blocks, dataset, inventory, counts)
 
         counts['datasets'] = num_datasets
-
-        return blocks_with_new_file
 
     def _make_sites(self, objects, inventory, counts):
         num_sites = 0
@@ -127,7 +128,7 @@ class InjectData(WebModule):
                     raise IllFormedRequest('site', str(obj), hint = str(exc))
     
                 try:
-                    inventory.update(new_site)
+                    self._update(inventory, new_site)
                 except:
                     raise RuntimeError('Inventory update failed')
         
@@ -158,7 +159,7 @@ class InjectData(WebModule):
                     raise IllFormedRequest('group', str(obj), hint = str(exc))
     
                 try:
-                    inventory.update(new_group)
+                    self._update(inventory, new_group)
                 except:
                     raise RuntimeError('Inventory update failed')
 
@@ -222,7 +223,7 @@ class InjectData(WebModule):
                 new_replica = df.DatasetReplica(dataset, site, growing = growing, group = group)
     
                 try:
-                    replica = inventory.update(new_replica)
+                    replica = self._update(inventory, new_replica)
                 except:
                     raise RuntimeError('Inventory update failed')
         
@@ -235,8 +236,6 @@ class InjectData(WebModule):
 
     def _make_blocks(self, objects, dataset, inventory, counts):
         num_blocks = 0
-
-        blocks_with_new_file = []
 
         for obj in objects:
             try:
@@ -272,7 +271,7 @@ class InjectData(WebModule):
                     raise IllFormedRequest('block', str(obj), hint = str(exc))
 
                 try:
-                    block = inventory.update(new_block)
+                    block = self._update(inventory, new_block)
                 except:
                     raise RuntimeError('Inventory update failed')
     
@@ -290,16 +289,12 @@ class InjectData(WebModule):
                 new_block = False
 
             if files is not None:
-                added_new_file = self._make_files(files, block, new_block, inventory, counts)
-                if added_new_file and not new_block:
-                    blocks_with_new_file.append(block)
+                self._make_files(files, block, new_block, inventory, counts)
 
         try:
             counts['blocks'] += num_blocks
         except KeyError:
             counts['blocks'] = num_blocks
-
-        return blocks_with_new_file
 
     def _make_files(self, objects, block, new_block, inventory, counts):
         num_files = 0
@@ -348,7 +343,7 @@ class InjectData(WebModule):
                 block.num_files += 1
 
                 try:
-                    lfile = inventory.update(new_lfile)
+                    lfile = self._update(inventory, new_lfile)
                 except:
                     raise RuntimeError('Inventory update failed')
 
@@ -363,11 +358,11 @@ class InjectData(WebModule):
                 num_files += 1
 
         if num_files != 0:
-            inventory.register_update(block)
+            self._register_update(inventory, block)
 
         try:
             for block_replica in block_replicas.itervalues():
-                inventory.update(block_replica)
+                self._update(inventory, block_replica)
         except:
             raise RuntimeError('Inventory update failed')
 
@@ -375,8 +370,6 @@ class InjectData(WebModule):
             counts['files'] += num_files
         except KeyError:
             counts['files'] = num_files
-
-        return num_files != 0
 
     def _make_blockreplicas(self, objects, dataset_replica, inventory, counts):
         num_blockreplicas = 0
@@ -441,7 +434,7 @@ class InjectData(WebModule):
                     raise IllFormedRequest('blockreplica', str(obj), hint = str(exc))
 
                 try:
-                    inventory.update(new_replica)
+                    self._update(inventory, new_replica)
                 except:
                     raise RuntimeError('Inventory update failed')
 
@@ -452,5 +445,77 @@ class InjectData(WebModule):
         except KeyError:
             counts['blockreplicas'] = num_blockreplicas
 
+
+class InjectData(InjectDataBase, MySQLRegistryMixin):
+    """
+    Asynchronous version of the injection. Injection instructions are queued in a registry table with the same format
+    as the central inventory update table. The updater process will pick up the injection instructions asynchronously.
+    """
+
+    def __init__(self, config):
+        InjectDataBase.__init__(self, config)
+        MySQLRegistryMixin.__init__(self, config)
+
+        self.inject_queue = []
+
+    def _update(self, inventory, obj):
+        embedded_clone, updated = obj.embed_into(self, check = True)
+        if updated:
+            self.inject_queue.append(embedded_clone)
+
+        return embedded_clone
+
+    def _register_update(self, inventory, obj):
+        self.inject_queue.append(obj)
+
+    def _initialize(self):
+        # Lock will be release if this process crashes
+        self.registry.lock_tables(write = ['data_injections'])
+
+    def _finalize(self):
+        fields = ('cmd', 'obj')
+        mapping = lambda obj: ('update', repr(obj))
+
+        self.registry.insert_many('data_injections', fields, mapping, self.inject_queue)
+        self.registry.unlock_tables()
+
+        self.message = 'Data will be injected in the regular update cycle later.'
+
+class InjectDataSync(InjectDataBase):
+    """
+    Synchronous version of data injection. The client is responsible for retrying when injection fails due to
+    an ongoing inventory update.
+    """
+
+    def __init__(self, config):
+        InjectDataBase.__init__(self, config)
+
+        # list of blocks whose subscriptions should be updated
+        self.blocks_with_new_file = set()
+        # using RLFSM to update the subscriptions
+        # we use the default settings
+        self.rlfsm = RLFSM()
+
+    def _update(self, inventory, obj):
+        if type(obj) is df.File:
+            self.blocks_with_new_file.add(obj.block)
+
+        return inventory.update(obj)
+
+    def _register_update(self, inventory, obj):
+        inventory.register_update(obj)
+
+    def _finalize(self):
+        # Do this here to minimize the risk of creating invalid subscriptions
+        for block in self.blocks_with_new_file:
+            all_files = block.files
+            for replica in block.replicas:
+                self.rlfsm.subscribe_files(replica.site, all_files - replica.files())
+
+        self.message = 'Data is injected.'
+
 # exported to __init__.py
-export_data = {'inject': InjectData}
+export_data = {
+    'inject': InjectData,
+    'injectsync': InjectDataSync
+}

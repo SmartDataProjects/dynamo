@@ -348,6 +348,7 @@ class WebServer(object):
             return self._internal_server_error()
 
         ## Step 6
+        self.message = provider.message
         self.content_type = provider.content_type
         self.headers = provider.additional_headers
         if 'callback' in request:

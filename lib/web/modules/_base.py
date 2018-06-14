@@ -4,6 +4,7 @@ class WebModule(object):
         self.require_authorizer = False
         self.content_type = 'application/json'
         self.additional_headers = []
+        self.message = ''
 
     def run(self, caller, request, inventory):
         """
