@@ -47,13 +47,12 @@ class MySQL(object):
             self.value = value
     
     def __init__(self, config = None):
-        if config is None:
-            config = MySQL._default_config
+        config = Configuration(config)
 
         if 'user' in config:
             user = config.user
         else:
-            user = config.default_user
+            user = MySQL._default_config.default_user
 
         try:
             self._connection_parameters = dict(MySQL._default_parameters[user])
@@ -84,13 +83,22 @@ class MySQL(object):
         
         # Use with care! A deadlock can occur when another session tries to lock a table used by a session with
         # reuse_connection = True
-        self.reuse_connection = config.get('reuse_connection', False)
+        if 'reuse_connection' in config:
+            self.reuse_connection = config.reuse_connection
+        else:
+            self.reuse_connection = MySQL._default_config.get('reuse_connection', False)
 
         # Default 1M characters
-        self.max_query_len = config.get('max_query_len', 1000000)
+        if 'max_query_len' in config:
+            self.max_query_len = config.max_query_len
+        else:
+            self.max_query_len = MySQL._default_config.get('max_query_len', 1000000)
 
         # Default database for CREATE TEMPORARY TABLE
-        self.scratch_db = config.get('scratch_db', '')
+        if 'scratch_db' in config:
+            self.scratch_db = config.scratch_db
+        else:
+            self.scratch_db = MySQL._default_config.get('scratch_db', '')
 
         # Row id of the last insertion. Will be nonzero if the table has an auto-increment primary key.
         # **NOTE** While core execution of query() and xquery() are locked and thread-safe, last_insert_id is not.
@@ -136,6 +144,7 @@ class MySQL(object):
 
         conf['reuse_connection'] = self.reuse_connection
         conf['max_query_len'] = self.max_query_len
+        conf['scratch_db'] = self.scratch_db
 
         return conf
 
