@@ -47,10 +47,12 @@ class AppServer(object):
         ## register them first.
         self.notify_lock = threading.Lock()
 
-        self._running = False
+        self._stop_flag = threading.Event()
 
     def start(self):
         """Start a daemon thread that runs the accept loop and return."""
+
+        self._stop_flag.clear()
 
         accept_thread = threading.Thread(target = self._accept_applications)
         accept_thread.daemon = True
@@ -60,12 +62,10 @@ class AppServer(object):
         scheduler_thread.daemon = True
         scheduler_thread.start()
 
-        self._running = True
-
     def stop(self):
         """Stop the server. Applications should have all terminated by the time this function is called."""
 
-        self._running = False
+        self._stop_flag.set()
         self._stop_accepting()
 
     def notify_synch_app(self, app_id, data):
@@ -431,7 +431,13 @@ class AppServer(object):
                 LOG.info('[Scheduler] Starting sequence %s.', sequence_name)
 
         while True:
+            if self._stop_flag.is_set():
+                break
+
             for sequence_name in self.dynamo_server.manager.master.get_sequences(enabled_only = True):
+                if self._stop_flag.is_set():
+                    break
+
                 work_dir = self.scheduler_base + '/' + sequence_name
 
                 db = sqlite3.connect(work_dir + '/sequence.db')
@@ -505,7 +511,7 @@ class AppServer(object):
                         self._schedule_from_sequence(sequence_name, iline + 1)
 
             # all sequences processed; now sleep for 10 seconds
-            time.sleep(10)
+            self._stop_flag.wait(10)
 
     def _schedule_from_sequence(self, sequence_name, iline):
         work_dir = self.scheduler_base + '/' + sequence_name

@@ -176,7 +176,9 @@ class SocketAppServer(AppServer):
             try:
                 conn, addr = self._sock.accept()
             except Exception as ex:
-                if self._running:
+                if self._stop_flag.is_set():
+                    return
+                else:
                     try:
                         if ex.errno == 9: # Bad file descriptor -> socket is closed
                             self.stop()
@@ -186,8 +188,6 @@ class SocketAppServer(AppServer):
 
                     LOG.error('Application server connection failed with error: %s.' % str(sys.exc_info()[1]))
                     continue
-
-                return
 
             thread.start_new_thread(self._process_application, (conn, addr))
 

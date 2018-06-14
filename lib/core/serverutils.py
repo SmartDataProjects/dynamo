@@ -29,6 +29,15 @@ def killproc(proc, LOG, timeout = 5):
     else:
         proc.join(timeout)
 
+    if proc.is_alive():
+        # if still alive, force kill
+        try:
+            os.kill(proc.pid, signal.SIGKILL)
+        except:
+            pass
+
+        proc.join(1)
+
 def bindmount(source, target):
     # Enums defined in sys/mount.h - not named variables in libc.so
     RDONLY = 1
