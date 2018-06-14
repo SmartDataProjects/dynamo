@@ -197,22 +197,25 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin):
 
     def make_temp_tables(self):
         # Make temporary tables and fill copy_ids_tmp with ids of requests whose item and site lists fully cover the provided list of items and sites.
-        self.registry.create_tmp_table('copy_items_tmp', ('item'))
+        columns = ['`item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL']
+        self.registry.create_tmp_table('copy_items_tmp', columns)
         if 'item' in self.request:
-            self.registry.insert_many('copy_items_tmp', ('item'), None, self.request['item'])
+            self.registry.insert_many('copy_items_tmp', ('item',), None, self.request['item'], db = self.registry.scratch_db)
 
-        self.registry.create_tmp_table('copy_sites_tmp', ('site'))
+        columns = ['`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL']
+        self.registry.create_tmp_table('copy_sites_tmp', columns)
         if 'site' in self.request:
-            self.registry.insert_many('copy_sites_tmp', ('site'), None, self.request['site'])
+            self.registry.insert_many('copy_sites_tmp', ('site',), None, self.request['site'], db = self.registry.scratch_db)
 
-        self.registry.create_tmp_table('copy_ids_tmp', ('id'))
+        columns = ['`id` int(10) unsigned NOT NULL AUTO_INCREMENT']
+        self.registry.create_tmp_table('copy_ids_tmp', columns)
 
-        sql = 'INSERT INTO `copy_ids_tmp`'
+        sql = 'INSERT INTO `{db}`.`copy_ids_tmp`'
         sql += ' SELECT r.`id` FROM `copy_requests` AS r WHERE'
-        sql += ' 0 NOT IN (SELECT (`site` IN (SELECT `site` FROM `copy_request_sites` AS s WHERE s.`request_id` = r.`id`)) FROM `copy_sites_tmp`)'
+        sql += ' 0 NOT IN (SELECT (`site` IN (SELECT `site` FROM `copy_request_sites` AS s WHERE s.`request_id` = r.`id`)) FROM `{db}`.`copy_sites_tmp`)'
         sql += ' AND '
-        sql += ' 0 NOT IN (SELECT (`item` IN (SELECT `item` FROM `copy_request_items` AS i WHERE i.`request_id` = r.`id`)) FROM `copy_items_tmp`)'
-        self.registry.query(sql)
+        sql += ' 0 NOT IN (SELECT (`item` IN (SELECT `item` FROM `copy_request_items` AS i WHERE i.`request_id` = r.`id`)) FROM `{db}`.`copy_items_tmp`)'
+        self.registry.query(sql.format(db = self.registry.scratch_db))
 
     def fill_from_sql(self, constraints, args):
         requests = {}

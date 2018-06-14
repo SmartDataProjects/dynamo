@@ -50,6 +50,7 @@
     "hosts": ["localhost"],
     "grants": [
       ["SELECT, LOCK TABLES", "dynamo"],
+      ["ALL PRIVILEGES", "dynamo\\_tmp"],
       ["INSERT, UPDATE, DELETE", "dynamo", "transfer_batches"],
       ["INSERT, UPDATE, DELETE", "dynamo", "transfer_queue"],
       ["INSERT, UPDATE, DELETE", "dynamo", "failed_transfers"],

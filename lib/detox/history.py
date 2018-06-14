@@ -319,15 +319,16 @@ class DetoxHistory(DetoxHistoryBase):
         self._mysql.query('CREATE TABLE `{0}` LIKE `replicas`'.format(table_name))
 
         # Insert full data into a temporary table with site and dataset names
-        sql = 'CREATE TEMPORARY TABLE `replicas_tmp` ('
-        sql += '`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,'
-        sql += '`dataset` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,'
-        sql += '`size` bigint(20) unsigned NOT NULL,'
-        sql += '`decision` enum(\'delete\',\'keep\',\'protect\') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,'
-        sql += '`condition` int(10) unsigned NOT NULL,'
-        sql += 'KEY `site_dataset` (`site`,`dataset`)'
-        sql += ')'
-        self._mysql.query(sql)
+        tmp_table = 'replicas_tmp'
+        columns = [
+            '`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL',
+            '`dataset` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL',
+            '`size` bigint(20) unsigned NOT NULL',
+            '`decision` enum(\'delete\',\'keep\',\'protect\') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL',
+            '`condition` int(10) unsigned NOT NULL',
+            'KEY `site_dataset` (`site`,`dataset`)'
+        ]
+        self._mysql.create_tmp_table(tmp_table, columns)
 
         def replica_entry(entries, decision):
             for replica, matches in entries.iteritems():
@@ -338,18 +339,18 @@ class DetoxHistory(DetoxHistoryBase):
                     yield (site_name, dataset_name, size, decision, condition_id)
 
         fields = ('site', 'dataset', 'size', 'decision', 'condition')
-        self._mysql.insert_many('replicas_tmp', fields, None, replica_entry(deleted_list, 'delete'), do_update = False)
-        self._mysql.insert_many('replicas_tmp', fields, None, replica_entry(kept_list, 'keep'), do_update = False)
-        self._mysql.insert_many('replicas_tmp', fields, None, replica_entry(protected_list, 'protect'), do_update = False)
+        self._mysql.insert_many(tmp_table, fields, None, replica_entry(deleted_list, 'delete'), do_update = False, db = self._mysql.scratch_db)
+        self._mysql.insert_many(tmp_table, fields, None, replica_entry(kept_list, 'keep'), do_update = False, db = self._mysql.scratch_db)
+        self._mysql.insert_many(tmp_table, fields, None, replica_entry(protected_list, 'protect'), do_update = False, db = self._mysql.scratch_db)
 
         # Then use insert select join to convert the names to ids
         sql = 'INSERT INTO `{0}` (`site_id`, `dataset_id`, `size`, `decision`, `condition`)'.format(table_name)
-        sql += ' SELECT s.`id`, d.`id`, r.`size`, r.`decision`, r.`condition` FROM `replicas_tmp` AS r'
+        sql += ' SELECT s.`id`, d.`id`, r.`size`, r.`decision`, r.`condition` FROM `{0}`.`{1}` AS r'.format(self._mysql.scratch_db, tmp_table)
         sql += ' INNER JOIN `{0}`.`sites` AS s ON s.`name` = r.`site`'.format(self.history_db)
         sql += ' INNER JOIN `{0}`.`datasets` AS d ON d.`name` = r.`dataset`'.format(self.history_db)
         self._mysql.query(sql)
 
-        self._mysql.query('DROP TABLE `replicas_tmp`')
+        self._mysql.drop_tmp_table(tmp_table)
 
         # Now transfer data to an SQLite file
         try:
@@ -440,25 +441,26 @@ class DetoxHistory(DetoxHistoryBase):
         self._mysql.query('CREATE TABLE `{0}` LIKE `sites`'.format(table_name))
 
         # Insert full data into a temporary table with site and dataset names
-        sql = 'CREATE TEMPORARY TABLE `sites_tmp` ('
-        sql += '`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,'
-        sql += '`status` enum(\'ready\',\'waitroom\',\'morgue\',\'unknown\') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,'
-        sql += '`quota` int(10) NOT NULL,'
-        sql += 'KEY `site` (`site`)'
-        sql += ')'
-        self._mysql.query(sql)
+        tmp_table = 'sites_tmp'
+        columns = [
+            '`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL',
+            '`status` enum(\'ready\',\'waitroom\',\'morgue\',\'unknown\') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL',
+            '`quota` int(10) NOT NULL',
+            'KEY `site` (`site`)'
+        ]
+        self._mysql.create_tmp_table(tmp_table, columns)
 
         fields = ('site', 'status', 'quota')
         mapping = lambda (site, quota): (site.name, site.status, quota)
-        self._mysql.insert_many('sites_tmp', fields, mapping, quotas.iteritems(), do_update = False)
+        self._mysql.insert_many(tmp_table, fields, mapping, quotas.iteritems(), do_update = False, db = self._mysql.scratch_db)
 
         # Then use insert select join to convert the names to ids
         sql = 'INSERT INTO `{0}` (`site_id`, `status`, `quota`)'.format(table_name)
-        sql += ' SELECT s.`id`, t.`status`, t.`quota` FROM `sites_tmp` AS t'
+        sql += ' SELECT s.`id`, t.`status`, t.`quota` FROM `{0}`.`{1}` AS t'.format(self._mysql.scratch_db, tmp_table)
         sql += ' INNER JOIN `{0}`.`sites` AS s ON s.`name` = t.`site`'.format(self.history_db)
         self._mysql.query(sql)
 
-        self._mysql.query('DROP TABLE `sites_tmp`')
+        self._mysql.drop_tmp_table(tmp_table)
 
         # Now transfer data to an SQLite file
         try:

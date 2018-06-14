@@ -86,6 +86,9 @@ class MySQL(object):
         # Default 1M characters
         self.max_query_len = config.get('max_query_len', 1000000)
 
+        # Default database for CREATE TEMPORARY TABLE
+        self.scratch_db = config.get('scratch_db', '')
+
         # Row id of the last insertion. Will be nonzero if the table has an auto-increment primary key.
         # **NOTE** While core execution of query() and xquery() are locked and thread-safe, last_insert_id is not.
         # Use insert_and_get_id() in a threaded environment.
@@ -605,51 +608,60 @@ class MySQL(object):
         return self.query('SELECT COUNT(*) FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s', db, table)[0] != 0
 
     def create_tmp_table(self, table, columns, db = ''):
+        """
+        Create a temporary table. Can be performed with a CREATE TEMPORARY TABLE privilege (not the full CREATE TABLE).
+        @param table    Temporary table name
+        @param columns  A list or tuple of column definitions (see make_map for an example). If a string (`X`.`Y` or `Y`), then use LIKE syntax to create.
+        @param db       Optional DB name (default is scratch_db).
+        """
         if not db:
-            db = self.db_name()
-
-        tmp_db = db + '_tmp'
-        tmp_table = '%s_tmp' % table
+            db = self.scratch_db
 
         self.drop_tmp_table(table, db = db)
 
-        sql = 'CREATE TEMPORARY TABLE `%s`.`%s` (' % (tmp_db, tmp_table)
-        sql += ','.join(columns)
-        sql += ') ENGINE=MyISAM DEFAULT CHARSET=latin1'
+        if type(columns) is str:
+            sql = 'CREATE TEMPORARY TABLE `%s`.`%s` LIKE %s' % (db, table, columns)
+        else:
+            sql = 'CREATE TEMPORARY TABLE `%s`.`%s` (' % (db, table)
+            sql += ','.join(columns)
+            sql += ') ENGINE=MyISAM DEFAULT CHARSET=latin1'
 
         self.query(sql)
 
-        return tmp_db, tmp_table
+    def truncate_tmp_table(self, table, db = ''):
+        if not db:
+            db = self.scratch_db
+
+        if self.table_exists(table, db):
+            self.query('TRUNCATE TABLE `%s`.`%s`' % (db, table))
 
     def drop_tmp_table(self, table, db = ''):
         if not db:
-            db = self.db_name()
+            db = self.scratch_db
 
-        tmp_db = db + '_tmp'
-        tmp_table = '%s_tmp' % table
-
-        if self.table_exists(tmp_table, db = tmp_db):
-            self.query('DROP TEMPORARY TABLE `%s`.`%s`' % (tmp_db, tmp_table))
+        if self.table_exists(table, db):
+            self.query('DROP TABLE `%s`.`%s`' % (db, table))
 
     def make_map(self, table, objects, object_id_map = None, id_object_map = None, key = None, tmp_join = False):
         objitr = iter(objects)
 
         if tmp_join:
+            tmp_table = table + '_map'
             columns = ['`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL', 'PRIMARY KEY (`name`)']
-            tmp_db, tmp_table = self.create_tmp_table(table + '_map', columns)
+            self.create_tmp_table(tmp_table, columns)
 
             # need to create a list first because objects can already be an iterator and iterators can iterate only once
             objlist = list(objitr)
             objitr = iter(objlist)
 
             if key is None:
-                self.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist, db = tmp_db)
+                self.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist, db = self.scratch_db)
             else:
-                self.insert_many(tmp_table, ('name',), lambda obj: (key(obj),), objlist, db = tmp_db)
+                self.insert_many(tmp_table, ('name',), lambda obj: (key(obj),), objlist, db = self.scratch_db)
 
-            name_to_id = dict(self.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s`.`%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_db, tmp_table)))
+            name_to_id = dict(self.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s`.`%s` AS t2 ON t2.`name` = t1.`name`' % (table, self.scratch_db, tmp_table)))
 
-            self.drop_tmp_table(table)
+            self.drop_tmp_table(tmp_table)
 
         else:
             name_to_id = dict(self.xquery('SELECT `name`, `id` FROM `%s`' % table))

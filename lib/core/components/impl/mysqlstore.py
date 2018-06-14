@@ -296,13 +296,13 @@ class MySQLInventoryStore(InventoryStore):
             sql += ' LEFT JOIN `block_replica_sizes` AS brf ON (brf.`block_id`, brf.`site_id`) = (b.`id`, dr.`site_id`)'
 
         if groups_tmp is not None:
-            sql += ' INNER JOIN `%s`.`%s` AS gt ON gt.`id` = br.`group_id`' % groups_tmp
+            sql += ' INNER JOIN `%s`.`%s` AS gt ON gt.`id` = br.`group_id`' % (self._mysql.scratch_db, groups_tmp)
 
         if sites_tmp is not None:
-            sql += ' INNER JOIN `%s`.`%s` AS st ON st.`id` = dr.`site_id`' % sites_tmp
+            sql += ' INNER JOIN `%s`.`%s` AS st ON st.`id` = dr.`site_id`' % (self._mysql.scratch_db, sites_tmp)
 
         if datasets_tmp is not None:
-            sql += ' INNER JOIN `%s`.`%s` AS dt ON dt.`id` = dr.`dataset_id`' % datasets_tmp
+            sql += ' INNER JOIN `%s`.`%s` AS dt ON dt.`id` = dr.`dataset_id`' % (self._mysql.scratch_db, datasets_tmp)
 
         sql += ' ORDER BY dr.`dataset_id`, dr.`site_id`, b.`id`'
 
@@ -414,14 +414,15 @@ class MySQLInventoryStore(InventoryStore):
                 block_replica.file_ids = tuple(file_ids)
 
     def _setup_constraints(self, table, names):
+        tmp_table = table + '_load'
         columns = ['`id` int(11) unsigned NOT NULL', 'PRIMARY KEY (`id`)']
-        tmp_db, tmp_table = self._mysql.create_tmp_table(table + '_load', columns)
+        self._mysql.create_tmp_table(tmp_table)
 
         # first dump the group ids into a temporary table, then constrain the original table
-        sqlbase = 'INSERT INTO `%s`.`%s` SELECT `id` FROM `%s`' % (tmp_db, tmp_table, table)
+        sqlbase = 'INSERT INTO `%s`.`%s` SELECT `id` FROM `%s`' % (self._mysql.scratch_db, tmp_table, table)
         self._mysql.execute_many(sqlbase, 'name', names)
 
-        return tmp_db, tmp_table
+        return tmp_table
 
     def _save_partitions(self, partitions): #override
         if self._mysql.table_exists('partitions_tmp'):
@@ -676,7 +677,7 @@ class MySQLInventoryStore(InventoryStore):
         sql = 'SELECT g.`id`, g.`name`, g.`olevel` FROM `groups` AS g'
 
         if groups_tmp is not None:
-            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = g.`id`' % groups_tmp
+            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = g.`id`' % (self._mysql.scratch_db, groups_tmp)
 
         for group_id, name, olname in self._mysql.xquery(sql):
             yield Group(
@@ -689,7 +690,7 @@ class MySQLInventoryStore(InventoryStore):
         sql = 'SELECT s.`id`, s.`name`, s.`host`, s.`storage_type`+0, s.`backend`, `status`+0 FROM `sites` AS s'
 
         if sites_tmp is not None:
-            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = s.`id`' % sites_tmp
+            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = s.`id`' % (self._mysql.scratch_db, sites_tmp)
 
         for site_id, name, host, storage_type, backend, status in self._mysql.xquery(sql):
             yield Site(
@@ -708,7 +709,7 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' INNER JOIN `partitions` AS p ON p.`id` = q.`partition_id`'
 
         if sites_tmp is not None:
-            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = q.`site_id`' % sites_tmp
+            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = q.`site_id`' % (self._mysql.scratch_db, sites_tmp)
 
         for site_name, partition_name, storage in self._mysql.xquery(sql):
             yield SitePartition(Site(site_name), Partition(partition_name), quota = storage * 1.e+12)
@@ -739,7 +740,7 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' FROM `datasets` AS d'
 
         if datasets_tmp is not None:
-            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = d.`id`' % datasets_tmp
+            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = d.`id`' % (self._mysql.scratch_db, datasets_tmp)
 
         for dataset_id, name, status, data_type, sw_version_id, last_update, is_open in self._mysql.xquery(sql):
             # size and num_files are reset when loading blocks
@@ -760,7 +761,7 @@ class MySQLInventoryStore(InventoryStore):
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
 
         if datasets_tmp is not None:
-            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = b.`dataset_id`' % datasets_tmp
+            sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = b.`dataset_id`' % (self._mysql.scratch_db, datasets_tmp)
 
         sql += ' ORDER BY b.`dataset_id`'
 
