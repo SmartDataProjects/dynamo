@@ -166,7 +166,7 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin):
         if 'item' in self.request or 'site' in self.request:
             tables.extend([('copy_request_items', 'i'), 'copy_request_items', ('copy_request_sites', 's'), 'copy_request_sites'])
 
-        self.registry.lock_tables(tables)
+        self.registry.lock_tables(write = tables)
 
     def load_existing(self, by_id = False):
         """
@@ -191,7 +191,7 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin):
     
             if 'item' in self.request or 'site' in self.request:
                 self.make_temp_tables()
-                constraints.append('r.`id` IN (SELECT `id` FROM `copy_ids_tmp`)')
+                constraints.append('r.`id` IN (SELECT `id` FROM `{0}`.`copy_ids_tmp`)'.format(self.registry.scratch_db))
 
         self.existing = self.fill_from_sql(constraints, args)
 
@@ -200,14 +200,19 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin):
         columns = ['`item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL']
         self.registry.create_tmp_table('copy_items_tmp', columns)
         if 'item' in self.request:
-            self.registry.insert_many('copy_items_tmp', ('item',), None, self.request['item'], db = self.registry.scratch_db)
+            mapping = lambda i: (i,)
+            self.registry.insert_many('copy_items_tmp', ('item',), mapping, self.request['item'], db = self.registry.scratch_db)
 
         columns = ['`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL']
         self.registry.create_tmp_table('copy_sites_tmp', columns)
         if 'site' in self.request:
-            self.registry.insert_many('copy_sites_tmp', ('site',), None, self.request['site'], db = self.registry.scratch_db)
+            mapping = lambda s: (s,)
+            self.registry.insert_many('copy_sites_tmp', ('site',), mapping, self.request['site'], db = self.registry.scratch_db)
 
-        columns = ['`id` int(10) unsigned NOT NULL AUTO_INCREMENT']
+        columns = [
+            '`id` int(10) unsigned NOT NULL AUTO_INCREMENT',
+            'PRIMARY KEY (`id`)'
+        ]
         self.registry.create_tmp_table('copy_ids_tmp', columns)
 
         sql = 'INSERT INTO `{db}`.`copy_ids_tmp`'

@@ -81,7 +81,8 @@ if __name__ == '__main__':
 
     PROXY = '/tmp/x509up_u%d' % os.getuid()
     
-    parser = ArgumentParser(description = 'Inject data to Dynamo inventory.')
+    parser = ArgumentParser(description = 'Request copy or deletion of datasets and blocks.')
+    parser.add_argument('--delete', '-D', action = 'store_true', dest = 'delete', help = 'Request deletions.')
     parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'datasets', nargs = '+', default = [], help = 'Datasets to copy.')
     parser.add_argument('--block', '-b', metavar = 'BLOCK', dest = 'blocks', nargs = '+', default = [], help = 'Blocks to copy.')
     parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'sites', nargs = '+', help = 'Sites to copy to.')
@@ -115,7 +116,10 @@ if __name__ == '__main__':
                 if len(items) == 0:
                     raise RuntimeError('Missing --dataset or --block.')
 
-                print inject(args.host, args.cert, args.key, items, args.sites, args.n)
+                if args.sites is None:
+                    raise RuntimeError('Missing --site')
+
+                print requestcopy(args.host, args.cert, args.key, items, args.sites, args.n)
 
     except Exception as ex:
         sys.stderr.write(str(ex) + '\n')

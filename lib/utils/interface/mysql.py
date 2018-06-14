@@ -23,7 +23,7 @@ LOG = logging.getLogger(__name__)
 class MySQL(object):
     """Generic thread-safe MySQL interface (for an interface)."""
 
-    _default_config = None
+    _default_config = Configuration()
     _default_parameters = {'': {}} # {user: config}
 
     @staticmethod
