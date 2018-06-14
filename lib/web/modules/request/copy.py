@@ -52,18 +52,22 @@ class CopyRequest(object):
         
         return d
 
-class CopyRequestMixin(UserDataMixin):
+class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin):
     """
     A mixin defining methods common to Make, Poll, and Cancel.
     """
 
-    def __init__(self):
-        UserDataMixin.__init__(self)
+    def __init__(self, config):
+        UserDataMixin.__init__(self, config)
+        MySQLRegistryMixin.__init__(self, config)
 
         self.request = {}
         self.existing = {}
 
         self.user_info_cache = {} # {name: (id, dn), id: (name, dn)}
+
+        # we'll be using temporary tables
+        self.registry.reuse_connection = True
 
     def parse_input(self, request, inventory, allowed_fields, required_fields = tuple()):
         # Check we have the right request fields
@@ -186,10 +190,29 @@ class CopyRequestMixin(UserDataMixin):
                 constraints.append('r.`user_id` IN (%s)' % ','.join('%d' % self.user_info_cache[user][0] for user in self.request['user']))
     
             if 'item' in self.request or 'site' in self.request:
-                self.make_temp_table()
+                self.make_temp_tables()
                 constraints.append('r.`id` IN (SELECT `id` FROM `copy_ids_tmp`)')
 
         self.existing = self.fill_from_sql(constraints, args)
+
+    def make_temp_tables(self):
+        # Make temporary tables and fill copy_ids_tmp with ids of requests whose item and site lists fully cover the provided list of items and sites.
+        self.registry.create_tmp_table('copy_items_tmp', ('item'))
+        if 'item' in self.request:
+            self.registry.insert_many('copy_items_tmp', ('item'), None, self.request['item'])
+
+        self.registry.create_tmp_table('copy_sites_tmp', ('site'))
+        if 'site' in self.request:
+            self.registry.insert_many('copy_sites_tmp', ('site'), None, self.request['site'])
+
+        self.registry.create_tmp_table('copy_ids_tmp', ('id'))
+
+        sql = 'INSERT INTO `copy_ids_tmp`'
+        sql += ' SELECT r.`id` FROM `copy_requests` AS r WHERE'
+        sql += ' 0 NOT IN (SELECT (`site` IN (SELECT `site` FROM `copy_request_sites` AS s WHERE s.`request_id` = r.`id`)) FROM `copy_sites_tmp`)'
+        sql += ' AND '
+        sql += ' 0 NOT IN (SELECT (`item` IN (SELECT `item` FROM `copy_request_items` AS i WHERE i.`request_id` = r.`id`)) FROM `copy_items_tmp`)'
+        self.registry.query(sql)
 
     def fill_from_sql(self, constraints, args):
         requests = {}
@@ -239,11 +262,10 @@ class CopyRequestMixin(UserDataMixin):
         return requests
 
 
-class MakeCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
+class MakeCopyRequest(WebModule, CopyRequestMixin):
     def __init__(self, config):
         WebModule.__init__(self, config)
-        MySQLRegistryMixin.__init__(self, config)
-        CopyRequestMixin.__init__(self)
+        CopyRequestMixin.__init__(self, config)
 
         # config.request.copy points to the "copy" method of dict
         self.default_group = config['request']['copy']['default_group']
@@ -324,11 +346,10 @@ class MakeCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
         return {existing.request_id: existing}
 
 
-class PollCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
+class PollCopyRequest(WebModule, CopyRequestMixin):
     def __init__(self, config):
         WebModule.__init__(self, config)
-        MySQLRegistryMixin.__init__(self, config)
-        CopyRequestMixin.__init__(self)
+        CopyRequestMixin.__init__(self, config)
 
     def run(self, caller, request, inventory):
         self.parse_input(request, inventory, ('request_id', 'item', 'site', 'status', 'user'))
@@ -338,11 +359,10 @@ class PollCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
         return [r.to_dict() for r in self.existing.itervalues()]
 
 
-class CancelCopyRequest(WebModule, MySQLRegistryMixin, CopyRequestMixin):
+class CancelCopyRequest(WebModule, CopyRequestMixin):
     def __init__(self, config):
         WebModule.__init__(self, config)
-        MySQLRegistryMixin.__init__(self, config)
-        CopyRequestMixin.__init__(self)
+        CopyRequestMixin.__init__(self, config)
 
     def run(self, caller, request, inventory):
         self.parse_input(request, inventory, ('request_id',), ('request_id',))

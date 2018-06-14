@@ -16,6 +16,9 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         MasterServer.__init__(self, config)
 
         self._server_id = 0
+        
+        # we'll be using table locks
+        self._mysql.reuse_connection = True
 
     def _connect(self): #override
         if self.get_master_host() == 'localhost' or self.get_master_host() == socket.gethostname():
