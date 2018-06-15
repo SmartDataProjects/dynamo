@@ -295,7 +295,7 @@ class MySQLInventoryStore(InventoryStore):
         sql = 'SELECT dr.`dataset_id`, dr.`site_id`, dr.`growing`, dr.`group_id`, br.`block_id`, br.`group_id`,'
         sql += ' br.`is_custodial`, UNIX_TIMESTAMP(br.`last_update`),'
         if BlockReplica._use_file_ids:
-            sql += ' f.`id`, f.`size`'
+            sql += ' br.`is_complete`, f.`id`, f.`size`'
         else:
             sql += ' brf.`num_files`, brf.`size`'
         sql += ' FROM `dataset_replicas` AS dr'
@@ -328,7 +328,7 @@ class MySQLInventoryStore(InventoryStore):
         block_replica = None
         for row in self._mysql.xquery(sql):
             if BlockReplica._use_file_ids:
-                dataset_id, site_id, growing, d_group_id, block_id, b_group_id, b_is_custodial, b_last_update, file_id, file_size = row
+                dataset_id, site_id, growing, d_group_id, block_id, b_group_id, b_is_custodial, b_last_update, b_is_complete, file_id, file_size = row
             else:
                 dataset_id, site_id, growing, d_group_id, block_id, b_group_id, b_is_custodial, b_last_update, b_num_files, b_size = row
 
@@ -375,7 +375,7 @@ class MySQLInventoryStore(InventoryStore):
             if block_replica is None or block is not block_replica.block or site is not block_replica.site:
                 if BlockReplica._use_file_ids and block_replica is not None:
                     # closing the previous block replica
-                    if block_replica_size != block.size or len(file_ids) != block.num_files:
+                    if not block_replica_complete:
                         block_replica.size = block_replica_size
                         block_replica.file_ids = tuple(file_ids)
 
@@ -395,7 +395,9 @@ class MySQLInventoryStore(InventoryStore):
                 )
                 # block_replica created as complete - adjusting size and file_ids later
 
-                if not BlockReplica._use_file_ids and b_size is not None:
+                if BlockReplica._use_file_ids:
+                    block_replica_complete = (b_is_complete == 1)
+                elif b_size is not None:
                     block_replica.size = b_size
                     block_replica.file_ids = b_num_files
     
@@ -412,7 +414,7 @@ class MySQLInventoryStore(InventoryStore):
             dataset_replica.dataset.replicas.add(dataset_replica)
             dataset_replica.site.add_dataset_replica(dataset_replica, add_block_replicas = True)
 
-        if BlockReplica._use_file_ids and block_replica is not None and (block_replica_size != block.size or len(file_ids) != block.num_files):
+        if BlockReplica._use_file_ids and block_replica is not None and not block_replica_complete:
             block_replica.size = block_replica_size
             block_replica.file_ids = tuple(file_ids)
 
@@ -594,11 +596,13 @@ class MySQLInventoryStore(InventoryStore):
 
         if BlockReplica._use_file_ids:
             # Fill block_replicas_tmp normally
-            fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update')
+            # is_complete is only used internally to distinguish empty and full replicas when there are no entries in block_replica_files
+            fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update', 'is_complete')
 
             mapping = lambda replica: (replica.block.id, replica.site.id, \
                                        replica.group.id, replica.is_custodial, \
-                                       time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)))
+                                       time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)),
+                                       replica.is_complete())
 
             num = self._mysql.insert_many('block_replicas_tmp', fields, mapping, replicas, do_update = False)
 
@@ -627,12 +631,13 @@ class MySQLInventoryStore(InventoryStore):
             # Add a size column to block_replicas_tmp (speed optimization)
             self._mysql.query('ALTER TABLE `block_replicas_tmp` ADD COLUMN `num_files` int(11) NOT NULL, ADD COLUMN `size` bigint(20) NOT NULL')
 
-            fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update', 'num_files', 'size')
+            # is_complete is not going to be used when _use_file_ids is False, but we'll save it anyway
+            fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update', 'is_complete', 'num_files', 'size')
 
             mapping = lambda replica: (replica.block.id, replica.site.id, \
                                        replica.group.id, replica.is_custodial, \
                                        time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)),
-                                       replica.file_ids, replica.size)
+                                       replica.is_complete(), replica.file_ids, replica.size)
 
             num = self._mysql.insert_many('block_replicas_tmp', fields, mapping, replicas, do_update = False)
 
@@ -853,7 +858,7 @@ class MySQLInventoryStore(InventoryStore):
         sql = 'SELECT b.`id`, b.`name`, b.`size`, d.`id`, d.`name`, s.`id`, s.`name`, g.`name`, br.`group_id`,'
         sql += ' br.`is_custodial`, UNIX_TIMESTAMP(br.`last_update`),'
         if BlockReplica._use_file_ids:
-            sql += ' f.`id`, f.`size`'
+            sql += ' br.`is_complete`, f.`id`, f.`size`'
         else:
             sql += ' brs.`num_files`, brs.`size`'
         sql += ' FROM `block_replicas` AS br'
@@ -883,7 +888,7 @@ class MySQLInventoryStore(InventoryStore):
         file_ids = []
         for row in self._mysql.xquery(sql):
             if BlockReplica._use_file_ids:
-                block_id, block_name, block_size, dataset_id, dataset_name, site_id, site_name, group_name, group_id, is_custodial, last_update, file_id, file_size = row
+                block_id, block_name, block_size, dataset_id, dataset_name, site_id, site_name, group_name, group_id, is_custodial, last_update, is_complete, file_id, file_size = row
             else:
                 block_id, block_name, block_size, dataset_id, dataset_name, site_id, site_name, group_name, group_id, is_custodial, last_update, num_files, size = row
 
@@ -913,7 +918,7 @@ class MySQLInventoryStore(InventoryStore):
 
             if block_replica is None or block is not block_replica.block or site is not block_replica.site:
                 if BlockReplica._use_file_ids and block_replica is not None:
-                    if block_replica_size != block.size or len(file_ids) != block.num_files:
+                    if not block_replica_complete:
                         block_replica.size = block_replica_size
                         block_replica.file_ids = tuple(file_ids)
 
@@ -931,7 +936,9 @@ class MySQLInventoryStore(InventoryStore):
                 )
                 # block_replica created as complete - adjusting size and file_ids later
 
-                if not blockReplica._use_file_ids:
+                if BlockReplica._use_file_ids:
+                    block_replica_complete = (is_complete == 1)
+                else:
                     if size is not None:
                         block_replica.size = size
                         block_replica.file_ids = num_files
@@ -946,7 +953,7 @@ class MySQLInventoryStore(InventoryStore):
         if BlockReplica._use_file_ids and block_replica is not None:
             # all block replicas have been yielded if use_file_ids is False
             # if true, we have one last one to yield
-            if block_replica_size != block.size or len(file_ids) != block.num_files:
+            if not block_replica_complete:
                 block_replica.size = block_replica_size
                 block_replica.file_ids = tuple(file_ids)
 
@@ -1011,12 +1018,15 @@ class MySQLInventoryStore(InventoryStore):
         if site_id == 0:
             return
 
-        fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update')
-        self._mysql.insert_update('block_replicas', fields, block_id, site_id, \
-            block_replica.group.id, block_replica.is_custodial, \
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update)))
+        is_complete = block_replica.is_complete()
 
-        if block_replica.is_complete() or block_replica.file_ids is None:
+        fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update', 'is_complete')
+        self._mysql.insert_update('block_replicas', fields, block_id, site_id, \
+                                  block_replica.group.id, block_replica.is_custodial, \
+                                  time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update)),
+                                  is_complete)
+
+        if is_complete or block_replica.file_ids is None:
             # If file_ids is None without is_complete(), it is actually a data corruption.
             # We allow the case instead of crashing in the interest of server stability.
             if BlockReplica._use_file_ids:
