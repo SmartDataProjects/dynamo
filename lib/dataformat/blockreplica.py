@@ -185,7 +185,12 @@ class BlockReplica(object):
         store.delete_blockreplica(self)
 
     def is_complete(self):
-        return self.size == self.block.size
+        size_match = (self.size == self.block.size)
+        if BlockReplica._use_file_ids:
+            # considering the case where we are missing zero-size files
+            return size_match and (len(self.file_ids) == self.block.num_files)
+        else:
+            return size_match
 
     def files(self):
         block_files = self.block.files

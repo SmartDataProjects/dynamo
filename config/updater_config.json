@@ -1,5 +1,6 @@
 {
   "registry": {
     "db": "dynamoregister"
-  }
+  },
+  "log_level": "debug"
 }

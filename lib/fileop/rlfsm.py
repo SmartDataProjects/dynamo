@@ -53,6 +53,9 @@ class RLFSM(object):
             self.id = None
             self.desubscription = desubscription
 
+    # exit codes
+    TR_NO_FILE = 2
+
     # default config
     _config = ''
 
@@ -238,13 +241,17 @@ class RLFSM(object):
             if replica is None:
                 return
 
+            LOG.debug('Updating replica %s with file_ids %s projected %s', replica, file_ids, projected)
+
             if len(file_ids) == 0 and len(projected) == 0:
+                LOG.debug('Deleting')
                 inventory.delete(replica)
             else:
                 all_files = replica.block.files
                 full_file_ids = set(f.id for f in all_files)
 
                 if file_ids == full_file_ids:
+                    LOG.debug('Replica is full. Updating')
                     replica.file_ids = None
                     replica.size = sum(f.size for f in all_files)
                     replica.last_update = int(time.time())
@@ -256,6 +263,7 @@ class RLFSM(object):
                         existing_file_ids = set(replica.file_ids)
 
                     if file_ids != existing_file_ids:
+                        LOG.debug('Replica content has changed: existing %s, new %s', existing_file_ids, file_ids)
                         replica.file_ids = tuple(file_ids)
                         replica.size = sum(f.size for f in all_files if f.id in file_ids)
                         replica.last_update = int(time.time())
@@ -287,6 +295,8 @@ class RLFSM(object):
         done_ids = []
         
         for sub_id, status, optype, dataset_name, block_name, file_id, site_name in self.db.xquery(sql):
+            LOG.debug('Subscription entry: %d, %s, %d, %s, %s, %d, %s', sub_id, status, optype, dataset_name, block_name, file_id, site_name)
+
             if dataset_name != _dataset_name:
                 _dataset_name = dataset_name
                 # dataset must exist
@@ -314,6 +324,8 @@ class RLFSM(object):
                 else:
                     file_ids = set(replica.file_ids)
 
+                LOG.debug('Handling new replica %s with file ids %s', replica, replica.file_ids)
+
                 projected.clear()
         
             if optype == COPY:
@@ -321,6 +333,7 @@ class RLFSM(object):
                     file_ids.add(file_id)
                 else:
                     projected.add(file_id)
+
             elif optype == DELETE:
                 try:
                     projected.remove(file_id)
@@ -337,6 +350,8 @@ class RLFSM(object):
                 done_ids.append(sub_id)
 
         update_replica(replica, file_ids, projected)
+
+        LOG.debug('Done ids: %s', done_ids)
 
         if not self.dry_run:
             # remove subscription entries with status 'done'
@@ -566,19 +581,32 @@ class RLFSM(object):
             if len(disk_sources) + len(tape_sources) == 0:
                 LOG.warning('Transfer of %s to %s has no source.', file_name, site_name)
                 to_hold.append(sub_id)
+                # don't add this subscritpion to subscriptions list
                 continue
 
-            subscription = RLFSM.Subscription(sub_id, lfile, destination, disk_sources, tape_sources)
-
             if status == 'retry':
-                subscription.failed_sources = {}
+                failed_sources = {}
                 for source_name, exitcode in self.db.query(get_tried_sites, sub_id):
                     source = inventory.sites[source_name]
-                    if source not in subscription.failed_sources:
-                        subscription.failed_sources[source] = [exitcode]
+                    if source not in failed_sources:
+                        failed_sources[source] = [exitcode]
                     else:
-                        subscription.failed_sources[source].append(exitcode)
-    
+                        failed_sources[source].append(exitcode)
+
+                if len(failed_sources) == len(disk_sources) + len(tape_sources):
+                    # transfers from all sites failed at least once
+                    for codes in failed_sources.itervalues():
+                        if codes[-1] != RLFSM.TR_NO_FILE:
+                            break
+                    else:
+                        # last failure from all sites due to missing file at source
+                        to_hold.append(sub_id)
+                        # don't add this subscritpion to subscriptions list
+                        continue
+            else:
+                failed_sources = None
+
+            subscription = RLFSM.Subscription(sub_id, lfile, destination, disk_sources, tape_sources, failed_sources)
             subscriptions.append(subscription)
 
         if not self.dry_run:
