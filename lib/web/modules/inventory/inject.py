@@ -279,6 +279,7 @@ class InjectDataBase(WebModule):
                 for replica in dataset.replicas:
                     if replica.growing:
                         # For growing replicas, we automatically create new block replicas
+                        # All new files will be subscribed to block replicas that don't have them yet
                         blockreplica = {'block': block.real_name(), 'site': replica.site.name, 'group': replica.group.name, 'size': 0, 'last_update': time.time()}
                         self._make_blockreplicas([blockreplica], replica, inventory, counts)
 
