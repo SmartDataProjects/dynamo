@@ -591,8 +591,14 @@ class Detox(object):
                     for item in items:
                         if type(item) is Dataset:
                             dataset = item
-                            block_replicas = site.find_dataset_replica(dataset).block_replicas
+                            replica = site.find_dataset_replica(dataset)
+                            block_replicas = replica.block_replicas
                             dataset_sizes[dataset] = dataset.size
+
+                            # Dataset-level deletion -> this replica cannot be growing any more
+                            replica.growing = False
+                            replica.group = inventory.groups[None]
+                            inventory.register_update(replica)
                         else:
                             block = item
                             dataset = block.dataset
