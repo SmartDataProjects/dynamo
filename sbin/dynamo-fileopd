@@ -17,6 +17,14 @@ import cStringIO
 from dynamo.utils.signaling import SignalConverter
 signal_converter = SignalConverter()
 
+transfer_nonerrors = {
+    17: 'Destination file exists.' # for a transfer task, 17 means that file exists at the destination - should check file size and checksum with context.stat(dest_pfn)
+}
+
+deletion_nonerrors = {
+    2: 'Target file already removed.'
+}
+
 def unblock_signal():
     signal_converter.unset(signal.SIGTERM)
     signal_converter.unset(signal.SIGHUP)
@@ -38,15 +46,15 @@ def transfer(src_pfn, dest_pfn, params_config):
     def docopy(params, src_pfn, dest_pfn):
         gfal2.creat_context().filecopy(params, src_pfn, dest_pfn)
 
-    return gfal_exec(docopy, (params, src_pfn, dest_pfn))
+    return gfal_exec(docopy, (params, src_pfn, dest_pfn), transfer_nonerrors)
 
 def delete(pfn):
     def dodelete(pfn):
         gfal2.creat_context().unlink(pfn)
 
-    return gfal_exec(dodelete, (pfn,))
+    return gfal_exec(dodelete, (pfn,), deletion_nonerrors)
 
-def gfal_exec(func, args):
+def gfal_exec(func, args, nonerrors):
     start_time = 0
     finish_time = 0
     log = ''
@@ -76,11 +84,8 @@ def gfal_exec(func, args):
                 # usually it finds a good port after a retry
                 continue
 
-            elif err.code == 17:
-                # for a transfer task, 17 means that file exists at the destination - should check file size and checksum with
-                # context.stat(dest_pfn)
-                # for a deletion task, hopefully 17 is not used..
-                return 0, start_time, int(time.time()), 'Destination file exists', ''
+            if err.code in nonerrors:
+                return 0, start_time, int(time.time()), nonerrors[err.code], ''
 
         except Exception as exc:
             exitcode, msg = -1, str(exc)
