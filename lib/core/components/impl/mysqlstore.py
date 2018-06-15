@@ -32,7 +32,7 @@ class MySQLInventoryStore(InventoryStore):
         config = Configuration(db_params = self._mysql.config())
         return MySQLInventoryStore(config)
 
-    def get_partitions(self, conditions):
+    def get_partitions(self, conditions): #override
         partition_names = set(self._mysql.query('SELECT `name` FROM `partitions`'))
 
         for name in set(conditions.iterkeys()) - partition_names:
@@ -134,7 +134,7 @@ class MySQLInventoryStore(InventoryStore):
 
         return dataset_names
 
-    def get_files(self, block):
+    def get_files(self, block): #override
         if LOG.getEffectiveLevel() == logging.DEBUG:
             LOG.debug('Loading files for block %s', block.full_name())
 
@@ -149,6 +149,18 @@ class MySQLInventoryStore(InventoryStore):
             files.add(File(name, block, size, fid))
 
         return files
+
+    def find_block_containing(self, lfn): #override
+        sql = 'SELECT d.`name`, b.`name` FROM `files` AS f'
+        sql += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
+        sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
+        sql += ' WHERE f.`name` = %s'
+
+        result = self._mysql.query(sql, lfn)
+        if len(result) == 0:
+            return None
+
+        return result[0][0], Block.to_internal_name(result[0][1])
 
     def load_data(self, inventory, group_names = None, site_names = None, dataset_names = None): #override
         ## We need the temporary tables to stay alive
@@ -1198,7 +1210,7 @@ class MySQLInventoryStore(InventoryStore):
         fields = ('site_id', 'partition_id', 'storage')
         self._mysql.insert_update('quotas', fields, site_id, partition_id, site_partition.quota * 1.e-12)
 
-    def version(self):
+    def version(self): #override
         """
         Concatenate hex checksums of all tables and take the md5.
         """
