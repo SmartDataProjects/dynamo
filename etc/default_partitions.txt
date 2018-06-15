@@ -1,1 +1,1 @@
-Default:  dataset.name == *
+Default:  group.name != None

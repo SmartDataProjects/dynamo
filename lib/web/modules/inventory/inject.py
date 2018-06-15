@@ -415,47 +415,50 @@ class InjectDataBase(WebModule):
                 if 'last_update' in obj:
                     kwd['last_update'] = obj['last_update']
 
-                if len(block.replicas) == 0:
-                    # "origin" block replicas must always be full
-                    kwd['file_ids'] = None
-                    kwd['size'] = -1 # will set size to block size
-                else:
-                    if 'files' in obj:
-                        if df.BlockReplica._use_file_ids:
-                            kwd['file_ids'] = obj['files']
-                        else:
-                            kwd['file_ids'] = len(obj['files'])
-
-                        size = 0
-                        for lfn in obj['files']:
-                            lfile = block.find_file(lfn)
-                            if lfile is None:
-                                raise InvalidRequest('Unknown file %s' % lfn)
-                            size += lfile.size
-
-                        kwd['size'] = size
-
-                        if kwd['size'] == block.size:
-                            if df.BlockReplica._use_file_ids:
-                                if len(kwd['file_ids']) == block.num_files:
-                                    kwd.pop('size')
-                                    kwd.pop('file_ids')
-                            else:
-                                if kwd['file_ids'] == block.num_files:
-                                    kwd.pop('size')
-                                    kwd.pop('file_ids')
-
                 try:
-                    new_replica = df.BlockReplica(block, site, group, **kwd)
+                    block_replica = df.BlockReplica(block, site, group, **kwd)
                 except TypeError as exc:
                     raise IllFormedRequest('blockreplica', str(obj), hint = str(exc))
 
-                try:
-                    self._update(inventory, new_replica)
-                except:
-                    raise RuntimeError('Inventory update failed')
-
                 num_blockreplicas += 1
+
+            if 'files' in obj:
+                file_names = obj['files']
+
+                if df.BlockReplica._use_file_ids:
+                    file_ids = []
+
+                size = 0
+                for lfn in file_names:
+                    lfile = block.find_file(lfn)
+                    if lfile is None:
+                        raise InvalidRequest('Unknown file %s' % lfn)
+
+                    size += lfile.size
+
+                    if df.BlockReplica._use_file_ids:
+                        if lfile.id == 0:
+                            raise InvalidRequest('File %s is not fully registered in inventory yet.' % lfn)
+
+                        file_ids.append(lfile.id)
+
+                block_replica.size = size
+
+                if len(file_names) == block.num_files and size == block.size:
+                    if df.BlockReplica._use_file_ids:
+                        block_replica.file_ids = None
+                    else:
+                        block_replica.file_ids = block.num_files
+                else:
+                    if df.BlockReplica._use_file_ids:
+                        block_replica.file_ids = tuple(file_ids)
+                    else:
+                        block_replica.file_ids = len(file_names)
+
+            try:
+                self._update(inventory, block_replica)
+            except:
+                raise RuntimeError('Inventory update failed')
 
         try:
             counts['blockreplicas'] += num_blockreplicas
