@@ -7,6 +7,6 @@ CREATE TABLE `file_subscriptions` (
   `last_update` datetime DEFAULT NULL,
   `delete` tinyint(1) unsigned NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `subscription` (`file_id`,`site_id`),
+  UNIQUE KEY `subscription` (`file_id`,`site_id`,`delete`),
   KEY `delete` (`delete`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;

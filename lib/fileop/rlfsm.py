@@ -366,14 +366,26 @@ class RLFSM(object):
         """
         LOG.info('Subscribing %d files to %s', len(files), str(site))
 
-        # local time
-        now = time.strftime('%Y-%m-%d %H:%M:%S')
-
-        fields = ('file_id', 'site_id', 'delete', 'created')
-        mapping = lambda f: (f.id, site.id, 0, now)
-
         if not self.dry_run:
-            self.db.insert_many('file_subscriptions', fields, mapping, files)
+            self.db.lock_tables(write = ['file_subscriptions'])
+
+        try:
+            if not self.dry_run:
+                # delete all new or retry desubscriptions
+                # if there is an inbatch desubscription, we let it run
+                self.db.delete_many('file_subscriptions', ('file_id', 'site_id'), [(f.id, site.id) for f in files], ['`delete` = 1', '`status` IN (`new`, `retry`)'])
+
+            # local time
+            now = time.strftime('%Y-%m-%d %H:%M:%S')
+    
+            fields = ('file_id', 'site_id', 'delete', 'created', 'last_update')
+            mapping = lambda f: (f.id, site.id, 0, now, now)
+    
+            if not self.dry_run:
+                self.db.insert_many('file_subscriptions', fields, mapping, files, do_update = True, update_columns = ('last_update'))
+
+        finally:
+            self.db.unlock_tables()
 
     def desubscribe_files(self, site, files):
         """
@@ -381,14 +393,26 @@ class RLFSM(object):
         """
         LOG.info('Desubscribing %d files from %s', len(files), site.name)
 
-        # local time
-        now = time.strftime('%Y-%m-%d %H:%M:%S')
-
-        fields = ('file_id', 'site_id', 'delete', 'created')
-        mapping = lambda f: (f.id, site.id, 1, now)
-
         if not self.dry_run:
-            self.db.insert_many('file_subscriptions', fields, mapping, files)
+            self.db.lock_tables(write = ['file_subscriptions'])
+
+        try:
+            if not self.dry_run:
+                # delete all new or retry subscriptions
+                # if there is an inbatch subscription, we let it run
+                self.db.delete_many('file_subscriptions', ('file_id', 'site_id'), [(f.id, site.id) for f in files], ['`delete` = 0', '`status` IN (`new`, `retry`)'])
+
+            # local time
+            now = time.strftime('%Y-%m-%d %H:%M:%S')
+    
+            fields = ('file_id', 'site_id', 'delete', 'created', 'last_update')
+            mapping = lambda f: (f.id, site.id, 1, now, now)
+    
+            if not self.dry_run:
+                self.db.insert_many('file_subscriptions', fields, mapping, files, do_update = True, update_columns = ('last_update'))
+
+        finally:
+            self.db.unlock_tables()
 
     def _run_cycle(self, inventory):
         while True:
@@ -450,15 +474,21 @@ class RLFSM(object):
 
         insert_history = insert_history.format(history = self.history_db, table = table_name)
 
+        check_cancel = 'SELECT `id` FROM `file_subscriptions` AS u'
+        check_cancel += ' INNER JOIN (SELECT `file_id` fid, `site_id` sid, `last_update` lu FROM `file_subscriptions` WHERE `id` = %s) AS su'
+        check_cancel += ' ON (su.fid, su.sid) = (u.`file_id`, u.`site_id`)'
+        check_cancel += ' WHERE u.`delete` = %s AND u.`last_update` > su.lu'
+
         if optype == 'transfer':
             insert_failure = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
             insert_failure += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_queue` WHERE `id` = %s'
             insert_failure += ' ON DUPLICATE KEY UPDATE `id`=VALUES(`id`)'
             delete_failures = 'DELETE FROM `failed_transfers` WHERE `subscription_id` = %s'
 
-        get_subscription = 'SELECT `subscription_id` FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
+        get_subscription = 'SELECT `subscription_id` FROM `{op}_queue` WHERE q.`id` = %s'
 
         update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
+        delete_subscription = 'DELETE FROM `file_subscriptions` WHERE `id` = %s'
 
         delete_queue = 'DELETE FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
 
@@ -498,8 +528,20 @@ class RLFSM(object):
                             # Delete entries from failed_transfers table
                             self.db.query(delete_failures, subscription_id)
                     else:
-                        LOG.debug('Subscription %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
-                        self.db.query(update_subscription, 'retry', subscription_id)
+                        # Lock to avoid race condition with [de]subscribe_files()
+                        self.db.lock_tables(write = [('file_subscriptions', 'u'), 'file_subscriptions'])
+                        try:
+                            result = self.db.query(check_cancel, subscription_id, 1 if optype == 'transfer' else 0)
+                            if len(result) == 0:
+                                LOG.debug('Subscription %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
+                                self.db.query(update_subscription, 'retry', subscription_id)
+                            else:
+                                # there is an overriding (de)subscription
+                                LOG.debug('Subscription %d failed and is overridden by subscription %d.', subscription_id, result[0])
+                                self.db.query(delete_subscription, subscription_id)
+                        finally:
+                            self.db.unlock_tables()
+
                         if optype == 'transfer':
                             # Insert entry to failed_transfers table
                             self.db.query(insert_failure, exitcode, task_id)

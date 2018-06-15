@@ -428,15 +428,16 @@ class MySQL(object):
 
         self.execute_many(sqlbase, key, pool, additional_conditions)
 
-    def insert_many(self, table, fields, mapping, objects, do_update = True, db = ''):
+    def insert_many(self, table, fields, mapping, objects, do_update = True, db = '', update_columns = None):
         """
         INSERT INTO table (fields) VALUES (mapping(objects)).
-        @param table         Table name.
-        @param fields        Name of columns. If None, perform INSERT INTO table VALUES
-        @param mapping       Typically a lambda that takes an element in the objects list and return a tuple corresponding to a row to insert.
-        @param objects       List or iterator of objects to insert.
-        @param do_update     If True, use ON DUPLICATE KEY UPDATE which can be slower than a straight INSERT.
-        @param db            DB name.
+        @param table          Table name.
+        @param fields         Name of columns. If None, perform INSERT INTO table VALUES
+        @param mapping        Typically a lambda that takes an element in the objects list and return a tuple corresponding to a row to insert.
+        @param objects        List or iterator of objects to insert.
+        @param do_update      If True, use ON DUPLICATE KEY UPDATE which can be slower than a straight INSERT.
+        @param db             DB name.
+        @param update_columns Tuple of column names to update when do_update is True. If None, all columns are updated.
 
         @return  total number of inserted rows.
         """
@@ -464,7 +465,10 @@ class MySQL(object):
             sqlbase += ' (%s)' % ','.join('`%s`' % f for f in fields)
         sqlbase += ' VALUES %s'
         if fields and do_update:
-            sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join('`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields)
+            if update_columns is None:
+                update_columns = fields
+
+            sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join('`{f}`=VALUES(`{f}`)'.format(f = f) for f in update_columns)
 
         if mapping is None:
             ncol = len(obj)
