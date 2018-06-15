@@ -396,6 +396,9 @@ class InjectDataBase(WebModule):
                 try:
                     group_name = obj['group']
                 except KeyError:
+                    if dataset_replica.group is df.Group.null_group:
+                        raise MissingParameter('group', context = 'blockreplica ' + str(obj))
+
                     group = dataset_replica.group
                 else:
                     try:
@@ -417,7 +420,11 @@ class InjectDataBase(WebModule):
                     kwd['size'] = -1 # will set size to block size
                 else:
                     if 'files' in obj:
-                        kwd['file_ids'] = obj['files']
+                        if df.BlockReplica._use_file_ids:
+                            kwd['file_ids'] = obj['files']
+                        else:
+                            kwd['file_ids'] = len(obj['files'])
+
                         size = 0
                         for lfn in obj['files']:
                             lfile = block.find_file(lfn)
@@ -426,6 +433,16 @@ class InjectDataBase(WebModule):
                             size += lfile.size
 
                         kwd['size'] = size
+
+                        if kwd['size'] == block.size:
+                            if df.BlockReplica._use_file_ids:
+                                if len(kwd['file_ids']) == block.num_files:
+                                    kwd.pop('size')
+                                    kwd.pop('file_ids')
+                            else:
+                                if kwd['file_ids'] == block.num_files:
+                                    kwd.pop('size')
+                                    kwd.pop('file_ids')
 
                 try:
                     new_replica = df.BlockReplica(block, site, group, **kwd)
