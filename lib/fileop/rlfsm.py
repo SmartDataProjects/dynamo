@@ -237,13 +237,10 @@ class RLFSM(object):
             LOG.debug('Issued %d deletion tasks in %d batches.', num_tasks, num_batches)
 
     def update_inventory(self, inventory):
-        def update_replica(replica, file_ids, projected):
-            if replica is None:
-                return
+        def update_replica(replica, file_ids, n_projected):
+            LOG.debug('Updating replica %s with file_ids %s projected %d', replica, file_ids, n_projected)
 
-            LOG.debug('Updating replica %s with file_ids %s projected %s', replica, file_ids, projected)
-
-            if len(file_ids) == 0 and len(projected) == 0:
+            if len(file_ids) == 0 and n_projected == 0:
                 LOG.debug('Deleting')
                 inventory.delete(replica)
             else:
@@ -276,6 +273,7 @@ class RLFSM(object):
         sql += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         sql += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
+        sql += ' WHERE u.`status` != \'held\''
         sql += ' ORDER BY d.`id`, b.`id`, s.`id`, u.`last_update`'
         
         _dataset_name = ''
@@ -315,8 +313,9 @@ class RLFSM(object):
                 site = inventory.sites[site_name]
         
             if replica is None or replica.block != block or replica.site != site:
-                # check updates for previous replica
-                update_replica(replica, file_ids, projected)
+                if replica not is None and has_update:
+                    # check updates for previous replica
+                    update_replica(replica, file_ids, len(projected))
 
                 replica = block.find_replica(site)
                 if replica.file_ids is None:
@@ -324,9 +323,10 @@ class RLFSM(object):
                 else:
                     file_ids = set(replica.file_ids)
 
-                LOG.debug('Handling new replica %s with file ids %s', replica, replica.file_ids)
-
                 projected.clear()
+                has_update = False
+
+                LOG.debug('Handling new replica %s with file ids %s', replica, replica.file_ids)
         
             if optype == COPY:
                 if status == 'done':
@@ -347,9 +347,11 @@ class RLFSM(object):
                         pass
 
             if status == 'done':
+                has_update = True
                 done_ids.append(sub_id)
 
-        update_replica(replica, file_ids, projected)
+        if replica is not None and has_update:
+            update_replica(replica, file_ids, len(projected))
 
         LOG.debug('Done ids: %s', done_ids)
 

@@ -47,7 +47,7 @@ class BlockReplica(object):
         #  ensure that the files in the provided list are all 0-size.
 
         if size < 0:
-            if type(block) is Block
+            if type(block) is Block:
                 self.size = block.size
                 if BlockReplica._use_file_ids:
                     self.file_ids = None
@@ -232,8 +232,11 @@ class BlockReplica(object):
     def is_complete(self):
         size_match = (self.size == self.block.size)
         if BlockReplica._use_file_ids:
-            # considering the case where we are missing zero-size files
-            return size_match and (len(self.file_ids) == self.block.num_files)
+            if self.file_ids is None:
+                return True
+            else:
+                # considering the case where we are missing zero-size files
+                return size_match and (len(self.file_ids) == self.block.num_files)
         else:
             return size_match and (self.file_ids == self.block.num_files)
 
