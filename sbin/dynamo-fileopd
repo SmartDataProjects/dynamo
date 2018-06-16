@@ -64,8 +64,8 @@ def gfal_exec(func, args, nonerrors):
         stream = cStringIO.StringIO()
         LOG.handlers.pop()
         handler = logging.StreamHandler(stream)
-        LOG.addHandler(handler)
         handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
+        LOG.addHandler(handler)
 
         start_time = int(time.time())
     

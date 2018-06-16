@@ -8,6 +8,7 @@ import logging.handlers
 import socket
 import collections
 import multiprocessing
+import cStringIO
 from cgi import FieldStorage
 from flup.server.fcgi_fork import WSGIServer
 
@@ -152,8 +153,19 @@ class WebServer(object):
             os._exit(exc.code)
 
     def main(self, environ, start_response):
+        # Increment the active count so that the parent process won't be killed before this function returns
         with self.active_count.get_lock():
             self.active_count.value += 1
+
+        LOG.info('%s-%s %s (%s:%s %s)', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], environ['HTTP_USER_AGENT'])
+
+        # Then immediately switch to logging to a buffer
+        root_logger = logging.getLogger()
+        stream = cStringIO.StringIO()
+        original_handler = root_logger.handlers.pop()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(logging.Formatter(fmt = '%(levelname)s:%(name)s: %(message)s'))
+        root_logger.addHandler(handler)
 
         try:
             self.code = 200 # HTTP response code
@@ -194,6 +206,14 @@ class WebServer(object):
             return content + '\n'
 
         finally:
+            root_logger.handlers.pop()
+            root_logger.addHandler(original_handler)
+
+            delim = '--------------'
+            log_tmp = stream.getvalue().strip()
+            log = ''.join('  %s\n' % line for line in log_tmp.split('\n'))
+            LOG.info('%s-%s %s (%s:%s) return:\n%s\n%s\n%s', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], delim, log, delim)
+
             with self.active_count.get_lock():
                 self.active_count.value -= 1
 

@@ -10,7 +10,7 @@ from ctypes import cdll
 libc = cdll.LoadLibrary("/lib64/libc.so.6") # will use glibc mount()
 
 from dynamo.core.inventory import DynamoInventory
-from dynamo.utils.log import log_exception, reset_logging
+from dynamo.utils.log import log_exception, reset_logger
 from dynamo.utils.path import find_common_base
 
 BANNER = '''
@@ -255,7 +255,7 @@ def pre_execution(path, is_local, read_only, defaults_config, inventory, authori
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     # Reset logging
-    reset_logging()
+    reset_logger()
 
     # Pass my inventory and authorizer to the executable through core.executable
     import dynamo.core.executable as executable
