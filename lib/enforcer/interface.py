@@ -108,12 +108,13 @@ class EnforcerInterface(object):
                     data_incomplete = {}
                     can_be_flipped = []
 
+                    # count the replicas already at the destinations
                     for replica in dataset.replicas:
                         if replica.site not in destination_sites:
                             continue
 
                         try:
-                            blockreps_in_partition = site_partition.replicas[replica]
+                            blockreps_in_partition = replica.site.partitions[partition].replicas[replica]
                         except KeyError:
                             continue
 
