@@ -514,7 +514,10 @@ class Detox(object):
                 pass
             else:
                 for block_replica in blocks_to_unlink:
-                    reowned_replicas.remove(block_replica)
+                    try:
+                        reowned_replicas.remove(block_replica)
+                    except KeyError:
+                        pass
 
                 if len(reowned_replicas) == 0:
                     reowned.pop(replica)
