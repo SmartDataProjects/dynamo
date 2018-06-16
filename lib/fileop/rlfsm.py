@@ -485,7 +485,7 @@ class RLFSM(object):
             insert_failure += ' ON DUPLICATE KEY UPDATE `id`=VALUES(`id`)'
             delete_failures = 'DELETE FROM `failed_transfers` WHERE `subscription_id` = %s'
 
-        get_subscription = 'SELECT `subscription_id` FROM `{op}_queue` WHERE q.`id` = %s'
+        get_subscription = 'SELECT `subscription_id` FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
 
         update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
         delete_subscription = 'DELETE FROM `file_subscriptions` WHERE `id` = %s'
