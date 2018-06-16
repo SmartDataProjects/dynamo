@@ -4,6 +4,7 @@ import time
 import traceback
 import json
 import logging
+import logging.handlers
 import socket
 import collections
 import multiprocessing
@@ -17,6 +18,7 @@ from dynamo.web.modules import modules, load_modules
 from dynamo.web.modules._html import HTMLMixin
 
 from dynamo.utils.transform import unicode2str
+from dynamo.utils.log import reset_logger
 
 LOG = logging.getLogger(__name__)
 
@@ -48,6 +50,9 @@ class WebServer(object):
 
         # cookie string -> (user name, user id)
         self.known_users = {}
+
+        # Log file path (start a rotating log if specified)
+        self.log_path = None
 
         self.debug = config.get('debug', False)
 
@@ -112,6 +117,14 @@ class WebServer(object):
         LOG.info('Started web server (PID %d).', self.server_proc.pid)
 
     def _serve(self):
+        if self.log_path:
+            reset_logger()
+
+            root_logger = logging.getLogger()
+            log_handler = logging.handlers.RotatingFileHandler(self.log_path, maxBytes = 10000000, backupCount = 100)
+            log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+            root_logger.addHandler(log_handler)
+
         # Set up module defaults
         # Using the same piece of code as serverutils, but only picking up fullauth or all configurations
         for key, config in self.dynamo_server.defaults_config.items():

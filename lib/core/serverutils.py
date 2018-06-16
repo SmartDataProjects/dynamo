@@ -10,13 +10,13 @@ from ctypes import cdll
 libc = cdll.LoadLibrary("/lib64/libc.so.6") # will use glibc mount()
 
 from dynamo.core.inventory import DynamoInventory
-from dynamo.utils.log import log_exception
+from dynamo.utils.log import log_exception, reset_logging
 from dynamo.utils.path import find_common_base
 
 BANNER = '''
 +++++++++++++++++++++++++++++++++++++
 ++++++++++++++ DYNAMO +++++++++++++++
-++++++++++++++  v2.1  +++++++++++++++
+++++++++++++++  v2.2  +++++++++++++++
 +++++++++++++++++++++++++++++++++++++
 '''
 
@@ -255,25 +255,7 @@ def pre_execution(path, is_local, read_only, defaults_config, inventory, authori
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     # Reset logging
-    # This is a rather hacky solution relying perhaps on the implementation internals of
-    # the logging module. It might stop working with changes to the logging.
-    # The assumptions are:
-    #  1. All loggers can be reached through Logger.manager.loggerDict
-    #  2. All logging.shutdown() does is call flush() and close() over all handlers
-    #     (i.e. calling the two is enough to ensure clean cutoff from all resources)
-    #  3. root_logger.handlers is the only link the root logger has to its handlers
-    for logger in [logging.getLogger()] + logging.Logger.manager.loggerDict.values():
-        while True:
-            try:
-                handler = logger.handlers.pop()
-            except AttributeError:
-                # logger is just a PlaceHolder and does not have .handlers
-                break
-            except IndexError:
-                break
-
-            handler.flush()
-            handler.close()
+    reset_logging()
 
     # Pass my inventory and authorizer to the executable through core.executable
     import dynamo.core.executable as executable

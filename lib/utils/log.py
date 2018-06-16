@@ -33,3 +33,25 @@ def log_exception(logger):
             handler.setFormatter(formatters[handler])
 
         parent = parent.parent
+
+def reset_logger():
+    # This is a rather hacky solution relying perhaps on the implementation internals of
+    # the logging module. It might stop working with changes to the logging module.
+    # The assumptions are:
+    #  1. All loggers can be reached through Logger.manager.loggerDict
+    #  2. The only operation logging.shutdown() does is to call flush() and close() over
+    #     all handlers (i.e. calling the two functions is enough to ensure clean cutoff
+    #     from all resources)
+    #  3. root_logger.handlers is the only link the root logger has to its handlers
+    for logger in [logging.getLogger()] + logging.Logger.manager.loggerDict.values():
+        while True:
+            try:
+                handler = logger.handlers.pop()
+            except AttributeError:
+                # logger is just a PlaceHolder and does not have .handlers
+                break
+            except IndexError:
+                break
+
+            handler.flush()
+            handler.close()
