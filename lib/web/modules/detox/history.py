@@ -188,7 +188,10 @@ class DetoxCycleSummary(DetoxHistoryCached):
 
         siteinfo = self.detox_history.get_sites(self.cycle, skip_unused = True)
         decisions = self.detox_history.get_deletion_decisions(self.cycle, size_only = True)
-        prev_decisions = self.detox_history.get_deletion_decisions(data['previous_cycle'], size_only = True)
+        if data['previous_cycle'] != 0:
+            prev_decisions = self.detox_history.get_deletion_decisions(data['previous_cycle'], size_only = True)
+        else:
+            prev_decisions = {}
 
         total = {'quota': 0., 'protect': 0., 'keep': 0., 'delete': 0., 'protect_prev': 0., 'keep_prev': 0.}
         
@@ -200,15 +203,21 @@ class DetoxCycleSummary(DetoxHistoryCached):
             else:
                 status_bit = 1
 
+            decision = decisions[sname]
+            try:
+                prev_decision = prev_decisions[sname]
+            except KeyError:
+                prev_decision = (0., 0., 0.)
+
             site_data.append({
                 'name': sname,
                 'quota': quota,
                 'status': status_bit,
-                'protect': decisions[sname][0],
-                'keep': decisions[sname][2],
-                'delete': decisions[sname][1],
-                'protect_prev': prev_decisions[sname][0],
-                'keep_prev': prev_decisions[sname][2]
+                'protect': decision[0],
+                'keep': decision[2],
+                'delete': decision[1],
+                'protect_prev': prev_decision[0],
+                'keep_prev': prev_decision[2]
             })
 
             for key in total.iterkeys():
