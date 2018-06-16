@@ -1,1 +1,1 @@
-Default:  group.name != None
+Default:  blockreplica.owner != None

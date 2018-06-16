@@ -200,6 +200,16 @@ class InjectDataBase(WebModule):
 
             if replica is None:
                 # new replica
+
+                if len(dataset.replicas) == 0:
+                    # "origin" dataset replica cannot be growing
+                    growing = False
+                else:
+                    try:
+                        growing = obj['growing']
+                    except KeyError:
+                        growing = True
+
                 try:
                     group_name = obj['group']
                 except KeyError:
@@ -210,14 +220,8 @@ class InjectDataBase(WebModule):
                     except KeyError:
                         raise InvalidRequest('Unknown group %s' % group_name)
 
-                if len(dataset.replicas) == 0:
-                    # "origin" dataset replica cannot be growing
-                    growing = False
-                else:
-                    try:
-                        growing = obj['growing']
-                    except KeyError:
-                        growing = True
+                if growing and group is df.Group.null_group:
+                    raise InvalidRequest('Growing dataset replica %s:%s needs a group.' % (site.name, dataset.name))
                     
                 new_replica = df.DatasetReplica(dataset, site, growing = growing, group = group)
     
