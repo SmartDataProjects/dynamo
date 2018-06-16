@@ -212,7 +212,7 @@ class WebServer(object):
             delim = '--------------'
             log_tmp = stream.getvalue().strip()
             log = ''.join('  %s\n' % line for line in log_tmp.split('\n'))
-            LOG.info('%s-%s %s (%s:%s) return:\n%s\n%s\n%s', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], delim, log, delim)
+            LOG.info('%s-%s %s (%s:%s) return:\n%s\n%s%s', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], delim, log, delim)
 
             with self.active_count.get_lock():
                 self.active_count.value -= 1

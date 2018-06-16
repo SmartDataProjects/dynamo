@@ -7,6 +7,7 @@ import time
 import threading
 import signal
 import multiprocessing
+import multiprocessing.managers
 import logging
 import logging.handlers
 import tempfile
@@ -29,7 +30,11 @@ def unblock_signal():
     signal_converter.unset(signal.SIGTERM)
     signal_converter.unset(signal.SIGHUP)
 
-def transfer(src_pfn, dest_pfn, params_config):
+def transfer(task_id, queued_ids, src_pfn, dest_pfn, params_config):
+    if task_id not in queued_ids:
+        # task was cancelled
+        return -1, 0, 0, '', ''
+
     try:
         params = gfal2.Gfal2Context.transfer_parameters()
         # Create parent directories at the destination
@@ -48,7 +53,11 @@ def transfer(src_pfn, dest_pfn, params_config):
 
     return gfal_exec(docopy, (params, src_pfn, dest_pfn), transfer_nonerrors)
 
-def delete(pfn):
+def delete(task_id, queued_ids, pfn):
+    if task_id not in queued_ids:
+        # task was cancelled
+        return -1, 0, 0, '', ''
+
     def dodelete(pfn):
         gfal2.creat_context().unlink(pfn)
 
@@ -77,7 +86,7 @@ def gfal_exec(func, args, nonerrors):
             finish_time = int(time.time())
         
         except gfal2.GError as err:
-            exitcode, msg = err.code, err.message
+            exitcode, msg = err.code, str(err)
 
             if err.code == 70:
                 # port bind failure - seems to be an artefact of using multiple gfal-copy in parallel
@@ -106,10 +115,13 @@ def gfal_exec(func, args, nonerrors):
     # all three variables would be defined even when all attempts are exhausted
     return exitcode, start_time, finish_time, msg, log
 
+
 class PoolManager(object):
-    def __init__(self, name, db, stop_flag, max_concurrent):
+    def __init__(self, name, db, queued_ids, queued_ids_lock, stop_flag, max_concurrent):
         self.name = name
         self.db = db
+        self.queued_ids = queued_ids
+        self.queued_ids_lock = queued_ids_lock
         self.stop_flag = stop_flag
 
         self._pool = multiprocessing.Pool(max_concurrent, initializer = unblock_signal)
@@ -162,8 +174,8 @@ class PoolManager(object):
                 return
 
 class TransferPoolManager(PoolManager):
-    def __init__(self, name, db, stop_flag, max_concurrent, params_config):
-        PoolManager.__init__(self, name, db, stop_flag, max_concurrent)
+    def __init__(self, name, db, queued_ids, queued_ids_lock, stop_flag, max_concurrent, params_config):
+        PoolManager.__init__(self, name, db, queued_ids, queued_ids_lock, stop_flag, max_concurrent)
         self.params_config = params_config
 
     def add_task(self, tid, src_pfn, dest_pfn):
@@ -172,9 +184,12 @@ class TransferPoolManager(PoolManager):
 
         sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'queued\' WHERE `id` = %s'
         self.db.query(sql, tid)
+        with self.queued_ids_lock:
+            if tid not in self.queued_ids:
+                self.queued_ids.append(tid)
 
         LOG.info('%s: Transfer %s->%s', self.name, src_pfn, dest_pfn)
-        self._results.append((tid, src_pfn, dest_pfn, self._pool.apply_async(transfer, (src_pfn, dest_pfn, self.params_config))))
+        self._results.append((tid, src_pfn, dest_pfn, self._pool.apply_async(transfer, (tid, self.queued_ids, src_pfn, dest_pfn, self.params_config))))
         if self._collector_thread is None:
             self.start_collector()
 
@@ -184,8 +199,17 @@ class TransferPoolManager(PoolManager):
 
         tid, src, dest, result = result_tuple
         exitcode, start_time, finish_time, msg, log = result.get()
-        
-        if exitcode == 0:
+
+        with self.queued_ids_lock:
+            try:
+                self.queued_ids.remove(tid)
+            except ValueError:
+                pass
+
+        if exitcode == -1:
+            LOG.info('%s: Transfer cancelled\n%s -> %s\n%s', self.name, src, dest)
+            return
+        elif exitcode == 0:
             LOG.info('%s: Transfer success (%d seconds)\n%s -> %s\n%s\n%s%s', self.name, finish_time - start_time, src, dest, delim, log, delim)
             status = 'done'
         else:
@@ -195,8 +219,8 @@ class TransferPoolManager(PoolManager):
         self.db.query(sql, status, exitcode, start_time, finish_time, tid)
 
 class DeletionPoolManager(PoolManager):
-    def __init__(self, name, db, stop_flag, max_concurrent):
-        PoolManager.__init__(self, name, db, stop_flag, max_concurrent)
+    def __init__(self, name, db, queued_ids, queued_ids_lock, stop_flag, max_concurrent):
+        PoolManager.__init__(self, name, db, queued_ids, queued_ids_lock, stop_flag, max_concurrent)
 
     def add_task(self, tid, pfn):
         if self._closed:
@@ -204,9 +228,12 @@ class DeletionPoolManager(PoolManager):
 
         sql = 'UPDATE `standalone_deletion_queue` SET `status` = \'queued\' WHERE `id` = %s'
         self.db.query(sql, tid)
+        with self.queued_ids_lock:
+            if tid not in self.queued_ids:
+                self.queued_ids.append(tid)
 
         LOG.info('%s: Deletion %s', self.name, pfn)
-        self._results.append((tid, pfn, self._pool.apply_async(delete, (pfn,))))
+        self._results.append((tid, pfn, self._pool.apply_async(delete, (tid, self.queued_ids, pfn,))))
         if self._collector_thread is None:
             self.start_collector()
 
@@ -216,8 +243,17 @@ class DeletionPoolManager(PoolManager):
 
         tid, pfn, result = result_tuple
         exitcode, start_time, finish_time, msg, log = result.get()
-        
-        if exitcode == 0:
+
+        with self.queued_ids_lock:
+            try:
+                self.queued_ids.remove(tid)
+            except ValueError:
+                pass
+
+        if exitcode == -1:
+            LOG.info('%s: Deletion cancelled\n%s', self.name, pfn)
+            return
+        elif exitcode == 0:
             LOG.info('%s: Deletion success (%d seconds)\n%s\n%s\n%s%s', self.name, finish_time - start_time, pfn, delim, log, delim)
             status = 'done'
         else:
@@ -301,6 +337,14 @@ if __name__ == '__main__':
     signal_converter.set(signal.SIGTERM)
     signal_converter.set(signal.SIGHUP)
 
+    ## Create a shared-memory manager to keep a list of queued tasks
+    task_id_manager = multiprocessing.managers.SyncManager()
+    task_id_manager.start()
+    queued_transfer_ids = task_id_manager.list()
+    transfer_ids_lock = task_id_manager.Lock()
+    queued_deletion_ids = task_id_manager.list()
+    deletion_ids_lock = task_id_manager.Lock()
+
     ## Collect PoolManagers
     managers = {}
 
@@ -310,14 +354,14 @@ if __name__ == '__main__':
         try:
             return managers[(src, dest)]
         except KeyError:
-            managers[(src, dest)] = TransferPoolManager('%s-%s' % (src, dest), db, stop_flag, max_concurrent, params_config)
+            managers[(src, dest)] = TransferPoolManager('%s-%s' % (src, dest), db, queued_transfer_ids, transfer_ids_lock, stop_flag, max_concurrent, params_config)
             return managers[(src, dest)]
 
     def get_deletion_manager(site):
         try:
             return managers[site]
         except KeyError:
-            managers[site] = DeletionPoolManager(site, db, stop_flag, max_concurrent)
+            managers[site] = DeletionPoolManager(site, db, queued_deletion_ids, deletion_ids_lock, stop_flag, max_concurrent)
             return managers[site]
 
     ## Start loop
@@ -353,6 +397,12 @@ if __name__ == '__main__':
 
                 deletion_first_wait = True
 
+            ## Queued tasks may be deleted by FOM - try cancelling the tasks using the task id list
+            sql = 'SELECT `id` FROM `standalone_deletion_queue` WHERE `status` = \'queued\''
+            with deletion_ids_lock:
+                del queued_deletion_ids[:]
+                queued_deletion_ids.extend(db.xquery(sql))
+
             ## Create transfer tasks (batched by site)
             if transfer_first_wait:
                 LOG.info('Creating transfer tasks.')
@@ -373,6 +423,12 @@ if __name__ == '__main__':
                 pool_manager.add_task(tid, src_pfn, dest_pfn)
 
                 transfer_first_wait = True
+
+            ## See above
+            sql = 'SELECT `id` FROM `standalone_transfer_queue` WHERE `status` = \'queued\''
+            with transfer_ids_lock:
+                del queued_transfer_ids[:]
+                queued_transfer_ids.extend(db.xquery(sql))
         
             ## Recycle threads
             for key, manager in managers.items():
