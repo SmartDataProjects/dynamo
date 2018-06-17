@@ -80,6 +80,11 @@ class MySQL(object):
 
         # Avoid interference in case the module is used from multiple threads
         self._connection_lock = multiprocessing.RLock()
+
+        # MySQL tables can be locked by multiple statements but are unlocked with one.
+        # In nested functions with each one locking different tables, we need to call UNLOCK TABLES
+        # only after the outermost function asks for it.
+        self._locked_tables = []
         
         # Use with care! A deadlock can occur when another session tries to lock a table used by a session with
         # reuse_connection = True
@@ -154,6 +159,14 @@ class MySQL(object):
 
         return self._connection.cursor(cursor_cls)
 
+    def close_cursor(self, cursor):
+        if cursor is not None:
+            cursor.close()
+    
+        if not self.reuse_connection and self._connection is not None:
+            self._connection.close()
+            self._connection = None
+
     def query(self, sql, *args, **kwd):
         """
         Execute an SQL query.
@@ -177,7 +190,6 @@ class MySQL(object):
         self._connection_lock.acquire()
 
         cursor = None
-
         try:
             cursor = self.get_cursor()
     
@@ -225,30 +237,32 @@ class MySQL(object):
                 raise
     
             result = cursor.fetchall()
-    
+
             if cursor.description is None:
+                # Was an insert, update, or delete query - really? Is there no other way to identify this?
                 if cursor.lastrowid != 0:
                     # insert query on an auto-increment column
                     self.last_insert_id = cursor.lastrowid
 
+                self.close_cursor(cursor)
+                self._connection_lock.release()
+
                 return cursor.rowcount
+
+            self.close_cursor(cursor)
+            self._connection_lock.release()
     
-            elif len(result) != 0 and len(result[0]) == 1:
+            if len(result) != 0 and len(result[0]) == 1:
                 # single column requested
                 return [row[0] for row in result]
     
             else:
                 return list(result)
 
-        finally:
-            if cursor is not None:
-                cursor.close()
-    
-            if not self.reuse_connection and self._connection is not None:
-                self._connection.close()
-                self._connection = None
-
-            self._connection_lock.release()
+        except:
+            self.close_cursor(cursor)
+            self._fully_unlock()
+            raise
 
     def insert_get_id(self, table, columns = None, values = None, select = None, db = None, **kwd):
         """
@@ -280,14 +294,20 @@ class MySQL(object):
         elif select is not None:
             sql += ' ' + select
 
-        with self._connection_lock:
+        self._connection_lock.acquire()
+
+        try:
             inserted = self.query(sql, *tuple(args), **kwd)
             if type(inserted) is list:
                 raise RuntimeError('Non-insert query executed in insert_get_id')
             elif inserted != 1:
                 raise RuntimeError('More than one row inserted in insert_get_id')
 
+            self._connection_lock.release()
             return self.last_insert_id
+
+        except:
+            self._fully_unlock()
 
     def xquery(self, sql, *args):
         """
@@ -297,11 +317,10 @@ class MySQL(object):
          - values if one column is called
         """
 
+        self._connection_lock.acquire()
+
         cursor = None
-
         try:
-            self._connection_lock.acquire()
-
             cursor = self.get_cursor(MySQLdb.cursors.SSCursor)
     
             self.last_insert_id = 0
@@ -352,19 +371,14 @@ class MySQL(object):
                     yield row
     
                 row = cursor.fetchone()
-    
-            return
 
-        finally:
-            # only called on exception or return
-            if cursor is not None:
-                cursor.close()
-    
-            if not self.reuse_connection and self._connection is not None:
-                self._connection.close()
-                self._connection = None
-
+            self.close_cursor(cursor)
             self._connection_lock.release()
+
+        except:
+            self.close_cursor(cursor)
+            self._fully_unlock()
+            raise
 
     def insert_and_get_id(self, sql, *args, **kwd):
         """
@@ -372,16 +386,29 @@ class MySQL(object):
         @return (last_insert_id, rowcount)
         """
 
-        with self._connection_lock:
+        self._connection_lock.acquire()
+
+        try:
             rowcount = self.query(sql, *args, **kwd)
-            return self.last_insert_id, rowcount
+            insert_id = self.last_insert_id
+
+            self._connection_lock.release()
+
+            return insert_id, rowcount
+
+        except:
+            self._fully_unlock()
+            raise
 
     def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = ''):
         result = []
 
         if type(key) is tuple:
             key_str = '(' + ','.join('`%s`' % k for k in key) + ')'
+        elif type(key) is MySQL.bare:
+            key_str = key.value
         elif '`' in key or '(' in key:
+            # backward compatibility
             key_str = key
         else:
             key_str = '`%s`' % key
@@ -520,32 +547,75 @@ class MySQL(object):
         return self.query(sql, *values)
 
     def lock_tables(self, read = [], write = [], **kwd):
-        # limitation: can only lock within the same database
+        """
+        Lock tables. Store the list of locked tables.
+        @param read   List of table names. A name can be a string (`%s`), 2-tuple (`%s` as %s), or MySQL.bare (%s)
+        @param write  Same as read
+        """
+
+        if not self.reuse_connection:
+            raise RuntimeError('MySQL locks cannot be used with reuse_connections = False.')
+
         terms = []
 
         for table in read:
             if type(table) is tuple:
                 terms.append('`%s` AS %s READ' % table)
+            elif type(table) is MySQL.bare:
+                terms.append(table.value + ' READ')
             else:
                 terms.append('`%s` READ' % table)
 
         for table in write:
             if type(table) is tuple:
                 terms.append('`%s` AS %s WRITE' % table)
+            elif type(table) is MySQL.bare:
+                terms.append(table.value + ' WRITE')
             else:
                 terms.append('`%s` WRITE' % table)
-
-        sql = 'LOCK TABLES ' + ', '.join(terms)
 
         # acquire thread lock so that other threads don't access the database while table locks are on
         self._connection_lock.acquire()
 
-        self.query(sql, **kwd)
+        try:
+            self._locked_tables.append(tuple(terms))
+    
+            # LOCK TABLES must always have the full list of tables to lock
+            # Append the terms to the tables we have already locked so far
+            # Each entry of locked_tables is a tuple of tables
+            all_tables = []
+            for table_list in self._locked_tables:
+                all_tables.extend(table_list)
+    
+            sql = 'LOCK TABLES ' + ', '.join(all_tables)
+            self.query(sql, **kwd)
 
-    def unlock_tables(self):
-        self.query('UNLOCK TABLES')
+        except:
+            self._fully_unlock()
+            raise
 
-        self._connection_lock.release()
+    def unlock_tables(self, force = False):
+        """
+        Unlock all tables if the current lock depth is 1 or force is True.
+        """
+
+        try:
+            if force:
+                del self._locked_tables[:]
+            else:
+                try:
+                    self._locked_tables.pop()
+                except IndexError:
+                    raise RuntimeError('Call to unlock_tables does not match lock_tables')
+
+            if len(self._locked_tables) == 0:
+                self.query('UNLOCK TABLES')
+
+        except:
+            self._fully_unlock()
+            raise
+        else:
+            self._connection_lock.release()
 
     def _execute_in_batches(self, execute, pool):
         """
@@ -699,3 +769,11 @@ class MySQL(object):
                 id_object_map[obj_id] = obj
 
         LOG.debug('make_map %s (%d) obejcts', table, num_obj)
+
+    def _fully_unlock(self):
+        # Call when the thread crashed. Fully releases the lock
+        while True:
+            try:
+                self._connection_lock.release()
+            except RuntimeError:
+                break

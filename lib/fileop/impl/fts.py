@@ -1,6 +1,7 @@
 import sys
 import time
 import calendar
+import collections
 import logging
 
 import fts3.rest.client.easy as fts3
@@ -27,10 +28,10 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         self.fts_retry = config.fts_retry
 
         # Bookkeeping device
-        self.mysql = MySQL(config.db_params)
+        self.db = MySQL(config.db_params)
 
         # Cache the error messages
-        self.error_messages = self.mysql.query('SELECT `code`, `message` FROM `fts_error_messages`')
+        self.error_messages = self.db.query('SELECT `code`, `message` FROM `fts_error_messages`')
 
         # Reuse the context object
         self.keep_context = config.get('keep_context', True)
@@ -86,6 +87,12 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         return self._submit_job(job, 'deletion', batch_id, pfn_to_task)
 
+    def cancel_transfers(self, task_ids): #override
+        return self._cancel(task_ids, 'transfer')
+
+    def cancel_deletions(self, task_ids): #override
+        return self._cancel(task_ids, 'deletion')
+
     def get_transfer_status(self, batch_id): #override
         if self.server_id == 0:
             self._set_server_id()
@@ -98,11 +105,17 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         return self._get_status(batch_id, 'deletion')
 
-    def forget_transfer_status(self, batch_id, task_id): #override
-        return self._forget_status(batch_id, task_id, 'transfer')
+    def forget_transfer_status(self, task_id): #override
+        return self._forget_status(task_id, 'transfer')
 
-    def forget_deletion_status(self, batch_id, task_id): #override
-        return self._forget_status(batch_id, task_id, 'deletion')
+    def forget_deletion_status(self, task_id): #override
+        return self._forget_status(task_id, 'deletion')
+
+    def forget_transfer_batch(self, task_id): #override
+        return self._forget_batch(task_id, 'transfer')
+
+    def forget_deletion_batch(self, task_id): #override
+        return self._forget_batch(task_id, 'deletion')
 
     def _ftscall(self, method, *args, **kwd):
         if self._context is None:
@@ -144,27 +157,71 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if self.server_id == 0:
             self._set_server_id()
 
-        sql = 'INSERT INTO `fts_{op}_batches` (`batch_id`, `fts_server_id`, `job_id`)'.format(op = optype)
-        sql += ' VALUES (%s, %s, %s)'
-        if not self.dry_run:
-            self.mysql.query(sql, batch_id, self.server_id, job_id)
-
-        fields = (optype + '_id', 'batch_id', 'fts_file_id')
-        mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])
-
-        if not self.dry_run:
-            self.mysql.insert_many('fts_' + optype + '_files', fields, mapping, fts_files)
+        # lock against cancellation
+        self.db.lock_tables(write = ['fts_' + optype + '_batches', 'fts_' + optype + '_files'])
+        try:
+            sql = 'INSERT INTO `fts_{op}_batches` (`batch_id`, `fts_server_id`, `job_id`)'.format(op = optype)
+            sql += ' VALUES (%s, %s, %s)'
+            if not self.dry_run:
+                self.db.query(sql, batch_id, self.server_id, job_id)
+    
+            fields = (optype + '_id', 'batch_id', 'fts_file_id')
+            mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])
+    
+            if not self.dry_run:
+                self.db.insert_many('fts_' + optype + '_files', fields, mapping, fts_files)
+        finally:
+            self.db.unlock_tables()
 
         return True
+
+    def _cancel(self, task_ids, optype):
+        # Cancel operation is done with locks on other tables. Need to lock ours too
+
+        if not self.dry_run:
+            self.db.lock_tables(write = [('fts_' + optype + '_batches', 'b'), ('fts_' + optype + '_files', 'f')])
+
+        cancelled_ids = []
+
+        try:
+            sql = 'SELECT b.`job_id`, f.`{op}_id`, f.`fts_file_id` FROM `fts_{op}_files` AS f'
+            sql += ' INNER JOIN `fts_{op}_batches` AS b ON b.`batch_id` = f.`batch_id`'
+            result = self.db.execute_many(sql.format(op = optype), MySQL.bare('f.`{op}_id`'.format(op = optype)), task_ids)
+    
+            by_job = collections.defaultdict(list)
+    
+            for job_id, task_id, file_id in result:
+                by_job[job_id].append((task_id, file_id))
+            
+            for job_id, ids in by_job.iteritems():
+                if self.dry_run:
+                    task_states = ['CANCELED'] * len(ids)
+                else:
+                    task_states = self._ftscall('cancel', job_id, file_ids = [t[1] for t in ids])
+                    if len(ids) == 1:
+                        # for some stupid reason FTS returns a single string
+                        task_states = [task_states]
+    
+                for (task_id, file_id), state in zip(ids, task_states):
+                    if state == 'CANCELED':
+                        cancelled_ids.append(task_id)
+
+            self.db.delete_many('fts_' + optype + '_files', 'id', cancelled_ids)
+
+        finally:
+            if not self.dry_run:
+                self.db.unlock_tables()
+
+        return cancelled_ids
 
     def _get_status(self, batch_id, optype):
         sql = 'SELECT `job_id` FROM `fts_{optype}_batches`'
         sql += ' WHERE `fts_server_id` = %s AND `batch_id` = %s'
 
-        job_id = self.mysql.query(sql.format(optype = optype), self.server_id, batch_id)[0]
+        job_id = self.db.query(sql.format(optype = optype), self.server_id, batch_id)[0]
 
         sql = 'SELECT `fts_file_id`, `{optype}_id` FROM `fts_{optype}_files` WHERE `batch_id` = %s'
-        fts_to_queue = dict(self.mysql.xquery(sql.format(optype = optype), batch_id))
+        fts_to_queue = dict(self.db.xquery(sql.format(optype = optype), batch_id))
 
         result = self._ftscall('get_job_status', job_id = job_id, list_files = True)
 
@@ -212,23 +269,37 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         return results
 
-    def _forget_status(self, batch_id, task_id, optype):
+    def _forget_status(self, task_id, optype):
         if self.dry_run:
             return
 
-        sql = 'DELETE FROM `fts_{optype}_files` WHERE `{optype}_id` = %s'
-        self.mysql.query(sql.format(optype = optype), task_id)
+        # Function may be called under table locks. Need to lock our tables
+        self.db.lock_tables(write = ['fts_' + optype + '_files'])
 
-        sql = 'SELECT COUNT(*) FROM `fts_{optype}_files` WHERE `batch_id` = %s'
-        if self.mysql.query(sql.format(optype = optype), batch_id)[0] == 0:
-            sql = 'DELETE FROM `fts_{optype}_batches` WHERE `batch_id` = %s'
-            self.mysql.query(sql.format(optype = optype), batch_id)
+        try:
+            sql = 'DELETE FROM `fts_{optype}_files` WHERE `{optype}_id` = %s'.format(optype = optype)
+            self.db.query(sql, task_id)
+        finally:
+            self.db.unlock_tables()
+
+    def _forget_batch(self, batch_id, optype):
+        if self.dry_run:
+            return
+
+        # Function may be called under table locks. Need to lock our tables
+        self.db.lock_tables(write = ['fts_' + optype + '_batches'])
+
+        try:
+            sql = 'DELETE FROM `fts_{optype}_batches` WHERE `batch_id` = %s'.format(optype = optype)
+            self.db.query(sql, batch_id)
+        finally:
+            self.db.unlock_tables()
 
     def _set_server_id(self):
-        result = self.mysql.query('SELECT `id` FROM `fts_servers` WHERE `url` = %s', self.server_url)
+        result = self.db.query('SELECT `id` FROM `fts_servers` WHERE `url` = %s', self.server_url)
         if len(result) == 0:
             if not self.dry_run:
-                self.mysql.query('INSERT INTO `fts_servers` (`url`) VALUES (%s) ON DUPLICATE KEY UPDATE `url`=VALUES(`url`)', self.server_url)
-                self.server_id = self.mysql.last_insert_id
+                self.db.query('INSERT INTO `fts_servers` (`url`) VALUES (%s) ON DUPLICATE KEY UPDATE `url`=VALUES(`url`)', self.server_url)
+                self.server_id = self.db.last_insert_id
         else:
             self.server_id = result[0]

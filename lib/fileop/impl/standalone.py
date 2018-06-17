@@ -91,17 +91,40 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
 
         return True
 
+    def cancel_transfers(self, task_ids): #override
+        return self._cancel(task_ids, 'transfer')
+
+    def cancel_deletions(self, task_ids): #override
+        return self._cancel(task_ids, 'deletion')
+
     def get_transfer_status(self, batch_id): #override
         return self._get_status(batch_id, 'transfer')
 
     def get_deletion_status(self, batch_id): #override
         return self._get_status(batch_id, 'deletion')
 
-    def forget_transfer_status(self, batch_id, task_id): #override
-        return self._forget_status(batch_id, task_id, 'transfer')
+    def forget_transfer_status(self, task_id): #override
+        return self._forget_status(task_id, 'transfer')
 
-    def forget_deletion_status(self, batch_id, task_id): #override
-        return self._forget_status(batch_id, task_id, 'deletion')
+    def forget_deletion_status(self, task_id): #override
+        return self._forget_status(task_id, 'deletion')
+
+    def forget_transfer_batch(self, batch_id): #override
+        return self._forget_batch(batch_id, 'transfer')
+
+    def forget_deletion_batch(self, batch_id): #override
+        return self._forget_batch(batch_id, 'deletion')
+
+    def _cancel(self, task_ids, optype):
+        self.db.lock_tables(write = ['standalone_' + optype + '_queue', ('standalone_' + optype + '_queue', 's'), (optype + '_queue', 'q'), 'standalone_' + optype + '_batches'])
+
+        try:
+            cancelled_ids = self.db.select_many('standalone_' + optype + '_queue', ('id',), 'id', task_ids, ['`status` IN (\'new\', \'queued\')'])
+            self.db.delete_many('standalone_' + optype + '_queue', 'id', cancelled_ids)
+        finally:
+            self.db.unlock_tables()
+
+        return cancelled_ids
 
     def _get_status(self, batch_id, optype):
         sql = 'SELECT q.`id`, a.`status`, a.`exitcode`, UNIX_TIMESTAMP(a.`start_time`), UNIX_TIMESTAMP(a.`finish_time`) FROM `standalone_{op}_queue` AS a'
@@ -111,17 +134,28 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
 
         return [(i, FileQuery.status_val(s), c, t, f) for (i, s, c, t, f) in self.db.xquery(sql, batch_id)]
 
-    def _forget_status(self, batch_id, task_id, optype):
+    def _forget_status(self, task_id, optype):
         if self.dry_run:
             return
 
-        sql = 'DELETE FROM `standalone_{op}_queue` WHERE `id` = %s'
-        sql = sql.format(op = optype)
-        self.db.query(sql, task_id)
+        # Function may be called under table locks. Need to lock our tables
+        self.db.lock_tables(write = ['standalone_' + optype + '_queue'])
 
-        sql = 'SELECT COUNT(*) FROM `standalone_{op}_queue` AS a'
-        sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'
-        sql += ' WHERE q.`batch_id` = %s'
-        if self.db.query(sql.format(op = optype), batch_id)[0] == 0:
+        try:
+            sql = 'DELETE FROM `standalone_{op}_queue` WHERE `id` = %s'.format(op = optype)
+            self.db.query(sql, task_id)
+        finally:
+            self.db.unlock_tables()
+
+    def _forget_batch(self, batch_id, optype):
+        if self.dry_run:
+            return
+
+        # Function may be called under table locks. Need to lock our tables
+        self.db.lock_tables(write = ['standalone_' + optype + '_batches'])
+
+        try:
             sql = 'DELETE FROM `standalone_{op}_batches` WHERE `batch_id` = %s'
             self.db.query(sql.format(op = optype), batch_id)
+        finally:
+            self.db.unlock_tables()

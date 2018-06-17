@@ -362,18 +362,34 @@ class RLFSM(object):
 
     def subscribe_files(self, site, files):
         """
-        Make subscriptions of missing files in the block replica.
+        Make file subscriptions at a site.
         """
         LOG.info('Subscribing %d files to %s', len(files), str(site))
 
         if not self.dry_run:
-            self.db.lock_tables(write = ['file_subscriptions'])
+            ## TODO need to cancel batches and queues
+            self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), 'deletion_queue', ('deletion_queue', 'q')])
 
         try:
+            pool = [(f.id, site.id) for f in files]
+            
+            if not self.dry_run:    
+                # delete all new, retry, or held desubscriptions
+                self.db.delete_many('file_subscriptions', ('file_id', 'site_id'), pool, ['`delete` = 1', '`status` IN (\'new\', \'retry\', \'held\')'])
+
+            # cancel the inbatch desubscriptions
+            sql = 'SELECT q.`id` FROM `deletion_queue` AS q'
+            sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+            deletion_ids = self.db.execute_many(sql, MySQL.bare('(u.`file_id`, u.`site_id`)'), pool, ['u.`delete` = 1', 'u.`status` = \'inbatch\''])
+            cancelled_ids = self.deletion_operation.cancel_deletions(deletion_ids)
+
             if not self.dry_run:
-                # delete all new or retry desubscriptions
-                # if there is an inbatch desubscription, we let it run
-                self.db.delete_many('file_subscriptions', ('file_id', 'site_id'), [(f.id, site.id) for f in files], ['`delete` = 1', '`status` IN (`new`, `retry`)'])
+                # delete the cancelled tasks and desubscriptions
+                sql = 'DELETE FROM u, q USING `file_subscriptions` AS u'
+                sql += ' INNER JOIN `deletion_queue` AS q ON q.`subscription_id` = u.`id`'
+                self.db.execute_many(sql, MySQL.bare('q.`id`'), cancelled_ids)
+
+                # deletion of empty batches can be left for update_status
 
             # local time
             now = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -385,7 +401,8 @@ class RLFSM(object):
                 self.db.insert_many('file_subscriptions', fields, mapping, files, do_update = True, update_columns = ('last_update'))
 
         finally:
-            self.db.unlock_tables()
+            if not self.dry_run:
+                self.db.unlock_tables()
 
     def desubscribe_files(self, site, files):
         """
@@ -394,13 +411,28 @@ class RLFSM(object):
         LOG.info('Desubscribing %d files from %s', len(files), site.name)
 
         if not self.dry_run:
-            self.db.lock_tables(write = ['file_subscriptions'])
+            self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), 'transfer_queue', ('transfer_queue', 'q')])
 
         try:
+            pool = [(f.id, site.id) for f in files]
+
             if not self.dry_run:
-                # delete all new or retry subscriptions
-                # if there is an inbatch subscription, we let it run
-                self.db.delete_many('file_subscriptions', ('file_id', 'site_id'), [(f.id, site.id) for f in files], ['`delete` = 0', '`status` IN (`new`, `retry`)'])
+                # delete all new, retry, or held subscriptions
+                self.db.delete_many('file_subscriptions', ('file_id', 'site_id'), pool, ['`delete` = 0', '`status` IN (\'new\', \'retry\', \'held\')'])
+
+            # cancel the inbatch subscriptions
+            sql = 'SELECT q.`id` FROM `transfer_queue` AS q'
+            sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+            transfer_ids = self.db.execute_many(sql, MySQL.bare('(u.`file_id`, u.`site_id`)'), pool, ['u.`delete` = 0', 'u.`status` = \'inbatch\''])
+            cancelled_ids = self.transfer_operation.cancel_transfers(transfer_ids)
+
+            if not self.dry_run:
+                # delete the cancelled tasks and subscriptions
+                sql = 'DELETE FROM u, q USING `file_subscriptions` AS u'
+                sql += ' INNER JOIN `transfer_queue` AS q ON q.`subscription_id` = u.`id`'
+                self.db.execute_many(sql, MySQL.bare('q.`id`'), cancelled_ids)
+
+                # deletion of empty batches can be left for update_status
 
             # local time
             now = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -412,7 +444,8 @@ class RLFSM(object):
                 self.db.insert_many('file_subscriptions', fields, mapping, files, do_update = True, update_columns = ('last_update'))
 
         finally:
-            self.db.unlock_tables()
+            if not self.dry_run:
+                self.db.unlock_tables()
 
     def _run_cycle(self, inventory):
         while True:
@@ -492,6 +525,8 @@ class RLFSM(object):
 
         delete_queue = 'DELETE FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
 
+        delete_batch = 'DELETE FROM `{op}_batches` WHERE `id` = %s'.format(op = optype)
+
         completed_subscriptions = []
         num_success = 0
         num_failure = 0
@@ -499,12 +534,16 @@ class RLFSM(object):
         if optype == 'transfer':
             get_results = self.transfer_query.get_transfer_status
             acknowledge_result = self.transfer_query.forget_transfer_status
+            close_batch = self.transfer_query.forget_transfer_batch
         else:
             get_results = self.deletion_query.get_deletion_status
             acknowledge_result = self.deletion_query.forget_deletion_status
+            close_batch = self.deletion_query.forget_deletion_batch
 
         for batch_id in self.db.query('SELECT `id` FROM `{op}_batches`'.format(op = optype)):
             results = get_results(batch_id)
+
+            batch_complete = True
 
             for task_id, status, exitcode, start_time, finish_time in results:
                 if status == FileQuery.STAT_DONE:
@@ -512,6 +551,7 @@ class RLFSM(object):
                 elif status == FileQuery.STAT_FAILED:
                     num_failure += 1
                 else:
+                    batch_complete = False
                     continue
 
                 if not self.dry_run:
@@ -551,10 +591,14 @@ class RLFSM(object):
                 if status == FileQuery.STAT_DONE:
                     completed_subscriptions.append(subscription_id)
 
-                acknowledge_result(batch_id, task_id)
+                acknowledge_result(task_id)
 
                 if self.cycle_stop.is_set():
                     break
+
+            if batch_complete:
+                self.db.query(delete_batch, batch_id)
+                close_batch(batch_id)
 
         if num_success + num_failure != 0:
             LOG.info('Archived file %s: %d succeeded, %d failed.', optype, num_success, num_failure)
