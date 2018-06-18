@@ -21,7 +21,9 @@ class FODCopyInterface(CopyInterface):
         if len(sites) != 1:
             raise OperationalError('schedule_copies should be called with a list of replicas at a single site.')
 
-        LOG.info('Scheduling copy of %d replicas using RLFSM (operation %d)', len(replica_list), operation_id)
+        self.rlfsm.dry_run = self.dry_run
+
+        LOG.info('Scheduling copy of %d replicas to %s using RLFSM (operation %d)', len(replica_list), list(sites)[0], operation_id)
 
         result = []
 
@@ -40,7 +42,7 @@ class FODCopyInterface(CopyInterface):
         
                 all_files = block_replica.block.files
                 missing_files = all_files - block_replica.files()
-        
+
                 self.rlfsm.subscribe_files(block_replica.site, missing_files)
 
                 clone_block_replica = BlockReplica(block_replica.block, block_replica.site, block_replica.group)
@@ -50,3 +52,6 @@ class FODCopyInterface(CopyInterface):
 
         # no external dependency - everything is a success
         return result
+
+    def copy_status(self, operation_id): #override
+        raise NotImplementedError('copy_status')

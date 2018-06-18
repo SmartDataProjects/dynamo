@@ -78,27 +78,24 @@ class TransactionHistoryInterface(object):
         """
         raise NotImplementedError('make_copy_entry')
 
-    def make_deletion_entry(self, cycle_number, site, operation_id, approved, dataset_list):
+    def make_deletion_entry(self, cycle_number, site):
         """
         Record a deletion operation.
         @param cycle_number  Cycle number
         @param site          Site object
-        @param operation_id  ID from the copy operation
-        @param approved      Boolean
-        @param dataset_list  [(dataset, size)]
         """
         raise NotImplementedError('make_deletion_entry')
 
     def update_copy_entry(self, copy_record):
         """
-        Update a copy entry. Only certain fields (approved, last_update) are updatable.
+        Update a copy entry.
         @param copy_record   HistoryRecord object.
         """
         raise NotImplementedError('update_copy_entry')
 
     def update_deletion_entry(self, deletion_record):
         """
-        Update a deletion entry. Only certain fields (approved, last_update) are updatable.
+        Update a deletion entry.
         @param deletion_record   HistoryRecord object.
         """
         raise NotImplementedError('update_deletion_entry')
