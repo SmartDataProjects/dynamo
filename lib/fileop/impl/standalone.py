@@ -116,15 +116,8 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         return self._forget_batch(batch_id, 'deletion')
 
     def _cancel(self, task_ids, optype):
-        self.db.lock_tables(write = ['standalone_' + optype + '_queue', ('standalone_' + optype + '_queue', 's'), (optype + '_queue', 'q'), 'standalone_' + optype + '_batches'])
-
-        try:
-            cancelled_ids = self.db.select_many('standalone_' + optype + '_queue', ('id',), 'id', task_ids, ['`status` IN (\'new\', \'queued\')'])
-            self.db.delete_many('standalone_' + optype + '_queue', 'id', cancelled_ids)
-        finally:
-            self.db.unlock_tables()
-
-        return cancelled_ids
+        sql = 'UPDATE `standalone_{op}_queue` SET `status` = \'cancelled\''
+        self.db.execute_many(sql, 'id', task_ids, ['`status` IN (\'new\', \'queued\')'])
 
     def _get_status(self, batch_id, optype):
         sql = 'SELECT q.`id`, a.`status`, a.`exitcode`, UNIX_TIMESTAMP(a.`start_time`), UNIX_TIMESTAMP(a.`finish_time`) FROM `standalone_{op}_queue` AS a'

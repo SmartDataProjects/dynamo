@@ -23,8 +23,6 @@ class FileDeletionOperation(FileOperation):
         """
         Cancel tasks.
         @params task_ids    List of DeletionTask ids
-
-        @return  List of task ids that were cancelled.
         """
         raise NotImplementedError('cancel_deletions')
 

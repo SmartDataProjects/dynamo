@@ -176,44 +176,18 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         return True
 
     def _cancel(self, task_ids, optype):
-        # Cancel operation is done with locks on other tables. Need to lock ours too
+        sql = 'SELECT b.`job_id`, f.`fts_file_id` FROM `fts_{op}_files` AS f'
+        sql += ' INNER JOIN `fts_{op}_batches` AS b ON b.`batch_id` = f.`batch_id`'
+        result = self.db.execute_many(sql.format(op = optype), MySQL.bare('f.`{op}_id`'.format(op = optype)), task_ids)
 
-        if not self.dry_run:
-            self.db.lock_tables(write = [('fts_' + optype + '_batches', 'b'), ('fts_' + optype + '_files', 'f')])
+        by_job = collections.defaultdict(list)
 
-        cancelled_ids = []
-
-        try:
-            sql = 'SELECT b.`job_id`, f.`{op}_id`, f.`fts_file_id` FROM `fts_{op}_files` AS f'
-            sql += ' INNER JOIN `fts_{op}_batches` AS b ON b.`batch_id` = f.`batch_id`'
-            result = self.db.execute_many(sql.format(op = optype), MySQL.bare('f.`{op}_id`'.format(op = optype)), task_ids)
+        for job_id, file_id in result:
+            by_job[job_id].append(file_id)
+        
+        for job_id, ids in by_job.iteritems():
+            self._ftscall('cancel', job_id, file_ids = ids)
     
-            by_job = collections.defaultdict(list)
-    
-            for job_id, task_id, file_id in result:
-                by_job[job_id].append((task_id, file_id))
-            
-            for job_id, ids in by_job.iteritems():
-                if self.dry_run:
-                    task_states = ['CANCELED'] * len(ids)
-                else:
-                    task_states = self._ftscall('cancel', job_id, file_ids = [t[1] for t in ids])
-                    if len(ids) == 1:
-                        # for some stupid reason FTS returns a single string
-                        task_states = [task_states]
-    
-                for (task_id, file_id), state in zip(ids, task_states):
-                    if state == 'CANCELED':
-                        cancelled_ids.append(task_id)
-
-            self.db.delete_many('fts_' + optype + '_files', 'id', cancelled_ids)
-
-        finally:
-            if not self.dry_run:
-                self.db.unlock_tables()
-
-        return cancelled_ids
-
     def _get_status(self, batch_id, optype):
         sql = 'SELECT `job_id` FROM `fts_{optype}_batches`'
         sql += ' WHERE `fts_server_id` = %s AND `batch_id` = %s'
@@ -252,6 +226,11 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                     if msg in reason:
                         exitcode = code
                         break
+                start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
+                finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
+            elif state == 'CANCELED':
+                status = FileQuery.STAT_CANCELLED
+                exitcode = -1
                 start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
                 finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
             elif state == 'SUBMITTED':

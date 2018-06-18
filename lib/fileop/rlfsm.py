@@ -148,6 +148,13 @@ class RLFSM(object):
         @param inventory   The inventory.
         """
 
+        LOG.debug('Clearing cancelled transfer tasks.')
+        task_ids = self._get_cancelled_tasks('transfer')
+        self.transfer_operation.cancel_transfers(task_ids)
+
+        if self.cycle_stop.is_set():
+            return
+
         LOG.debug('Fetching subscription status from the file operation agent.')
         self._update_status('transfer')
 
@@ -198,6 +205,13 @@ class RLFSM(object):
         The only cases where stopping is problematic are within self._update_status and self._start_deletions.
         @param inventory   The inventory.
         """
+
+        LOG.debug('Clearing cancelled deletion tasks.')
+        task_ids = self._get_cancelled_tasks('deletion')
+        self.deletion_operation.cancel_transfers(task_ids)
+
+        if self.cycle_stop.is_set():
+            return
 
         LOG.debug('Fetching deletion status from the file operation agent.')
         completed = self._update_status('deletion')
@@ -366,43 +380,7 @@ class RLFSM(object):
         """
         LOG.info('Subscribing %d files to %s', len(files), str(site))
 
-        if not self.dry_run:
-            ## TODO need to cancel batches and queues
-            self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), 'deletion_queue', ('deletion_queue', 'q')])
-
-        try:
-            pool = [(f.id, site.id) for f in files]
-            
-            if not self.dry_run:    
-                # delete all new, retry, or held desubscriptions
-                self.db.delete_many('file_subscriptions', ('file_id', 'site_id'), pool, ['`delete` = 1', '`status` IN (\'new\', \'retry\', \'held\')'])
-
-            # cancel the inbatch desubscriptions
-            sql = 'SELECT q.`id` FROM `deletion_queue` AS q'
-            sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
-            deletion_ids = self.db.execute_many(sql, MySQL.bare('(u.`file_id`, u.`site_id`)'), pool, ['u.`delete` = 1', 'u.`status` = \'inbatch\''])
-            cancelled_ids = self.deletion_operation.cancel_deletions(deletion_ids)
-
-            if not self.dry_run:
-                # delete the cancelled tasks and desubscriptions
-                sql = 'DELETE FROM u, q USING `file_subscriptions` AS u'
-                sql += ' INNER JOIN `deletion_queue` AS q ON q.`subscription_id` = u.`id`'
-                self.db.execute_many(sql, MySQL.bare('q.`id`'), cancelled_ids)
-
-                # deletion of empty batches can be left for update_status
-
-            # local time
-            now = time.strftime('%Y-%m-%d %H:%M:%S')
-    
-            fields = ('file_id', 'site_id', 'delete', 'created', 'last_update')
-            mapping = lambda f: (f.id, site.id, 0, now, now)
-    
-            if not self.dry_run:
-                self.db.insert_many('file_subscriptions', fields, mapping, files, do_update = True, update_columns = ('last_update'))
-
-        finally:
-            if not self.dry_run:
-                self.db.unlock_tables()
+        self._subscribe(site, files, 0)
 
     def desubscribe_files(self, site, files):
         """
@@ -410,42 +388,7 @@ class RLFSM(object):
         """
         LOG.info('Desubscribing %d files from %s', len(files), site.name)
 
-        if not self.dry_run:
-            self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), 'transfer_queue', ('transfer_queue', 'q')])
-
-        try:
-            pool = [(f.id, site.id) for f in files]
-
-            if not self.dry_run:
-                # delete all new, retry, or held subscriptions
-                self.db.delete_many('file_subscriptions', ('file_id', 'site_id'), pool, ['`delete` = 0', '`status` IN (\'new\', \'retry\', \'held\')'])
-
-            # cancel the inbatch subscriptions
-            sql = 'SELECT q.`id` FROM `transfer_queue` AS q'
-            sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
-            transfer_ids = self.db.execute_many(sql, MySQL.bare('(u.`file_id`, u.`site_id`)'), pool, ['u.`delete` = 0', 'u.`status` = \'inbatch\''])
-            cancelled_ids = self.transfer_operation.cancel_transfers(transfer_ids)
-
-            if not self.dry_run:
-                # delete the cancelled tasks and subscriptions
-                sql = 'DELETE FROM u, q USING `file_subscriptions` AS u'
-                sql += ' INNER JOIN `transfer_queue` AS q ON q.`subscription_id` = u.`id`'
-                self.db.execute_many(sql, MySQL.bare('q.`id`'), cancelled_ids)
-
-                # deletion of empty batches can be left for update_status
-
-            # local time
-            now = time.strftime('%Y-%m-%d %H:%M:%S')
-    
-            fields = ('file_id', 'site_id', 'delete', 'created', 'last_update')
-            mapping = lambda f: (f.id, site.id, 1, now, now)
-    
-            if not self.dry_run:
-                self.db.insert_many('file_subscriptions', fields, mapping, files, do_update = True, update_columns = ('last_update'))
-
-        finally:
-            if not self.dry_run:
-                self.db.unlock_tables()
+        self._subscribe(site, files, 1)
 
     def _run_cycle(self, inventory):
         while True:
@@ -464,6 +407,40 @@ class RLFSM(object):
             is_set = self.cycle_stop.wait(30)
             if is_set: # is true if in Python 2.7 and the flag is set
                 break
+
+    def _subscribe(self, site, files, delete):
+        opp_op = 0 if delete == 1 else 1
+
+        if not self.dry_run:
+            self.db.lock_tables(write = ['file_subscriptions'])
+
+        try:
+            sql = 'UPDATE `file_subscriptions` SET `status` = \'cancelled\''
+            if not self.dry_run:
+                self.db.execute_many(sql, ('file_id', 'site_id'), [(f.id, site.id) for f in files], ['`delete` = %d' % opp_op, '`status` IN (\'new\', \'inbatch\', \'retry\', \'held\')'])
+    
+            # local time
+            now = time.strftime('%Y-%m-%d %H:%M:%S')
+    
+            fields = ('file_id', 'site_id', 'delete', 'created', 'last_update')
+            mapping = lambda f: (f.id, site.id, delete, now, now)
+    
+            if not self.dry_run:
+                self.db.insert_many('file_subscriptions', fields, mapping, files, do_update = True, update_columns = ('last_update'))
+
+        finally:
+            self.db.unlock_tables()
+
+    def _get_cancelled_tasks(self, optype):
+        if optype == 'transfer':
+            delete = 0
+        else:
+            delete = 1
+
+        sql = 'SELECT q.`id` FROM `{op}_queue` AS q'.format(op = optype)
+        sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+        sql += ' WHERE u.`status` = \'cancelled\' AND u.`delete` = %d' % delete
+        return self.db.query(sql)
 
     def _update_status(self, optype):
         # insert queries all have ON DUPLICATE key to make sure we can restart in case of a crash
@@ -507,18 +484,15 @@ class RLFSM(object):
 
         insert_history = insert_history.format(history = self.history_db, table = table_name)
 
-        check_cancel = 'SELECT `id` FROM `file_subscriptions` AS u'
-        check_cancel += ' INNER JOIN (SELECT `file_id` fid, `site_id` sid, `last_update` lu FROM `file_subscriptions` WHERE `id` = %s) AS su'
-        check_cancel += ' ON (su.fid, su.sid) = (u.`file_id`, u.`site_id`)'
-        check_cancel += ' WHERE u.`delete` = %s AND u.`last_update` > su.lu'
-
         if optype == 'transfer':
             insert_failure = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
             insert_failure += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_queue` WHERE `id` = %s'
             insert_failure += ' ON DUPLICATE KEY UPDATE `id`=VALUES(`id`)'
             delete_failures = 'DELETE FROM `failed_transfers` WHERE `subscription_id` = %s'
 
-        get_subscription = 'SELECT `subscription_id` FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
+        get_subscription = 'SELECT u.`id`, u.`status` FROM `{op}_queue` AS q'.format(op = optype)
+        get_subscription += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+        get_subscription += ' WHERE q.`id` = %s'
 
         update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
         delete_subscription = 'DELETE FROM `file_subscriptions` WHERE `id` = %s'
@@ -527,9 +501,10 @@ class RLFSM(object):
 
         delete_batch = 'DELETE FROM `{op}_batches` WHERE `id` = %s'.format(op = optype)
 
-        completed_subscriptions = []
+        done_subscriptions = []
         num_success = 0
         num_failure = 0
+        num_cancelled = 0
 
         if optype == 'transfer':
             get_results = self.transfer_query.get_transfer_status
@@ -539,6 +514,8 @@ class RLFSM(object):
             get_results = self.deletion_query.get_deletion_status
             acknowledge_result = self.deletion_query.forget_deletion_status
             close_batch = self.deletion_query.forget_deletion_batch
+
+        # Collect completed tasks
 
         for batch_id in self.db.query('SELECT `id` FROM `{op}_batches`'.format(op = optype)):
             results = get_results(batch_id)
@@ -550,6 +527,8 @@ class RLFSM(object):
                     num_success += 1
                 elif status == FileQuery.STAT_FAILED:
                     num_failure += 1
+                elif status == FileQuery.STAT_CANCELLED:
+                    num_cancelled += 1
                 else:
                     batch_complete = False
                     continue
@@ -558,38 +537,40 @@ class RLFSM(object):
                     self.db.query(insert_file, task_id)
                     self.db.query(insert_history, exitcode, start_time, finish_time, task_id)
 
-                subscription_id = self.db.query(get_subscription, task_id)[0]
+                subscription_id, subscription_status = self.db.query(get_subscription, task_id)[0]
 
-                if not self.dry_run:
+                if subscription_status == 'inbatch':
                     if status == FileQuery.STAT_DONE:
-                        LOG.debug('Subscription %d completed.', optype, subscription_id)
-                        self.db.query(update_subscription, 'done', subscription_id)
+                        LOG.debug('Subscription %d done.', subscription_id)
+                        if not self.dry_run:
+                            self.db.query(update_subscription, 'done', subscription_id)
+                            if optype == 'transfer':
+                                # Delete entries from failed_transfers table
+                                self.db.query(delete_failures, subscription_id)
+    
+                    elif status == FileQuery.STAT_FAILED:
+                        LOG.debug('Subscription %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
+                        if not self.dry_run:
+                            self.db.query(update_subscription, 'retry', subscription_id)
+    
+                        if optype == 'transfer' and not self.dry_run::
+                            # Insert entry to failed_transfers table
+                            self.db.query(insert_failure, exitcode, task_id)
+
+                elif subscription_status == 'cancelled':
+                    # subscription is cancelled and task terminated -> delete the subscription now, irrespective of the task status
+                    LOG.debug('Subscription %d is cancelled.', subscription_id)
+                    if not self.dry_run:
+                        self.db.query(delete_subscription, subscription_id)
                         if optype == 'transfer':
                             # Delete entries from failed_transfers table
                             self.db.query(delete_failures, subscription_id)
-                    else:
-                        # Lock to avoid race condition with [de]subscribe_files()
-                        self.db.lock_tables(write = [('file_subscriptions', 'u'), 'file_subscriptions'])
-                        try:
-                            result = self.db.query(check_cancel, subscription_id, 1 if optype == 'transfer' else 0)
-                            if len(result) == 0:
-                                LOG.debug('Subscription %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
-                                self.db.query(update_subscription, 'retry', subscription_id)
-                            else:
-                                # there is an overriding (de)subscription
-                                LOG.debug('Subscription %d failed and is overridden by subscription %d.', subscription_id, result[0])
-                                self.db.query(delete_subscription, subscription_id)
-                        finally:
-                            self.db.unlock_tables()
-
-                        if optype == 'transfer':
-                            # Insert entry to failed_transfers table
-                            self.db.query(insert_failure, exitcode, task_id)
     
+                if not self.dry_run:
                     self.db.query(delete_queue, task_id)
 
                 if status == FileQuery.STAT_DONE:
-                    completed_subscriptions.append(subscription_id)
+                    done_subscriptions.append(subscription_id)
 
                 acknowledge_result(task_id)
 
@@ -600,12 +581,12 @@ class RLFSM(object):
                 self.db.query(delete_batch, batch_id)
                 close_batch(batch_id)
 
-        if num_success + num_failure != 0:
-            LOG.info('Archived file %s: %d succeeded, %d failed.', optype, num_success, num_failure)
+        if num_success + num_failure + num_cancelled != 0:
+            LOG.info('Archived file %s: %d succeeded, %d failed, %d cancelled.', optype, num_success, num_failure, num_cancelled)
         else:
-            LOG.debug('Archived file %s: %d succeeded, %d failed.', optype, num_success, num_failure)
+            LOG.debug('Archived file %s: %d succeeded, %d failed, %d cancelled.', optype, num_success, num_failure, num_cancelled)
 
-        return completed_subscriptions
+        return done_subscriptions
 
     def _get_subscriptions(self, inventory):
         subscriptions = []

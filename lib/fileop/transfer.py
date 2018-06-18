@@ -23,8 +23,6 @@ class FileTransferOperation(FileOperation):
         """
         Cancel tasks.
         @params task_ids    List of TransferTask ids
-
-        @return  List of task ids that were cancelled.
         """
         raise NotImplementedError('cancel_transfers')
 
