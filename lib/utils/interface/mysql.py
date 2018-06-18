@@ -409,7 +409,14 @@ class MySQL(object):
             if type(vals) is list:
                 result.extend(vals)
 
-        self._execute_in_batches(execute, pool)
+        # executing in batches - we may issue multiple queries
+        self._connection_lock.acquire()
+        try:
+            self._execute_in_batches(execute, pool)
+            self._connection_lock.release()
+        except:
+            self._fully_unlock()
+            raise
 
         return result
 
