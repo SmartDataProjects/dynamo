@@ -42,6 +42,9 @@ class DynamoServer(object):
         self.manager_config = config.manager.clone()
         self.manager = ServerManager(self.manager_config)
 
+        ## Modules defaults config
+        self.defaults_config = config.defaults
+
         ## Application collection
         self.applications_config = config.applications.clone()
         if self.applications_config.enabled:
@@ -210,13 +213,13 @@ class DynamoServer(object):
             self._setup_remote_store()
 
     def get_subprocess_args(self):
-        # Create a inventory proxy with a fresh connection to the store backend to avoid the child closing the connection
+        # Create an inventory proxy with a fresh connection to the store backend to avoid the child closing the connection
         inventory_proxy = self.inventory.create_proxy()
 
         # Similarly pass a new Authorizer with a fresh connection
         authorizer = self.manager.master.create_authorizer()
 
-        return self.applications_config.defaults, inventory_proxy, authorizer
+        return inventory_proxy, authorizer
 
     def _run_application_cycles(self):
         """
@@ -444,7 +447,7 @@ class DynamoServer(object):
 
                 if status == AppManager.STAT_RUN:
                     if read_state == 1:
-                        self.update_inventory(update_commands)
+                        self._update_inventory(update_commands)
     
                     elif read_state == 2:
                         status = AppManager.STAT_FAILED
@@ -525,10 +528,10 @@ class DynamoServer(object):
 
         read_state, update_commands = self._collect_updates()
 
+        pid = self.manager.master.get_web_write_process_id()
+
         if read_state == 0:
             LOG.debug('No updates received from the web process.')
-
-            pid = self.manager.master.get_web_write_process_id()
             try:
                 os.kill(pid, 0) # poll the process
             except OSError:
@@ -541,7 +544,7 @@ class DynamoServer(object):
 
         elif read_state == 1:
             LOG.info('Updating the inventory with data sent from web.')
-            self.update_inventory(update_commands)
+            self._update_inventory(update_commands)
 
         LOG.debug('Releasing write lock.')
         self.manager.master.stop_write_web()
@@ -570,7 +573,7 @@ class DynamoServer(object):
             # Finally remove the entry
             self.manager.master.delete_application(app['appid'])
 
-    def update_inventory(self, update_commands):
+    def _update_inventory(self, update_commands):
         # My updates
         self.manager.set_status(ServerHost.STAT_UPDATING)
 
@@ -614,8 +617,7 @@ class DynamoServer(object):
 
             if self.webserver:
                 # Restart the web server so it gets the latest inventory image
-                self.webserver.stop()
-                self.webserver.start()
+                self.webserver.restart()
 
         return has_update
 
@@ -624,14 +626,16 @@ class DynamoServer(object):
         # That doesn't cause a problem only because no shared resource (e.g. database connections)
         # are instantiated in the constructor of these objects.
         # We probably should have a more explicit safeguard mechanism.
-        defaults_conf, inventory, authorizer = self.get_subprocess_args()
+        inventory, authorizer = self.get_subprocess_args()
 
         if app['write_request']:
             queue = self.inventory_update_queue
         else:
             queue = None
 
-        proc_args = (app['path'], app['args'], is_local, defaults_conf, inventory, authorizer, queue)
+        # TODO we should probably not pass all of this through a pipe to the subprocess but rather have run_script
+        # back as a DynamoServer method and inherit memory from the main process
+        proc_args = (app['path'], app['args'], is_local, self.defaults_config, inventory, authorizer, queue)
 
         proc = multiprocessing.Process(target = serverutils.run_script, name = app['title'], args = proc_args)
         proc.daemon = True

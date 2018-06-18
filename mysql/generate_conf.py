@@ -24,7 +24,7 @@ def generate_local_board_conf(conf_str):
 
     board_conf = OD([('module', 'mysqlboard:MySQLUpdateBoard'), ('config', OD())])
     
-    board_conf['config']['db_params'] = OD([('host', host), ('user', user), ('passwd', passwd), ('db', 'dynamoserver')])
+    board_conf['config']['db_params'] = OD([('host', host), ('user', user), ('passwd', passwd), ('db', 'dynamoserver'), ('scratch_db', 'dynamo_tmp')])
 
     return board_conf
 
@@ -44,7 +44,8 @@ def generate_store_conf(conf_str):
         ('db', 'dynamo'),
         ('reuse_connection', True),
         ('user', conf['server']),
-        ('passwd', server_conf['passwd'])
+        ('passwd', server_conf['passwd']),
+        ('scratch_db', 'dynamo_tmp')
     ])
 
     store_conf['readonly_config']['db_params'] = OD([
@@ -52,7 +53,8 @@ def generate_store_conf(conf_str):
         ('db', 'dynamo'),
         ('reuse_connection', True),
         ('user', conf['reader']),
-        ('passwd', reader_conf['passwd'])
+        ('passwd', reader_conf['passwd']),
+        ('scratch_db', 'dynamo_tmp')
     ])
 
     return store_conf
@@ -83,7 +85,8 @@ def generate_master_conf(conf_str):
         ('host', host),
         ('user', user),
         ('passwd', passwd),
-        ('db', 'dynamoserver')
+        ('db', 'dynamoserver'),
+        ('scratch_db', 'dynamo_tmp')
     ])
 
     return master_conf
@@ -112,7 +115,8 @@ def generate_fom_conf(conf_str):
         ('host', host),
         ('user', user),
         ('passwd', passwd),
-        ('db', 'dynamo')
+        ('db', 'dynamo'),
+        ('scratch_db', 'dynamo_tmp')
     ])
     fom_conf['db']['history'] = 'dynamohistory'
 
@@ -121,7 +125,8 @@ def generate_fom_conf(conf_str):
         ('host', host),
         ('user', user),
         ('passwd', passwd),
-        ('db', 'dynamo')
+        ('db', 'dynamo'),
+        ('scratch_db', 'dynamo_tmp')
     ])
 
     return fom_conf

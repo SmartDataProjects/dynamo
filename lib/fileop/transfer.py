@@ -14,8 +14,17 @@ class FileTransferOperation(FileOperation):
         Do the transfer operation on the batch of tasks.
         @params batch_id     Integer
         @params batch_tasks  List of TransferTask objects
+
+        @return  boolean indicating the operation success.
         """
         raise NotImplementedError('start_transfers')
+
+    def cancel_transfers(self, task_ids):
+        """
+        Cancel tasks.
+        @params task_ids    List of TransferTask ids
+        """
+        raise NotImplementedError('cancel_transfers')
 
 class FileTransferQuery(FileQuery):
     @staticmethod
@@ -34,10 +43,16 @@ class FileTransferQuery(FileQuery):
         """
         raise NotImplementedError('get_transfer_status')
 
-    def forget_transfer_status(self, batch_id, task_id):
+    def forget_transfer_status(self, task_id):
         """
         Delete the internal record (if there is any) of the specific task.
-        @param batch_id  Integer id of the transfer task batch.
         @param task_id   Integer id of the transfer task.
         """
         raise NotImplementedError('fotget_transfer_status')
+
+    def forget_transfer_batch(self, batch_id):
+        """
+        Delete the internal record (if there is any) of the specific batch.
+        @param batch_id   Integer id of the transfer task batch.
+        """
+        raise NotImplementedError('fotget_transfer_batch')

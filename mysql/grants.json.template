@@ -21,11 +21,14 @@
       ["INSERT, UPDATE, DELETE", "dynamoregister", "activity_lock"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "copy_requests"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "copy_request_items"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "copy_request_sites"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "active_copies"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_requests"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_request_items"],
+      ["INSERT, UPDATE, DELETE", "dynamoregister", "deletion_request_sites"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "active_deletions"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "detox_locks"],
+      ["INSERT, UPDATE, DELETE, ALTER", "dynamoregister", "data_injections"],
       ["SELECT", "dynamoserver", "users"]
     ]
   },
@@ -47,6 +50,7 @@
     "hosts": ["localhost"],
     "grants": [
       ["SELECT, LOCK TABLES", "dynamo"],
+      ["ALL PRIVILEGES", "dynamo\\_tmp"],
       ["INSERT, UPDATE, DELETE", "dynamo", "transfer_batches"],
       ["INSERT, UPDATE, DELETE", "dynamo", "transfer_queue"],
       ["INSERT, UPDATE, DELETE", "dynamo", "failed_transfers"],

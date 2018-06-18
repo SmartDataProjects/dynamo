@@ -97,17 +97,6 @@ if serve_applications == 'true':
     app_conf['server']['module'] = source_conf.get('applications', 'server')
     app_conf['server']['config'] = json.loads(source_conf.get('applications', 'server_conf'))
 
-    defaults_path = source_conf.get('applications', 'defaults_conf')
-    if not defaults_path.startswith('/'):
-        defaults_path = os.path.dirname(os.path.realpath(sys.argv[1])) + '/' + defaults_path
-
-    with open(defaults_path) as source:
-        try:
-            app_conf['defaults'] = OD(json.loads(source.read()))
-        except:
-            sys.stderr.write('Failed to parse %s\n' % defaults_path)
-            raise
-
     app_conf['timeout'] = 7200
     app_conf['retain_records_for'] = 7
 
@@ -128,6 +117,17 @@ if serve_fileop == 'true':
         transfer_conf['config']['batch_size'] = 4000
 
     server_conf['file_operations']['daemon'] = json.loads(source_conf.get('file_operations', 'fod_conf'))
+
+defaults_path = source_conf.get('server', 'defaults_conf')
+if not defaults_path.startswith('/'):
+    defaults_path = os.path.dirname(os.path.realpath(sys.argv[1])) + '/' + defaults_path
+
+with open(defaults_path) as source:
+    try:
+        server_conf['defaults'] = OD(json.loads(source.read()))
+    except:
+        sys.stderr.write('Failed to parse %s\n' % defaults_path)
+        raise
 
 server_conf['notification_recipient'] = email
 server_conf['status_poll_interval'] = 1.0

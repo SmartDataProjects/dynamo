@@ -60,6 +60,7 @@
   "utils.interface.mysql:MySQL": {
     "fullauth": {
       "default_user": "dynamo",
+      "scratch_db": "dynamo_tmp",
       "params": {
         "dynamo": {
           "passwd": "",
@@ -68,11 +69,16 @@
         "dynamofod": {
           "passwd": "",
           "host": "localhost"
+        },
+        "dynamoread": {
+          "passwd": "",
+          "host": "localhost"
         }
       }
     },
     "readonly": {
       "default_user": "dynamoread",
+      "scratch_db": "dynamo_tmp",
       "params": {
         "dynamoread": {
           "passwd": "",

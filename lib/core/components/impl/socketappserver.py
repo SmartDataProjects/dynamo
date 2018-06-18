@@ -9,6 +9,7 @@ import shutil
 import code
 import ssl
 import json
+import traceback
 import logging
 
 from dynamo.core.components.appserver import AppServer
@@ -175,7 +176,9 @@ class SocketAppServer(AppServer):
             try:
                 conn, addr = self._sock.accept()
             except Exception as ex:
-                if self._running:
+                if self._stop_flag.is_set():
+                    return
+                else:
                     try:
                         if ex.errno == 9: # Bad file descriptor -> socket is closed
                             self.stop()
@@ -185,8 +188,6 @@ class SocketAppServer(AppServer):
 
                     LOG.error('Application server connection failed with error: %s.' % str(sys.exc_info()[1]))
                     continue
-
-                return
 
             thread.start_new_thread(self._process_application, (conn, addr))
 
@@ -220,7 +221,7 @@ class SocketAppServer(AppServer):
             for rdn in user_cert_data['subject']:
                 dn += '/' + '+'.join('%s=%s' % (DN_TRANSLATION[key], value) for key, value in rdn)
 
-            user_name = master.identify_user(dn = dn, check_trunc = True)
+            user_name, _, _ = master.identify_user(dn = dn, check_trunc = True)
             if user_name is None:
                 io.send('failed', 'Unidentified user DN %s' % dn)
                 return
@@ -312,7 +313,10 @@ class SocketAppServer(AppServer):
                         shutil.rmtree(workarea)
 
         except:
-            io.send('failed', sys.exc_info()[0].__name__ + ': ' + str(sys.exc_info()[1]))
+            exc_type, exc, tb = sys.exc_info()
+            msg = '\n' + ''.join(traceback.format_tb(tb)) + '\n'
+            msg += '%s: %s' % (exc_type.__name__, str(exc))
+            io.send('failed', msg)
         finally:
             conn.close()
 
@@ -321,9 +325,9 @@ class SocketAppServer(AppServer):
         port_data = io.recv()
         addr = (io.host, port_data['port'])
 
-        defaults_config, inventory, authorizer = self.dynamo_server.get_subprocess_args()
+        inventory, authorizer = self.dynamo_server.get_subprocess_args()
 
-        args = (addr, workarea, defaults_config, inventory, authorizer)
+        args = (addr, workarea, self.dynamo_server.defaults_config, inventory, authorizer)
         proc = multiprocessing.Process(target = run_interactive_through_socket, name = 'interactive', args = args)
         proc.start()
         proc.join()

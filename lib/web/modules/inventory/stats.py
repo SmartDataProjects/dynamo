@@ -1,113 +1,135 @@
 import re
 import math
-import logging
+import json
+import collections
 
 from dynamo.web.modules._base import WebModule
+from dynamo.web.modules._html import HTMLMixin
 from dynamo.web.modules._common import yesno
 import dynamo.web.exceptions as exceptions
+from dynamo.dataformat import Dataset, Site, Group
 
-LOG = logging.getLogger(__name__)
+from _customize import customize_stats
 
-def campaign_name(dataset):
-    sd = dataset.name[dataset.name.find('/', 1) + 1:dataset.name.rfind('/')]
-    return sd[:sd.find('-')]
+class InventoryStatCategories(object):
+    """
+    Just a holder for available data categorization. Specify
+    (category_name, (category_title, target, mapping))
+    where target is either Dataset, Site, or Group and mapping is a function that takes an instance of the
+    target class and returns a value to be used for categorization.
+    Categories can be made specific to the Dynamo instance using _customize.customize_stats.
+    """
+
+    categories = collections.OrderedDict([
+        ('data_type', ('Dataset type', Dataset, lambda d: Dataset.data_type_name(d.data_type))),
+        ('dataset_status', ('Dataset status', Dataset, lambda d: Dataset.status_name(d.status))),
+        ('dataset_software_version', ('Dataset software version', Dataset, lambda d: d.software_version)),
+        ('dataset', ('Dataset name', Dataset, lambda d: d.name)),
+        ('site', ('Site name', Site, lambda s: s.name)),
+        ('site_status', ('Site status', Site, lambda s: Site.status_name(s.status))),
+        ('group', ('Group name', Group, lambda g: g.name))
+    ])
+
+customize_stats(InventoryStatCategories)
+
+def passes_constraints(item, constraints):
+    if len(constraints) == 0:
+        return True
+
+    for category, pattern in constraints.iteritems():
+        valuemap = InventoryStatCategories.categories[category][2]
+        value = valuemap(item)
+
+        if type(pattern) is list:
+            # ORed list
+            match = True
+            for pat in pattern:
+                if pat is None and value is None:
+                    break
+                elif pat.match(value):
+                    break
+            else:
+                # no pattern matched
+                return False
+                
+        elif pattern is None and value is not None:
+            return False
+
+        elif not pattern.match(value):
+            return False
+
+    return True
+
 
 def filter_and_categorize(request, inventory, counts_only = False):
     # return {category: [(dataset_replica, [block_replica])]} or {category: [(dataset, replication)]} that match the filter
 
-    try:
-        campaign = request['campaign'].strip()
-    except:
-        campaign_pattern = None
-    else:
-        if campaign:
-            campaign_pattern = re.compile(campaign)
-        else:
-            campaign_pattern = None
+    # constraints
+    dataset_constraints = {}
+    site_constraints = {}
+    group_constraints = {}
+
+    for category, (_, target, _) in InventoryStatCategories.categories.iteritems():
+        if target is Dataset:
+            constraints = dataset_constraints
+        elif target is Site:
+            constraints = site_constraints
+        elif target is Group:
+            constraints = group_constraints
+
+        try:
+            const_req = request[category]
+        except KeyError:
+            const_req = None
+
+        if const_req:
+            if type(const_req) is str:
+                if const_req == 'None':
+                    constraints[category] = None
+                else:
+                    constraints[category] = re.compile(const_req)
+
+            elif type(const_req) is list:
+                if len(const_req) != 0:
+                    constraints[category] = []
+
+                    for const_str in const_req:
+                        if const_str == 'None':
+                            constraints[category].append(None)
+                        else:
+                            constraints[category].append(re.compile(const_str))
 
     try:
-        tier = request['data_tier'].strip()
+        list_by = request['list_by'].strip()
     except:
-        tier_pattern = None
-    else:
-        if tier:
-            tier_pattern = re.compile(tier)
-        else:
-            tier_pattern = None
-
-    try:
-        dataset = request['dataset'].strip()
-    except:
-        dataset_pattern = None
-    else:
-        if dataset:
-            dataset_pattern = re.compile(dataset)
-        else:
-            dataset_pattern = None
-
-    try:
-        site = request['site'].strip()
-    except:
-        site_pattern = None
-    else:
-        if site:
-            site_pattern = re.compile(site)
-        else:
-            site_pattern = None
-
-    groups = None
-    try:
-        group_names = request['group[]']
-    except:
-        pass
-    else:
-        if group_names is not None:
-            if type(group_names) is str:
-                group_names = [group_names]
-    
-            if len(group_names) != 0:
-                groups = set()
-    
-                for group_name in group_names:
-                    if group_name == 'None':
-                        group_name = None
-    
-                    try:
-                        groups.add(inventory.groups[group_name])
-                    except KeyError:
-                        pass
-
-    try:
-        list_by = request['categories'].strip()
-    except:
-        list_by = 'campaigns'
+        list_by = next(cat for cat in InventoryStatCategories.categories.iterkeys())
 
     product = {}
 
+    matching_sites = set()
+    for site in inventory.sites.itervalues():
+        if passes_constraints(site, site_constraints):
+            matching_sites.add(site)
+
+    matching_groups = set()
+    for group in inventory.groups.itervalues():
+        if passes_constraints(group, group_constraints):
+            matching_groups.add(group)
+    
     for dataset in inventory.datasets.itervalues():
-        if dataset_pattern is not None and not dataset_pattern.match(dataset.name):
-            continue
-
-        tier = dataset.name[dataset.name.rfind('/') + 1:]
-    
-        if tier_pattern is not None and not tier_pattern.match(tier):
-            continue
-
-        campaign = campaign_name(dataset)
-    
-        if campaign_pattern is not None and not campaign_pattern.match(campaign):
+        if not passes_constraints(dataset, dataset_constraints):
             continue
 
         replica_list = []
     
         for replica in dataset.replicas:
-            if site_pattern is not None and not site_pattern.match(replica.site.name):
+            if replica.site not in matching_sites:
                 continue
     
             br_list = []
     
             for block_replica in replica.block_replicas:
-                if groups is None or block_replica.group in groups:
+                if block_replica.group in matching_groups:
                     br_list.append(block_replica)
 
             if len(br_list) == 0:
@@ -115,47 +137,36 @@ def filter_and_categorize(request, inventory, counts_only = False):
 
             replica_list.append((replica, br_list))
 
-        if list_by == 'campaigns':
+        _, target, keymap = InventoryStatCategories.categories[list_by]
+
+        if target is Dataset:
+            key = keymap(dataset)
+
             try:
-                category_data = product[campaign]
+                category_data = product[key]
             except KeyError:
-                category_data = product[campaign] = []
+                category_data = product[key] = []
 
             if counts_only:
                 category_data.append((dataset, len(replica_list)))
             else:
                 category_data.extend(replica_list)
 
-        elif list_by == 'dataTiers':
-            try:
-                category_data = product[tier]
-            except KeyError:
-                category_data = product[tier] = []
-
-            if counts_only:
-                category_data.append((dataset, len(replica_list)))
-            else:
-                category_data.extend(replica_list)
-
-        elif list_by == 'datasets':
-            if counts_only:
-                product[dataset.name] = [(dataset, len(replica_list))]
-            else:
-                product[dataset.name] = replica_list
-
-        elif list_by == 'sites':
+        elif target is Site:
             for replica, br_list in replica_list:
+                key = keymap(replica.site)
+
                 try:
-                    category_data = product[replica.site.name]
+                    category_data = product[key]
                 except KeyError:
-                    category_data = product[replica.site.name] = []
+                    category_data = product[key] = []
 
                 if counts_only:
                     category_data.append((dataset, 1))
                 else:
                     category_data.append((replica, br_list))
 
-        elif list_by == 'groups':
+        elif target is Group:
             counts = {}
             for replica, br_list in replica_list:
                 by_group = {}
@@ -166,10 +177,12 @@ def filter_and_categorize(request, inventory, counts_only = False):
                         by_group[br.group] = [br]
                 
                 for group, brs in by_group.items():
+                    key = keymap(group)
+
                     try:
-                        category_data = product[group.name]
+                        category_data = product[key]
                     except KeyError:
-                        category_data = product[group.name] = []
+                        category_data = product[key] = []
 
                     if counts_only:
                         try:
@@ -181,7 +194,7 @@ def filter_and_categorize(request, inventory, counts_only = False):
 
             if counts_only:
                 for group, count in counts.items():
-                    product[group.name].append((dataset, count))
+                    product[key].append((dataset, count))
 
     return product
 
@@ -189,7 +202,7 @@ def filter_and_categorize(request, inventory, counts_only = False):
 class TotalSizeListing(WebModule):
     def run(self, caller, request, inventory):
         """
-        @return {'dataType': 'size', 'content': [{key: key_name, size: size in TB}]}
+        @return {'statistic': 'size', 'content': [{key: key_name, size: size in TB}]}
         """
 
         if yesno(request, 'physical'):
@@ -210,13 +223,13 @@ class TotalSizeListing(WebModule):
 
         content.sort(key = lambda x: x['size'], reverse = True)
 
-        return {'dataType': 'size', 'content': content}
+        return {'statistic': 'size', 'content': content}
 
 
 class ReplicationFactorListing(WebModule):
     def run(self, caller, request, inventory):
         """
-        @return {'dataType': 'replication', 'content': [{key: key_name, mean: mean rep factor, rms: rms rep factor}]}
+        @return {'statistic': 'replication', 'content': [{key: key_name, mean: mean rep factor, rms: rms rep factor}]}
         """
 
         dataset_counts = filter_and_categorize(request, inventory, counts_only = True)
@@ -238,13 +251,13 @@ class ReplicationFactorListing(WebModule):
 
         content.sort(key = lambda x: x['mean'], reverse = True)
 
-        return {'dataType': 'replication', 'content': content}
+        return {'statistic': 'replication', 'content': content}
 
 
 class SiteUsageListing(WebModule):
     def run(self, caller, request, inventory):
         """
-        @return {'dataType': 'usage', 'content': [{'site': site_name, 'usage': [{key: key_name, size: size}]}]}
+        @return {'statistic': 'usage', 'content': [{'site': site_name, 'usage': [{key: key_name, size: size}]}]}
         """
 
         if yesno(request, 'physical', True):
@@ -286,10 +299,87 @@ class SiteUsageListing(WebModule):
 
         content.sort(key = lambda x: x['site'])
 
-        return {'dataType': 'usage', 'content': content, 'keys': sorted(all_replicas.keys())}
+        return {'statistic': 'usage', 'content': content, 'keys': sorted(all_replicas.keys())}
+
+
+class InventoryStats(WebModule, HTMLMixin):
+    """
+    The original inventory monitor showing various inventory statistics.
+    """
+
+    def __init__(self, config):
+        WebModule.__init__(self, config) 
+        HTMLMixin.__init__(self, 'Dynamo inventory statistics', 'inventory/stats.html')
+
+        self.stylesheets = ['/css/inventory/stats.css']
+        self.scripts = ['/js/utils.js', '/js/inventory/stats.js']
+
+        self.default_constraints = config.inventory.stats.default_constraints
+
+    def run(self, caller, request, inventory):
+        # Parse GET and POST requests and set the defaults
+        try:
+            statistic = request['statistic'].strip()
+        except:
+            statistic = 'size'
+
+        try:
+            list_by = request['list_by'].strip()
+        except:
+            list_by = next(cat for cat in InventoryStatCategories.categories.iterkeys())
+
+        constraints = {}
+        for key in InventoryStatCategories.categories.iterkeys():
+            try:
+                constraint = request[key]
+            except KeyError:
+                continue
+
+            if type(constraint) is str:
+                constraint = constraint.strip()
+                if ',' in constraint:
+                    constraint = constraint.split(',')
+
+            constraints[key] = constraint
+
+        if len(constraints) == 0:
+            constraints = self.default_constraints
+
+        # HTML formatting
+
+        self.header_script = '$(document).ready(function() { initPage(\'%s\', \'%s\', %s); });' % (statistic, list_by, json.dumps(constraints))
+
+        repl = {}
+
+        categories_html = ''
+        constraint_types_html = ''
+        constraint_inputs_html = ''
+        for name, (title, _, _) in InventoryStatCategories.categories.iteritems():
+            categories_html += '                <option value="%s">%s</option>\n' % (name, title)
+            constraint_types_html += '              <div class="constraintType">%s</div>\n' % title
+            if name != 'group':
+                constraint_inputs_html += '              <div class="constraintInput"> = <input class="constraint" type="text" id="%s" name="%s"></div>' % (name, name)
+
+        repl['CATEGORIES'] = categories_html
+        repl['CONSTRAINT_TYPES'] = constraint_types_html
+        repl['CONSTRAINT_INPUTS'] = constraint_inputs_html
+
+        if yesno(request, 'physical', True):
+            repl['PHYSICAL_CHECKED'] = ' checked="checked"'
+            repl['PROJECTED_CHECKED'] = ''
+        else:
+            repl['PHYSICAL_CHECKED'] = ''
+            repl['PROJECTED_CHECKED'] = ' checked="checked"'
+
+        return self.form_html(repl)
+
 
 export_data = {
     'stats/size': TotalSizeListing,
     'stats/replication': ReplicationFactorListing,
     'stats/usage': SiteUsageListing
+}
+
+export_web = {
+    'stats': InventoryStats
 }

@@ -11,8 +11,8 @@ class MySQLApplicationLockInterface(ApplicationLockInterface):
     def __init__(self, config, authorizer):
         ApplicationLockInterface.__init__(self, config, authorizer)
 
-        self.user_id = authorizer.identify_user(name = self.user, with_id = True)[1]
-        self.role_id = authorizer.identify_role(name = self.role, with_id = True)[1]
+        self.user_id = authorizer.identify_user(name = self.user)[1]
+        self.role_id = authorizer.identify_role(name = self.role)[1]
 
         self._registry = MySQL(config.get('db_params', None))
 

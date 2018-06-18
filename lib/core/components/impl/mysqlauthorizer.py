@@ -23,35 +23,32 @@ class MySQLAuthorizer(Authorizer):
     def list_users(self):
         return self._mysql.query('SELECT `name`, `email`, `dn` FROM `users` ORDER BY `id`')
 
-    def identify_user(self, dn = '', check_trunc = False, name = '', with_id = False): #override
+    def identify_user(self, dn = '', check_trunc = False, name = '', uid = None): #override
         if dn:
-            result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `dn` = %s', dn)
+            result = self._mysql.query('SELECT `name`, `id`, `dn` FROM `users` WHERE `dn` = %s', dn)
             if check_trunc and len(result) == 0:
                 while dn:
                     dn = dn[:dn.rfind('/')]
-                    result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `dn` = %s', dn)
+                    result = self._mysql.query('SELECT `name`, `id`, `dn` FROM `users` WHERE `dn` = %s', dn)
                     if len(result) != 0:
                         break
+        elif name:
+            result = self._mysql.query('SELECT `name`, `id`, `dn` FROM `users` WHERE `name` = %s', name)
         else:
-            result = self._mysql.query('SELECT `name`, `id` FROM `users` WHERE `name` = %s', name)
+            result = self._mysql.query('SELECT `name`, `id`, `dn` FROM `users` WHERE `id` = %s', uid)
 
         if len(result) == 0:
             return None
         else:
-            if with_id:
-                return (result[0][0], int(result[0][1]))
-            else:
-                return result[0][0]
+            return (result[0][0], int(result[0][1]), result[0][2])
 
-    def identify_role(self, name, with_id = False): #override
+    def identify_role(self, name): #override
         try:
-            if with_id:
-                name, rid = self._mysql.query('SELECT `name`, `id` FROM `roles` WHERE `name` = %s', name)[0]
-                return (name, int(rid))
-            else:
-                return self._mysql.query('SELECT `name` FROM `roles` WHERE `name` = %s', name)[0]
+            name, rid = self._mysql.query('SELECT `name`, `id` FROM `roles` WHERE `name` = %s', name)[0]
         except IndexError:
             return None
+        else:
+            return (name, int(rid))
 
     def list_roles(self):
         return self._mysql.query('SELECT `name` FROM `roles`')
@@ -99,3 +96,6 @@ class MySQLAuthorizer(Authorizer):
         
         return self._mysql.query(sql, *args)
 
+    def create_authorizer(self): #override
+        config = Configuration(db_params = self._mysql.config())
+        return MySQLAuthorizer(config)

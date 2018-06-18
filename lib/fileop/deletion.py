@@ -14,8 +14,17 @@ class FileDeletionOperation(FileOperation):
         Do the deletion operation on the batch of tasks.
         @params batch_id     Integer
         @params batch_tasks  List of DeletionTask objects
+
+        @return  boolean indicating the operation success.
         """
         raise NotImplementedError('start_deletions')
+
+    def cancel_deletions(self, task_ids):
+        """
+        Cancel tasks.
+        @params task_ids    List of DeletionTask ids
+        """
+        raise NotImplementedError('cancel_deletions')
 
 class DirDeletionOperation(object):
     @staticmethod
@@ -50,10 +59,16 @@ class FileDeletionQuery(FileQuery):
         """
         raise NotImplementedError('get_transfer_status')
 
-    def forget_deletion_status(self, batch_id, task_id):
+    def forget_deletion_status(self, task_id):
         """
         Delete the internal record (if there is any) of the specific task.
-        @param batch_id  Integer id of the deletion task batch.
         @param task_id   Integer id of the deletion task.
         """
         raise NotImplementedError('fotget_transfer_status')
+
+    def forget_deletion_batch(self, batch_id):
+        """
+        Delete the internal record (if there is any) of the specific batch.
+        @param batch_id   Integer id of the deletion task batch.
+        """
+        raise NotImplementedError('fotget_deletion_batch')

@@ -3,7 +3,7 @@ CREATE TABLE `file_transfers` (
   `file_id` bigint(20) unsigned NOT NULL,
   `source_id` int(10) unsigned NOT NULL,
   `destination_id` int(10) unsigned NOT NULL,
-  `exitcode` smallint(5) unsigned NOT NULL,
+  `exitcode` smallint(5) NOT NULL,
   `batch_id` bigint(20) unsigned NOT NULL,
   `created` datetime NOT NULL,
   `started` datetime NOT NULL,

@@ -5,6 +5,10 @@ from dynamo.web.modules._base import WebModule
 from dynamo.dataformat import Dataset
 
 class ListDatasets(WebModule):
+    """
+    Simple dataset listing.
+    """
+
     def run(self, caller, request, inventory):
         datasets = []
     
@@ -31,5 +35,8 @@ class ListDatasets(WebModule):
         # return any JSONizable python object (maybe should be limited to a list)
         return response
 
+
 # exported to __init__.py
-export_data = {'datasets': ListDatasets}
+export_data = {
+    'datasets': ListDatasets
+}

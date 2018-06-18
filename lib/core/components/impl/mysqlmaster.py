@@ -6,6 +6,7 @@ from dynamo.core.components.master import MasterServer
 from dynamo.core.components.host import ServerHost
 from .mysqlauthorizer import MySQLAuthorizer
 from .mysqlappmanager import MySQLAppManager
+from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration
 
 class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
@@ -15,6 +16,9 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         MasterServer.__init__(self, config)
 
         self._server_id = 0
+        
+        # we'll be using table locks
+        self._mysql.reuse_connection = True
 
     def _connect(self): #override
         if self.get_master_host() == 'localhost' or self.get_master_host() == socket.gethostname():
@@ -24,9 +28,8 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         else:
             self._mysql.query('DELETE FROM `servers` WHERE `hostname` = %s', socket.gethostname())
 
-        self._mysql.query('INSERT INTO `servers` (`hostname`, `last_heartbeat`) VALUES (%s, NOW())', socket.gethostname())
         # id of this server
-        self._server_id = self._mysql.last_insert_id
+        self._server_id = self._mysql.insert_get_id('servers', columns = ('hostname', 'last_heartbeat'), values = (socket.gethostname(), MySQL.bare('NOW()')))
 
     def _do_lock(self): #override
         self._mysql.lock_tables(write = ['servers', 'applications'], read = ['users'])
@@ -121,15 +124,19 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
 
     def get_store_config(self, hostname): #override
         self._mysql.lock_tables(read = ['servers'])
-        while self.get_status(hostname) == ServerHost.STAT_UPDATING:
-            # need to get the version of the remote server when it's not updating
+
+        try:
+            while self.get_status(hostname) == ServerHost.STAT_UPDATING:
+                # need to get the version of the remote server when it's not updating
+                self._mysql.unlock_tables()
+                time.sleep(2)
+                self._mysql.lock_tables(read = ['servers'])
+            
+            sql = 'SELECT `store_module`, `store_config`, `store_version` FROM `servers` WHERE `hostname` = %s'
+            result = self._mysql.query(sql, hostname)
+
+        finally:
             self._mysql.unlock_tables()
-            time.sleep(2)
-            self._mysql.lock_tables(read = ['servers'])
-        
-        sql = 'SELECT `store_module`, `store_config`, `store_version` FROM `servers` WHERE `hostname` = %s'
-        result = self._mysql.query(sql, hostname)
-        self._mysql.unlock_tables()
 
         if len(result) == 0:
             return None
@@ -253,10 +260,6 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
             deleted = self._mysql.query(sql, user_id, role_id, target)
 
         return deleted != 0
-
-    def create_authorizer(self): #override
-        config = Configuration(db_params = self._mysql.config())
-        return MySQLAuthorizer(config)
 
     def check_connection(self): #override
         try:

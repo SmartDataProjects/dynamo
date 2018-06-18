@@ -1,5 +1,25 @@
 #!/usr/bin/env python
 
+#################################################################################
+### dynamo-fileopd ##############################################################
+###
+### File operations daemon that acts on the transfer and deletion tasks created
+### by the Dynamo file operations manager (FOM). Tasks are listed in MySQL tables
+### ("queues"). This daemon is responsible for picking up tasks from the queues
+### and executing gfal2 copies or deletions, while driving the task state machine.
+### Parallel operations are implemented using multiprocessing.Pool. One Pool is
+### created per source-destination pair (target site) in transfers (deletions).
+### Because each gfal2 operation reserves a network port, the machine must have
+### sufficient number of open ports for this daemon to operate.
+### Task state machine:
+### Tasks arrive at the queue in 'new' state. The possible transitions are
+###  new -> queued       ... When the task is added to the operation pool
+###  queued -> done      ... When the task operation succeeded
+###  queued -> failed    ... When the task operation failed
+###  new -> cancelled    ... When the task is cancelled by the FOM
+###  queued -> cancelled ... When the task is cancelled by the FOM
+#################################################################################
+
 import os
 import sys
 import pwd
@@ -7,37 +27,65 @@ import time
 import threading
 import signal
 import multiprocessing
+import multiprocessing.managers
 import logging
 import logging.handlers
 import tempfile
 import gfal2
+import cStringIO
 
-def transfer(src_pfn, dest_pfn, params_config):
-    try:
-        context = gfal2.creat_context()
-    except Exception as exc:
-        # multiprocessing pool cannot handle certain exceptions - convert to string
-        raise Exception(str(exc))
+## Need to have a global signal converter that subprocesses can unset blocking
+from dynamo.utils.signaling import SignalConverter
+signal_converter = SignalConverter()
 
-    try:
-        context.stat(dest_pfn)
-    except gfal2.GError as err:
-        if err.code == 2:
-            # file doesn't exist at destination
-            pass
-        else:
-            raise Exception(str(err))
-    except Exception as exc:
-        raise Exception(str(exc))
-    else:
-        return 0, int(time.time()), int(time.time()), 'Destination file exists', ''
+## Specify error codes that should not be considered as errors
+
+transfer_nonerrors = {
+    17: 'Destination file exists.' # for a transfer task, 17 means that file exists at the destination
+                                   # - should check file size and checksum with context.stat(dest_pfn)
+}
+
+deletion_nonerrors = {
+    2: 'Target file already removed.'
+}
+
+def pre_exec():
+    """Function executed in each subprocess before everything else"""
+
+    signal_converter.unset(signal.SIGTERM)
+    signal_converter.unset(signal.SIGHUP)
+
+def transfer(task_id, queued_ids, queued_ids_lock, src_pfn, dest_pfn, params_config):
+    """
+    Transfer task worker process
+    @param task_id         Task id in the queue.
+    @param queued_ids      List (actually multiprocessing proxy for a shared-memory list) of active task ids.
+    @param queued_ids_lock Lock for the ids list
+    @param src_pfn         Source PFN
+    @param dest_pfn        Destination PFN
+    @param params_config   Configuration parameters used to create GFAL2 transfer parameters.
+
+    @return  (exit code, start time, finish time, error message, log string)
+    """
+
+    with queued_ids_lock:
+        if task_id not in queued_ids:
+            # task was cancelled
+            return -1, 0, 0, '', ''
+
+    if not params_config['overwrite']:
+        # At least for some sites, transfers with overwrite = False still overwrites the file. Try stat first
+        stat_result = gfal_exec('stat', (dest_pfn,))
+
+        if stat_result[0] == 0:
+            return stat_result
 
     try:
         params = gfal2.Gfal2Context.transfer_parameters()
         # Create parent directories at the destination
         params.create_parent = True
         # Overwrite the destination if file already exists (otherwise throws an error)
-        params.overwrite = True
+        params.overwrite = params_config['overwrite']
         params.set_checksum(*params_config['checksum'])
         params.timeout = params_config['transfer_timeout'] # we probably want this to be file size dependent
     
@@ -45,59 +93,77 @@ def transfer(src_pfn, dest_pfn, params_config):
         # multiprocessing pool cannot handle certain exceptions - convert to string
         raise Exception(str(exc))
 
-    def docopy(params, src_pfn, dest_pfn):
-        context.filecopy(params, src_pfn, dest_pfn)
+    return gfal_exec('filecopy', (params, src_pfn, dest_pfn), transfer_nonerrors)
 
-    return gfal_exec(docopy, (params, src_pfn, dest_pfn))
+def delete(task_id, queued_ids, queued_ids_lock, pfn):
+    """
+    Deletion task worker process
+    @param task_id        Task id in the queue.
+    @param queued_ids     List (actually multiprocessing proxy for a shared-memory list) of active task ids.
+    @param queued_ids_lock Lock for the ids list
+    @param pfn            Target PFN
 
-def delete(pfn):
-    def dodelete(pfn):
-        gfal2.creat_context().unlink(pfn)
+    @return  (exit code, start time, finish time, error message, log string)
+    """
 
-    return gfal_exec(dodelete, (pfn,))
+    with queued_ids_lock:
+        if task_id not in queued_ids:
+            # task was cancelled
+            return -1, 0, 0, '', ''
 
-def gfal_exec(func, args):
+    return gfal_exec('unlink', (pfn,), deletion_nonerrors)
+
+def gfal_exec(method, args, nonerrors = {}):
+    """
+    GFAL2 execution function
+    @param method     Name of the Gfal2Context method to execute.
+    @param args       Tuple of arguments to pass to the method
+    @param nonerrors  Dictionary of error code translation for non-errors.
+
+    @return  (exit code, start time, finish time, error message, log string)
+    """
+
     start_time = 0
     finish_time = 0
     log = ''
 
     for attempt in xrange(5):
-        # redirect stdout and stderr to a temporary file
-        stream = tempfile.TemporaryFile() 
-        stdout_fileno = sys.stdout.fileno()
-        stderr_fileno = sys.stderr.fileno()
-        stdout_copy = os.dup(stdout_fileno)
-        stderr_copy = os.dup(stderr_fileno)
-        os.dup2(stream.fileno(), stdout_fileno)
-        os.dup2(stream.fileno(), stderr_fileno)
+        # gfal2 knows to write to the logger. Redirect to StringIO and dump the full log at the end.
+        stream = cStringIO.StringIO()
+        LOG.handlers.pop()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
+        LOG.addHandler(handler)
+
+        start_time = int(time.time())
     
         try:
             gfal2.set_verbose(gfal2.verbose_level.verbose)
 
-            start_time = int(time.time())
-
-            func(*args)
+            context = gfal2.creat_context()
+            getattr(gfal2.Gfal2Context, method)(context, *args)
 
             finish_time = int(time.time())
         
         except gfal2.GError as err:
-            exitcode, msg = err.code, err.message
+            exitcode, msg = err.code, str(err)
 
             if err.code == 70:
+                # port bind failure - seems to be an artefact of using multiple gfal-copy in parallel
+                # usually it finds a good port after a retry
                 continue
+
+            if err.code in nonerrors:
+                return 0, start_time, int(time.time()), nonerrors[err.code], ''
+
+        except Exception as exc:
+            exitcode, msg = -1, str(exc)
     
         else:
             exitcode, msg = 0, ''
     
         finally:
-            sys.stdout.flush()
-            sys.stderr.flush()
-
-            stream.seek(0)
-            log_tmp = stream.read().strip()
-
-            os.dup2(stdout_copy, stdout_fileno)
-            os.dup2(stderr_copy, stderr_fileno)
+            log_tmp = stream.getvalue().strip()
 
         # give a nice indent to each line
         log = ''.join('  %s\n' % line for line in log_tmp.split('\n'))
@@ -109,18 +175,98 @@ def gfal_exec(func, args):
     # all three variables would be defined even when all attempts are exhausted
     return exitcode, start_time, finish_time, msg, log
 
-class PoolManager(object):
-    def __init__(self, name, db, stop_flag, max_concurrent):
-        self.name = name
-        self.db = db
-        self.stop_flag = stop_flag
 
-        self._pool = multiprocessing.Pool(max_concurrent)
+class PoolManager(object):
+    """
+    Base class for managing one task pool. Asynchronous results of the tasks are collected
+    in collect_results() running as a separate thread, automatically started when the first
+    task is added to the pool
+    """
+
+    db = None
+    stop_flag = None
+
+    def __init__(self, name, optype, opformat, task, max_concurrent):
+        """
+        @param name           Name of the instance. Used in logging.
+        @param optype         'transfer' or 'deletion'.
+        @param opformat       Format string used in logging.
+        @param task           Task function.
+        @param max_concurrent Maximum number of concurrent processes in the pool.
+        """
+
+        self.name = name
+        self.optype = optype
+        self.opformat = opformat
+        self.task = task
+
+        self._pool = multiprocessing.Pool(max_concurrent, initializer = pre_exec)
         self._results = []
         self._collector_thread = None
         self._closed = False
 
+    def add_task(self, tid, *args):
+        """
+        Add a task to the pool and start the results collector.
+        """
+
+        if self._closed:
+            raise RuntimeError('PoolManager %s is closed' % self.name)
+
+        # TransferPoolManager or DeletionPoolManager
+        self_cls = type(self)
+
+        sql = 'UPDATE `standalone_{op}_queue` SET `status` = \'queued\' WHERE `id` = %s'.format(op = self.optype)
+        with self_cls.queued_ids_lock:
+            PoolManager.db.query(sql, tid)
+            self_cls.queued_ids.append(tid)
+
+        opstring = self.opformat.format(*args)
+        LOG.info('%s: %s %s', self.name, self.optype, opstring)
+
+        proc_args = (tid, self_cls.queued_ids, self_cls.queued_ids_lock) + args
+        async_result = self._pool.apply_async(self.task, proc_args)
+        self._results.append((tid, async_result) + args)
+
+        if self._collector_thread is None:
+            self.start_collector()
+
+    def process_result(self, result_tuple):
+        """
+        Process the result of a completed task.
+        """
+
+        delim = '--------------'
+
+        tid, result = result_tuple[:2]
+        args = result_tuple[2:]
+
+        exitcode, start_time, finish_time, msg, log = result.get()
+
+        optime = finish_time - start_time
+        opstring = self.opformat.format(*args)
+
+        if exitcode == -1:
+            LOG.info('%s: cancelled %s %s', self.name, self.optype, opstring)
+            status = 'cancelled'
+        elif exitcode == 0:
+            LOG.info('%s: succeeded %s (%d s) %s\n%s\n%s%s', self.name, self.optype, optime, opstring, delim, log, delim)
+            status = 'done'
+        else:
+            LOG.info('%s: failed %s (%d s, %d: %s) %s\n%s\n%s%s', self.name, self.optype, optime, exitcode, msg, opstring, delim, log, delim)
+            status = 'failed'
+
+        sql = 'UPDATE `standalone_{op}_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'.format(op = self.optype)
+
+        PoolManager.db.query(sql, status, exitcode, start_time, finish_time, tid)
+
     def ready_for_recycle(self):
+        """
+        Check if this pool manager can be shut down. Managers should be shut down whenever
+        possible to keep the resource (threads and subprocesses) usage down and also to
+        adjust the concurrency on each link as needed.
+        """
+
         if self._closed:
             return True
 
@@ -130,7 +276,7 @@ class PoolManager(object):
         if self._collector_thread.is_alive():
             return False
 
-        if self.stop_flag.is_set():
+        if PoolManager.stop_flag.is_set():
             LOG.warning('Terminating pool %s' % self.name)
             self._pool.terminate()
 
@@ -151,10 +297,10 @@ class PoolManager(object):
         while len(self._results) != 0:
             ir = 0
             while ir != len(self._results):
-                if self.stop_flag.is_set():
+                if PoolManager.stop_flag.is_set():
                     return
     
-                if not self._results[ir][-1].ready():
+                if not self._results[ir][1].ready():
                     ir += 1
                     continue
     
@@ -165,69 +311,29 @@ class PoolManager(object):
                 return
 
 class TransferPoolManager(PoolManager):
-    def __init__(self, name, db, stop_flag, max_concurrent, params_config):
-        PoolManager.__init__(self, name, db, stop_flag, max_concurrent)
-        self.params_config = params_config
+    queued_ids = None
+    queued_ids_lock = None
 
-    def add_task(self, tid, src_pfn, dest_pfn):
-        if self._closed:
-            raise RuntimeError('PoolManager %s is closed' % self.name)
-
-        LOG.debug('Transfer %s->%s', src_pfn, dest_pfn)
-        self._results.append((tid, src_pfn, dest_pfn, self._pool.apply_async(transfer, (src_pfn, dest_pfn, self.params_config))))
-        if self._collector_thread is None:
-            self.start_collector()
-
-    def process_result(self, result_tuple):
-        delim = '--------------'
-        sql = 'UPDATE `standalone_transfer_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'
-
-        tid, src, dest, result = result_tuple
-        exitcode, start_time, finish_time, msg, log = result.get()
-        
-        if exitcode == 0:
-            LOG.info('Transfer success (%d seconds)\n%s -> %s\n%s\n%s%s', finish_time - start_time, src, dest, delim, log, delim)
-            status = 'done'
-        else:
-            LOG.info('Transfer failure (%d seconds, code %d: %s)\n%s -> %s\n%s\n%s%s', finish_time - start_time, exitcode, msg, src, dest, delim, log, delim)
-            status = 'failed'
-
-        self.db.query(sql, status, exitcode, start_time, finish_time, tid)
+    def __init__(self, src, dest, max_concurrent):
+        name = '%s-%s' % (src, dest)
+        opformat = '{0} -> {1}'
+        PoolManager.__init__(self, name, 'transfer', opformat, transfer, max_concurrent)
 
 class DeletionPoolManager(PoolManager):
-    def __init__(self, name, db, stop_flag, max_concurrent):
-        PoolManager.__init__(self, name, db, stop_flag, max_concurrent)
+    queued_ids = None
+    queued_ids_lock = None
 
-    def add_task(self, tid, pfn):
-        if self._closed:
-            raise RuntimeError('PoolManager %s is closed' % self.name)
-
-        LOG.debug('Deletion %s', pfn)
-        self._results.append((tid, pfn, self._pool.apply_async(delete, (pfn,))))
-        if self._collector_thread is None:
-            self.start_collector()
-
-    def process_result(self, result_tuple):
-        delim = '--------------'
-        sql = 'UPDATE `standalone_deletion_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'
-
-        tid, pfn, result = result_tuple
-        exitcode, start_time, finish_time, msg, log = result.get()
-        
-        if exitcode == 0:
-            LOG.info('Deletion success (%d seconds)\n%s\n%s\n%s%s', finish_time - start_time, pfn, delim, log, delim)
-            status = 'done'
-        else:
-            LOG.info('Deletion failure (%d seconds, code %d: %s)\n%s\n%s\n%s%s', finish_time - start_time, exitcode, msg, pfn, delim, log, delim)
-            status = 'failed'
-
-        self.db.query(sql, status, exitcode, start_time, finish_time, tid)
+    def __init__(self, site, max_concurrent):
+        opformat = '{0}'
+        PoolManager.__init__(self, site, 'deletion', opformat, delete, max_concurrent)
 
 
 if __name__ == '__main__':
     ## Read server config (should be readable only to root)
     from dynamo.dataformat import Configuration
-    import dynamo.core.server as main
+    from dynamo.core.serverutils import BANNER
+    from dynamo.utils.log import log_exception
+    from dynamo.utils.interface.mysql import MySQL
     
     try:
         config_path = os.environ['DYNAMO_SERVER_CONFIG']
@@ -249,11 +355,9 @@ if __name__ == '__main__':
     LOG.addHandler(log_handler)
     
     ## Print some nice banner before we start logging with the timestamp format
-    LOG.critical(main.serverutils.BANNER)
+    LOG.critical(BANNER)
     
     log_handler.setFormatter(logging.Formatter(fmt = log_format))
-
-    from dynamo.utils.log import log_exception
 
     ## Set the effective user id to config.user
     try:
@@ -267,17 +371,20 @@ if __name__ == '__main__':
     fileop_config = config.file_operations
     
     ## Set up operational parameters
-    # We probably want to make this link specific (which means we'll have to create a new table that records the site names for each batch)
+    # We want to make these parameters dynamic in the future
+    # (which means we'll have to create a new table that records the site names for each batch)
     max_concurrent = fileop_config.daemon.max_parallel_links
     checksum_algo = fileop_config.daemon.get('checksum', '')
     transfer_timeout = fileop_config.daemon.transfer_timeout
+    overwrite = fileop_config.daemon.get('overwrite', False)
 
     if 'gfal2_verbosity' in fileop_config.daemon:
         gfal2.set_verbose(getattr(gfal2.verbose_level, fileop_config.daemon.gfal2_verbosity.lower()))
 
     params_config = {
         'transfer_nstreams': 1,
-        'transfer_timeout': transfer_timeout
+        'transfer_timeout': transfer_timeout,
+        'overwrite': overwrite
     }
 
     if checksum_algo:
@@ -287,40 +394,69 @@ if __name__ == '__main__':
         params_config['checksum'] = (gfal2.checksum_mode.none, '', '')
 
     ## Set up a handle to the DB
-    from dynamo.utils.interface.mysql import MySQL
-
     db = MySQL(fileop_config.manager.db.db_params)
-   
+  
     ## Convert SIGTERM and SIGHUP into KeyboardInterrupt (SIGINT already is)
-    from dynamo.utils.signaling import SignalConverter
-    signal_converter = SignalConverter(logger = LOG)
+    signal_converter._logger = LOG
     signal_converter.set(signal.SIGTERM)
     signal_converter.set(signal.SIGHUP)
+
+    ## Create a shared-memory manager to keep a list of queued tasks
+    task_id_manager = multiprocessing.managers.SyncManager()
+    task_id_manager.start()
+    queued_transfer_ids = task_id_manager.list()
+    transfer_ids_lock = task_id_manager.Lock()
+    queued_deletion_ids = task_id_manager.list()
+    deletion_ids_lock = task_id_manager.Lock()
+
+    TransferPoolManager.queued_ids = queued_transfer_ids
+    TransferPoolManager.queued_ids_lock = transfer_ids_lock
+    DeletionPoolManager.queued_ids = queued_deletion_ids
+    DeletionPoolManager.queued_ids_lock = deletion_ids_lock
 
     ## Collect PoolManagers
     managers = {}
 
+    ## Flag to stop the managers
     stop_flag = threading.Event()
 
-    def get_transfer_manager(src, dest):
+    ## Set the pool manager statics
+    PoolManager.db = db
+    PoolManager.stop_flag = stop_flag
+
+    ## Pool manager getters
+    def get_transfer_manager(src, dest, max_concurrent):
         try:
             return managers[(src, dest)]
         except KeyError:
-            managers[(src, dest)] = TransferPoolManager('%s-%s' % (src, dest), db, stop_flag, max_concurrent, params_config)
+            managers[(src, dest)] = TransferPoolManager(src, dest, max_concurrent)
             return managers[(src, dest)]
 
-    def get_deletion_manager(site):
+    def get_deletion_manager(site, max_concurrent):
         try:
             return managers[site]
         except KeyError:
-            managers[site] = DeletionPoolManager(site, db, stop_flag, max_concurrent)
+            managers[site] = DeletionPoolManager(site, max_concurrent)
             return managers[site]
 
     ## Start loop
     try:
+        # If the previous cycle ended with a crash, there may be some dangling tasks in the queued state
+        sql = 'UPDATE `standalone_deletion_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+        db.query(sql)
+        sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+        db.query(sql)
+
+        deletion_first_wait = True
+        transfer_first_wait = True
+
         while True:
             ## Create deletion tasks (batched by site)
-            LOG.info('Creating deletion tasks.')
+            if deletion_first_wait:
+                LOG.info('Creating deletion tasks.')
+                deletion_first_wait = False
+            else:
+                LOG.debug('Creating deletion tasks.')
         
             sql = 'SELECT q.`id`, a.`file`, b.`site` FROM `standalone_deletion_queue` AS a'
             sql += ' INNER JOIN `deletion_queue` AS q ON q.`id` = a.`id`'
@@ -329,16 +465,32 @@ if __name__ == '__main__':
             sql += ' ORDER BY b.`site`, q.`id`'
         
             _site = ''
-            for tid, pfn, site in db.xquery(sql):
+            for tid, pfn, site in db.query(sql):
                 if site != _site:
                     _site = site
-                    pool_manager = get_deletion_manager(site)
+                    pool_manager = get_deletion_manager(site, max_concurrent)
 
                 pool_manager.add_task(tid, pfn)
 
+                deletion_first_wait = True
+
+            ## Queued tasks may be cancelled FOM - try cancelling the tasks using the task id list
+            LOG.debug('Listing queued deletion tasks.')
+
+            sql = 'SELECT `id` FROM `standalone_deletion_queue` WHERE `status` = \'queued\''
+            with deletion_ids_lock:
+                del queued_deletion_ids[:]
+                # List proxy cannot use extend with a generator
+                for tid in db.xquery(sql):
+                    queued_deletion_ids.append(tid)
+
             ## Create transfer tasks (batched by site)
-            LOG.info('Creating transfer tasks.')
-        
+            if transfer_first_wait:
+                LOG.info('Creating transfer tasks.')
+                transfer_first_wait = False
+            else:
+                LOG.debug('Creating transfer tasks.')
+
             sql = 'SELECT q.`id`, a.`source`, a.`destination`, b.`source_site`, b.`destination_site` FROM `standalone_transfer_queue` AS a'
             sql += ' INNER JOIN `transfer_queue` AS q ON q.`id` = a.`id`'
             sql += ' INNER JOIN `standalone_transfer_batches` AS b ON b.`batch_id` = q.`batch_id`'
@@ -346,16 +498,29 @@ if __name__ == '__main__':
             sql += ' ORDER BY b.`source_site`, b.`destination_site`, q.`id`'
         
             _link = None
-            for tid, src_pfn, dest_pfn, ssite, dsite in db.xquery(sql):
+            for tid, src_pfn, dest_pfn, ssite, dsite in db.query(sql):
                 if (ssite, dsite) != _link:
                     _link = (ssite, dsite)
-                    pool_manager = get_transfer_manager(ssite, dsite)
+                    pool_manager = get_transfer_manager(ssite, dsite, max_concurrent)
         
-                pool_manager.add_task(tid, src_pfn, dest_pfn)
+                pool_manager.add_task(tid, src_pfn, dest_pfn, params_config)
+
+                transfer_first_wait = True
+
+            ## See above
+            LOG.debug('Listing queued transfer tasks.')
+
+            sql = 'SELECT `id` FROM `standalone_transfer_queue` WHERE `status` = \'queued\''
+            with transfer_ids_lock:
+                del queued_transfer_ids[:]
+                # List proxy cannot use extend with a generator
+                for tid in db.xquery(sql):
+                    queued_transfer_ids.append(tid)
         
             ## Recycle threads
             for key, manager in managers.items():
                 if manager.ready_for_recycle():
+                    LOG.info('Recycling pool manager %s', manager.name)
                     managers.pop(key)
 
             time.sleep(30)
@@ -368,6 +533,15 @@ if __name__ == '__main__':
 
     finally:
         stop_flag.set()
+
+        try:
+            # try to clean up
+            sql = 'UPDATE `standalone_deletion_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+            db.query(sql)
+            sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+            db.query(sql)
+        except:
+            pass
 
     while True:
         # PoolManagers will terminate automatically once stop_flag is set

@@ -31,24 +31,24 @@ class Authorizer(object):
         """
         raise NotImplementedError('list_users')
 
-    def identify_user(self, dn = '', check_trunc = False, name = '', with_id = False):
+    def identify_user(self, dn = '', check_trunc = False, name = '', uid = None):
         """
         Translate the DN to user account name.
         @param dn           Certificate Distinguished Name.
         @param check_trunc  Retry progressively truncated DNs until a match is found.
         @param name         User name.
-        @param get_id If true, return a tuple (user name, user id)
+        @param uid          User id.
 
-        @return  User name string or (user name, user id). None if not identified
+        @return  (user name, user id, user dn) or None if not identified
         """
         raise NotImplementedError('identify_user')
 
-    def identify_role(self, name, with_id = False):
+    def identify_role(self, name):
         """
         Check if a role exists.
         @param name  Role name
         
-        @return  Role name string or (role name, role id). None if not identified
+        @return  (role name, role id) or None if not identified
         """
         raise NotImplementedError('identify_role')
 
@@ -90,3 +90,10 @@ class Authorizer(object):
         @return List of (user name, role name) authorized for the target.
         """
         raise NotImplementedError('list_authorized_users')
+
+    def create_authorizer(self):
+        """
+        Clone self with fresh connections.
+        @return A new authorizer instance with a fresh connection
+        """
+        raise NotImplementedError('create_authorizer')

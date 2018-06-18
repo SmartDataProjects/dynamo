@@ -28,8 +28,10 @@ class BlockReplica(object):
             return len(self.file_ids)
 
     def __init__(self, block, site, group, is_custodial = False, size = -1, last_update = 0, file_ids = None):
-        # Creater of the object is responsible for making sure size and file_ids are consistent
-        # file_ids should be a tuple of (long) integers or LFN strings, latter in case where the file is not yet registered with the inventory
+        # User of the object is responsible for making sure size and file_ids are consistent
+        # if _use_file_ids is True, file_ids should be a tuple of (long) integers or LFN strings,
+        #   latter in case where the file is not yet registered with the inventory
+        # if _use_file_ids is False, file_ids is the number of files this replica has.
 
         self._block = block
         self._site = site
@@ -37,21 +39,47 @@ class BlockReplica(object):
         self.is_custodial = is_custodial
         self.last_update = last_update
 
-        if size < 0 and type(block) is not str:
-            self.size = block.size
-            self.file_ids = None
-        elif size == 0:
+        # Override file_ids depending on the given size:
+        # If size < 0, this replica is considered full. If type(block) is Block, set the size and file_ids
+        #  from the block. If not, this is a transient object - just set the size to -1.
+        # If size == 0 and file_ids is None, self.file_ids becomes an empty tuple.
+        #  size == 0 and file_ids = finite tuple is allowed. It is the object creator's responsibility to
+        #  ensure that the files in the provided list are all 0-size.
+
+        if size < 0:
+            if type(block) is Block:
+                self.size = block.size
+                if BlockReplica._use_file_ids:
+                    self.file_ids = None
+                else:
+                    self.file_ids = block.num_files
+            else:
+                self.size = -1
+                self.file_ids = None
+
+        elif size == 0 and file_ids is None:
             self.size = 0
             if BlockReplica._use_file_ids:
                 self.file_ids = tuple()
             else:
-                self.file_ids = None
+                self.file_ids = 0
+
+        elif file_ids is None:
+            if type(block) is Block:
+                raise ObjectError('Cannot initialize a BlockReplica with finite size and file_ids = None without a valid block')
+
+            if size == block.size:
+                if BlockReplica._use_file_ids:
+                    self.file_ids = None
+                else:
+                    self.file_ids = block.num_files
+            else:
+                raise ObjectError('BlockReplica file_ids cannot be None when size is finite and not the full block size')
+
         else:
             self.size = size
 
-            if file_ids is None or not BlockReplica._use_file_ids:
-                self.file_ids = None
-            else:
+            if BlockReplica._use_file_ids:
                 # some iterable
                 tmplist = []
                 for fid in file_ids:
@@ -61,6 +89,9 @@ class BlockReplica(object):
                         tmplist.append(fid)
     
                 self.file_ids = tuple(tmplist)
+            else:
+                # must be an integer
+                self.file_ids = file_ids
 
     def __str__(self):
         return 'BlockReplica %s:%s (group=%s, size=%d, last_update=%s)' % \
@@ -69,16 +100,30 @@ class BlockReplica(object):
                 time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(self.last_update)))
 
     def __repr__(self):
+        # repr is mostly used for application - server communication. Set size to -1 if the replica is complete
+        if self.is_complete():
+            size = -1
+            file_ids = None
+        else:
+            size = self.size
+            file_ids = self.file_ids
+
         return 'BlockReplica(%s,%s,%s,%s,%d,%d,%s)' % \
             (repr(self._block_full_name()), repr(self._site_name()), repr(self._group_name()), \
-            self.is_custodial, self.size, self.last_update, repr(self.file_ids))
+            self.is_custodial, size, self.last_update, repr(file_ids))
 
     def __eq__(self, other):
+        if BlockReplica._use_file_ids:
+            # check len() first to avoid having to create sets for no good reason
+            file_ids_match = (self.file_ids == other.file_ids) or ((len(self.file_ids) == len(other.file_ids)) and (set(self.file_ids) == set(other.file_ids)))
+        else:
+            file_ids_match = self.file_ids == other.file_ids
+
         return self is other or \
             (self._block_full_name() == other._block_full_name() and self._site_name() == other._site_name() and \
              self._group_name() == other._group_name() and \
              self.is_custodial == other.is_custodial and self.size == other.size and \
-             self.last_update == other.last_update and self.file_ids == other.file_ids)
+             self.last_update == other.last_update and file_ids_match)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -185,9 +230,20 @@ class BlockReplica(object):
         store.delete_blockreplica(self)
 
     def is_complete(self):
-        return self.size == self.block.size
+        size_match = (self.size == self.block.size)
+        if BlockReplica._use_file_ids:
+            if self.file_ids is None:
+                return True
+            else:
+                # considering the case where we are missing zero-size files
+                return size_match and (len(self.file_ids) == self.block.num_files)
+        else:
+            return size_match and (self.file_ids == self.block.num_files)
 
     def files(self):
+        if not BlockReplica._use_file_ids:
+            raise NotImplementedError('BlockReplica.files')
+
         block_files = self.block.files
         if self.file_ids is None:
             return set(block_files)
@@ -200,18 +256,22 @@ class BlockReplica(object):
         if lfile.block != self.block:
             raise ObjectError('Cannot add file %s (block %s) to %s', lfile.lfn, lfile.block.full_name(), str(self))
 
-        if self.file_ids is None:
-            # This was a full replica. A new file was added to the block. The replica remains full.
-            return
-        else:
-            file_ids = set(self.file_ids)
+        if BlockReplica._use_file_ids:
+            if self.file_ids is None:
+                # This was a full replica. A new file was added to the block. The replica remains full.
+                return
+            else:
+                file_ids = set(self.file_ids)
 
-        file_ids.add(lfile.id)
+            file_ids.add(lfile.id)
+    
+            if len(file_ids) == self.block.num_files:
+                self.file_ids = None
+            else:
+                self.file_ids = tuple(file_ids)
 
-        if len(file_ids) == self.block.num_files:
-            self.file_ids = None
         else:
-            self.file_ids = tuple(file_ids)
+            self.file_ids += 1
 
         self.size += lfile.size
 
@@ -221,15 +281,19 @@ class BlockReplica(object):
         if lfile.block != self.block:
             raise ObjectError('Cannot delete file %s (block %s) from %s', lfile.lfn, lfile.block.full_name(), str(self))
 
-        if self.file_ids is None:
-            file_ids = [f.id for f in self.block.files]
+        if BlockReplica._use_file_ids:
+            if self.file_ids is None:
+                file_ids = [f.id for f in self.block.files]
+            else:
+                file_ids = list(self.file_ids)
+
+            # Let remove() raise ValueError if the file id is not found
+            file_ids.remove(lfile.id)
+            self.file_ids = tuple(file_ids)
+
         else:
-            file_ids = list(self.file_ids)
+            self.file_ids -= 1
 
-        # Let remove() raise ValueError if the file id is not found
-        file_ids.remove(lfile.id)
-
-        self.file_ids = tuple(file_ids)
         self.size -= lfile.size
 
     def _block_full_name(self):
@@ -273,7 +337,11 @@ class BlockReplica(object):
         self.is_custodial = other.is_custodial
         self.size = other.size
         self.last_update = other.last_update
-        if other.file_ids is None:
-            self.file_ids = None
+
+        if BlockReplica._use_file_ids:
+            if other.file_ids is None:
+                self.file_ids = None
+            else:
+                self.file_ids = tuple(other.file_ids)
         else:
-            self.file_ids = tuple(other.file_ids)
+            self.file_ids = other.file_ids

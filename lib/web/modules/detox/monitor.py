@@ -1,61 +1,49 @@
-import json
-
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._html import HTMLMixin
+from dynamo.web.modules._mysqlhistory import MySQLHistoryMixin
 from dynamo.web.modules._common import yesno
 import dynamo.web.exceptions as exceptions
 
-class DatasetStats(WebModule, HTMLMixin):
+class DetoxMonitor(WebModule, MySQLHistoryMixin, HTMLMixin):
     def __init__(self, config):
         WebModule.__init__(self, config)
-        HTMLMixin.__init__(self, 'Dynamo Detox monitor', config.detox.monitor.body_html)
+        MySQLHistoryMixin.__init__(self, config)
+        HTMLMixin.__init__(self, 'Detox deletion results', 'detox/monitor.html')
 
-        self.stylesheets = ['/css/inventory.css']
-        self.scripts = ['/js/utils.js', '/js/detox.js']
-        self.header_script = '$(document).ready(function() { initPage(\'{DATA_TYPE}\', \'{CATEGORIES}\', {CONSTRAINTS}); });'
+        self.stylesheets = ['/css/detox/monitor.css']
+        self.scripts = ['/js/utils.js', '/js/detox/monitor.js']
+        
+        with open(HTMLMixin.contents_path + '/html/detox/monitor_titleblock.html') as source:
+            self.titleblock = source.read()
+
+        self.default_partition = config.detox.default_partition
 
     def run(self, caller, request, inventory):
         # Parse GET and POST requests and set the defaults
-        repl = {}
+        if 'cycle' in request:
+            cycle = int(request['cycle'])
+        else:
+            cycle = 0
 
-        try:
-            repl['DATA_TYPE'] = request['dataType'].strip()
-        except:
-            repl['DATA_TYPE'] = 'size'
-
-        try:
-            repl['CATEGORIES'] = request['categories'].strip()
-        except:
-            repl['CATEGORIES'] = 'campaigns'
-
-        constraints = {}
-        for key in ['campaign', 'dataTier', 'dataset', 'site']:
+        partition_id = 0
+        if 'partition' in request:
             try:
-                constraints[key] = request[key].strip()
-            except:
+                partition_id = self.history.query('SELECT `id` FROM `partitions` WHERE `name` = %s', request['partition'])[0]
+            except IndexError:
                 pass
 
-        group = request['group']
-        if type(group) is list:
-            constraints['group'] = group
-        elif type(group) is str:
-            constraints['group'] = group.strip().split(',')
+        if 'partition_id' in request:
+            partition_id = request['partition_id']
 
-        if len(constraints) == 0:
-            constraints['group'] = ['AnalysisOps']
+        if partition_id == 0:
+            partition_id = self.history.query('SELECT `id` FROM `partitions` WHERE `name` = %s', self.default_partition)[0]
 
-        repl['CONSTRAINTS'] = json.dumps(constraints)
+        # HTML formatting
 
-        if yesno(request, 'physical'):
-            repl['PHYSICAL_CHECKED'] = 'checked="checked"'
-            repl['PROJECTED_CHECKED'] = ''
-        else:
-            repl['PHYSICAL_CHECKED'] = ''
-            repl['PROJECTED_CHECKED'] = 'checked="checked"'
+        self.header_script = '$(document).ready(function() { initPage(%d, %d); });' % (cycle, partition_id)
 
-        return self.form_html(repl)
-
+        return self.form_html()
 
 export_web = {
-    'datasets': DatasetStats
+    '': DetoxMonitor
 }

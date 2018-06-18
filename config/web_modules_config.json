@@ -1,18 +1,27 @@
 {
-  "rlfsm": {
-    "db": {
-      "db_params": {
-        "db": "dynamo",
-        "user": "dynamofod",
-        "passwd": ""
-      },
-      "history": "dynamohistory"
-    }
+  "archive_path": "$(DYNAMO_ARCHIVE)",
+  "spool_path": "$(DYNAMO_SPOOL)",
+  "history": {
+    "user": "dynamoread",
+    "db": "dynamohistory"
+  },
+  "registry": {
+    "user": "dynamo",
+    "db": "dynamoregister"
   },
   "inventory": {
-    "monitor": {
-      "body_html": "inventory/monitor.html",
+    "stats": {
       "default_constraints": {}
     }
-  }  
+  },
+  "request": {
+    "copy": {
+      "default_group": "analysis"
+    }
+  },
+  "detox": {
+    "default_partition": "Default",
+    "monitored_partitions": ["Default"],
+    "cache_db": "dynamohistory_cache"
+  }
 }

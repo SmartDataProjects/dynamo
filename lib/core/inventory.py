@@ -23,14 +23,14 @@ class ObjectRepository(object):
         self.datasets = NameKeyDict()
         self.partitions = NameKeyDict()
 
-        # null group always exist
+        # Null group always exist
         self.groups[None] = df.Group.null_group
+
+        # This base class does not actually have a persistency store
+        self._store = None
 
     def update(self, obj):
         return obj.embed_into(self)
-
-    def register_update(self, obj):
-        pass
 
     def delete(self, obj):
         try:
@@ -45,8 +45,37 @@ class ObjectRepository(object):
             LOG.error('Exception in inventory.delete(%s)' % str(obj))
             raise
 
-    def clear_update(self):
-        pass
+    def make_object(self, repstr):
+        """
+        Create an object from its representation string.
+
+        @param repstr  A string returned by repr(obj)
+
+        @return A new object represented by the input.
+        """
+
+        return eval('df.' + repstr)
+
+    def find_file(self, lfn):
+        """
+        There is no rule for mapping the file name to blocks and datasets. This function
+        uses the persistency store (which would be a relational database for any sane installation)
+        to retrieve a fully-linked file object given an LFN.
+
+        @param lfn   Logical name of the file to find
+
+        @return A fully-linked File object
+        """
+
+        result = self._store.find_block_containing(lfn)
+        # result is None or (dataset_name, block_name)
+
+        if result is None:
+            return None
+
+        # Not capturing exceptions because there shouldn't be anything raised
+        # If there is, that means we have a really bad desynch between the inventory and the store.
+        return self.datasets[result[0]].find_block(result[1], must_find = True).find_file(lfn, must_find = True)
 
 
 class DynamoInventoryProxy(ObjectRepository):
@@ -225,9 +254,6 @@ class DynamoInventory(ObjectRepository):
         LOG.info('Data is loaded to memory. %d groups, %d sites, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.groups), len(self.sites), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
         self.loaded = True
-
-    def make_object(self, repstr):
-        return eval('df.' + repstr)
 
     def _load_partitions(self):
         """Load partition data from a text table."""

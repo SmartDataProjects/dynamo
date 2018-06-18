@@ -4,19 +4,22 @@ import time
 import traceback
 import json
 import logging
+import logging.handlers
 import socket
 import collections
 import multiprocessing
+import cStringIO
 from cgi import FieldStorage
 from flup.server.fcgi_fork import WSGIServer
 
 import dynamo.core.serverutils as serverutils
 import dynamo.web.exceptions as exceptions
 # Actual modules imported at the bottom of this file
-from dynamo.web.modules import modules
+from dynamo.web.modules import modules, load_modules
 from dynamo.web.modules._html import HTMLMixin
 
 from dynamo.utils.transform import unicode2str
+from dynamo.utils.log import reset_logger
 
 LOG = logging.getLogger(__name__)
 
@@ -37,6 +40,8 @@ class WebServer(object):
 
         self.server_proc = None
 
+        self.active_count = multiprocessing.Value('I', 0, lock = True)
+
         HTMLMixin.contents_path = config.contents_path
         # common mixin class used by all page-generating modules
         with open(HTMLMixin.contents_path + '/html/header_common.html') as source:
@@ -46,6 +51,9 @@ class WebServer(object):
 
         # cookie string -> (user name, user id)
         self.known_users = {}
+
+        # Log file path (start a rotating log if specified)
+        self.log_path = None
 
         self.debug = config.get('debug', False)
 
@@ -64,12 +72,77 @@ class WebServer(object):
 
         self.server_proc.terminate()
         LOG.debug('Waiting for web server to join.')
-        self.server_proc.join()
+        self.server_proc.join(5)
+
+        if self.server_proc.is_alive():
+            # SIGTERM got ignored
+            LOG.info('Web server failed to stop. Sending KILL signal..')
+            try:
+                os.kill(self.server_proc.pid, signal.SIGKILL)
+            except:
+                pass
+
+            self.server_proc.join(5)
+
+            if self.server_proc.is_alive():
+                LOG.warning('Web server (PID %d) is stuck.', self.server_proc.pid)
+                self.server_proc = None
+                return
+
         LOG.debug('Web server joined.')
 
         self.server_proc = None
 
+    def restart(self):
+        LOG.info('Restarting web server (PID %d).', self.server_proc.pid)
+
+        # Replace the active_count by a temporary object (won't be visible from subprocs)
+        old_active_count = self.active_count
+        self.active_count = multiprocessing.Value('I', 0, lock = True)
+
+        # A new WSGI server will overtake the socket. New requests will be handled by new_server_proc
+        LOG.debug('Starting new web server.')
+        new_server_proc = multiprocessing.Process(target = self._serve)
+        new_server_proc.daemon = True
+        new_server_proc.start()
+
+        # Drain and stop the main server
+        LOG.debug('Waiting for web server to drain.')
+        while old_active_count.value != 0:
+            time.sleep(0.2)
+
+        self.stop()
+
+        self.server_proc = new_server_proc
+
+        LOG.info('Started web server (PID %d).', self.server_proc.pid)
+
     def _serve(self):
+        if self.log_path:
+            reset_logger()
+
+            root_logger = logging.getLogger()
+            log_handler = logging.handlers.RotatingFileHandler(self.log_path, maxBytes = 10000000, backupCount = 100)
+            log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+            root_logger.addHandler(log_handler)
+
+        # Set up module defaults
+        # Using the same piece of code as serverutils, but only picking up fullauth or all configurations
+        for key, config in self.dynamo_server.defaults_config.items():
+            try:
+                myconf = config['fullauth']
+            except KeyError:
+                try:
+                    myconf = config['all']
+                except KeyError:
+                    continue
+    
+            modname, clsname = key.split(':')
+            module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
+            cls = getattr(module, clsname)
+    
+            cls.set_default(myconf)
+
         try:
             self.wsgi_server.run()
         except SystemExit as exc:
@@ -80,8 +153,73 @@ class WebServer(object):
             os._exit(exc.code)
 
     def main(self, environ, start_response):
+        # Increment the active count so that the parent process won't be killed before this function returns
+        with self.active_count.get_lock():
+            self.active_count.value += 1
+
+        LOG.info('%s-%s %s (%s:%s %s)', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], environ['HTTP_USER_AGENT'])
+
+        # Then immediately switch to logging to a buffer
+        root_logger = logging.getLogger()
+        stream = cStringIO.StringIO()
+        original_handler = root_logger.handlers.pop()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(logging.Formatter(fmt = '%(levelname)s:%(name)s: %(message)s'))
+        root_logger.addHandler(handler)
+
+        try:
+            self.code = 200 # HTTP response code
+            self.content_type = 'application/json' # content type string
+            self.headers = [] # list of header tuples
+            self.callback = None # set to callback function name if this is a JSONP request
+            self.message = '' # string
+
+            content = self._main(environ)
+
+            # Maybe we can use some standard library?
+            if self.code == 200:
+                status = 'OK'
+            elif self.code == 400:
+                status = 'Bad Request'
+            elif self.code == 403:
+                status = 'Forbidden'
+            elif self.code == 404:
+                status = 'Not Found'
+            elif self.code == 500:
+                status = 'Internal Server Error'
+            elif self.code == 503:
+                status = 'Service Unavailable'
+
+            if self.content_type == 'application/json':
+                json_data = {'result': status, 'message': self.message}
+                if content is not None:
+                    json_data['data'] = content
+
+                content = json.dumps(json_data)
+                if self.callback is not None:
+                    content = self.callback + '(' + content + ')'
+
+            headers = [('Content-Type', self.content_type)] + self.headers
+
+            start_response('%d %s' % (self.code, status), headers)
+
+            return content + '\n'
+
+        finally:
+            root_logger.handlers.pop()
+            root_logger.addHandler(original_handler)
+
+            delim = '--------------'
+            log_tmp = stream.getvalue().strip()
+            log = ''.join('  %s\n' % line for line in log_tmp.split('\n'))
+            LOG.info('%s-%s %s (%s:%s) return:\n%s\n%s%s', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], delim, log, delim)
+
+            with self.active_count.get_lock():
+                self.active_count.value -= 1
+
+    def _main(self, environ):
         """
-        WSGI callable. Steps:
+        Body of the WSGI callable. Steps:
         1. Determine protocol. If HTTPS, identify the user.
         2. If js or css is requested, respond.
         3. Find the module class and instantiate it.
@@ -90,6 +228,8 @@ class WebServer(object):
         6. Respond.
         """
 
+        authorizer = None
+
         ## Step 1
         if environ['REQUEST_SCHEME'] == 'http':
             # No auth
@@ -97,22 +237,24 @@ class WebServer(object):
             authlist = []
 
         elif environ['REQUEST_SCHEME'] == 'https':
-            authorizer = self.dynamo_server.manager.master
+            authorizer = self.dynamo_server.manager.master.create_authorizer()
 
             # Client DN must match a known user
             try:
                 user, user_id = self.identify_user(environ, authorizer)
             except exceptions.AuthorizationError:
-                start_response('403 Forbidden', [('Content-Type', 'text/plain')])
-                return 'Unknown user.\nClient name: %s\n' % environ['SSL_CLIENT_S_DN']
+                self.code = 403
+                self.message = 'Unknown user. Client name: %s' % environ['SSL_CLIENT_S_DN']
+                return 
             except:
-                return self._internal_server_error(start_response)
+                return self._internal_server_error()
 
             authlist = authorizer.list_user_auth(user)
 
         else:
-            start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            return 'Only HTTP or HTTPS requests are allowed.\n'
+            self.code = 400
+            self.message = 'Only HTTP or HTTPS requests are allowed.'
+            return
 
         ## Step 2
         mode = environ['SCRIPT_NAME'].strip('/')
@@ -121,46 +263,55 @@ class WebServer(object):
             try:
                 source = open(HTMLMixin.contents_path + '/' + mode + environ['PATH_INFO'])
             except IOError:
-                start_response('404 Not Found', [('Content-Type', 'text/plain')])
+                self.code = 404
+                self.content_type = 'text/plain'
                 return 'Invalid request %s%s.\n' % (mode, environ['PATH_INFO'])
             else:
-                content = source.read()
-                source.close()
                 if mode == 'js':
-                    ctype = 'text/javascript'
+                    self.content_type = 'text/javascript'
                 else:
-                    ctype = 'text/css'
+                    self.content_type = 'text/css'
 
-                start_response('200 OK', [('Content-Type', ctype)])
-                return content + '\n'
+                content = source.read() + '\n'
+                source.close()
+
+                return content
 
         ## Step 3
         if mode != 'data' and mode != 'web':
-            start_response('404 Not Found', [('Content-Type', 'text/plain')])
-            return 'Invalid request %s.\n' % mode
+            self.code = 404
+            self.message = 'Invalid request %s.' % mode
+            return
 
         module, _, command = environ['PATH_INFO'][1:].partition('/')
 
         try:
             cls = modules[mode][module][command]
         except KeyError:
-            start_response('404 Not Found', [('Content-Type', 'text/plain')])
-            return 'Invalid request %s/%s.\n' % (module, command)
+            # Was a new module added perhaps?
+            load_modules()
+            try: # again
+                cls = modules[mode][module][command]
+            except KeyError:
+                self.code = 404
+                self.message = 'Invalid request %s/%s.' % (module, command)
+                return
 
         try:
-            obj = cls(self.modules_config)
+            provider = cls(self.modules_config)
         except:
-            return self._internal_server_error(start_response)
+            return self._internal_server_error()
 
-        if obj.write_enabled:
+        if provider.write_enabled:
             self.dynamo_server.manager.master.lock()
 
             try:
                 if self.dynamo_server.manager.master.inhibit_write():
                     # We need to give up here instead of waiting, because the web server processes will be flushed out as soon as
                     # inventory is updated after the current writing process is done
-                    start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
-                    return 'Server cannot execute %s/%s at the moment because the inventory is being updated.\n' % (module, command)
+                    self.code = 503
+                    self.message = 'Server cannot execute %s/%s at the moment because the inventory is being updated.' % (module, command)
+                    return
                 else:
                     self.dynamo_server.manager.master.start_write_web(socket.gethostname(), os.getpid())
                     # stop is called from the DynamoServer upon successful inventory update
@@ -172,22 +323,39 @@ class WebServer(object):
             finally:
                 self.dynamo_server.manager.master.unlock()
 
+        if provider.require_authorizer:
+            if authorizer is None:
+                authorizer = self.dynamo_server.manager.master.create_authorizer()
+
+            provider.authorizer = authorizer
+
         try:
             ## Step 4
             if 'CONTENT_TYPE' in environ and environ['CONTENT_TYPE'] == 'application/json':
                 try:
                     request = json.loads(environ['wsgi.input'].read())
                 except:
-                    start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-                    return 'Could not parse input.\n'
+                    self.code = 400
+                    self.message = 'Could not parse input.'
+                    return
             else:
                 # Use FieldStorage to parse URL-encoded GET and POST requests
                 fstorage = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
                 if fstorage.list is None:
-                    start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-                    return 'Could not parse input.\n'
+                    self.code = 400
+                    self.message = 'Could not parse input.'
+                    return 
 
-                request = dict((item.name, item.value) for item in fstorage.list)
+                request = {}
+                for item in fstorage.list:
+                    if item.name.endswith('[]'):
+                        key = item.name[:-2]
+                        try:
+                            request[key].append(item.value)
+                        except KeyError:
+                            request[key] = [item.value]
+                    else:
+                        request[item.name] = item.value
 
             unicode2str(request)
     
@@ -195,54 +363,31 @@ class WebServer(object):
             caller = WebServer.User(user, user_id, authlist)
 
             inventory = self.dynamo_server.inventory.create_proxy()
-            if obj.write_enabled:
+            if provider.write_enabled:
                 inventory._update_commands = []
 
-            content = obj.run(caller, request, inventory)
+            content = provider.run(caller, request, inventory)
 
-            if obj.write_enabled:
+            if provider.write_enabled:
                 # TODO make web server log to a separate file
                 serverutils.send_updates(inventory, self.dynamo_server.inventory_update_queue, silent = True)
             
-        except exceptions.AuthorizationError:
-            start_response('403 Forbidden', [('Content-Type', 'text/plain')])
-            return 'User not authorized to perform the request.\n'
-        except exceptions.MissingParameter as ex:
-            start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            msg = 'Missing required parameter "%s"' % ex.param_name
-            if ex.context is not None:
-                msg += ' in %s' % ex.context
-            msg += '.\n'
-            return msg
-        except exceptions.IllFormedRequest as ex:
-            start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            msg = 'Parameter "%s" has illegal value "%s".' % (ex.param_name, ex.value)
-            if ex.hint is not None:
-                msg += ' ' + ex.hint + '.'
-            if ex.allowed is not None:
-                msg += ' Allowed values: [%s]' % ['"%s"' % v for v in ex.allowed]
-            return msg + '\n'
-        except exceptions.ResponseDenied as ex:
-            start_response('400 Bad Request', [('Content-Type', 'text/plain')])
-            return 'Server denied response due to: %s\n' % str(ex)
+        except (exceptions.AuthorizationError, exceptions.ResponseDenied, exceptions.MissingParameter,
+                exceptions.ExtraParameter, exceptions.IllFormedRequest, exceptions.InvalidRequest) as ex:
+            self.code = 400
+            self.message = str(ex)
+            return
         except:
-            return self._internal_server_error(start_response)
+            return self._internal_server_error()
 
         ## Step 6
-        if mode == 'data':
-            start_response('200 OK', [('Content-Type', 'application/json')])
+        self.message = provider.message
+        self.content_type = provider.content_type
+        self.headers = provider.additional_headers
+        if 'callback' in request:
+            self.callback = request['callback']
 
-            data_str = json.dumps(content)
-
-            if 'callback' in request:
-                # JSONP request
-                return request['callback'] + '(' + data_str + ')'
-            else:
-                # Normal JSON
-                return data_str + '\n'
-        else:
-            start_response('200 OK', [('Content-Type', 'text/html')])
-            return content
+        return content
 
     def identify_user(self, environ, authorizer):
         """Read the DN string in the environ and return (user name, user id)."""
@@ -274,15 +419,17 @@ class WebServer(object):
             key, _, value = part.partition(' = ')
             dn += '/' + key + '=' + value
 
-        userinfo = authorizer.identify_user(dn = dn, check_trunc = True, with_id = True)
+        userinfo = authorizer.identify_user(dn = dn, check_trunc = True)
 
         if userinfo is None:
             raise exceptions.AuthorizationError()
 
-        return userinfo
+        return userinfo[:2]
 
-    def _internal_server_error(self, start_fnc):
-        start_fnc('500 Internal Server Error', [('Content-Type', 'text/plain')])
+    def _internal_server_error(self):
+        self.code = 500
+        self.content_type = 'text/plain'
+
         exc_type, exc, tb = sys.exc_info()
         if self.debug:
             response = 'Caught exception %s while waiting for task to complete.\n' % exc_type.__name__

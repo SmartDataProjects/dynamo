@@ -3,7 +3,7 @@ import sys
 import logging
 import time
 import re
-import threading
+import multiprocessing
 from ConfigParser import ConfigParser
 
 import MySQLdb
@@ -11,10 +11,19 @@ import MySQLdb.converters
 import MySQLdb.cursors
 import MySQLdb.connections
 
-# Fix for some (newer) versions of MySQLdb
-from types import TupleType, ListType
-MySQLdb.converters.conversions[TupleType] = MySQLdb.converters.escape_sequence
-MySQLdb.converters.conversions[ListType] = MySQLdb.converters.escape_sequence
+try:
+    MySQLdb.converters.quote_tuple
+except AttributeError:
+    # Old version of MySQLdb - nothing to do
+    pass
+else:
+    # Backward compatibility measure
+    # Older versions of MySQLdb has "query = query % db.literal(args)" in cursor.execute, which requires tuples and lists to
+    # not convert to string. Newer versions are more sensible and returns a string on all conversions. However, to be backward
+    # compatible, we need to break that sensibility.
+    from types import TupleType, ListType
+    MySQLdb.converters.conversions[TupleType] = MySQLdb.converters.escape_sequence
+    MySQLdb.converters.conversions[ListType] = MySQLdb.converters.escape_sequence
 
 from dynamo.dataformat import Configuration
 
@@ -23,12 +32,14 @@ LOG = logging.getLogger(__name__)
 class MySQL(object):
     """Generic thread-safe MySQL interface (for an interface)."""
 
-    _default_user = ''
+    _default_config = Configuration()
     _default_parameters = {'': {}} # {user: config}
 
     @staticmethod
     def set_default(config):
-        MySQL._default_user = config.default_user
+        MySQL._default_config = Configuration(config)
+        MySQL._default_config.pop('params')
+
         for user, params in config.params.items():
             MySQL._default_parameters[user] = dict(params)
             MySQL._default_parameters[user]['user'] = user
@@ -36,6 +47,13 @@ class MySQL(object):
     @staticmethod
     def escape_string(string):
         return MySQLdb.escape_string(string)
+
+    class bare(object):
+        """
+        Pass bare(string) as column values to bypass formatting in insert_get_id (support will be expanded to other methods).
+        """
+        def __init__(self, value):
+            self.value = value
     
     def __init__(self, config = None):
         config = Configuration(config)
@@ -43,7 +61,7 @@ class MySQL(object):
         if 'user' in config:
             user = config.user
         else:
-            user = MySQL._default_user
+            user = MySQL._default_config.default_user
 
         try:
             self._connection_parameters = dict(MySQL._default_parameters[user])
@@ -70,14 +88,21 @@ class MySQL(object):
         self._connection = None
 
         # Avoid interference in case the module is used from multiple threads
-        self._connection_lock = threading.RLock()
+        self._connection_lock = multiprocessing.RLock()
+
+        # MySQL tables can be locked by multiple statements but are unlocked with one.
+        # In nested functions with each one locking different tables, we need to call UNLOCK TABLES
+        # only after the outermost function asks for it.
+        self._locked_tables = []
         
-        # Use with care! A deadlock can occur when another session tries to lock a table used by a session with
-        # reuse_connection = True
-        self.reuse_connection = config.get('reuse_connection', False)
+        # Use with care! If False, table locks and temporary tables cannot be used
+        self.reuse_connection = config.get('reuse_connection', MySQL._default_config.get('reuse_connection', True))
 
         # Default 1M characters
-        self.max_query_len = config.get('max_query_len', 1000000)
+        self.max_query_len = config.get('max_query_len', MySQL._default_config.get('max_query_len', 1000000))
+
+        # Default database for CREATE TEMPORARY TABLE
+        self.scratch_db = config.get('scratch_db', MySQL._default_config.get('scratch_db', ''))
 
         # Row id of the last insertion. Will be nonzero if the table has an auto-increment primary key.
         # **NOTE** While core execution of query() and xquery() are locked and thread-safe, last_insert_id is not.
@@ -123,6 +148,7 @@ class MySQL(object):
 
         conf['reuse_connection'] = self.reuse_connection
         conf['max_query_len'] = self.max_query_len
+        conf['scratch_db'] = self.scratch_db
 
         return conf
 
@@ -131,6 +157,14 @@ class MySQL(object):
             self._connection = MySQLdb.connect(**self._connection_parameters)
 
         return self._connection.cursor(cursor_cls)
+
+    def close_cursor(self, cursor):
+        if cursor is not None:
+            cursor.close()
+    
+        if not self.reuse_connection and self._connection is not None:
+            self._connection.close()
+            self._connection = None
 
     def query(self, sql, *args, **kwd):
         """
@@ -155,7 +189,6 @@ class MySQL(object):
         self._connection_lock.acquire()
 
         cursor = None
-
         try:
             cursor = self.get_cursor()
     
@@ -203,30 +236,78 @@ class MySQL(object):
                 raise
     
             result = cursor.fetchall()
-    
+
             if cursor.description is None:
+                # Was an insert, update, or delete query - really? Is there no other way to identify this?
                 if cursor.lastrowid != 0:
                     # insert query on an auto-increment column
                     self.last_insert_id = cursor.lastrowid
 
+                self.close_cursor(cursor)
+                self._connection_lock.release()
+
                 return cursor.rowcount
+
+            self.close_cursor(cursor)
+            self._connection_lock.release()
     
-            elif len(result) != 0 and len(result[0]) == 1:
+            if len(result) != 0 and len(result[0]) == 1:
                 # single column requested
                 return [row[0] for row in result]
     
             else:
                 return list(result)
 
-        finally:
-            if cursor is not None:
-                cursor.close()
-    
-            if not self.reuse_connection and self._connection is not None:
-                self._connection.close()
-                self._connection = None
+        except:
+            self.close_cursor(cursor)
+            self._fully_unlock()
+            raise
+
+    def insert_get_id(self, table, columns = None, values = None, select = None, db = None, **kwd):
+        """
+        Auto-form an INSERT statement, execute it under a lock and return the last_insert_id.
+        @param table    Table name without reverse-quotes.
+        @param columns  If an iterable, column names to insert to. If None, insert filling all columns is assumed.
+        @param values   If an iterable, column values to insert. Either values or select must be None.
+        @param select   If 
+        """
+
+        args = []
+
+        sql = 'INSERT INTO `%s`' % table
+        if columns is not None:
+            # has to be some iterable
+            sql += ' (%s)' % ','.join('`%s`' % c for c in columns)
+
+        if values is not None:
+            values_list = []
+            for v in values:
+                if type(v) is MySQL.bare:
+                    # For example, inserting with functions e.g. NOW()
+                    values_list.append(v.value)
+                else:
+                    values_list.append('%s')
+                    args.append(v)
+
+            sql += ' VALUES (%s)' % ','.join(values_list)
+
+        elif select is not None:
+            sql += ' ' + select
+
+        self._connection_lock.acquire()
+
+        try:
+            inserted = self.query(sql, *tuple(args), **kwd)
+            if type(inserted) is list:
+                raise RuntimeError('Non-insert query executed in insert_get_id')
+            elif inserted != 1:
+                raise RuntimeError('More than one row inserted in insert_get_id')
 
             self._connection_lock.release()
+            return self.last_insert_id
+
+        except:
+            self._fully_unlock()
 
     def xquery(self, sql, *args):
         """
@@ -236,11 +317,10 @@ class MySQL(object):
          - values if one column is called
         """
 
+        self._connection_lock.acquire()
+
         cursor = None
-
         try:
-            self._connection_lock.acquire()
-
             cursor = self.get_cursor(MySQLdb.cursors.SSCursor)
     
             self.last_insert_id = 0
@@ -278,49 +358,34 @@ class MySQL(object):
                 raise RuntimeError('xquery cannot be used for non-SELECT statements')
     
             row = cursor.fetchone()
-            if row is None:
-                # having yield statements below makes this a 0-element iterator
-                return
-    
-            single_column = (len(row) == 1)
-    
-            while row:
-                if single_column:
-                    yield row[0]
-                else:
-                    yield row
-    
-                row = cursor.fetchone()
-    
-            return
+            if row is not None:
+                single_column = (len(row) == 1)
+        
+                while row:
+                    if single_column:
+                        yield row[0]
+                    else:
+                        yield row
+        
+                    row = cursor.fetchone()
 
-        finally:
-            # only called on exception or return
-            if cursor is not None:
-                cursor.close()
-    
-            if not self.reuse_connection and self._connection is not None:
-                self._connection.close()
-                self._connection = None
-
+            self.close_cursor(cursor)
             self._connection_lock.release()
 
-    def insert_and_get_id(self, sql, *args, **kwd):
-        """
-        Thread-safe call for an insertion query to a table with an auto-increment primary key.
-        @return (last_insert_id, rowcount)
-        """
-
-        with self._connection_lock:
-            rowcount = self.query(sql, *args, **kwd)
-            return self.last_insert_id, rowcount
+        except:
+            self.close_cursor(cursor)
+            self._fully_unlock()
+            raise
 
     def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = ''):
         result = []
 
         if type(key) is tuple:
             key_str = '(' + ','.join('`%s`' % k for k in key) + ')'
+        elif type(key) is MySQL.bare:
+            key_str = key.value
         elif '`' in key or '(' in key:
+            # backward compatibility
             key_str = key
         else:
             key_str = '`%s`' % key
@@ -341,7 +406,14 @@ class MySQL(object):
             if type(vals) is list:
                 result.extend(vals)
 
-        self._execute_in_batches(execute, pool)
+        # executing in batches - we may issue multiple queries
+        self._connection_lock.acquire()
+        try:
+            self._execute_in_batches(execute, pool)
+            self._connection_lock.release()
+        except:
+            self._fully_unlock()
+            raise
 
         return result
 
@@ -351,31 +423,45 @@ class MySQL(object):
 
         quoted = []
         for field in fields:
-            if '(' in field or '`' in field:
+            if type(field) is MySQL.bare:
+                quoted.append(field.value)
+            elif '(' in field or '`' in field:
+                # backward compatibility
                 quoted.append(field)
             else:
                 quoted.append('`%s`' % field)
 
         fields_str = ','.join(quoted)
+        
+        if type(table) is MySQL.bare:
+            table_str = table.value
+        else:
+            table_str = '`%s`' % table
 
-        sqlbase = 'SELECT {fields} FROM `{table}`'.format(fields = fields_str, table = table)
+        sqlbase = 'SELECT {fields} FROM {table}'.format(fields = fields_str, table = table_str)
 
         return self.execute_many(sqlbase, key, pool, additional_conditions, order_by = order_by)
 
-    def delete_many(self, table, key, pool, additional_conditions = []):
-        sqlbase = 'DELETE FROM `{table}`'.format(table = table)
+    def delete_many(self, table, key, pool, additional_conditions = [], db = ''):
+        if type(table) is MySQL.bare:
+            table_str = table.value
+        else:
+            table_str = '`%s`' % table
+
+        sqlbase = 'DELETE FROM {table}'.format(table = table_str)
 
         self.execute_many(sqlbase, key, pool, additional_conditions)
 
-    def insert_many(self, table, fields, mapping, objects, do_update = True, db = ''):
+    def insert_many(self, table, fields, mapping, objects, do_update = True, db = '', update_columns = None):
         """
         INSERT INTO table (fields) VALUES (mapping(objects)).
-        @param table         Table name.
-        @param fields        Name of columns. If None, perform INSERT INTO table VALUES
-        @param mapping       Typically a lambda that takes an element in the objects list and return a tuple corresponding to a row to insert.
-        @param objects       List or iterator of objects to insert.
-        @param do_update     If True, use ON DUPLICATE KEY UPDATE which can be slower than a straight INSERT.
-        @param db            DB name.
+        @param table          Table name.
+        @param fields         Name of columns. If None, perform INSERT INTO table VALUES
+        @param mapping        Typically a lambda that takes an element in the objects list and return a tuple corresponding to a row to insert.
+        @param objects        List or iterator of objects to insert.
+        @param do_update      If True, use ON DUPLICATE KEY UPDATE which can be slower than a straight INSERT.
+        @param db             DB name.
+        @param update_columns Tuple of column names to update when do_update is True. If None, all columns are updated.
 
         @return  total number of inserted rows.
         """
@@ -403,7 +489,10 @@ class MySQL(object):
             sqlbase += ' (%s)' % ','.join('`%s`' % f for f in fields)
         sqlbase += ' VALUES %s'
         if fields and do_update:
-            sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join('`{f}`=VALUES(`{f}`)'.format(f = f) for f in fields)
+            if update_columns is None:
+                update_columns = fields
+
+            sqlbase += ' ON DUPLICATE KEY UPDATE ' + ','.join('`{f}`=VALUES(`{f}`)'.format(f = f) for f in update_columns)
 
         if mapping is None:
             ncol = len(obj)
@@ -419,6 +508,7 @@ class MySQL(object):
             values = ''
 
             while itr:
+                # tuple is converted by quote_tuple into a single string
                 if mapping is None:
                     values += template % MySQLdb.escape(obj, MySQLdb.converters.conversions)
                 else:
@@ -443,44 +533,104 @@ class MySQL(object):
 
         return num_inserted
 
-    def insert_update(self, table, fields, *values):
+    def insert_update(self, table, fields, *values, **kwd):
+        """
+        A shortcut function to perform one INSERT ON DUPLICATE KEY UPDATE.
+        @param table          Table name
+        @param fields         A tuple of field names
+        @param values         A tuple of values to insert.
+        @param update_columns Optional list of columns to update.
+        """
+
+        if 'update_columns' in kwd:
+            update_columns = kwd.pop('update_columns')
+        else:
+            update_columns = fields
+
         placeholders = ', '.join(['%s'] * len(fields))
 
         sql = 'INSERT INTO `%s` (' % table
         sql += ', '.join('`%s`' % f for f in fields)
         sql += ') VALUES (' + placeholders + ')'
         sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join('`%s`=VALUES(`%s`)' % (f, f) for f in fields)
+        sql += ', '.join('`%s`=VALUES(`%s`)' % (f, f) for f in update_columns)
 
-        return self.query(sql, *values)
+        return self.query(sql, *values, **kwd)
 
     def lock_tables(self, read = [], write = [], **kwd):
-        # limitation: can only lock within the same database
+        """
+        Lock tables. Store the list of locked tables.
+        @param read   List of table names. A name can be a string (`%s`), 2-tuple (`%s` as %s), or MySQL.bare (%s)
+        @param write  Same as read
+        """
+
+        if not self.reuse_connection:
+            raise RuntimeError('MySQL locks cannot be used when reuse_connection = False.')
+
         terms = []
 
         for table in read:
             if type(table) is tuple:
-                terms.append('`%s` AS %s READ' % table)
+                terms.append(('`%s` AS %s' % table, 'READ'))
+            elif type(table) is MySQL.bare:
+                terms.append((table.value, 'READ'))
             else:
-                terms.append('`%s` READ' % table)
+                terms.append(('`%s`' % table, 'READ'))
 
         for table in write:
             if type(table) is tuple:
-                terms.append('`%s` AS %s WRITE' % table)
+                terms.append(('`%s` AS %s' % table, 'WRITE'))
+            elif type(table) is MySQL.bare:
+                terms.append((table.value, 'WRITE'))
             else:
-                terms.append('`%s` WRITE' % table)
-
-        sql = 'LOCK TABLES ' + ', '.join(terms)
+                terms.append(('`%s`' % table, 'WRITE'))
 
         # acquire thread lock so that other threads don't access the database while table locks are on
         self._connection_lock.acquire()
 
-        self.query(sql, **kwd)
+        try:
+            self._locked_tables.append(tuple(terms))
+    
+            # LOCK TABLES must always have the full list of tables to lock
+            # Append the terms to the tables we have already locked so far
+            # Need to uniquify the table list + override if there are overlapping READ and WRITE
+            all_tables = {}
+            for terms in self._locked_tables:
+                for term in terms:
+                    if term[1] == 'WRITE':
+                        all_tables[term[0]] = 'WRITE'
+                    elif term[0] not in all_tables:
+                        all_tables[term[0]] = term[1]
+    
+            sql = 'LOCK TABLES ' + ', '.join('%s %s' % term for term in all_tables.iteritems())
+            self.query(sql, **kwd)
 
-    def unlock_tables(self):
-        self._connection_lock.release()
+        except:
+            self._fully_unlock()
+            raise
 
-        self.query('UNLOCK TABLES')
+    def unlock_tables(self, force = False):
+        """
+        Unlock all tables if the current lock depth is 1 or force is True.
+        """
+
+        try:
+            if force:
+                del self._locked_tables[:]
+            else:
+                try:
+                    self._locked_tables.pop()
+                except IndexError:
+                    raise RuntimeError('Call to unlock_tables does not match lock_tables')
+
+            if len(self._locked_tables) == 0:
+                self.query('UNLOCK TABLES')
+
+        except:
+            self._fully_unlock()
+            raise
+        else:
+            self._connection_lock.release()
 
     def _execute_in_batches(self, execute, pool):
         """
@@ -527,12 +677,21 @@ class MySQL(object):
         except StopIteration:
             return
 
+        # type-checking the element - all elements must share a type
+        if type(obj) is tuple or type(obj) is list:
+            # template = (%s, %s, ...)
+            template = '(' + ','.join(['%s'] * len(obj)) + ')'
+            escape = lambda o, c: template % MySQLdb.escape(o, c)
+        else:
+            escape = MySQLdb.escape
+
         # need to repeat in case pool is a long list
         while True:
             pool_expr = '('
 
             while itr:
-                pool_expr += MySQLdb.escape(obj, MySQLdb.converters.conversions)
+                # tuples and scalars are all quoted by escape()
+                pool_expr += escape(obj, MySQLdb.converters.conversions)
 
                 try:
                     obj = itr.next()
@@ -559,51 +718,64 @@ class MySQL(object):
         return self.query('SELECT COUNT(*) FROM `information_schema`.`tables` WHERE `table_schema` = %s AND `table_name` = %s', db, table)[0] != 0
 
     def create_tmp_table(self, table, columns, db = ''):
-        if not db:
-            db = self.db_name()
+        """
+        Create a temporary table. Can be performed with a CREATE TEMPORARY TABLE privilege (not the full CREATE TABLE).
+        @param table    Temporary table name
+        @param columns  A list or tuple of column definitions (see make_map for an example). If a string (`X`.`Y` or `Y`), then use LIKE syntax to create.
+        @param db       Optional DB name (default is scratch_db).
+        """
 
-        tmp_db = db + '_tmp'
-        tmp_table = '%s_tmp' % table
+        if not self.reuse_connection:
+            raise RuntimeError('Temporary tables cannot be created when reuse_connection = False.')
+
+        if not db:
+            db = self.scratch_db
 
         self.drop_tmp_table(table, db = db)
 
-        sql = 'CREATE TEMPORARY TABLE `%s`.`%s` (' % (tmp_db, tmp_table)
-        sql += ','.join(columns)
-        sql += ') ENGINE=MyISAM DEFAULT CHARSET=latin1'
+        if type(columns) is str:
+            sql = 'CREATE TEMPORARY TABLE `%s`.`%s` LIKE %s' % (db, table, columns)
+        else:
+            sql = 'CREATE TEMPORARY TABLE `%s`.`%s` (' % (db, table)
+            sql += ','.join(columns)
+            sql += ') ENGINE=MyISAM DEFAULT CHARSET=latin1'
 
         self.query(sql)
 
-        return tmp_db, tmp_table
+    def truncate_tmp_table(self, table, db = ''):
+        if not db:
+            db = self.scratch_db
+
+        if self.table_exists(table, db):
+            self.query('TRUNCATE TABLE `%s`.`%s`' % (db, table))
 
     def drop_tmp_table(self, table, db = ''):
         if not db:
-            db = self.db_name()
+            db = self.scratch_db
 
-        tmp_db = db + '_tmp'
-        tmp_table = '%s_tmp' % table
-
-        if self.table_exists(tmp_table, db = tmp_db):
-            self.query('DROP TEMPORARY TABLE `%s`.`%s`' % (tmp_db, tmp_table))
+        if self.table_exists(table, db):
+            self.query('DROP TABLE `%s`.`%s`' % (db, table))
 
     def make_map(self, table, objects, object_id_map = None, id_object_map = None, key = None, tmp_join = False):
         objitr = iter(objects)
 
         if tmp_join:
+            tmp_table = table + '_map'
             columns = ['`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL', 'PRIMARY KEY (`name`)']
-            tmp_db, tmp_table = self.create_tmp_table(table + '_map', columns)
+            self.create_tmp_table(tmp_table, columns)
 
             # need to create a list first because objects can already be an iterator and iterators can iterate only once
             objlist = list(objitr)
             objitr = iter(objlist)
 
             if key is None:
-                self.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist, db = tmp_db)
+                self.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist, db = self.scratch_db)
             else:
-                self.insert_many(tmp_table, ('name',), lambda obj: (key(obj),), objlist, db = tmp_db)
+                self.insert_many(tmp_table, ('name',), lambda obj: (key(obj),), objlist, db = self.scratch_db)
 
-            name_to_id = dict(self.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s`.`%s` AS t2 ON t2.`name` = t1.`name`' % (table, tmp_db, tmp_table)))
+            name_to_id = dict(self.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s`.`%s` AS t2 ON t2.`name` = t1.`name`' % (table, self.scratch_db, tmp_table)))
 
-            self.drop_tmp_table(table)
+            self.drop_tmp_table(tmp_table)
 
         else:
             name_to_id = dict(self.xquery('SELECT `name`, `id` FROM `%s`' % table))
@@ -625,3 +797,11 @@ class MySQL(object):
                 id_object_map[obj_id] = obj
 
         LOG.debug('make_map %s (%d) obejcts', table, num_obj)
+
+    def _fully_unlock(self):
+        # Call when the thread crashed. Fully releases the lock
+        while True:
+            try:
+                self._connection_lock.release()
+            except (RuntimeError, AssertionError):
+                break

@@ -10,6 +10,7 @@ parser.add_argument('--user', '-u', metavar = 'USER', dest = 'user', default = '
 parser.add_argument('--passwd', '-p', metavar = 'PASSWD', dest = 'passwd', default = '', help = 'DB password.')
 parser.add_argument('--defaults-group-suffix', metavar = 'SUFFIX', dest = 'defaults_suffix', default = '', help = 'Defaults file block suffix.')
 parser.add_argument('--defaults-file', metavar = 'PATH', dest = 'defaults_file', default = '/etc/my.cnf', help = 'Defaults file.')
+parser.add_argument('--revoke', '-R', action = 'store_true', dest = 'revoke', help = 'Revoke all grants.')
 parser.add_argument('--quiet', '-q', action = 'store_true', dest = 'quiet', help = "Don't print grant statements.")
 parser.add_argument('--help', '-i', action = 'store_true', dest = 'help', help = 'Print this help.')
 
@@ -48,9 +49,10 @@ cursor = db.cursor()
 cursor.execute('SELECT `User`, `Host` FROM `mysql`.`user`')
 in_db = set(cursor.fetchall())
 
-for user, host in (users - in_db):
-    print 'Creating user \'%s\'@\'%s\'' % (user, host)
-    db.query('CREATE USER \'%s\'@\'%s\' IDENTIFIED BY \'%s\'' % (user, host, config[user]['passwd']))
+if not args.revoke:
+    for user, host in (users - in_db):
+        print 'Creating user \'%s\'@\'%s\'' % (user, host)
+        db.query('CREATE USER \'%s\'@\'%s\' IDENTIFIED BY \'%s\'' % (user, host, config[user]['passwd']))
 
 db.commit()
 
@@ -58,6 +60,9 @@ print '-> Updating table grants.'
 
 for user, host in users:
     cursor.execute('DELETE FROM `mysql`.`tables_priv` WHERE `User` = %s AND `Host` = %s', (user, host))
+
+    if args.revoke:
+        continue
 
     for grant in config[user]['grants']:
         if len(grant) == 2:
@@ -67,9 +72,14 @@ for user, host in users:
 
     db.commit()
 
+if args.revoke:
+    for user, host in (users - in_db):
+        print 'Deleting user \'%s\'@\'%s\'' % (user, host)
+        db.query('DROP USER \'%s\'@\'%s\'')
+
 print ' Done.\n'
 
-if not args.quiet:
+if not args.quiet and not args.revoke:
     for user, host in sorted(users):
         print 'Granted to %s@%s:' % (user, host)
         cursor.execute('SHOW GRANTS FOR \'%s\'@\'%s\'' % (user, host))

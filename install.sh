@@ -142,6 +142,8 @@ python -m compileall $INSTALL_PATH/python/site-packages/dynamo > /dev/null
 ### Install the executables ###
 
 cp $SOURCE/bin/dynamo $CLIENT_PATH/
+cp $SOURCE/bin/dynamo-inject $CLIENT_PATH/
+cp $SOURCE/bin/dynamo-request $CLIENT_PATH/
 
 cp $SOURCE/exec/* $INSTALL_PATH/exec/
 chown $USER:$(id -gn $USER) $INSTALL_PATH/exec/*

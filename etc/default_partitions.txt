@@ -1,1 +1,1 @@
-Default:  dataset.name == *
+Default:  blockreplica.owner != None

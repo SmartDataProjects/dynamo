@@ -67,32 +67,10 @@ var colors = [
 
 var loading = new Spinner({'scale': 5, 'corners': 0, 'width': 2});
 
-function handleError(jqXHR, textStatus, errorThrown) {
-  var msg = 'Error fetching data: ';
-  switch (jqXHR.status) {
-  case 400:
-    msg += 'Bad HTTP request';
-    break;
-  case 403:
-    msg += 'Permission denied';
-    break;
-  case 404:
-    msg += 'Not found';
-    break;
-  case 500:
-    msg += 'Internal server error';
-    break;
-  default:
-    msg += 'Unknown error';
-    break;
-  }
-  $('#error').html(msg);
-}
-
-function initPage(dataType, categories, constraints) {
+function initPage(statistic, list_by, constraints) {
   var ajaxInput = {
-    'url': '/data/inventory/groups',
-    'success': function (data, textStatus, jqXHR) { setGroups(data); },
+    'url': dataPath + '/inventory/groups',
+    'success': function (data, textStatus, jqXHR) { setGroups(data.data); },
     'error': handleError,
     'dataType': 'json',
     'async': false
@@ -100,10 +78,10 @@ function initPage(dataType, categories, constraints) {
 
   $.ajax(ajaxInput);
 
-  $('#dataType > option[value="' + dataType + '"]')
+  $('#statistic > option[value="' + statistic + '"]')
     .attr('selected', true);
 
-  $('#categories > option[value="' + categories + '"]')
+  $('#list_by > option[value="' + list_by + '"]')
     .attr('selected', true);
 
   for (var c in constraints) {
@@ -115,8 +93,8 @@ function initPage(dataType, categories, constraints) {
       $('#' + c).attr('value', constraints[c]);
   }
 
-  $('#dataType').change(limitOptions);
-  $('#categories').change(limitOptions);
+  $('#statistic').change(limitOptions);
+  $('#list_by').change(limitOptions);
   $('.constraint').change(limitOptions);
 
   $(document).ajaxStart(function () {
@@ -140,21 +118,21 @@ function initPage(dataType, categories, constraints) {
 
 function limitOptions() {
   // do not allow datasets view unless some constraints are set
-  $('#categories > option[value="datasets"]')
+  $('#list_by > option[value="datasets"]')
     .attr('disabled', $('#campaign').val() == '' && $('#dataset').val() == '' && $('#site').val() == '');
 
-  var dataType = $('#dataType').val();
+  var statistic = $('#statistic').val();
 
-  if (dataType == 'replication' || dataType == 'usage') {
-    var selected = $('#categories :selected').get(0);
+  if (statistic == 'replication' || statistic == 'usage') {
+    var selected = $('#list_by :selected').get(0);
     if (selected.value == 'sites')
-      selected = $('#categories :first').get(0);
+      selected = $('#list_by :first').get(0);
         
-    $('#categories > option[value="sites"]')
+    $('#list_by > option[value="sites"]')
       .attr('selected', false)
       .attr('disabled', true);
         
-    if (dataType == 'replication')
+    if (statistic == 'replication')
       $('#site')
         .attr('value', '')
         .attr('disabled', true);
@@ -165,14 +143,14 @@ function limitOptions() {
     selected.selected = true;
   }
   else {
-    $('#categories > option[value="sites"]')
+    $('#list_by > option[value="sites"]')
       .attr('disabled', false);
     $('#site')
       .attr('value', '')
       .attr('disabled', false);
   }
 
-  if (dataType == 'replication') {
+  if (statistic == 'replication') {
     $('#physicalText').html('Complete replicas');
     $('#projectedText').html('All replicas');
   }
@@ -195,8 +173,6 @@ function setGroups(data) {
 function displayData(data) {
   var legendWidth = d3.select('#legendCont').node().clientWidth * 0.1;
 
-  d3.select('#lastUpdateTimestamp').text(data.lastUpdate);
-
   if (data.content.length == 0) {
     d3.select('#axisBox').style('height', '0');
     d3.select('#graphBox').style('height', '100%');
@@ -214,7 +190,7 @@ function displayData(data) {
     return;
   }
 
-  if (data.dataType == 'size') {
+  if (data.statistic == 'size') {
     // data.content: [{key: (key_name), size: (size)}]
 
     d3.select('#axisBox').style('height', '8%');
@@ -300,7 +276,7 @@ function displayData(data) {
       .text(function (d) { return d.key; })
       .each(function () { truncateText(this, legendWidth - 3); } );
   }
-  else if (data.dataType == 'replication') {
+  else if (data.statistic == 'replication') {
     // data.content: [{key: (key_name), mean: (mean), rms: (rms)}]
 
     d3.select('#axisBox').style('height', '3%');
@@ -400,7 +376,7 @@ function displayData(data) {
       .attr('dy', 1.6)
       .text('RMS');
   }
-  else if (data.dataType == 'usage') {
+  else if (data.statistic == 'usage') {
     // data.content: [{site: (site_name), usage: [{key: (key_name), size: (size)}]}]
     // data.keys: [(key_name)]
 
@@ -527,25 +503,24 @@ function displayData(data) {
 function loadData() {
   $('#error').html('');
 
-  var dataType = $('#dataType').val();
+  var statistic = $('#statistic').val();
 
   var inputData = {
-    'categories': $('#categories').val(),
+    'list_by': $('#list_by').val(),
     'physical': $('.physical:checked').val(),
-    'campaign': $('#campaign').val(),
-    'data_tier': $('#dataTier').val(),
-    'dataset': $('#dataset').val(),
-    'site': $('#site').val(),
     'group': []
   };
+
+  d3.select('#constraintsRight').selectAll('input.constraint')
+    .each(function () { inputData[this.name] = this.value; });
 
   var groups = $('#group :selected').get();
   for (var g in groups)
     inputData.group.push(groups[g].value);
 
   var ajaxInput = {
-    'url': '/data/inventory/stats/' + dataType,
-    'success': function (data, textStatus, jqXHR) { displayData(data); },
+    'url': dataPath + '/inventory/stats/' + statistic,
+    'success': function (data, textStatus, jqXHR) { displayData(data.data); },
     'error': handleError,
     'dataType': 'json',
     'async': true,
@@ -557,17 +532,15 @@ function loadData() {
 function getData() {
   $('#error').html('');
 
-  var dataType = $('#dataType').val();
+  var statistic = $('#statistic').val();
 
-  var url = '/data/inventory/stats/' + dataType
-  url += '?categories=' + $('#categories').val();
+  var url = window.location.protocol + '//' + window.location.hostname + dataPath + '/inventory/stats/' + statistic;
+  url += '?list_by=' + $('#list_by').val();
   url += '&physical=' + $('.physical:checked').val();
-  var fields = ['campaign', 'dataTier', 'dataset', 'site'];
-  for (var iF in fields) {
-    var elem = $('#' + fields[iF]);
-    if (elem.val() != '')
-      url += '&' + fields[iF] + '=' + elem.val();
-  }
+
+  d3.select('#constraintsRight').selectAll('input.constraint')
+    .each(function () { url += '&' + this.name + '=' + this.value; });
+
   var groups = $('#group :selected').get();
   if (groups.length != 0) {
     url += '&group=';

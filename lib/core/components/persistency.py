@@ -84,6 +84,17 @@ class InventoryStore(object):
         
         raise NotImplementedError('get_files')
 
+    def find_block_containing(self, lfn):
+        """
+        Find the names of the dataset and the block containing a given file.
+
+        @param lfn   Logical name of the file to find.
+
+        @return (dataset_name, block_name) or None if not found.
+        """
+
+        raise NotImplementedError('find_block_containing')
+
     def load_data(self, inventory, group_names = None, site_names = None, dataset_names = None):
         """
         Load data into inventory.

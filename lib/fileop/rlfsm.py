@@ -8,7 +8,7 @@ import logging
 from dynamo.fileop.base import FileQuery
 from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
 from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery, DirDeletionOperation
-from dynamo.dataformat import Configuration, Block, Site
+from dynamo.dataformat import Configuration, Block, Site, BlockReplica
 from dynamo.utils.interface.mysql import MySQL
 
 LOG = logging.getLogger(__name__)
@@ -52,6 +52,9 @@ class RLFSM(object):
         def __init__(self, desubscription):
             self.id = None
             self.desubscription = desubscription
+
+    # exit codes
+    TR_NO_FILE = 2
 
     # default config
     _config = ''
@@ -145,6 +148,13 @@ class RLFSM(object):
         @param inventory   The inventory.
         """
 
+        LOG.debug('Clearing cancelled transfer tasks.')
+        task_ids = self._get_cancelled_tasks('transfer')
+        self.transfer_operation.cancel_transfers(task_ids)
+
+        if self.cycle_stop.is_set():
+            return
+
         LOG.debug('Fetching subscription status from the file operation agent.')
         self._update_status('transfer')
 
@@ -196,6 +206,13 @@ class RLFSM(object):
         @param inventory   The inventory.
         """
 
+        LOG.debug('Clearing cancelled deletion tasks.')
+        task_ids = self._get_cancelled_tasks('deletion')
+        self.deletion_operation.cancel_transfers(task_ids)
+
+        if self.cycle_stop.is_set():
+            return
+
         LOG.debug('Fetching deletion status from the file operation agent.')
         completed = self._update_status('deletion')
 
@@ -234,17 +251,22 @@ class RLFSM(object):
             LOG.debug('Issued %d deletion tasks in %d batches.', num_tasks, num_batches)
 
     def update_inventory(self, inventory):
-        def update_replica(replica, file_ids, projected):
-            if replica is None:
-                return
+        if not BlockReplica._use_file_ids:
+            LOG.error('rlfsm.update_inventory cannot be used when BlockReplicas do not handle file ids.')
+            return
 
-            if len(file_ids) == 0 and len(projected) == 0:
+        def update_replica(replica, file_ids, n_projected):
+            LOG.debug('Updating replica %s with file_ids %s projected %d', replica, file_ids, n_projected)
+
+            if len(file_ids) == 0 and n_projected == 0:
+                LOG.debug('Deleting')
                 inventory.delete(replica)
             else:
                 all_files = replica.block.files
                 full_file_ids = set(f.id for f in all_files)
 
                 if file_ids == full_file_ids:
+                    LOG.debug('Replica is full. Updating')
                     replica.file_ids = None
                     replica.size = sum(f.size for f in all_files)
                     replica.last_update = int(time.time())
@@ -256,6 +278,7 @@ class RLFSM(object):
                         existing_file_ids = set(replica.file_ids)
 
                     if file_ids != existing_file_ids:
+                        LOG.debug('Replica content has changed: existing %s, new %s', existing_file_ids, file_ids)
                         replica.file_ids = tuple(file_ids)
                         replica.size = sum(f.size for f in all_files if f.id in file_ids)
                         replica.last_update = int(time.time())
@@ -268,6 +291,7 @@ class RLFSM(object):
         sql += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         sql += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
+        sql += ' WHERE u.`status` != \'held\''
         sql += ' ORDER BY d.`id`, b.`id`, s.`id`, u.`last_update`'
         
         _dataset_name = ''
@@ -287,6 +311,8 @@ class RLFSM(object):
         done_ids = []
         
         for sub_id, status, optype, dataset_name, block_name, file_id, site_name in self.db.xquery(sql):
+            LOG.debug('Subscription entry: %d, %s, %d, %s, %s, %d, %s', sub_id, status, optype, dataset_name, block_name, file_id, site_name)
+
             if dataset_name != _dataset_name:
                 _dataset_name = dataset_name
                 # dataset must exist
@@ -305,22 +331,33 @@ class RLFSM(object):
                 site = inventory.sites[site_name]
         
             if replica is None or replica.block != block or replica.site != site:
-                # check updates for previous replica
-                update_replica(replica, file_ids, projected)
+                if replica is not None and has_update:
+                    # check updates for previous replica
+                    update_replica(replica, file_ids, len(projected))
 
                 replica = block.find_replica(site)
+
+                if replica is None:
+                    # unexpected file! -> mark the subscription for deletion and move on
+                    done_ids.append(sub_id)
+                    continue
+                    
                 if replica.file_ids is None:
                     file_ids = set(f.id for f in block.files)
                 else:
                     file_ids = set(replica.file_ids)
 
                 projected.clear()
+                has_update = False
+
+                LOG.debug('Handling new replica %s with file ids %s', replica, replica.file_ids)
         
             if optype == COPY:
                 if status == 'done':
                     file_ids.add(file_id)
                 else:
                     projected.add(file_id)
+
             elif optype == DELETE:
                 try:
                     projected.remove(file_id)
@@ -334,9 +371,13 @@ class RLFSM(object):
                         pass
 
             if status == 'done':
+                has_update = True
                 done_ids.append(sub_id)
 
-        update_replica(replica, file_ids, projected)
+        if replica is not None and has_update:
+            update_replica(replica, file_ids, len(projected))
+
+        LOG.debug('Done ids: %s', done_ids)
 
         if not self.dry_run:
             # remove subscription entries with status 'done'
@@ -345,18 +386,11 @@ class RLFSM(object):
 
     def subscribe_files(self, site, files):
         """
-        Make subscriptions of missing files in the block replica.
+        Make file subscriptions at a site.
         """
         LOG.info('Subscribing %d files to %s', len(files), str(site))
 
-        # local time
-        now = time.strftime('%Y-%m-%d %H:%M:%S')
-
-        fields = ('file_id', 'site_id', 'delete', 'created')
-        mapping = lambda f: (f.id, site.id, 0, now)
-
-        if not self.dry_run:
-            self.db.insert_many('file_subscriptions', fields, mapping, files)
+        self._subscribe(site, files, 0)
 
     def desubscribe_files(self, site, files):
         """
@@ -364,14 +398,7 @@ class RLFSM(object):
         """
         LOG.info('Desubscribing %d files from %s', len(files), site.name)
 
-        # local time
-        now = time.strftime('%Y-%m-%d %H:%M:%S')
-
-        fields = ('file_id', 'site_id', 'delete', 'created')
-        mapping = lambda f: (f.id, site.id, 1, now)
-
-        if not self.dry_run:
-            self.db.insert_many('file_subscriptions', fields, mapping, files)
+        self._subscribe(site, files, 1)
 
     def _run_cycle(self, inventory):
         while True:
@@ -390,6 +417,41 @@ class RLFSM(object):
             is_set = self.cycle_stop.wait(30)
             if is_set: # is true if in Python 2.7 and the flag is set
                 break
+
+    def _subscribe(self, site, files, delete):
+        opp_op = 0 if delete == 1 else 1
+
+        if not self.dry_run:
+            self.db.lock_tables(write = ['file_subscriptions'])
+
+        try:
+            sql = 'UPDATE `file_subscriptions` SET `status` = \'cancelled\''
+            if not self.dry_run:
+                self.db.execute_many(sql, ('file_id', 'site_id'), [(f.id, site.id) for f in files], ['`delete` = %d' % opp_op, '`status` IN (\'new\', \'inbatch\', \'retry\', \'held\')'])
+    
+            # local time
+            now = time.strftime('%Y-%m-%d %H:%M:%S')
+    
+            fields = ('file_id', 'site_id', 'status', 'delete', 'created', 'last_update')
+            mapping = lambda f: (f.id, site.id, 'new', delete, now, now)
+    
+            if not self.dry_run:
+                self.db.insert_many('file_subscriptions', fields, mapping, files, do_update = True, update_columns = ('status', 'last_update'))
+
+        finally:
+            if not self.dry_run:
+                self.db.unlock_tables()
+
+    def _get_cancelled_tasks(self, optype):
+        if optype == 'transfer':
+            delete = 0
+        else:
+            delete = 1
+
+        sql = 'SELECT q.`id` FROM `{op}_queue` AS q'.format(op = optype)
+        sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+        sql += ' WHERE u.`status` = \'cancelled\' AND u.`delete` = %d' % delete
+        return self.db.query(sql)
 
     def _update_status(self, optype):
         # insert queries all have ON DUPLICATE key to make sure we can restart in case of a crash
@@ -439,70 +501,119 @@ class RLFSM(object):
             insert_failure += ' ON DUPLICATE KEY UPDATE `id`=VALUES(`id`)'
             delete_failures = 'DELETE FROM `failed_transfers` WHERE `subscription_id` = %s'
 
-        get_subscription = 'SELECT `subscription_id` FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
+        get_subscription = 'SELECT u.`id`, u.`status` FROM `{op}_queue` AS q'.format(op = optype)
+        get_subscription += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+        get_subscription += ' WHERE q.`id` = %s'
 
         update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
+        delete_subscription = 'DELETE FROM `file_subscriptions` WHERE `id` = %s'
 
-        delete_queue = 'DELETE FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
+        delete_task = 'DELETE FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
 
-        completed_subscriptions = []
+        delete_batch = 'DELETE FROM `{op}_batches` WHERE `id` = %s'.format(op = optype)
+
+        done_subscriptions = []
         num_success = 0
         num_failure = 0
+        num_cancelled = 0
 
         if optype == 'transfer':
             get_results = self.transfer_query.get_transfer_status
             acknowledge_result = self.transfer_query.forget_transfer_status
+            close_batch = self.transfer_query.forget_transfer_batch
         else:
             get_results = self.deletion_query.get_deletion_status
             acknowledge_result = self.deletion_query.forget_deletion_status
+            close_batch = self.deletion_query.forget_deletion_batch
+
+        # Collect completed tasks
 
         for batch_id in self.db.query('SELECT `id` FROM `{op}_batches`'.format(op = optype)):
             results = get_results(batch_id)
 
+            batch_complete = True
+
             for task_id, status, exitcode, start_time, finish_time in results:
+                LOG.debug('%s results: %d %s %d %d %d', optype, task_id, status, exitcode, start_time, finish_time)
+
                 if status == FileQuery.STAT_DONE:
                     num_success += 1
                 elif status == FileQuery.STAT_FAILED:
                     num_failure += 1
+                elif status == FileQuery.STAT_CANCELLED:
+                    num_cancelled += 1
                 else:
+                    batch_complete = False
                     continue
 
                 if not self.dry_run:
                     self.db.query(insert_file, task_id)
                     self.db.query(insert_history, exitcode, start_time, finish_time, task_id)
 
-                subscription_id = self.db.query(get_subscription, task_id)[0]
-
+                # We check the subscription status and update accordingly. Need to lock the tables.
                 if not self.dry_run:
-                    if status == FileQuery.STAT_DONE:
-                        LOG.debug('Subscription %d completed.', optype, subscription_id)
-                        self.db.query(update_subscription, 'done', subscription_id)
-                        if optype == 'transfer':
-                            # Delete entries from failed_transfers table
-                            self.db.query(delete_failures, subscription_id)
-                    else:
-                        LOG.debug('Subscription %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
-                        self.db.query(update_subscription, 'retry', subscription_id)
-                        if optype == 'transfer':
-                            # Insert entry to failed_transfers table
-                            self.db.query(insert_failure, exitcode, task_id)
+                    self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), optype + '_queue', (optype + '_queue', 'q')])
+
+                try:
+                    subscription = self.db.query(get_subscription, task_id)
+                    if len(subscription) == 0:
+                        # A task without subscription - some sort of state corruption. Just ignore
+                        if not self.dry_run:
+                            self.db.query(delete_task, task_id)
+                            continue
+
+                    subscription_id, subscription_status = subscription[0]
     
-                    self.db.query(delete_queue, task_id)
+                    if subscription_status == 'inbatch':
+                        if status == FileQuery.STAT_DONE:
+                            LOG.debug('Subscription %d done.', subscription_id)
+                            if not self.dry_run:
+                                self.db.query(update_subscription, 'done', subscription_id)
+        
+                        elif status == FileQuery.STAT_FAILED:
+                            LOG.debug('Subscription %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
+                            if not self.dry_run:
+                                self.db.query(update_subscription, 'retry', subscription_id)
+        
+                    elif subscription_status == 'cancelled':
+                        # subscription is cancelled and task terminated -> delete the subscription now, irrespective of the task status
+                        LOG.debug('Subscription %d is cancelled.', subscription_id)
+                        if not self.dry_run:
+                            self.db.query(delete_subscription, subscription_id)
+                finally:
+                    if not self.dry_run:
+                        self.db.unlock_tables()
+
+                if optype == 'transfer':
+                    if subscription_status == 'cancelled' or (subscription_status == 'inbatch' and status == FileQuery.STAT_DONE):
+                        # Delete entries from failed_transfers table
+                        self.db.query(delete_failures, subscription_id)
+
+                    elif subscription_status == 'inbatch' and status == FileQuery.STAT_FAILED:
+                        # Insert entry to failed_transfers table
+                        self.db.query(insert_failure, exitcode, task_id)
+    
+                if not self.dry_run:
+                    self.db.query(delete_task, task_id)
 
                 if status == FileQuery.STAT_DONE:
-                    completed_subscriptions.append(subscription_id)
+                    done_subscriptions.append(subscription_id)
 
-                acknowledge_result(batch_id, task_id)
+                acknowledge_result(task_id)
 
                 if self.cycle_stop.is_set():
                     break
 
-        if num_success + num_failure != 0:
-            LOG.info('Archived file %s: %d succeeded, %d failed.', optype, num_success, num_failure)
-        else:
-            LOG.debug('Archived file %s: %d succeeded, %d failed.', optype, num_success, num_failure)
+            if batch_complete:
+                self.db.query(delete_batch, batch_id)
+                close_batch(batch_id)
 
-        return completed_subscriptions
+        if num_success + num_failure + num_cancelled != 0:
+            LOG.info('Archived file %s: %d succeeded, %d failed, %d cancelled.', optype, num_success, num_failure, num_cancelled)
+        else:
+            LOG.debug('Archived file %s: %d succeeded, %d failed, %d cancelled.', optype, num_success, num_failure, num_cancelled)
+
+        return done_subscriptions
 
     def _get_subscriptions(self, inventory):
         subscriptions = []
@@ -566,19 +677,32 @@ class RLFSM(object):
             if len(disk_sources) + len(tape_sources) == 0:
                 LOG.warning('Transfer of %s to %s has no source.', file_name, site_name)
                 to_hold.append(sub_id)
+                # don't add this subscritpion to subscriptions list
                 continue
 
-            subscription = RLFSM.Subscription(sub_id, lfile, destination, disk_sources, tape_sources)
-
             if status == 'retry':
-                subscription.failed_sources = {}
+                failed_sources = {}
                 for source_name, exitcode in self.db.query(get_tried_sites, sub_id):
                     source = inventory.sites[source_name]
-                    if source not in subscription.failed_sources:
-                        subscription.failed_sources[source] = [exitcode]
+                    if source not in failed_sources:
+                        failed_sources[source] = [exitcode]
                     else:
-                        subscription.failed_sources[source].append(exitcode)
-    
+                        failed_sources[source].append(exitcode)
+
+                if len(failed_sources) == len(disk_sources) + len(tape_sources):
+                    # transfers from all sites failed at least once
+                    for codes in failed_sources.itervalues():
+                        if codes[-1] != RLFSM.TR_NO_FILE:
+                            break
+                    else:
+                        # last failure from all sites due to missing file at source
+                        to_hold.append(sub_id)
+                        # don't add this subscritpion to subscriptions list
+                        continue
+            else:
+                failed_sources = None
+
+            subscription = RLFSM.Subscription(sub_id, lfile, destination, disk_sources, tape_sources, failed_sources)
             subscriptions.append(subscription)
 
         if not self.dry_run:

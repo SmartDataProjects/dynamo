@@ -17,8 +17,8 @@ class FileOperation(object):
         raise NotImplementedError('form_batches')
 
 class FileQuery(object):
-    _statuses = ['new', 'inprogress', 'done', 'failed']
-    STAT_NEW, STAT_INPROGRESS, STAT_DONE, STAT_FAILED = range(4)
+    _statuses = ['new', 'inprogress', 'done', 'failed', 'cancelled']
+    STAT_NEW, STAT_INPROGRESS, STAT_DONE, STAT_FAILED, STAT_CANCELLED = range(5)
 
     @staticmethod
     def status_name(val):

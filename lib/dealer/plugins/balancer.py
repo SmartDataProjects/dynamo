@@ -55,7 +55,7 @@ class BalancingHandler(BaseHandler):
             except KeyError:
                 continue
 
-            protections = [(ds_name, size, reason) for ds_name, size, decision, reason in decisions if decision == 'protect']
+            protections = [(ds_name, size, reason) for ds_name, size, decision, _, reason in decisions if decision == 'protect']
             protected_fraction = float(sum(size for _, size, _ in protections)) / quota
 
             LOG.debug('Site %s protected fraction %f', site.name, protected_fraction)

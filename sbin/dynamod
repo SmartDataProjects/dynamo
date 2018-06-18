@@ -11,6 +11,8 @@ import logging.handlers
 
 ## Read server config (should be readable only to root)
 from dynamo.dataformat import Configuration
+from dynamo.utils.signaling import SignalConverter
+from dynamo.utils.log import log_exception
 import dynamo.core.server as main
 
 try:
@@ -19,6 +21,9 @@ except KeyError:
     config_path = '/etc/dynamo/server_config.json'
 
 config = Configuration(config_path)
+
+## Make sure the server user exists (raises KeyError if it doesn't)
+pwnam = pwd.getpwnam(config.user)
 
 ## Set up logging (write to stderr unless path is given)
 log_level = getattr(logging, config.logging.level.upper())
@@ -51,24 +56,29 @@ changelog.critical(main.serverutils.BANNER)
 
 log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
 
-from dynamo.utils.log import log_exception
+if config.logging.get('path', ''):
+    ## Change the ownership of the log files (necessary because we want to start logging before initializing the server)
+    try:
+        os.chown(config.logging.path + '/server.log', pwnam.pw_uid, pwnam.pw_gid)
+        os.chown(config.logging.path + '/updates.log', pwnam.pw_uid, pwnam.pw_gid)
+    except OSError:
+        LOG.warning('Cannot switch log file ownership to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 
 # Convert SIGTERM and SIGHUP into KeyboardInterrupt (SIGINT already is)
-from dynamo.utils.signaling import SignalConverter
 signal_converter = SignalConverter(logger = LOG)
 signal_converter.set(signal.SIGTERM)
 signal_converter.set(signal.SIGHUP)
-
-server = None
 
 ## Start the server
 try:
     ## Take actions that need privileged access (e.g. read private keys) here before we switch euid
     server = main.DynamoServer(config)
 
+    if server.webserver is not None and config.logging.get('path', ''):
+        server.webserver.log_path = config.logging.path + '/web.log'
+
     ## Set the effective user id to config.user
     try:
-        pwnam = pwd.getpwnam(config.user)
         os.setegid(pwnam.pw_gid)
         os.seteuid(pwnam.pw_uid)
     except OSError:
