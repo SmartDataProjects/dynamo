@@ -157,21 +157,16 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if self.server_id == 0:
             self._set_server_id()
 
-        # lock against cancellation
-        self.db.lock_tables(write = ['fts_' + optype + '_batches', 'fts_' + optype + '_files'])
-        try:
-            sql = 'INSERT INTO `fts_{op}_batches` (`batch_id`, `fts_server_id`, `job_id`)'.format(op = optype)
-            sql += ' VALUES (%s, %s, %s)'
-            if not self.dry_run:
-                self.db.query(sql, batch_id, self.server_id, job_id)
-    
-            fields = (optype + '_id', 'batch_id', 'fts_file_id')
-            mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])
-    
-            if not self.dry_run:
-                self.db.insert_many('fts_' + optype + '_files', fields, mapping, fts_files)
-        finally:
-            self.db.unlock_tables()
+        sql = 'INSERT INTO `fts_{op}_batches` (`batch_id`, `fts_server_id`, `job_id`)'.format(op = optype)
+        sql += ' VALUES (%s, %s, %s)'
+        if not self.dry_run:
+            self.db.query(sql, batch_id, self.server_id, job_id)
+
+        fields = (optype + '_id', 'batch_id', 'fts_file_id')
+        mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])
+
+        if not self.dry_run:
+            self.db.insert_many('fts_' + optype + '_files', fields, mapping, fts_files)
 
         return True
 
@@ -252,27 +247,15 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if self.dry_run:
             return
 
-        # Function may be called under table locks. Need to lock our tables
-        self.db.lock_tables(write = ['fts_' + optype + '_files'])
-
-        try:
-            sql = 'DELETE FROM `fts_{optype}_files` WHERE `{optype}_id` = %s'.format(optype = optype)
-            self.db.query(sql, task_id)
-        finally:
-            self.db.unlock_tables()
+        sql = 'DELETE FROM `fts_{optype}_files` WHERE `{optype}_id` = %s'.format(optype = optype)
+        self.db.query(sql, task_id)
 
     def _forget_batch(self, batch_id, optype):
         if self.dry_run:
             return
 
-        # Function may be called under table locks. Need to lock our tables
-        self.db.lock_tables(write = ['fts_' + optype + '_batches'])
-
-        try:
-            sql = 'DELETE FROM `fts_{optype}_batches` WHERE `batch_id` = %s'.format(optype = optype)
-            self.db.query(sql, batch_id)
-        finally:
-            self.db.unlock_tables()
+        sql = 'DELETE FROM `fts_{optype}_batches` WHERE `batch_id` = %s'.format(optype = optype)
+        self.db.query(sql, batch_id)
 
     def _set_server_id(self):
         result = self.db.query('SELECT `id` FROM `fts_servers` WHERE `url` = %s', self.server_url)

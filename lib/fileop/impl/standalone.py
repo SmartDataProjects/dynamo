@@ -131,24 +131,12 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         if self.dry_run:
             return
 
-        # Function may be called under table locks. Need to lock our tables
-        self.db.lock_tables(write = ['standalone_' + optype + '_queue'])
-
-        try:
-            sql = 'DELETE FROM `standalone_{op}_queue` WHERE `id` = %s'.format(op = optype)
-            self.db.query(sql, task_id)
-        finally:
-            self.db.unlock_tables()
+        sql = 'DELETE FROM `standalone_{op}_queue` WHERE `id` = %s'.format(op = optype)
+        self.db.query(sql, task_id)
 
     def _forget_batch(self, batch_id, optype):
         if self.dry_run:
             return
 
-        # Function may be called under table locks. Need to lock our tables
-        self.db.lock_tables(write = ['standalone_' + optype + '_batches'])
-
-        try:
-            sql = 'DELETE FROM `standalone_{op}_batches` WHERE `batch_id` = %s'
-            self.db.query(sql.format(op = optype), batch_id)
-        finally:
-            self.db.unlock_tables()
+        sql = 'DELETE FROM `standalone_{op}_batches` WHERE `batch_id` = %s'
+        self.db.query(sql.format(op = optype), batch_id)
