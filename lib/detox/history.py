@@ -373,10 +373,15 @@ class DetoxHistory(DetoxHistoryBase):
 
         LOG.info('Creating snapshot SQLite3 DB %s', db_file_name)
 
-        # hardcoded!!
-        replica_delete = 1
-        replica_keep = 2
-        replica_protect = 3
+        # get the decision value to name mapping
+        enum = self._mysql.query('SELECT `COLUMN_TYPE` FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` = %s AND `TABLE_NAME` = \'replicas\' AND `COLUMN_NAME` = \'decision\'', self.cache_db)[0]
+        # "enum('delete','keep','protect')" -> ['delete', 'keep', 'protect']
+        values = map(lambda s: s.replace("'", '').replace('"', ''), enum[5:-1].split(','))
+
+        decision_mapping = []
+        for idec, decision in enumerate(values):
+            # MySQL enum starts at 1
+            decision_mapping.append((idec + 1, decision))
 
         snapshot_db = sqlite3.connect(db_file_name)
         snapshot_cursor = snapshot_db.cursor()
@@ -386,9 +391,8 @@ class DetoxHistory(DetoxHistoryBase):
         sql += '`value` TEXT NOT NULL'
         sql += ')'
         snapshot_db.execute(sql)
-        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'delete\')' % replica_delete)
-        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'keep\')' % replica_keep)
-        snapshot_db.execute('INSERT INTO `decisions` VALUES (%d, \'protect\')' % replica_protect)
+        for value, name in decision_mapping:
+            snapshot_db.execute('INSERT INTO `decisions` VALUES (?, ?)', (value, name))
 
         sql = 'CREATE TABLE `replicas` ('
         sql += '`site_id` SMALLINT NOT NULL,'
@@ -402,7 +406,7 @@ class DetoxHistory(DetoxHistoryBase):
 
         sql = 'INSERT INTO `replicas` VALUES (?, ?, ?, ?, ?)'
 
-        for entry in self._mysql.xquery('SELECT `site_id`, `dataset_id`, `size`, `decision`, `condition` FROM `{0}`'.format(table_name)):
+        for entry in self._mysql.xquery('SELECT `site_id`, `dataset_id`, `size`, 0+`decision`, `condition` FROM `{0}`'.format(table_name)):
             snapshot_cursor.execute(sql, entry)
 
         snapshot_db.commit()
