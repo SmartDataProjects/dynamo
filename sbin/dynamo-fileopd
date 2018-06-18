@@ -73,6 +73,13 @@ def transfer(task_id, queued_ids, queued_ids_lock, src_pfn, dest_pfn, params_con
             # task was cancelled
             return -1, 0, 0, '', ''
 
+    if not params_config['overwrite']:
+        # At least for some sites, transfers with overwrite = False still overwrites the file. Try stat first
+        stat_result = gfal_exec('stat', (dest_pfn,))
+
+        if stat_result[0] == 0:
+            return stat_result
+
     try:
         params = gfal2.Gfal2Context.transfer_parameters()
         # Create parent directories at the destination
@@ -106,7 +113,7 @@ def delete(task_id, queued_ids, queued_ids_lock, pfn):
 
     return gfal_exec('unlink', (pfn,), deletion_nonerrors)
 
-def gfal_exec(method, args, nonerrors):
+def gfal_exec(method, args, nonerrors = {}):
     """
     GFAL2 execution function
     @param method     Name of the Gfal2Context method to execute.
