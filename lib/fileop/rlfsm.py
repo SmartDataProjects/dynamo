@@ -448,7 +448,7 @@ class RLFSM(object):
         else:
             delete = 1
 
-        sql = 'SELECT q.`id` FROM `{op}_queue` AS q'.format(op = optype)
+        sql = 'SELECT q.`id` FROM `{op}_tasks` AS q'.format(op = optype)
         sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         sql += ' WHERE u.`status` = \'cancelled\' AND u.`delete` = %d' % delete
         return self.db.query(sql)
@@ -457,7 +457,7 @@ class RLFSM(object):
         # insert queries all have ON DUPLICATE key to make sure we can restart in case of a crash
 
         insert_file = 'INSERT INTO `{history}`.`files` (`name`, `size`)'
-        insert_file += ' SELECT f.`name`, f.`size` FROM `transfer_queue` AS q'
+        insert_file += ' SELECT f.`name`, f.`size` FROM `transfer_tasks` AS q'
         insert_file += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         insert_file += ' INNER JOIN .`files` AS f ON f.`id` = u.`file_id`'
         insert_file += ' WHERE u.`delete` = 0 AND q.`id` = %s'
@@ -483,9 +483,9 @@ class RLFSM(object):
             delete_val = '1'
 
         insert_history = 'INSERT INTO `{history}`.`{table}`'
-        insert_history += ' (`id`, `file_id`, ' + site_fields + ', `exitcode`, `batch_id`, `created`, `started`, `finished`, `completed`)'
-        insert_history += ' SELECT q.`id`, hf.`id`, ' + site_values + ', %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s), FROM_UNIXTIME(%s), NOW()'
-        insert_history += ' FROM `transfer_queue` AS q'
+        insert_history += ' (`file_id`, ' + site_fields + ', `exitcode`, `batch_id`, `created`, `started`, `finished`, `completed`)'
+        insert_history += ' SELECT hf.`id`, ' + site_values + ', %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s), FROM_UNIXTIME(%s), NOW()'
+        insert_history += ' FROM `transfer_tasks` AS q'
         insert_history += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         insert_history += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
         insert_history += ' INNER JOIN `{history}`.`files` AS hf ON hf.`name` = f.`name`'
@@ -497,18 +497,18 @@ class RLFSM(object):
 
         if optype == 'transfer':
             insert_failure = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
-            insert_failure += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_queue` WHERE `id` = %s'
+            insert_failure += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_tasks` WHERE `id` = %s'
             insert_failure += ' ON DUPLICATE KEY UPDATE `id`=VALUES(`id`)'
             delete_failures = 'DELETE FROM `failed_transfers` WHERE `subscription_id` = %s'
 
-        get_subscription = 'SELECT u.`id`, u.`status` FROM `{op}_queue` AS q'.format(op = optype)
+        get_subscription = 'SELECT u.`id`, u.`status` FROM `{op}_tasks` AS q'.format(op = optype)
         get_subscription += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         get_subscription += ' WHERE q.`id` = %s'
 
         update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
         delete_subscription = 'DELETE FROM `file_subscriptions` WHERE `id` = %s'
 
-        delete_task = 'DELETE FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
+        delete_task = 'DELETE FROM `{op}_tasks` WHERE `id` = %s'.format(op = optype)
 
         delete_batch = 'DELETE FROM `{op}_batches` WHERE `id` = %s'.format(op = optype)
 
@@ -552,7 +552,7 @@ class RLFSM(object):
 
                 # We check the subscription status and update accordingly. Need to lock the tables.
                 if not self.dry_run:
-                    self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), optype + '_queue', (optype + '_queue', 'q')])
+                    self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), optype + '_tasks', (optype + '_tasks', 'q')])
 
                 try:
                     subscription = self.db.query(get_subscription, task_id)
@@ -807,11 +807,11 @@ class RLFSM(object):
         mapping = lambda t: (t.subscription.id, t.source.id, batch_id, now)
 
         if not self.dry_run:
-            self.db.insert_many('transfer_queue', fields, mapping, tasks)
+            self.db.insert_many('transfer_tasks', fields, mapping, tasks)
         
         # set the task ids
         tasks_by_sub = dict((t.subscription.id, t) for t in tasks)
-        for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `transfer_queue` WHERE `batch_id` = %s', batch_id):
+        for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `transfer_tasks` WHERE `batch_id` = %s', batch_id):
             tasks_by_sub[subscription_id].id = task_id
 
         self.transfer_operation.dry_run = self.dry_run
@@ -831,7 +831,7 @@ class RLFSM(object):
 
                 if not self.dry_run:
                     sql = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
-                    sql += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_queue` WHERE `id` = %s'
+                    sql += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_tasks` WHERE `id` = %s'
                     self.db.query(sql, -1, task.id)
 
                     sql = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
@@ -842,7 +842,7 @@ class RLFSM(object):
 
             if not self.dry_run:
                 # roll back
-                self.db.query('DELETE FROM `transfer_queue` WHERE `batch_id` = %s', batch_id)
+                self.db.query('DELETE FROM `transfer_tasks` WHERE `batch_id` = %s', batch_id)
                 self.db.query('DELETE FROM `transfer_batches` WHERE `id` = %s', batch_id)
 
             num_batches, num_tasks = 0, 0
@@ -871,11 +871,11 @@ class RLFSM(object):
         mapping = lambda t: (t.desubscription.id, batch_id, now)
 
         if not self.dry_run:
-            self.db.insert_many('deletion_queue', fields, mapping, tasks)
+            self.db.insert_many('deletion_tasks', fields, mapping, tasks)
 
         # set the task ids
         tasks_by_sub = dict((t.desubscription.id, t) for t in tasks)
-        for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `deletion_queue` WHERE `batch_id` = %s', batch_id):
+        for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `deletion_tasks` WHERE `batch_id` = %s', batch_id):
             tasks_by_sub[subscription_id].id = task_id
         
         success = self.deletion_operation.start_deletions(batch_id, tasks)
@@ -901,7 +901,7 @@ class RLFSM(object):
 
             if not self.dry_run:
                 # roll back
-                self.db.query('DELETE FROM `deletion_queue` WHERE `batch_id` = %s', batch_id)
+                self.db.query('DELETE FROM `deletion_tasks` WHERE `batch_id` = %s', batch_id)
                 self.db.query('DELETE FROM `deletion_batches` WHERE `id` = %s', batch_id)
 
             num_batches, num_tasks = 0, 0
@@ -940,4 +940,4 @@ class RLFSM(object):
 
         fields = ('site_id', 'directory')
         if not self.dry_run:
-            self.db.insert_many('directory_cleaning_queue', fields, None, get_entry(), do_update = True)
+            self.db.insert_many('directory_cleaning_tasks', fields, None, get_entry(), do_update = True)

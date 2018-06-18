@@ -190,7 +190,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         job_id = self.db.query(sql.format(optype = optype), self.server_id, batch_id)[0]
 
         sql = 'SELECT `fts_file_id`, `{optype}_id` FROM `fts_{optype}_files` WHERE `batch_id` = %s'
-        fts_to_queue = dict(self.db.xquery(sql.format(optype = optype), batch_id))
+        fts_to_task = dict(self.db.xquery(sql.format(optype = optype), batch_id))
 
         result = self._ftscall('get_job_status', job_id = job_id, list_files = True)
 
@@ -203,7 +203,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         for fts_file in fts_files:
             try:
-                task_id = fts_to_queue[fts_file['file_id']]
+                task_id = fts_to_task[fts_file['file_id']]
             except KeyError:
                 continue
 

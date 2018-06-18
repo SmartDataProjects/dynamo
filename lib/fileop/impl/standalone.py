@@ -61,9 +61,9 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         if not self.dry_run:
             sql = 'INSERT INTO `standalone_transfer_batches` (`batch_id`, `source_site`, `destination_site`) VALUES (%s, %s, %s)'
             self.db.query(sql, batch_id, source.name, destination.name)
-            self.db.insert_many('standalone_transfer_queue', fields, mapping, batch_tasks)
+            self.db.insert_many('standalone_transfer_tasks', fields, mapping, batch_tasks)
 
-        LOG.debug('Inserted %d entries to standalone_transfer_queue for batch %d.', len(batch_tasks), batch_id)
+        LOG.debug('Inserted %d entries to standalone_transfer_tasks for batch %d.', len(batch_tasks), batch_id)
 
         return True
 
@@ -85,9 +85,9 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         if not self.dry_run:
             sql = 'INSERT INTO `standalone_deletion_batches` (`batch_id`, `site`) VALUES (%s, %s)'
             self.db.query(sql, batch_id, site.name)
-            self.db.insert_many('standalone_deletion_queue', fields, mapping, batch_tasks)
+            self.db.insert_many('standalone_deletion_tasks', fields, mapping, batch_tasks)
 
-        LOG.debug('Inserted %d entries to standalone_deletion_queue for batch %d.', len(batch_tasks), batch_id)
+        LOG.debug('Inserted %d entries to standalone_deletion_tasks for batch %d.', len(batch_tasks), batch_id)
 
         return True
 
@@ -116,12 +116,12 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         return self._forget_batch(batch_id, 'deletion')
 
     def _cancel(self, task_ids, optype):
-        sql = 'UPDATE `standalone_{op}_queue` SET `status` = \'cancelled\''.format(op = optype)
+        sql = 'UPDATE `standalone_{op}_tasks` SET `status` = \'cancelled\''.format(op = optype)
         self.db.execute_many(sql, 'id', task_ids, ['`status` IN (\'new\', \'queued\')'])
 
     def _get_status(self, batch_id, optype):
-        sql = 'SELECT q.`id`, a.`status`, a.`exitcode`, UNIX_TIMESTAMP(a.`start_time`), UNIX_TIMESTAMP(a.`finish_time`) FROM `standalone_{op}_queue` AS a'
-        sql += ' INNER JOIN `{op}_queue` AS q ON q.`id` = a.`id`'
+        sql = 'SELECT q.`id`, a.`status`, a.`exitcode`, UNIX_TIMESTAMP(a.`start_time`), UNIX_TIMESTAMP(a.`finish_time`) FROM `standalone_{op}_tasks` AS a'
+        sql += ' INNER JOIN `{op}_tasks` AS q ON q.`id` = a.`id`'
         sql += ' WHERE q.`batch_id` = %s'
         sql = sql.format(op = optype)
 
@@ -131,7 +131,7 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         if self.dry_run:
             return
 
-        sql = 'DELETE FROM `standalone_{op}_queue` WHERE `id` = %s'.format(op = optype)
+        sql = 'DELETE FROM `standalone_{op}_tasks` WHERE `id` = %s'.format(op = optype)
         self.db.query(sql, task_id)
 
     def _forget_batch(self, batch_id, optype):
