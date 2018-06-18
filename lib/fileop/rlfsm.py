@@ -534,6 +534,8 @@ class RLFSM(object):
             batch_complete = True
 
             for task_id, status, exitcode, start_time, finish_time in results:
+                LOG.debug('%s results: %d %s %d %d %d', optype, task_id, status, exitcode, start_time, finish_time)
+
                 if status == FileQuery.STAT_DONE:
                     num_success += 1
                 elif status == FileQuery.STAT_FAILED:
@@ -550,10 +552,17 @@ class RLFSM(object):
 
                 # We check the subscription status and update accordingly. Need to lock the tables.
                 if not self.dry_run:
-                    self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), (optype + '_queue', 'q')])
+                    self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), optype + '_queue', (optype + '_queue', 'q')])
 
                 try:
-                    subscription_id, subscription_status = self.db.query(get_subscription, task_id)[0]
+                    subscription = self.db.query(get_subscription, task_id)
+                    if len(subscription) == 0:
+                        # A task without subscription - some sort of state corruption. Just ignore
+                        if not self.dry_run:
+                            self.db.query(delete_task, task_id)
+                            continue
+
+                    subscription_id, subscription_status = subscription[0]
     
                     if subscription_status == 'inbatch':
                         if status == FileQuery.STAT_DONE:

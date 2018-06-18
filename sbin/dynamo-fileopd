@@ -13,11 +13,11 @@
 ### sufficient number of open ports for this daemon to operate.
 ### Task state machine:
 ### Tasks arrive at the queue in 'new' state. The possible transitions are
-###  new -> queued    ... When the task is added to the operation pool
-###  queued -> done   ... When the task operation succeeded
-###  queued -> failed ... When the task operation failed
-###  new -> -         ... When the task is cancelled by the FOM
-###  queued -> -      ... When the task is cancelled by the FOM
+###  new -> queued       ... When the task is added to the operation pool
+###  queued -> done      ... When the task operation succeeded
+###  queued -> failed    ... When the task operation failed
+###  new -> cancelled    ... When the task is cancelled by the FOM
+###  queued -> cancelled ... When the task is cancelled by the FOM
 #################################################################################
 
 import os
@@ -237,7 +237,6 @@ class PoolManager(object):
         """
 
         delim = '--------------'
-        sql = 'UPDATE `standalone_{op}_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'.format(op = self.optype)
 
         tid, result = result_tuple[:2]
         args = result_tuple[2:]
@@ -249,13 +248,15 @@ class PoolManager(object):
 
         if exitcode == -1:
             LOG.info('%s: cancelled %s %s', self.name, self.optype, opstring)
-            return
+            status = 'cancelled'
         elif exitcode == 0:
             LOG.info('%s: succeeded %s (%d s) %s\n%s\n%s%s', self.name, self.optype, optime, opstring, delim, log, delim)
             status = 'done'
         else:
             LOG.info('%s: failed %s (%d s, %d: %s) %s\n%s\n%s%s', self.name, self.optype, optime, exitcode, msg, opstring, delim, log, delim)
             status = 'failed'
+
+        sql = 'UPDATE `standalone_{op}_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'.format(op = self.optype)
 
         PoolManager.db.query(sql, status, exitcode, start_time, finish_time, tid)
 
@@ -299,7 +300,7 @@ class PoolManager(object):
                 if PoolManager.stop_flag.is_set():
                     return
     
-                if not self._results[ir][-1].ready():
+                if not self._results[ir][1].ready():
                     ir += 1
                     continue
     
@@ -454,6 +455,8 @@ if __name__ == '__main__':
             if deletion_first_wait:
                 LOG.info('Creating deletion tasks.')
                 deletion_first_wait = False
+            else:
+                LOG.debug('Creating deletion tasks.')
         
             sql = 'SELECT q.`id`, a.`file`, b.`site` FROM `standalone_deletion_queue` AS a'
             sql += ' INNER JOIN `deletion_queue` AS q ON q.`id` = a.`id`'
@@ -471,16 +474,22 @@ if __name__ == '__main__':
 
                 deletion_first_wait = True
 
-            ## Queued tasks may be deleted by FOM - try cancelling the tasks using the task id list
+            ## Queued tasks may be cancelled FOM - try cancelling the tasks using the task id list
+            LOG.debug('Listing queued deletion tasks.')
+
             sql = 'SELECT `id` FROM `standalone_deletion_queue` WHERE `status` = \'queued\''
             with deletion_ids_lock:
                 del queued_deletion_ids[:]
-                queued_deletion_ids.extend(db.xquery(sql))
+                # List proxy cannot use extend with a generator
+                for tid in db.xquery(sql):
+                    queued_deletion_ids.append(tid)
 
             ## Create transfer tasks (batched by site)
             if transfer_first_wait:
                 LOG.info('Creating transfer tasks.')
                 transfer_first_wait = False
+            else:
+                LOG.debug('Creating transfer tasks.')
 
             sql = 'SELECT q.`id`, a.`source`, a.`destination`, b.`source_site`, b.`destination_site` FROM `standalone_transfer_queue` AS a'
             sql += ' INNER JOIN `transfer_queue` AS q ON q.`id` = a.`id`'
@@ -499,14 +508,19 @@ if __name__ == '__main__':
                 transfer_first_wait = True
 
             ## See above
+            LOG.debug('Listing queued transfer tasks.')
+
             sql = 'SELECT `id` FROM `standalone_transfer_queue` WHERE `status` = \'queued\''
             with transfer_ids_lock:
                 del queued_transfer_ids[:]
-                queued_transfer_ids.extend(db.xquery(sql))
+                # List proxy cannot use extend with a generator
+                for tid in db.xquery(sql):
+                    queued_transfer_ids.append(tid)
         
             ## Recycle threads
             for key, manager in managers.items():
                 if manager.ready_for_recycle():
+                    LOG.info('Recycling pool manager %s', manager.name)
                     managers.pop(key)
 
             time.sleep(30)

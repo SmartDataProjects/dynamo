@@ -358,19 +358,16 @@ class MySQL(object):
                 raise RuntimeError('xquery cannot be used for non-SELECT statements')
     
             row = cursor.fetchone()
-            if row is None:
-                # having yield statements below makes this a 0-element iterator
-                return
-    
-            single_column = (len(row) == 1)
-    
-            while row:
-                if single_column:
-                    yield row[0]
-                else:
-                    yield row
-    
-                row = cursor.fetchone()
+            if row is not None:
+                single_column = (len(row) == 1)
+        
+                while row:
+                    if single_column:
+                        yield row[0]
+                    else:
+                        yield row
+        
+                    row = cursor.fetchone()
 
             self.close_cursor(cursor)
             self._connection_lock.release()
