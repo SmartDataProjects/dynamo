@@ -11,10 +11,19 @@ import MySQLdb.converters
 import MySQLdb.cursors
 import MySQLdb.connections
 
-# Fix for some (newer) versions of MySQLdb
-from types import TupleType, ListType
-MySQLdb.converters.conversions[TupleType] = MySQLdb.converters.escape_sequence
-MySQLdb.converters.conversions[ListType] = MySQLdb.converters.escape_sequence
+try:
+    MySQLdb.converters.quote_tuple
+except AttributeError:
+    # Old version of MySQLdb - nothing to do
+    pass
+else:
+    # Backward compatibility measure
+    # Older versions of MySQLdb has "query = query % db.literal(args)" in cursor.execute, which requires tuples and lists to
+    # not convert to string. Newer versions are more sensible and returns a string on all conversions. However, to be backward
+    # compatible, we need to break that sensibility.
+    from types import TupleType, ListType
+    MySQLdb.converters.conversions[TupleType] = MySQLdb.converters.escape_sequence
+    MySQLdb.converters.conversions[ListType] = MySQLdb.converters.escape_sequence
 
 from dynamo.dataformat import Configuration
 
@@ -86,24 +95,14 @@ class MySQL(object):
         # only after the outermost function asks for it.
         self._locked_tables = []
         
-        # Use with care! A deadlock can occur when another session tries to lock a table used by a session with
-        # reuse_connection = True
-        if 'reuse_connection' in config:
-            self.reuse_connection = config.reuse_connection
-        else:
-            self.reuse_connection = MySQL._default_config.get('reuse_connection', False)
+        # Use with care! If False, table locks and temporary tables cannot be used
+        self.reuse_connection = config.get('reuse_connection', MySQL._default_config.get('reuse_connection', True))
 
         # Default 1M characters
-        if 'max_query_len' in config:
-            self.max_query_len = config.max_query_len
-        else:
-            self.max_query_len = MySQL._default_config.get('max_query_len', 1000000)
+        self.max_query_len = config.get('max_query_len', MySQL._default_config.get('max_query_len', 1000000))
 
         # Default database for CREATE TEMPORARY TABLE
-        if 'scratch_db' in config:
-            self.scratch_db = config.scratch_db
-        else:
-            self.scratch_db = MySQL._default_config.get('scratch_db', '')
+        self.scratch_db = config.get('scratch_db', MySQL._default_config.get('scratch_db', ''))
 
         # Row id of the last insertion. Will be nonzero if the table has an auto-increment primary key.
         # **NOTE** While core execution of query() and xquery() are locked and thread-safe, last_insert_id is not.
@@ -284,6 +283,7 @@ class MySQL(object):
             values_list = []
             for v in values:
                 if type(v) is MySQL.bare:
+                    # For example, inserting with functions e.g. NOW()
                     values_list.append(v.value)
                 else:
                     values_list.append('%s')
@@ -380,26 +380,6 @@ class MySQL(object):
             self._fully_unlock()
             raise
 
-    def insert_and_get_id(self, sql, *args, **kwd):
-        """
-        Thread-safe call for an insertion query to a table with an auto-increment primary key.
-        @return (last_insert_id, rowcount)
-        """
-
-        self._connection_lock.acquire()
-
-        try:
-            rowcount = self.query(sql, *args, **kwd)
-            insert_id = self.last_insert_id
-
-            self._connection_lock.release()
-
-            return insert_id, rowcount
-
-        except:
-            self._fully_unlock()
-            raise
-
     def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = ''):
         result = []
 
@@ -439,19 +419,32 @@ class MySQL(object):
 
         quoted = []
         for field in fields:
-            if '(' in field or '`' in field:
+            if type(field) is MySQL.bare:
+                quoted.append(field.value)
+            elif '(' in field or '`' in field:
+                # backward compatibility
                 quoted.append(field)
             else:
                 quoted.append('`%s`' % field)
 
         fields_str = ','.join(quoted)
+        
+        if type(table) is MySQL.bare:
+            table_str = table.value
+        else:
+            table_str = '`%s`' % table
 
-        sqlbase = 'SELECT {fields} FROM `{table}`'.format(fields = fields_str, table = table)
+        sqlbase = 'SELECT {fields} FROM {table}'.format(fields = fields_str, table = table_str)
 
         return self.execute_many(sqlbase, key, pool, additional_conditions, order_by = order_by)
 
-    def delete_many(self, table, key, pool, additional_conditions = []):
-        sqlbase = 'DELETE FROM `{table}`'.format(table = table)
+    def delete_many(self, table, key, pool, additional_conditions = [], db = ''):
+        if type(table) is MySQL.bare:
+            table_str = table.value
+        else:
+            table_str = '`%s`' % table
+
+        sqlbase = 'DELETE FROM {table}'.format(table = table_str)
 
         self.execute_many(sqlbase, key, pool, additional_conditions)
 
@@ -511,6 +504,7 @@ class MySQL(object):
             values = ''
 
             while itr:
+                # tuple is converted by quote_tuple into a single string
                 if mapping is None:
                     values += template % MySQLdb.escape(obj, MySQLdb.converters.conversions)
                 else:
@@ -535,16 +529,29 @@ class MySQL(object):
 
         return num_inserted
 
-    def insert_update(self, table, fields, *values):
+    def insert_update(self, table, fields, *values, **kwd):
+        """
+        A shortcut function to perform one INSERT ON DUPLICATE KEY UPDATE.
+        @param table          Table name
+        @param fields         A tuple of field names
+        @param values         A tuple of values to insert.
+        @param update_columns Optional list of columns to update.
+        """
+
+        if 'update_columns' in kwd:
+            update_columns = kwd.pop('update_columns')
+        else:
+            update_columns = fields
+
         placeholders = ', '.join(['%s'] * len(fields))
 
         sql = 'INSERT INTO `%s` (' % table
         sql += ', '.join('`%s`' % f for f in fields)
         sql += ') VALUES (' + placeholders + ')'
         sql += ' ON DUPLICATE KEY UPDATE '
-        sql += ', '.join('`%s`=VALUES(`%s`)' % (f, f) for f in fields)
+        sql += ', '.join('`%s`=VALUES(`%s`)' % (f, f) for f in update_columns)
 
-        return self.query(sql, *values)
+        return self.query(sql, *values, **kwd)
 
     def lock_tables(self, read = [], write = [], **kwd):
         """
@@ -554,25 +561,25 @@ class MySQL(object):
         """
 
         if not self.reuse_connection:
-            raise RuntimeError('MySQL locks cannot be used with reuse_connections = False.')
+            raise RuntimeError('MySQL locks cannot be used when reuse_connection = False.')
 
         terms = []
 
         for table in read:
             if type(table) is tuple:
-                terms.append('`%s` AS %s READ' % table)
+                terms.append(('`%s` AS %s' % table, 'READ'))
             elif type(table) is MySQL.bare:
-                terms.append(table.value + ' READ')
+                terms.append((table.value, 'READ'))
             else:
-                terms.append('`%s` READ' % table)
+                terms.append(('`%s`' % table, 'READ'))
 
         for table in write:
             if type(table) is tuple:
-                terms.append('`%s` AS %s WRITE' % table)
+                terms.append(('`%s` AS %s' % table, 'WRITE'))
             elif type(table) is MySQL.bare:
-                terms.append(table.value + ' WRITE')
+                terms.append((table.value, 'WRITE'))
             else:
-                terms.append('`%s` WRITE' % table)
+                terms.append(('`%s`' % table, 'WRITE'))
 
         # acquire thread lock so that other threads don't access the database while table locks are on
         self._connection_lock.acquire()
@@ -582,12 +589,16 @@ class MySQL(object):
     
             # LOCK TABLES must always have the full list of tables to lock
             # Append the terms to the tables we have already locked so far
-            # Each entry of locked_tables is a tuple of tables
-            all_tables = []
-            for table_list in self._locked_tables:
-                all_tables.extend(table_list)
+            # Need to uniquify the table list + override if there are overlapping READ and WRITE
+            all_tables = {}
+            for terms in self._locked_tables:
+                for term in terms:
+                    if term[1] == 'WRITE':
+                        all_tables[term[0]] = 'WRITE'
+                    elif term[0] not in all_tables:
+                        all_tables[term[0]] = term[1]
     
-            sql = 'LOCK TABLES ' + ', '.join(all_tables)
+            sql = 'LOCK TABLES ' + ', '.join('%s %s' % term for term in all_tables.iteritems())
             self.query(sql, **kwd)
 
         except:
@@ -662,12 +673,21 @@ class MySQL(object):
         except StopIteration:
             return
 
+        # type-checking the element - all elements must share a type
+        if type(obj) is tuple or type(obj) is list:
+            # template = (%s, %s, ...)
+            template = '(' + ','.join(['%s'] * len(obj)) + ')'
+            escape = lambda o, c: template % MySQLdb.escape(o, c)
+        else:
+            escape = MySQLdb.escape
+
         # need to repeat in case pool is a long list
         while True:
             pool_expr = '('
 
             while itr:
-                pool_expr += MySQLdb.escape(obj, MySQLdb.converters.conversions)
+                # tuples and scalars are all quoted by escape()
+                pool_expr += escape(obj, MySQLdb.converters.conversions)
 
                 try:
                     obj = itr.next()
@@ -700,6 +720,10 @@ class MySQL(object):
         @param columns  A list or tuple of column definitions (see make_map for an example). If a string (`X`.`Y` or `Y`), then use LIKE syntax to create.
         @param db       Optional DB name (default is scratch_db).
         """
+
+        if not self.reuse_connection:
+            raise RuntimeError('Temporary tables cannot be created when reuse_connection = False.')
+
         if not db:
             db = self.scratch_db
 
@@ -775,5 +799,5 @@ class MySQL(object):
         while True:
             try:
                 self._connection_lock.release()
-            except RuntimeError:
+            except (RuntimeError, AssertionError):
                 break

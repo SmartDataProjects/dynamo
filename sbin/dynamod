@@ -56,12 +56,13 @@ changelog.critical(main.serverutils.BANNER)
 
 log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s: %(message)s'))
 
-## Change the ownership of the log files (necessary because we want to start logging before initializing the server)
-try:
-    os.chown(config.logging.path + '/server.log', pwnam.pw_uid, pwnam.pw_gid)
-    os.chown(config.logging.path + '/updates.log', pwnam.pw_uid, pwnam.pw_gid)
-except OSError:
-    LOG.warning('Cannot switch log file ownership to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
+if config.logging.get('path', ''):
+    ## Change the ownership of the log files (necessary because we want to start logging before initializing the server)
+    try:
+        os.chown(config.logging.path + '/server.log', pwnam.pw_uid, pwnam.pw_gid)
+        os.chown(config.logging.path + '/updates.log', pwnam.pw_uid, pwnam.pw_gid)
+    except OSError:
+        LOG.warning('Cannot switch log file ownership to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 
 # Convert SIGTERM and SIGHUP into KeyboardInterrupt (SIGINT already is)
 signal_converter = SignalConverter(logger = LOG)
@@ -73,7 +74,7 @@ try:
     ## Take actions that need privileged access (e.g. read private keys) here before we switch euid
     server = main.DynamoServer(config)
 
-    if server.webserver is not None:
+    if server.webserver is not None and config.logging.get('path', ''):
         server.webserver.log_path = config.logging.path + '/web.log'
 
     ## Set the effective user id to config.user
