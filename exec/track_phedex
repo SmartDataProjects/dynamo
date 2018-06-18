@@ -151,7 +151,11 @@ totals = {} # {site: tallies}
 ongoing_totals = {} # {site: tallies}
 
 def get_copy_status(request_id):
-    return request_id, copy.copy_status(request_id)
+    try:
+        return request_id, copy.copy_status(request_id)
+    except:
+        LOG.error('Failed to get copy status for request %d', request_id)
+        return request_id, {}
 
 def is_transfer_stuck(rrd_file):
     try:
