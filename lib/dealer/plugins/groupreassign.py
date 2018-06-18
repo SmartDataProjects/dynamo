@@ -1,6 +1,6 @@
 import logging
 
-from base import BaseHandler
+from base import BaseHandler, DealerRequest
 
 LOG = logging.getLogger(__name__)
 
@@ -35,8 +35,8 @@ class GroupReassigner(BaseHandler):
                 dataset = dataset_replica.dataset
                 blocks = set(r.block for r in block_replicas)
                 if blocks == dataset.blocks:
-                    requests.append((dataset, site))
+                    requests.append(DealerRequest(dataset, destination = site))
                 else:
-                    requests.append((list(blocks), site))
+                    requests.append(DealerRequest(list(blocks), destination = site))
 
         return requests

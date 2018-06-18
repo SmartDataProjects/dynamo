@@ -78,10 +78,10 @@ class Undertaker(BaseHandler):
 
                     if blocks_only_at_site == set(dataset.blocks):
                         # the entire dataset needs to be transferred off
-                        requests.append(dataset)
+                        requests.append(DealerRequest(dataset))
                         total_size += dataset.size
                     else:
-                        requests.append(list(blocks_only_at_site))
+                        requests.append(DealerRequest(list(blocks_only_at_site)))
                         total_size += sum(b.size for b in blocks_only_at_site)
     
         LOG.info('Offloading protected datasets from sites [%s] (total size %.1f TB)', ' '.join(s.name for s in bad_sites), total_size * 1.e-12)

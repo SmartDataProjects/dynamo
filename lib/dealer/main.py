@@ -5,7 +5,8 @@ import fnmatch
 import logging
 import random
 
-from dynamo.dataformat import Dataset, DatasetReplica, Block, BlockReplica, Site, ConfigurationError
+from dynamo.dataformat import Dataset, DatasetReplica, BlockReplica
+from dynamo.dataformat.history import CopiedReplica, HistoryRecord
 from dynamo.dealer.dealerpolicy import DealerPolicy
 from dynamo.operation.copy import CopyInterface
 from dynamo.history.history import TransactionHistoryInterface
@@ -59,8 +60,6 @@ class Dealer(object):
 
         LOG.info('Identifying target sites.')
         partition = inventory.partitions[self.policy.partition_name]
-        # Group of newly created replicas
-        group = inventory.groups[self.policy.group_name]
 
         # Ask each site if it should be considered as a copy destination.
         self.policy.set_target_sites(inventory.sites.itervalues(), partition)
@@ -82,44 +81,41 @@ class Dealer(object):
         # Plugins can specify the destination sites too, but are not passed the list of target sites
         # to keep things simpler. If a plugin proposes a copy to a non-target site, the proposal is
         # ignored.
-        # requests is [(item, destination, plugin)]
+        # requests is [(DealerRequest, plugin)]
         requests = self._collect_requests(inventory)
 
         LOG.info('Determining the list of transfers to make.')
         # copy_list is {plugin: [new dataset replica]}
-        copy_list = self._determine_copies(partition, group, requests)
+        copy_list = self._determine_copies(partition, requests)
 
         LOG.info('Saving the record')
         for plugin, replicas in copy_list.iteritems():
-            plugin.postprocess(cycle_number, self.history, copy_list[plugin])
+            plugin.postprocess(cycle_number, replicas)
 
         # We don't care about individual plugins any more - flatten the copy list
         # Resolve potential overlaps (one plugin can request a part of dataset requested by another)
-        # Group is fixed for a single run() for now, so there is no problem of overwriting ownerships
-        unique_map = {} # {(site, dataset): set(block)}
-        for plugin, replicas in copy_list.iteritems():
+        # If two plugins request the same block with different ownership, one with the higher priority (lower priority number) wins
+        unique_map = {} # {(site, dataset): dataset_replica}
+        for plugin in sorted(copy_list.iterkeys(), key = lambda p: self._plugin_priorities[p]):
+            replicas = copy_list[plugin]
+
             for replica in replicas:
-                try:
-                    unique_map[(replica.site, replica.dataset)].update(br.block for br in replica.block_replicas)
-                except KeyError:
-                    unique_map[(replica.site, replica.dataset)] = set(br.block for br in replica.block_replicas)
+                key = (replica.site, replica.dataset)
+                if key in unique_map:
+                    reserved_replica = unique_map[key]
+                    for block_replica in replica.block_replicas:
+                        if reserved_replica.find_block_replica(block_replica.block) is None:
+                            # this BR was not requested by the other (higher-priority) plugin
+                            reserved_replica.block_replicas.add(block_replica)
 
-        # Remake replica objects
-        copy_list = []
-        for (site, dataset), blocks in unique_map.iteritems():
-            if blocks == dataset.blocks:
-                replica = DatasetReplica(dataset, site, growing = True, group = group)
-                for block in blocks:
-                    replica.block_replicas.add(BlockReplica(block, site, group, size = 0))
+                else:
+                    unique_map[key] = replica
 
-                copy_list.append(replica)
-            else:
-                for block in blocks:
-                    copy_list.append(BlockReplica(block, site, group, size = 0))
+        flattened_replicas = unique_map.values()
 
         LOG.info('Committing copy.')
         comment = 'Dynamo -- Automatic replication request for %s partition.' % partition.name
-        self._commit_copies(cycle_number, inventory, copy_list, comment)
+        self._commit_copies(cycle_number, inventory, flattened_replicas, comment)
 
         self.history.close_copy_cycle(cycle_number)
 
@@ -146,7 +142,7 @@ class Dealer(object):
                 n_nonzero_prio += 1
 
         if n_zero_prio != 0 and n_nonzero_prio != 0:
-            LOG.warning('Throwing away finite-priority plugins to make away for zero-priority plugins.')
+            LOG.warning('Throwing away finite-priority plugins to make way for zero-priority plugins.')
             for plugin, prio in self._plugin_priorities.items():
                 if prio != 0:
                     self._plugin_priorities.pop(plugin)
@@ -166,6 +162,9 @@ class Dealer(object):
         @return A list of (item, destination, plugin)
         """
 
+        # Default group for newly created replicas
+        default_group = inventory.groups[self.policy.group_name]
+
         reqlists = {} # {plugin: reqlist} reqlist is [(item, destination)]
 
         for plugin, priority in self._plugin_priorities.items():
@@ -179,17 +178,9 @@ class Dealer(object):
             LOG.debug('%s requesting %d items', plugin.name, len(plugin_requests))
 
             if len(plugin_requests) != 0:
-                reqlist = reqlists[plugin] = []
+                reqlists[plugin] = plugin_requests
 
-                for request in plugin_requests:
-                    if type(request) is not tuple:
-                        # Plugins can just request an item to be copied somewhere.
-                        # Convert the request into a tuple
-                        reqlist.append((request, None))
-                    else:
-                        reqlist.append(request)
-
-        # Flattened list of requests [(item, destination, plugin)]
+        # Flattened list of (DealerRequest, plugin)
         requests = []
 
         while len(reqlists) != 0:
@@ -213,55 +204,60 @@ class Dealer(object):
                 LOG.debug('No more requests from %s', plugin.name)
                 reqlists.pop(plugin)
 
-            item, destination = request
-
-            if type(item) is Dataset:
-                dataset = item
-                # check that there is at least one source (allow it to be incomplete - could be in production)
-                if len(dataset.replicas) == 0:
+            # check that there is at least one source (allow it to be incomplete - could be in production)
+            if request.block is not None:
+                if len(request.block.replicas) == 0:
+                    continue
+            elif request.blocks is not None:
+                if len(request.blocks) == 0:
                     continue
 
-                name = item.name
-            elif type(item) is Block:
-                if len(item.replicas) == 0:
-                    continue
-
-                dataset = item.dataset
-                name = item.full_name()
-            elif type(item) is list:
                 no_source = False
-                for block in item:
+
+                for block in request.blocks:
                     if len(block.replicas) == 0:
                         no_source = True
                         break
 
+                # all blocks must have at least one copy
                 if no_source:
                     continue
+            elif request.dataset is not None:
+                if len(request.dataset.replicas) == 0:
+                    continue
 
-                dataset = item[0].dataset
-                block_names = ':'.join(block.real_name() for block in item)
-                name = Block.to_full_name(dataset.name, block_names)
-
-            if dataset.status not in (Dataset.STAT_PRODUCTION, Dataset.STAT_VALID):
+            if request.dataset.status not in (Dataset.STAT_PRODUCTION, Dataset.STAT_VALID):
                 continue
 
+            # set the group here
+            if request.group is None:
+                request.group = default_group
+
             if LOG.getEffectiveLevel() == logging.DEBUG:
-                if destination is None:
+                if request.destination is None:
                     destname = 'somewhere'
                 else:
-                    destname = destination.name
-    
-                LOG.debug('Selecting request from %s: %s to %s', plugin.name, name, destname)
+                    destname = request.destination.name
 
-            requests.append(request + (plugin,))
+                if request.block is not None:
+                    name_str = request.block.full_name()
+                elif request.blocks is not None:    
+                    name_str = request.blocks[0].full_name()
+                    for block in request.blocks[1:]:
+                        name_str += '+' + block.real_name()
+                else:
+                    name_str = request.dataset.name
+
+                LOG.debug('Selecting request from %s: %s to %s', plugin.name, name_str, destname)
+
+            requests.append((request, plugin))
 
         return requests
 
-    def _determine_copies(self, partition, group, requests):
+    def _determine_copies(self, partition, requests):
         """
         @param partition       Partition we copy into.
-        @param group           Make new replicas owned by this group.
-        @param requests        [(item, destination, plugin)], where item is a Dataset, Block, or [Block]
+        @param requests        [(DealerRequest, plugin)]
         @return {plugin: [new dataset replica]}
         """
 
@@ -283,39 +279,40 @@ class Dealer(object):
         }
 
         # now go through all requests
-        for item, destination, plugin in requests:
-            if destination is None:
+        for request, plugin in requests:
+            if request.destination is None:
                 # Randomly choose the destination site with probability proportional to free space
-                destination, item_name, item_size, reject_reason = self.policy.find_destination_for(item, group, partition)
+                # request.destination will be set in the function
+                reject_reason = self.policy.find_destination_for(request, partition)
             else:
                 # Check the destination availability
-                item_name, item_size, reject_reason = self.policy.check_destination(item, destination, group, partition)
+                reject_reason = self.policy.check_destination(request, partition)
 
             if reject_reason is not None:
                 reject_stats[reject_reason] += 1
                 continue
 
-            LOG.debug('Copying %s to %s requested by %s', item_name, destination.name, plugin.name)
+            LOG.debug('Copying %s to %s requested by %s', request.item_name(), request.destination.name, plugin.name)
             try:
-                stat = stats[plugin.name][destination.name]
+                stat = stats[plugin.name][request.destination.name]
             except KeyError:
                 stat = (0, 0)
 
-            stats[plugin.name][destination.name] = (stat[0] + 1, stat[0] + item_size)
+            stats[plugin.name][request.destination.name] = (stat[0] + 1, stat[0] + request.item_size())
 
-            if type(item) is Dataset:
-                dataset = item
-                blocks = dataset.blocks
-            elif type(item) is Block:
-                dataset = block.dataset
-                blocks = [item]
-            elif type(item) is list:
-                blocks = item
-                dataset = blocks[0].dataset
+            if request.block is not None:
+                blocks = [request.block]
+                growing = False
+            elif request.blocks is not None:
+                blocks = request.blocks
+                growing = False
+            else:
+                blocks = request.dataset.blocks
+                growing = True
 
-            new_replica = DatasetReplica(dataset, destination, group = group)
+            new_replica = DatasetReplica(request.dataset, request.destination, growing = growing, group = request.group)
             for block in blocks:
-                new_replica.block_replicas.add(BlockReplica(block, destination, group, size = 0))
+                new_replica.block_replicas.add(BlockReplica(block, request.destination, request.group, size = 0))
 
             copy_list[plugin].append(new_replica)
             # New replicas may not be in the target partition, but we add the size up to be conservative
@@ -344,13 +341,11 @@ class Dealer(object):
         """
         @param cycle_number  Cycle number.
         @param inventory     Dynamo inventory.
-        @param copy_list     List of dataset or block replicas
+        @param copy_list     List of dataset replicas to be created (proposal - final state depends on copy scheduling success)
         @param comment       Comment to be passed to the copy interface.
         """
 
         signal_blocker = SignalBlocker(logger = LOG)
-
-        group = inventory.groups[self.policy.group_name]
 
         by_site = collections.defaultdict(list)
         for replica in copy_list:
@@ -361,54 +356,19 @@ class Dealer(object):
 
             LOG.info('Scheduling copy of %d replicas to %s.', len(replicas), site.name)
 
-            now = time.time()
-
             with signal_blocker:
-                copy_mapping = self.copy_op.schedule_copies(replicas, comments = comment)
-        
-                # It would be better if mapping from replicas to items is somehow kept
-                # Then we can get rid of creating yet another replica object below, which
-                # means we can let each plugin decide which group they want to make replicas in
-                for copy_id, (approved, site, items) in copy_mapping.iteritems():
-                    dataset_sizes = collections.defaultdict(int)
-                    # items: mixed list of datasets and blocks
-                    for item in items:
-                        if type(item) is Dataset:
-                            dataset_sizes[item] = item.size
-                            if approved:
-                                existing_replica = site.find_dataset_replica(item)
-                                if existing_replica is None:
-                                    inventory.update(DatasetReplica(item, site, growing = True, group = group))
-                                    for block in item.blocks:
-                                        inventory.update(BlockReplica(block, site, group, size = 0, last_update = now))
+                operation_id = self.history.make_copy_entry(cycle_number, site)
 
-                                else:
-                                    # group reassignment
-                                    existing_replica.growing = True
-                                    existing_replica.group = group
-                                    inventory.register_update(existing_replica)
-                                    for block in item.blocks:
-                                        block_replica = existing_replica.find_block_replica(block)
-                                        if block_replica is None:
-                                            inventory.update(BlockReplica(block, site, group, size = 0, last_update = now))
-                                        elif block_replica.group != group:
-                                            block_replica.group = group
-                                            block_replica.last_update = now
-                                            inventory.register_update(block_replica)
+                history_record = HistoryRecord(HistoryRecord.OP_COPY, operation_id, site.name, int(time.time()))
 
-                        else: # Block
-                            dataset_sizes[item.dataset] += item.size
-                            if approved:
-                                existing_replica = site.find_dataset_replica(item.dataset)
-                                if existing_replica is None:
-                                    inventory.update(DatasetReplica(item.dataset, site, growing = False))
+                # note: scheduled_replicas consist of cloned replica objects
+                scheduled_replicas = self.copy_op.schedule_copies(replicas, operation_id, comments = comment)
 
-                                block_replica = existing_replica.find_block_replica(item)
-                                if block_replica is None:
-                                    inventory.update(BlockReplica(item, site, group, size = 0, last_update = now))
-                                elif block_replica.group != group:
-                                    block_replica.group = group
-                                    block_replica.last_update = now
-                                    inventory.register_update(block_replica)
-    
-                    self.history.make_copy_entry(cycle_number, site, copy_id, approved, dataset_sizes.items())
+                for replica in scheduled_replicas:
+                    history_record.replicas.append(CopiedReplica(replica.dataset.name, replica.size(physical = False), HistoryRecord.ST_ENROUTE))
+
+                    inventory.update(replica)
+                    for block_replica in replica.block_replicas:
+                        inventory.update(block_replica)
+
+                self.history.update_copy_entry(history_record)

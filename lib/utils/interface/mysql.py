@@ -269,7 +269,7 @@ class MySQL(object):
         @param table    Table name without reverse-quotes.
         @param columns  If an iterable, column names to insert to. If None, insert filling all columns is assumed.
         @param values   If an iterable, column values to insert. Either values or select must be None.
-        @param select   If 
+        @param select   If a string must be a full SELECT statement that can insert to the table.
         """
 
         args = []

@@ -11,5 +11,9 @@ class ObjectError(Exception):
     pass
 
 class ConfigurationError(Exception):
-    """Exception to be when invalid configuration is detected."""
+    """Exception to be raised when invalid configuration is detected."""
+    pass
+
+class OperationalError(Exception):
+    """Exception to be raised when constraints on function arguments are violated."""
     pass

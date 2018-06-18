@@ -2,7 +2,7 @@ import logging
 import math
 
 from dynamo.dataformat import Dataset
-from base import BaseHandler
+from base import BaseHandler, DealerRequest
 
 LOG = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class PopularityHandler(BaseHandler):
             
         requests.sort(key = lambda x: x[0].attr['request_weight'], reverse = True)
 
-        datasets_to_request = []
+        dealer_requests = []
 
         # [(d1, n1), (d2, n2), ...] -> [d1, d2, .., d1, ..] (d1 repeats n1 times)
         while True:
@@ -74,11 +74,11 @@ class PopularityHandler(BaseHandler):
                 if num_requests == 0:
                     continue
 
-                datasets_to_request.append(dataset)
+                dealer_requests.append(DealerRequest(dataset))
                 requests[ir] = (dataset, num_requests - 1)
                 added_request = True
 
             if not added_request:
                 break
         
-        return datasets_to_request
+        return dealer_requests

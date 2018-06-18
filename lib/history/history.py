@@ -68,14 +68,13 @@ class TransactionHistoryInterface(object):
         """
         raise NotImplementedError('close_deletion_cycle')
 
-    def make_copy_entry(self, cycle_number, site, operation_id, approved, dataset_list):
+    def make_copy_entry(self, cycle_number, site):
         """
-        Record a copy operation.
+        Book a copy operation history entry.
         @param cycle_number  Cycle number
         @param site          Site object
-        @param operation_id  ID from the copy operation
-        @param approved      Boolean
-        @param dataset_list  [(dataset, size)]
+
+        @return  Newly created copy operation id.
         """
         raise NotImplementedError('make_copy_entry')
 

@@ -29,16 +29,6 @@ class DeletionInterface(object):
         self.dry_run = config.get('dry_run', False)
         self._next_operation_id = 1
 
-    def schedule_deletion(self, replica, comments = ''):
-        """
-        Schedule a deletion of the dataset or block replica.
-        @param replica   A DatasetReplica or BlockReplica
-        @param comments  Comments to be passed to the operation interface
-        @return {operation id, approved, site, [dataset/block]}
-        """
-
-        raise NotImplementedError('schedule_deletion')
-
     def schedule_deletions(self, replica_list, comments = ''):
         """
         Schedule a deletion of multiple replicas. Subclasses should implement the most efficient way

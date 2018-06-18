@@ -29,29 +29,15 @@ class CopyInterface(object):
         self.dry_run = config.get('dry_run', False)
         self._next_operation_id = 1
 
-    def schedule_copy(self, replica, comments = ''):
+    def schedule_copies(self, replica_list, operation_id, comments = ''):
         """
-        Schedule and execute a copy operation.
-        @param replica  DatasetReplica or BlockReplica
-        @param comments Comments to be passed to the external interface.
-        @return {operation_id: (approved, site, [dataset/block])}
-        """
-
-        raise NotImplementedError('schedule_copy')
-
-    def schedule_copies(self, replica_list, comments = ''):
-        """
-        Schedule mass copies. Subclasses can implement efficient algorithms.
-        @param replica_list  List of DatasetReplicas and BlockReplicas
+        Schedule copies.
+        @param replica_list  List of DatasetReplicas. Must be replicas at a single site.
+        @param operation_id  Copy operation id in the history DB for logging.
         @param comments      Comments to be passed to the external interface.
-        @return {operation_id: (approved, site, [dataset/block])}
+        @return List of successfully scheduled replicas (cloned objects from replica_list)
         """
-
-        request_mapping = {}
-        for replica in replica_list:
-            request_mapping.update(self.schedule_copy(replica, comments))
-
-        return request_mapping
+        raise NotImplementedError('schedule_copies')
 
     def copy_status(self, operation_id):
         """

@@ -4,7 +4,7 @@ import fnmatch
 import random
 import re
 
-from dynamo.dealer.plugins.base import BaseHandler
+from dynamo.dealer.plugins.base import BaseHandler, DealerRequest
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration, Dataset, Block, DatasetReplica, BlockReplica
 from dynamo.dataformat.exceptions import ObjectError
@@ -271,10 +271,12 @@ class CopyRequestsHandler(BaseHandler):
                 continue
 
             # each element of items is either a dataset or a list of blocks
+            # convert to DealerRequests
+
+            proto_dealer_requests = []
 
             # process the items list
-            for ii in range(len(items)):
-                item = items[ii]
+            for item in items:
                 if type(item) is Dataset:
                     if dataset.size > self.max_size:
                         reject(request_id, 'Dataset %s is too large (>%.0f TB)' % (dataset.name, self.max_size * 1.e-12))
@@ -294,7 +296,9 @@ class CopyRequestsHandler(BaseHandler):
                     if total_size > float(dataset.size) * self.block_request_max:
                         # if the total size of requested blocks is large enough, just copy the dataset
                         # covers the case where we actually have the full list of blocks (if block_request_max is less than 1)
-                        items[ii] = dataset
+                        item = dataset
+
+                proto_dealer_requests.append(DealerRequest(item, group = group))
 
             if rejected:
                 continue
@@ -303,30 +307,25 @@ class CopyRequestsHandler(BaseHandler):
             completed_requests = []
 
             # find destinations (num_copies times) for each item
-            for item in items:
-                # function to find existing copies
-                # will not make a request only if there is a full copy of the item
-                _, _, already_exists, owned_by = policy.item_info(item)
+            for proto_request in proto_requests:
+                # try to make a dealer request for all requests, except when there is a full copy of the item
 
-                if type(item) is Dataset:
-                    dataset = item
-                else:
-                    dataset = item[0].dataset
-                
                 if num_copies == 0:
                     # make one copy at each site
 
                     for destination in sites:
-                        if already_exists(item, destination, group) == 2:
-                            completed_requests.append((item, destination))
+                        dealer_request = DealerRequest(proto_request.item(), destination = destination)
+
+                        if dealer_request.item_already_exists() == 2:
+                            completed_requests.append(dealer_request)
                         else:
-                            item_name, _, rejection_reason = policy.check_destination(item, destination, group, partition)
+                            rejection_reason = policy.check_destination(dealer_request, partition)
                             if rejection_reason is not None:
-                                # item_name is guaranteed to be valid
-                                reject(request_id, 'Cannot copy %s to %s' % (item_name, destination.name))
+                                reject(request_id, 'Cannot copy %s to %s' % (dealer_request.item_name(), destination.name))
                                 rejected = True
+                                break
         
-                            new_requests.append((item, destination))
+                            new_requests.append(dealer_request)
 
                 else:
                     # total of n copies
@@ -336,7 +335,7 @@ class CopyRequestsHandler(BaseHandler):
                     # bring sites where the item already exists first (may want to just "flip" the ownership)
                     sites_and_existence = []
                     for destination in sites:
-                        exists = already_exists(item, destination, group) # 0, 1, or 2
+                        exists = proto_request.item_already_exists(destination) # 0, 1, or 2
                         if exists != 0:
                             sites_and_existence.insert(0, (destination, exists))
                         else:
@@ -346,49 +345,52 @@ class CopyRequestsHandler(BaseHandler):
                         if num_new == 0:
                             break
 
+                        dealer_request = DealerRequest(proto_request.item(), destination = destination)
+
                         # consider copies proposed by other requests as complete
                         try:
-                            proposed_blocks = blocks_to_propose[destination][dataset]
+                            proposed_blocks = blocks_to_propose[destination][dealer_request.dataset]
                         except KeyError:
                             pass
                         else:
-                            if type(item) is Dataset:
-                                if item.blocks == proposed_blocks:
+                            if dealer_request.blocks is not None:
+                                if set(dealer_request.blocks) <= proposed_blocks:
                                     num_new -= 1
-                                    completed_requests.append((item, destination))
+                                    completed_requests.append(dealer_request)
                                     continue
 
                             else:
-                                if set(item) <= proposed_blocks:
+                                if dealer_request.dataset.blocks == proposed_blocks:
                                     num_new -= 1
-                                    completed_requests.append((item, destination))
+                                    completed_requests.append(dealer_request)
                                     continue
 
                         # if the item already exists, it's a complete copy too
                         if exists == 2:
                             num_new -= 1
-                            completed_requests.append((item, destination))
+                            completed_requests.append(dealer_request)
                         elif exists == 1:
                             # if the current group can be overwritten, make a request
                             # otherwise skip
-                            single_owner = owned_by(item, destination) # None if owned by multiple groups
+                            single_owner = dealer_request.item_owned_by() # None if owned by multiple groups
                             if single_owner is not None and len(overwritten_groups) != 0 and single_owner in overwritten_groups:
-                                new_requests.append((item, destination))
+                                new_requests.append(dealer_request)
                                 num_new -= 1
                         else:
                             candidate_sites.append(destination)
 
                     for icopy in range(num_new):
-                        destination, item_name, _, _ = policy.find_destination_for(item, group, partition, candidates = candidate_sites)
+                        dealer_request = DealerRequest(proto_request.item())
+                        policy.find_destination_for(dealer_request, partition, candidates = candidate_sites)
     
-                        if destination is None:
+                        if dealer_request.destination is None:
                             # if any of the item cannot find any of the num_new destinations, reject the request
-                            reject(request_id, 'Destination %d for %s not available' % (icopy, item_name))
+                            reject(request_id, 'Destination %d for %s not available' % (icopy, dealer_request.item_name()))
                             rejected = True
                             break
     
                         candidate_sites.remove(destination)
-                        new_requests.append((item, destination))
+                        new_requests.append(dealer_request)
 
                 # if num_copies == 0, else
 
@@ -401,27 +403,27 @@ class CopyRequestsHandler(BaseHandler):
                 continue
 
             # finally add to the returned requests
-            for item, site in new_requests:
-                activate(request_id, item, site, 'new')
+            for dealer_request in new_requests:
+                activate(request_id, dealer_request.item(), dealer_request.destination, 'new')
 
                 try:
-                    site_blocks = blocks_to_propose[site]
+                    site_blocks = blocks_to_propose[dealer_request.destination]
                 except KeyError:
-                    site_blocks = blocks_to_propose[site] = {}
+                    site_blocks = blocks_to_propose[dealer_request.destination] = {}
 
-                if type(item) is Dataset:
-                    blocks_to_propose[site][item] = set(item.blocks)
-                else:
-                    dataset = item[0].dataset
+                if dealer_request.blocks is not None:
                     try:
-                        blocks = site_blocks[dataset]
+                        blocks = site_blocks[dealer_request.dataset]
                     except KeyError:
-                        blocks = site_blocks[dataset] = set()
+                        blocks = site_blocks[dealer_request.dataset] = set()
     
-                    blocks.update(item)
+                    blocks.update(dealer_request.blocks)
 
-            for item, site in completed_requests:
-                activate(request_id, item, site, 'completed')
+                else:
+                    site_blocks[dealer_request.dataset] = set(dealer_request.dataset.blocks)
+
+            for dealer_request in completed_requests:
+                activate(request_id, dealer_request.item(), dealer_request.destination, 'completed')
 
             if not self.read_only:
                 self.registry.query('UPDATE `copy_requests` SET `status` = \'activated\' WHERE `id` = %s', request_id)
@@ -429,18 +431,18 @@ class CopyRequestsHandler(BaseHandler):
         if not self.read_only:
             self.registry.unlock_tables()
 
-        # form the final proposal
+        # throw away all the DealerRequest objects we've been using and form the final proposal
         dealer_requests = []
         for site, block_list in blocks_to_propose.iteritems():
             for dataset, blocks in block_list.iteritems():
                 if blocks == dataset.blocks:
-                    dealer_requests.append((dataset, site))
+                    dealer_requests.append(DealerRequest(dataset, destination = site))
                 else:
-                    dealer_requests.append((list(blocks), site))
+                    dealer_requests.append(DealerRequest(list(blocks), destination = site))
 
         return dealer_requests
 
-    def postprocess(self, cycle_number, history, copy_list): # override
+    def postprocess(self, cycle_number, copy_list): # override
         """
         Create active copy entries for accepted copies.
         """
@@ -456,4 +458,3 @@ class CopyRequestsHandler(BaseHandler):
 
             # active copies with block name
             self.registry.query(sql, Block.to_full_name(replica.dataset.name, '%'), replica.site.name)
-

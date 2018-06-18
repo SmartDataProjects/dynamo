@@ -22,12 +22,14 @@ class HistoryRecord(object):
     # operation status
     ST_ENROUTE, ST_COMPLETE, ST_CANCELLED = range(1, 4)
 
-    def __init__(self, operation_type, operation_id, site_name, timestamp = 0, approved = False, last_update = 0):
+    def __init__(self, operation_type, operation_id, site_name, timestamp = 0):
+        if type(operation_type) is str:
+            operation_type = eval('HistoryRecord.OP_' + operation_type.upper())
+
         self.operation_type = operation_type
         self.operation_id = operation_id
         self.site_name = site_name
         self.timestamp = timestamp
-        self.approved = bool(approved)
         self.replicas = []
 
     def __str__(self):
@@ -36,13 +38,13 @@ class HistoryRecord(object):
         else:
             op = 'DELETE'
 
-        return 'HistoryRecord (%s, id=%d, site=%s, timestamp=%d, approved=%s)' % \
-            (op, self.operation_id, self.site_name, self.timestamp, self.approved)
+        return 'HistoryRecord (%s, id=%d, site=%s, timestamp=%d)' % \
+            (op, self.operation_id, self.site_name, self.timestamp)
 
     def __repr__(self):
         if self.operation_type == HistoryRecord.OP_COPY:
-            op = 'OP_COPY'
+            op = 'COPY'
         else:
-            op = 'OP_DELETE'
+            op = 'DELETE'
 
-        return 'HistoryRecord(%s, %d, %s)' % (op, self.operation_id, self.site_name)
+        return 'HistoryRecord(%s, %d, %s)' % (repr(op), self.operation_id, repr(self.site_name))

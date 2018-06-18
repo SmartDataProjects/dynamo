@@ -36,23 +36,14 @@ class MySQLHistory(TransactionHistoryInterface):
     def close_deletion_cycle(self, cycle_number): #override
         self._do_close_cycle(HistoryRecord.OP_DELETE, cycle_number)
 
-    def make_copy_entry(self, cycle_number, site, operation_id, approved, dataset_list): #override
+    def make_copy_entry(self, cycle_number, site): #override
         if self.test or self.read_only or cycle_number == 0:
             # Don't do anything
             return
 
-        # site and datasets are expected to be already in the database.
-
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (d.name for d, s in dataset_list)))
-
-        self._mysql.query('INSERT INTO `copy_requests` (`id`, `cycle_id`, `timestamp`, `approved`, `site_id`) VALUES (%s, %s, NOW(), %s, %s)', operation_id, cycle_number, approved, site_id)
-        
-        fields = ('copy_id', 'dataset_id', 'size')
-        mapping = lambda (dataset, size): (operation_id, dataset_ids[dataset.name], size)
-
-        self._mysql.insert_many('copied_replicas', fields, mapping, dataset_list, do_update = False)
+        return self._mysql.insert_get_id('copy_operations', columns = ('cycle_id', 'timestamp', 'site_id'), values = (cycle_number, MySQL.bare('NOW()'), site_id))
 
     def make_deletion_entry(self, cycle_number, site, operation_id, approved, dataset_list): #override
         if self.test or self.read_only or cycle_number == 0:
@@ -65,7 +56,7 @@ class MySQLHistory(TransactionHistoryInterface):
 
         dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (d.name for d, s in dataset_list)))
 
-        self._mysql.query('INSERT INTO `deletion_requests` (`id`, `cycle_id`, `timestamp`, `approved`, `site_id`) VALUES (%s, %s, NOW(), %s, %s)', operation_id, cycle_number, approved, site_id)
+        self._mysql.query('INSERT INTO `deletion_operations` (`id`, `cycle_id`, `timestamp`, `approved`, `site_id`) VALUES (%s, %s, NOW(), %s, %s)', operation_id, cycle_number, approved, site_id)
 
         fields = ('deletion_id', 'dataset_id', 'size')
         mapping = lambda (dataset, size): (operation_id, dataset_ids[dataset.name], size)
@@ -76,18 +67,18 @@ class MySQLHistory(TransactionHistoryInterface):
         if self.test or self.read_only:
             return
 
-        self._mysql.query('UPDATE `copy_requests` SET `approved` = %s WHERE `id` = %s', copy_record.approved, copy_record.operation_id)
+        dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (d.name for d, s in dataset_list)))
 
-        sql = 'UPDATE `copied_replicas` SET `size` = %s, `status` = %s'
-        sql += ' WHERE `copy_id` = %s AND `dataset_id` = (SELECT `id` FROM `datasets` WHERE `name` = %s)'
-        for replica in copy_record.replicas:
-            self._mysql.query(sql, replica.size, replica.status, copy_record.operation_id, replica.dataset_name)
+        fields = ('copy_id', 'dataset_id', 'size', 'status')
+        mapping = lambda replica: (copy_record.operation_id, dataset_ids[replica.dataset_name], replica.size, replica.status)
+
+        self._mysql.insert_many('copied_replicas', fields, mapping, copy_record.replicas, do_update = True, update_columns = ('size', 'status'))
 
     def update_deletion_entry(self, deletion_record): #override
         if self.test or self.read_only:
             return
 
-        self._mysql.query('UPDATE `deletion_requests` SET `approved` = %s, WHERE `id` = %s', deletion_record.approved, deletion_record.operation_id)
+        self._mysql.query('UPDATE `deletion_operations` SET `approved` = %s, WHERE `id` = %s', deletion_record.approved, deletion_record.operation_id)
 
         sql = 'UPDATE `deleted_replicas` SET `size` = %s'
         sql += ' WHERE `deletion_id` = %s AND `dataset_id` = (SELECT `id` FROM `datasets` WHERE `name` = %s)'
@@ -111,7 +102,7 @@ class MySQLHistory(TransactionHistoryInterface):
     def get_incomplete_copies(self, partition): #override
         sql = 'SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, d.`name`, s.`name`, c.`size`'
         sql += ' FROM `copied_replicas` AS c'
-        sql += ' INNER JOIN `copy_requests` AS h ON h.`id` = c.`copy_id`'
+        sql += ' INNER JOIN `copy_operations` AS h ON h.`id` = c.`copy_id`'
         sql += ' INNER JOIN `cycles` AS r ON r.`id` = h.`cycle_id`'
         sql += ' INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id`'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`'
@@ -134,11 +125,11 @@ class MySQLHistory(TransactionHistoryInterface):
         return records
 
     def get_site_name(self, operation_id): #override
-        result = self._mysql.query('SELECT s.name FROM `sites` AS s INNER JOIN `copy_requests` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s', operation_id)
+        result = self._mysql.query('SELECT s.name FROM `sites` AS s INNER JOIN `copy_operations` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s', operation_id)
         if len(result) != 0:
             return result[0]
 
-        result = self._mysql.query('SELECT s.name FROM `sites` AS s INNER JOIN `deletion_requests` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s', operation_id)
+        result = self._mysql.query('SELECT s.name FROM `sites` AS s INNER JOIN `deletion_operations` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s', operation_id)
         if len(result) != 0:
             return result[0]
 
