@@ -116,7 +116,7 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         return self._forget_batch(batch_id, 'deletion')
 
     def _cancel(self, task_ids, optype):
-        sql = 'UPDATE `standalone_{op}_queue` SET `status` = \'cancelled\''
+        sql = 'UPDATE `standalone_{op}_queue` SET `status` = \'cancelled\''.format(op = optype)
         self.db.execute_many(sql, 'id', task_ids, ['`status` IN (\'new\', \'queued\')'])
 
     def _get_status(self, batch_id, optype):
