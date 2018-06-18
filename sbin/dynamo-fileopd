@@ -55,21 +55,23 @@ def pre_exec():
     signal_converter.unset(signal.SIGTERM)
     signal_converter.unset(signal.SIGHUP)
 
-def transfer(task_id, queued_ids, src_pfn, dest_pfn, params_config):
+def transfer(task_id, queued_ids, queued_ids_lock, src_pfn, dest_pfn, params_config):
     """
     Transfer task worker process
-    @param task_id        Task id in the queue.
-    @param queued_ids     List (actually multiprocessing proxy for a shared-memory list) of active task ids.
-    @param src_pfn        Source PFN
-    @param dest_pfn       Destination PFN
-    @param params_config  Configuration parameters used to create GFAL2 transfer parameters.
+    @param task_id         Task id in the queue.
+    @param queued_ids      List (actually multiprocessing proxy for a shared-memory list) of active task ids.
+    @param queued_ids_lock Lock for the ids list
+    @param src_pfn         Source PFN
+    @param dest_pfn        Destination PFN
+    @param params_config   Configuration parameters used to create GFAL2 transfer parameters.
 
     @return  (exit code, start time, finish time, error message, log string)
     """
 
-    if task_id not in queued_ids:
-        # task was cancelled
-        return -1, 0, 0, '', ''
+    with queued_ids_lock:
+        if task_id not in queued_ids:
+            # task was cancelled
+            return -1, 0, 0, '', ''
 
     try:
         params = gfal2.Gfal2Context.transfer_parameters()
@@ -86,19 +88,21 @@ def transfer(task_id, queued_ids, src_pfn, dest_pfn, params_config):
 
     return gfal_exec('filecopy', (params, src_pfn, dest_pfn), transfer_nonerrors)
 
-def delete(task_id, queued_ids, pfn):
+def delete(task_id, queued_ids, queued_ids_lock, pfn):
     """
     Deletion task worker process
     @param task_id        Task id in the queue.
     @param queued_ids     List (actually multiprocessing proxy for a shared-memory list) of active task ids.
+    @param queued_ids_lock Lock for the ids list
     @param pfn            Target PFN
 
     @return  (exit code, start time, finish time, error message, log string)
     """
 
-    if task_id not in queued_ids:
-        # task was cancelled
-        return -1, 0, 0, '', ''
+    with queued_ids_lock:
+        if task_id not in queued_ids:
+            # task was cancelled
+            return -1, 0, 0, '', ''
 
     return gfal_exec('unlink', (pfn,), deletion_nonerrors)
 
@@ -213,7 +217,7 @@ class PoolManager(object):
         opstring = self.opformat.format(*args)
         LOG.info('%s: %s %s', self.name, self.optype, opstring)
 
-        proc_args = (tid, self_cls.queued_ids) + args
+        proc_args = (tid, self_cls.queued_ids, self_cls.queued_ids_lock) + args
         async_result = self._pool.apply_async(self.task, proc_args)
         self._results.append((tid, async_result) + args)
 
