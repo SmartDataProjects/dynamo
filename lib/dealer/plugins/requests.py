@@ -386,7 +386,8 @@ class CopyRequestsHandler(BaseHandler):
                         elif exists == 1:
                             # if the current group can be overwritten, make a request
                             # otherwise skip
-                            if len(overwritten_groups) != 0 and owned_by(item, destination) in overwritten_groups:
+                            single_owner = owned_by(item, destination) # None if owned by multiple groups
+                            if single_owner is not None and len(overwritten_groups) != 0 and single_owner in overwritten_groups:
                                 new_requests.append((item, destination))
                                 num_new -= 1
                         else:
