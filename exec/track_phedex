@@ -42,8 +42,6 @@ dealer_config = Configuration(config.dealer_config).dealer
 ## Logger
 
 LOG = make_standard_logger(config.log_level)
-import logging
-LOG.setLevel(logging.WARNING)
 
 ## Parallelizer
 
