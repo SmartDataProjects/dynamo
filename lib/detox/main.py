@@ -185,6 +185,7 @@ class Detox(object):
                         block_to_clone[block] = block_clone
 
                 replica_clone = DatasetReplica(dataset_clone, site_clone)
+                replica_clone.copy(dataset_replica)
                 dataset_clone.replicas.add(replica_clone)
                 site_clone.add_dataset_replica(replica_clone, add_block_replicas = False)
 
@@ -275,6 +276,10 @@ class Detox(object):
             # We will only move a few replicas (on a single site up to deletion_per_iteration) from
             # delete_candidates to deleted at each iteration. The rest will be handed to keep_candidates
             delete_candidates = {} # same structure as deleted
+            # For replicas that were Dismissed at dataset level, if it ends up being flagged for deletion,
+            # we perform a dataset-level deletion (set growing to False and delete the DatasetReplica in addition
+            # to BlockReplicas).
+            dataset_level_delete_candidates = set()
             # Keep candidates: replicas that match Dismiss lines but are not on sites where deletion is triggered.
             # Will be passed to the kept list at the end of the final iteration.
             keep_candidates = {}
@@ -349,6 +354,8 @@ class Detox(object):
 
                         # as a result of the modification, the dataset replica can become empty
                         if len(replica.block_replicas) == 0:
+                            # replica is deleted at dataset level - can no longer be growing
+                            replica.growing = False
                             # if all blocks were deleted, take the replica off all_replicas for later iterations
                             # this is the only place where the replica can become empty
                             empty_replicas.add(replica)
@@ -356,6 +363,7 @@ class Detox(object):
                     elif isinstance(action, Dismiss):
                         if replica.site in triggered_sites:
                             get_list(delete_candidates, replica, condition_id).update(block_replicas)
+                            dataset_level_delete_candidates.add(replica)
                         else:
                             get_list(keep_candidates, replica, condition_id).update(block_replicas)
 
@@ -440,6 +448,9 @@ class Detox(object):
                             deleted_volume += sum(br.size for br in to_delete)
 
                 if len(replica.block_replicas) == 0:
+                    if replica in dataset_level_delete_candidates:
+                        replica.growing = False
+                    
                     replica.unlink_from(repository)
                     all_replicas.remove(replica)
 
@@ -564,7 +575,12 @@ class Detox(object):
                 for block_replica in block_replicas:
                     all_block_replicas.add(original_block_replicas[block_replica.block.name])
 
-            deletions_by_site[site].append((original_replica, all_block_replicas))
+            if not replica.growing and all_block_replicas == original_replica.block_replicas:
+                # if we are deleting all block replicas and the replica is marked as not growing, delete the DatasetReplica
+                deletions_by_site[site].append((original_replica, None))
+            else:
+                # otherwise delete only the BlockReplicas
+                deletions_by_site[site].append((original_replica, list(all_block_replicas)))
 
         # now schedule deletions for each site
         for site in sorted(deletions_by_site.iterkeys(), key = lambda s: s.name):
@@ -572,51 +588,37 @@ class Detox(object):
 
             LOG.info('Deleting %d replicas from %s.', len(site_deletion_list), site.name)
 
-            flat_list = []
-            for replica, block_replicas in site_deletion_list:
-                if block_replicas == replica.block_replicas:
-                    flat_list.append(replica)
-                else:
-                    flat_list.extend(block_replicas)
-
             # Block interruptions until deletion is executed and recorded
             with signal_blocker:
-                deletion_mapping = self.deletion_op.schedule_deletions(flat_list, comments = comment)
-    
-                total_size = 0
-    
-                for deletion_id, (approved, site, items) in deletion_mapping.iteritems():
-                    # Delete ownership of block replicas in the approved deletions.
-                    # Because replicas in partition_repository are modified already during the iterative
-                    # deletion, we find the original replicas from the global inventory.
+                operation_id = self.history.make_deletion_entry(cycle_number, site)
 
-                    dataset_sizes = collections.defaultdict(int)
-                    for item in items:
-                        if type(item) is Dataset:
-                            dataset = item
-                            replica = site.find_dataset_replica(dataset)
-                            block_replicas = replica.block_replicas
-                            dataset_sizes[dataset] = dataset.size
+                history_record = HistoryRecord(HistoryRecord.OP_DELETE, operation_id, site.name, int(time.time()))
 
-                            # Dataset-level deletion -> this replica cannot be growing any more
-                            replica.growing = False
-                            replica.group = inventory.groups[None]
-                            inventory.register_update(replica)
-                        else:
-                            block = item
-                            dataset = block.dataset
-                            block_replicas = [block.find_replica(site)]
-                            dataset_sizes[dataset] += block.size
+                scheduled_replicas = self.deletion_op.schedule_deletions(site_deletion_list, comments = comment)
 
-                        for block_replica in block_replicas:
-                            if approved:
-                                block_replica.group = inventory.groups[None]
-                                inventory.register_update(block_replica)
+                for replica, block_replicas in scheduled_replicas:
+                    # replicas are clones -> use inventory.update instead of inventory.register_update
 
-                    self.history.make_deletion_entry(cycle_number, site, deletion_id, approved, dataset_sizes.items())
-                    total_size += sum(dataset_sizes.values())
+                    if block_replicas is None:
+                        replica.growing = False
+                        replica.group = inventory.groups[None]
+                        inventory.update(replica)
+                        block_replicas = replica.block_replicas
 
-            LOG.info('Done deleting %.1f TB from %s.', total_size * 1.e-12, site.name)
+                    deleted_size = 0
+
+                    for block_replica in block_replicas:
+                        block_replica.group = inventory.groups[None]
+                        inventory.update(block_replica)
+
+                        deleted_size += block_replica.size
+
+                    history_record.replicas.append(DeletedReplica(replica.dataset.name, deleted_size))
+
+                self.history.update_deletion_entry(history_record)
+
+                total_size = sum(r.size for r in history_record.replicas)
+                LOG.info('Done deleting %.1f TB from %s.', total_size * 1.e-12, site.name)
 
     def _commit_reassignments(self, cycle_number, inventory, reowned, comment):
         """

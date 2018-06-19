@@ -41,27 +41,22 @@ class MySQLHistory(TransactionHistoryInterface):
             # Don't do anything
             return
 
+        # site must be already in the database.
+
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
         return self._mysql.insert_get_id('copy_operations', columns = ('cycle_id', 'timestamp', 'site_id'), values = (cycle_number, MySQL.bare('NOW()'), site_id))
 
-    def make_deletion_entry(self, cycle_number, site, operation_id, approved, dataset_list): #override
+    def make_deletion_entry(self, cycle_number, site): #override
         if self.test or self.read_only or cycle_number == 0:
             # Don't do anything
             return
 
-        # site and datasets are expected to be already in the database.
+        # site must be already in the database.
 
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (d.name for d, s in dataset_list)))
-
-        self._mysql.query('INSERT INTO `deletion_operations` (`id`, `cycle_id`, `timestamp`, `approved`, `site_id`) VALUES (%s, %s, NOW(), %s, %s)', operation_id, cycle_number, approved, site_id)
-
-        fields = ('deletion_id', 'dataset_id', 'size')
-        mapping = lambda (dataset, size): (operation_id, dataset_ids[dataset.name], size)
-
-        self._mysql.insert_many('deleted_replicas', fields, mapping, dataset_list, do_update = False)
+        return self._mysql.insert_get_id('deletion_operations', columns = ('cycle_id', 'timestamp', 'site_id'), values = (cycle_number, MySQL.bare('NOW()'), site_id))
 
     def update_copy_entry(self, copy_record): #override
         if self.test or self.read_only:
@@ -78,12 +73,12 @@ class MySQLHistory(TransactionHistoryInterface):
         if self.test or self.read_only:
             return
 
-        self._mysql.query('UPDATE `deletion_operations` SET `approved` = %s, WHERE `id` = %s', deletion_record.approved, deletion_record.operation_id)
+        dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (d.name for d, s in dataset_list)))
 
-        sql = 'UPDATE `deleted_replicas` SET `size` = %s'
-        sql += ' WHERE `deletion_id` = %s AND `dataset_id` = (SELECT `id` FROM `datasets` WHERE `name` = %s)'
-        for replica in deletion_record.replicas:
-            self._mysql.query(sql, replica.size, deletion_record.operation_id, replica.dataset_name)
+        fields = ('deletion_id', 'dataset_id', 'size')
+        mapping = lambda replica: (deletion_record.operation_id, dataset_ids[replica.dataset_name], replica.size)
+
+        self._mysql.insert_many('deleted_replicas', fields, mapping, deletion_record.replicas, do_update = True, update_columns = ('size'))
 
     def save_sites(self, sites): #override
         if self.read_only:

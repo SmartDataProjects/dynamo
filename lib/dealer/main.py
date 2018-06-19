@@ -361,7 +361,6 @@ class Dealer(object):
 
                 history_record = HistoryRecord(HistoryRecord.OP_COPY, operation_id, site.name, int(time.time()))
 
-                # note: scheduled_replicas consist of cloned replica objects
                 scheduled_replicas = self.copy_op.schedule_copies(replicas, operation_id, comments = comment)
 
                 for replica in scheduled_replicas:
@@ -372,3 +371,6 @@ class Dealer(object):
                         inventory.update(block_replica)
 
                 self.history.update_copy_entry(history_record)
+
+                total_size = sum(r.size for r in history_record.replicas)
+                LOG.info('Scheduled copy %.1f TB to %s.', total_size * 1.e-12, site.name)

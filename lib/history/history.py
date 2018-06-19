@@ -83,6 +83,8 @@ class TransactionHistoryInterface(object):
         Record a deletion operation.
         @param cycle_number  Cycle number
         @param site          Site object
+
+        @return  Newly created deletion operation id.
         """
         raise NotImplementedError('make_deletion_entry')
 
