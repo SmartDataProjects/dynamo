@@ -28,13 +28,14 @@ from dynamo.utils.interface.mysql import MySQL
 config.registry['reuse_connection'] = True
 
 registry = MySQL(config.registry)
+history = MySQL(config.history)
 
 ## Loop over active transfers and check against inventory
 from dynamo.core.executable import inventory
 from dynamo.dataformat import Block, ObjectError
 
 if not read_only:
-    registry.query('LOCK TABLES `active_copies` WRITE, `active_copies` AS a READ, `copy_requests` AS r READ')
+    registry.lock_tables(write = ['active_copies'], read = [('active_copies', 'a'), ('copy_requests', 'r')])
 
 def update(request_id, item, site):
     if read_only:
@@ -113,17 +114,24 @@ for request_id, item_name, site_name, group_name in registry.query(sql):
             LOG.debug('%s incomplete', replica)
 
 if not read_only:
-    registry.query('UNLOCK TABLES')
+    registry.unlock_tables()
 
 ## Set the request status
 if not read_only:
-    registry.query('LOCK TABLES `copy_requests` WRITE, `copy_requests` AS r WRITE, `active_copies` AS a READ')
+    registry.lock_tables(write = ['copy_requests', ('copy_requests', 'r'), ('active_copies', 'a'), ('copy_request_items', 'i'), ('copy_request_sites', 's')])
 
 def update(request_id):
     if read_only:
         return
 
     sql = 'UPDATE `copy_requests` SET `status` = \'completed\' WHERE `id` = %s'
+    history.query(sql, request_id)
+
+    sql = 'DELETE FROM r, a, i, s USING `copy_requests` AS r'
+    sql += ' INNER JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
+    sql += ' INNER JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
+    sql += ' INNER JOIN `copy_request_sites` AS s ON s.`request_id` = r.`id`'
+    sql += ' WHERE r.`id` = %s'
     registry.query(sql, request_id)
 
 sql = 'SELECT r.`id`, a.`status` FROM `copy_requests` AS r INNER JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
@@ -146,4 +154,4 @@ if all_complete:
     update(_request_id)
 
 if not read_only:
-    registry.query('UNLOCK TABLES')
+    registry.unlock_tables()

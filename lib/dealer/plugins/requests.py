@@ -17,10 +17,11 @@ class CopyRequestsHandler(BaseHandler):
     def __init__(self, config):
         BaseHandler.__init__(self, 'DirectRequests')
 
-        db_config = Configuration(config.db_params)
-        db_config['reuse_connection'] = True # need to work with table locks
+        registry_config = Configuration(config.registry)
+        registry_config['reuse_connection'] = True # need to work with table locks
         
-        self.registry = MySQL(db_config)
+        self.registry = MySQL(registry_config)
+        self.history = MySQL(config.history)
 
         # maximum size that can be requested
         self.max_size = config.max_size * 1.e+12
@@ -183,7 +184,14 @@ class CopyRequestsHandler(BaseHandler):
 
             sql = 'UPDATE `copy_requests` AS r SET r.`status` = \'rejected\', r.`rejection_reason` = %s'
             sql += ' WHERE r.`id` = %s'
-            self.registry.query(sql, reason, request_id)
+            self.history.query(sql, reason, request_id)
+
+            sql = 'DELETE FROM r, a, i, s USING `copy_requests` AS r'
+            sql += ' INNER JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
+            sql += ' INNER JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
+            sql += ' INNER JOIN `copy_request_sites` AS s ON s.`request_id` = r.`id`'
+            sql += ' WHERE r.`id` = %s'
+            self.registry.query(sql, request_id)
 
         # loop over requests and find items and destinations
         for request_id, (group_name, num_copies, request_count, request_time, site_names, item_names) in grouped_requests.iteritems():

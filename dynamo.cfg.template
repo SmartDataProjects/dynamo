@@ -111,7 +111,7 @@ fom_conf={"db": {"user": "dynamofod"}, "transfer": {}}
 # Configuration JSON for the File Operations Daemon (empty if backend=fts)
 #  max_parallel_links: Maximum number of concurrent operations within each batch
 #  transfer_timeout: Timeout for individual transfers (seconds)
-fod_conf={"max_parallel_links": 20, "transfer_timeout": 3600}
+fod_conf={"max_batches": 50, "max_parallel_links": 200, "transfer_timeout": 3600}
 
 # Alternative file operations configuration
 #backend=fts

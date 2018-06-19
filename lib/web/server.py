@@ -24,7 +24,39 @@ from dynamo.utils.log import reset_logger
 LOG = logging.getLogger(__name__)
 
 class WebServer(object):
-    User = collections.namedtuple('User', ['name', 'id', 'authlist'])
+    User = collections.namedtuple('User', ['name', 'dn', 'id', 'authlist'])
+
+    @staticmethod
+    def format_dn(dn_string):
+        """Read the DN string in the environ and return (user name, user id)."""
+        dn_parts = []
+        start = 0
+        end = 0
+        while True:
+            end = dn_string.find(',', end)
+            if end == -1:
+                dn_parts.append(dn_string[start:])
+                break
+
+            if end == 0:
+                raise exceptions.AuthorizationError()
+
+            if dn_string[end - 1] == '\\':
+                # if this was an escaped comma, move ahead
+                end += 1
+                continue
+
+            dn_parts.append(dn_string[start:end])
+            end += 2 # skip ', '
+            start = end
+
+        dn = ''
+        for part in dn_parts:
+            key, _, value = part.partition(' = ')
+            dn += '/' + key + '=' + value
+
+        return dn
+
 
     def __init__(self, config, dynamo_server):
         self.socket = config.socket
@@ -233,7 +265,7 @@ class WebServer(object):
         ## Step 1
         if environ['REQUEST_SCHEME'] == 'http':
             # No auth
-            user, user_id = None, 0
+            user, dn, user_id = None, None, 0
             authlist = []
 
         elif environ['REQUEST_SCHEME'] == 'https':
@@ -241,7 +273,13 @@ class WebServer(object):
 
             # Client DN must match a known user
             try:
-                user, user_id = self.identify_user(environ, authorizer)
+                dn = WebServer.format_dn(environ['SSL_CLIENT_S_DN'])
+                userinfo = authorizer.identify_user(dn = dn, check_trunc = True)
+                if userinfo is None:
+                    raise exceptions.AuthorizationError()
+
+                user, user_id, dn = userinfo
+
             except exceptions.AuthorizationError:
                 self.code = 403
                 self.message = 'Unknown user. Client name: %s' % environ['SSL_CLIENT_S_DN']
@@ -360,7 +398,7 @@ class WebServer(object):
             unicode2str(request)
     
             ## Step 5
-            caller = WebServer.User(user, user_id, authlist)
+            caller = WebServer.User(user, dn, user_id, authlist)
 
             inventory = self.dynamo_server.inventory.create_proxy()
             if provider.write_enabled:
@@ -388,43 +426,6 @@ class WebServer(object):
             self.callback = request['callback']
 
         return content
-
-    def identify_user(self, environ, authorizer):
-        """Read the DN string in the environ and return (user name, user id)."""
-        
-        dn_string = environ['SSL_CLIENT_S_DN']
-        dn_parts = []
-        start = 0
-        end = 0
-        while True:
-            end = dn_string.find(',', end)
-            if end == -1:
-                dn_parts.append(dn_string[start:])
-                break
-
-            if end == 0:
-                raise exceptions.AuthorizationError()
-
-            if dn_string[end - 1] == '\\':
-                # if this was an escaped comma, move ahead
-                end += 1
-                continue
-
-            dn_parts.append(dn_string[start:end])
-            end += 2 # skip ', '
-            start = end
-
-        dn = ''
-        for part in dn_parts:
-            key, _, value = part.partition(' = ')
-            dn += '/' + key + '=' + value
-
-        userinfo = authorizer.identify_user(dn = dn, check_trunc = True)
-
-        if userinfo is None:
-            raise exceptions.AuthorizationError()
-
-        return userinfo[:2]
 
     def _internal_server_error(self):
         self.code = 500

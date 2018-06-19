@@ -54,6 +54,10 @@ class MySQL(object):
         """
         def __init__(self, value):
             self.value = value
+
+    @staticmethod
+    def make_tuple(obj):
+        return (obj,)
     
     def __init__(self, config = None):
         config = Configuration(config)
@@ -377,8 +381,9 @@ class MySQL(object):
             self._fully_unlock()
             raise
 
-    def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = ''):
+    def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = '', on_duplicate_key_update = ''):
         result = []
+        result_sum = None
 
         if type(key) is tuple:
             key_str = '(' + ','.join('`%s`' % k for k in key) + ')'
@@ -398,13 +403,22 @@ class MySQL(object):
         sqlbase += key_str + ' IN {pool}'
 
         def execute(pool_expr):
+            global result_sum
+
             sql = sqlbase.format(pool = pool_expr)
             if order_by:
                 sql += ' ORDER BY ' + order_by
+            if on_duplicate_key_update:
+                sql += ' ON DUPLICATE KEY UPDATE ' + on_duplicate_key_update
 
             vals = self.query(sql)
             if type(vals) is list:
                 result.extend(vals)
+            elif type(vals) is int:
+                if result_sum is None:
+                    result_sum = 0
+
+                result_sum += vals
 
         # executing in batches - we may issue multiple queries
         self._connection_lock.acquire()
@@ -415,30 +429,13 @@ class MySQL(object):
             self._fully_unlock()
             raise
 
-        return result
+        if result_sum is None:
+            return result
+        else:
+            return result_sum
 
     def select_many(self, table, fields, key, pool, additional_conditions = [], order_by = ''):
-        if type(fields) is str:
-            fields = (fields,)
-
-        quoted = []
-        for field in fields:
-            if type(field) is MySQL.bare:
-                quoted.append(field.value)
-            elif '(' in field or '`' in field:
-                # backward compatibility
-                quoted.append(field)
-            else:
-                quoted.append('`%s`' % field)
-
-        fields_str = ','.join(quoted)
-        
-        if type(table) is MySQL.bare:
-            table_str = table.value
-        else:
-            table_str = '`%s`' % table
-
-        sqlbase = 'SELECT {fields} FROM {table}'.format(fields = fields_str, table = table_str)
+        sqlbase = self._form_select_many_sql(table, fields)
 
         return self.execute_many(sqlbase, key, pool, additional_conditions, order_by = order_by)
 
@@ -531,6 +528,38 @@ class MySQL(object):
             
             num_inserted += self.query(sqlbase % values)
 
+        return num_inserted
+
+    def insert_select_many(self, insert_table, insert_fields, select_table, select_fields, key, pool, do_update = True, db = '', update_columns, additional_conditions = [], order_by = ''):
+        """
+        INSERT INTO insert_table (insert_fields) SELECT select_fields FROM select_table WHERE key IN pool
+        @param insert_table   Table to insert to.
+        @param insert_fields  Name of columns in insert_table.
+        @param select_table   Table to select from.
+        @param select_fields  Name of columns in select_table.
+        @param key            See select_many.
+        @param pool           See select_many.
+
+        @return  total number of inserted rows.
+        """
+
+        if db == '':
+            db = self.db_name()
+
+        sqlbase = 'INSERT INTO `%s`.`%s`' % (db, insert_table)
+        if insert_fields:
+            sqlbase += ' (%s)' % ','.join('`%s`' % f for f in insert_fields)
+
+        sqlbase += self._form_select_many_sql(select_table, select_fields)
+            
+        if insert_fields and do_update:
+            if update_columns is None:
+                update_columns = insert_fields
+
+            update = ','.join('`{f}`=VALUES(`{f}`)'.format(f = f) for f in update_columns)
+
+        num_inserted = self.execute_many(sqlbase, key, pool, additional_conditions = additional_conditions, order_by = order_by, on_duplicate_key_update = update)
+        
         return num_inserted
 
     def insert_update(self, table, fields, *values, **kwd):
@@ -631,6 +660,29 @@ class MySQL(object):
             raise
         else:
             self._connection_lock.release()
+
+    def _form_select_many_sql(self, table, fields)
+        if type(fields) is str:
+            fields = (fields,)
+
+        quoted = []
+        for field in fields:
+            if type(field) is MySQL.bare:
+                quoted.append(field.value)
+            elif '(' in field or '`' in field:
+                # backward compatibility
+                quoted.append(field)
+            else:
+                quoted.append('`%s`' % field)
+
+        fields_str = ','.join(quoted)
+        
+        if type(table) is MySQL.bare:
+            table_str = table.value
+        else:
+            table_str = '`%s`' % table
+
+        return 'SELECT {fields} FROM {table}'.format(fields = fields_str, table = table_str)
 
     def _execute_in_batches(self, execute, pool):
         """
