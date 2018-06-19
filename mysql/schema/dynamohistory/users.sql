@@ -4,6 +4,6 @@ CREATE TABLE `users` (
   `email` varchar(128) COLLATE latin1_general_cs DEFAULT NULL,
   `dn` varchar(256) COLLATE latin1_general_cs DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `name` (`name`),
   UNIQUE KEY `dn` (`dn`)
+  KEY `name` (`name`),
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

@@ -530,7 +530,7 @@ class MySQL(object):
 
         return num_inserted
 
-    def insert_select_many(self, insert_table, insert_fields, select_table, select_fields, key, pool, do_update = True, db = '', update_columns, additional_conditions = [], order_by = ''):
+    def insert_select_many(self, insert_table, insert_fields, select_table, select_fields, key, pool, do_update = True, db = '', update_columns = None, additional_conditions = [], order_by = ''):
         """
         INSERT INTO insert_table (insert_fields) SELECT select_fields FROM select_table WHERE key IN pool
         @param insert_table   Table to insert to.
@@ -661,7 +661,7 @@ class MySQL(object):
         else:
             self._connection_lock.release()
 
-    def _form_select_many_sql(self, table, fields)
+    def _form_select_many_sql(self, table, fields):
         if type(fields) is str:
             fields = (fields,)
 

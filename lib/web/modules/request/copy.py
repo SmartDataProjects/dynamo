@@ -1,6 +1,7 @@
 import time
 import calendar
 import json
+import logging
 
 from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedRequest, InvalidRequest, AuthorizationError
 from dynamo.web.modules._base import WebModule
@@ -9,6 +10,8 @@ from dynamo.web.modules._mysqlhistory import MySQLHistoryMixin
 from dynamo.web.modules._userdata import UserDataMixin
 from dynamo.utils.interface.mysql import MySQL
 import dynamo.dataformat as df
+
+LOG = logging.getLogger(__name__)
 
 class CopyRequest(object):
     """
@@ -73,6 +76,7 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
 
         # we'll be using temporary tables
         self.registry.reuse_connection = True
+        self.history.reuse_connection = True
 
     def parse_input(self, request, inventory, allowed_fields, required_fields = tuple()):
         # Check we have the right request fields
@@ -236,21 +240,21 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
 
         if 'item' in self.request:
             dataset_names, block_names = self.save_items()
-            self.history.insert_select_many('copy_datasets_tmp', ('dataset_id',), 'datasets', ('id',), 'name', dataset_names, db = self.registry.scratch_db)
-            self.history.insert_select_many('copy_blocks_tmp', ('block_id',), 'blocks', ('id',), ('dataset_id', 'name'), block_names, db = self.registry.scratch_db)
+            self.history.insert_select_many('copy_datasets_tmp', ('dataset_id',), 'datasets', ('id',), 'name', dataset_names, db = self.history.scratch_db)
+            self.history.insert_select_many('copy_blocks_tmp', ('block_id',), 'blocks', ('id',), ('dataset_id', 'name'), block_names, db = self.history.scratch_db)
 
         columns = ['`site_id` int(10) unsigned NOT NULL']
-        self.registry.create_tmp_table('copy_sites_tmp', columns)
+        self.history.create_tmp_table('copy_sites_tmp', columns)
 
         if 'site' in self.request:
-            self.history.insert_many('sites', ('name',), None, self.request['site'])
-            self.history.insert_select_many('copy_sites_tmp', ('site_id',), 'sites', ('id',), 'name', self.request['site'], db = self.registry.scratch_db)
+            self.history.insert_many('sites', ('name',), MySQL.make_tuple, self.request['site'])
+            self.history.insert_select_many('copy_sites_tmp', ('site_id',), 'sites', ('id',), 'name', self.request['site'], db = self.history.scratch_db)
 
         columns = [
             '`id` int(10) unsigned NOT NULL AUTO_INCREMENT',
             'PRIMARY KEY (`id`)'
         ]
-        self.registry.create_tmp_table('copy_ids_tmp', columns)
+        self.history.create_tmp_table('copy_ids_tmp', columns)
 
         sql = 'INSERT INTO `{db}`.`copy_ids_tmp`'
         sql += ' SELECT r.`id` FROM `copy_requests` AS r WHERE'
@@ -258,27 +262,28 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
         sql += ' AND '
         sql += ' 0 NOT IN (SELECT (`dataset_id` IN (SELECT `dataset_id` FROM `copy_request_datasets` AS d WHERE d.`request_id` = r.`id`)) FROM `{db}`.`copy_datasets_tmp`)'
         sql += ' AND '
-        sql += ' 0 NOT IN (SELECT (`block_id` IN (SELECT `block_id` FROM `copy_request_blocks` AS b WHERE b.`request_id` = r.`id`)) FROM `{db}`.`copy_datasets_tmp`)'
-        self.registry.query(sql.format(db = self.registry.scratch_db))
+        sql += ' 0 NOT IN (SELECT (`block_id` IN (SELECT `block_id` FROM `copy_request_blocks` AS b WHERE b.`request_id` = r.`id`)) FROM `{db}`.`copy_blocks_tmp`)'
+        self.history.query(sql.format(db = self.history.scratch_db))
 
     def save_items(self):
         # Save the datasets and blocks to the history DB and return ([dataset name], [(dataset id, block name)])
         dataset_names = []
+        block_dataset_names = []
         block_names = []
         for item in self.request['item']:
-            if item in inventory.datasets:
+            # names are validated already
+            try:
+                dataset_name, block_name = df.Block.from_full_name(item)
+            except df.ObjectError:
                 dataset_names.append(item)
             else:
-                # names are validated already
-                dataset_name, block_name = df.Block.from_full_name(item)
+                block_dataset_names.append(dataset_name)
                 block_names.append((dataset_name, df.Block.to_real_name(block_name)))
 
-        block_dataset_names = [b[0] for b in block_names]
+        self.history.insert_many('datasets', ('name',), MySQL.make_tuple, dataset_names)
+        self.history.insert_many('blocks', ('name',), MySQL.make_tuple, block_dataset_names)
 
-        self.history.insert_many('datasets', ('name',), None, dataset_names)
-        self.history.insert_many('datasets', ('name',), None, block_dataset_names)
-
-        dataset_id_map = dict(self.select_many('datasets', ('name', 'id'), 'name', block_dataset_names))
+        dataset_id_map = dict(self.history.select_many('datasets', ('name', 'id'), 'name', block_dataset_names))
         # redefine block_names with dataset id
         for i in xrange(len(block_names)):
             dname, bname = block_names[i]
@@ -300,7 +305,7 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
         if request_id is not None:
             constraints.append('r.`id` = %d' % request_id)
         if status is not None:
-            constraints.append('r.`status` IN (%s)' % ','.join('\'%s\'' % status))
+            constraints.append('r.`status` IN (%s)' % ','.join('\'%s\'' % s for s in status))
         if user is not None:
             constraints.append('r.`user_id` IN (%s)' % ','.join('%d' % self.user_info_cache[u][0] for u in user))
         if item is not None or site is not None:
@@ -356,17 +361,17 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
 
         archived_requests = {}
 
-        sql = 'SELECT r.`id`, g.`name`, r.`num_copies`, r.`status`, UNIX_TIMESTAMP(r.`first_request_time`), UNIX_TIMESTAMP(r.`last_request_time`),'
-        sql += ' r.`request_count`, r.`rejection_reason`, u.`name`, u.`dn`'
+        sql = 'SELECT r.`id`, g.`name`, r.`num_copies`, r.`status`, UNIX_TIMESTAMP(r.`request_time`),'
+        sql += ' r.`rejection_reason`, u.`name`, u.`dn`'
+        sql += ' FROM `copy_requests` AS r'
         sql += ' INNER JOIN `groups` AS g ON g.`id` = r.`group_id`'
         sql += ' INNER JOIN `users` AS u ON u.`id` = r.`user_id`'
-        sql += ' FROM `copy_requests` AS r'
 
         constraints = []
         if request_id is not None:
             constraints.append('r.`id` = %d' % request_id)
         if status is not None:
-            constraints.append('r.`status` IN (%s)' % ','.join('\'%s\'' % status))
+            constraints.append('r.`status` IN (%s)' % ','.join('\'%s\'' % s for s in status))
         if user is not None:
             constraints.append('r.`user_id` IN (SELECT `id` FROM `users` WHERE `name` IN (%s))' % ','.join('\'%s\'' % u for u in user))
         if item is not None or site is not None:
@@ -378,9 +383,9 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
 
         sql += ' ORDER BY r.`id`'
 
-        for rid, group, n, status, first_request, last_request, count, reason, user, dn in self.history.xquery(sql):
+        for rid, group, n, status, request_time, reason, user, dn in self.history.xquery(sql):
             if rid not in live_requests:
-                archived_requests[rid] = CopyRequest(rid, user, dn, group, n, status, first_request, last_request, count, reason)
+                archived_requests[rid] = CopyRequest(rid, user, dn, group, n, status, request_time, request_time, 1, reason)
 
         if len(archived_requests) != 0:
             # get the sites
@@ -496,9 +501,9 @@ class MakeCopyRequest(WebModule, CopyRequestMixin):
 
         # Make an entry in history
         dataset_names, block_names = self.save_items()
-        self.history.insert_update('groups', ('name',), (self.request['group'],), update_columns = ('name',))
-        self.history.insert_update('users', ('name', 'dn'), (caller.name, caller.dn), update_columns = ('name',))
-        self.history.insert_many('sites', ('name',), None, self.request['site'])
+        self.history.insert_update('groups', ('name',), self.request['group'], update_columns = ('name',))
+        self.history.insert_update('users', ('name', 'dn'), caller.name, caller.dn, update_columns = ('name',))
+        self.history.insert_many('sites', ('name',), MySQL.make_tuple, self.request['site'])
 
         sql = 'INSERT INTO `copy_requests` (`id`, `group_id`, `num_copies`, `user_id`, `request_time`)'
         sql += ' SELECT %s, g.`id`, %s, u.`id`, FROM_UNIXTIME(%s) FROM `groups` AS g, `users` AS u'
@@ -517,7 +522,7 @@ class MakeCopyRequest(WebModule, CopyRequestMixin):
         sql = 'UPDATE `copy_requests` SET `group` = %s, `num_copies` = %s, `last_request_time` = FROM_UNIXTIME(%s), `request_count` = %s WHERE `id` = %s'
         self.registry.query(sql, existing.group, existing.n, existing.last_request, existing.request_count, existing.request_id)
 
-        sql = 'UPDATE `copy_requests` SET `group` = %s, `num_copies` = %s WHERE `id` = %s'
+        sql = 'UPDATE `copy_requests` SET `group_id` = (SELECT `id` FROM `groups` WHERE `name` = %s), `num_copies` = %s WHERE `id` = %s'
         self.history.query(sql, existing.group, existing.n, existing.request_id)
 
         return {existing.request_id: existing}
@@ -544,21 +549,25 @@ class CancelCopyRequest(WebModule, CopyRequestMixin):
     def run(self, caller, request, inventory):
         self.parse_input(request, inventory, ('request_id',), ('request_id',))
 
+        request_id = self.request['request_id']
+
+        LOG.info('Cancelling copy request %d', request_id)
+
         self.lock_tables()
         
         try:
             self.load_existing(by_id = True)
             if len(self.existing) == 0:
-                raise InvalidRequest('Invalid request id %d' % self.request['request_id'])
+                raise InvalidRequest('Invalid request id %d' % request_id)
                 
-            existing = self.existing[self.request['request_id']]
+            existing = self.existing[request_id]
             if existing.status == 'new':
                 existing.status = 'cancelled'
                 sql = 'UPDATE `copy_requests` SET `status` = \'cancelled\' WHERE `id` = %s'
-                self.history.query(sql, existing.request_id)
+                self.history.query(sql, request_id)
 
                 sql = 'DELETE FROM r, a, i, s USING `copy_requests` AS r'
-                sql += ' INNER JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
+                sql += ' LEFT JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
                 sql += ' INNER JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
                 sql += ' INNER JOIN `copy_request_sites` AS s ON s.`request_id` = r.`id`'
                 sql += ' WHERE r.`id` = %s'
@@ -568,7 +577,7 @@ class CancelCopyRequest(WebModule, CopyRequestMixin):
                 pass
 
             else:
-                raise InvalidRequest('Request %d cannot be cancelled any more' % self.request['request_id'])
+                raise InvalidRequest('Request %d cannot be cancelled any more' % request_id)
 
         finally:
             self.registry.unlock_tables()

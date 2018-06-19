@@ -1,4 +1,4 @@
-from exceptions import IntegrityError, ObjectError, ConfigurationError
+from exceptions import IntegrityError, ObjectError, ConfigurationError, OperationalError
 from dataset import Dataset
 from block import Block
 from lfile import File
@@ -15,6 +15,7 @@ __all__ = [
     'IntegrityError',
     'ObjectError',
     'ConfigurationError',
+    'OperationalError',
     'Dataset',
     'Block',
     'File',
