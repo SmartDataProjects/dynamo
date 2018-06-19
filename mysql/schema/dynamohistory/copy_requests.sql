@@ -8,8 +8,6 @@ CREATE TABLE `copy_requests` (
   `rejection_reason` text CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `user` (`user_id`),
-  KEY `first_request_time` (`first_request_time`),
-  KEY `last_request_time` (`last_request_time`),
-  KEY `request_count` (`request_count`),
+  KEY `request_time` (`request_time`),
   KEY `status` (`status`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
