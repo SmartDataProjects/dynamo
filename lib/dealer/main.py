@@ -316,11 +316,11 @@ class Dealer(object):
 
             copy_list[plugin].append(new_replica)
             # New replicas may not be in the target partition, but we add the size up to be conservative
-            copy_volumes[destination] += item_size
+            copy_volumes[request.destination] += request.item_size()
 
-            if not self.policy.is_target_site(destination.partitions[partition], copy_volumes[destination]):
-                LOG.info('%s is not a target site any more.', destination.name)
-                self.policy.target_sites.remove(destination)
+            if not self.policy.is_target_site(request.destination.partitions[partition], copy_volumes[request.destination]):
+                LOG.info('%s is not a target site any more.', request.destination.name)
+                self.policy.target_sites.remove(request.destination)
 
             if sum(copy_volumes.itervalues()) > self.policy.max_total_cycle_volume:
                 LOG.warning('Total copy volume has exceeded the limit. No more copies will be made.')

@@ -28,7 +28,7 @@ class BaseHandler(object):
 
 
 class DealerRequest(object):
-    __slots__ = ['dataset', 'block', 'destination', 'group']
+    __slots__ = ['dataset', 'block', 'blocks', 'destination', 'group']
 
     def __init__(self, item, destination = None, group = None):
         """
@@ -105,7 +105,7 @@ class DealerRequest(object):
         level = 0
 
         if self.block is not None:
-            replica = site.find_block_replica(block)
+            replica = site.find_block_replica(self.block)
             if replica is not None and replica.is_complete():
                 level = 1
                 if replica.group == self.group:
@@ -115,7 +115,7 @@ class DealerRequest(object):
             complete_at_site = True
             owned_at_site = True
         
-            for block in blocks:
+            for block in self.blocks:
                 replica = site.find_block_replica(block)
                 if replica is None or not replica.is_complete():
                     complete_at_site = False
@@ -131,7 +131,7 @@ class DealerRequest(object):
                 level = 0
 
         else:
-            replica = site.find_dataset_replica(dataset)
+            replica = site.find_dataset_replica(self.dataset)
             if replica is not None and replica.is_full():
                 level = 1
         

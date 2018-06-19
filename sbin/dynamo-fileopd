@@ -216,7 +216,7 @@ class PoolManager(object):
         # TransferPoolManager or DeletionPoolManager
         self_cls = type(self)
 
-        sql = 'UPDATE `standalone_{op}_queue` SET `status` = \'queued\' WHERE `id` = %s'.format(op = self.optype)
+        sql = 'UPDATE `standalone_{op}_tasks` SET `status` = \'queued\' WHERE `id` = %s'.format(op = self.optype)
         with self_cls.queued_ids_lock:
             PoolManager.db.query(sql, tid)
             self_cls.queued_ids.append(tid)
@@ -256,7 +256,7 @@ class PoolManager(object):
             LOG.info('%s: failed %s (%d s, %d: %s) %s\n%s\n%s%s', self.name, self.optype, optime, exitcode, msg, opstring, delim, log, delim)
             status = 'failed'
 
-        sql = 'UPDATE `standalone_{op}_queue` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'.format(op = self.optype)
+        sql = 'UPDATE `standalone_{op}_tasks` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'.format(op = self.optype)
 
         PoolManager.db.query(sql, status, exitcode, start_time, finish_time, tid)
 
@@ -442,9 +442,9 @@ if __name__ == '__main__':
     ## Start loop
     try:
         # If the previous cycle ended with a crash, there may be some dangling tasks in the queued state
-        sql = 'UPDATE `standalone_deletion_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+        sql = 'UPDATE `standalone_deletion_tasks` SET `status` = \'new\' WHERE `status` = \'queued\''
         db.query(sql)
-        sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+        sql = 'UPDATE `standalone_transfer_tasks` SET `status` = \'new\' WHERE `status` = \'queued\''
         db.query(sql)
 
         deletion_first_wait = True
@@ -458,8 +458,8 @@ if __name__ == '__main__':
             else:
                 LOG.debug('Creating deletion tasks.')
         
-            sql = 'SELECT q.`id`, a.`file`, b.`site` FROM `standalone_deletion_queue` AS a'
-            sql += ' INNER JOIN `deletion_queue` AS q ON q.`id` = a.`id`'
+            sql = 'SELECT q.`id`, a.`file`, b.`site` FROM `standalone_deletion_tasks` AS a'
+            sql += ' INNER JOIN `deletion_tasks` AS q ON q.`id` = a.`id`'
             sql += ' INNER JOIN `standalone_deletion_batches` AS b ON b.`batch_id` = q.`batch_id`'
             sql += ' WHERE a.`status` = \'new\''
             sql += ' ORDER BY b.`site`, q.`id`'
@@ -477,7 +477,7 @@ if __name__ == '__main__':
             ## Queued tasks may be cancelled FOM - try cancelling the tasks using the task id list
             LOG.debug('Listing queued deletion tasks.')
 
-            sql = 'SELECT `id` FROM `standalone_deletion_queue` WHERE `status` = \'queued\''
+            sql = 'SELECT `id` FROM `standalone_deletion_tasks` WHERE `status` = \'queued\''
             with deletion_ids_lock:
                 del queued_deletion_ids[:]
                 # List proxy cannot use extend with a generator
@@ -491,8 +491,8 @@ if __name__ == '__main__':
             else:
                 LOG.debug('Creating transfer tasks.')
 
-            sql = 'SELECT q.`id`, a.`source`, a.`destination`, b.`source_site`, b.`destination_site` FROM `standalone_transfer_queue` AS a'
-            sql += ' INNER JOIN `transfer_queue` AS q ON q.`id` = a.`id`'
+            sql = 'SELECT q.`id`, a.`source`, a.`destination`, b.`source_site`, b.`destination_site` FROM `standalone_transfer_tasks` AS a'
+            sql += ' INNER JOIN `transfer_tasks` AS q ON q.`id` = a.`id`'
             sql += ' INNER JOIN `standalone_transfer_batches` AS b ON b.`batch_id` = q.`batch_id`'
             sql += ' WHERE a.`status` = \'new\''
             sql += ' ORDER BY b.`source_site`, b.`destination_site`, q.`id`'
@@ -510,7 +510,7 @@ if __name__ == '__main__':
             ## See above
             LOG.debug('Listing queued transfer tasks.')
 
-            sql = 'SELECT `id` FROM `standalone_transfer_queue` WHERE `status` = \'queued\''
+            sql = 'SELECT `id` FROM `standalone_transfer_tasks` WHERE `status` = \'queued\''
             with transfer_ids_lock:
                 del queued_transfer_ids[:]
                 # List proxy cannot use extend with a generator
@@ -536,9 +536,9 @@ if __name__ == '__main__':
 
         try:
             # try to clean up
-            sql = 'UPDATE `standalone_deletion_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+            sql = 'UPDATE `standalone_deletion_tasks` SET `status` = \'new\' WHERE `status` = \'queued\''
             db.query(sql)
-            sql = 'UPDATE `standalone_transfer_queue` SET `status` = \'new\' WHERE `status` = \'queued\''
+            sql = 'UPDATE `standalone_transfer_tasks` SET `status` = \'new\' WHERE `status` = \'queued\''
             db.query(sql)
         except:
             pass

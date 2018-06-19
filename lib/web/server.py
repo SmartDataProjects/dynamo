@@ -140,8 +140,12 @@ class WebServer(object):
 
         # Drain and stop the main server
         LOG.debug('Waiting for web server to drain.')
+        elapsed = 0.
         while old_active_count.value != 0:
             time.sleep(0.2)
+            elapsed += 0.2
+            if elapsed >= 10.:
+                break
 
         self.stop()
 

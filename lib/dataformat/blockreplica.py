@@ -173,6 +173,9 @@ class BlockReplica(object):
             if type(self.group) is str or self.group is None:
                 # can happen if self is an unlinked clone
                 replica.group = group
+            if self.size < 0:
+                # self represents a full block replica without the knowledge of the actual size (again an unlinked clone)
+                replica.size = block.size
 
             site.update_partitioning(replica)
             updated = True

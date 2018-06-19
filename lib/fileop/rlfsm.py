@@ -330,7 +330,7 @@ class RLFSM(object):
                 # site must exist
                 site = inventory.sites[site_name]
         
-            if replica is None or replica.block != block or replica.site != site:
+            if replica is None or replica.block is not block or replica.site is not site:
                 if replica is not None and has_update:
                     # check updates for previous replica
                     update_replica(replica, file_ids, len(projected))

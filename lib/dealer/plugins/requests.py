@@ -315,7 +315,7 @@ class CopyRequestsHandler(BaseHandler):
             completed_requests = []
 
             # find destinations (num_copies times) for each item
-            for proto_request in proto_requests:
+            for proto_request in proto_dealer_requests:
                 # try to make a dealer request for all requests, except when there is a full copy of the item
 
                 if num_copies == 0:

@@ -62,7 +62,7 @@ class MySQLHistory(TransactionHistoryInterface):
         if self.test or self.read_only:
             return
 
-        dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (d.name for d, s in dataset_list)))
+        dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (r.dataset_name for r in copy_record.replicas)))
 
         fields = ('copy_id', 'dataset_id', 'size', 'status')
         mapping = lambda replica: (copy_record.operation_id, dataset_ids[replica.dataset_name], replica.size, replica.status)
@@ -73,7 +73,7 @@ class MySQLHistory(TransactionHistoryInterface):
         if self.test or self.read_only:
             return
 
-        dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (d.name for d, s in dataset_list)))
+        dataset_ids = dict(self._mysql.select_many('datasets', ('name', 'id'), 'name', (r.dataset_name for r in deletion_record.replicas)))
 
         fields = ('deletion_id', 'dataset_id', 'size')
         mapping = lambda replica: (deletion_record.operation_id, dataset_ids[replica.dataset_name], replica.size)
