@@ -1,0 +1,390 @@
+#!/usr/bin/env python
+
+###############################################################
+####### This script will spit out png files monitoring ########
+####### the copy status through Phedex on three levels: #######
+####### -per replica, -per request, -per site #################
+#
+####### yiiyama@mit.edu, bmaier@mit.edu #######################
+###############################################################
+
+import sys
+import os
+import time
+import shutil
+import rrdtool
+import selinux
+import collections
+import csv
+
+from datetime import datetime, timedelta
+
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description = 'Track transfers')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+
+args = parser.parse_args()
+sys.argv = []
+
+from dynamo.dataformat import Configuration, HistoryRecord, Block, ObjectError
+from dynamo.utils.parallel import Map
+from dynamo.core.executable import read_only, make_standard_logger
+
+## Configuration
+
+config = Configuration(args.config)
+dealer_config = Configuration(config.dealer_config).dealer
+
+## Logger
+
+LOG = make_standard_logger(config.log_level)
+
+## Data source
+
+from dynamo.history.history import TransactionHistoryInterface
+from dynamo.operation.copy import CopyInterface
+
+if 'history' in config:
+    history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
+else:
+    history = TransactionHistoryInterface.get_instance()
+
+copy = CopyInterface.get_instance(dealer_config.copy_op.module, dealer_config.copy_op.config)
+
+## Paths
+
+rrd_dir = config.rrd_path_base + '/track_transfers'
+
+if not read_only:
+    try:
+        os.makedirs(rrd_dir)
+    except OSError:
+        pass
+
+## RRD functions
+
+interval = int(config.rrd_interval)
+
+def create_rrd(path):
+    start = (int(time.time()) / interval - 1) * interval
+
+    rrdtool.create(path, '--start', str(start), '--step', str(interval),
+                   'DS:copied:GAUGE:%d:0:U' % (interval * 800),
+                   'DS:total:GAUGE:%d:0:U' % (interval * 800),
+                   'RRA:LAST:0:1:%i' % 1344)
+
+    # data source
+    #  DS:<name>:<type>:<heartbeat>:<min>:<max>
+    #  type = GAUGE: quantity that has a value at each time point
+    #  heartbeat: "maximum number of seconds that may pass between two updates of this
+    #              data source before the value of the data source is assumed to be *UNKNOWN*"
+    #  min/max = U: unknown
+    # round robin archive (RRA)
+    #  RRA:<type>:<xff>:<nsteps>:<nrows>
+    #  type = LAST: just use the last value, no averaging etc.
+    #  xff: fraction of <nsteps> that can have UNKNOWN as the value
+    #  nsteps: number of steps used for calculation
+    #  nrows: number of records to keep
+
+    # change selinux context of the RRD so that it can be read by a apache-invoked PHP script
+    try:
+        selinux.chcon(path, 'unconfined_u:object_r:httpd_sys_content_t:s0')
+    except:
+        pass
+
+## Get all sites with ongoing transfers
+
+records = collections.defaultdict(set)
+
+for partition in config.partitions:
+    partition_records = history.get_incomplete_copies(partition)    
+    for record in partition_records:
+        site = history.get_site_name(record.operation_id)
+        records[site].add(record)
+
+LOG.info('Sites with open transfers: %s', records.keys())
+
+## Get the copy status
+
+incomplete_replicas_rrd = set()
+totals = {} # {site: tallies}
+ongoing_totals = {} # {site: tallies}
+
+def get_copy_status(record):
+    return record, copy.copy_status(record.operation_id)
+
+def is_transfer_stuck(rrd_file):
+    try:
+        # LAST returns a tuple ((start, end, something), something, records)
+        lasttime = rrdtool.fetch(rrd_file, "LAST")[0][1]
+        firsttime = lasttime - 6*24*3600
+        result = rrdtool.fetch(rrd_file, "LAST", '-s', str(firsttime), '-e', str(lasttime))
+    except:
+        return 0
+
+    rows = result[2]
+
+    # rewind to the last non-null record
+    while len(rows) != 0 and rows[-1][1] is None:
+        rows.pop()
+
+    if len(rows) > 480:
+        if rows[-1][0] is None or rows[-481][0] is None:
+            # Copied is None - you can't tell if the transfer is stuck..
+            return 0
+        elif (rows[-1][0] - rows[-481][0])/rows[-1][1] < 0.01:
+            return 1
+
+    return 0
+
+
+for sitename, site_records in records.iteritems():
+    # Will do this per site, parallelizing copy_status query for the records
+    LOG.info('Processing %s', sitename)
+
+    # Create a directory for the site
+    site_rrd_dir = rrd_dir + '/' + sitename
+
+    if not read_only:
+        try:
+            os.mkdir(site_rrd_dir)
+        except OSError:
+            pass
+
+    site_totals = totals[sitename] = {
+        "total_volume": 0., # total of all datasets
+        "copied_volume": 0., # copied volume
+    }
+
+    site_ongoing_totals = ongoing_totals[sitename] = {
+        "ongoing": 0., # number of ongoing transfers
+        "total": 0., # total of datasets that are not 100%
+        "total_stuck": 0., # out of which is stuck
+        "copied": 0., # copied volume, out of datasets that are not 100%
+        "copied_stuck": 0. # out of which is stuck
+    }
+
+    dataset_details = []
+
+    status_list = Map(config.parallel).execute(get_copy_status, site_records)
+
+    for record, status in status_list:
+        LOG.info('Transfer request ID: %d', record.operation_id)
+   
+        if len(status) == 0:
+            # old transfer. seems to not exist anymore. Call it complete and just update the history DB.
+            for replica in record.replicas:
+                replica.status = HistoryRecord.ST_COMPLETE
+
+            if not read_only:
+                history.update_copy_entry(record)
+
+            continue
+
+        request_total = 0
+        request_copied = 0
+
+        status_map = {}
+        for (st_sitename, item), status_data in status.iteritems():
+            if st_sitename != sitename:
+                # Dealer does not make requests to multiple sites in a single operation, so hitting this line indicates some sort of error
+                LOG.error('Site name mismatch for copy record %d: %s != %s', record.operation_id, sitename, st_sitename)
+                continue
+
+            if status_data is None:
+                continue
+
+            total, copied, last_update = status_data
+
+            try:
+                dataset_name, _ = Block.from_full_name(item)
+            except ObjectError:
+                dataset_name = item
+
+            try:
+                current_total, current_copied = status_map[dataset_name]
+            except KeyError:
+                status_map[dataset_name] = (total, copied)
+            else:
+                status_map[dataset_name] = (total + current_total, copied + current_copied)
+
+        update_record = False
+
+        for replica_record in record.replicas:
+            try:
+                total, copied = status_map[replica_record.dataset_name]
+            except KeyError:
+                # the copy request was cancelled
+                replica_record.status = HistoryRecord.ST_CANCELLED
+                update_record = True
+
+                continue
+
+            LOG.debug('%s %s %s %s', sitename, replica_record.dataset_name, total, copied)
+
+            if total != replica_record.size:
+                replica_record.size = total
+                update_record = True
+
+            # Keeping track of the request status
+            request_total += total
+            request_copied += copied
+
+            site_totals['total_volume'] += total
+            site_totals['copied_volume'] += copied
+
+            # We have an RRD file for each (site, dataset) combination
+            rrd_file = '%s/%d_%s.rrd' % (site_rrd_dir, record.operation_id, replica_record.dataset_name[1:].replace('/', '+'))
+
+            if copied == total:
+                replica_record.status = HistoryRecord.ST_COMPLETE
+                update_record = True
+
+                if not read_only:
+                    # We don't need to keep the RRD file any more
+                    try:
+                        os.unlink(rrd_file)
+                    except OSError:
+                        pass
+
+            else:
+                # Incomplete
+
+                incomplete_replicas_rrd.add(rrd_file)
+
+                if not read_only and not os.path.exists(rrd_file):
+                    # RRD does not exist yet
+                    create_rrd(rrd_file)
+
+                is_stuck = is_transfer_stuck(rrd_file)
+
+                # Update the RRD file
+
+                timestamp = int(time.time()) / interval * interval
+
+                try:
+                    lasttime = rrdtool.fetch(rrd_file, "LAST")[0][1]
+                except:
+                    lasttime = 0
+
+                if not read_only and timestamp != lasttime:
+                    rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
+                
+                # Tally up this tranfsfer
+
+                site_ongoing_totals['ongoing'] += 1
+                site_ongoing_totals['total'] += total
+                site_ongoing_totals['total_stuck'] += is_stuck * total
+                site_ongoing_totals['copied'] += copied
+                site_ongoing_totals['copied_stuck'] += is_stuck * copied
+
+                dataset_details.append({
+                    'id': record.operation_id,
+                    'name': replica_record.dataset_name,
+                    'copied': copied,
+                    'total': total,
+                    'stuck': is_stuck
+                })
+            
+        # Update the history DB
+        if update_record and not read_only:
+            LOG.info('Updating history record %d', record.operation_id)
+            history.update_copy_entry(record)
+
+    dataset_details.sort(key = lambda x: x['total'])
+
+    if not read_only:
+        with open("%s/filelist.txt" % site_rrd_dir, "w") as csvfilelist:
+            fieldnames = ["id", "name", "copied", "total", "stuck"]
+    
+            writer = csv.DictWriter(csvfilelist, fieldnames = fieldnames)
+            writer.writerow(dict(zip(fieldnames, fieldnames)))
+    
+            for detail in dataset_details:
+                writer.writerow(detail)
+
+## Create overview files
+
+if not read_only:
+    with open("%s/overview.txt" % rrd_dir, "w") as overview:
+        fieldnames = ["sitename", "ongoing", "total", "copied", "total_stuck", "copied_stuck"]
+    
+        writer = csv.DictWriter(overview, fieldnames = fieldnames)
+        writer.writerow(dict(zip(fieldnames, fieldnames)))
+    
+        for site in records.iterkeys():
+            if totals[site]['total_volume'] == 0:
+                continue
+    
+            ongoing_totals[site]['sitename'] = site
+    
+            writer.writerow(ongoing_totals[site])
+
+total_volume = sum(t['total_volume'] for s, t in totals.iteritems())
+copied_volume = sum(t['copied_volume'] for s, t in totals.iteritems())
+
+total_rrdfile = rrd_dir + '/total.rrd'
+if not read_only and not os.path.exists(total_rrdfile):
+    create_rrd(total_rrdfile)
+
+if not read_only:
+    timestamp = int(time.time()) / interval * interval
+    try:
+        rrdtool.update(total_rrdfile, '%d:%d:%d' % (timestamp, copied_volume, total_volume))
+    except:
+        pass
+
+    ## Deletion part - first delete rrd files of completed requests that are older than one week,
+    ## since we do not want them to be a part of the graphs anymore 
+    
+    for subdir in os.listdir(rrd_dir):
+        if subdir in ['total.rrd', 'overview.txt', 'monitoring']:
+            continue
+    
+        subpath = rrd_dir + '/' + subdir
+    
+        existing_rrds = ['%s/%s' % (subpath, r) for r in os.listdir(subpath) if r.endswith('.rrd')]
+    
+        older_than = datetime.now() - timedelta(days=20)
+        
+        for existing_rrd in existing_rrds:
+            filetime = datetime.fromtimestamp(os.path.getmtime(existing_rrd))
+            if not read_only and existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
+                # Delete pngs and rrd files
+                os.unlink(existing_rrd)
+
+    ## Copy rrds to the /var/www location
+
+    target_dir = config.rrd_publish_target + '/monitoring'
+    try:
+        os.makedirs(target_dir)
+    except OSError:
+        pass
+    
+    for entry in os.listdir(target_dir):
+        if entry.startswith('T'):
+            target = target_dir + '/' + entry
+            try:
+                shutil.rmtree(target)
+            except OSError:
+                pass
+    
+    try:
+        os.unlink(target_dir + '/total.rrd')
+    except OSError:
+        pass
+    
+    try:
+        os.unlink(target_dir + '/overview.txt')
+    except OSError:
+        pass
+    
+    for entry in os.listdir(rrd_dir):
+        if entry.startswith('T'):
+            source = rrd_dir + '/' + entry
+            target = target_dir + '/' + entry
+            shutil.copytree(source, target)
+    
+    shutil.copy(rrd_dir + '/total.rrd', target_dir)
+    shutil.copy(rrd_dir + '/overview.txt', target_dir)
