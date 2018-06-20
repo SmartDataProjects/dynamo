@@ -18,7 +18,7 @@ class DeletionRequest(object):
     Utility class to carry around all relevant information about a request.
     """
 
-    def __init__(self, request_id, user, user_dn, status, request_time, rejection_reason = None):
+    def __init__(self, request_id, user, user_dn, status, request_time, reject_reason = None):
         self.request_id = request_id
         self.user = user
         self.user_dn = user_dn
@@ -57,6 +57,10 @@ class DeletionRequestMixin(ParseInputMixin, SaveParamsMixin, MySQLRegistryMixin,
         SaveParamsMixin.__init__(self, config)
         MySQLRegistryMixin.__init__(self, config)
         MySQLHistoryMixin.__init__(self, config)
+
+        # we'll be using temporary tables
+        self.registry.reuse_connection = True
+        self.history.reuse_connection = True
 
     def lock_tables(self):
         # Caller of this function is responsible for unlocking
@@ -219,41 +223,46 @@ class MakeDeletionRequest(WebModule, DeletionRequestMixin):
                 return [existing]
 
             else:
-                now = int(time.time())
-        
-                # Make an entry in registry
-                columns = ('user_id', 'request_time')
-                values = (caller.id, MySQL.bare('FROM_UNIXTIME(%d)' % now))
-                request_id = self.registry.insert_get_id('deletion_requests', columns, values)
-        
-                fields = ('request_id', 'site')
-                mapping = lambda site: (request_id, site)
-                self.registry.insert_many('deletion_request_sites', fields, mapping, self.request['site'])
-        
-                fields = ('request_id', 'item')
-                mapping = lambda item: (request_id, item)
-                self.registry.insert_many('deletion_request_items', fields, mapping, self.request['item'])
-        
-                # Make an entry in history
-                self.save_params(caller)
-        
-                sql = 'INSERT INTO `deletion_requests` (`id`, `user_id`, `request_time`)'
-                sql += ' SELECT %s, u.`id`, FROM_UNIXTIME(%s) FROM `users` AS u'
-                sql += ' WHERE u.`dn` = %s'
-                self.history.query(sql, request_id, now, caller.dn)
-        
-                self.history.insert_select_many('deletion_request_sites', ('request_id', 'site_id'), 'sites', (MySQL.bare('%d' % request_id), 'id'), 'name', self.request['site'])
-        
-                # history_dataset_names set in save_params
-                self.history.insert_select_many('deletion_request_datasets', ('request_id', 'dataset_id'), 'datasets', (MySQL.bare('%d' % request_id), 'id'), 'name', self.history_dataset_names)
-        
-                # history_block_names set in save_params
-                self.history.insert_select_many('deletion_request_blocks', ('request_id', 'block_id'), 'blocks', (MySQL.bare('%d' % request_id), 'id'), ('dataset_id', 'name'), self.history_block_names)
-        
-                requests = self.fill_from_sql(request_id = request_id)
-
+                requests = self.create_request(caller)
                 # requests is a single-element dictionary
                 return [r.to_dict() for r in requests.itervalues()]
+
+        finally:
+            self.registry.unlock_tables()
+
+    def create_request(self, caller):
+        now = int(time.time())
+
+        # Make an entry in registry
+        columns = ('user_id', 'request_time')
+        values = (caller.id, MySQL.bare('FROM_UNIXTIME(%d)' % now))
+        request_id = self.registry.insert_get_id('deletion_requests', columns, values)
+
+        fields = ('request_id', 'site')
+        mapping = lambda site: (request_id, site)
+        self.registry.insert_many('deletion_request_sites', fields, mapping, self.request['site'])
+
+        fields = ('request_id', 'item')
+        mapping = lambda item: (request_id, item)
+        self.registry.insert_many('deletion_request_items', fields, mapping, self.request['item'])
+
+        # Make an entry in history
+        self.save_params(caller)
+
+        sql = 'INSERT INTO `deletion_requests` (`id`, `user_id`, `request_time`)'
+        sql += ' SELECT %s, u.`id`, FROM_UNIXTIME(%s) FROM `users` AS u'
+        sql += ' WHERE u.`dn` = %s'
+        self.history.query(sql, request_id, now, caller.dn)
+
+        self.history.insert_select_many('deletion_request_sites', ('request_id', 'site_id'), 'sites', (MySQL.bare('%d' % request_id), 'id'), 'name', self.request['site'])
+
+        # history_dataset_names set in save_params
+        self.history.insert_select_many('deletion_request_datasets', ('request_id', 'dataset_id'), 'datasets', (MySQL.bare('%d' % request_id), 'id'), 'name', self.history_dataset_names)
+
+        # history_block_names set in save_params
+        self.history.insert_select_many('deletion_request_blocks', ('request_id', 'block_id'), 'blocks', (MySQL.bare('%d' % request_id), 'id'), ('dataset_id', 'name'), self.history_block_names)
+
+        return self.fill_from_sql(request_id = request_id)
 
 
 class PollDeletionRequest(WebModule, DeletionRequestMixin):

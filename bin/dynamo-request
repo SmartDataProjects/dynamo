@@ -81,6 +81,62 @@ def cancelcopy(host, cert, key, rid):
         else:
             raise RuntimeError(response.text)
 
+def requestdelete(host, cert, key, items, sites):
+    requests.packages.urllib3.disable_warnings()
+
+    url = 'https://%s/data/request/delete' % host
+
+    data = []
+    for item in items:
+        data.append(('item[]', item))
+    for site in sites:
+        data.append(('site[]', site))
+
+    for attempt in xrange(5):
+        response = requests.request('POST', url = url, data = data, verify = False, timeout = 600, cert = (cert, key))
+
+        if response.status_code == 200:
+            return response.text
+        elif response.status_code == 503:
+            print 'Server is unavailable:', response.text
+            time.sleep(2)
+            continue
+        else:
+            raise RuntimeError(response.text)
+
+def polldelete(host, cert, key, rid = None, items = None, sites = None, statuses = None, users = None):
+    requests.packages.urllib3.disable_warnings()
+
+    url = 'https://%s/data/request/polldelete' % host
+
+    data = []
+    if rid is not None:
+        data.append(('request_id', rid))
+    if items is not None:
+        data.extend(('item[]', item) for item in items)
+    if sites is not None:
+        data.extend(('site[]', site) for site in sites)
+    if statuses is not None:
+        data.extend(('status[]', status) for status in statuses)
+    if users is not None:
+        data.extend(('user[]', user) for user in users)
+
+    if len(data) == 0:
+        raise RuntimeError('No selection specified')
+
+    for attempt in xrange(5):
+        response = requests.request('POST', url, data = data, verify = False, timeout = 600, cert = (cert, key))
+
+        if response.status_code == 200:
+            return response.text
+        elif response.status_code == 503:
+            print 'Server is unavailable:', response.text
+            time.sleep(2)
+            continue
+        else:
+            raise RuntimeError(response.text)
+
+
 if __name__ == '__main__':
     from argparse import ArgumentParser
 
@@ -103,12 +159,32 @@ if __name__ == '__main__':
     args = parser.parse_args()
     sys.argv = []
 
+    items = args.datasets + args.blocks
+
     try:
-        if args.cancel is not None:
-            print cancelcopy(args.host, args.cert, args.key, args.cancel)
-        else:
-            items = args.datasets + args.blocks
+        if args.delete:
+            if args.poll is not None:
+                if args.poll == 0:
+                    args.poll = None
+                if len(items) == 0:
+                    items = None
         
+                print polldelete(args.host, args.cert, args.key, args.poll, items, args.sites, args.statuses, args.users)
+        
+            else:
+                if len(items) == 0:
+                    raise RuntimeError('Missing --dataset or --block.')
+
+                if args.sites is None:
+                    raise RuntimeError('Missing --site')
+
+                print requestdelete(args.host, args.cert, args.key, items, args.sites)
+
+        else:
+            if args.cancel is not None:
+                print cancelcopy(args.host, args.cert, args.key, args.cancel)
+                sys.exit(0)
+
             if args.poll is not None:
                 if args.poll == 0:
                     args.poll = None

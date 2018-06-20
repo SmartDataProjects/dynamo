@@ -3,6 +3,8 @@ import fnmatch
 
 from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedRequest, InvalidRequest
 from dynamo.web.modules._userdata import UserDataMixin
+from dynamo.utils.interface.mysql import MySQL
+import dynamo.dataformat as df
 
 class ParseInputMixin(UserDataMixin):
     def __init__(self, config):
@@ -153,7 +155,7 @@ class SaveParamsMixin(object):
         self.history_block_names = []
 
     def save_params(self, caller = None):
-        if 'group' in self.requests:
+        if 'group' in self.request:
             self.history.insert_update('groups', ('name',), self.request['group'], update_columns = ('name',))
 
         if caller is not None:
@@ -224,7 +226,7 @@ class SaveParamsMixin(object):
         self.history.create_tmp_table('blocks_tmp', columns)
 
         if item:
-            if len(self.history_dataset_names) != 0
+            if len(self.history_dataset_names) != 0:
                 self.history.insert_select_many('datasets_tmp', ('dataset_id',), 'datasets', ('id',), 'name', self.history_dataset_names, db = self.history.scratch_db)
             if len(self.history_block_names) != 0:
                 self.history.insert_select_many('blocks_tmp', ('block_id',), 'blocks', ('id',), ('dataset_id', 'name'), self.history_block_names, db = self.history.scratch_db)

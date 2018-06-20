@@ -252,7 +252,7 @@ class MakeCopyRequest(WebModule, CopyRequestMixin):
 
             if existing is None:
                 # create a new request
-                requests = self.create_request(inventory, caller)
+                requests = self.create_request(caller)
 
             else:
                 existing.request_count += 1
@@ -273,7 +273,7 @@ class MakeCopyRequest(WebModule, CopyRequestMixin):
         # requests is a single-element dictionary
         return [r.to_dict() for r in requests.itervalues()]
 
-    def create_request(self, inventory, caller):
+    def create_request(self, caller):
         if 'item' not in self.request:
             raise MissingParameter('item')
 
@@ -382,6 +382,7 @@ class CancelCopyRequest(WebModule, CopyRequestMixin):
 
             else:
                 raise InvalidRequest('Request %d cannot be cancelled any more' % request_id)
+
 
         finally:
             self.registry.unlock_tables()

@@ -550,7 +550,7 @@ class MySQL(object):
         if insert_fields:
             sqlbase += ' (%s)' % ','.join('`%s`' % f for f in insert_fields)
 
-        sqlbase += self._form_select_many_sql(select_table, select_fields)
+        sqlbase += ' ' + self._form_select_many_sql(select_table, select_fields)
             
         if insert_fields and do_update:
             if update_columns is None:
@@ -709,7 +709,8 @@ class MySQL(object):
 
             return
 
-        elif type(pool) is str:
+        elif type(pool) is MySQL.bare or type(pool) is str:
+            # case str: backward compatibility
             execute(pool)
 
             return
