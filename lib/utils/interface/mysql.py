@@ -614,6 +614,10 @@ class MySQL(object):
             else:
                 terms.append(('`%s`' % table, 'WRITE'))
 
+        if len(terms) == 0:
+            # why was the function even called?
+            return
+
         # acquire thread lock so that other threads don't access the database while table locks are on
         self._connection_lock.acquire()
 
@@ -728,6 +732,9 @@ class MySQL(object):
         try:
             obj = itr.next()
         except StopIteration:
+            # empty set!
+            pool_expr = '(NULL)'
+            execute(pool_expr)
             return
 
         # type-checking the element - all elements must share a type
