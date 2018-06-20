@@ -34,17 +34,18 @@ class CopyRequest(object):
         self.active_copies = None
 
     def to_dict(self):
-        d = {'request_id': self.request_id,
-             'item': self.items,
-             'site': self.sites,
-             'group': self.group,
-             'n': self.n,
-             'status': self.status,
-             'first_request': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(self.first_request)),
-             'last_request': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(self.last_request)),
-             'request_count': self.request_count,
-             'user': self.user,
-             'dn': self.user_dn
+        d = {
+            'request_id': self.request_id,
+            'item': self.items,
+            'site': self.sites,
+            'group': self.group,
+            'n': self.n,
+            'status': self.status,
+            'first_request': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(self.first_request)),
+            'last_request': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(self.last_request)),
+            'request_count': self.request_count,
+            'user': self.user,
+            'dn': self.user_dn
         }
 
         if self.status == 'rejected':

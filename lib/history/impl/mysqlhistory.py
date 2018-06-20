@@ -45,7 +45,10 @@ class MySQLHistory(TransactionHistoryInterface):
 
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        return self._mysql.insert_get_id('copy_operations', columns = ('cycle_id', 'timestamp', 'site_id'), values = (cycle_number, MySQL.bare('NOW()'), site_id))
+        operation_id = self._mysql.insert_get_id('copy_operations', columns = ('timestamp', 'site_id'), values = (MySQL.bare('NOW()'), site_id))
+        self._mysql.query('INSERT INTO `cycle_copy_operations` (`cycle_id`, `operation_id`) VALUES (%s, %s)', cycle_number, operation_id)
+
+        return operation_id
 
     def make_deletion_entry(self, cycle_number, site): #override
         if self.test or self.read_only or cycle_number == 0:
@@ -56,7 +59,10 @@ class MySQLHistory(TransactionHistoryInterface):
 
         site_id = self._mysql.query('SELECT `id` FROM `sites` WHERE `name` LIKE %s', site.name)[0]
 
-        return self._mysql.insert_get_id('deletion_operations', columns = ('cycle_id', 'timestamp', 'site_id'), values = (cycle_number, MySQL.bare('NOW()'), site_id))
+        operation_id = self._mysql.insert_get_id('deletion_operations', columns = ('timestamp', 'site_id'), values = (MySQL.bare('NOW()'), site_id))
+        self._mysql.query('INSERT INTO `cycle_deletion_operations` (`cycle_id`, `operation_id`) VALUES (%s, %s)', cycle_number, operation_id)
+
+        return operation_id
 
     def update_copy_entry(self, copy_record): #override
         if self.test or self.read_only:
