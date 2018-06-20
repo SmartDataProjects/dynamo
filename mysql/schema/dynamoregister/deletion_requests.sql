@@ -5,6 +5,6 @@ CREATE TABLE `deletion_requests` (
   `status` enum('new','activated') NOT NULL DEFAULT 'new',
   PRIMARY KEY (`id`),
   KEY `user` (`user_id`),
-  KEY `timestamp` (`timestamp`),
+  KEY `request_time` (`request_time`),
   KEY `status` (`status`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;

@@ -104,11 +104,12 @@ class MySQLHistory(TransactionHistoryInterface):
         sql = 'SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, d.`name`, s.`name`, c.`size`'
         sql += ' FROM `copied_replicas` AS c'
         sql += ' INNER JOIN `copy_operations` AS h ON h.`id` = c.`copy_id`'
-        sql += ' INNER JOIN `cycles` AS r ON r.`id` = h.`cycle_id`'
+        sql += ' INNER JOIN `cycle_copy_operations` AS cc ON cc.`operation_id` = c.`id`'
+        sql += ' INNER JOIN `cycles` AS r ON r.`id` = cc.`cycle_id`'
         sql += ' INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id`'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`'
         sql += ' INNER JOIN `sites` AS s ON s.`id` = h.`site_id`'
-        sql += ' WHERE h.`id` > 0 AND p.`name` LIKE \'%s\' AND c.`status` = \'enroute\' AND h.`cycle_id` > 0' % partition
+        sql += ' WHERE h.`id` > 0 AND p.`name` LIKE \'%s\' AND c.`status` = \'enroute\' AND cc.`cycle_id` > 0' % partition
         sql += ' ORDER BY h.`id`'
 
         records = []
