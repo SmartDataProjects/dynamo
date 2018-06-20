@@ -7,7 +7,7 @@ from dynamo.web.exceptions import InvalidRequest
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._mysqlregistry import MySQLRegistryMixin
 from dynamo.web.modules._mysqlhistory import MySQLHistoryMixin
-from dynamo.web.midules.request.mixin import ParseInputMixin, SaveParamsMixin
+from dynamo.web.modules.request.mixin import ParseInputMixin, SaveParamsMixin
 from dynamo.utils.interface.mysql import MySQL
 import dynamo.dataformat as df
 
