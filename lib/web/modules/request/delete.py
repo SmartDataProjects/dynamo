@@ -122,13 +122,13 @@ class DeletionRequestMixin(ParseInputMixin, SaveParamsMixin, MySQLRegistryMixin,
         if len(live_requests) != 0:
             # get the sites
             sql = 'SELECT s.`request_id`, s.`site` FROM `deletion_request_sites` AS s WHERE s.`request_id` IN (%s)' %  ','.join('%d' % d for d in live_requests.iterkeys())
-            for rid, site in self.registry.xquery(sql):
-                live_requests[rid].sites.append(site)
+            for rid, sname in self.registry.xquery(sql):
+                live_requests[rid].sites.append(sname)
     
             # get the items
             sql = 'SELECT i.`request_id`, i.`item` FROM `deletion_request_items` AS i WHERE i.`request_id` IN (%s)' %  ','.join('%d' % d for d in live_requests.iterkeys())
-            for rid, item in self.registry.xquery(sql):
-                live_requests[rid].items.append(item)
+            for rid, iname in self.registry.xquery(sql):
+                live_requests[rid].items.append(iname)
 
             if request_id is not None:
                 # we've found the request already
@@ -220,7 +220,7 @@ class MakeDeletionRequest(WebModule, DeletionRequestMixin):
                     existing = self.existing[request_id]
 
             if existing is not None:
-                return [existing]
+                return [existing.to_dict()]
 
             else:
                 requests = self.create_request(caller)
