@@ -59,10 +59,12 @@ class CopyRequestManager(RequestManager):
             ('copy_request_items', 'i'), 'copy_request_items', ('copy_request_sites', 's'), 'copy_request_sites'
         ]
 
-        self.registry.lock_tables(write = tables)
+        if not self.dry_run:
+            self.registry.lock_tables(write = tables)
 
     def save_group(self, group):
-        self.history.insert_update('groups', ('name',), group, update_columns = ('name',))
+        if not self.dry_run:
+            self.history.insert_update('groups', ('name',), group, update_columns = ('name',))
 
     def get_requests(self, authorizer, request_id = None, statuses = None, users = None, items = None, sites = None): #override
         live_requests = {}
@@ -211,6 +213,9 @@ class CopyRequestManager(RequestManager):
     def create_request(self, caller, items, sites, group, ncopies):
         now = int(time.time())
 
+        if self.dry_run:
+            return CopyRequest(0, caller.name, caller.dn, group, ncopies, 'new', now, now, 1)
+
         # Make an entry in registry
         columns = ('group', 'num_copies', 'user_id', 'first_request_time', 'last_request_time')
         values = (group, ncopies, caller.id, MySQL.bare('FROM_UNIXTIME(%d)' % now), MySQL.bare('FROM_UNIXTIME(%d)' % now))
@@ -248,6 +253,9 @@ class CopyRequestManager(RequestManager):
         return self.get_requests(request_id = request_id)[request_id]
 
     def update_request(self, request):
+        if self.dry_run:
+            return
+
         sql = 'UPDATE `copy_requests` SET `group` = %s, `num_copies` = %s, `last_request_time` = FROM_UNIXTIME(%s), `request_count` = %s WHERE `id` = %s'
         self.registry.query(sql, request.group, request.n, request.last_request, request.request_count, request.request_id)
 
@@ -255,6 +263,9 @@ class CopyRequestManager(RequestManager):
         self.history.query(sql, request.group, request.n, request.request_id)
 
     def cancel_request(self, request_id):
+        if self.dry_run:
+            return
+
         sql = 'UPDATE `copy_requests` SET `status` = \'cancelled\' WHERE `id` = %s'
         self.history.query(sql, request_id)
 

@@ -16,6 +16,8 @@ class RequestManager(object):
 
         self.optype = optype
 
+        self.dry_run = config.get('dry_run', False)
+
     def lock(self):
         self.registry.lock_tables()
 
@@ -23,16 +25,18 @@ class RequestManager(object):
         self.registry.unlock_tables()
 
     def save_user(self, caller):
-        self.history.insert_update('users', ('name', 'dn'), caller.name, caller.dn, update_columns = ('name',))
+        if not self.dry_run:
+            self.history.insert_update('users', ('name', 'dn'), caller.name, caller.dn, update_columns = ('name',))
 
     def save_sites(self, sites):
-        self.history.insert_many('sites', ('name',), MySQL.make_tuple, sites)
+        if not self.dry_run:
+            self.history.insert_many('sites', ('name',), MySQL.make_tuple, sites)
 
     def save_items(self, items, dataset_names = [], block_names = []):
         del dataset_names[:]
         del block_names[:]
 
-        block_dataset_names = []
+        block_dataset_names = set()
         for item in items:
             # names are validated already
             try:
@@ -40,19 +44,27 @@ class RequestManager(object):
             except df.ObjectError:
                 dataset_names.append(item)
             else:
-                block_dataset_names.append(dataset_name)
+                block_dataset_names.add(dataset_name)
                 block_names.append((dataset_name, df.Block.to_real_name(block_name)))
 
-        self.history.insert_many('datasets', ('name',), MySQL.make_tuple, dataset_names)
-        self.history.insert_many('blocks', ('name',), MySQL.make_tuple, block_dataset_names)
+        if not self.dry_run:
+            self.history.insert_many('datasets', ('name',), MySQL.make_tuple, dataset_names)
+            self.history.insert_many('datasets', ('name',), MySQL.make_tuple, block_dataset_names)
 
         dataset_id_map = dict(self.history.select_many('datasets', ('name', 'id'), 'name', block_dataset_names))
         # redefine block_names with dataset id
         for i in xrange(len(block_names)):
             dname, bname = block_names[i]
-            block_names[i] = (dataset_id_map[dname], bname)
+            try:
+                dataset_id = dataset_id_map[dname]
+            except KeyError:
+                # can happen in dry runs
+                dataset_id = 0
 
-        self.history.insert_many('blocks', ('dataset_id', 'name'), None, block_names)
+            block_names[i] = (dataset_id, bname)
+
+        if not self.dry_run:
+            self.history.insert_many('blocks', ('dataset_id', 'name'), None, block_names)
 
     def make_temp_registry_tables(self, items, sites):
         # Make temporary tables and fill copy_ids_tmp with ids of requests whose item and site lists fully cover the provided list of items and sites.

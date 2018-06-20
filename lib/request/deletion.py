@@ -41,9 +41,7 @@ class DeletionRequest(object):
 
 class DeletionRequestManager(RequestManager):
     def __init__(self, config):
-        RequestManager.__init__(self, config, 'copy')
-
-        self.authorizer = None
+        RequestManager.__init__(self, config, 'deletion')
 
     def lock(self):
         # Caller of this function is responsible for unlocking
@@ -53,7 +51,8 @@ class DeletionRequestManager(RequestManager):
             ('deletion_request_items', 'i'), 'deletion_request_items', ('deletion_request_sites', 's'), 'deletion_request_sites'
         ]
 
-        self.registry.lock_tables(write = tables)
+        if not self.dry_run:
+            self.registry.lock_tables(write = tables)
 
     def get_requests(self, authorizer, request_id = None, statuses = None, users = None, items = None, sites = None): #override
         live_requests = {}
@@ -200,6 +199,9 @@ class DeletionRequestManager(RequestManager):
 
     def create_request(self, caller, items, sites):
         now = int(time.time())
+
+        if self.dry_run:
+            return DeletionRequest(0, caller.name, caller.dn, 'new', now, None)
 
         # Make an entry in registry
         columns = ('user_id', 'request_time')
