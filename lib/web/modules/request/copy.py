@@ -3,11 +3,11 @@ import calendar
 import json
 import logging
 
-from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedRequest, InvalidRequest, AuthorizationError
+from dynamo.web.exceptions import InvalidRequest
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._mysqlregistry import MySQLRegistryMixin
 from dynamo.web.modules._mysqlhistory import MySQLHistoryMixin
-from dynamo.web.modules._userdata import UserDataMixin
+from dynamo.web.midules.request.mixin import ParseInputMixin, SaveParamsMixin
 from dynamo.utils.interface.mysql import MySQL
 import dynamo.dataformat as df
 
@@ -58,7 +58,8 @@ class CopyRequest(object):
         
         return d
 
-class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
+
+class CopyRequestMixin(MySQLRegistryMixin, MySQLHistoryMixin, ParseInputMixin, SaveParamsMixin):
     """
     A mixin defining methods common to Make, Poll, and Cancel.
     Requests are written in registry when they are in new and activated states.
@@ -66,108 +67,14 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
     """
 
     def __init__(self, config):
-        UserDataMixin.__init__(self, config)
         MySQLRegistryMixin.__init__(self, config)
         MySQLHistoryMixin.__init__(self, config)
-
-        self.request = {}
-        self.existing = {}
-
-        self.user_info_cache = {} # {name: (id, dn), id: (name, dn)}
+        ParseInputMixin.__init__(self, config)
+        SaveParamsMixin.__init__(self, config)
 
         # we'll be using temporary tables
         self.registry.reuse_connection = True
         self.history.reuse_connection = True
-
-    def parse_input(self, request, inventory, allowed_fields, required_fields = tuple()):
-        # Check we have the right request fields
-
-        input_fields = set(request.keys())
-        allowed_fields = set(allowed_fields)
-        excess = input_fields - allowed_fields
-        if len(excess) != 0:
-            raise ExtraParameter(list(excess)[0])
-
-        for key in required_fields:
-            if key not in request:
-                raise MissingParameter(key)
-
-        # Pick up the values and cast them to correct types
-
-        for key in ['request_id', 'n']:
-            if key not in request:
-                continue
-
-            try:
-                self.request[key] = int(request[key])
-            except ValueError:
-                raise IllFormedRequest(key, request[key], hint = '%s must be an integer' % key)
-
-        for key in ['item', 'status', 'site', 'user']:
-            if key not in request:
-                continue
-
-            value = request[key]
-            if type(value) is str:
-                self.request[key] = value.strip().split(',')
-            elif type(value) is list:
-                self.request[key] = value
-            else:
-                raise IllFormedRequest(key, request[key], hint = '%s must be a string or a list' % key)
-
-        for key in ['group']:
-            if key not in request:
-                continue
-
-            self.request[key] = request[key]
-
-        # Check value validity
-        # We check the site, group, and item names but not use their ids in the table.
-        # The only reason for this would be to make the registry not dependent on specific inventory store technology.
-
-        if 'item' in self.request:
-            for item in self.request['item']:
-                if item in inventory.datasets:
-                    # OK this is a known dataset
-                    continue
-    
-                try:
-                    dataset_name, block_name = df.Block.from_full_name(item)
-                except df.ObjectError:
-                    raise InvalidRequest('Invalid item name %s' % item)
-    
-                try:
-                    inventory.datasets[dataset_name].find_block(block_name, must_find = True)
-                except:
-                    raise InvalidRequest('Invalid block name %s' % item)
-
-        if 'site' in self.request:
-            for site in self.request['site']:
-                try:
-                    inventory.sites[site]
-                except KeyError:
-                    raise InvalidRequest('Invalid site name %s' % site)
-
-        if 'group' in self.request:
-            try:
-                inventory.groups[self.request['group']]
-            except KeyError:
-                raise InvalidRequest('Invalid group name %s' % self.request['group'])
-
-        # Minor security concern: do we want to expose the user list this way?
-        if 'user' in self.request:
-            for uname in self.request['user']:
-                result = self.authorizer.identify_user(name = uname)
-                if result is None:
-                    raise InvalidRequest('Invalid user name %s' % uname)
-
-                self.user_info_cache[uname] = result[1:] # id, dn
-                self.user_info_cache[result[1]] = (uname, result[2]) # name, dn
-
-        if 'status' in self.request:
-            for status in self.request['status']:
-                if status not in ('new', 'activated', 'completed', 'rejected', 'cancelled'):
-                    raise InvalidRequest('Invalid status value %s' % status)
 
     def lock_tables(self):
         # Caller of this function is responsible for unlocking
@@ -179,122 +86,7 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
 
         self.registry.lock_tables(write = tables)
 
-    def load_existing(self, by_id = False):
-        """
-        Find an existing copy request from values in self.request and set self.existing.
-        """
-        constraints = {}
-        if 'request_id' in self.request:
-            constraints['request_id'] = self.request['request_id']
-
-        if not by_id:
-            if 'status' in self.request:
-                constraints['status'] = self.request['status']
-            elif 'request_id' not in self.request:
-                # limit to live requests
-                constraints['status'] = ['new', 'activated']
-    
-            if 'user' in self.request:
-                constraints['user'] = self.request['user']
-    
-            if 'item' in self.request:
-                constraints['item'] = self.request['item']
-
-            if 'site' in self.request:
-                constraints['site'] = self.request['site']
-
-        self.existing = self.fill_from_sql(**constraints)
-
-    def make_temp_registry_tables(self):
-        # Make temporary tables and fill copy_ids_tmp with ids of requests whose item and site lists fully cover the provided list of items and sites.
-        columns = ['`item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL']
-        self.registry.create_tmp_table('copy_items_tmp', columns)
-        if 'item' in self.request:
-            mapping = lambda i: (i,)
-            self.registry.insert_many('copy_items_tmp', ('item',), mapping, self.request['item'], db = self.registry.scratch_db)
-
-        columns = ['`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL']
-        self.registry.create_tmp_table('copy_sites_tmp', columns)
-        if 'site' in self.request:
-            mapping = lambda s: (s,)
-            self.registry.insert_many('copy_sites_tmp', ('site',), mapping, self.request['site'], db = self.registry.scratch_db)
-
-        columns = [
-            '`id` int(10) unsigned NOT NULL AUTO_INCREMENT',
-            'PRIMARY KEY (`id`)'
-        ]
-        self.registry.create_tmp_table('copy_ids_tmp', columns)
-
-        sql = 'INSERT INTO `{db}`.`copy_ids_tmp`'
-        sql += ' SELECT r.`id` FROM `copy_requests` AS r WHERE'
-        sql += ' 0 NOT IN (SELECT (`site` IN (SELECT `site` FROM `copy_request_sites` AS s WHERE s.`request_id` = r.`id`)) FROM `{db}`.`copy_sites_tmp`)'
-        sql += ' AND '
-        sql += ' 0 NOT IN (SELECT (`item` IN (SELECT `item` FROM `copy_request_items` AS i WHERE i.`request_id` = r.`id`)) FROM `{db}`.`copy_items_tmp`)'
-        self.registry.query(sql.format(db = self.registry.scratch_db))
-
-    def make_temp_history_tables(self):
-        # Make temporary tables and fill copy_ids_tmp with ids of requests whose item and site lists fully cover the provided list of items and sites.
-        columns = ['`dataset_id` int(10) unsigned NOT NULL']
-        self.history.create_tmp_table('copy_datasets_tmp', columns)
-        columns = ['`block_id` bigint(20) unsigned NOT NULL']
-        self.history.create_tmp_table('copy_blocks_tmp', columns)
-
-        if 'item' in self.request:
-            dataset_names, block_names = self.save_items()
-            self.history.insert_select_many('copy_datasets_tmp', ('dataset_id',), 'datasets', ('id',), 'name', dataset_names, db = self.history.scratch_db)
-            self.history.insert_select_many('copy_blocks_tmp', ('block_id',), 'blocks', ('id',), ('dataset_id', 'name'), block_names, db = self.history.scratch_db)
-
-        columns = ['`site_id` int(10) unsigned NOT NULL']
-        self.history.create_tmp_table('copy_sites_tmp', columns)
-
-        if 'site' in self.request:
-            self.history.insert_many('sites', ('name',), MySQL.make_tuple, self.request['site'])
-            self.history.insert_select_many('copy_sites_tmp', ('site_id',), 'sites', ('id',), 'name', self.request['site'], db = self.history.scratch_db)
-
-        columns = [
-            '`id` int(10) unsigned NOT NULL AUTO_INCREMENT',
-            'PRIMARY KEY (`id`)'
-        ]
-        self.history.create_tmp_table('copy_ids_tmp', columns)
-
-        sql = 'INSERT INTO `{db}`.`copy_ids_tmp`'
-        sql += ' SELECT r.`id` FROM `copy_requests` AS r WHERE'
-        sql += ' 0 NOT IN (SELECT (`site_id` IN (SELECT `site_id` FROM `copy_request_sites` AS s WHERE s.`request_id` = r.`id`)) FROM `{db}`.`copy_sites_tmp`)'
-        sql += ' AND '
-        sql += ' 0 NOT IN (SELECT (`dataset_id` IN (SELECT `dataset_id` FROM `copy_request_datasets` AS d WHERE d.`request_id` = r.`id`)) FROM `{db}`.`copy_datasets_tmp`)'
-        sql += ' AND '
-        sql += ' 0 NOT IN (SELECT (`block_id` IN (SELECT `block_id` FROM `copy_request_blocks` AS b WHERE b.`request_id` = r.`id`)) FROM `{db}`.`copy_blocks_tmp`)'
-        self.history.query(sql.format(db = self.history.scratch_db))
-
-    def save_items(self):
-        # Save the datasets and blocks to the history DB and return ([dataset name], [(dataset id, block name)])
-        dataset_names = []
-        block_dataset_names = []
-        block_names = []
-        for item in self.request['item']:
-            # names are validated already
-            try:
-                dataset_name, block_name = df.Block.from_full_name(item)
-            except df.ObjectError:
-                dataset_names.append(item)
-            else:
-                block_dataset_names.append(dataset_name)
-                block_names.append((dataset_name, df.Block.to_real_name(block_name)))
-
-        self.history.insert_many('datasets', ('name',), MySQL.make_tuple, dataset_names)
-        self.history.insert_many('blocks', ('name',), MySQL.make_tuple, block_dataset_names)
-
-        dataset_id_map = dict(self.history.select_many('datasets', ('name', 'id'), 'name', block_dataset_names))
-        # redefine block_names with dataset id
-        for i in xrange(len(block_names)):
-            dname, bname = block_names[i]
-            block_names[i] = (dataset_id_map[dname], bname)
-
-        self.history.insert_many('blocks', ('dataset_id', 'name'), None, block_names)
-
-        return dataset_names, block_names
-
-    def fill_from_sql(self, request_id = None, status = None, user = None, item = None, site = None):
+    def fill_from_sql(self, request_id = None, status = None, user = None, item = None, site = None): #override
         live_requests = {}
 
         sql = 'SELECT r.`id`, r.`group`, r.`num_copies`, r.`status`, UNIX_TIMESTAMP(r.`first_request_time`), UNIX_TIMESTAMP(r.`last_request_time`),'
@@ -310,8 +102,8 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
         if user is not None:
             constraints.append('r.`user_id` IN (%s)' % ','.join('%d' % self.user_info_cache[u][0] for u in user))
         if item is not None or site is not None:
-            self.make_temp_registry_tables()
-            constraints.append('r.`id` IN (SELECT `id` FROM `{0}`.`copy_ids_tmp`)'.format(self.registry.scratch_db))
+            self.make_temp_registry_tables('copy', item, site)
+            constraints.append('r.`id` IN (SELECT `id` FROM `{0}`.`ids_tmp`)'.format(self.registry.scratch_db))
 
         if len(constraints) != 0:
             sql += ' WHERE ' + ' AND '.join(constraints)
@@ -360,6 +152,8 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
             # there's nothing in the archive
             return live_requests
 
+        self.save_params()
+
         archived_requests = {}
 
         sql = 'SELECT r.`id`, g.`name`, r.`num_copies`, r.`status`, UNIX_TIMESTAMP(r.`request_time`),'
@@ -376,8 +170,8 @@ class CopyRequestMixin(UserDataMixin, MySQLRegistryMixin, MySQLHistoryMixin):
         if user is not None:
             constraints.append('r.`user_id` IN (SELECT `id` FROM `users` WHERE `name` IN (%s))' % ','.join('\'%s\'' % u for u in user))
         if item is not None or site is not None:
-            self.make_temp_history_tables()
-            constraints.append('r.`id` IN (SELECT `id` FROM `{0}`.`copy_ids_tmp`)'.format(self.history.scratch_db))
+            self.make_temp_history_tables('copy', item is not None, site)
+            constraints.append('r.`id` IN (SELECT `id` FROM `{0}`.`ids_tmp`)'.format(self.history.scratch_db))
 
         if len(constraints) != 0:
             sql += ' WHERE ' + ' AND '.join(constraints)
@@ -425,6 +219,7 @@ class MakeCopyRequest(WebModule, CopyRequestMixin):
 
         # config.request.copy points to the "copy" method of dict
         self.default_group = config['request']['copy']['default_group']
+        self.default_site = config['request']['copy'].get('default_site', [])
 
     def run(self, caller, request, inventory):
         self.parse_input(request, inventory, ('request_id', 'item', 'site', 'group', 'n'))
@@ -479,11 +274,20 @@ class MakeCopyRequest(WebModule, CopyRequestMixin):
         return [r.to_dict() for r in requests.itervalues()]
 
     def create_request(self, inventory, caller):
+        if 'item' not in self.request:
+            raise MissingParameter('item')
+
         if 'n' not in self.request:
             self.request['n'] = 1
 
         if 'group' not in self.request:
             self.request['group'] = self.default_group
+
+        if 'site' not in self.request:
+            if len(self.default_site) == 0:
+                raise MissingParameter('site')
+            else:
+                self.request['site'] = list(self.default_site)
 
         now = int(time.time())
 
@@ -501,10 +305,7 @@ class MakeCopyRequest(WebModule, CopyRequestMixin):
         self.registry.insert_many('copy_request_items', fields, mapping, self.request['item'])
 
         # Make an entry in history
-        dataset_names, block_names = self.save_items()
-        self.history.insert_update('groups', ('name',), self.request['group'], update_columns = ('name',))
-        self.history.insert_update('users', ('name', 'dn'), caller.name, caller.dn, update_columns = ('name',))
-        self.history.insert_many('sites', ('name',), MySQL.make_tuple, self.request['site'])
+        self.save_params(caller)
 
         sql = 'INSERT INTO `copy_requests` (`id`, `group_id`, `num_copies`, `user_id`, `request_time`)'
         sql += ' SELECT %s, g.`id`, %s, u.`id`, FROM_UNIXTIME(%s) FROM `groups` AS g, `users` AS u'
@@ -513,9 +314,11 @@ class MakeCopyRequest(WebModule, CopyRequestMixin):
 
         self.history.insert_select_many('copy_request_sites', ('request_id', 'site_id'), 'sites', (MySQL.bare('%d' % request_id), 'id'), 'name', self.request['site'])
 
-        self.history.insert_select_many('copy_request_datasets', ('request_id', 'dataset_id'), 'datasets', (MySQL.bare('%d' % request_id), 'id'), 'name', dataset_names)
+        # history_dataset_names set in save_params
+        self.history.insert_select_many('copy_request_datasets', ('request_id', 'dataset_id'), 'datasets', (MySQL.bare('%d' % request_id), 'id'), 'name', self.history_dataset_names)
 
-        self.history.insert_select_many('copy_request_blocks', ('request_id', 'block_id'), 'blocks', (MySQL.bare('%d' % request_id), 'id'), ('dataset_id', 'name'), block_names)
+        # history_block_names set in save_params
+        self.history.insert_select_many('copy_request_blocks', ('request_id', 'block_id'), 'blocks', (MySQL.bare('%d' % request_id), 'id'), ('dataset_id', 'name'), self.history_block_names)
 
         return self.fill_from_sql(request_id = request_id)
 

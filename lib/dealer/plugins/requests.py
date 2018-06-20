@@ -1,8 +1,6 @@
 import collections
 import logging
-import fnmatch
 import random
-import re
 
 from dynamo.dealer.plugins.base import BaseHandler, DealerRequest
 from dynamo.utils.interface.mysql import MySQL
@@ -201,25 +199,19 @@ class CopyRequestsHandler(BaseHandler):
                 reject(request_id, 'Invalid group name %s' % group_name)
                 continue
 
-            sites = [] # list of sites
+            sites = [] # list of sites. User can give wildcards but the web interface resolves them
 
             for site_name in site_names:
-                if '*' in site_name:
-                    site_pat = re.compile(fnmatch.translate(site_name))
-                    for site in policy.target_sites:
-                        if site_pat.match(site.name):
-                            sites.append(site)
-                else:
-                    try:
-                        site = inventory.sites[site_name]
-                    except KeyError:
-                        continue
+                try:
+                    site = inventory.sites[site_name]
+                except KeyError:
+                    continue
 
-                    if site in policy.target_sites:
-                        sites.append(site)
+                if site in policy.target_sites:
+                    sites.append(site)
 
             if len(sites) == 0:
-                reject(request_id, 'No valid site name in list')
+                reject(request_id, 'Target sites not available for transfers')
                 continue
 
             # randomize site ordering
