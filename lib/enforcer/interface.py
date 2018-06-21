@@ -131,7 +131,7 @@ class EnforcerInterface(object):
 
                         if replica.is_full():
                             num_complete += 1
-                        else:
+                        elif not replica.is_complete():
                             num_incomplete += 1
                             data_incomplete[replica.site.name] = str(replica.size(physical = True)) + "__" + str(replica.size(physical = False))
 
