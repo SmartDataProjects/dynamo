@@ -83,6 +83,20 @@
       }
     }
   },
+  "request.common:RequestManager": {
+    "fullauth": {
+      "registry": {
+        "db": "dynamoregister",
+        "user": "dynamo"
+      }
+    },
+    "readonly": {
+      "registry": {
+        "db": "dynamoregister",
+        "user": "dynamoread"
+      }
+    }
+  },
   "detox.history:DetoxHistoryBase": {
     "all": {
       "cache_db": "dynamohistory_cache",

@@ -106,22 +106,23 @@ class HistoryDatabase(object):
         self.save_datasets(datasets)
 
         columns = [
-            '`dataset` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL'
+            '`dataset` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL',
             '`block` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL'
         ]
         self.db.create_tmp_table('blocks_tmp', columns)
         self.db.insert_many('blocks_tmp', ('dataset', 'block'), None, block_list, db = self.db.scratch_db)
 
-        sql = 'INSERT INTO `blocks` (`dataset_id`, `name`) SELECT d.`id`, b.`block` FROM `{scratch}`.`blocks_tmp`'.format(scratch = self.db.scratch_db)
+        sql = 'INSERT INTO `blocks` (`dataset_id`, `name`)'
+        sql += ' SELECT d.`id`, b.`block` FROM `{scratch}`.`blocks_tmp` AS b'.format(scratch = self.db.scratch_db)
         sql += ' INNER JOIN `datasets` AS d ON d.`name` = b.`dataset`'
         self.db.query(sql)
 
         if get_ids:
             sql = 'SELECT b.`id` FROM `blocks` AS b'
-            sql += 'INNER JOIN (SELECT d.`id` dataset_id, t.`block` block_name FROM `{scratch}`.`blocks_tmp` AS t'.format(scratch = self.history.db.scratch_db)
+            sql += ' INNER JOIN (SELECT d.`id` dataset_id, t.`block` block_name FROM `{scratch}`.`blocks_tmp` AS t'.format(scratch = self.db.scratch_db)
             sql += ' INNER JOIN `datasets` AS d ON d.`name` = t.`dataset`) AS j ON (j.`dataset_id`, j.`block_name`) = (b.`dataset_id`, b.`name`)'
 
-            ids = self.history.db.query(sql)
+            ids = self.db.query(sql)
 
         self.db.drop_tmp_table('blocks_tmp')
         self.db.reuse_connection = reuse_orig

@@ -110,7 +110,7 @@ class DealerHistory(DealerHistoryBase):
         if self.read_only:
             return
 
-        self.db.query('UPDATE `cycles` SET `time_end` = FROM_UNIXTIME(%s) WHERE `id` = %s', time.time(), cycle_number)
+        self.db.query('UPDATE `cycles` SET `time_end` = NOW() WHERE `id` = %s', cycle_number)
 
     def make_cycle_entry(self, cycle_id, site):
         history_record = self.make_entry(site)

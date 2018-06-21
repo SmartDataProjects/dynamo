@@ -806,15 +806,20 @@ class MySQL(object):
         if not db:
             db = self.scratch_db
 
-        if self.table_exists(table, db):
-            self.query('TRUNCATE TABLE `%s`.`%s`' % (db, table))
+        table_full = '`%s`.`%s`' % (db, table)[0][1]
+        create_stmt = self.query('SHOW CREATE TABLE %s' % table_full)[0][1]
+        self.query('SET sql_notes = 0')
+        self.query('DROP TABLE IF EXISTS ' + table_full)
+        self.query('SET sql_notes = 1')
+        self.query(create_stmt)
 
     def drop_tmp_table(self, table, db = ''):
         if not db:
             db = self.scratch_db
 
-        if self.table_exists(table, db):
-            self.query('DROP TABLE `%s`.`%s`' % (db, table))
+        self.query('SET sql_notes = 0')
+        self.query('DROP TABLE IF EXISTS `%s`.`%s`' % (db, table))
+        self.query('SET sql_notes = 1')
 
     def make_map(self, table, objects, object_id_map = None, id_object_map = None, key = None, tmp_join = False):
         objitr = iter(objects)

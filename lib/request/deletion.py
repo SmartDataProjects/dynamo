@@ -1,3 +1,5 @@
+import time
+
 from dynamo.request.common import RequestManager
 from dynamo.utils.interface.mysql import MySQL
 
@@ -40,7 +42,7 @@ class DeletionRequest(object):
 
 
 class DeletionRequestManager(RequestManager):
-    def __init__(self, config):
+    def __init__(self, config = None):
         RequestManager.__init__(self, config, 'deletion')
 
     def lock(self): #override

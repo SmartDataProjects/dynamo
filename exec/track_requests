@@ -20,7 +20,7 @@ config = Configuration(args.config)
 ## Set up logging (write to stdout)
 from dynamo.core.executable import read_only, make_standard_logger
 
-LOG = make_standard_logger(config.log_level)
+LOG = make_standard_logger(config.get('log_level', 'info'))
 
 ## Loop over active transfers and check against inventory
 from dynamo.core.executable import inventory, authorizer
@@ -30,9 +30,9 @@ from dynamo.operation.deletion import DeletionInterface
 from dynamo.operation.history import DeletionHistoryDatabase
 import dynamo.dataformat as df
 
-deletion_manager = DeletionRequestManager(config.manager)
-copy_manager = CopyRequestManager(config.manager)
-history = DeletionHistoryDatabase(config.history)
+deletion_manager = DeletionRequestManager()
+copy_manager = CopyRequestManager()
+history = DeletionHistoryDatabase()
 deletion = DeletionInterface.get_instance()
 
 if read_only:

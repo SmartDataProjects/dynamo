@@ -54,7 +54,7 @@ class CopyRequest(object):
 
 
 class CopyRequestManager(RequestManager):
-    def __init__(self, config):
+    def __init__(self, config = None):
         RequestManager.__init__(self, config, 'copy')
 
     def lock(self): #override

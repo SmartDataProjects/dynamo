@@ -19,7 +19,7 @@ class CopyRequestBase(WebModule, UserDataMixin, ParseInputMixin):
         UserDataMixin.__init__(self, config)
         ParseInputMixin.__init__(self, config)
 
-        manager_config = df.Configuration(registry = config.registry, history = config.history)
+        manager_config = df.Configuration(registry = config.registry, history = {'db_params': config.history})
 
         self.manager = CopyRequestManager(manager_config)
 

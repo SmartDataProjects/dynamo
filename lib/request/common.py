@@ -11,13 +11,22 @@ class RequestManager(object):
     to abstractify the class if necessary.
     """
 
-    def __init__(self, config, optype):
+    # default config
+    _config = df.Configuration()
+
+    @staticmethod
+    def set_default(config):
+        RequestManager._config = Configuration(config)
+
+    def __init__(self, config = None, optype):
         """
         @param optype  'copy' or 'deletion'.
         """
+        if config is None:
+            config = RequestManager._config
 
         self.registry = MySQL(config.registry)
-        self.history = HistoryDatabase(config.history)
+        self.history = HistoryDatabase(config.get('history', None))
 
         # we'll be using temporary tables
         self.registry.reuse_connection = True
