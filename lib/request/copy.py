@@ -371,6 +371,7 @@ class CopyRequestManager(RequestManager):
                 if n_complete == len(request.active_deletions):
                     request.status = 'completed'
                     self.update_request(request)
-        
-        if not read_only:
-            self.unlock()
+
+        finally:
+            if not read_only:
+                self.unlock()

@@ -2,21 +2,22 @@ import logging
 
 from dynamo.web.exceptions import InvalidRequest
 from dynamo.web.modules._base import WebModule
+from dynamo.web.modules._userdata import UserDataMixin
 from dynamo.web.modules.request.mixin import ParseInputMixin
 from dynamo.request.copy import CopyRequestManager
 import dynamo.dataformat as df
 
 LOG = logging.getLogger(__name__)
 
-class CopyRequestBase(WebModule, ParseInputMixin, UserDataMixin):
+class CopyRequestBase(WebModule, UserDataMixin, ParseInputMixin):
     """
     Base class for copy requests. Initialize with an input parser and a handle to the authorizer.
     """
 
     def __init__(self, config):
         WebModule.__init__(self, config)
-        ParseInputMixin.__init__(self, config)
         UserDataMixin.__init__(self, config)
+        ParseInputMixin.__init__(self, config)
 
         manager_config = df.Configuration(registry = config.registry, history = config.history)
 

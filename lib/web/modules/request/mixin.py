@@ -2,14 +2,11 @@ import re
 import fnmatch
 
 from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedRequest, InvalidRequest
-from dynamo.web.modules._userdata import UserDataMixin
 from dynamo.utils.interface.mysql import MySQL
 import dynamo.dataformat as df
 
-class ParseInputMixin(object):
+class ParseInputMixin(UserDataMixin):
     def __init__(self, config):
-        UserDataMixin.__init__(self, config)
-
         # Parsed and formatted HTTP queries
         self.params = {}
 
