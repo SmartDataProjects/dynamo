@@ -262,8 +262,7 @@ class DeletionRequestManager(RequestManager):
         # Update active deletion status
         sql_update = 'UPDATE `active_deletions` SET `status` = \'completed\', `updated` = NOW() WHERE `request_id` = %s AND `item` = %s AND `site` = %s'
 
-        if not self.dry_run:
-            self.lock()
+        self.lock()
 
         try:
             sql = 'SELECT r.`id`, a.`item`, a.`site` FROM `active_deletions` AS a'
@@ -310,13 +309,11 @@ class DeletionRequestManager(RequestManager):
                             self.registry.query(sql_update, request_id, item_name, site_name)
                         
         finally:
-            if not self.dry_run:
-                self.unlock()
+            self.unlock()
 
         # Update request status
 
-        if not self.dry_run:
-            self.lock()
+        self.lock()
 
         try:
             active_requests = self.get_requests(authorizer, statuses = ['activated'])
@@ -332,5 +329,4 @@ class DeletionRequestManager(RequestManager):
                     self.update_request(request)
 
         finally:
-            if not self.dry_run:
-                self.unlock()
+            self.unlock()

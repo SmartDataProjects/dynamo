@@ -42,11 +42,12 @@ class RequestManager(object):
         """
         Lock the registry table for lookup + update workflows.
         """
-
-        self.registry.lock_tables()
+        if not self.dry_run:
+            self.registry.lock_tables()
 
     def unlock(self):
-        self.registry.unlock_tables()
+        if not self.dry_run:
+            self.registry.unlock_tables()
 
     def save_items(self, items):
         """
