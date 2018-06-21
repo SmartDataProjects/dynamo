@@ -9,9 +9,6 @@ class DealerHistoryBase(CopyHistoryDatabase):
     Parts of the DealerHistory that can be used by the web dealer monitor.
     """
 
-    def __init__(self, config):
-        OperationHistoryDatabase.__init__(self, config)
-
     def get_incomplete_copies(self, partition):
         """
         Get a list of incomplete copies.

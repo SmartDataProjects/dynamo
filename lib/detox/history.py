@@ -16,7 +16,7 @@ class DetoxHistoryBase(DeletionHistoryDatabase):
     """
 
     def __init__(self, config):
-        OperationHistoryDatabase.__init__(self, config)
+        DeletionHistoryDatabase.__init__(self, config)
 
         self.history_db = self.db.db_name()
         self.cache_db = config.cache_db

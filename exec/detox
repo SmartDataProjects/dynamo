@@ -46,9 +46,7 @@ detox = Detox(config.detox)
 
 if read_only:
     detox.deletion_op.dry_run = True
-    detox.copy_op.dry_run = True
     detox.history.read_only = True
-    detox.detoxhistory.read_only = True
 
 detox.run(inventory, comment = args.comment, create_cycle = not args.snapshot_run)
 
