@@ -28,7 +28,7 @@ class Dealer(object):
         else: # default setting
             self.copy_op = CopyInterface.get_instance()
 
-        self.history = DealerHistory(config.history)
+        self.history = DealerHistory(config.get('history', None))
 
         self._attr_producers = []
 

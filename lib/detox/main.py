@@ -24,7 +24,7 @@ class Detox(object):
         else:
             self.deletion_op = DeletionInterface.get_instance()
 
-        self.history = DealerHistory(config.history)
+        self.history = DetoxHistory(config.get('history', None))
 
         self.policy = DetoxPolicy(config)
 

@@ -20,7 +20,7 @@ class DetoxHistoryBase(DeletionHistoryDatabase):
 
     @staticmethod
     def set_default(config):
-        DetoxHisotryBase._config = Configuration(config)
+        DetoxHistoryBase._config = Configuration(config)
 
     def __init__(self, config = None):
         DeletionHistoryDatabase.__init__(self, config)
