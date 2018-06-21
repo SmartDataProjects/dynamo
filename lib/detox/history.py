@@ -269,7 +269,7 @@ class DetoxHistoryBase(DeletionHistoryDatabase):
             # then update the cache usage
             self._update_cache_usage(template, cycle_number)
 
-        self.db.use_db(None)
+        self.db.use_db(self.history_db)
 
     def _update_cache_usage(self, template, cycle_number):
         self.db.use_db(self.cache_db)
@@ -493,7 +493,7 @@ class DetoxHistory(DetoxHistoryBase):
         os.chmod(db_file_name, 0666)
 
         # reset DB connection
-        self.db.use_db(None)
+        self.db.use_db(self.history_db)
 
         self.db.reuse_connection = reuse
 
@@ -607,7 +607,7 @@ class DetoxHistory(DetoxHistoryBase):
             self._update_cache_usage('replicas', cycle_number)
             self._update_cache_usage('sites', cycle_number)
 
-        self.db.use_db(None)
+        self.db.use_db(self.history_db)
 
         self.db.reuse_connection = reuse
 

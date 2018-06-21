@@ -1,3 +1,5 @@
+import logging
+
 from dynamo.operation.history import CopyHistoryDatabase
 from dynamo.dataformat.history import HistoryRecord
 from dynamo.utils.interface.mysql import MySQL
