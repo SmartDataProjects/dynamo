@@ -51,7 +51,7 @@ copy_manager.collect_updates(inventory, authorizer)
 # Execute deletion operations on new deletion requests
 new_requests = deletion_manager.get_requests(authorizer, statuses = ['new'])
 
-for request in new_requests:
+for request in new_requests.itervalues():
     datasets = {}
 
     for item in request.items:
@@ -131,6 +131,8 @@ for request in new_requests:
         continue
 
     for site, replica_list in replica_lists.iteritems():
+        LOG.info('Issueing deletion of %d replicas at %s', len(replica_list), site.name)
+
         record = history.make_deletion_entry(site.name)
 
         scheduled = deletion.schedule_deletions(replica_list, record.operation_id)

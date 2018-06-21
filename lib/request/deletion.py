@@ -318,7 +318,7 @@ class DeletionRequestManager(RequestManager):
         try:
             active_requests = self.get_requests(authorizer, statuses = ['activated'])
 
-            for request in active_requests:
+            for request in active_requests.itervalues():
                 if request.active_deletions is None:
                     LOG.error('No active deletions for activated request %d', request.request_id)
                     continue

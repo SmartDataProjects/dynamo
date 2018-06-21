@@ -362,13 +362,13 @@ class CopyRequestManager(RequestManager):
         try:
             active_requests = self.get_requests(authorizer, statuses = ['activated'])
 
-            for request in active_requests:
-                if request.active_deletions is None:
+            for request in active_requests.itervalues():
+                if request.active_copies is None:
                     LOG.error('No active copies for activated request %d', request.request_id)
                     continue
 
-                n_complete = sum(1 for a in request.active_deletions if a[2] == 'completed')
-                if n_complete == len(request.active_deletions):
+                n_complete = sum(1 for a in request.active_copies if a[2] == 'completed')
+                if n_complete == len(request.active_copies):
                     request.status = 'completed'
                     self.update_request(request)
 
