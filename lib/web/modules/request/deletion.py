@@ -45,7 +45,7 @@ class MakeDeletionRequest(DeletionRequestBase):
                 return [existing.to_dict()]
 
             else:
-                request = self.manager.create_request(caller, self.params['item'], self.params['site'])
+                request = self.manager.create_request(caller, self.authorizer, self.params['item'], self.params['site'])
                 return [request.to_dict()]
 
         finally:

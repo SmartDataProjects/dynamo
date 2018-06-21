@@ -16,9 +16,9 @@ class RequestManager(object):
 
     @staticmethod
     def set_default(config):
-        RequestManager._config = Configuration(config)
+        RequestManager._config = df.Configuration(config)
 
-    def __init__(self, config = None, optype):
+    def __init__(self, optype, config = None):
         """
         @param optype  'copy' or 'deletion'.
         """

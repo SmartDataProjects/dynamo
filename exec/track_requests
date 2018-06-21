@@ -7,7 +7,7 @@ import time
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Detox')
-parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', required = True, help = 'Configuration JSON.')
+parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', help = 'Configuration JSON.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -30,10 +30,13 @@ from dynamo.operation.deletion import DeletionInterface
 from dynamo.operation.history import DeletionHistoryDatabase
 import dynamo.dataformat as df
 
-deletion_manager = DeletionRequestManager()
-copy_manager = CopyRequestManager()
-history = DeletionHistoryDatabase()
-deletion = DeletionInterface.get_instance()
+deletion_manager = DeletionRequestManager(config.get('manager', None))
+copy_manager = CopyRequestManager(config.get('manager', None))
+history = DeletionHistoryDatabase(config.get('history', None))
+if 'deletion' in config:
+    deletion = DeletionInterface.get_instance(config.deletion.module, config.deletion.config)
+else:
+    deletion = DeletionInterface.get_instance()
 
 if read_only:
     deletion_manager.dry_run = True
@@ -42,8 +45,8 @@ if read_only:
     deletion.dry_run = True
 
 # Check the inventory content and update the requests
-deletion_manager.collect_updates(inventory)
-copy_manager.collect_updates(inventory)
+deletion_manager.collect_updates(inventory, authorizer)
+copy_manager.collect_updates(inventory, authorizer)
 
 # Execute deletion operations on new deletion requests
 new_requests = deletion_manager.get_requests(authorizer, statuses = ['new'])

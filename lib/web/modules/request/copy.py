@@ -82,7 +82,7 @@ class MakeCopyRequest(CopyRequestBase):
                     else:
                         self.params['site'] = list(self.default_sites)
 
-                request = self.manager.create_request(caller, self.params['item'], self.params['site'], self.params['group'], self.params['n'])
+                request = self.manager.create_request(caller, self.authorizer, self.params['item'], self.params['site'], self.params['group'], self.params['n'])
 
             else:
                 existing.request_count += 1

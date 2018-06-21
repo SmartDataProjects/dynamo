@@ -55,7 +55,7 @@ class CopyRequest(object):
 
 class CopyRequestManager(RequestManager):
     def __init__(self, config = None):
-        RequestManager.__init__(self, config, 'copy')
+        RequestManager.__init__(self, 'copy', config)
 
     def lock(self): #override
         # Caller of this function is responsible for unlocking
@@ -212,7 +212,7 @@ class CopyRequestManager(RequestManager):
 
         return all_requests
 
-    def create_request(self, caller, items, sites, group, ncopies):
+    def create_request(self, caller, authorizer, items, sites, group, ncopies):
         now = int(time.time())
 
         if self.dry_run:
@@ -245,7 +245,7 @@ class CopyRequestManager(RequestManager):
         mapping = lambda bid: (request_id, bid)
         self.history.db.insert_select_many('copy_request_blocks', ('request_id', 'block_id'), mapping, history_block_ids)
 
-        return self.get_requests(request_id = request_id)[request_id]
+        return self.get_requests(authorizer, request_id = request_id)[request_id]
 
     def update_request(self, request):
         if self.dry_run:
@@ -267,7 +267,7 @@ class CopyRequestManager(RequestManager):
             sql += ' WHERE r.`id` = %s'
             self.registry.query(sql, request_id)
 
-    def collect_updates(self, inventory):
+    def collect_updates(self, inventory, authorizer):
         """
         Check active requests against the inventory state and set the status flags accordingly.
         """
@@ -360,7 +360,7 @@ class CopyRequestManager(RequestManager):
             self.lock()
 
         try:
-            active_requests = self.get_requests(statuses = ['activated'])
+            active_requests = self.get_requests(authorizer, statuses = ['activated'])
 
             for request in active_requests:
                 if request.active_deletions is None:
@@ -373,5 +373,5 @@ class CopyRequestManager(RequestManager):
                     self.update_request(request)
 
         finally:
-            if not read_only:
+            if not self.dry_run:
                 self.unlock()
