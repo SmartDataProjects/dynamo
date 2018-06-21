@@ -46,7 +46,26 @@ class MySQL(object):
 
     @staticmethod
     def escape_string(string):
+        """
+        String escape without the surrounding quotes.
+        """
         return MySQLdb.escape_string(string)
+
+    @staticmethod
+    def stringify_sequence(sequence):
+        """
+        Return a MySQL list string from the sequence.
+        """
+        return '(%s)' % ','.join(MySQL.escape(sequence))
+
+    @staticmethod
+    def escape(value):
+        """
+        Converts a string to a quoted string and a number to a decimal expression string. Result of the function
+        can be used directly as a right-hand-side expression in queries. Lists and tuples are converted to python tuples
+        with each element escaped.
+        """
+        return MySQLdb.escape(value, MySQLdb.converters.conversions)
 
     class bare(object):
         """
@@ -505,11 +524,10 @@ class MySQL(object):
             values = ''
 
             while itr:
-                # tuple is converted by quote_tuple into a single string
                 if mapping is None:
-                    values += template % MySQLdb.escape(obj, MySQLdb.converters.conversions)
+                    values += template % MySQL.escape(obj)
                 else:
-                    values += template % MySQLdb.escape(mapping(obj), MySQLdb.converters.conversions)
+                    values += template % MySQL.escape(mapping(obj))
     
                 try:
                     obj = itr.next()
@@ -739,11 +757,9 @@ class MySQL(object):
 
         # type-checking the element - all elements must share a type
         if type(obj) is tuple or type(obj) is list:
-            # template = (%s, %s, ...)
-            template = '(' + ','.join(['%s'] * len(obj)) + ')'
-            escape = lambda o, c: template % MySQLdb.escape(o, c)
+            escape = MySQL.stringify_sequence
         else:
-            escape = MySQLdb.escape
+            escape = MySQL.escape
 
         # need to repeat in case pool is a long list
         while True:
@@ -751,7 +767,7 @@ class MySQL(object):
 
             while itr:
                 # tuples and scalars are all quoted by escape()
-                pool_expr += escape(obj, MySQLdb.converters.conversions)
+                pool_expr += escape(obj)
 
                 try:
                     obj = itr.next()

@@ -2,44 +2,7 @@ import time
 
 from dynamo.request.common import RequestManager
 from dynamo.utils.interface.mysql import MySQL
-
-class DeletionRequest(object):
-    """
-    Utility class to carry around all relevant information about a request.
-    """
-
-    def __init__(self, request_id, user, user_dn, status, request_time, reject_reason = None):
-        self.request_id = request_id
-        self.user = user
-        self.user_dn = user_dn
-        self.status = status
-        self.request_time = request_time
-        self.reject_reason = reject_reason
-        self.sites = []
-        self.items = []
-        self.active_deletions = None
-
-    def to_dict(self):
-        d = {
-            'request_id': self.request_id,
-            'item': self.items,
-            'site': self.sites,
-            'status': self.status,
-            'request_time': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(self.request_time)),
-            'user': self.user,
-            'dn': self.user_dn
-        }
-
-        if self.status == 'rejected':
-            d['reason'] = self.reject_reason
-        elif self.status in ('activated', 'completed'):
-            active = d['deletion'] = []
-            # active_copies must be non-null
-            for item, site, status, update in self.active_deletions:
-                active.append({'item': item, 'site': site, 'status': status, 'updated': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(update))})
-        
-        return d
-
+from dynamo.dataformat.request import Request, RequestAction, DeletionRequest
 
 class DeletionRequestManager(RequestManager):
     def __init__(self, config = None):
@@ -57,117 +20,60 @@ class DeletionRequestManager(RequestManager):
             self.registry.lock_tables(write = tables)
 
     def get_requests(self, authorizer, request_id = None, statuses = None, users = None, items = None, sites = None):
-        live_requests = {}
+        all_requests = {}
 
-        sql = 'SELECT r.`id`, r.`status`, UNIX_TIMESTAMP(r.`request_time`),'
-        sql += ' r.`user_id`, a.`item`, a.`site`, a.`status`, UNIX_TIMESTAMP(a.`updated`)'
+        sql = 'SELECT r.`id`, 0+r.`status`, UNIX_TIMESTAMP(r.`request_time`),'
+        sql += ' r.`user_id`, a.`item`, a.`site`, 0+a.`status`, UNIX_TIMESTAMP(a.`updated`)'
         sql += ' FROM `deletion_requests` AS r'
         sql += ' LEFT JOIN `active_deletions` AS a ON a.`request_id` = r.`id`'
-
-        user_cache = {} # reduce interaction with the authorizer
-
-        constraints = []
-        if request_id is not None:
-            constraints.append('r.`id` = %d' % request_id)
-        if statuses is not None:
-            constraints.append('r.`status` IN (%s)' % ','.join('\'%s\'' % s for s in statuses))
-        if users is not None:
-            user_ids = []
-            for user in users:
-                result = authorizer.identify_user(name = user)
-                if result is not None:
-                    user, user_id, dn = result
-                    user_cache[user_id] = (user, dn)
-                    user_ids.append(user_id)
-                
-            constraints.append('r.`user_id` IN (%s)' % ','.join('%d' % user_ids))
-        if items is not None or sites is not None:
-            self.make_temp_registry_tables(items, sites)
-            constraints.append('r.`id` IN (SELECT `id` FROM `{0}`.`ids_tmp`)'.format(self.registry.scratch_db))
-
-        if len(constraints) != 0:
-            sql += ' WHERE ' + ' AND '.join(constraints)
-
+        sql += self._make_registry_constraints(authorizer, request_id, statuses, users, items, sites)
         sql += ' ORDER BY r.`id`'
 
         _rid = 0
         for rid, status, request_time, user_id, a_item, a_site, a_status, a_update in self.registry.xquery(sql):
             if rid != _rid:
                 _rid = rid
+                user, dn = self._find_user(user_id)
 
-                try:
-                    user, dn = user_cache[user_id]
-                except KeyError:
-                    result = authorizer.identify_user(uid = user_id)
-                    if result is None:
-                        user = None
-                        dn = None
-                    else:
-                        user, dn = user_cache[user_id] = (result[0], result[2])
-
-                request = live_requests[rid] = DeletionRequest(rid, user, dn, status, request_time)
+                request = all_requests[rid] = DeletionRequest(rid, user, dn, status, request_time)
 
             if a_item is not None:
-                if request.active_deletions is None:
-                    request.active_deletions = []
+                if request.actions is None:
+                    request.actions = []
 
-                request.active_deletions.append((a_item, a_site, a_status, a_update))
+                request.actions.append(RequestAction(a_item, a_site, a_status, a_update))
 
-        if len(live_requests) != 0:
+        if len(all_requests) != 0:
             # get the sites
-            sql = 'SELECT s.`request_id`, s.`site` FROM `deletion_request_sites` AS s WHERE s.`request_id` IN (%s)' %  ','.join('%d' % d for d in live_requests.iterkeys())
+            sql = 'SELECT s.`request_id`, s.`site` FROM `deletion_request_sites` AS s WHERE s.`request_id` IN (%s)' %  ','.join('%d' % d for d in all_requests.iterkeys())
             for rid, site in self.registry.xquery(sql):
-                live_requests[rid].sites.append(site)
+                all_requests[rid].sites.append(site)
     
             # get the items
-            sql = 'SELECT i.`request_id`, i.`item` FROM `deletion_request_items` AS i WHERE i.`request_id` IN (%s)' %  ','.join('%d' % d for d in live_requests.iterkeys())
+            sql = 'SELECT i.`request_id`, i.`item` FROM `deletion_request_items` AS i WHERE i.`request_id` IN (%s)' %  ','.join('%d' % d for d in all_requests.iterkeys())
             for rid, item in self.registry.xquery(sql):
-                live_requests[rid].items.append(item)
+                all_requests[rid].items.append(item)
 
             if request_id is not None:
-                # we've found the request already
-                return live_requests
+                # we were looking for a unique request and we found it
+                return all_requests
 
-        if statuses is not None and set(statuses) < set(['new', 'activated']):
+        if statuses is not None and (set(statuses) < set(['new', 'activated']) or set(statuses) < set([Request.ST_NEW, Request.ST_ACTIVATED])):
             # there's nothing in the archive
-            return live_requests
+            return all_requests
 
-        if sites is not None:
-            history_site_ids = self.history.save_sites(sites, get_ids = True)
-        else:
-            history_site_ids = None
-
-        if items is not None:
-            history_dataset_ids, history_block_ids = self.save_items(items)
-        else:
-            history_dataset_ids = None
-            history_block_ids = None
-
+        # Pick up archived requests from the history DB
         archived_requests = {}
 
         sql = 'SELECT r.`id`, r.`status`, UNIX_TIMESTAMP(r.`request_time`),'
         sql += ' r.`rejection_reason`, u.`name`, u.`dn`'
         sql += ' FROM `deletion_requests` AS r'
         sql += ' INNER JOIN `users` AS u ON u.`id` = r.`user_id`'
-
-        constraints = []
-        if request_id is not None:
-            constraints.append('r.`id` = %d' % request_id)
-        if statuses is not None:
-            constraints.append('r.`status` IN (%s)' % ','.join('\'%s\'' % s for s in statuses))
-        if users is not None:
-            constraints.append('r.`user_id` IN (SELECT `id` FROM `users` WHERE `name` IN (%s))' % ','.join('\'%s\'' % u for u in users))
-        if items is not None or sites is not None:
-            temp_table = self.make_temp_history_tables(history_dataset_ids, history_block_ids, history_site_ids)
-            constraints.append('r.`id` IN (SELECT `id` FROM {0})'.format(temp_table))
-
-        if len(constraints) != 0:
-            sql += ' WHERE ' + ' AND '.join(constraints)
-
+        sql += self._make_history_constraints(request_id, statuses, users, items, sites)
         sql += ' ORDER BY r.`id`'
 
         for rid, status, request_time, reason, user, dn in self.history.db.xquery(sql):
-            if rid not in live_requests:
+            if rid not in all_requests:
                 archived_requests[rid] = DeletionRequest(rid, user, dn, status, request_time, reason)
 
         if len(archived_requests) != 0:
@@ -193,8 +99,6 @@ class DeletionRequestManager(RequestManager):
             for rid, dataset, block in self.history.db.xquery(sql):
                 archived_requests[rid].items.append(df.Block.to_full_name(dataset, block))
 
-        # there should not be any overlap of request ids
-        all_requests = live_requests
         all_requests.update(archived_requests)
 
         return all_requests
@@ -218,7 +122,7 @@ class DeletionRequestManager(RequestManager):
         # Make an entry in history
         history_user_ids = self.history.save_users([(caller.name, caller.dn)], get_ids = True)
         history_site_ids = self.history.save_sites(sites, get_ids = True)
-        history_dataset_ids, history_block_ids = self.save_items(items)
+        history_dataset_ids, history_block_ids = self._save_items(items)
 
         sql = 'INSERT INTO `deletion_requests` (`id`, `user_id`, `request_time`)'
         sql += ' SELECT %s, u.`id`, FROM_UNIXTIME(%s) FROM `groups` AS g, `users` AS u'
@@ -241,10 +145,13 @@ class DeletionRequestManager(RequestManager):
         sql = 'UPDATE `deletion_requests` SET `status` = %s, `rejection_reason` = %s WHERE `id` = %s'
         self.history.db.query(sql, request.status, request.reject_reason, request.request_id)
 
-        if request.status in ('new', 'activated'):
+        if request.status in (Request.ST_NEW, Request.ST_ACTIVATED):
             sql = 'UPDATE `deletion_requests` SET `status` = %s, `request_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'
             self.registry.query(sql, request.status, request.request_time, request.request_id)
 
+            sql = 'UPDATE `active_deletions` SET `status` = %s, `updated` = FROM_UNIXTIME(%s) WHERE `request_id` = %s AND `item` = %s AND site = %s'
+            for a in request.actions:
+                self.registry.query(sql, a.status, a.last_update, request.request_id, a.item, a.site)
         else:
             # terminal state
             sql = 'DELETE FROM r, a, i, s USING `deletion_requests` AS r'
@@ -259,74 +166,73 @@ class DeletionRequestManager(RequestManager):
         Check active requests against the inventory state and set the status flags accordingly.
         """
 
-        # Update active deletion status
-        sql_update = 'UPDATE `active_deletions` SET `status` = \'completed\', `updated` = NOW() WHERE `request_id` = %s AND `item` = %s AND `site` = %s'
+        now = int(time.time())
 
         self.lock()
 
         try:
-            sql = 'SELECT r.`id`, a.`item`, a.`site` FROM `active_deletions` AS a'
-            sql += ' INNER JOIN `deletion_requests` AS r ON r.`id` = a.`request_id`'
-            sql += ' WHERE a.`status` IN (\'new\', \'queued\')'
-            
-            for request_id, item_name, site_name in self.registry.query(sql):
-                try:
-                    site = inventory.sites[site_name]
-                except KeyError:
-                    LOG.error('Unknown site %s', site_name)
-                    continue
-                
-                try:
-                    dataset_name, block_name = df.Block.from_full_name(item_name)
-                except df.ObjectError:
-                    dataset_name = item_name
-                    block_name = None
-                else:
-                    pass
-                    
-                try:
-                    dataset = inventory.datasets[dataset_name]
-                except KeyError:
-                    LOG.error('Unknown dataset %s', dataset_name)
-                    continue
-            
-                if block_name is None:
-                    replica = site.find_dataset_replica(dataset)
-                    if replica is None:
-                        LOG.debug('%s gone', replica)
-                        if not self.dry_run:
-                            self.registry.query(sql_update, request_id, item_name, site_name)
-            
-                else:
-                    block = dataset.find_block(block_name)
-                    if block is None:
-                        LOG.error('Unknown block %s', item_name)
-            
-                    replica = site.find_block_replica(block)
-                    if replica is None:
-                        LOG.debug('Replica %s:%s gone', site.name, block.full_name())
-                        if not self.dry_run:
-                            self.registry.query(sql_update, request_id, item_name, site_name)
-                        
-        finally:
-            self.unlock()
-
-        # Update request status
-
-        self.lock()
-
-        try:
-            active_requests = self.get_requests(authorizer, statuses = ['activated'])
+            active_requests = self.get_requests(authorizer, statuses = [Request.ST_ACTIVATED])
 
             for request in active_requests.itervalues():
-                if request.active_deletions is None:
+                if request.actions is None:
                     LOG.error('No active deletions for activated request %d', request.request_id)
                     continue
 
-                n_complete = sum(1 for a in request.active_deletions if a[2] == 'completed')
-                if n_complete == len(request.active_deletions):
-                    request.status = 'completed'
-                    self.update_request(request)
+                updated = False
 
+                for action in request.actions:
+                    if status not in (RequestAction.ST_NEW, RequestAction.ST_QUEUED):
+                        continue
+
+                    try:
+                        site = inventory.sites[action.site]
+                    except KeyError:
+                        LOG.error('Unknown site %s', action.site)
+                        continue
+               
+                    try:
+                        dataset_name, block_name = df.Block.from_full_name(action.item)
+                    except df.ObjectError:
+                        dataset_name = action.item
+                        block_name = None
+                    else:
+                        pass
+                        
+                    try:
+                        dataset = inventory.datasets[dataset_name]
+                    except KeyError:
+                        LOG.error('Unknown dataset %s', dataset_name)
+                        continue
+
+                    if block_name is None:
+                        # looking for a dataset replica
+
+                        replica = site.find_dataset_replica(dataset)
+                        if replica is None:
+                            LOG.debug('Replica %s:%s gone', site.name, dataset.name)
+                            action.status = RequestAction.ST_COMPLETED
+                            action.last_update = now
+                            updated = True
+
+                    else:
+                        block = dataset.find_block(block_name)
+                        if block is None:
+                            LOG.error('Unknown block %s', action.item)
+                
+                        replica = site.find_block_replica(block)
+                        if replica is None:
+                            LOG.debug('Replica %s:%s gone', site.name, block.full_name())
+                            action.status = RequestAction.ST_COMPLETED
+                            action.last_update = now
+                            updated = True
+
+                n_complete = sum(1 for a in request.actions if a.status == RequestAction.ST_COMPLETED)
+                if n_complete == len(request.actions):
+                    request.status = Request.ST_COMPLETED
+                    updated = True
+
+                if updated:
+                    self.update_request(request)
+                        
         finally:
             self.unlock()

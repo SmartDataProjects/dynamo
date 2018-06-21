@@ -1,6 +1,11 @@
+import logging
+
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.history.history import HistoryDatabase
 import dynamo.dataformat as df
+from dynamo.dataformat.request import Request, RequestAction
+
+LOG = logging.getLogger(__name__)
 
 class RequestManager(object):
     """
@@ -38,6 +43,8 @@ class RequestManager(object):
         if self.dry_run:
             self.history.read_only = True
 
+        self.user_cache = {} # reduce interaction with the authorizer
+
     def lock(self):
         """
         Lock the registry table for lookup + update workflows.
@@ -49,7 +56,7 @@ class RequestManager(object):
         if not self.dry_run:
             self.registry.unlock_tables()
 
-    def save_items(self, items):
+    def _save_items(self, items):
         """
         Save the items into history.
         @param items          List of dataset and block names.
@@ -73,7 +80,7 @@ class RequestManager(object):
 
         return dataset_ids, block_ids
 
-    def make_temp_registry_tables(self, items, sites):
+    def _make_temp_registry_tables(self, items, sites):
         """
         Make temporary tables to be used to constrain request search.
         @param items   List of dataset and block names.
@@ -83,15 +90,13 @@ class RequestManager(object):
         # Make temporary tables and fill copy_ids_tmp with ids of requests whose item and site lists fully cover the provided list of items and sites.
         columns = ['`item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL']
         self.registry.create_tmp_table('items_tmp', columns)
-        if items is not None:
-            mapping = lambda i: (i,)
-            self.registry.insert_many('items_tmp', ('item',), mapping, items, db = self.registry.scratch_db)
-
         columns = ['`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL']
         self.registry.create_tmp_table('sites_tmp', columns)
+
+        if items is not None:
+            self.registry.insert_many('items_tmp', ('item',), MySQL.make_tuple, items, db = self.registry.scratch_db)
         if sites is not None:
-            mapping = lambda s: (s,)
-            self.registry.insert_many('sites_tmp', ('site',), mapping, sites, db = self.registry.scratch_db)
+            self.registry.insert_many('sites_tmp', ('site',), MySQL.make_tuple, sites, db = self.registry.scratch_db)
 
         columns = [
             '`id` int(10) unsigned NOT NULL AUTO_INCREMENT',
@@ -106,7 +111,9 @@ class RequestManager(object):
         sql += ' 0 NOT IN (SELECT (`item` IN (SELECT `item` FROM `{op}_request_items` AS i WHERE i.`request_id` = r.`id`)) FROM `{db}`.`items_tmp`)'
         self.registry.query(sql.format(db = self.registry.scratch_db, op = self.optype))
 
-    def make_temp_history_tables(self, dataset_ids, block_ids, site_ids):
+        return '`{db}`.`ids_tmp`'.format(db = self.registry.scratch_db)
+
+    def _make_temp_history_tables(self, dataset_ids, block_ids, site_ids):
         """
         Make temporary tables to be used to constrain request search.
         @param dataset_ids   List of dataset ids.
@@ -151,3 +158,84 @@ class RequestManager(object):
         self.history.db.query(sql.format(db = self.history.db.scratch_db, op = self.optype))
 
         return '`{db}`.`ids_tmp`'.format(db = self.history.db.scratch_db)
+
+    def _make_registry_constraints(self, authorizer, request_id, statuses, users, items, sites):
+        constraints = []
+
+        if request_id is not None:
+            constraints.append('r.`id` = %d' % request_id)
+
+        if statuses is not None:
+            constraints.append('r.`status` IN ' + MySQL.stringify_sequence(statuses))
+
+        if users is not None:
+            user_ids = []
+            for user in users:
+                result = authorizer.identify_user(name = user)
+                if result is not None:
+                    user, user_id, dn = result
+                    self.user_cache[user_id] = (user, dn)
+                    user_ids.append(user_id)
+
+            constraints.append('r.`user_id` IN ' + MySQL.stringify_sequence(user_ids))
+
+        if items is not None or sites is not None:
+            temp_table = self._make_temp_registry_tables(items, sites)
+            constraints.append('r.`id` IN (SELECT `id` FROM {0})'.format(temp_table))
+
+        if len(constraints) != 0:
+            return ' WHERE ' + ' AND '.join(constraints)
+        else:
+            return ''
+
+    def _make_history_constraints(self, request_id, statuses, users, items, sites):
+        if users is not None:
+            history_user_ids = self.history.save_users(users, get_ids = True)
+        else:
+            history_user_ids = None
+
+        if items is not None:
+            history_dataset_ids, history_block_ids = self._save_items(items)
+        else:
+            history_dataset_ids = None
+            history_block_ids = None
+
+        if sites is not None:
+            history_site_ids = self.history.save_sites(sites, get_ids = True)
+        else:
+            history_site_ids = None
+
+        constraints = []
+
+        if request_id is not None:
+            constraints.append('r.`id` = %d' % request_id)
+
+        if statuses is not None:
+            constraints.append('r.`status` IN ' + MySQL.stringify_sequence(statuses))
+
+        if users is not None:
+            constraints.append('r.`user_id` IN ' + MySQL.stringify_sequence(history_user_ids))
+
+        if items is not None or sites is not None:
+            temp_table = self._make_temp_history_tables(history_dataset_ids, history_block_ids, history_site_ids)
+            constraints.append('r.`id` IN (SELECT `id` FROM {0})'.format(temp_table))
+
+        if len(constraints) != 0:
+            return ' WHERE ' + ' AND '.join(constraints)
+        else:
+            return ''
+
+    def _find_user(self, authorizer, user_id):
+        try:
+            user, dn = self.user_cache[user_id]
+        except KeyError:
+            result = authorizer.identify_user(uid = user_id)
+            if result is None:
+                user = None
+                dn = None
+            else:
+                user, dn = self.user_cache[user_id] = (result[0], result[2])
+
+        return user, dn
+
+        

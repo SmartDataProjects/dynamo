@@ -29,6 +29,7 @@ from dynamo.request.copy import CopyRequestManager
 from dynamo.operation.deletion import DeletionInterface
 from dynamo.operation.history import DeletionHistoryDatabase
 import dynamo.dataformat as df
+from dynamo.dataformat.request import Request, RequestAction
 
 deletion_manager = DeletionRequestManager(config.get('manager', None))
 copy_manager = CopyRequestManager(config.get('manager', None))
@@ -49,49 +50,13 @@ deletion_manager.collect_updates(inventory, authorizer)
 copy_manager.collect_updates(inventory, authorizer)
 
 # Execute deletion operations on new deletion requests
-new_requests = deletion_manager.get_requests(authorizer, statuses = ['new'])
+new_requests = deletion_manager.get_requests(authorizer, statuses = [Request.ST_NEW])
 
 for request in new_requests.itervalues():
-    datasets = {}
+    datasets = request.find_items(inventory, LOG)
+    sites = request.find_sites(inventory, LOG)
 
-    for item in request.items:
-        try:
-            dataset = inventory.datasets[item]
-        except KeyError:
-            try:
-                dataset_name, block_name = df.Block.from_full_name(item)
-            except df.ObjectError:
-                LOG.error('Invalid item name %s', item)
-            else:
-                try:
-                    dataset = inventory.datasets[dataset_name]
-                except KeyError:
-                    LOG.error('Unknown dataset %s', dataset_name)
-                else:
-                    if dataset in datasets and datasets[dataset] is None:
-                        continue
-
-                    block = dataset.find_block(block_name)
-                    if block is None:
-                        LOG.error('Unknown block %s', df.Block.to_real_name(block_name))
-                    else:
-                        if dataset in datasets:
-                            datasets[dataset].add(block)
-                        else:
-                            datasets[dataset] = set([block])
-
-        else:
-            datasets[dataset] = None
-
-    sites = []
-    for site_name in request.sites:
-        try:
-            site = inventory.sites[site_name]
-            sites.append(site)
-        except KeyError:
-            # requests should be validated, so this should not happen
-            LOG.error('Unknown site %s', site_name)
-
+    # Organize replicas by sites
     replica_lists = {}
 
     for site in sites:
@@ -126,12 +91,16 @@ for request in new_requests.itervalues():
             replica_lists[site] = replica_list
 
     if len(replica_lists) == 0:
-        request.status = 'completed'
+        # Nothing to delete here
+        request.status = Request.ST_COMPLETED
         deletion_manager.update_request(request)
         continue
 
+    activation_list = []
+    now = int(time.time())
+
     for site, replica_list in replica_lists.iteritems():
-        LOG.info('Issueing deletion of %d replicas at %s', len(replica_list), site.name)
+        LOG.info('Issuing deletion of %d replicas at %s', len(replica_list), site.name)
 
         record = history.make_deletion_entry(site.name)
 
@@ -144,6 +113,11 @@ for request in new_requests.itervalues():
                 inventory.update(replica)
                 block_replicas = replica.block_replicas
 
+                activation_list.append((replica.dataset.name, site.name, now))
+            else:
+                for block_replica in block_replicas:
+                    activation_list.append((block_replica.block.full_name(), site.name, now))
+
             deleted_size = 0
 
             for block_replica in block_replicas:
@@ -155,3 +129,6 @@ for request in new_requests.itervalues():
             record.replicas.append(DeletedReplica(replica.dataset.name, deleted_size))
 
         history.update_deletion_entry(record)
+
+    request.activate(activation_list)
+    deletion_manager.update_request(request)

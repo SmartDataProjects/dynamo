@@ -1,3 +1,7 @@
+"""
+Classes representing copy and deletion records. Not linked to the inventory.
+"""
+
 class CopiedReplica(object):
     __slots__ = ['dataset_name', 'size', 'status']
 
