@@ -6,11 +6,10 @@ class BaseHandler(object):
         self.required_attrs = []
         self.read_only = False
 
-    def get_requests(self, inventory, history, policy):
+    def get_requests(self, inventory, policy):
         """
         Return a prioritized list of objects requesting transfer of.
         @param inventory  DynamoInventory object.
-        @param history    TransactionHistoryInterface object
         @param policy     DealerPolicy object
 
         @return List of DealerRequests.

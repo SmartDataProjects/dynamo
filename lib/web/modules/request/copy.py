@@ -1,6 +1,3 @@
-import time
-import calendar
-import json
 import logging
 
 from dynamo.web.exceptions import InvalidRequest
@@ -143,7 +140,7 @@ class CancelCopyRequest(CopyRequestBase):
 
             if existing.status == 'new':
                 existing.status = 'cancelled'
-                self.cancel_request(request_id)
+                self.update_request(existing)
 
             elif existing.status == 'cancelled':
                 pass

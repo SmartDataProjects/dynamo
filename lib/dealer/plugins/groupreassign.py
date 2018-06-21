@@ -10,7 +10,7 @@ class GroupReassigner(BaseHandler):
         
         self.from_groups = list(config.from_groups)
     
-    def get_requests(self, inventory, history, policy): # override
+    def get_requests(self, inventory, policy): # override
         from_groups = set(inventory.groups[g] for g in self.from_groups)
 
         partition = inventory.partitions[policy.partition_name]

@@ -1,4 +1,3 @@
-import sys
 import time
 import logging
 import collections
@@ -9,8 +8,6 @@ from dynamo.detox.detoxpolicy import DetoxPolicy
 from dynamo.detox.detoxpolicy import Ignore, Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
 from dynamo.detox.history import DetoxHistory
 from dynamo.operation.deletion import DeletionInterface
-from dynamo.operation.copy import CopyInterface
-from dynamo.history.history import TransactionHistoryInterface
 from dynamo.utils.signaling import SignalBlocker
 
 LOG = logging.getLogger(__name__)
@@ -27,28 +24,15 @@ class Detox(object):
         else:
             self.deletion_op = DeletionInterface.get_instance()
 
-        if 'copy_op' in config:
-            self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
-        else:
-            self.copy_op = CopyInterface.get_instance()
-
-        if 'history' in config:
-            self.history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
-        else:
-            self.history = TransactionHistoryInterface.get_instance()
-        self.detoxhistory = DetoxHistory(config.detox_history)
-
-        if config.test_run:
-            self.deletion_op.dry_run = True
-            self.copy_op.dry_run = True
-
-            # history.test = True does not mean read-only
-            self.history.test = True
-            # there is no test flag for detoxhistory
+        self.history = DealerHistory(config.history)
 
         self.policy = DetoxPolicy(config)
 
         self.deletion_per_iteration = config.deletion_per_iteration
+
+        self.test_run = config.get('test_run', False)
+        if self.test_run:
+            self.deletion_op.dry_run = True
 
     def run(self, inventory, comment = '', create_cycle = True):
         """
@@ -60,7 +44,7 @@ class Detox(object):
 
         if create_cycle:
             # fetch the deletion cycle number
-            cycle_tag = self.history.new_deletion_cycle(self.policy.partition_name, self.policy.version, comment = comment)
+            cycle_tag = self.history.new_cycle(self.policy.partition_name, self.policy.version, comment = comment, test = self.test_run)
             LOG.info('Detox cycle %d for %s starting', cycle_tag, self.policy.partition_name)
         else:
             cycle_tag = self.policy.partition_name
@@ -74,33 +58,29 @@ class Detox(object):
         for plugin in self.policy.attr_producers:
             plugin.load(partition_repository)
 
-        LOG.info('Saving site and dataset names.')
-        self.history.save_sites(partition_repository.sites.values())
-        self.history.save_datasets(partition_repository.datasets.values())
-
         LOG.info('Saving policy conditions.')
         # Sets policy IDs for each lines from the history DB; need to run this before execute_policy
-        self.detoxhistory.save_conditions(self.policy.policy_lines)
+        self.history.save_conditions(self.policy.policy_lines)
 
         LOG.info('Applying policy to replicas.')
         deleted, kept, protected, reowned = self._execute_policy(partition_repository)
 
         LOG.info('Saving deletion decisions.')
-        self.detoxhistory.save_decisions(cycle_tag, deleted, kept, protected)
+        self.history.save_decisions(cycle_tag, deleted, kept, protected)
 
         LOG.info('Saving quotas and site statuses.')
         partition = partition_repository.partitions[self.policy.partition_name]
         quotas = dict((s, s.partitions[partition].quota * 1.e-12) for s in partition_repository.sites.itervalues())
-        self.detoxhistory.save_siteinfo(cycle_tag, quotas)
+        self.history.save_siteinfo(cycle_tag, quotas)
 
         if create_cycle:
             LOG.info('Committing deletion.')
             comment = 'Dynamo -- Automatic cache release request for %s partition.' % self.policy.partition_name
             self._commit_deletions(cycle_tag, inventory, deleted, comment)
             comment = 'Dynamo -- Automatic group reassignment for %s partition.' % self.policy.partition_name
-            self._commit_reassignments(cycle_tag, inventory, reowned, comment)
+            self._commit_reassignments(inventory, reowned, comment)
 
-            self.history.close_deletion_cycle(cycle_tag)
+            self.history.close_cycle(cycle_tag)
 
         LOG.info('Detox cycle completed')
 
@@ -252,7 +232,7 @@ class Detox(object):
         kept = {} # same
 
         # list of block replicas that will change ownership at commit stage.
-        reowned = {} # {dataset_replica: [block_replicas]}
+        reowned = {} # {dataset_replica: set([block_replicas])}
 
         def get_list(outmap, replica, condition_id):
             try:
@@ -564,6 +544,7 @@ class Detox(object):
 
         # get the original replicas from the inventory and organize them into sites
         deletions_by_site = collections.defaultdict(list) # {site: [(dataset_replica, block_replicas)]}
+
         for replica, matches in deleted.iteritems():
             site = inventory.sites[replica.site.name]
 
@@ -590,11 +571,9 @@ class Detox(object):
 
             # Block interruptions until deletion is executed and recorded
             with signal_blocker:
-                operation_id = self.history.make_deletion_entry(cycle_number, site)
+                history_record = self.history.make_cycle_entry(cycle_number, site)
 
-                history_record = HistoryRecord(HistoryRecord.OP_DELETE, operation_id, site.name, int(time.time()))
-
-                scheduled_replicas = self.deletion_op.schedule_deletions(site_deletion_list, comments = comment)
+                scheduled_replicas = self.deletion_op.schedule_deletions(site_deletion_list, history_record.operation_id, comments = comment)
 
                 for replica, block_replicas in scheduled_replicas:
                     # replicas are clones -> use inventory.update instead of inventory.register_update
@@ -615,62 +594,54 @@ class Detox(object):
 
                     history_record.replicas.append(DeletedReplica(replica.dataset.name, deleted_size))
 
-                self.history.update_deletion_entry(history_record)
+                self.history.update_entry(history_record)
 
                 total_size = sum(r.size for r in history_record.replicas)
                 LOG.info('Done deleting %.1f TB from %s.', total_size * 1.e-12, site.name)
 
-    def _commit_reassignments(self, cycle_number, inventory, reowned, comment):
+    def _commit_reassignments(self, inventory, reowned, comment):
         """
-        @param cycle_number  Cycle number.
         @param inventory     Global (original) inventory
-        @param reowned       {dataset_replica: {condition_id: set(block_replicas)}}
+        @param reowned       {dataset_replica: set([block_replicas])}
         @param comment       Comment to be passed to the copy interface.
         """
 
-        # organize the replicas into sites and set up ownership change
-        reown_by_site = collections.defaultdict(list) # {site: [(dataset_replica, block_replicas)]}
+        # If Dynamo owns all files, all we need to do is update the inventory.
+        # It is however possible that the other hand the underlying storage system requires some operation.
+        need_operation = hasattr(self.deletion_op, 'schedule_reassignments')
+
+        if need_operation:
+            # get the original replicas from the inventory and organize them into sites
+            reown_by_site = collections.defaultdict(list) # {site: [(dataset_replica, block_replicas)]}
+
         for replica, block_replicas in reowned.iteritems():
-            reown_by_site[replica.site].append((replica, block_replicas))
+            # just do the reassignment in the inventory upfront
+            original_replica = inventory.update(replica)
 
-        # now schedule change of ownership (transfer request at the site) for each site
-        for site in sorted(reown_by_site.iterkeys(), key = lambda s: s.name):
-            site_reown_list = reown_by_site[site]
+            original_block_replicas = dict((br.block.name, br) for br in original_replica.block_replicas)
 
-            LOG.info('Changing ownership of %d replicas at %s.', len(site_reown_list), site.name)
+            all_block_replicas = set()
+            for block_replica in block_replicas:
+                original_block_replica = original_block_replicas[block_replica.block.name]
 
-            flat_list = []
-            for replica, block_replicas in site_reown_list:
-                if set(block_replicas) == replica.block_replicas:
-                    flat_list.append(replica)
+                if original_block_replica != block_replica:
+                    original_block_replica.copy(block_replica)
+                    inventory.register_update(original_block_replica)
+
+                all_block_replicas.add(original_block_replica)
+
+            if need_operation:
+                if replica.growing and all_block_replicas == original_replica.block_replicas:
+                    # if we are reassigning all block replicas and the replica is marked as growing, reassign the DatasetReplica
+                    reown_by_site[original_replica.site].append((original_replica, None))
                 else:
-                    flat_list.extend(block_replicas)
+                    # otherwise reassign by BlockReplicas
+                    reown_by_site[original_replica.site].append((original_replica, all_block_replicas))
 
-            # Unlike deletions, we don't need to block interruptions here because there is nothing to record.
-            reassignment_mapping = self.copy_op.schedule_copies(flat_list, comments = comment)
-
-            for copy_id, (approved, site, items) in reassignment_mapping.iteritems():
-                if not approved:
-                    continue
-
-                for item in items:
-                    if type(item) is Dataset:
-                        dataset = inventory.datasets[item.name]
-                        replica = dataset.find_replica(site.name)
-
-                        # replica in the partition_repository
-                        clone_replica = item.find_replica(site)
-                        for clone_block_replica in clone_replica.block_replicas:
-                            block_replica = replica.find_block_replica(clone_block_replica.block.name)
-                            block_replica.group = inventory.groups[clone_block_replica.group.name]
-
-                            inventory.update(block_replica)
-                    else:
-                        dataset = inventory.datasets[item.dataset.name]
-                        block = dataset.find_block(item.name)
-                        replica = block.find_replica(site.name)
-
-                        clone_replica = item.find_replica(site)
-                        replica.group = inventory.groups[clone_replica.group.name]
-
-                        inventory.update(replica)
+        if need_operation:
+            for site in sorted(reown_by_site.iterkeys(), key = lambda s: s.name):
+                site_reown_list = reown_by_site[site]
+    
+                LOG.info('Changing ownership of %d replicas at %s.', len(site_reown_list), site.name)
+    
+                self.deletion_op.schedule_reassignments(site_reown_list, comments = comment)

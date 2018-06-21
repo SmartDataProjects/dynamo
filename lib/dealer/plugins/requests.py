@@ -19,6 +19,7 @@ class CopyRequestsHandler(BaseHandler):
         registry_config['reuse_connection'] = True # need to work with table locks
         
         self.registry = MySQL(registry_config)
+        # we should introduce a RequestHistoryDatabase object, but for now use raw MySQL
         self.history = MySQL(config.history)
 
         # maximum size that can be requested
@@ -31,7 +32,7 @@ class CopyRequestsHandler(BaseHandler):
         # list of group names from which ownership of blocks can be taken away
         self.overwritten_groups = config.get('overwritten_groups', [])
 
-    def get_requests(self, inventory, history, policy): # override
+    def get_requests(self, inventory, policy): # override
         """
         1. Request all active transfers in new state (these were not queued in the last cycle)
         2. Find all transfer requests with status new.

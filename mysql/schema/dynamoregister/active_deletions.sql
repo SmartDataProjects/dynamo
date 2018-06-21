@@ -3,7 +3,7 @@ CREATE TABLE `active_deletions` (
   `item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   `site` varchar(32) NOT NULL,
   `timestamp` datetime NOT NULL,
-  `status` enum('new','queued') NOT NULL DEFAULT 'new',
+  `status` enum('new','queued','failed','completed') NOT NULL DEFAULT 'new',
   `created` datetime NOT NULL,
   `updated` datetime DEFAULT NULL,
   KEY `request` (`request_id`),

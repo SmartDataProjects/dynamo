@@ -17,7 +17,7 @@ class EnforcerHandler(BaseHandler):
 
         self.interface = EnforcerInterface(config.enforcer)
 
-    def get_requests(self, inventory, history, policy): # override
+    def get_requests(self, inventory, policy): # override
         requests = []
         for dataset, site in self.interface.report_back(inventory):
             requests.append(DealerRequest(dataset, destination = site))

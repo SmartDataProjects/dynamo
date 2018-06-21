@@ -2,6 +2,7 @@
 
 import sys
 import os
+import time
 
 from argparse import ArgumentParser
 
@@ -21,137 +22,131 @@ from dynamo.core.executable import read_only, make_standard_logger
 
 LOG = make_standard_logger(config.log_level)
 
-## Instantiate registry backend
-from dynamo.utils.interface.mysql import MySQL
-
-# need to lock tables -> reuse connections
-config.registry['reuse_connection'] = True
-
-registry = MySQL(config.registry)
-history = MySQL(config.history)
-
 ## Loop over active transfers and check against inventory
-from dynamo.core.executable import inventory
-from dynamo.dataformat import Block, ObjectError
+from dynamo.core.executable import inventory, authorizer
+from dynamo.request.deletion import DeletionRequestManager
+from dynamo.request.copy import CopyRequestManager
+from dynamo.operation.deletion import DeletionInterface
+from dynamo.operation.history import DeletionHistoryDatabase
+import dynamo.dataformat as df
 
-if not read_only:
-    registry.lock_tables(write = ['active_copies'], read = [('active_copies', 'a'), ('copy_requests', 'r')])
+deletion_manager = DeletionRequestManager(config.manager)
+copy_manager = CopyRequestManager(config.manager)
+history = DeletionHistoryDatabase(config.history)
+deletion = DeletionInterface.get_instance()
 
-def update(request_id, item, site):
-    if read_only:
-        return
+if read_only:
+    deletion_manager.dry_run = True
+    copy_manager.dry_run = True
+    history.read_only = True
+    deletion.dry_run = True
 
-    sql = 'UPDATE `active_copies` SET `status` = \'completed\', `updated` = NOW() WHERE `request_id` = %s AND `item` = %s AND `site` = %s'
-    registry.query(sql, request_id, item, site)
+# Check the inventory content and update the requests
+deletion_manager.collect_updates(inventory)
+copy_manager.collect_updates(inventory)
 
-sql = 'SELECT r.`id`, a.`item`, a.`site`, r.`group` FROM `active_copies` AS a'
-sql += ' INNER JOIN `copy_requests` AS r ON r.`id` = a.`request_id`'
-sql += ' WHERE a.`status` IN (\'new\', \'queued\')'
+# Execute deletion operations on new deletion requests
+new_requests = deletion_manager.get_requests(authorizer, statuses = ['new'])
 
-for request_id, item_name, site_name, group_name in registry.query(sql):
-    try:
-        site = inventory.sites[site_name]
-    except KeyError:
-        LOG.error('Unknown site %s', site_name)
-        continue
-    
-    try:
-        group = inventory.groups[group_name]
-    except KeyError:
-        LOG.error('Unknown group %s', group_name)
-        continue
+for request in new_requests:
+    datasets = {}
 
-    try:
-        dataset_name, block_name = Block.from_full_name(item_name)
-    except ObjectError:
-        dataset_name = item_name
-        block_name = None
-    else:
-        pass
-        
-    try:
-        dataset = inventory.datasets[dataset_name]
-    except KeyError:
-        LOG.error('Unknown dataset %s', dataset_name)
-        continue
+    for item in request.items:
+        try:
+            dataset = inventory.datasets[item]
+        except KeyError:
+            try:
+                dataset_name, block_name = df.Block.from_full_name(item)
+            except df.ObjectError:
+                LOG.error('Invalid item name %s', item)
+            else:
+                try:
+                    dataset = inventory.datasets[dataset_name]
+                except KeyError:
+                    LOG.error('Unknown dataset %s', dataset_name)
+                else:
+                    if dataset in datasets and datasets[dataset] is None:
+                        continue
 
-    if block_name is None:
-        replica = site.find_dataset_replica(dataset)
-        if replica is None:
-            LOG.debug('Replica %s:%s not created yet', site.name, dataset.name)
-            continue
+                    block = dataset.find_block(block_name)
+                    if block is None:
+                        LOG.error('Unknown block %s', df.Block.to_real_name(block_name))
+                    else:
+                        if dataset in datasets:
+                            datasets[dataset].add(block)
+                        else:
+                            datasets[dataset] = set([block])
 
-        owners = set(br.group for br in replica.block_replicas)
-
-        if len(owners) > 1 or list(owners)[0] != group:
-            LOG.error('%s is not owned by %s.', replica, group)
-            continue
-
-        if replica.is_complete():
-            LOG.debug('%s complete', replica)
-            update(request_id, item_name, site_name)
         else:
-            LOG.debug('%s incomplete', replica)
+            datasets[dataset] = None
 
-    else:
-        block = dataset.find_block(block_name)
-        if block is None:
-            LOG.error('Unknown block %s', item_name)
+    sites = []
+    for site_name in request.sites:
+        try:
+            site = inventory.sites[site_name]
+            sites.append(site)
+        except KeyError:
+            # requests should be validated, so this should not happen
+            LOG.error('Unknown site %s', site_name)
 
-        replica = site.find_block_replica(block)
-        if replica is None:
-            LOG.debug('Replica %s:%s not created yet', site.name, block.full_name())
-            continue
+    replica_lists = {}
 
-        if replica.group != group:
-            LOG.error('%s is not owned by %s.', replica, group)
-            continue
+    for site in sites:
+        replica_list = []
 
-        if replica.is_complete():
-            LOG.debug('%s complete', replica)
-            update(request_id, item_name, site_name)
-        else:
-            LOG.debug('%s incomplete', replica)
+        for dataset, blocks in datasets.iteritems():
+            replica = site.find_dataset_replica(dataset)
+            if replica is None:
+                continue
 
-if not read_only:
-    registry.unlock_tables()
+            replica_clone = df.DatasetReplica(dataset, site)
+            replica_clone.copy(replica)
+            # we don't need to clone because we don't change anything for block replicas
+            replica_clone.block_replicas = set(replica.block_replicas)
 
-## Set the request status
-if not read_only:
-    registry.lock_tables(write = ['copy_requests', ('copy_requests', 'r'), ('active_copies', 'a'), ('copy_request_items', 'i'), ('copy_request_sites', 's')])
+            if blocks is None:
+                replica_clone.growing = False
+                replica_list.append((replica_clone, None))
+            else:
+                block_replicas = []
+                for block in blocks:
+                    block_replica = replica.find_block_replica(block)
+                    if block_replica is None:
+                        continue
 
-def update(request_id):
-    if read_only:
-        return
+                    block_replicas.append(block_replica)
 
-    sql = 'UPDATE `copy_requests` SET `status` = \'completed\' WHERE `id` = %s'
-    history.query(sql, request_id)
+                if len(block_replicas) != 0:
+                    replica_list.append((replica_clone, block_replicas))
 
-    sql = 'DELETE FROM r, a, i, s USING `copy_requests` AS r'
-    sql += ' INNER JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
-    sql += ' INNER JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
-    sql += ' INNER JOIN `copy_request_sites` AS s ON s.`request_id` = r.`id`'
-    sql += ' WHERE r.`id` = %s'
-    registry.query(sql, request_id)
+        if len(replica_list) != 0:
+            replica_lists[site] = replica_list
 
-sql = 'SELECT r.`id`, a.`status` FROM `copy_requests` AS r INNER JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
-sql += ' WHERE r.`status` = \'activated\''
+    if len(replica_lists) == 0:
+        request.status = 'completed'
+        deletion_manager.update_request(request)
+        continue
 
-_request_id = 0
-all_complete = False
-for request_id, status in registry.query(sql):
-    if request_id != _request_id:
-        if all_complete:
-            update(_request_id)
+    for site, replica_list in replica_lists.iteritems():
+        record = history.make_deletion_entry(site.name)
 
-        _request_id = request_id
-        all_complete = True
+        scheduled = deletion.schedule_deletions(replica_list, record.operation_id)
 
-    if status != 'completed':
-        all_complete = False
+        for replica, block_replicas in scheduled:
+            if block_replicas is None:
+                replica.growing = False
+                replica.group = inventory.groups[None]
+                inventory.update(replica)
+                block_replicas = replica.block_replicas
 
-if all_complete:
-    update(_request_id)
+            deleted_size = 0
 
-if not read_only:
-    registry.unlock_tables()
+            for block_replica in block_replicas:
+                block_replica.group = inventory.groups[None]
+                inventory.update(block_replica)
+
+                deleted_size += block_replica.size
+
+            record.replicas.append(DeletedReplica(replica.dataset.name, deleted_size))
+
+        history.update_deletion_entry(record)

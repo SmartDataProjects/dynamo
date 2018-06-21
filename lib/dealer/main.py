@@ -6,10 +6,10 @@ import logging
 import random
 
 from dynamo.dataformat import Dataset, DatasetReplica, BlockReplica
-from dynamo.dataformat.history import CopiedReplica, HistoryRecord
+from dynamo.dataformat.history import CopiedReplica
 from dynamo.dealer.dealerpolicy import DealerPolicy
+from dynamo.dealer.history import DealerHistory
 from dynamo.operation.copy import CopyInterface
-from dynamo.history.history import TransactionHistoryInterface
 from dynamo.utils.signaling import SignalBlocker
 import dynamo.dealer.plugins as dealer_plugins
 from dynamo.policy.producers import get_producers
@@ -28,19 +28,17 @@ class Dealer(object):
         else: # default setting
             self.copy_op = CopyInterface.get_instance()
 
-        if 'history' in config:
-            self.history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
-        else:
-            self.history = TransactionHistoryInterface.get_instance()
-
-        if config.test_run:
-            self.copy_op.dry_run = True
-            self.history.test = True
+        self.history = DealerHistory(config.history)
 
         self._attr_producers = []
 
         self.policy = DealerPolicy(config)
-        self._setup_plugins(config, config.test_run)
+
+        self.test_run = config.get('test_run', False)
+        if self.test_run:
+            self.copy_op.dry_run = True
+
+        self._setup_plugins(config)
 
     def run(self, inventory, comment = ''):
         """
@@ -54,7 +52,7 @@ class Dealer(object):
         """
 
         # fetch the deletion cycle number
-        cycle_number = self.history.new_copy_cycle(self.policy.partition_name, self.policy.version, comment = comment)
+        cycle_number = self.history.new_cycle(self.policy.partition_name, self.policy.version, comment = comment, test = self.test_run)
 
         LOG.info('Dealer cycle %d for %s starting', cycle_number, self.policy.partition_name)
 
@@ -71,10 +69,6 @@ class Dealer(object):
         LOG.info('Loading dataset attrs.')
         for plugin in self._attr_producers:
             plugin.load(inventory)
-
-        LOG.info('Saving site and dataset names.')
-        self.history.save_sites(inventory.sites.itervalues())
-        self.history.save_datasets(inventory.datasets.itervalues())
 
         LOG.info('Collecting copy proposals.')
         # Prioritized lists of datasets, blocks, and files
@@ -117,14 +111,14 @@ class Dealer(object):
         comment = 'Dynamo -- Automatic replication request for %s partition.' % partition.name
         self._commit_copies(cycle_number, inventory, flattened_replicas, comment)
 
-        self.history.close_copy_cycle(cycle_number)
+        self.history.close_cycle(cycle_number)
 
         LOG.info('Dealer cycle completed')
 
     def get_plugins(self):
         return self._plugin_priorities.keys()
 
-    def _setup_plugins(self, config, is_test_run):
+    def _setup_plugins(self, config):
         self._plugin_priorities = {}
 
         n_zero_prio = 0
@@ -133,7 +127,7 @@ class Dealer(object):
             modname, _, clsname = spec.module.partition(':')
             cls = getattr(__import__('dynamo.dealer.plugins.' + modname, globals(), locals(), [clsname]), clsname)
             plugin = cls(spec.config)
-            plugin.read_only = is_test_run
+            plugin.read_only = self.test_run
             self._plugin_priorities[plugin] = spec.priority
 
             if spec.priority:
@@ -173,7 +167,7 @@ class Dealer(object):
                 # -> treat all as equal.
                 priority = 1
 
-            plugin_requests = plugin.get_requests(inventory, self.history, self.policy)
+            plugin_requests = plugin.get_requests(inventory, self.policy)
 
             LOG.debug('%s requesting %d items', plugin.name, len(plugin_requests))
 
@@ -357,11 +351,9 @@ class Dealer(object):
             LOG.info('Scheduling copy of %d replicas to %s.', len(replicas), site.name)
 
             with signal_blocker:
-                operation_id = self.history.make_copy_entry(cycle_number, site)
+                history_record = self.history.make_cycle_entry(cycle_number, site)
 
-                history_record = HistoryRecord(HistoryRecord.OP_COPY, operation_id, site.name, int(time.time()))
-
-                scheduled_replicas = self.copy_op.schedule_copies(replicas, operation_id, comments = comment)
+                scheduled_replicas = self.copy_op.schedule_copies(replicas, history_record.operation_id, comments = comment)
 
                 for replica in scheduled_replicas:
                     history_record.replicas.append(CopiedReplica(replica.dataset.name, replica.size(physical = False), HistoryRecord.ST_ENROUTE))
@@ -370,7 +362,7 @@ class Dealer(object):
                     for block_replica in replica.block_replicas:
                         inventory.update(block_replica)
 
-                self.history.update_copy_entry(history_record)
+                self.history.update_entry(history_record)
 
                 total_size = sum(r.size for r in history_record.replicas)
                 LOG.info('Scheduled copy %.1f TB to %s.', total_size * 1.e-12, site.name)

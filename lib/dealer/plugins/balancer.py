@@ -3,7 +3,7 @@ import random
 
 from base import BaseHandler, DealerRequest
 from dynamo.dataformat import Site
-from dynamo.detox.history import DetoxHistory
+from dynamo.detox.history import DetoxHistoryBase
 
 LOG = logging.getLogger(__name__)
 
@@ -17,11 +17,11 @@ class BalancingHandler(BaseHandler):
 
         self.max_dataset_size = config.max_dataset_size * 1.e+12
         self.max_cycle_volume = config.max_cycle_volume * 1.e+12
-        self.detoxhistory = DetoxHistory(config.detox_history)
+        self.detoxhistory = DetoxHistoryBase(config.detox_history)
         self.target_reasons = dict(config.target_reasons)
 
-    def get_requests(self, inventory, history, policy):
-        latest_cycles = history.get_deletion_cycles(policy.partition_name)
+    def get_requests(self, inventory, policy):
+        latest_cycles = self.detoxhistory.get_cycles(policy.partition_name)
         if len(latest_cycles) == 0:
             return []
 

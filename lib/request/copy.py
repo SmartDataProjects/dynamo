@@ -1,5 +1,11 @@
+import time
+import logging
+
 from dynamo.request.common import RequestManager
 from dynamo.utils.interface.mysql import MySQL
+import dynamo.dataformat as df
+
+LOG = logging.getLogger(__name__)
 
 class CopyRequest(object):
     """
@@ -51,7 +57,7 @@ class CopyRequestManager(RequestManager):
     def __init__(self, config):
         RequestManager.__init__(self, config, 'copy')
 
-    def lock(self):
+    def lock(self): #override
         # Caller of this function is responsible for unlocking
         # Non-aliased locks are for insert & update statements later
         tables = [
@@ -62,11 +68,7 @@ class CopyRequestManager(RequestManager):
         if not self.dry_run:
             self.registry.lock_tables(write = tables)
 
-    def save_group(self, group):
-        if not self.dry_run:
-            self.history.insert_update('groups', ('name',), group, update_columns = ('name',))
-
-    def get_requests(self, authorizer, request_id = None, statuses = None, users = None, items = None, sites = None): #override
+    def get_requests(self, authorizer, request_id = None, statuses = None, users = None, items = None, sites = None):
         live_requests = {}
 
         sql = 'SELECT r.`id`, r.`group`, r.`num_copies`, r.`status`, UNIX_TIMESTAMP(r.`first_request_time`), UNIX_TIMESTAMP(r.`last_request_time`),'
@@ -143,15 +145,15 @@ class CopyRequestManager(RequestManager):
             return live_requests
 
         if sites is not None:
-            self.save_sites(sites)
+            history_site_ids = self.history.save_sites(sites, get_ids = True)
+        else:
+            history_site_ids = None
 
         if items is not None:
-            history_dataset_names = []
-            history_block_names = []
-            self.save_items(items, history_dataset_names, history_block_names)
+            history_dataset_ids, history_block_ids = self.save_items(items)
         else:
-            history_dataset_names = None
-            history_block_names = None
+            history_dataset_ids = None
+            history_block_ids = None
 
         archived_requests = {}
 
@@ -169,15 +171,15 @@ class CopyRequestManager(RequestManager):
         if users is not None:
             constraints.append('r.`user_id` IN (SELECT `id` FROM `users` WHERE `name` IN (%s))' % ','.join('\'%s\'' % u for u in users))
         if items is not None or sites is not None:
-            self.make_temp_history_tables(history_dataset_names, history_block_names, sites)
-            constraints.append('r.`id` IN (SELECT `id` FROM `{0}`.`ids_tmp`)'.format(self.history.scratch_db))
+            temp_table = self.make_temp_history_tables(history_dataset_ids, history_block_ids, history_site_ids)
+            constraints.append('r.`id` IN (SELECT `id` FROM {0})'.format(temp_table))
 
         if len(constraints) != 0:
             sql += ' WHERE ' + ' AND '.join(constraints)
 
         sql += ' ORDER BY r.`id`'
 
-        for rid, group, n, status, request_time, reason, user, dn in self.history.xquery(sql):
+        for rid, group, n, status, request_time, reason, user, dn in self.history.db.xquery(sql):
             if rid not in live_requests:
                 archived_requests[rid] = CopyRequest(rid, user, dn, group, n, status, request_time, request_time, 1, reason)
 
@@ -186,14 +188,14 @@ class CopyRequestManager(RequestManager):
             sql = 'SELECT s.`request_id`, h.`name` FROM `copy_request_sites` AS s'
             sql += ' INNER JOIN `sites` AS h ON h.`id` = s.`site_id`'
             sql += ' WHERE s.`request_id` IN (%s)' %  ','.join('%d' % d for d in archived_requests.iterkeys())
-            for rid, site in self.history.xquery(sql):
+            for rid, site in self.history.db.xquery(sql):
                 archived_requests[rid].sites.append(site)
     
             # get the datasets
             sql = 'SELECT i.`request_id`, d.`name` FROM `copy_request_datasets` AS i'
             sql += ' INNER JOIN `datasets` AS d ON d.`id` = i.`dataset_id`'
             sql += ' WHERE i.`request_id` IN (%s)' %  ','.join('%d' % d for d in archived_requests.iterkeys())
-            for rid, dataset in self.history.xquery(sql):
+            for rid, dataset in self.history.db.xquery(sql):
                 archived_requests[rid].items.append(dataset)
 
             # get the blocks
@@ -201,7 +203,7 @@ class CopyRequestManager(RequestManager):
             sql += ' INNER JOIN `blocks` AS b ON b.`id` = i.`block_id`'
             sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
             sql += ' WHERE i.`request_id` IN (%s)' %  ','.join('%d' % d for d in archived_requests.iterkeys())
-            for rid, dataset, block in self.history.xquery(sql):
+            for rid, dataset, block in self.history.db.xquery(sql):
                 archived_requests[rid].items.append(df.Block.to_full_name(dataset, block))
 
         # there should not be any overlap of request ids
@@ -221,34 +223,27 @@ class CopyRequestManager(RequestManager):
         values = (group, ncopies, caller.id, MySQL.bare('FROM_UNIXTIME(%d)' % now), MySQL.bare('FROM_UNIXTIME(%d)' % now))
         request_id = self.registry.insert_get_id('copy_requests', columns, values)
 
-        fields = ('request_id', 'site')
         mapping = lambda site: (request_id, site)
-        self.registry.insert_many('copy_request_sites', fields, mapping, sites)
-
-        fields = ('request_id', 'item')
+        self.registry.insert_many('copy_request_sites', ('request_id', 'site'), mapping, sites)
         mapping = lambda item: (request_id, item)
-        self.registry.insert_many('copy_request_items', fields, mapping, items)
+        self.registry.insert_many('copy_request_items', ('request_id', 'item'), mapping, items)
 
         # Make an entry in history
-        history_dataset_names = []
-        history_block_names = []
-        self.save_user(caller)
-        self.save_items(items, history_dataset_names, history_block_names)
-        self.save_sites(sites)
-        self.save_group(group)
+        history_user_ids = self.history.save_users([(caller.name, caller.dn)], get_ids = True)
+        history_site_ids = self.history.save_sites(sites, get_ids = True)
+        history_group_ids = self.history.save_groups([group], get_ids = True)
+        history_dataset_ids, history_block_ids = self.save_items(items)
 
         sql = 'INSERT INTO `copy_requests` (`id`, `group_id`, `num_copies`, `user_id`, `request_time`)'
-        sql += ' SELECT %s, g.`id`, %s, u.`id`, FROM_UNIXTIME(%s) FROM `groups` AS g, `users` AS u'
-        sql += ' WHERE g.`name` = %s AND u.`dn` = %s'
-        self.history.query(sql, request_id, ncopies, now, group, caller.dn)
+        sql += ' VALUES (%s, %s, %s, %s, FROM_UNIXTIME(%s))'
+        self.history.db.query(sql, request_id, history_group_ids[0], ncopies, history_user_ids[0], now)
 
-        self.history.insert_select_many('copy_request_sites', ('request_id', 'site_id'), 'sites', (MySQL.bare('%d' % request_id), 'id'), 'name', sites)
-
-        # history_dataset_names set in save_params
-        self.history.insert_select_many('copy_request_datasets', ('request_id', 'dataset_id'), 'datasets', (MySQL.bare('%d' % request_id), 'id'), 'name', history_dataset_names)
-
-        # history_block_names set in save_params
-        self.history.insert_select_many('copy_request_blocks', ('request_id', 'block_id'), 'blocks', (MySQL.bare('%d' % request_id), 'id'), ('dataset_id', 'name'), history_block_names)
+        mapping = lambda sid: (request_id, sid)
+        self.history.db.insert_many('copy_request_sites', ('request_id', 'site_id'), mapping, history_site_ids)
+        mapping = lambda did: (request_id, did)
+        self.history.db.insert_select_many('copy_request_datasets', ('request_id', 'dataset_id'), mapping, history_dataset_ids)
+        mapping = lambda bid: (request_id, bid)
+        self.history.db.insert_select_many('copy_request_blocks', ('request_id', 'block_id'), mapping, history_block_ids)
 
         return self.get_requests(request_id = request_id)[request_id]
 
@@ -256,22 +251,126 @@ class CopyRequestManager(RequestManager):
         if self.dry_run:
             return
 
-        sql = 'UPDATE `copy_requests` SET `group` = %s, `num_copies` = %s, `last_request_time` = FROM_UNIXTIME(%s), `request_count` = %s WHERE `id` = %s'
-        self.registry.query(sql, request.group, request.n, request.last_request, request.request_count, request.request_id)
+        sql = 'UPDATE `copy_requests` SET `status` = %s, `group_id` = (SELECT `id` FROM `groups` WHERE `name` = %s), `num_copies` = %s, `rejection_reason` = %s WHERE `id` = %s'
+        self.history.db.query(sql, request.status, request.group, request.n, request.reject_reason, request.request_id)
 
-        sql = 'UPDATE `copy_requests` SET `group_id` = (SELECT `id` FROM `groups` WHERE `name` = %s), `num_copies` = %s WHERE `id` = %s'
-        self.history.query(sql, request.group, request.n, request.request_id)
+        if request.status in ('new', 'activated'):
+            sql = 'UPDATE `copy_requests` SET `status` = %s, `group` = %s, `num_copies` = %s, `last_request_time` = FROM_UNIXTIME(%s), `request_count` = %s WHERE `id` = %s'
+            self.registry.query(sql, request.status, request.group, request.n, request.last_request, request.request_count, request.request_id)
 
-    def cancel_request(self, request_id):
-        if self.dry_run:
-            return
+        else:
+            # terminal state
+            sql = 'DELETE FROM r, a, i, s USING `copy_requests` AS r'
+            sql += ' LEFT JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
+            sql += ' INNER JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
+            sql += ' INNER JOIN `copy_request_sites` AS s ON s.`request_id` = r.`id`'
+            sql += ' WHERE r.`id` = %s'
+            self.registry.query(sql, request_id)
 
-        sql = 'UPDATE `copy_requests` SET `status` = \'cancelled\' WHERE `id` = %s'
-        self.history.query(sql, request_id)
+    def collect_updates(self, inventory):
+        """
+        Check active requests against the inventory state and set the status flags accordingly.
+        """
 
-        sql = 'DELETE FROM r, a, i, s USING `copy_requests` AS r'
-        sql += ' LEFT JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
-        sql += ' INNER JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
-        sql += ' INNER JOIN `copy_request_sites` AS s ON s.`request_id` = r.`id`'
-        sql += ' WHERE r.`id` = %s'
-        self.registry.query(sql, request_id)
+        # Update active copy status
+        sql_update = 'UPDATE `active_copies` SET `status` = \'completed\', `updated` = NOW() WHERE `request_id` = %s AND `item` = %s AND `site` = %s'
+
+        if not self.dry_run:
+            self.lock()
+
+        try:
+            sql = 'SELECT r.`id`, a.`item`, a.`site`, r.`group` FROM `active_copies` AS a'
+            sql += ' INNER JOIN `copy_requests` AS r ON r.`id` = a.`request_id`'
+            sql += ' WHERE a.`status` IN (\'new\', \'queued\')'
+            
+            for request_id, item_name, site_name, group_name in self.registry.query(sql):
+                try:
+                    site = inventory.sites[site_name]
+                except KeyError:
+                    LOG.error('Unknown site %s', site_name)
+                    continue
+                
+                try:
+                    group = inventory.groups[group_name]
+                except KeyError:
+                    LOG.error('Unknown group %s', group_name)
+                    continue
+            
+                try:
+                    dataset_name, block_name = df.Block.from_full_name(item_name)
+                except df.ObjectError:
+                    dataset_name = item_name
+                    block_name = None
+                else:
+                    pass
+                    
+                try:
+                    dataset = inventory.datasets[dataset_name]
+                except KeyError:
+                    LOG.error('Unknown dataset %s', dataset_name)
+                    continue
+            
+                if block_name is None:
+                    replica = site.find_dataset_replica(dataset)
+                    if replica is None:
+                        LOG.debug('Replica %s:%s not created yet', site.name, dataset.name)
+                        continue
+            
+                    owners = set(br.group for br in replica.block_replicas)
+            
+                    if len(owners) > 1 or list(owners)[0] != group:
+                        LOG.error('%s is not owned by %s.', replica, group)
+                        continue
+            
+                    if replica.is_complete():
+                        LOG.debug('%s complete', replica)
+                        if not self.dry_run:
+                            self.registry.query(sql_update, request_id, item_name, site_name)
+
+                    else:
+                        LOG.debug('%s incomplete', replica)
+            
+                else:
+                    block = dataset.find_block(block_name)
+                    if block is None:
+                        LOG.error('Unknown block %s', item_name)
+            
+                    replica = site.find_block_replica(block)
+                    if replica is None:
+                        LOG.debug('Replica %s:%s not created yet', site.name, block.full_name())
+                        continue
+            
+                    if replica.group != group:
+                        LOG.error('%s is not owned by %s.', replica, group)
+                        continue
+            
+                    if replica.is_complete():
+                        LOG.debug('%s complete', replica)
+                        if not self.dry_run:
+                            self.registry.query(sql_update, request_id, item_name, site_name)
+                    else:
+                        LOG.debug('%s incomplete', replica)
+                        
+        finally:
+            self.unlock()
+
+        # Update request status
+
+        if not self.dry_run:
+            self.lock()
+
+        try:
+            active_requests = self.get_requests(statuses = ['activated'])
+
+            for request in active_requests:
+                if request.active_deletions is None:
+                    LOG.error('No active copies for activated request %d', request.request_id)
+                    continue
+
+                n_complete = sum(1 for a in request.active_deletions if a[2] == 'completed')
+                if n_complete == len(request.active_deletions):
+                    request.status = 'completed'
+                    self.update_request(request)
+        
+        if not read_only:
+            self.unlock()

@@ -22,7 +22,7 @@ class PopularityHandler(BaseHandler):
 
         self._datasets = []
 
-    def get_requests(self, inventory, history, policy): # override
+    def get_requests(self, inventory, policy): # override
         self._datasets = []
         requests = []
 
