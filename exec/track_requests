@@ -53,8 +53,15 @@ copy_manager.collect_updates(inventory, authorizer)
 new_requests = deletion_manager.get_requests(authorizer, statuses = [Request.ST_NEW])
 
 for request in new_requests.itervalues():
-    datasets = request.find_items(inventory, LOG)
-    sites = request.find_sites(inventory, LOG)
+    invalid_items = []
+    invalid_sites = []
+    datasets = request.find_items(inventory, invalid_items)
+    sites = request.find_sites(inventory, invalid_sites)
+
+    for item in invalid_items:
+        LOG.error('Invalid item in request %d: %s', request.request_id, item)
+    for site in invalid_sites:
+        LOG.error('Invalid site in request %d: %s', request.request_id, site)
 
     # Organize replicas by sites
     replica_lists = {}
@@ -131,4 +138,7 @@ for request in new_requests.itervalues():
         history.update_deletion_entry(record)
 
     request.activate(activation_list)
+    for action in request.actions:
+        action.status = RequestAction.ST_QUEUED
+
     deletion_manager.update_request(request)

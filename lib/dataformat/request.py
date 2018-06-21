@@ -54,10 +54,11 @@ class Request(object):
         
         return d
 
-    def find_items(self, inventory, logger = None):
+    def find_items(self, inventory, invalid_items = None):
         """
         Find datasets and blocks in the items list from the inventory.
-        @param inventory   DynamoInventory object
+        @param inventory     DynamoInventory object
+        @param invalid_items If set to a list, fill with item names not found in the inventory.
 
         @return  {dataset: set of blocks or None}, None if the item is a dataset.
         """
@@ -71,37 +72,41 @@ class Request(object):
                 try:
                     dataset_name, block_name = Block.from_full_name(item)
                 except ObjectError:
-                    if logger:
-                        logger.error('Invalid item name %s', item)
+                    if invalid_items is not None:
+                        invalid_items.append(item)
+                    continue
+
+                try:
+                    dataset = inventory.datasets[dataset_name]
+                except KeyError:
+                    if invalid_items is not None:
+                        invalid_items.append(item)
+                    continue
+
+                if dataset in datasets and datasets[dataset] is None:
+                    continue
+
+                block = dataset.find_block(block_name)
+                if block is None:
+                    if invalid_items is not None:
+                        invalid_items.append(item)
+                    continue
+
+                if dataset in datasets:
+                    datasets[dataset].add(block)
                 else:
-                    try:
-                        dataset = inventory.datasets[dataset_name]
-                    except KeyError:
-                        if logger:
-                            logger.error('Unknown dataset %s', dataset_name)
-                    else:
-                        if dataset in datasets and datasets[dataset] is None:
-                            continue
-    
-                        block = dataset.find_block(block_name)
-                        if block is None:
-                            if logger:
-                                logger.error('Unknown block %s', Block.to_real_name(block_name))
-                        else:
-                            if dataset in datasets:
-                                datasets[dataset].add(block)
-                            else:
-                                datasets[dataset] = set([block])
+                    datasets[dataset] = set([block])
     
             else:
                 datasets[dataset] = None
 
         return datasets
 
-    def find_sites(self, inventory, logger = None):
+    def find_sites(self, inventory, invalid_sites = None):
         """
         Find sites in the sites list from the inventory.
-        @param inventory   DynamoInventory object
+        @param inventory     DynamoInventory object
+        @param invalid_sites If set to a list, fill with site names not found in the inventory.
 
         @return  List of sites.
         """
@@ -112,17 +117,26 @@ class Request(object):
                 site = inventory.sites[site_name]
                 sites.append(site)
             except KeyError:
-                # requests should be validated, so this should not happen
-                if logger:
-                    logger.error('Unknown site %s', site_name)
+                if invalid_sites is not None:
+                    invalid_sites.append(site_name)
+
+                continue
 
         return sites
 
     def activate(self, activation_list):
         self.actions = []
 
-        for item, site, timestamp in activation_list:
-            self.actions.append(RequestAction(item, site, RequestAction.ST_NEW, timestamp))
+        for entry in activation_list:
+            if len(entry) == 3:
+                item, site, timestamp = entry
+                status = RequestAction.ST_NEW
+            elif len(entry) == 4:
+                item, site, timestamp, status = entry
+            else:
+                continue
+
+            self.actions.append(RequestAction(item, site, status, timestamp))
 
         self.status = Request.ST_ACTIVATED
 

@@ -182,24 +182,35 @@ class CopyRequestManager(RequestManager):
             for request in active_requests.itervalues():
                 if request.actions is None:
                     LOG.error('No active copies for activated request %d', request.request_id)
+                    request.status = Request.ST_COMPLETED
+                    self.update_request(request)
+
                     continue
 
                 try:
                     group = inventory.groups[request.group]
                 except KeyError:
                     LOG.error('Unknown group %s', request.group)
+                    request.status = Request.REJECTED
+                    request.reject_reason = 'Unknown group %s' % request.group
+                    self.update_request(request)
+
                     continue
 
                 updated = False
 
                 for action in request.actions:
-                    if status not in (RequestAction.ST_NEW, RequestAction.ST_QUEUED):
+                    if status != RequestAction.ST_QUEUED:
                         continue
 
                     try:
                         site = inventory.sites[action.site]
                     except KeyError:
                         LOG.error('Unknown site %s', action.site)
+                        action.status = RequestAction.ST_FAILED
+                        action.last_update = now
+                        updated = True
+
                         continue
                
                     try:
@@ -214,6 +225,10 @@ class CopyRequestManager(RequestManager):
                         dataset = inventory.datasets[dataset_name]
                     except KeyError:
                         LOG.error('Unknown dataset %s', dataset_name)
+                        action.status = RequestAction.ST_FAILED
+                        action.last_update = now
+                        updated = True
+
                         continue
 
                     if block_name is None:
@@ -240,6 +255,11 @@ class CopyRequestManager(RequestManager):
                         block = dataset.find_block(block_name)
                         if block is None:
                             LOG.error('Unknown block %s', action.item)
+                            action.status = RequestAction.ST_FAILED
+                            action.last_update = now
+                            updated = True
+
+                            continue
                 
                         replica = site.find_block_replica(block)
                         if replica is None:
@@ -258,7 +278,7 @@ class CopyRequestManager(RequestManager):
                         else:
                             LOG.debug('%s incomplete', replica)
 
-                n_complete = sum(1 for a in request.actions if a.status == RequestAction.ST_COMPLETED)
+                n_complete = sum(1 for a in request.actions if a.status in (RequestAction.ST_COMPLETED, RequestAction.ST_FAILED))
                 if n_complete == len(request.actions):
                     request.status = Request.ST_COMPLETED
                     updated = True
