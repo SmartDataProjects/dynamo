@@ -10,7 +10,7 @@ which indicates the names of the dataset attributes the load() function provides
 
 import os
 
-_producers = {} # {attribute name: class}
+_producers = {} # {attribute name: [class]}
 
 # Not a very elegant way of handling imports, but this way we don't have to know a priori what files and classes exist
 _moddir = os.path.dirname(__file__)
