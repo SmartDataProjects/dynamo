@@ -98,7 +98,7 @@ class EnforcerInterface(object):
                             break
 
             # Check how many full replicas of the dataset are in the destination sites
-            for dataset in datasets_to_evalute:
+            for dataset in datasets_to_evaluate:
                 num_complete = 0
                 num_incomplete = 0
                 used_sites = set()
