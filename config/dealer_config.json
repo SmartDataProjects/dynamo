@@ -20,11 +20,6 @@
     },
     "attrs": {
     },
-    "history": {
-      "db_params": {
-        "db": "dynamohistory"
-      }
-    },
     "target_sites": [],
     "target_site_occupancy": 0.93,
     "max_site_pending_fraction": 0.03,

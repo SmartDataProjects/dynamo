@@ -1,22 +1,4 @@
 {
-  "history.history:TransactionHistoryInterface": {
-    "fullauth": {
-      "module": "mysqlhistory:MySQLHistory",
-      "config": {
-        "db_params": {
-          "db": "dynamohistory"
-        }
-      }
-    },
-    "readonly": {
-      "module": "mysqlhistory:MySQLHistory",
-      "config": {
-        "db_params": {
-          "db": "dynamohistory"
-        }
-      }
-    }
-  },
   "operation.copy:CopyInterface": {
     "fullauth": {
       "module": "fodcopy:FODCopyInterface",
@@ -85,6 +67,27 @@
           "host": "localhost"
         }
       }
+    }
+  },
+  "history.history:HistoryDatabase": {
+    "fullauth": {
+      "db_params": {
+        "db": "dynamohistory",
+        "user": "dynamo"
+      }
+    },
+    "readonly": {
+      "db_params": {
+        "db": "dynamohistory",
+        "user": "dynamoread"
+      }
+    }
+  },
+  "detox.history:DetoxHistoryBase": {
+    "all": {
+      "cache_db": "dynamohistory_cache",
+      "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
+      "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
     }
   },
   "utils.interface.webservice:HTTPSCertKeyHandler": {

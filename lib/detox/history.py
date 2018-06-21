@@ -7,6 +7,7 @@ import logging
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Site
 from dynamo.operation.history import DeletionHistoryDatabase
+from dynamo.dataformat import Configuration
 
 LOG = logging.getLogger(__name__)
 
@@ -15,8 +16,18 @@ class DetoxHistoryBase(DeletionHistoryDatabase):
     Parts of the DetoxHistory that can be used by the web detox monitor.
     """
 
-    def __init__(self, config):
+    _config = Configuration()
+
+    @staticmethod
+    def set_default(config):
+        DetoxHisotryBase._config = Configuration(config)
+
+    def __init__(self, config = None):
         DeletionHistoryDatabase.__init__(self, config)
+
+        # intentionally passing the config directly to DeletionHistoryDatabase
+        if config is None:
+            config = DetoxHistoryBase._config
 
         self.history_db = self.db.db_name()
         self.cache_db = config.cache_db

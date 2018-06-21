@@ -1,4 +1,5 @@
 from dynamo.utils.interface.mysql import MySQL
+from dynamo.dataformat import Configuration
 
 class HistoryDatabase(object):
     """
@@ -9,7 +10,17 @@ class HistoryDatabase(object):
     few of the common operations that are necessary for any history recording.
     """
 
-    def __init__(self, config):
+    # default configuration
+    _config = Configuration()
+
+    @staticmethod
+    def set_default(config):
+        HistoryDatabase._config = Configuration(config)
+
+    def __init__(self, config = None):
+        if config is None:
+            config = HistoryDatabase._config
+
         self.db = MySQL(config.db_params)
 
         self.read_only = config.get('read_only', False)

@@ -1,15 +1,7 @@
 {
   "detox": {
     "deletion_per_iteration": 0.01,
-    "attrs": {},
-    "history": {
-      "db_params": {
-        "db": "dynamohistory"
-      },
-      "cache_db": "dynamohistory_cache",
-      "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
-      "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
-    }
+    "attrs": {}
   },
   "log_level": "info"
 }

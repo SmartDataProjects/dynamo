@@ -5,7 +5,7 @@ from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedReq
 from dynamo.utils.interface.mysql import MySQL
 import dynamo.dataformat as df
 
-class ParseInputMixin(UserDataMixin):
+class ParseInputMixin(object):
     def __init__(self, config):
         # Parsed and formatted HTTP queries
         self.params = {}

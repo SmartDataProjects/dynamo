@@ -6,7 +6,7 @@ import logging
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._userdata import UserDataMixin
 from dynamo.web.modules.request.mixin import ParseInputMixin
-from dynamo.request.copy import DeletionRequestManager
+from dynamo.request.deletion import DeletionRequestManager
 import dynamo.dataformat as df
 
 LOG = logging.getLogger(__name__)
