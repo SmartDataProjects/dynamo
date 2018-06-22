@@ -614,6 +614,7 @@ class DetoxHistory(DetoxHistoryBase):
     def make_cycle_entry(self, cycle_number, site):
         history_record = self.make_entry(site)
 
-        self.db.query('INSERT INTO `cycle_copy_operations` (`cycle_id`, `operation_id`) VALUES (%s, %s)', cycle_number, history_record.operation_id)
+        if not self._read_only:
+            self.db.query('INSERT INTO `cycle_copy_operations` (`cycle_id`, `operation_id`) VALUES (%s, %s)', cycle_number, history_record.operation_id)
 
         return history_record

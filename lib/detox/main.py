@@ -4,6 +4,7 @@ import collections
 
 from dynamo.core.inventory import ObjectRepository
 from dynamo.dataformat import Group, Site, Dataset, Block, DatasetReplica, BlockReplica
+from dynamo.dataformat.history import DeletedReplica
 from dynamo.detox.detoxpolicy import DetoxPolicy
 from dynamo.detox.detoxpolicy import Ignore, Protect, Delete, Dismiss, ProtectBlock, DeleteBlock, DismissBlock
 from dynamo.detox.history import DetoxHistory

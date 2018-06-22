@@ -3,17 +3,17 @@ import fnmatch
 import re
 
 from dynamo.web.modules._base import WebModule
-from dynamo.web.modules._mysqlhistory import MySQLHistoryMixin
 from dynamo.web.modules._filedownload import FileDownloadMixin
 from dynamo.web.modules._common import yesno
 import dynamo.web.exceptions as exceptions
 from dynamo.detox.history import DetoxHistoryBase
 from dynamo.dataformat import Configuration
 
-class DetoxHistory(WebModule, MySQLHistoryMixin):
+class WebDetoxHistory(WebModule):
     def __init__(self, config):
         WebModule.__init__(self, config)
-        MySQLHistoryMixin.__init__(self, config)
+
+        self.detox_history = DetoxHistoryBase()
 
         # The partition that shows up when the page is opened with no arguments
         self.default_partition = config.detox.default_partition
@@ -33,14 +33,14 @@ class DetoxHistory(WebModule, MySQLHistoryMixin):
             name = self.default_partition
 
         try:
-            self.partition_id = self.history.query('SELECT `id` FROM `partitions` WHERE `name` = %s', name)[0]
+            self.partition_id = self.detox_history.db.query('SELECT `id` FROM `partitions` WHERE `name` = %s', name)[0]
         except IndexError:
             raise exceptions.InvalidRequest('Unknown partition %s' % name)
 
     def get_cycle(self, cycle):
         sql = 'SELECT `id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `cycles`'
         sql += ' WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = %s AND `id` = %s'
-        result = self.history.query(sql, self.partition_id, self.operation, cycle)
+        result = self.detox_history.db.query(sql, self.partition_id, self.operation, cycle)
 
         if len(result) == 0:
             return
@@ -53,7 +53,7 @@ class DetoxHistory(WebModule, MySQLHistoryMixin):
     def get_latest_cycle(self):
         sql = 'SELECT `id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `cycles`'
         sql += ' WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = %s ORDER BY `id` DESC LIMIT 1'
-        result = self.history.query(sql, self.partition_id, self.operation)
+        result = self.detox_history.db.query(sql, self.partition_id, self.operation)
 
         if len(result) == 0:
             # this partition has no run
@@ -78,9 +78,9 @@ class DetoxHistory(WebModule, MySQLHistoryMixin):
             self.get_cycle(cycle)
 
 
-class DetoxPartitions(DetoxHistory):
+class DetoxPartitions(WebDetoxHistory):
     def __init__(self, config):
-        DetoxHistory.__init__(self, config)
+        WebDetoxHistory.__init__(self, config)
 
         self.excluded_partitions = config.detox.get('excluded_partitions', [])
 
@@ -91,7 +91,7 @@ class DetoxPartitions(DetoxHistory):
 
         data = []
 
-        for partition_id, partition in self.history.xquery(sql, self.operation):
+        for partition_id, partition in self.detox_history.db.xquery(sql, self.operation):
             if partition in self.excluded_partitions:
                 continue
 
@@ -103,7 +103,7 @@ class DetoxPartitions(DetoxHistory):
         return data
 
 
-class DetoxCycles(DetoxHistory):
+class DetoxCycles(WebDetoxHistory):
     def run(self, caller, request, inventory):
         if 'partition_id' in request:
             self.partition_id = int(request['partition_id'])
@@ -130,32 +130,13 @@ class DetoxCycles(DetoxHistory):
             sql += ' WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = %s ORDER BY `id`'
 
             data = []
-            for cycle, policy_version, comment, timestamp in self.history.xquery(sql, self.partition_id, self.operation):
+            for cycle, policy_version, comment, timestamp in self.detox_history.db.xquery(sql, self.partition_id, self.operation):
                 data.append({'cycle': cycle, 'partition_id': self.partition_id, 'policy_version': policy_version, 'comment': comment, 'timestamp': timestamp})
 
             return data
 
 
-class DetoxHistoryCached(DetoxHistory):
-    """
-    DetoxHistory with a handle to dynamo.detox.history:DetoxHistoryBase to deal with site and replica cache.
-    """
-
-    def __init__(self, config):
-        DetoxHistory.__init__(self, config)
-
-        dh_config = Configuration({
-            'history_db': self.history.db_name(),
-            'cache_db': config.detox.cache_db,
-            'snapshots_spool_dir': config.spool_path + '/detox_snapshots',
-            'snapshots_archive_dir': config.archive_path + '/detox_snapshots'
-        })
-        self.detox_history = DetoxHistoryBase(dh_config)
-        self.detox_history._mysql = self.history
-
-
-
-class DetoxCycleSummary(DetoxHistoryCached):
+class DetoxCycleSummary(WebDetoxHistory):
     def run(self, caller, request, inventory):
         self.get_partition_and_cycle(request)
 
@@ -172,14 +153,14 @@ class DetoxCycleSummary(DetoxHistoryCached):
         sql = 'SELECT `id` FROM `cycles` WHERE `id` < %s AND `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\''
         sql += ' AND `operation` = %s ORDER BY `id` DESC LIMIT 1'
         try:
-            data['previous_cycle'] = self.history.query(sql, self.cycle, self.partition_id, self.operation)[0]
+            data['previous_cycle'] = self.detox_history.db.query(sql, self.cycle, self.partition_id, self.operation)[0]
         except IndexError:
             data['previous_cycle'] = 0
 
         sql = 'SELECT `id` FROM `cycles` WHERE `id` > %s AND `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\''
         sql += ' AND `operation` = %s ORDER BY `id` ASC LIMIT 1'
         try:
-            data['next_cycle'] = self.history.query(sql, self.cycle, self.partition_id, self.operation)[0]
+            data['next_cycle'] = self.detox_history.db.query(sql, self.cycle, self.partition_id, self.operation)[0]
         except IndexError:
             data['next_cycle'] = 0
 
@@ -230,9 +211,9 @@ class DetoxCycleSummary(DetoxHistoryCached):
         return data
 
 
-class DetoxCycleDump(DetoxHistoryCached, FileDownloadMixin):
+class DetoxCycleDump(WebDetoxHistory, FileDownloadMixin):
     def __init__(self, config):
-        DetoxHistoryCached.__init__(self, config)
+        WebDetoxHistory.__init__(self, config)
 
     def run(self, caller, request, inventory):
         self.get_partition_and_cycle(request)
@@ -247,7 +228,7 @@ class DetoxCycleDump(DetoxHistoryCached, FileDownloadMixin):
         return self.export_content(dump, 'deletions_%d.txt' % self.cycle)
 
 
-class DetoxSiteDetail(DetoxHistoryCached):
+class DetoxSiteDetail(WebDetoxHistory):
     def run(self, caller, request, inventory):
         self.get_partition_and_cycle(request)
 
@@ -282,7 +263,7 @@ class DetoxSiteDetail(DetoxHistoryCached):
         return data
 
 
-class DetoxDatasetSearch(DetoxHistoryCached):
+class DetoxDatasetSearch(WebDetoxHistory):
     def run(self, caller, request, inventory):
         self.get_partition_and_cycle(request)
 

@@ -14,28 +14,26 @@ class DummyDeletionInterface(DeletionInterface):
     def __init__(self, config = None):
         DeletionInterface.__init__(self, config)
 
-    def schedule_deletion(self, replica, comments = ''): #override
-        LOG.info('Ignoring deletion schedule of %s', str(replica))
+    def schedule_deletions(self, replica_list, operation_id, comments = ''): #override
+        LOG.info('Ignoring deletion schedule of %d replicas (operation %d)', len(replica_list), operation_id)
 
-        if type(replica) is DatasetReplica:
-            return {0: (True, replica.site, [replica.dataset])}
-        else:
-            return {0: (True, replica.site, [replica.block])}
+        result = []
 
-    def schedule_copies(self, replica_list, comments = ''): #override
-        LOG.info('Ignoring deletion schedule of %d replicas', len(replica_list))
+        for replica, block_replicas in replica_list:
+            clone_replica = DatasetReplica(replica.dataset, replica.site)
+            clone_replica.copy(replica)
 
-        clones = []
-
-        for dataset_replica, block_replicas in replica_list:
             if block_replicas is None:
-                clones.append((clone_replica, None))
+                result.append((clone_replica, None))
             else:
-                clones.append((clone_replica, []))
+                clone_block_replicas = []
+    
                 for block_replica in block_replicas:
-                    clone_block_replica = BlockReplica(block_replica.block, block_replica.site)
+                    clone_block_replica = BlockReplica(block_replica.block, block_replica.site, block_replica.group)
                     clone_block_replica.copy(block_replica)
                     clone_block_replica.last_update = int(time.time())
-                    clones[-1][1].append(clone_block_replica)
+                    clone_block_replicas.append(clone_block_replica)
+                    
+                result.append((clone_replica, clone_block_replicas))
 
         return result
