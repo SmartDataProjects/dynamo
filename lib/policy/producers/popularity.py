@@ -1,4 +1,15 @@
-from pop.engine import engine
+import logging
+
+LOG = logging.getLogger(__init__)
+
+try:
+    from pop.engine import engine
+except ImportError:
+    LOG.error('File popularity engine not found. Using a dummy class.')
+
+    class engine(object):
+        def get_namespace_usage_summary(self, namespace):
+            return []
 
 class FilePopularity(object):
     """
