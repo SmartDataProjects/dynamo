@@ -33,13 +33,13 @@ class DeletionRequestManager(RequestManager):
         for rid, status, request_time, user, dn, a_item, a_site, a_status, a_update in self.registry.xquery(sql):
             if rid != _rid:
                 _rid = rid
-                request = all_requests[rid] = DeletionRequest(rid, user, dn, status, request_time)
+                request = all_requests[rid] = DeletionRequest(rid, user, dn, int(status), request_time)
 
             if a_item is not None:
                 if request.actions is None:
                     request.actions = []
 
-                request.actions.append(RequestAction(a_item, a_site, a_status, a_update))
+                request.actions.append(RequestAction(a_item, a_site, int(a_status), a_update))
 
         if len(all_requests) != 0:
             # get the sites
@@ -72,7 +72,7 @@ class DeletionRequestManager(RequestManager):
 
         for rid, status, request_time, reason, user, dn in self.history.db.xquery(sql):
             if rid not in all_requests:
-                archived_requests[rid] = DeletionRequest(rid, user, dn, status, request_time, reason)
+                archived_requests[rid] = DeletionRequest(rid, user, dn, int(status), request_time, reason)
 
         if len(archived_requests) != 0:
             # get the sites

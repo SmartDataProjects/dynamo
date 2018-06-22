@@ -37,13 +37,13 @@ class CopyRequestManager(RequestManager):
         for rid, group, n, status, first_request, last_request, count, user, dn, a_item, a_site, a_status, a_update in self.registry.xquery(sql):
             if rid != _rid:
                 _rid = rid
-                request = all_requests[rid] = CopyRequest(rid, user, dn, group, n, status, first_request, last_request, count)
+                request = all_requests[rid] = CopyRequest(rid, user, dn, group, n, int(status), first_request, last_request, count)
 
             if a_item is not None:
                 if request.actions is None:
                     request.actions = []
 
-                request.actions.append(RequestAction(a_item, a_site, a_status, a_update))
+                request.actions.append(RequestAction(a_item, a_site, int(a_status), a_update))
 
         if len(all_requests) != 0:
             # get the sites
@@ -77,7 +77,7 @@ class CopyRequestManager(RequestManager):
 
         for rid, group, n, status, request_time, reason, user, dn in self.history.db.xquery(sql):
             if rid not in all_requests:
-                archived_requests[rid] = CopyRequest(rid, user, dn, group, n, status, request_time, request_time, 1, reason)
+                archived_requests[rid] = CopyRequest(rid, user, dn, group, n, int(status), request_time, request_time, 1, reason)
 
         if len(archived_requests) != 0:
             # get the sites
