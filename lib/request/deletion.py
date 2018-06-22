@@ -130,9 +130,9 @@ class DeletionRequestManager(RequestManager):
         mapping = lambda sid: (request_id, sid)
         self.history.db.insert_many('deletion_request_sites', ('request_id', 'site_id'), mapping, history_site_ids)
         mapping = lambda did: (request_id, did)
-        self.history.db.insert_select_many('deletion_request_datasets', ('request_id', 'dataset_id'), mapping, history_dataset_ids)
+        self.history.db.insert_many('deletion_request_datasets', ('request_id', 'dataset_id'), mapping, history_dataset_ids)
         mapping = lambda bid: (request_id, bid)
-        self.history.db.insert_select_many('deletion_request_blocks', ('request_id', 'block_id'), mapping, history_block_ids)
+        self.history.db.insert_many('deletion_request_blocks', ('request_id', 'block_id'), mapping, history_block_ids)
 
         return self.get_requests(request_id = request_id)[request_id]
 
