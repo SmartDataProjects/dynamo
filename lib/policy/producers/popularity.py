@@ -38,12 +38,13 @@ class FilePopularity(object):
     
                 lfn = replacement + name
                 file_object = inventory.find_file(lfn)
-                attribute = file_object.block.dataset.attr
+                dataset = file_object.block.dataset
+                attribute = dataset.attr
     
                 if 'num_access' not in attribute:
-                    attribute['num_access'] = n_access
+                    attribute['num_access'] = float(n_access) / len(dataset.num_files)
                 else:
-                    attribute['num_access'] += n_access
+                    attribute['num_access'] += float(n_access) / len(dataset.num_files)
     
                 if 'last_access' not in attribute:
                     attribute['last_access'] = access
