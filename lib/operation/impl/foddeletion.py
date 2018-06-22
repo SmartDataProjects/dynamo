@@ -16,7 +16,7 @@ class FODDeletionInterface(DeletionInterface):
         DeletionInterface.__init__(self, config)
         self.rlfsm = RLFSM(config.get('fod', None))
 
-    def set_read_only(self, value): #override
+    def set_read_only(self, value = True): #override
         self._read_only = value
         self.rlfsm.set_read_only(value)
 
