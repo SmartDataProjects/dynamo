@@ -612,7 +612,7 @@ class DetoxHistory(DetoxHistoryBase):
         self.db.reuse_connection = reuse
 
     def make_cycle_entry(self, cycle_number, site):
-        history_record = self.make_entry(site)
+        history_record = self.make_entry(site.name)
 
         if not self._read_only:
             self.db.query('INSERT INTO `cycle_copy_operations` (`cycle_id`, `operation_id`) VALUES (%s, %s)', cycle_number, history_record.operation_id)
