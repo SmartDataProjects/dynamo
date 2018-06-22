@@ -3,11 +3,11 @@ import logging
 LOG = logging.getLogger(__name__)
 
 try:
-    from pop.engine import engine
+    from pop.engine import Engine
 except ImportError:
     LOG.error('File popularity engine not found. Using a dummy class.')
 
-    class engine(object):
+    class Engine(object):
         def get_namespace_usage_summary(self, namespace):
             return []
 
@@ -22,7 +22,7 @@ class FilePopularity(object):
     produces = ['last_access', 'num_access']
 
     def __init__(self, config):
-        self.pop_engine = engine()
+        self.pop_engine = Engine()
         # config.namespaces is a list of string pairs (namespace, replacement to map to LFN)
         # because config can only hold lists, convert them to tuples
         self.namespaces = map(tuple, config.namespaces)
