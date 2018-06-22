@@ -30,7 +30,7 @@ class DeletionHistoryDatabase(HistoryDatabase):
         fields = ('deletion_id', 'dataset_id', 'size')
         mapping = lambda replica: (deletion_record.operation_id, dataset_id_map[replica.dataset_name], replica.size)
 
-        self.db.insert_many('deleted_replicas', fields, mapping, deletion_record.replicas, do_update = True, update_columns = ('size'))
+        self.db.insert_many('deleted_replicas', fields, mapping, deletion_record.replicas, do_update = True, update_columns = ('size',))
 
     def get_site_name(self, operation_id):
         sql = 'SELECT s.name FROM `sites` AS s INNER JOIN `deletion_operations` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s'

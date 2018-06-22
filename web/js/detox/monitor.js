@@ -1,3 +1,4 @@
+var detoxPath = dataPath + '/detox';
 var currentCycle = 0;
 var nextCycle = 0;
 var previousCycle = 0;
@@ -29,7 +30,7 @@ function initPage(cycleNumber, partitionId)
 {
     // confirm the specified cycle or get the latest
     var cycleInput = {
-        'url': dataPath + '/detox/cycles',
+        'url': detoxPath + '/cycles',
         'data': {'partition_id': partitionId, 'cycle': cycleNumber},
         'dataType': 'json',
         'async': true
@@ -38,7 +39,7 @@ function initPage(cycleNumber, partitionId)
     var cycleCall = $.ajax(cycleInput);
 
     var partitionInput = {
-        'url': dataPath + '/detox/partitions',
+        'url': detoxPath + '/partitions',
         'data': {},
         'dataType': 'json',
         'async': true
@@ -77,7 +78,7 @@ function checkUpdates()
         return;
 
     var jaxData = {
-        'url': dataPath + '/detox/cycles',
+        'url': detoxPath + '/cycles',
         'data': {'partition_id': partitionId, 'cycle': 0},
         'success': function (cycleResponse, textStatus, jqXHR) { processUpdates(cycleResponse.data); },
         'dataType': 'json',
@@ -899,7 +900,7 @@ function loadSummary(cycleNumber, partitionId, summaryNorm)
     $(box.node()).append($(spinner.el));
 
     var jaxData = {
-        'url': dataPath + '/detox/summary',
+        'url': detoxPath + '/summary',
         'data': {'cycle': cycleNumber},
         'success': function (response, textStatus, jqXHR) {
             $('#error').html('');
@@ -955,7 +956,7 @@ function loadSiteTable(name)
     $('#' + name + ' .siteTableBox').append($(spinner.el));
 
     var jaxData = {
-        'url': dataPath + '/detox/sitedetail',
+        'url': detoxPath + '/sitedetail',
         'data': {'cycle': currentCycle, 'site': name},
         'success': function (response, textStatus, jqXHR) {
             $('#error').html('');
@@ -998,7 +999,7 @@ function findDataset()
     $('#summaryGraphBox').append($(spinner.el));
 
     var jaxData = {
-        'url': dataPath + '/detox/datasets',
+        'url': detoxPath + '/datasets',
         'data': {'cycle': currentCycle, 'datasets': datasetNames},
         'success': function (response, textStatus, jqXHR) {
             $('#error').html('');
@@ -1040,7 +1041,7 @@ function removeDataset(displayBox)
     $('#summaryGraphBox').append($(spinner.el));
 
     var jaxData = {
-        'url': dataPath + '/detox/datasets',
+        'url': detoxPath + '/datasets',
         'data': {'cycle': currentCycle, 'datasets': datasetNames},
         'success': function (response, textStatus, jqXHR) {
             $('#error').html('');
@@ -1064,6 +1065,6 @@ function removeDataset(displayBox)
 
 function downloadList()
 {
-    var url = window.location.protocol + '//' + window.location.hostname + dataPath + '/dump?cycle=' + currentCycle;
+    var url = window.location.protocol + '//' + window.location.hostname + detoxPath + '/dump?cycle=' + currentCycle;
     window.location = url;
 }

@@ -17,6 +17,7 @@ class DetoxMonitor(WebModule, MySQLHistoryMixin, HTMLMixin):
             self.titleblock = source.read()
 
         self.default_partition = config.detox.default_partition
+        self.test_cycle = False
 
     def run(self, caller, request, inventory):
         # Parse GET and POST requests and set the defaults
@@ -40,10 +41,21 @@ class DetoxMonitor(WebModule, MySQLHistoryMixin, HTMLMixin):
 
         # HTML formatting
 
-        self.header_script = '$(document).ready(function() { initPage(%d, %d); });' % (cycle, partition_id)
+        if self.test_cycle:
+            set_detox_path = 'detoxPath = dataPath + /detox/test; '
+        else:
+            set_detox_path = ''
+
+        self.header_script = '$(document).ready(function() { %sinitPage(%d, %d); });' % (set_detox_path, cycle, partition_id)
 
         return self.form_html()
 
+def DetoxTestMonitor(config):
+    instance = cls(config)
+    instance.test_cycle = True
+    return instance
+
 export_web = {
-    '': DetoxMonitor
+    '': DetoxMonitor,
+    'test': DetoxTestMonitor
 }
