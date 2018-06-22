@@ -42,7 +42,7 @@ class DetoxMonitor(WebModule, MySQLHistoryMixin, HTMLMixin):
         # HTML formatting
 
         if self.test_cycle:
-            set_detox_path = 'detoxPath = dataPath + /detox/test; '
+            set_detox_path = 'detoxPath = dataPath + \'/detox/test\'; '
         else:
             set_detox_path = ''
 
@@ -51,7 +51,7 @@ class DetoxMonitor(WebModule, MySQLHistoryMixin, HTMLMixin):
         return self.form_html()
 
 def DetoxTestMonitor(config):
-    instance = cls(config)
+    instance = DetoxMonitor(config)
     instance.test_cycle = True
     return instance
 

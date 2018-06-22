@@ -391,7 +391,7 @@ class RLFSM(object):
         """
         Make file subscriptions at a site.
         """
-        LOG.info('Subscribing %d files to %s', len(files), str(site))
+        LOG.debug('Subscribing %d files to %s', len(files), str(site))
 
         self._subscribe(site, files, 0)
 
@@ -399,7 +399,7 @@ class RLFSM(object):
         """
         Book deletion of files at the site.
         """
-        LOG.info('Desubscribing %d files from %s', len(files), site.name)
+        LOG.debug('Desubscribing %d files from %s', len(files), site.name)
 
         self._subscribe(site, files, 1)
 
