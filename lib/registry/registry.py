@@ -17,7 +17,7 @@ class RegistryDatabase(object):
 
     def __init__(self, config = None):
         if config is None:
-            config = HistoryDatabase._config
+            config = RegistryDatabase._config
 
         self.db = MySQL(config.db_params)
 

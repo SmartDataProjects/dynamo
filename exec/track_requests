@@ -30,6 +30,7 @@ from dynamo.operation.deletion import DeletionInterface
 from dynamo.operation.history import DeletionHistoryDatabase
 import dynamo.dataformat as df
 from dynamo.dataformat.request import Request, RequestAction
+from dynamo.dataformat.history import DeletedReplica
 
 deletion_manager = DeletionRequestManager(config.get('manager', None))
 copy_manager = CopyRequestManager(config.get('manager', None))
@@ -109,7 +110,7 @@ for request in new_requests.itervalues():
     for site, replica_list in replica_lists.iteritems():
         LOG.info('Issuing deletion of %d replicas at %s', len(replica_list), site.name)
 
-        record = history.make_deletion_entry(site.name)
+        record = history.make_entry(site.name)
 
         scheduled = deletion.schedule_deletions(replica_list, record.operation_id)
 
@@ -135,7 +136,7 @@ for request in new_requests.itervalues():
 
             record.replicas.append(DeletedReplica(replica.dataset.name, deleted_size))
 
-        history.update_deletion_entry(record)
+        history.update_entry(record)
 
     request.activate(activation_list)
     for action in request.actions:

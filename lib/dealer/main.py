@@ -6,7 +6,7 @@ import logging
 import random
 
 from dynamo.dataformat import Dataset, DatasetReplica, BlockReplica
-from dynamo.dataformat.history import CopiedReplica
+from dynamo.dataformat.history import CopiedReplica, HistoryRecord
 from dynamo.dealer.dealerpolicy import DealerPolicy
 from dynamo.dealer.history import DealerHistory
 from dynamo.operation.copy import CopyInterface

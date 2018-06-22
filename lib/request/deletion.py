@@ -1,8 +1,11 @@
 import time
+import logging
 
 from dynamo.request.common import RequestManager
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat.request import Request, RequestAction, DeletionRequest
+
+LOG = logging.getLogger(__name__)
 
 class DeletionRequestManager(RequestManager):
     def __init__(self, config = None):
@@ -63,7 +66,7 @@ class DeletionRequestManager(RequestManager):
         # Pick up archived requests from the history DB
         archived_requests = {}
 
-        sql = 'SELECT r.`id`, r.`status`, UNIX_TIMESTAMP(r.`request_time`),'
+        sql = 'SELECT r.`id`, 0+r.`status`, UNIX_TIMESTAMP(r.`request_time`),'
         sql += ' r.`rejection_reason`, u.`name`, u.`dn`'
         sql += ' FROM `deletion_requests` AS r'
         sql += ' INNER JOIN `users` AS u ON u.`id` = r.`user_id`'
@@ -153,9 +156,9 @@ class DeletionRequestManager(RequestManager):
         else:
             # terminal state
             sql = 'DELETE FROM r, a, i, s USING `deletion_requests` AS r'
-            sql += ' INNER JOIN `active_deletions` AS a ON a.`request_id` = r.`id`'
-            sql += ' INNER JOIN `deletion_request_items` AS i ON i.`request_id` = r.`id`'
-            sql += ' INNER JOIN `deletion_request_sites` AS s ON s.`request_id` = r.`id`'
+            sql += ' LEFT JOIN `active_deletions` AS a ON a.`request_id` = r.`id`'
+            sql += ' LEFT JOIN `deletion_request_items` AS i ON i.`request_id` = r.`id`'
+            sql += ' LEFT JOIN `deletion_request_sites` AS s ON s.`request_id` = r.`id`'
             sql += ' WHERE r.`id` = %s'
             self.registry.query(sql, request.request_id)
 

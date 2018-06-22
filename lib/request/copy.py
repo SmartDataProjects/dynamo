@@ -160,8 +160,8 @@ class CopyRequestManager(RequestManager):
             # terminal state
             sql = 'DELETE FROM r, a, i, s USING `copy_requests` AS r'
             sql += ' LEFT JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
-            sql += ' INNER JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
-            sql += ' INNER JOIN `copy_request_sites` AS s ON s.`request_id` = r.`id`'
+            sql += ' LEFT JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
+            sql += ' LEFT JOIN `copy_request_sites` AS s ON s.`request_id` = r.`id`'
             sql += ' WHERE r.`id` = %s'
             self.registry.query(sql, request.request_id)
 
