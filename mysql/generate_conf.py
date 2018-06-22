@@ -59,7 +59,7 @@ def generate_store_conf(conf_str):
         ('host', host),
         ('db', 'dynamo'),
         ('user', user),
-        ('passwd', passwd)
+        ('passwd', passwd),
         ('scratch_db', 'dynamo_tmp')
     ])
 
@@ -85,17 +85,16 @@ def generate_master_conf(conf_str):
         host = conf['host']
 
     user = conf['user']
-    readuser = conf['readuser']
+
+    if 'readuser' in conf:
+        readuser = conf['readuser']
+    else:
+        readuser = None
    
     if 'passwd' in conf:
         passwd = conf['passwd']
     else:
         passwd = grants_conf[user]['passwd']
-
-    if 'readpasswd' in conf:
-        readpasswd = conf['readpasswd']
-    else:
-        readpasswd = grants_conf[readuser]['passwd']
 
     master_conf = OD([
         ('module', 'mysqlmaster:MySQLMasterServer'),
@@ -110,13 +109,20 @@ def generate_master_conf(conf_str):
         ('scratch_db', 'dynamo_tmp')
     ])
 
-    master_conf['readonly_config']['db_params'] = OD([
-        ('host', host),
-        ('db', 'dynamoserver'),
-        ('user', readuser),
-        ('passwd', readpasswd),
-        ('scratch_db', 'dynamo_tmp')
-    ])
+    if readuser is not None:
+        if 'readpasswd' in conf:
+            readpasswd = conf['readpasswd']
+        else:
+            readpasswd = grants_conf[readuser]['passwd']
+
+        master_conf['readonly_config'] = OD()
+        master_conf['readonly_config']['db_params'] = OD([
+            ('host', host),
+            ('db', 'dynamoserver'),
+            ('user', readuser),
+            ('passwd', readpasswd),
+            ('scratch_db', 'dynamo_tmp')
+        ])
 
     return master_conf
 
