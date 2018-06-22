@@ -164,14 +164,25 @@ class Detox(object):
                     dataset_clone = dataset.embed_into(partition_repository)
 
                     for block in dataset.blocks:
-                        block_clone = Block(block.name, dataset_clone)
-                        block_clone.copy(block)
+                        block_clone = Block(
+                            block.name,
+                            dataset_clone,
+                            size = block.size,
+                            num_files = block.num_files,
+                            is_open = block.is_open,
+                            last_update = block.last_update,
+                            bid = block.id
+                        )
                         dataset_clone.blocks.add(block_clone)
 
                         block_to_clone[block] = block_clone
 
-                replica_clone = DatasetReplica(dataset_clone, site_clone)
-                replica_clone.copy(dataset_replica)
+                replica_clone = DatasetReplica(
+                    dataset_clone,
+                    site_clone,
+                    growing = dataset_replica.growing,
+                    group = partition_repository.groups[dataset_replica.group.name]
+                )
                 dataset_clone.replicas.add(replica_clone)
                 site_clone.add_dataset_replica(replica_clone, add_block_replicas = False)
 
@@ -187,10 +198,15 @@ class Detox(object):
                 for block_replica in block_replica_set:
                     block_clone = block_to_clone[block_replica.block]
 
-                    block_replica_clone = BlockReplica(block_clone, site_clone, block_replica.group)
-                    block_replica_clone.copy(block_replica)
-                    # group has to be reset to the clone
-                    block_replica_clone.group = partition_repository.groups[block_replica.group.name]
+                    block_replica_clone = BlockReplica(
+                        block_clone,
+                        site_clone,
+                        partition_repository.groups[block_replica.group.name],
+                        is_custodial = block_replica.is_custodial,
+                        size = block_replica.size,
+                        last_update = block_replica.last_update,
+                        file_ids = block_replicas.file_ids
+                    )
 
                     replica_clone.block_replicas.add(block_replica_clone)
                     block_clone.replicas.add(block_replica_clone)
