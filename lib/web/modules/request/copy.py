@@ -5,6 +5,7 @@ from dynamo.web.modules._base import WebModule
 from dynamo.web.modules.request.mixin import ParseInputMixin
 from dynamo.request.copy import CopyRequestManager
 import dynamo.dataformat as df
+from dynamo.dataformat.request import Request
 
 LOG = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class MakeCopyRequest(CopyRequestBase):
 
                 existing = existing_requests[request_id]
 
-                if existing.status != 'new':
+                if existing.status != Request.ST_NEW:
                     raise InvalidRequest('Request %d cannot be updated any more' % request_id)
 
             else:
@@ -57,10 +58,10 @@ class MakeCopyRequest(CopyRequestBase):
                 existing_requests = self.manager.get_requests(**constraints)
 
                 for request_id in sorted(existing_requests.iterkeys()):
-                    if existing_requests[request_id].status == 'new':
+                    if existing_requests[request_id].status == Request.ST_NEW:
                         existing = existing_requests[request_id]
                         break
-                    elif existing_requests[request_id].status == 'activated':
+                    elif existing_requests[request_id].status == Request.ST_ACTIVATED:
                         existing = existing_requests[request_id]
 
             if existing is None:
@@ -86,7 +87,7 @@ class MakeCopyRequest(CopyRequestBase):
                 existing.request_count += 1
                 existing.last_request = time.time()
 
-                if existing.status == 'new':
+                if existing.status == Request.ST_NEW:
                     # allow update of values
                     if 'group' in self.params:
                         existing.group = self.params['group']
@@ -137,11 +138,11 @@ class CancelCopyRequest(CopyRequestBase):
                 
             existing = existing_requests[request_id]
 
-            if existing.status == 'new':
-                existing.status = 'cancelled'
+            if existing.status == Request.ST_NEW:
+                existing.status = Request.ST_CANCELLED
                 self.update_request(existing)
 
-            elif existing.status == 'cancelled':
+            elif existing.status == Request.ST_CANCELLED:
                 pass
 
             else:

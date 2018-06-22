@@ -1,12 +1,10 @@
-import time
-import calendar
-import json
 import logging
 
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules.request.mixin import ParseInputMixin
 from dynamo.request.deletion import DeletionRequestManager
 import dynamo.dataformat as df
+from dynamo.dataformat.request import Request
 
 LOG = logging.getLogger(__name__)
 
@@ -33,10 +31,10 @@ class MakeDeletionRequest(DeletionRequestBase):
             existing = None
 
             for request_id in sorted(existing_requests.iterkeys()):
-                if existing_requests[request_id].status == 'new':
+                if existing_requests[request_id].status == Request.ST_NEW:
                     existing = existing_requests[request_id]
                     break
-                elif existing_requests[request_id].status == 'activated':
+                elif existing_requests[request_id].status == Request.ST_ACTIVATED:
                     existing = existing_requests[request_id]
 
             if existing is not None:
