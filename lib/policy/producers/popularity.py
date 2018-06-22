@@ -23,18 +23,20 @@ class FilePopularity(object):
 
     def __init__(self, config):
         self.pop_engine = engine()
-        self.namespaces = config.namespaces
+        # config.namespaces is a list of string pairs (namespace, replacement to map to LFN)
+        # because config can only hold lists, convert them to tuples
+        self.namespaces = map(tuple, config.namespaces)
 
     def load(self, inventory):
 
         # need namespace
-        for namespace in self.namespaces:
+        for namespace, replacement in self.namespaces:
 
             usage_summary = self.pop_engine.get_namespace_usage_summary(namespace)
     
             for (name,n_accesses,last_access) in usage_summary:
     
-                lfn = namespace + name
+                lfn = replacement + name
                 file_object = inventory.find_file(lfn)
                 attribute = file_object.block.dataset.attr
     

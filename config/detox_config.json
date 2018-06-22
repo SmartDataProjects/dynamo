@@ -2,8 +2,6 @@
   "detox": {
     "deletion_per_iteration": 0.01,
     "attrs": {
-      "FilePopularity": {
-      }
     }
   },
   "log_level": "info"
