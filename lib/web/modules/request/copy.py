@@ -2,21 +2,19 @@ import logging
 
 from dynamo.web.exceptions import InvalidRequest
 from dynamo.web.modules._base import WebModule
-from dynamo.web.modules._userdata import UserDataMixin
 from dynamo.web.modules.request.mixin import ParseInputMixin
 from dynamo.request.copy import CopyRequestManager
 import dynamo.dataformat as df
 
 LOG = logging.getLogger(__name__)
 
-class CopyRequestBase(WebModule, UserDataMixin, ParseInputMixin):
+class CopyRequestBase(WebModule, ParseInputMixin):
     """
-    Base class for copy requests. Initialize with an input parser and a handle to the authorizer.
+    Base class for copy requests. Initialize with an input parser.
     """
 
     def __init__(self, config):
         WebModule.__init__(self, config)
-        UserDataMixin.__init__(self, config)
         ParseInputMixin.__init__(self, config)
 
         manager_config = df.Configuration(registry = config.registry, history = {'db_params': config.history})
@@ -44,7 +42,7 @@ class MakeCopyRequest(CopyRequestBase):
                 request_id = self.params['request_id']
 
                 constraints = self.make_constraints(by_id = True)
-                existing_requests = self.manager.get_requests(self.authorizer, **constraints)
+                existing_requests = self.manager.get_requests(**constraints)
 
                 if len(existing_requests) == 0:
                     raise InvalidRequest('Invalid request id %d' % request_id)
@@ -56,7 +54,7 @@ class MakeCopyRequest(CopyRequestBase):
 
             else:
                 constraints = self.make_constraints(by_id = False)
-                existing_requests = self.manager.get_requests(self.authorizer, **constraints)
+                existing_requests = self.manager.get_requests(**constraints)
 
                 for request_id in sorted(existing_requests.iterkeys()):
                     if existing_requests[request_id].status == 'new':
@@ -82,7 +80,7 @@ class MakeCopyRequest(CopyRequestBase):
                     else:
                         self.params['site'] = list(self.default_sites)
 
-                request = self.manager.create_request(caller, self.authorizer, self.params['item'], self.params['site'], self.params['group'], self.params['n'])
+                request = self.manager.create_request(caller, self.params['item'], self.params['site'], self.params['group'], self.params['n'])
 
             else:
                 existing.request_count += 1
@@ -114,7 +112,7 @@ class PollCopyRequest(CopyRequestBase):
         self.parse_input(request, inventory, ('request_id', 'item', 'site', 'status', 'user'))
 
         constraints = self.make_constraints(by_id = False)
-        existing_requests = self.manager.get_requests(self.authorizer, **constraints)
+        existing_requests = self.manager.get_requests(**constraints)
 
         return [r.to_dict() for r in existing_requests.itervalues()]
 
@@ -132,7 +130,7 @@ class CancelCopyRequest(CopyRequestBase):
         
         try:
             constraints = self.make_constraints(by_id = True)
-            existing_requests = self.manager.get_requests(self.authorizer, **constraints)
+            existing_requests = self.manager.get_requests(**constraints)
 
             if len(existing_requests) == 0:
                 raise InvalidRequest('Invalid request id %d' % request_id)

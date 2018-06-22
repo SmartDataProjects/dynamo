@@ -19,22 +19,20 @@ class DeletionRequestManager(RequestManager):
         if not self.dry_run:
             self.registry.lock_tables(write = tables)
 
-    def get_requests(self, authorizer, request_id = None, statuses = None, users = None, items = None, sites = None):
+    def get_requests(self, request_id = None, statuses = None, users = None, items = None, sites = None):
         all_requests = {}
 
         sql = 'SELECT r.`id`, 0+r.`status`, UNIX_TIMESTAMP(r.`request_time`),'
-        sql += ' r.`user_id`, a.`item`, a.`site`, 0+a.`status`, UNIX_TIMESTAMP(a.`updated`)'
+        sql += ' r.`user`, r.`dn`, a.`item`, a.`site`, 0+a.`status`, UNIX_TIMESTAMP(a.`updated`)'
         sql += ' FROM `deletion_requests` AS r'
         sql += ' LEFT JOIN `active_deletions` AS a ON a.`request_id` = r.`id`'
-        sql += self._make_registry_constraints(authorizer, request_id, statuses, users, items, sites)
+        sql += self._make_registry_constraints(request_id, statuses, users, items, sites)
         sql += ' ORDER BY r.`id`'
 
         _rid = 0
-        for rid, status, request_time, user_id, a_item, a_site, a_status, a_update in self.registry.xquery(sql):
+        for rid, status, request_time, user, dn, a_item, a_site, a_status, a_update in self.registry.xquery(sql):
             if rid != _rid:
                 _rid = rid
-                user, dn = self._find_user(user_id)
-
                 request = all_requests[rid] = DeletionRequest(rid, user, dn, status, request_time)
 
             if a_item is not None:
@@ -103,15 +101,15 @@ class DeletionRequestManager(RequestManager):
 
         return all_requests
 
-    def create_request(self, caller, authorizer, items, sites):
+    def create_request(self, caller, items, sites):
         now = int(time.time())
 
         if self.dry_run:
             return DeletionRequest(0, caller.name, caller.dn, 'new', now, None)
 
         # Make an entry in registry
-        columns = ('user_id', 'request_time')
-        values = (caller.id, MySQL.bare('FROM_UNIXTIME(%d)' % now))
+        columns = ('user', 'dn', 'request_time')
+        values = (caller.name, caller.dn, MySQL.bare('FROM_UNIXTIME(%d)' % now))
         request_id = self.registry.insert_get_id('deletion_requests', columns, values)
 
         mapping = lambda site: (request_id, site)
@@ -136,7 +134,7 @@ class DeletionRequestManager(RequestManager):
         mapping = lambda bid: (request_id, bid)
         self.history.db.insert_select_many('deletion_request_blocks', ('request_id', 'block_id'), mapping, history_block_ids)
 
-        return self.get_requests(authorizer, request_id = request_id)[request_id]
+        return self.get_requests(request_id = request_id)[request_id]
 
     def update_request(self, request):
         if self.dry_run:
@@ -161,7 +159,7 @@ class DeletionRequestManager(RequestManager):
             sql += ' WHERE r.`id` = %s'
             self.registry.query(sql, request_id)
 
-    def collect_updates(self, inventory, authorizer):
+    def collect_updates(self, inventory):
         """
         Check active requests against the inventory state and set the status flags accordingly.
         """
@@ -171,7 +169,7 @@ class DeletionRequestManager(RequestManager):
         self.lock()
 
         try:
-            active_requests = self.get_requests(authorizer, statuses = [Request.ST_ACTIVATED])
+            active_requests = self.get_requests(statuses = [Request.ST_ACTIVATED])
 
             for request in active_requests.itervalues():
                 if request.actions is None:

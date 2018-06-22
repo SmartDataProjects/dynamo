@@ -23,7 +23,7 @@ from dynamo.core.executable import read_only, make_standard_logger
 LOG = make_standard_logger(config.get('log_level', 'info'))
 
 ## Loop over active transfers and check against inventory
-from dynamo.core.executable import inventory, authorizer
+from dynamo.core.executable import inventory
 from dynamo.request.deletion import DeletionRequestManager
 from dynamo.request.copy import CopyRequestManager
 from dynamo.operation.deletion import DeletionInterface
@@ -46,11 +46,11 @@ if read_only:
     deletion.dry_run = True
 
 # Check the inventory content and update the requests
-deletion_manager.collect_updates(inventory, authorizer)
-copy_manager.collect_updates(inventory, authorizer)
+deletion_manager.collect_updates(inventory)
+copy_manager.collect_updates(inventory)
 
 # Execute deletion operations on new deletion requests
-new_requests = deletion_manager.get_requests(authorizer, statuses = [Request.ST_NEW])
+new_requests = deletion_manager.get_requests(statuses = [Request.ST_NEW])
 
 for request in new_requests.itervalues():
     invalid_items = []

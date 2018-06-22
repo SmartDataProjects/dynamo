@@ -23,22 +23,20 @@ class CopyRequestManager(RequestManager):
         if not self.dry_run:
             self.registry.lock_tables(write = tables)
 
-    def get_requests(self, authorizer, request_id = None, statuses = None, users = None, items = None, sites = None):
+    def get_requests(self, request_id = None, statuses = None, users = None, items = None, sites = None):
         all_requests = {}
 
         sql = 'SELECT r.`id`, r.`group`, r.`num_copies`, 0+r.`status`, UNIX_TIMESTAMP(r.`first_request_time`), UNIX_TIMESTAMP(r.`last_request_time`),'
-        sql += ' r.`request_count`, r.`user_id`, a.`item`, a.`site`, 0+a.`status`, UNIX_TIMESTAMP(a.`updated`)'
+        sql += ' r.`request_count`, r.`user`, r.`dn`, a.`item`, a.`site`, 0+a.`status`, UNIX_TIMESTAMP(a.`updated`)'
         sql += ' FROM `copy_requests` AS r'
         sql += ' LEFT JOIN `active_copies` AS a ON a.`request_id` = r.`id`'
-        sql += self._make_registry_constraints(authorizer, request_id, statuses, users, items, sites)
+        sql += self._make_registry_constraints(request_id, statuses, users, items, sites)
         sql += ' ORDER BY r.`id`'
 
         _rid = 0
-        for rid, group, n, status, first_request, last_request, count, user_id, a_item, a_site, a_status, a_update in self.registry.xquery(sql):
+        for rid, group, n, status, first_request, last_request, count, user, dn, a_item, a_site, a_status, a_update in self.registry.xquery(sql):
             if rid != _rid:
                 _rid = rid
-                user, dn = self._find_user(user_id)
-
                 request = all_requests[rid] = CopyRequest(rid, user, dn, group, n, status, first_request, last_request, count)
 
             if a_item is not None:
@@ -108,15 +106,15 @@ class CopyRequestManager(RequestManager):
 
         return all_requests
 
-    def create_request(self, caller, authorizer, items, sites, group, ncopies):
+    def create_request(self, caller, items, sites, group, ncopies):
         now = int(time.time())
 
         if self.dry_run:
             return CopyRequest(0, caller.name, caller.dn, group, ncopies, 'new', now, now, 1)
 
         # Make an entry in registry
-        columns = ('group', 'num_copies', 'user_id', 'first_request_time', 'last_request_time')
-        values = (group, ncopies, caller.id, MySQL.bare('FROM_UNIXTIME(%d)' % now), MySQL.bare('FROM_UNIXTIME(%d)' % now))
+        columns = ('group', 'num_copies', 'user', 'dn', 'first_request_time', 'last_request_time')
+        values = (group, ncopies, caller.name, caller.dn, MySQL.bare('FROM_UNIXTIME(%d)' % now), MySQL.bare('FROM_UNIXTIME(%d)' % now))
         request_id = self.registry.insert_get_id('copy_requests', columns, values)
 
         mapping = lambda site: (request_id, site)
@@ -141,7 +139,7 @@ class CopyRequestManager(RequestManager):
         mapping = lambda bid: (request_id, bid)
         self.history.db.insert_select_many('copy_request_blocks', ('request_id', 'block_id'), mapping, history_block_ids)
 
-        return self.get_requests(authorizer, request_id = request_id)[request_id]
+        return self.get_requests(request_id = request_id)[request_id]
 
     def update_request(self, request):
         if self.dry_run:
@@ -167,7 +165,7 @@ class CopyRequestManager(RequestManager):
             sql += ' WHERE r.`id` = %s'
             self.registry.query(sql, request_id)
 
-    def collect_updates(self, inventory, authorizer):
+    def collect_updates(self, inventory):
         """
         Check active requests against the inventory state and set the status flags accordingly.
         """
@@ -177,7 +175,7 @@ class CopyRequestManager(RequestManager):
         self.lock()
 
         try:
-            active_requests = self.get_requests(authorizer, statuses = [Request.ST_ACTIVATED])
+            active_requests = self.get_requests(statuses = [Request.ST_ACTIVATED])
 
             for request in active_requests.itervalues():
                 if request.actions is None:

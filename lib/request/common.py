@@ -43,8 +43,6 @@ class RequestManager(object):
         if self.dry_run:
             self.history.read_only = True
 
-        self.user_cache = {} # reduce interaction with the authorizer
-
     def lock(self):
         """
         Lock the registry table for lookup + update workflows.
@@ -159,7 +157,7 @@ class RequestManager(object):
 
         return '`{db}`.`ids_tmp`'.format(db = self.history.db.scratch_db)
 
-    def _make_registry_constraints(self, authorizer, request_id, statuses, users, items, sites):
+    def _make_registry_constraints(self, request_id, statuses, users, items, sites):
         constraints = []
 
         if request_id is not None:
@@ -169,15 +167,7 @@ class RequestManager(object):
             constraints.append('r.`status` IN ' + MySQL.stringify_sequence(statuses))
 
         if users is not None:
-            user_ids = []
-            for user in users:
-                result = authorizer.identify_user(name = user)
-                if result is not None:
-                    user, user_id, dn = result
-                    self.user_cache[user_id] = (user, dn)
-                    user_ids.append(user_id)
-
-            constraints.append('r.`user_id` IN ' + MySQL.stringify_sequence(user_ids))
+            constraints.append('r.`user` IN ' + MySQL.stringify_sequence(users))
 
         if items is not None or sites is not None:
             temp_table = self._make_temp_registry_tables(items, sites)
@@ -224,18 +214,3 @@ class RequestManager(object):
             return ' WHERE ' + ' AND '.join(constraints)
         else:
             return ''
-
-    def _find_user(self, authorizer, user_id):
-        try:
-            user, dn = self.user_cache[user_id]
-        except KeyError:
-            result = authorizer.identify_user(uid = user_id)
-            if result is None:
-                user = None
-                dn = None
-            else:
-                user, dn = self.user_cache[user_id] = (result[0], result[2])
-
-        return user, dn
-
-        
