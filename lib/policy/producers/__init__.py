@@ -9,6 +9,7 @@ which indicates the names of the dataset attributes the load() function provides
 """
 
 import os
+import logging
 
 _producers = {} # {attribute name: [class]}
 
@@ -20,8 +21,9 @@ for pyfile in os.listdir(_moddir):
         continue
 
     modname = pyfile.replace('.py', '')
-    # Line below equivalent to "import dynamo.policy.producers.{modname}"
-    module = __import__('dynamo.policy.producers.' + modname, globals(), locals())
+    # Line below equivalent to "import {modname}"
+    # Last argument 1 specifies that the modname must be imported from this directory
+    module = __import__(modname, globals(), locals(), 1)
 
     # Pick up names (that don't start with _) from the imported module (or package) that has the 'load' and 'produces' attributes
     for name in dir(module):
@@ -44,6 +46,8 @@ for pyfile in os.listdir(_moddir):
             except KeyError:
                 _producers[attr_name] = [cls]
 
+
+LOG = logging.getLogger(__name__)
 
 def get_producers(attr_names, producers_config):
     """
@@ -77,7 +81,7 @@ def get_producers(attr_names, producers_config):
                 LOG.error('Please fix the configuration so that each dataset attribute is provided by a unique producer.')
                 raise ConfigurationError('Duplicate attribute producer')
 
-                selected_cls = cls
+            selected_cls = cls
 
         if selected_cls is None:
             LOG.error('Attribute %s is not provided by any producer.', attr_name)
