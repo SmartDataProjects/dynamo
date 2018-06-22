@@ -17,10 +17,13 @@ log_path=/var/log/dynamo
 archive_path=/local/data/dynamo
 
 # Location of the policy package
-policy_path=/usr/local/dynamo-policies
+policy_path=/usr/share/dynamo-policies
 
 # Location of the client executable
-client_path=/usr/local/bin
+client_path=/usr/bin
+
+# Location of the server executable
+sysbin_path=/usr/sbin
 
 [server]
 ## Dynamo server configuration
