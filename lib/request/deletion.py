@@ -182,7 +182,7 @@ class DeletionRequestManager(RequestManager):
                 updated = False
 
                 for action in request.actions:
-                    if status != RequestAction.ST_QUEUED:
+                    if action.status != RequestAction.ST_QUEUED:
                         continue
 
                     try:

@@ -154,7 +154,7 @@ class RequestAction(object):
             self.status = eval('RequestAction.ST_' + status.upper())
         else:
             self.status = status
-        self.last_update = update
+        self.last_update = last_update
     
 
 class CopyRequest(Request):

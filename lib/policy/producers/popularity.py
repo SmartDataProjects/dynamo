@@ -1,6 +1,6 @@
 import logging
 
-LOG = logging.getLogger(__init__)
+LOG = logging.getLogger(__name__)
 
 try:
     from pop.engine import engine
