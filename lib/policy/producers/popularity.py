@@ -1,4 +1,5 @@
 import logging
+import calendar
 
 LOG = logging.getLogger(__name__)
 
@@ -34,7 +35,10 @@ class FilePopularity(object):
 
             usage_summary = self.pop_engine.get_namespace_usage_summary(namespace)
     
-            for (name,n_accesses,last_access) in usage_summary:
+            for (name,n_access,last_access) in usage_summary:
+                
+                # last_access is given in datetime.datetime
+                utc_access = calendar.timegm(last_access.utctimetuple())
     
                 lfn = replacement + name
                 file_object = inventory.find_file(lfn)
@@ -42,11 +46,11 @@ class FilePopularity(object):
                 attribute = dataset.attr
     
                 if 'num_access' not in attribute:
-                    attribute['num_access'] = float(n_access) / len(dataset.num_files)
+                    attribute['num_access'] = float(n_access) / dataset.num_files
                 else:
-                    attribute['num_access'] += float(n_access) / len(dataset.num_files)
+                    attribute['num_access'] += float(n_access) / dataset.num_files
     
                 if 'last_access' not in attribute:
-                    attribute['last_access'] = access
-                elif attribute['last_access'] < access:
-                    attribute['last_access'] = access
+                    attribute['last_access'] = utc_access
+                elif attribute['last_access'] < utc_access:
+                    attribute['last_access'] = utc_access

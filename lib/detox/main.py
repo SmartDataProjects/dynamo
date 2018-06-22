@@ -177,11 +177,16 @@ class Detox(object):
 
                         block_to_clone[block] = block_clone
 
+                if dataset_replica.group is None:
+                    group = None
+                else:
+                    group = partition_repository.groups[dataset_replica.group.name]
+
                 replica_clone = DatasetReplica(
                     dataset_clone,
                     site_clone,
                     growing = dataset_replica.growing,
-                    group = partition_repository.groups[dataset_replica.group.name]
+                    group = group
                 )
                 dataset_clone.replicas.add(replica_clone)
                 site_clone.add_dataset_replica(replica_clone, add_block_replicas = False)
@@ -197,15 +202,19 @@ class Detox(object):
 
                 for block_replica in block_replica_set:
                     block_clone = block_to_clone[block_replica.block]
+                    if block_replica.is_complete():
+                        size = -1
+                    else:
+                        size = block_replica.size
 
                     block_replica_clone = BlockReplica(
                         block_clone,
                         site_clone,
                         partition_repository.groups[block_replica.group.name],
                         is_custodial = block_replica.is_custodial,
-                        size = block_replica.size,
+                        size = size,
                         last_update = block_replica.last_update,
-                        file_ids = block_replicas.file_ids
+                        file_ids = block_replica.file_ids
                     )
 
                     replica_clone.block_replicas.add(block_replica_clone)
