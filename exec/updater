@@ -26,7 +26,7 @@ from dynamo.fileop.rlfsm import RLFSM
 rlfsm = RLFSM(config.get('rlfsm', None))
 
 if read_only:
-    rlfsm.dry_run = True
+    rlfsm.set_read_only()
 
 ## Set up a handle to the registry
 from dynamo.utils.interface.mysql import MySQL

@@ -4,7 +4,10 @@ class BaseHandler(object):
     def __init__(self, name):
         self.name = name
         self.required_attrs = []
-        self.read_only = False
+        self._read_only = False
+
+    def set_read_only(self, value = True):
+        self._read_only = value
 
     def get_requests(self, inventory, policy):
         """

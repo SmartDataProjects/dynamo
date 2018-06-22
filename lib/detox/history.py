@@ -321,7 +321,7 @@ class DetoxHistory(DetoxHistoryBase):
         @return cycle number.
         """
 
-        if self.read_only:
+        if self._read_only:
             return 0
 
         part_id = self.save_partitions([partition], get_ids = True)[0]
@@ -341,7 +341,7 @@ class DetoxHistory(DetoxHistoryBase):
         @param cycle_number   Cycle number
         """
 
-        if self.read_only:
+        if self._read_only:
             return
 
         self.db.query('UPDATE `cycles` SET `time_end` = NOW() WHERE `id` = %s', cycle_number)
@@ -352,7 +352,7 @@ class DetoxHistory(DetoxHistoryBase):
         @param policy_lines  List of PolicyLine objects
         """
 
-        if self.read_only:
+        if self._read_only:
             return
 
         for line in policy_lines:
@@ -378,7 +378,7 @@ class DetoxHistory(DetoxHistoryBase):
         in multiple of deleted, kept, and protected.
         """
 
-        if self.read_only:
+        if self._read_only:
             return
     
         reuse = self.db.reuse_connection
@@ -504,7 +504,7 @@ class DetoxHistory(DetoxHistoryBase):
         @param quotas         {site: quota in TB}
         """
 
-        if self.read_only:
+        if self._read_only:
             return
 
         reuse = self.db.reuse_connection

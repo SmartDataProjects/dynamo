@@ -32,7 +32,11 @@ class Detox(object):
 
         self.test_run = config.get('test_run', False)
         if self.test_run:
-            self.deletion_op.dry_run = True
+            self.deletion_op.set_read_only()
+
+    def set_read_only(self, value = True):
+        self.deletion_op.set_read_only(value)
+        self.history.set_read_only(value)
 
     def run(self, inventory, comment = '', create_cycle = True):
         """

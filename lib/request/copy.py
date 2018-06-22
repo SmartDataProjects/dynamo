@@ -20,7 +20,7 @@ class CopyRequestManager(RequestManager):
             ('copy_request_items', 'i'), 'copy_request_items', ('copy_request_sites', 's'), 'copy_request_sites'
         ]
 
-        if not self.dry_run:
+        if not self._read_only:
             self.registry.lock_tables(write = tables)
 
     def get_requests(self, request_id = None, statuses = None, users = None, items = None, sites = None):
@@ -109,7 +109,7 @@ class CopyRequestManager(RequestManager):
     def create_request(self, caller, items, sites, group, ncopies):
         now = int(time.time())
 
-        if self.dry_run:
+        if self._read_only:
             return CopyRequest(0, caller.name, caller.dn, group, ncopies, 'new', now, now, 1)
 
         # Make an entry in registry
@@ -142,7 +142,7 @@ class CopyRequestManager(RequestManager):
         return self.get_requests(request_id = request_id)[request_id]
 
     def update_request(self, request):
-        if self.dry_run:
+        if self._read_only:
             return
 
         sql = 'UPDATE `copy_requests` SET `status` = %s, `group_id` = (SELECT `id` FROM `groups` WHERE `name` = %s), `num_copies` = %s, `rejection_reason` = %s WHERE `id` = %s'

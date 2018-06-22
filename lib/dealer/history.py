@@ -87,7 +87,7 @@ class DealerHistory(DealerHistoryBase):
         @return cycle number.
         """
 
-        if self.read_only:
+        if self._read_only:
             return 0
 
         part_id = self.save_partitions([partition], get_ids = True)[0]
@@ -107,7 +107,7 @@ class DealerHistory(DealerHistoryBase):
         @param cycle_number   Cycle number
         """
 
-        if self.read_only:
+        if self._read_only:
             return
 
         self.db.query('UPDATE `cycles` SET `time_end` = NOW() WHERE `id` = %s', cycle_number)

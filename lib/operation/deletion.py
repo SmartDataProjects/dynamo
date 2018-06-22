@@ -25,9 +25,10 @@ class DeletionInterface(object):
 
     def __init__(self, config = None):
         config = Configuration(config)
+        self._read_only = False
 
-        self.dry_run = config.get('dry_run', False)
-        self._next_operation_id = 1
+    def set_read_only(self, value = True):
+        self._read_only = value
 
     def schedule_deletions(self, replica_list, operation_id, comments = ''):
         """

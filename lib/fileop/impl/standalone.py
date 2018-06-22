@@ -58,7 +58,7 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
                 destination.to_pfn(lfn, 'gfal2')
             )
 
-        if not self.dry_run:
+        if not self._read_only:
             sql = 'INSERT INTO `standalone_transfer_batches` (`batch_id`, `source_site`, `destination_site`) VALUES (%s, %s, %s)'
             self.db.query(sql, batch_id, source.name, destination.name)
             self.db.insert_many('standalone_transfer_tasks', fields, mapping, batch_tasks)
@@ -82,7 +82,7 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
                 site.to_pfn(lfn, 'gfal2')
             )
 
-        if not self.dry_run:
+        if not self._read_only:
             sql = 'INSERT INTO `standalone_deletion_batches` (`batch_id`, `site`) VALUES (%s, %s)'
             self.db.query(sql, batch_id, site.name)
             self.db.insert_many('standalone_deletion_tasks', fields, mapping, batch_tasks)
@@ -128,14 +128,14 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         return [(i, FileQuery.status_val(s), c, t, f) for (i, s, c, t, f) in self.db.xquery(sql, batch_id)]
 
     def _forget_status(self, task_id, optype):
-        if self.dry_run:
+        if self._read_only:
             return
 
         sql = 'DELETE FROM `standalone_{op}_tasks` WHERE `id` = %s'.format(op = optype)
         self.db.query(sql, task_id)
 
     def _forget_batch(self, batch_id, optype):
-        if self.dry_run:
+        if self._read_only:
             return
 
         sql = 'DELETE FROM `standalone_{op}_batches` WHERE `batch_id` = %s'

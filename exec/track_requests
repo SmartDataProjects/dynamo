@@ -40,10 +40,10 @@ else:
     deletion = DeletionInterface.get_instance()
 
 if read_only:
-    deletion_manager.dry_run = True
-    copy_manager.dry_run = True
-    history.read_only = True
-    deletion.dry_run = True
+    deletion_manager.set_read_only()
+    copy_manager.set_read_only()
+    history.set_read_only()
+    deletion.set_read_only()
 
 # Check the inventory content and update the requests
 deletion_manager.collect_updates(inventory)

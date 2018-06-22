@@ -39,19 +39,20 @@ class RequestManager(object):
 
         self.optype = optype
 
-        self.dry_run = config.get('dry_run', False)
-        if self.dry_run:
-            self.history.read_only = True
+        self.set_read_only(config.get('read_only', False))
+
+    def set_read_only(self, value = True):
+        self._read_only = value
 
     def lock(self):
         """
         Lock the registry table for lookup + update workflows.
         """
-        if not self.dry_run:
+        if not self._read_only:
             self.registry.lock_tables()
 
     def unlock(self):
-        if not self.dry_run:
+        if not self._read_only:
             self.registry.unlock_tables()
 
     def _save_items(self, items):

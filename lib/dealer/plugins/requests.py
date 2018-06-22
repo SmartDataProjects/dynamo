@@ -32,10 +32,11 @@ class CopyRequestsHandler(BaseHandler):
 
         self.activated_requests = []
 
-        if self.read_only:
-            self.request_manager.dry_run = True
+    def set_read_only(self, value = True): #override
+        self._read_only = value
+        self.request_manager.set_read_only(value)
 
-    def get_requests(self, inventory, policy): # override
+    def get_requests(self, inventory, policy): #override
         """
         1. Request all active transfers in new state (these were not queued in the last cycle)
         2. Find all transfer requests with status new.

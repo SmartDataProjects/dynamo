@@ -16,12 +16,14 @@ class FODCopyInterface(CopyInterface):
         CopyInterface.__init__(self, config)
         self.rlfsm = RLFSM(config.get('fod', None))
 
+    def set_read_only(self, value = True): #override
+        self._read_only = value
+        self.rlfsm.set_read_only(value)
+
     def schedule_copies(self, replica_list, operation_id, comments = ''): #override
         sites = set(r.site for r in replica_list)
         if len(sites) != 1:
             raise OperationalError('schedule_copies should be called with a list of replicas at a single site.')
-
-        self.rlfsm.dry_run = self.dry_run
 
         LOG.info('Scheduling copy of %d replicas to %s using RLFSM (operation %d)', len(replica_list), list(sites)[0], operation_id)
 

@@ -16,7 +16,7 @@ class DeletionRequestManager(RequestManager):
             ('deletion_request_items', 'i'), 'deletion_request_items', ('deletion_request_sites', 's'), 'deletion_request_sites'
         ]
 
-        if not self.dry_run:
+        if not self._read_only:
             self.registry.lock_tables(write = tables)
 
     def get_requests(self, request_id = None, statuses = None, users = None, items = None, sites = None):
@@ -104,7 +104,7 @@ class DeletionRequestManager(RequestManager):
     def create_request(self, caller, items, sites):
         now = int(time.time())
 
-        if self.dry_run:
+        if self._read_only:
             return DeletionRequest(0, caller.name, caller.dn, 'new', now, None)
 
         # Make an entry in registry
@@ -137,7 +137,7 @@ class DeletionRequestManager(RequestManager):
         return self.get_requests(request_id = request_id)[request_id]
 
     def update_request(self, request):
-        if self.dry_run:
+        if self._read_only:
             return
 
         sql = 'UPDATE `deletion_requests` SET `status` = %s, `rejection_reason` = %s WHERE `id` = %s'

@@ -25,8 +25,10 @@ class CopyInterface(object):
 
     def __init__(self, config = None):
         config = Configuration(config)
+        self._read_only = False
 
-        self.dry_run = config.get('dry_run', False)
+    def set_read_only(self, value = True):
+        self._read_only = value
 
     def schedule_copies(self, replica_list, operation_id, comments = ''):
         """

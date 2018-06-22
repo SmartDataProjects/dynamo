@@ -16,6 +16,10 @@ class FODDeletionInterface(DeletionInterface):
         DeletionInterface.__init__(self, config)
         self.rlfsm = RLFSM(config.get('fod', None))
 
+    def set_read_only(self, value): #override
+        self._read_only = value
+        self.rlfsm.set_read_only(value)
+
     def schedule_deletions(self, replica_list, operation_id, comments = ''): #override
         sites = set(r.site for r, b in replica_list)
         if len(sites) != 1:

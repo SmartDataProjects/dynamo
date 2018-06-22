@@ -10,7 +10,7 @@ class DeletionHistoryDatabase(HistoryDatabase):
     """
 
     def make_entry(self, site_name):
-        if self.read_only:
+        if self._read_only:
             operation_id = 0
         else:
             site_id = self.save_sites([site_name], get_ids = True)[0]
@@ -19,7 +19,7 @@ class DeletionHistoryDatabase(HistoryDatabase):
         return HistoryRecord(HistoryRecord.OP_DELETE, operation_id, site_name, int(time.time()))
 
     def update_entry(self, deletion_record):
-        if self.read_only:
+        if self._read_only:
             return
 
         dataset_names = [r.dataset_name for r in deletion_record.replicas]
@@ -47,7 +47,7 @@ class CopyHistoryDatabase(HistoryDatabase):
     """
 
     def make_entry(self, site_name):
-        if self.read_only:
+        if self._read_only:
             operation_id = 0
         else:
             site_id = self.save_sites([site_name], get_ids = True)[0]
@@ -56,7 +56,7 @@ class CopyHistoryDatabase(HistoryDatabase):
         return HistoryRecord(HistoryRecord.OP_COPY, operation_id, site_name, int(time.time()))
 
     def update_entry(self, copy_record):
-        if self.read_only:
+        if self._read_only:
             return
 
         dataset_names = [r.dataset_name for r in copy_record.replicas]

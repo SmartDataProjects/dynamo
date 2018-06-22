@@ -23,13 +23,16 @@ class HistoryDatabase(object):
 
         self.db = MySQL(config.db_params)
 
-        self.read_only = config.get('read_only', False)
+        self.set_read_only(config.get('read_only', False))
+
+    def set_read_only(self, value = True):
+        self._read_only = value
 
     def save_users(self, user_list, get_ids = False):
         """
         @param user_list  [(name, dn)]
         """
-        if self.read_only:
+        if self._read_only:
             if get_ids:
                 return [0] * len(user_list)
             else:
@@ -41,7 +44,7 @@ class HistoryDatabase(object):
             return self.db.select_many('users', ('id',), 'dn', [u[1] for u in user_list])
 
     def save_partitions(self, partition_names, get_ids = False):
-        if self.read_only:
+        if self._read_only:
             if get_ids:
                 return [0] * len(partition_names)
             else:
@@ -53,7 +56,7 @@ class HistoryDatabase(object):
             return self.db.select_many('partitions', ('id',), 'name', partition_names)
 
     def save_sites(self, site_names, get_ids = False):
-        if self.read_only:
+        if self._read_only:
             if get_ids:
                 return [0] * len(site_names)
             else:
@@ -65,7 +68,7 @@ class HistoryDatabase(object):
             return self.db.select_many('sites', ('id',), 'name', site_names)
 
     def save_groups(self, group_names, get_ids = False):
-        if self.read_only:
+        if self._read_only:
             if get_ids:
                 return [0] * len(group_names)
             else:
@@ -77,7 +80,7 @@ class HistoryDatabase(object):
             return self.db.select_many('groups', ('id',), 'name', group_names)
 
     def save_datasets(self, dataset_names, get_ids = False):
-        if self.read_only:
+        if self._read_only:
             if get_ids:
                 return [0] * len(dataset_names)
             else:
@@ -92,7 +95,7 @@ class HistoryDatabase(object):
         """
         @param block_list   [(dataset name, block name)]
         """
-        if self.read_only:
+        if self._read_only:
             if get_ids:
                 return [0] * len(block_list)
             else:

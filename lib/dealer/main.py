@@ -36,9 +36,15 @@ class Dealer(object):
 
         self.test_run = config.get('test_run', False)
         if self.test_run:
-            self.copy_op.dry_run = True
+            self.copy_op.set_read_only()
 
         self._setup_plugins(config)
+
+    def set_read_only(self, value = True):
+        self.copy_op.set_read_only(value)
+        self.history.set_read_only(value)
+        for plugin in self._plugin_priorities.keys():
+            plugin.set_read_only(value)
 
     def run(self, inventory, comment = ''):
         """
@@ -127,7 +133,8 @@ class Dealer(object):
             modname, _, clsname = spec.module.partition(':')
             cls = getattr(__import__('dynamo.dealer.plugins.' + modname, globals(), locals(), [clsname]), clsname)
             plugin = cls(spec.config)
-            plugin.read_only = self.test_run
+            if self.test_run:
+                plugin.set_read_only()
             self._plugin_priorities[plugin] = spec.priority
 
             if spec.priority:
