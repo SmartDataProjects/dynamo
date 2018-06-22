@@ -29,7 +29,9 @@
       ["INSERT, UPDATE, DELETE", "dynamoregister", "active_deletions"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "detox_locks"],
       ["INSERT, UPDATE, DELETE, ALTER", "dynamoregister", "data_injections"],
-      ["SELECT", "dynamoserver", "users"]
+      ["SELECT", "dynamoserver", "users"],
+      ["SELECT", "dynamoserver", "roles"],
+      ["SELECT", "dynamoserver", "user_authorizations"]
     ]
   },
   "dynamoread": {
@@ -42,7 +44,9 @@
       ["SELECT, LOCK TABLES", "dynamohistory"],
       ["SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE, DROP", "dynamohistory\\_cache"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "activity_lock"],
-      ["SELECT", "dynamoserver", "users"]
+      ["SELECT", "dynamoserver", "users"],
+      ["SELECT", "dynamoserver", "roles"],
+      ["SELECT", "dynamoserver", "user_authorizations"]
     ]
   },
   "dynamofod": {

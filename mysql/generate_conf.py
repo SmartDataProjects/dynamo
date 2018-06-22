@@ -17,6 +17,7 @@ def generate_local_board_conf(conf_str):
         host = conf['host']
 
     user = conf['user']
+
     if 'passwd' in conf:
         passwd = conf['passwd']
     else:
@@ -33,27 +34,40 @@ def generate_store_conf(conf_str):
 
     with open(thisdir + '/grants.json') as source:
         grants_conf = json.load(source)
-    
-    server_conf = grants_conf[conf['server']]
-    reader_conf = grants_conf[conf['reader']]
+
+    if 'host' not in conf:
+        host = 'localhost'
+    else:
+        host = conf['host']
+
+    user = conf['user']
+    readuser = conf['readuser']
+   
+    if 'passwd' in conf:
+        passwd = conf['passwd']
+    else:
+        passwd = grants_conf[user]['passwd']
+
+    if 'readpasswd' in conf:
+        readpasswd = conf['readpasswd']
+    else:
+        readpasswd = grants_conf[readuser]['passwd']
 
     store_conf = OD([('module', 'mysqlstore:MySQLInventoryStore'), ('config', OD()), ('readonly_config', OD())])
 
     store_conf['config']['db_params'] = OD([
-        ('host', 'localhost'),
+        ('host', host),
         ('db', 'dynamo'),
-        ('reuse_connection', True),
-        ('user', conf['server']),
-        ('passwd', server_conf['passwd']),
+        ('user', user),
+        ('passwd', passwd)
         ('scratch_db', 'dynamo_tmp')
     ])
 
     store_conf['readonly_config']['db_params'] = OD([
-        ('host', 'localhost'),
+        ('host', host),
         ('db', 'dynamo'),
-        ('reuse_connection', True),
-        ('user', conf['reader']),
-        ('passwd', reader_conf['passwd']),
+        ('user', readuser),
+        ('passwd', readpasswd),
         ('scratch_db', 'dynamo_tmp')
     ])
 
@@ -71,10 +85,17 @@ def generate_master_conf(conf_str):
         host = conf['host']
 
     user = conf['user']
+    readuser = conf['readuser']
+   
     if 'passwd' in conf:
         passwd = conf['passwd']
     else:
         passwd = grants_conf[user]['passwd']
+
+    if 'readpasswd' in conf:
+        readpasswd = conf['readpasswd']
+    else:
+        readpasswd = grants_conf[readuser]['passwd']
 
     master_conf = OD([
         ('module', 'mysqlmaster:MySQLMasterServer'),
@@ -83,9 +104,17 @@ def generate_master_conf(conf_str):
 
     master_conf['config']['db_params'] = OD([
         ('host', host),
+        ('db', 'dynamoserver'),
         ('user', user),
         ('passwd', passwd),
+        ('scratch_db', 'dynamo_tmp')
+    ])
+
+    master_conf['readonly_config']['db_params'] = OD([
+        ('host', host),
         ('db', 'dynamoserver'),
+        ('user', readuser),
+        ('passwd', readpasswd),
         ('scratch_db', 'dynamo_tmp')
     ])
 
