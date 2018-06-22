@@ -157,7 +157,7 @@ class DeletionRequestManager(RequestManager):
             sql += ' INNER JOIN `deletion_request_items` AS i ON i.`request_id` = r.`id`'
             sql += ' INNER JOIN `deletion_request_sites` AS s ON s.`request_id` = r.`id`'
             sql += ' WHERE r.`id` = %s'
-            self.registry.query(sql, request_id)
+            self.registry.query(sql, request.request_id)
 
     def collect_updates(self, inventory):
         """

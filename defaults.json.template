@@ -100,8 +100,8 @@
   "detox.history:DetoxHistoryBase": {
     "all": {
       "cache_db": "dynamohistory_cache",
-      "snapshots_spool_dir": "$(DYNAMO_SPOOL)/detox_snapshots",
-      "snapshots_archive_dir": "$(DYNAMO_ARCHIVE)/detox_snapshots"
+      "snapshots_spool_dir": "/var/spool/dynamo/detox_snapshots",
+      "snapshots_archive_dir": "/var/spool/dynamo/detox_snapshots"
     }
   },
   "utils.interface.webservice:HTTPSCertKeyHandler": {
