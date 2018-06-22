@@ -1,9 +1,11 @@
 CREATE TABLE `deletion_requests` (
-  `id` int(10) NOT NULL,
-  `cycle_id` int(10) NOT NULL,
-  `timestamp` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
-  `approved` tinyint(1) NOT NULL DEFAULT '0',
-  `site_id` int(10) unsigned NOT NULL DEFAULT '0',
-  KEY `external_id` (`id`),
-  KEY `cycle` (`cycle_id`)
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int(10) unsigned NOT NULL,
+  `request_time` datetime NOT NULL,
+  `status` enum('new','activated','completed','rejected','cancelled') NOT NULL DEFAULT 'new',
+  `rejection_reason` text CHARACTER SET latin1 COLLATE latin1_general_cs,
+  PRIMARY KEY (`id`),
+  KEY `user` (`user_id`),
+  KEY `request_time` (`request_time`),
+  KEY `status` (`status`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;

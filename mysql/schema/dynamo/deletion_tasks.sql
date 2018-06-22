@@ -1,4 +1,4 @@
-CREATE TABLE `deletion_queue` (
+CREATE TABLE `deletion_tasks` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `subscription_id` bigint(20) unsigned NOT NULL,
   `batch_id` bigint(20) unsigned NOT NULL,

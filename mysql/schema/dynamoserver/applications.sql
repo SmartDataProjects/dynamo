@@ -6,7 +6,7 @@ CREATE TABLE `applications` (
   `args` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
   `status` enum('new','assigned','run','done','notfound','authfailed','failed','killed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `server` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
-  `exit_code` int(10) unsigned DEFAULT NULL,
+  `exit_code` int(10) DEFAULT NULL,
   `user_id` int(10) unsigned NOT NULL,
   `user_host` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,

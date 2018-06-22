@@ -16,7 +16,7 @@
 INITLOG_ARGS=""
 
 EXECUTABLE=dynamod # executable this script spawns
-TARGET=_INSTALLPATH_/sbin/dynamod # full path to the executable
+TARGET=_SYSBINPATH_/dynamod # full path to the executable
 
 source _INSTALLPATH_/etc/profile.d/init.sh
 

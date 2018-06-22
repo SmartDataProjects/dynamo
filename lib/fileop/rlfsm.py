@@ -98,15 +98,18 @@ class RLFSM(object):
         else:
             self.deletion_query = self.deletion_operation
 
-        self.dry_run = config.get('dry_run', False)
-        if self.transfer_operation:
-            self.transfer_operation.dry_run = self.dry_run
-        if self.deletion_operation:
-            self.deletion_operation.dry_run = self.dry_run
-
         # Cycle thread
         self.main_cycle = None
         self.cycle_stop = threading.Event()
+
+        self.set_read_only(config.get('read_only', False))
+
+    def set_read_only(self, value = True):
+        self._read_only = value
+        if self.transfer_operation:
+            self.transfer_operation.set_read_only(value)
+        if self.deletion_operation:
+            self.deletion_operation.set_read_only(value)
 
     def start(self, inventory):
         """
@@ -330,7 +333,7 @@ class RLFSM(object):
                 # site must exist
                 site = inventory.sites[site_name]
         
-            if replica is None or replica.block != block or replica.site != site:
+            if replica is None or replica.block is not block or replica.site is not site:
                 if replica is not None and has_update:
                     # check updates for previous replica
                     update_replica(replica, file_ids, len(projected))
@@ -379,7 +382,7 @@ class RLFSM(object):
 
         LOG.debug('Done ids: %s', done_ids)
 
-        if not self.dry_run:
+        if not self._read_only:
             # remove subscription entries with status 'done'
             # this is dangerous - what if inventory fails to update on the server side?
             self.db.delete_many('file_subscriptions', 'id', done_ids)
@@ -388,7 +391,7 @@ class RLFSM(object):
         """
         Make file subscriptions at a site.
         """
-        LOG.info('Subscribing %d files to %s', len(files), str(site))
+        LOG.debug('Subscribing %d files to %s', len(files), str(site))
 
         self._subscribe(site, files, 0)
 
@@ -396,7 +399,7 @@ class RLFSM(object):
         """
         Book deletion of files at the site.
         """
-        LOG.info('Desubscribing %d files from %s', len(files), site.name)
+        LOG.debug('Desubscribing %d files from %s', len(files), site.name)
 
         self._subscribe(site, files, 1)
 
@@ -421,12 +424,12 @@ class RLFSM(object):
     def _subscribe(self, site, files, delete):
         opp_op = 0 if delete == 1 else 1
 
-        if not self.dry_run:
+        if not self._read_only:
             self.db.lock_tables(write = ['file_subscriptions'])
 
         try:
             sql = 'UPDATE `file_subscriptions` SET `status` = \'cancelled\''
-            if not self.dry_run:
+            if not self._read_only:
                 self.db.execute_many(sql, ('file_id', 'site_id'), [(f.id, site.id) for f in files], ['`delete` = %d' % opp_op, '`status` IN (\'new\', \'inbatch\', \'retry\', \'held\')'])
     
             # local time
@@ -435,11 +438,11 @@ class RLFSM(object):
             fields = ('file_id', 'site_id', 'status', 'delete', 'created', 'last_update')
             mapping = lambda f: (f.id, site.id, 'new', delete, now, now)
     
-            if not self.dry_run:
+            if not self._read_only:
                 self.db.insert_many('file_subscriptions', fields, mapping, files, do_update = True, update_columns = ('status', 'last_update'))
 
         finally:
-            if not self.dry_run:
+            if not self._read_only:
                 self.db.unlock_tables()
 
     def _get_cancelled_tasks(self, optype):
@@ -448,7 +451,7 @@ class RLFSM(object):
         else:
             delete = 1
 
-        sql = 'SELECT q.`id` FROM `{op}_queue` AS q'.format(op = optype)
+        sql = 'SELECT q.`id` FROM `{op}_tasks` AS q'.format(op = optype)
         sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         sql += ' WHERE u.`status` = \'cancelled\' AND u.`delete` = %d' % delete
         return self.db.query(sql)
@@ -457,7 +460,7 @@ class RLFSM(object):
         # insert queries all have ON DUPLICATE key to make sure we can restart in case of a crash
 
         insert_file = 'INSERT INTO `{history}`.`files` (`name`, `size`)'
-        insert_file += ' SELECT f.`name`, f.`size` FROM `transfer_queue` AS q'
+        insert_file += ' SELECT f.`name`, f.`size` FROM `transfer_tasks` AS q'
         insert_file += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         insert_file += ' INNER JOIN .`files` AS f ON f.`id` = u.`file_id`'
         insert_file += ' WHERE u.`delete` = 0 AND q.`id` = %s'
@@ -483,9 +486,9 @@ class RLFSM(object):
             delete_val = '1'
 
         insert_history = 'INSERT INTO `{history}`.`{table}`'
-        insert_history += ' (`id`, `file_id`, ' + site_fields + ', `exitcode`, `batch_id`, `created`, `started`, `finished`, `completed`)'
-        insert_history += ' SELECT q.`id`, hf.`id`, ' + site_values + ', %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s), FROM_UNIXTIME(%s), NOW()'
-        insert_history += ' FROM `transfer_queue` AS q'
+        insert_history += ' (`file_id`, ' + site_fields + ', `exitcode`, `batch_id`, `created`, `started`, `finished`, `completed`)'
+        insert_history += ' SELECT hf.`id`, ' + site_values + ', %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s), FROM_UNIXTIME(%s), NOW()'
+        insert_history += ' FROM `transfer_tasks` AS q'
         insert_history += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         insert_history += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
         insert_history += ' INNER JOIN `{history}`.`files` AS hf ON hf.`name` = f.`name`'
@@ -497,18 +500,18 @@ class RLFSM(object):
 
         if optype == 'transfer':
             insert_failure = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
-            insert_failure += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_queue` WHERE `id` = %s'
+            insert_failure += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_tasks` WHERE `id` = %s'
             insert_failure += ' ON DUPLICATE KEY UPDATE `id`=VALUES(`id`)'
             delete_failures = 'DELETE FROM `failed_transfers` WHERE `subscription_id` = %s'
 
-        get_subscription = 'SELECT u.`id`, u.`status` FROM `{op}_queue` AS q'.format(op = optype)
+        get_subscription = 'SELECT u.`id`, u.`status` FROM `{op}_tasks` AS q'.format(op = optype)
         get_subscription += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         get_subscription += ' WHERE q.`id` = %s'
 
         update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
         delete_subscription = 'DELETE FROM `file_subscriptions` WHERE `id` = %s'
 
-        delete_task = 'DELETE FROM `{op}_queue` WHERE `id` = %s'.format(op = optype)
+        delete_task = 'DELETE FROM `{op}_tasks` WHERE `id` = %s'.format(op = optype)
 
         delete_batch = 'DELETE FROM `{op}_batches` WHERE `id` = %s'.format(op = optype)
 
@@ -546,19 +549,19 @@ class RLFSM(object):
                     batch_complete = False
                     continue
 
-                if not self.dry_run:
+                if not self._read_only:
                     self.db.query(insert_file, task_id)
                     self.db.query(insert_history, exitcode, start_time, finish_time, task_id)
 
                 # We check the subscription status and update accordingly. Need to lock the tables.
-                if not self.dry_run:
-                    self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), optype + '_queue', (optype + '_queue', 'q')])
+                if not self._read_only:
+                    self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), optype + '_tasks', (optype + '_tasks', 'q')])
 
                 try:
                     subscription = self.db.query(get_subscription, task_id)
                     if len(subscription) == 0:
                         # A task without subscription - some sort of state corruption. Just ignore
-                        if not self.dry_run:
+                        if not self._read_only:
                             self.db.query(delete_task, task_id)
                             continue
 
@@ -567,21 +570,21 @@ class RLFSM(object):
                     if subscription_status == 'inbatch':
                         if status == FileQuery.STAT_DONE:
                             LOG.debug('Subscription %d done.', subscription_id)
-                            if not self.dry_run:
+                            if not self._read_only:
                                 self.db.query(update_subscription, 'done', subscription_id)
         
                         elif status == FileQuery.STAT_FAILED:
                             LOG.debug('Subscription %d failed (exit code %d). Flagging retry.', subscription_id, exitcode)
-                            if not self.dry_run:
+                            if not self._read_only:
                                 self.db.query(update_subscription, 'retry', subscription_id)
         
                     elif subscription_status == 'cancelled':
                         # subscription is cancelled and task terminated -> delete the subscription now, irrespective of the task status
                         LOG.debug('Subscription %d is cancelled.', subscription_id)
-                        if not self.dry_run:
+                        if not self._read_only:
                             self.db.query(delete_subscription, subscription_id)
                 finally:
-                    if not self.dry_run:
+                    if not self._read_only:
                         self.db.unlock_tables()
 
                 if optype == 'transfer':
@@ -593,7 +596,7 @@ class RLFSM(object):
                         # Insert entry to failed_transfers table
                         self.db.query(insert_failure, exitcode, task_id)
     
-                if not self.dry_run:
+                if not self._read_only:
                     self.db.query(delete_task, task_id)
 
                 if status == FileQuery.STAT_DONE:
@@ -705,7 +708,7 @@ class RLFSM(object):
             subscription = RLFSM.Subscription(sub_id, lfile, destination, disk_sources, tape_sources, failed_sources)
             subscriptions.append(subscription)
 
-        if not self.dry_run:
+        if not self._read_only:
             self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `last_update` = NOW()', 'id', to_hold)
 
         return subscriptions
@@ -791,7 +794,7 @@ class RLFSM(object):
 
     def _start_transfers(self, tasks):
         # start the transfer of tasks. If batch submission fails, make progressively smaller batches until failing tasks are identified.
-        if self.dry_run:
+        if self._read_only:
             batch_id = 0
         else:
             self.db.query('INSERT INTO `transfer_batches` (`id`) VALUES (0)')
@@ -806,20 +809,20 @@ class RLFSM(object):
         fields = ('subscription_id', 'source_id', 'batch_id', 'created')
         mapping = lambda t: (t.subscription.id, t.source.id, batch_id, now)
 
-        if not self.dry_run:
-            self.db.insert_many('transfer_queue', fields, mapping, tasks)
+        if not self._read_only:
+            self.db.insert_many('transfer_tasks', fields, mapping, tasks)
         
         # set the task ids
         tasks_by_sub = dict((t.subscription.id, t) for t in tasks)
-        for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `transfer_queue` WHERE `batch_id` = %s', batch_id):
+        for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `transfer_tasks` WHERE `batch_id` = %s', batch_id):
             tasks_by_sub[subscription_id].id = task_id
 
-        self.transfer_operation.dry_run = self.dry_run
+        self.transfer_operation.read_only = self._read_only
         
         success = self.transfer_operation.start_transfers(batch_id, tasks)
 
         if success:
-            if not self.dry_run:
+            if not self._read_only:
                 self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\', `last_update` = NOW()', 'id', [t.subscription.id for t in tasks])
 
             return 1, len(tasks)
@@ -829,9 +832,9 @@ class RLFSM(object):
                 LOG.error('Cannot start transfer of %s from %s to %s',
                     task.subscription.file.lfn, task.source.name, task.subscription.destination.name)
 
-                if not self.dry_run:
+                if not self._read_only:
                     sql = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
-                    sql += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_queue` WHERE `id` = %s'
+                    sql += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_tasks` WHERE `id` = %s'
                     self.db.query(sql, -1, task.id)
 
                     sql = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
@@ -840,9 +843,9 @@ class RLFSM(object):
             else:
                 LOG.error('Batch transfer of %d files failed. Retrying with smaller batches.', len(tasks))
 
-            if not self.dry_run:
+            if not self._read_only:
                 # roll back
-                self.db.query('DELETE FROM `transfer_queue` WHERE `batch_id` = %s', batch_id)
+                self.db.query('DELETE FROM `transfer_tasks` WHERE `batch_id` = %s', batch_id)
                 self.db.query('DELETE FROM `transfer_batches` WHERE `id` = %s', batch_id)
 
             num_batches, num_tasks = 0, 0
@@ -858,7 +861,7 @@ class RLFSM(object):
             return num_batches, num_tasks
 
     def _start_deletions(self, tasks):
-        if self.dry_run:
+        if self._read_only:
             batch_id = 0
         else:
             self.db.query('INSERT INTO `deletion_batches` (`id`) VALUES (0)')
@@ -870,18 +873,18 @@ class RLFSM(object):
         fields = ('subscription_id', 'batch_id', 'created')
         mapping = lambda t: (t.desubscription.id, batch_id, now)
 
-        if not self.dry_run:
-            self.db.insert_many('deletion_queue', fields, mapping, tasks)
+        if not self._read_only:
+            self.db.insert_many('deletion_tasks', fields, mapping, tasks)
 
         # set the task ids
         tasks_by_sub = dict((t.desubscription.id, t) for t in tasks)
-        for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `deletion_queue` WHERE `batch_id` = %s', batch_id):
+        for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `deletion_tasks` WHERE `batch_id` = %s', batch_id):
             tasks_by_sub[subscription_id].id = task_id
         
         success = self.deletion_operation.start_deletions(batch_id, tasks)
 
         if success:
-            if not self.dry_run:
+            if not self._read_only:
                 self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\', `last_update` = NOW()', 'id', [t.desubscription.id for t in tasks])
 
             return 1, len(tasks)
@@ -892,16 +895,16 @@ class RLFSM(object):
                 LOG.error('Cannot delete %s at %s',
                     task.desubscription.file.lfn, task.desubscription.site.name)
 
-                if not self.dry_run:
+                if not self._read_only:
                     sql = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
                     self.db.query(sql, 'held', task.desubscription.id)
 
             else:
                 LOG.error('Batch deletion of %d files failed. Retrying with smaller batches.', len(tasks))
 
-            if not self.dry_run:
+            if not self._read_only:
                 # roll back
-                self.db.query('DELETE FROM `deletion_queue` WHERE `batch_id` = %s', batch_id)
+                self.db.query('DELETE FROM `deletion_tasks` WHERE `batch_id` = %s', batch_id)
                 self.db.query('DELETE FROM `deletion_batches` WHERE `id` = %s', batch_id)
 
             num_batches, num_tasks = 0, 0
@@ -939,5 +942,5 @@ class RLFSM(object):
                     yield site.id, directory
 
         fields = ('site_id', 'directory')
-        if not self.dry_run:
-            self.db.insert_many('directory_cleaning_queue', fields, None, get_entry(), do_update = True)
+        if not self._read_only:
+            self.db.insert_many('directory_cleaning_tasks', fields, None, get_entry(), do_update = True)

@@ -9,6 +9,8 @@ import code
 import multiprocessing
 import threading
 import Queue
+import traceback
+import shlex
 
 from dynamo.core.inventory import DynamoInventory
 from dynamo.core.manager import ServerManager, OutOfSyncError
@@ -622,23 +624,122 @@ class DynamoServer(object):
         return has_update
 
     def _start_subprocess(self, app, is_local):
+        proc_args = (app['path'], app['args'], is_local, not app['write_request'])
+
+        proc = multiprocessing.Process(target = self.run_script, name = app['title'], args = proc_args)
+        proc.daemon = True
+        proc.start()
+
+        return proc
+
+    def run_script(self, path, args, is_local, read_only):
+        """
+        Main function for script execution.
+        @param path            Path to the work area of the script. Will be the root directory in read-only processes.
+        @param args            Script command-line arguments.
+        @param is_local        True if script is requested from localhost.
+        @param defaults_config A Configuration object specifying the global defaults for various tools
+        @param read_only       Boolean
+        """
+    
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        stdout = open(path + '/_stdout', 'a')
+        stderr = open(path + '/_stderr', 'a')
+        sys.stdout = stdout
+        sys.stderr = stderr
+
         # These objects can be garbage-collected as soon as this function returns.
         # That doesn't cause a problem only because no shared resource (e.g. database connections)
         # are instantiated in the constructor of these objects.
         # We probably should have a more explicit safeguard mechanism.
         inventory, authorizer = self.get_subprocess_args()
 
-        if app['write_request']:
-            queue = self.inventory_update_queue
-        else:
+        if read_only:
             queue = None
+        else:
+            queue = self.inventory_update_queue
 
-        # TODO we should probably not pass all of this through a pipe to the subprocess but rather have run_script
-        # back as a DynamoServer method and inherit memory from the main process
-        proc_args = (app['path'], app['args'], is_local, self.defaults_config, inventory, authorizer, queue)
+        path = serverutils.pre_execution(path, is_local, read_only, self.defaults_config, inventory, authorizer)
+    
+        # Set argv
+        sys.argv = [path + '/exec.py']
+        if args:
+            sys.argv += shlex.split(args) # split using shell-like syntax
+    
+        # Execute the script
+        try:
+            myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
+            execfile(path + '/exec.py', myglobals)
+    
+        except:
+            exc_type, exc, tb = sys.exc_info()
+    
+            if exc_type is SystemExit:
+                # sys.exit used in the script
+                if exc.code == 0:
+                    serverutils.send_updates(inventory, queue)
+                else:
+                    raise
+    
+            elif exc_type is KeyboardInterrupt:
+                # Terminated by the server.
+                sys.exit(2)
+    
+            else:
+                # print the traceback "manually" to cut out the first two lines showing the server process
+                tb_lines = traceback.format_tb(tb)[1:]
+                sys.stderr.write('Traceback (most recent call last):\n')
+                sys.stderr.write(''.join(tb_lines))
+                sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
+                sys.stderr.flush()
+        
+                sys.exit(1)
+    
+        else:
+            serverutils.send_updates(inventory, queue)
+            # Queue stays available on the other end even if we terminate the process
+    
+        finally:
+            # cleanup
+            serverutils.post_execution(path, is_local)
+    
+            sys.stdout.close()
+            sys.stderr.close()
+            # multiprocessing/forking.py still uses sys.stdout and sys.stderr - need to return them to the original FDs
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
-        proc = multiprocessing.Process(target = serverutils.run_script, name = app['title'], args = proc_args)
-        proc.daemon = True
-        proc.start()
-
-        return proc
+    def run_interactive(self, path, is_local, make_console, stdout = sys.stdout, stderr = sys.stderr):
+        """
+        Main function for interactive sessions.
+        For now we limit interactive sessions to read-only.
+        @param path            Path to the work area.
+        @param is_local        True if script is requested from localhost.
+        @param defaults_config A Configuration object specifying the global defaults for various tools
+        @param inventory       A DynamoInventoryProxy instance
+        @param authorizer      An Authorizer instance
+        @param make_console    A callable which takes a dictionary of locals as an argument and returns a console
+        @param stdout          File-like object for stdout
+        @param stderr          File-like object for stderr
+        """
+    
+        inventory, authorizer = self.get_subprocess_args()
+    
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        sys.stdout = stdout
+        sys.stderr = stderr
+    
+        serverutils.pre_execution(path, is_local, True, self.defaults_config, inventory, authorizer)
+    
+        # use receive of oconn as input
+        mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': inventory}
+        console = make_console(mylocals)
+        try:
+            console.interact(serverutils.BANNER)
+        finally:
+            serverutils.post_execution(path, is_local)
+    
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr

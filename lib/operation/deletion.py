@@ -25,34 +25,22 @@ class DeletionInterface(object):
 
     def __init__(self, config = None):
         config = Configuration(config)
+        self._read_only = False
 
-        self.dry_run = config.get('dry_run', False)
-        self._next_operation_id = 1
+    def set_read_only(self, value = True):
+        self._read_only = value
 
-    def schedule_deletion(self, replica, comments = ''):
+    def schedule_deletions(self, replica_list, operation_id, comments = ''):
         """
-        Schedule a deletion of the dataset or block replica.
-        @param replica   A DatasetReplica or BlockReplica
-        @param comments  Comments to be passed to the operation interface
-        @return {operation id, approved, site, [dataset/block]}
-        """
-
-        raise NotImplementedError('schedule_deletion')
-
-    def schedule_deletions(self, replica_list, comments = ''):
-        """
-        Schedule a deletion of multiple replicas. Subclasses should implement the most efficient way
-        according to available features.
-        @param replica_list  A flat list of DatasetReplicas or BlockReplicas
+        Schedule a deletion of multiple replicas.
+        @param replica_list  [(DatasetReplica, [BlockReplica])]. List of block replicas can be None if deleting the entire dataset replica.
+        @param operation_id  Deletion operation id in the history DB for logging.
         @param comments      Comments to be pased to the operation interface
-        @return {operation id: (approved, site, [dataset/block])}
+
+        @return  Clone [(DatasetReplica, [BlockReplica] or None)] for successfully scheduled replicas
         """
 
-        request_mapping = {}
-        for replica in replica_list:
-            request_mapping.update(self.schedule_deletion(replica, comments = comments))
-
-        return request_mapping
+        raise NotImplementedError('schedule_deletions')
 
     def deletion_status(self, operation_id):
         """

@@ -1,170 +1,134 @@
-import logging
+from dynamo.utils.interface.mysql import MySQL
+from dynamo.dataformat import Configuration
 
-from dynamo.dataformat import Configuration, HistoryRecord
-from dynamo.utils.classutil import get_instance
-
-LOG = logging.getLogger(__name__)
-
-class TransactionHistoryInterface(object):
+class HistoryDatabase(object):
     """
-    Interface for transaction history.
+    Interface to the history database. This is a MySQL-specific implementation, and we actually
+    expose the backend database.. Will be a bit tricky to replace the backend when we need to do it.
+    What we do with the history DB is very much application specific, so it makes little sense
+    to have generic abstract interface to individual actions. The methods of this class are just a
+    few of the common operations that are necessary for any history recording.
     """
 
-    @staticmethod
-    def get_instance(module = None, config = None):
-        if module is None:
-            module = TransactionHistoryInterface._module
-        if config is None:
-            config = TransactionHistoryInterface._config
-
-        return get_instance(TransactionHistoryInterface, module, config)
-
-    # defaults
-    _module = ''
+    # default configuration
     _config = Configuration()
 
     @staticmethod
     def set_default(config):
-        TransactionHistoryInterface._module = config.module
-        TransactionHistoryInterface._config = config.config
+        HistoryDatabase._config = Configuration(config)
 
-    def __init__(self, config):
-        self.test = config.get('test', False)
-        self.read_only = config.get('read_only', False)
+    def __init__(self, config = None):
+        if config is None:
+            config = HistoryDatabase._config
 
-    def new_copy_cycle(self, partition, policy_version, comment = ''):
-        """
-        Set up a new copy cycle for the partition.
-        @param partition        partition name string
-        @param policy_version   string for policy version
-        @param comment          comment string
+        self.db = MySQL(config.db_params)
 
-        @return cycle number.
-        """
-        raise NotImplementedError('new_copy_cycle')
+        self.set_read_only(config.get('read_only', False))
 
-    def new_deletion_cycle(self, partition, policy_version, comment = ''):
-        """
-        Set up a new deletion cycle for the partition.
-        @param partition        partition name string
-        @param policy_version   string for policy version
-        @param comment          comment string
+    def set_read_only(self, value = True):
+        self._read_only = value
 
-        @return cycle number.
+    def save_users(self, user_list, get_ids = False):
         """
-        raise NotImplementedError('new_deletion_cycle')
+        @param user_list  [(name, dn)]
+        """
+        if self._read_only:
+            if get_ids:
+                return [0] * len(user_list)
+            else:
+                return
 
-    def close_copy_cycle(self, cycle_number):
-        """
-        Finalize the records for the given cycle.
-        @param cycle_number   Cycle number
-        """
-        raise NotImplementedError('close_copy_cycle')
+        self.db.insert_many('users', ('name', 'dn'), None, user_list, do_update = True)
 
-    def close_deletion_cycle(self, cycle_number):
-        """
-        Finalize the records for the given cycle.
-        @param cycle_number   Cycle number
-        """
-        raise NotImplementedError('close_deletion_cycle')
+        if get_ids:
+            return self.db.select_many('users', ('id',), 'dn', [u[1] for u in user_list])
 
-    def make_copy_entry(self, cycle_number, site, operation_id, approved, dataset_list):
-        """
-        Record a copy operation.
-        @param cycle_number  Cycle number
-        @param site          Site object
-        @param operation_id  ID from the copy operation
-        @param approved      Boolean
-        @param dataset_list  [(dataset, size)]
-        """
-        raise NotImplementedError('make_copy_entry')
+    def save_partitions(self, partition_names, get_ids = False):
+        if self._read_only:
+            if get_ids:
+                return [0] * len(partition_names)
+            else:
+                return
 
-    def make_deletion_entry(self, cycle_number, site, operation_id, approved, dataset_list):
-        """
-        Record a deletion operation.
-        @param cycle_number  Cycle number
-        @param site          Site object
-        @param operation_id  ID from the copy operation
-        @param approved      Boolean
-        @param dataset_list  [(dataset, size)]
-        """
-        raise NotImplementedError('make_deletion_entry')
+        self.db.insert_many('partitions', ('name',), MySQL.make_tuple, partition_names, do_update = True)
 
-    def update_copy_entry(self, copy_record):
-        """
-        Update a copy entry. Only certain fields (approved, last_update) are updatable.
-        @param copy_record   HistoryRecord object.
-        """
-        raise NotImplementedError('update_copy_entry')
+        if get_ids:
+            return self.db.select_many('partitions', ('id',), 'name', partition_names)
 
-    def update_deletion_entry(self, deletion_record):
-        """
-        Update a deletion entry. Only certain fields (approved, last_update) are updatable.
-        @param deletion_record   HistoryRecord object.
-        """
-        raise NotImplementedError('update_deletion_entry')
+    def save_sites(self, site_names, get_ids = False):
+        if self._read_only:
+            if get_ids:
+                return [0] * len(site_names)
+            else:
+                return
 
-    def save_sites(self, sites):
-        """
-        Save site names.
-        @param sites       List of Site objects
-        """
-        raise NotImplementedError('save_sites')
+        self.db.insert_many('sites', ('name',), MySQL.make_tuple, site_names, do_update = True)
 
-    def save_datasets(self, datasets):
-        """
-        Save dataset names.
-        @param datasets    List of Dataset objects
-        """
-        raise NotImplementedError('save_datasets')
+        if get_ids:
+            return self.db.select_many('sites', ('id',), 'name', site_names)
 
-    def get_incomplete_copies(self, partition):
-        """
-        Get a list of incomplete copies.
-        @param partition   partition name
+    def save_groups(self, group_names, get_ids = False):
+        if self._read_only:
+            if get_ids:
+                return [0] * len(group_names)
+            else:
+                return
 
-        @return list of HistoryRecords
-        """
-        raise NotImplementedError('get_incomplete_copies')
+        self.db.insert_many('groups', ('name',), MySQL.make_tuple, group_names, do_update = True)
 
-    def get_site_name(self, operation_id):
-        """
-        Get the copy or deletion target site name for the given operation.
-        @param operation_id   Copy or deletion operation id
+        if get_ids:
+            return self.db.select_many('groups', ('id',), 'name', group_names)
 
-        @return site name string (empty if not operation is found)
-        """
-        raise NotImplementedError('get_site_name')
+    def save_datasets(self, dataset_names, get_ids = False):
+        if self._read_only:
+            if get_ids:
+                return [0] * len(dataset_names)
+            else:
+                return
 
-    def get_deletion_cycles(self, partition, first = -1, last = -1):
-        """
-        Get a list of deletion cycles in range first <= cycle <= last. If first == -1, pick only the latest before last.
-        If last == -1, select cycles up to the latest.
-        @param partition  partition name
-        @param first      first cycle
-        @param last       last cycle
+        self.db.insert_many('datasets', ('name',), MySQL.make_tuple, dataset_names, do_update = True)
 
-        @return list of cycle numbers
-        """
-        raise NotImplementedError('get_deletion_cycles')
+        if get_ids:
+            return self.db.select_many('datasets', ('id',), 'name', dataset_names)
 
-    def get_copy_cycles(self, partition, first = -1, last = -1):
+    def save_blocks(self, block_list, get_ids = False):
         """
-        Get a list of copy cycles in range first <= cycle <= last. If first == -1, pick only the latest before last.
-        If last == -1, select cycles up to the latest.
-        @param partition  partition name
-        @param first      first cycle
-        @param last       last cycle
+        @param block_list   [(dataset name, block name)]
+        """
+        if self._read_only:
+            if get_ids:
+                return [0] * len(block_list)
+            else:
+                return
 
-        @return list of cycle numbers
-        """
-        raise NotImplementedError('get_copy_cycles')
+        reuse_orig = self.db.reuse_connection
+        self.db.reuse_connection = True
 
-    def get_cycle_timestamp(self, cycle_number):
-        """
-        Get the timestamp of the copy or deletion cycle.
-        @param cycle_number  Cycle number
+        datasets = set(b[0] for b in block_list)
 
-        @return UNIX timestamp of the cycle.
-        """
-        raise NotImplementedError('get_cycle_timestamp')
+        self.save_datasets(datasets)
+
+        columns = [
+            '`dataset` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL',
+            '`block` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL'
+        ]
+        self.db.create_tmp_table('blocks_tmp', columns)
+        self.db.insert_many('blocks_tmp', ('dataset', 'block'), None, block_list, db = self.db.scratch_db)
+
+        sql = 'INSERT INTO `blocks` (`dataset_id`, `name`)'
+        sql += ' SELECT d.`id`, b.`block` FROM `{scratch}`.`blocks_tmp` AS b'.format(scratch = self.db.scratch_db)
+        sql += ' INNER JOIN `datasets` AS d ON d.`name` = b.`dataset`'
+        self.db.query(sql)
+
+        if get_ids:
+            sql = 'SELECT b.`id` FROM `blocks` AS b'
+            sql += ' INNER JOIN (SELECT d.`id` dataset_id, t.`block` block_name FROM `{scratch}`.`blocks_tmp` AS t'.format(scratch = self.db.scratch_db)
+            sql += ' INNER JOIN `datasets` AS d ON d.`name` = t.`dataset`) AS j ON (j.`dataset_id`, j.`block_name`) = (b.`dataset_id`, b.`name`)'
+
+            ids = self.db.query(sql)
+
+        self.db.drop_tmp_table('blocks_tmp')
+        self.db.reuse_connection = reuse_orig
+
+        if get_ids:
+            return ids

@@ -22,7 +22,7 @@
 
 #cycleComments {
     width: 100%;
-    height: 30%;
+    height: 20%;
     text-align: right;
     margin: 0 0 0 0;
 }    
@@ -36,7 +36,7 @@
 
 #cycles {
     width: 100%;
-    height: 20%;
+    height: 30%;
     float:right;
     text-align: right;
 }

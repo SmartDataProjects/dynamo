@@ -17,10 +17,13 @@ log_path=/var/log/dynamo
 archive_path=/local/data/dynamo
 
 # Location of the policy package
-policy_path=/usr/local/dynamo-policies
+policy_path=/usr/share/dynamo-policies
 
 # Location of the client executable
-client_path=/usr/local/bin
+client_path=/usr/bin
+
+# Location of the server executable
+sysbin_path=/usr/sbin
 
 [server]
 ## Dynamo server configuration
@@ -34,19 +37,19 @@ email=
 # Server persistency store technology (leave blank if not running store)
 store=mysql
 
-# Store configuration to be passed to $store/generate_store_conf.py
-store_conf={"server": "dynamosrv", "reader": "dynamoread"}
+# Store configuration to be passed to $store/generate_conf.py
+store_conf={"host": "localhost", "user": "dynamosrv", "readuser": "dynamoread"}
 
 # Master server technology
 master=mysql
 
-# Configuration to be passed to $master/generate_master_conf.py
-master_conf={"host": "localhost", "user": "dynamosrv"}
+# Configuration to be passed to $master/generate_conf.py
+master_conf={"host": "localhost", "user": "dynamosrv", "readuser": "dynamoread"}
 
 # Master server shadow technology
 shadow=mysql
 
-# Configuration to be passed to $shadow/generate_shadow_conf.py
+# Configuration to be passed to $shadow/generate_conf.py
 shadow_conf={"host": "localhost", "user": "dynamosrv"}
 
 # Server update board technology
@@ -56,7 +59,7 @@ local_board=mysql
 local_board_conf={"host": "localhost", "user": "dynamosrv"}
 
 # Location of the partition definition
-partition_def=$(DYNAMO_BASE)/etc/default_partitions.txt
+partition_def=/usr/local/dynamo/etc/default_partitions.txt
 
 # Path to the default configuration file for common tools (relative to this file)
 defaults_conf=defaults.json
@@ -75,8 +78,8 @@ server=socketappserver:SocketAppServer
 #  keyfile: Server private key (can be self-signed)
 #  capath: CA path for client authentication (can be a directory in python 2.7; otherwise a single file with all CA certs concatenated)
 # Cert and key files here can be generated with /etc/pki/tls/certs/make-dummy-cert if you have openssl installed in Red Hat
-server_conf={"workarea_base": "$(DYNAMO_SPOOL)/work",
-             "scheduler_base": "$(DYNAMO_SPOOL)/scheduler",
+server_conf={"workarea_base": "/var/spool/dynamo/work",
+             "scheduler_base": "/var/spool/dynamo/scheduler",
              "certfile": "/etc/pki/tls/certs/localhost.crt",
              "keyfile": "/etc/pki/tls/certs/localhost.crt",
              "capath": "/etc/pki/tls/certs/ca-bundle.crt"}
@@ -111,7 +114,7 @@ fom_conf={"db": {"user": "dynamofod"}, "transfer": {}}
 # Configuration JSON for the File Operations Daemon (empty if backend=fts)
 #  max_parallel_links: Maximum number of concurrent operations within each batch
 #  transfer_timeout: Timeout for individual transfers (seconds)
-fod_conf={"max_parallel_links": 20, "transfer_timeout": 3600}
+fod_conf={"max_batches": 50, "max_parallel_links": 200, "transfer_timeout": 3600}
 
 # Alternative file operations configuration
 #backend=fts

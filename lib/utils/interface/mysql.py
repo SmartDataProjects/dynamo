@@ -46,7 +46,26 @@ class MySQL(object):
 
     @staticmethod
     def escape_string(string):
+        """
+        String escape without the surrounding quotes.
+        """
         return MySQLdb.escape_string(string)
+
+    @staticmethod
+    def stringify_sequence(sequence):
+        """
+        Return a MySQL list string from the sequence.
+        """
+        return '(%s)' % ','.join(MySQL.escape(sequence))
+
+    @staticmethod
+    def escape(value):
+        """
+        Converts a string to a quoted string and a number to a decimal expression string. Result of the function
+        can be used directly as a right-hand-side expression in queries. Lists and tuples are converted to python tuples
+        with each element escaped.
+        """
+        return MySQLdb.escape(value, MySQLdb.converters.conversions)
 
     class bare(object):
         """
@@ -54,6 +73,10 @@ class MySQL(object):
         """
         def __init__(self, value):
             self.value = value
+
+    @staticmethod
+    def make_tuple(obj):
+        return (obj,)
     
     def __init__(self, config = None):
         config = Configuration(config)
@@ -269,7 +292,7 @@ class MySQL(object):
         @param table    Table name without reverse-quotes.
         @param columns  If an iterable, column names to insert to. If None, insert filling all columns is assumed.
         @param values   If an iterable, column values to insert. Either values or select must be None.
-        @param select   If 
+        @param select   If a string must be a full SELECT statement that can insert to the table.
         """
 
         args = []
@@ -377,8 +400,9 @@ class MySQL(object):
             self._fully_unlock()
             raise
 
-    def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = ''):
+    def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = '', on_duplicate_key_update = ''):
         result = []
+        result_sum = None
 
         if type(key) is tuple:
             key_str = '(' + ','.join('`%s`' % k for k in key) + ')'
@@ -398,13 +422,22 @@ class MySQL(object):
         sqlbase += key_str + ' IN {pool}'
 
         def execute(pool_expr):
+            global result_sum
+
             sql = sqlbase.format(pool = pool_expr)
             if order_by:
                 sql += ' ORDER BY ' + order_by
+            if on_duplicate_key_update:
+                sql += ' ON DUPLICATE KEY UPDATE ' + on_duplicate_key_update
 
             vals = self.query(sql)
             if type(vals) is list:
                 result.extend(vals)
+            elif type(vals) is int:
+                if result_sum is None:
+                    result_sum = 0
+
+                result_sum += vals
 
         # executing in batches - we may issue multiple queries
         self._connection_lock.acquire()
@@ -415,30 +448,13 @@ class MySQL(object):
             self._fully_unlock()
             raise
 
-        return result
+        if result_sum is None:
+            return result
+        else:
+            return result_sum
 
     def select_many(self, table, fields, key, pool, additional_conditions = [], order_by = ''):
-        if type(fields) is str:
-            fields = (fields,)
-
-        quoted = []
-        for field in fields:
-            if type(field) is MySQL.bare:
-                quoted.append(field.value)
-            elif '(' in field or '`' in field:
-                # backward compatibility
-                quoted.append(field)
-            else:
-                quoted.append('`%s`' % field)
-
-        fields_str = ','.join(quoted)
-        
-        if type(table) is MySQL.bare:
-            table_str = table.value
-        else:
-            table_str = '`%s`' % table
-
-        sqlbase = 'SELECT {fields} FROM {table}'.format(fields = fields_str, table = table_str)
+        sqlbase = self._form_select_many_sql(table, fields)
 
         return self.execute_many(sqlbase, key, pool, additional_conditions, order_by = order_by)
 
@@ -508,11 +524,10 @@ class MySQL(object):
             values = ''
 
             while itr:
-                # tuple is converted by quote_tuple into a single string
                 if mapping is None:
-                    values += template % MySQLdb.escape(obj, MySQLdb.converters.conversions)
+                    values += template % MySQL.escape(obj)
                 else:
-                    values += template % MySQLdb.escape(mapping(obj), MySQLdb.converters.conversions)
+                    values += template % MySQL.escape(mapping(obj))
     
                 try:
                     obj = itr.next()
@@ -531,6 +546,38 @@ class MySQL(object):
             
             num_inserted += self.query(sqlbase % values)
 
+        return num_inserted
+
+    def insert_select_many(self, insert_table, insert_fields, select_table, select_fields, key, pool, do_update = True, db = '', update_columns = None, additional_conditions = [], order_by = ''):
+        """
+        INSERT INTO insert_table (insert_fields) SELECT select_fields FROM select_table WHERE key IN pool
+        @param insert_table   Table to insert to.
+        @param insert_fields  Name of columns in insert_table.
+        @param select_table   Table to select from.
+        @param select_fields  Name of columns in select_table.
+        @param key            See select_many.
+        @param pool           See select_many.
+
+        @return  total number of inserted rows.
+        """
+
+        if db == '':
+            db = self.db_name()
+
+        sqlbase = 'INSERT INTO `%s`.`%s`' % (db, insert_table)
+        if insert_fields:
+            sqlbase += ' (%s)' % ','.join('`%s`' % f for f in insert_fields)
+
+        sqlbase += ' ' + self._form_select_many_sql(select_table, select_fields)
+            
+        if insert_fields and do_update:
+            if update_columns is None:
+                update_columns = insert_fields
+
+            update = ','.join('`{f}`=VALUES(`{f}`)'.format(f = f) for f in update_columns)
+
+        num_inserted = self.execute_many(sqlbase, key, pool, additional_conditions = additional_conditions, order_by = order_by, on_duplicate_key_update = update)
+        
         return num_inserted
 
     def insert_update(self, table, fields, *values, **kwd):
@@ -585,6 +632,10 @@ class MySQL(object):
             else:
                 terms.append(('`%s`' % table, 'WRITE'))
 
+        if len(terms) == 0:
+            # why was the function even called?
+            return
+
         # acquire thread lock so that other threads don't access the database while table locks are on
         self._connection_lock.acquire()
 
@@ -632,6 +683,29 @@ class MySQL(object):
         else:
             self._connection_lock.release()
 
+    def _form_select_many_sql(self, table, fields):
+        if type(fields) is str:
+            fields = (fields,)
+
+        quoted = []
+        for field in fields:
+            if type(field) is MySQL.bare:
+                quoted.append(field.value)
+            elif '(' in field or '`' in field:
+                # backward compatibility
+                quoted.append(field)
+            else:
+                quoted.append('`%s`' % field)
+
+        fields_str = ','.join(quoted)
+        
+        if type(table) is MySQL.bare:
+            table_str = table.value
+        else:
+            table_str = '`%s`' % table
+
+        return 'SELECT {fields} FROM {table}'.format(fields = fields_str, table = table_str)
+
     def _execute_in_batches(self, execute, pool):
         """
         Execute the execute function in batches. Pool can be a list or a tuple that defines
@@ -657,7 +731,8 @@ class MySQL(object):
 
             return
 
-        elif type(pool) is str:
+        elif type(pool) is MySQL.bare or type(pool) is str:
+            # case str: backward compatibility
             execute(pool)
 
             return
@@ -675,15 +750,16 @@ class MySQL(object):
         try:
             obj = itr.next()
         except StopIteration:
+            # empty set!
+            pool_expr = '(NULL)'
+            execute(pool_expr)
             return
 
         # type-checking the element - all elements must share a type
         if type(obj) is tuple or type(obj) is list:
-            # template = (%s, %s, ...)
-            template = '(' + ','.join(['%s'] * len(obj)) + ')'
-            escape = lambda o, c: template % MySQLdb.escape(o, c)
+            escape = MySQL.stringify_sequence
         else:
-            escape = MySQLdb.escape
+            escape = MySQL.escape
 
         # need to repeat in case pool is a long list
         while True:
@@ -691,7 +767,7 @@ class MySQL(object):
 
             while itr:
                 # tuples and scalars are all quoted by escape()
-                pool_expr += escape(obj, MySQLdb.converters.conversions)
+                pool_expr += escape(obj)
 
                 try:
                     obj = itr.next()
@@ -746,15 +822,20 @@ class MySQL(object):
         if not db:
             db = self.scratch_db
 
-        if self.table_exists(table, db):
-            self.query('TRUNCATE TABLE `%s`.`%s`' % (db, table))
+        table_full = '`%s`.`%s`' % (db, table)[0][1]
+        create_stmt = self.query('SHOW CREATE TABLE %s' % table_full)[0][1]
+        self.query('SET sql_notes = 0')
+        self.query('DROP TABLE IF EXISTS ' + table_full)
+        self.query('SET sql_notes = 1')
+        self.query(create_stmt)
 
     def drop_tmp_table(self, table, db = ''):
         if not db:
             db = self.scratch_db
 
-        if self.table_exists(table, db):
-            self.query('DROP TABLE `%s`.`%s`' % (db, table))
+        self.query('SET sql_notes = 0')
+        self.query('DROP TABLE IF EXISTS `%s`.`%s`' % (db, table))
+        self.query('SET sql_notes = 1')
 
     def make_map(self, table, objects, object_id_map = None, id_object_map = None, key = None, tmp_join = False):
         objitr = iter(objects)

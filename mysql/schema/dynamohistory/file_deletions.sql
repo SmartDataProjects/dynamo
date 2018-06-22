@@ -1,5 +1,5 @@
 CREATE TABLE `file_deletions` (
-  `id` bigint(20) unsigned NOT NULL,
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `file_id` bigint(20) unsigned NOT NULL,
   `site_id` int(10) unsigned NOT NULL,
   `exitcode` smallint(5) NOT NULL,

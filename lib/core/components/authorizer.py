@@ -14,7 +14,7 @@ class Authorizer(object):
         return get_instance(Authorizer, module, config)
 
     def __init__(self, config):
-        pass
+        self.readonly_config = None
 
     def user_exists(self, name):
         """
@@ -93,7 +93,7 @@ class Authorizer(object):
 
     def create_authorizer(self):
         """
-        Clone self with fresh connections.
+        Clone self with fresh connections. Use readonly_config if available.
         @return A new authorizer instance with a fresh connection
         """
         raise NotImplementedError('create_authorizer')

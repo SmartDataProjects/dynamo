@@ -1,4 +1,4 @@
-CREATE TABLE `transfer_queue` (
+CREATE TABLE `transfer_tasks` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `subscription_id` bigint(20) unsigned NOT NULL,
   `source_id` int(11) unsigned NOT NULL,

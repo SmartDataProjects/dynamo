@@ -37,8 +37,6 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         self.keep_context = config.get('keep_context', True)
         self._context = None
 
-        self.dry_run = False
-
     def form_batches(self, tasks): #override
         if len(tasks) == 0:
             return []
@@ -131,7 +129,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         return getattr(fts3, method)(context, *args, **kwd)
 
     def _submit_job(self, job, optype, batch_id, pfn_to_task):
-        if self.dry_run:
+        if self._read_only:
             job_id = 'test'
         else:
             try:
@@ -159,13 +157,13 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         sql = 'INSERT INTO `fts_{op}_batches` (`batch_id`, `fts_server_id`, `job_id`)'.format(op = optype)
         sql += ' VALUES (%s, %s, %s)'
-        if not self.dry_run:
+        if not self._read_only:
             self.db.query(sql, batch_id, self.server_id, job_id)
 
         fields = (optype + '_id', 'batch_id', 'fts_file_id')
         mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])
 
-        if not self.dry_run:
+        if not self._read_only:
             self.db.insert_many('fts_' + optype + '_files', fields, mapping, fts_files)
 
         return True
@@ -190,7 +188,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         job_id = self.db.query(sql.format(optype = optype), self.server_id, batch_id)[0]
 
         sql = 'SELECT `fts_file_id`, `{optype}_id` FROM `fts_{optype}_files` WHERE `batch_id` = %s'
-        fts_to_queue = dict(self.db.xquery(sql.format(optype = optype), batch_id))
+        fts_to_task = dict(self.db.xquery(sql.format(optype = optype), batch_id))
 
         result = self._ftscall('get_job_status', job_id = job_id, list_files = True)
 
@@ -203,7 +201,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         for fts_file in fts_files:
             try:
-                task_id = fts_to_queue[fts_file['file_id']]
+                task_id = fts_to_task[fts_file['file_id']]
             except KeyError:
                 continue
 
@@ -244,14 +242,14 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         return results
 
     def _forget_status(self, task_id, optype):
-        if self.dry_run:
+        if self._read_only:
             return
 
         sql = 'DELETE FROM `fts_{optype}_files` WHERE `{optype}_id` = %s'.format(optype = optype)
         self.db.query(sql, task_id)
 
     def _forget_batch(self, batch_id, optype):
-        if self.dry_run:
+        if self._read_only:
             return
 
         sql = 'DELETE FROM `fts_{optype}_batches` WHERE `batch_id` = %s'.format(optype = optype)
@@ -260,7 +258,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
     def _set_server_id(self):
         result = self.db.query('SELECT `id` FROM `fts_servers` WHERE `url` = %s', self.server_url)
         if len(result) == 0:
-            if not self.dry_run:
+            if not self._read_only:
                 self.db.query('INSERT INTO `fts_servers` (`url`) VALUES (%s) ON DUPLICATE KEY UPDATE `url`=VALUES(`url`)', self.server_url)
                 self.server_id = self.db.last_insert_id
         else:

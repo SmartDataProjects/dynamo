@@ -2,7 +2,7 @@ import logging
 import fnmatch
 import random
 
-from dynamo.dataformat import Site, Dataset, Block
+from dynamo.dataformat import Site
 
 LOG = logging.getLogger(__name__)
 
@@ -19,87 +19,6 @@ class ReplicaPlacementRule(object):
 
     def block_allowed(self, block, site):
         return True
-
-
-# "already_exists" functions
-# Return values are
-# 0 -> item does not exist at the site
-# 1 -> item exists but is owned by a different group
-# 2 -> item exists and is owned by the group
-
-def dataset_already_exists(dataset, site, group):
-    level = 0
-    replica = site.find_dataset_replica(dataset)
-    if replica is not None and replica.is_full():
-        level = 1
-
-        owners = set(brep.group for brep in replica.block_replicas)
-        if len(owners) == 1 and list(owners)[0] == group:
-            level = 2
-
-    return level
-
-def block_already_exists(block, site, group):
-    level = 0
-    replica = site.find_block_replica(block)
-    if replica is not None and replica.is_complete():
-        level = 1
-        if replica.group == group:
-            level = 2
-
-    return level
-
-def blocks_already_exist(blocks, site, group):
-    complete_at_site = True
-    owned_at_site = True
-
-    for block in blocks:
-        replica = site.find_block_replica(block)
-        if replica is None or not replica.is_complete():
-            complete_at_site = False
-        elif replica.group != group:
-            owned_at_site = False
-
-    if complete_at_site:
-        if owned_at_site:
-            return 2
-        else:
-            return 1
-    else:
-        return 0
-
-# "group finding" functions
-# If the item is owned by a single group at the site, return the group object
-# Otherwise return None
-
-def dataset_owned_by(dataset, site):
-    replica = site.find_dataset_replica(dataset)
-    if replica is not None:
-        owners = set(brep.group for brep in replica.block_replicas)
-        if len(owners) == 1:
-            return list(owners)[0]
-
-    return None
-
-def block_owned_by(block, site):
-    replica = site.find_block_replica(block)
-    if replica is not None:
-        return replica.group
-
-    return None
-
-def blocks_owned_by(blocks, site):
-    group = None
-
-    for block in blocks:
-        replica = site.find_block_replica(block)
-        if replica is None:
-            if group is None:
-                group = replica.group
-            else:
-                return None
-
-    return group
 
 
 class DealerPolicy(object):
@@ -186,65 +105,30 @@ class DealerPolicy(object):
 
         return True
 
-    def is_allowed_destination(self, item, site):
+    def is_allowed_destination(self, request, site):
         """
-        Check if the item (= Dataset, Block, or [Block]) is allowed to be at site, according to the set of rules.
+        Check if the request item is allowed to be at site, according to the set of rules.
         """
 
         for rule in self.placement_rules:
-            if item is Dataset:
-                if not rule.dataset_allowed(item, site):
+            if request.block is not None:
+                if not rule.block_allowed(request.block, site):
                     return False
-
-            elif item is Block:
-                if not rule.block_allowed(item, site):
-                    return False
-
-            elif type(item) is list:
-                for block in item:
+            elif request.blocks is not None:
+                for block in request.blocks:
                     if not rule.block_allowed(block, site):
                         return False
+            else:
+                if not rule.dataset_allowed(request.dataset, site):
+                    return False
 
         return True
 
-    def item_info(self, item):
-        if type(item) is Dataset:
-            item_name = item.name
-            item_size = item.size
-            already_exists = dataset_already_exists
-            owned_by = dataset_owned_by
-
-        elif type(item) is Block:
-            item_name = item.full_name()
-            item_size = item.size
-            already_exists = block_already_exists
-            owned_by = block_owned_by
-
-        elif type(item) is list:
-            # list of blocks (must belong to the same dataset)
-            if len(item) == 0:
-                return None, None, None, None
-
-            dataset = item[0].dataset
-            item_name = dataset.name
-            item_size = sum(b.size for b in item)
-            already_exists = blocks_already_exist
-            owned_by = blocks_owned_by
-
-        else:
-            return None, None, None, None
-
-        return item_name, item_size, already_exists, owned_by
-
-    def find_destination_for(self, item, group, partition, candidates = None):
-        item_name, item_size, already_exists, owned_by = self.item_info(item)
-
-        if item_name is None:
-            LOG.warning('Invalid request found. Skipping.')
-            return None, None, None, 'Invalid request'
-
+    def find_destination_for(self, request, partition, candidates = None):
         if candidates is None:
             candidates = self.target_sites
+
+        item_size = request.item_size()
 
         site_array = []
         for site in candidates:
@@ -259,11 +143,11 @@ class DealerPolicy(object):
                     continue
 
             # replica must not be at the site already
-            if already_exists(item, site, group):
+            if request.item_already_exists(site) != 0:
                 continue
 
             # placement must be allowed by the policy
-            if not self.is_allowed_destination(item, site):
+            if not self.is_allowed_destination(request, site):
                 continue
 
             p = 1. - projected_occupancy
@@ -273,46 +157,42 @@ class DealerPolicy(object):
             site_array.append((site, p))
 
         if len(site_array) == 0:
-            LOG.warning('%s has no copy destination.', item_name)
-            return None, item_name, item_size, 'No destination available'
+            LOG.warning('%s has no copy destination.', request.item_name())
+            return 'No destination available'
 
         x = random.uniform(0., site_array[-1][1])
 
         isite = next(k for k in range(len(site_array)) if x < site_array[k][1])
 
-        return site_array[isite][0], item_name, item_size, None
+        request.destination = site_array[isite][0]
 
-    def check_destination(self, item, destination, group, partition):
-        item_name, item_size, already_exists, owned_by = self.item_info(item)
+        return None
 
-        if item_name is None:
-            LOG.warning('Invalid request found. Skipping.')
-            return None, None, 'Invalid request'
+    def check_destination(self, request, partition):
+        if request.destination not in self.target_sites:
+            LOG.debug('Destination %s for %s is not a target site.', request.destination.name, request.item_name())
+            return 'Not a target site'
 
-        if destination not in self.target_sites:
-            LOG.debug('Destination %s for %s is not a target site.', destination.name, item_name)
-            return item_name, item_size, 'Not a target site'
+        if not self.is_allowed_destination(request, request.destination):
+            LOG.debug('Placement of %s to %s not allowed by policy.', request.item_name(), request.destination.name)
+            return 'Not allowed'
 
-        if not self.is_allowed_destination(item, destination):
-            LOG.debug('Placement of %s to %s not allowed by policy.', item_name, destination.name)
-            return item_name, item_size, 'Not allowed'
-
-        exists_level = already_exists(item, destination, group)
+        exists_level = request.item_already_exists()
 
         if exists_level == 2: # exists and owned by the same group
-            LOG.debug('%s is already at %s.', item_name, destination.name)
-            return item_name, item_size, 'Replica exists'
+            LOG.debug('%s is already at %s.', request.item_name(), request.destination.name)
+            return 'Replica exists'
 
         elif exists_level == 0: # does not exist
-            site_partition = destination.partitions[partition]
+            site_partition = request.destination.partitions[partition]
             if site_partition.quota > 0:
                 occupancy_fraction = site_partition.occupancy_fraction(physical = False)
-                occupancy_fraction += float(item_size) / site_partition.quota
+                occupancy_fraction += float(request.item_size()) / site_partition.quota
             else:
                 occupancy_fraction = 1.
     
             if occupancy_fraction >= 1.:
-                LOG.debug('Cannot copy %s to %s because destination is full.', item_name, destination.name)
-                return item_name, item_size, 'Destination is full'
+                LOG.debug('Cannot copy %s to %s because destination is full.', request.item_name(), request.destination.name)
+                return 'Destination is full'
 
-        return item_name, item_size, None
+        return None

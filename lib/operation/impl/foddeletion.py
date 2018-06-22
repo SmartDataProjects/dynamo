@@ -1,7 +1,8 @@
+import time
 import logging
 
 from dynamo.operation.deletion import DeletionInterface
-from dynamo.dataformat import DatasetReplica
+from dynamo.dataformat import DatasetReplica, BlockReplica
 from dynamo.fileop.rlfsm import RLFSM
 
 LOG = logging.getLogger(__name__)
@@ -15,40 +16,46 @@ class FODDeletionInterface(DeletionInterface):
         DeletionInterface.__init__(self, config)
         self.rlfsm = RLFSM(config.get('fod', None))
 
-    def schedule_deletion(self, replica, comments = ''): #override
-        """
-        Make file desubscriptions in FOD.
-        Note: FOD does not have a concept of operation id.
-        """
+    def set_read_only(self, value = True): #override
+        self._read_only = value
+        self.rlfsm.set_read_only(value)
 
-        LOG.info('Scheduling deletion of %s using RLFSM', str(replica))
+    def schedule_deletions(self, replica_list, operation_id, comments = ''): #override
+        sites = set(r.site for r, b in replica_list)
+        if len(sites) != 1:
+            raise OperationalError('schedule_copies should be called with a list of replicas at a single site.')
 
-        if type(replica) is DatasetReplica:
-            for block_replica in replica.block_replicas:
+        site = list(sites)[0]
+
+        LOG.info('Scheduling deletion of %d replicas from %s using RLFSM (operation %d)', len(replica_list), site.name, operation_id)
+
+        clones = []
+
+        for dataset_replica, block_replicas in replica_list:
+            if block_replicas is None:
+                to_delete = dataset_replica.block_replicas
+            else:
+                to_delete = block_replicas
+
+            for block_replica in to_delete:
                 self.rlfsm.desubscribe_files(block_replica.site, block_replica.files())
 
-            return {0: (True, replica.site, [replica.dataset])}
-        else:
-            self.rlfsm.desubscribe_files(replica.site, replica.files())
+            # No external dependency -> all operations are successful
 
-            return {0: (True, replica.site, [replica.block])}
+            clone_replica = DatasetReplica(dataset_replica.dataset, dataset_replica.site)
+            clone_replica.copy(dataset_replica)
 
-    def schedule_deletions(self, replica_list, comments = ''): #override
-        LOG.info('Scheduling deletion of %d replicas using RLFSM', len(replica_list))
-
-        items_by_site = {}
-        for replica in replica_list:
-            if replica.site not in items_by_site:
-                items_by_site[replica.site] = []
-
-            if type(replica) is DatasetReplica:
-                for block_replica in replica.block_replicas:
-                    self.rlfsm.desubscribe_files(block_replica.site, block_replica.files())
-
-                items_by_site[replica.site].append(replica.dataset)
+            if block_replicas is None:
+                clones.append((clone_replica, None))
             else:
-                self.rlfsm.desubscribe_files(replica.site, replica.files())
+                clones.append((clone_replica, []))
+                for block_replica in block_replicas:
+                    clone_block_replica = BlockReplica(block_replica.block, block_replica.site)
+                    clone_block_replica.copy(block_replica)
+                    clone_block_replica.last_update = int(time.time())
+                    clones[-1][1].append(clone_block_replica)
 
-                items_by_site[replica.site].append(replica.block)
+        return clones
 
-        return dict((0, (True, site, items)) for site, items in items_by_site.iteritems())
+    def deletion_status(self, operation_id): #override
+        raise NotImplementedError('deletion_status')

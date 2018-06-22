@@ -1,5 +1,5 @@
 CREATE TABLE `file_transfers` (
-  `id` bigint(20) unsigned NOT NULL,
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `file_id` bigint(20) unsigned NOT NULL,
   `source_id` int(10) unsigned NOT NULL,
   `destination_id` int(10) unsigned NOT NULL,

@@ -97,5 +97,10 @@ class MySQLAuthorizer(Authorizer):
         return self._mysql.query(sql, *args)
 
     def create_authorizer(self): #override
-        config = Configuration(db_params = self._mysql.config())
+        if self.readonly_config is None:
+            db_params = self._mysql.config()
+        else:
+            db_params = self.readonly_config.db_params
+
+        config = Configuration(db_params = db_params)
         return MySQLAuthorizer(config)

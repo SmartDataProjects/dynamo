@@ -40,10 +40,7 @@ dealer = Dealer(dealer_config)
 LOG.info('Dealer instance using %s for copy', type(dealer.copy_op).__name__)
 
 if read_only:
-    dealer.copy_op.dry_run = True
-    dealer.history.read_only = True
-    for plugin in dealer.get_plugins():
-        plugin.read_only = True
+    dealer.set_read_only()
 
 dealer.run(inventory, comment = args.comment)
 

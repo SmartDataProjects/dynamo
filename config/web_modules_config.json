@@ -2,7 +2,7 @@
   "archive_path": "$(DYNAMO_ARCHIVE)",
   "spool_path": "$(DYNAMO_SPOOL)",
   "history": {
-    "user": "dynamoread",
+    "user": "dynamo",
     "db": "dynamohistory"
   },
   "registry": {

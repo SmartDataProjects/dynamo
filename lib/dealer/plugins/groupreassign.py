@@ -1,6 +1,6 @@
 import logging
 
-from base import BaseHandler
+from base import BaseHandler, DealerRequest
 
 LOG = logging.getLogger(__name__)
 
@@ -10,7 +10,7 @@ class GroupReassigner(BaseHandler):
         
         self.from_groups = list(config.from_groups)
     
-    def get_requests(self, inventory, history, policy): # override
+    def get_requests(self, inventory, policy): # override
         from_groups = set(inventory.groups[g] for g in self.from_groups)
 
         partition = inventory.partitions[policy.partition_name]
@@ -35,8 +35,8 @@ class GroupReassigner(BaseHandler):
                 dataset = dataset_replica.dataset
                 blocks = set(r.block for r in block_replicas)
                 if blocks == dataset.blocks:
-                    requests.append((dataset, site))
+                    requests.append(DealerRequest(dataset, destination = site))
                 else:
-                    requests.append((list(blocks), site))
+                    requests.append(DealerRequest(list(blocks), destination = site))
 
         return requests

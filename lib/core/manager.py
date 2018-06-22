@@ -18,6 +18,7 @@ class ServerManager(object):
     def __init__(self, config):
         # Create a master server interface
         self.master = MasterServer.get_instance(config.master.module, config.master.config)
+        self.master.readonly_config = config.master.readonly_config
         self.master.connect()
         self.master_host = self.master.get_master_host()
 

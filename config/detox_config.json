@@ -1,0 +1,8 @@
+{
+  "detox": {
+    "deletion_per_iteration": 0.01,
+    "attrs": {
+    }
+  },
+  "log_level": "info"
+}

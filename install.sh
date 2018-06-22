@@ -28,6 +28,7 @@ SPOOL_PATH=$($READCONF paths.spool_path)
 LOG_PATH=$($READCONF paths.log_path)
 POLICY_PATH=$($READCONF paths.policy_path)
 CLIENT_PATH=$($READCONF paths.client_path)
+SYSBIN_PATH=$($READCONF paths.sysbin_path)
 WEBSERVER=$($READCONF web.enabled)
 APPSERVER=$($READCONF applications.enabled)
 FILEOP=$($READCONF file_operations.enabled)
@@ -113,10 +114,8 @@ fi
 echo
 
 require mkdir -p $INSTALL_PATH
-mkdir -p $INSTALL_PATH/python/site-packages/dynamo
 mkdir -p $INSTALL_PATH/exec
 mkdir -p $INSTALL_PATH/utilities
-mkdir -p $INSTALL_PATH/sbin
 mkdir -p $INSTALL_PATH/etc/profile.d
 require chown -R $USER:$(id -gn $USER) $INSTALL_PATH
 
@@ -136,14 +135,31 @@ require chmod 777 $SPOOL_PATH
 
 echo "-> Installing.."
 
-cp -r $SOURCE/lib/* $INSTALL_PATH/python/site-packages/dynamo/
-python -m compileall $INSTALL_PATH/python/site-packages/dynamo > /dev/null
+for PYPATH in $(python -c 'import sys; print " ".join(sys.path)')
+do
+  if [[ $PYPATH =~ ^/usr/lib/python.*/site-packages$ ]]
+  then
+    mkdir -p $PYPATH/dynamo
+    cp -r $SOURCE/lib/* $PYPATH/dynamo/
+    python -m compileall $PYPATH/dynamo > /dev/null
+  fi
+done
 
-### Install the executables ###
+### Install ###
 
-cp $SOURCE/bin/dynamo $CLIENT_PATH/
-cp $SOURCE/bin/dynamo-inject $CLIENT_PATH/
-cp $SOURCE/bin/dynamo-request $CLIENT_PATH/
+mkdir -p $CLIENT_PATH
+for FILE in dynamo dynamo-inject dynamo-request
+do
+  cp $SOURCE/bin/$FILE $CLIENT_PATH/$FILE
+  chmod 755 $CLIENT_PATH/$FILE
+done
+
+mkdir -p $SYSBIN_PATH
+for FILE in dynamod dynamo-exec-auth dynamo-fileopd dynamo-user-auth
+do
+  cp $SOURCE/sbin/$FILE $SYSBIN_PATH/$FILE
+  chmod 744 $SYSBIN_PATH/$FILE
+done
 
 cp $SOURCE/exec/* $INSTALL_PATH/exec/
 chown $USER:$(id -gn $USER) $INSTALL_PATH/exec/*
@@ -152,10 +168,6 @@ chmod 755 $INSTALL_PATH/exec/*
 cp $SOURCE/utilities/* $INSTALL_PATH/utilities/
 chown $USER:$(id -gn $USER) $INSTALL_PATH/utilities/*
 chmod 755 $INSTALL_PATH/utilities/*
-
-cp $SOURCE/sbin/* $INSTALL_PATH/sbin/
-chown root:$(id -gn $USER) $INSTALL_PATH/sbin/*
-chmod 754 $INSTALL_PATH/sbin/*
 
 cp $SOURCE/etc/default_partitions.txt $INSTALL_PATH/etc/
 chown root:$(id -gn $USER) $INSTALL_PATH/etc/default_partitions.txt
@@ -180,8 +192,6 @@ echo "export DYNAMO_BASE=$INSTALL_PATH" > $INITSCRIPT
 echo "export DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> $INITSCRIPT
 echo "export DYNAMO_SPOOL=$SPOOL_PATH" >> $INITSCRIPT
 [ $POLICY_PATH ] && echo "export DYNAMO_POLICIES=$POLICY_PATH" >> $INITSCRIPT
-echo "export PYTHONPATH="'$DYNAMO_BASE/python/site-packages:$(echo $PYTHONPATH | sed "s|$DYNAMO_BASE/python/site-packages:||")' >> $INITSCRIPT
-echo "export PATH="'$DYNAMO_BASE/bin:$DYNAMO_BASE/sbin:$(echo $PATH | sed "s|$DYNAMO_BASE/bin:$DYNAMO_BASE/sbin:||")' >> $INITSCRIPT
 
 echo " Done."
 echo
@@ -293,7 +303,7 @@ if [[ $(uname -r) =~ el7 ]]
 then
   # systemd daemon
   cp $SOURCE/daemon/dynamod.systemd /usr/lib/systemd/system/dynamod.service
-  sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /usr/lib/systemd/system/dynamod.service
+  sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /usr/lib/systemd/system/dynamod.service
 
   # environment file for the daemon
   ENV=/etc/sysconfig/dynamod
@@ -301,11 +311,11 @@ then
   echo "DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> $ENV
   echo "DYNAMO_SPOOL=$SPOOL_PATH" >> $ENV
   [ $POLICY_PATH ] && echo "DYNAMO_POLICIES=$POLICY_PATH" >> $ENV
-  echo "PYTHONPATH=$INSTALL_PATH/python/site-packages" >> $ENV
 
   systemctl daemon-reload
 else
   cp $SOURCE/daemon/dynamod.sysv /etc/init.d/dynamod
+  sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /etc/init.d/dynamod
   sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamod
   chmod +x /etc/init.d/dynamod
 fi
@@ -318,15 +328,12 @@ then
   then
     # systemd daemon
     cp $SOURCE/daemon/dynamo-fileopd.systemd /usr/lib/systemd/system/dynamo-fileopd.service
-    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /usr/lib/systemd/system/dynamo-fileopd.service
-  
-    # environment file for the daemon
-    ENV=/etc/sysconfig/dynamo-fileopd
-    echo "PYTHONPATH=$INSTALL_PATH/python/site-packages" >> $ENV
+    sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /usr/lib/systemd/system/dynamo-fileopd.service
   
     systemctl daemon-reload
   else
     cp $SOURCE/daemon/dynamo-fileopd.sysv /etc/init.d/dynamo-fileopd
+    sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /etc/init.d/dynamo-fileopd
     sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamo-fileopd
     chmod +x /etc/init.d/dynamo-fileopd
   fi
