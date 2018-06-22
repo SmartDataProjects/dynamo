@@ -93,6 +93,7 @@ class Detox(object):
         """Create a mini-inventory consisting only of replicas in the partition."""
 
         partition_repository = ObjectRepository()
+        partition_repository._store = inventory._store
 
         LOG.info('Identifying target sites.')
 

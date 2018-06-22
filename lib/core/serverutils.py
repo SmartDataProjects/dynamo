@@ -2,8 +2,6 @@ import os
 import sys
 import signal
 import multiprocessing
-import traceback
-import shlex
 import logging
 from ctypes import cdll
 
@@ -78,107 +76,6 @@ def clean_remote_request(path):
     proc = multiprocessing.Process(target = umountall, args = (path,))
     proc.start()
     proc.join()
-
-def run_script(path, args, is_local, defaults_config, inventory, authorizer, queue = None):
-    """
-    Main function for script execution.
-    @param path            Path to the work area of the script. Will be the root directory in read-only processes.
-    @param args            Script command-line arguments.
-    @param is_local        True if script is requested from localhost.
-    @param defaults_config A Configuration object specifying the global defaults for various tools
-    @param inventory       A DynamoInventoryProxy instance
-    @param authorizer      An Authorizer instance
-    @param queue           Queue if write-enabled.
-    """
-
-    old_stdout = sys.stdout
-    old_stderr = sys.stderr
-    stdout = open(path + '/_stdout', 'a')
-    stderr = open(path + '/_stderr', 'a')
-    sys.stdout = stdout
-    sys.stderr = stderr
-
-    path = pre_execution(path, is_local, queue is None, defaults_config, inventory, authorizer)
-
-    # Set argv
-    sys.argv = [path + '/exec.py']
-    if args:
-        sys.argv += shlex.split(args) # split using shell-like syntax
-
-    # Execute the script
-    try:
-        myglobals = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': 'exec.py', '__doc__': None, '__package__': None}
-        execfile(path + '/exec.py', myglobals)
-
-    except:
-        exc_type, exc, tb = sys.exc_info()
-
-        if exc_type is SystemExit:
-            # sys.exit used in the script
-            if exc.code == 0:
-                send_updates(inventory, queue)
-            else:
-                raise
-
-        elif exc_type is KeyboardInterrupt:
-            # Terminated by the server.
-            sys.exit(2)
-
-        else:
-            # print the traceback "manually" to cut out the first two lines showing the server process
-            tb_lines = traceback.format_tb(tb)[1:]
-            sys.stderr.write('Traceback (most recent call last):\n')
-            sys.stderr.write(''.join(tb_lines))
-            sys.stderr.write('%s: %s\n' % (exc_type.__name__, str(exc)))
-            sys.stderr.flush()
-    
-            sys.exit(1)
-
-    else:
-        send_updates(inventory, queue)
-        # Queue stays available on the other end even if we terminate the process
-
-    finally:
-        # cleanup
-        post_execution(path, is_local)
-
-        sys.stdout.close()
-        sys.stderr.close()
-        # multiprocessing/forking.py still uses sys.stdout and sys.stderr - need to return them to the original FDs
-        sys.stdout = old_stdout
-        sys.stderr = old_stderr
-
-def run_interactive(path, is_local, defaults_config, inventory, authorizer, make_console, stdout = sys.stdout, stderr = sys.stderr):
-    """
-    Main function for interactive sessions.
-    For now we limit interactive sessions to read-only.
-    @param path            Path to the work area.
-    @param is_local        True if script is requested from localhost.
-    @param defaults_config A Configuration object specifying the global defaults for various tools
-    @param inventory       A DynamoInventoryProxy instance
-    @param authorizer      An Authorizer instance
-    @param make_console    A callable which takes a dictionary of locals as an argument and returns a console
-    @param stdout          File-like object for stdout
-    @param stderr          File-like object for stderr
-    """
-
-    old_stdout = sys.stdout
-    old_stderr = sys.stderr
-    sys.stdout = stdout
-    sys.stderr = stderr
-
-    pre_execution(path, is_local, True, defaults_config, inventory, authorizer)
-
-    # use receive of oconn as input
-    mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': inventory}
-    console = make_console(mylocals)
-    try:
-        console.interact(BANNER)
-    finally:
-        post_execution(path, is_local)
-
-    sys.stdout = old_stdout
-    sys.stderr = old_stderr
 
 def pre_execution(path, is_local, read_only, defaults_config, inventory, authorizer):
     uid = os.geteuid()
