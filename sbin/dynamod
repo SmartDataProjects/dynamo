@@ -15,11 +15,7 @@ from dynamo.utils.signaling import SignalConverter
 from dynamo.utils.log import log_exception
 import dynamo.core.server as main
 
-try:
-    config_path = os.environ['DYNAMO_SERVER_CONFIG']
-except KeyError:
-    config_path = '/etc/dynamo/server_config.json'
-
+config_path = os.getenv('DYNAMO_SERVER_CONFIG', '/etc/dynamo/server_config.json')
 config = Configuration(config_path)
 
 ## Make sure the server user exists (raises KeyError if it doesn't)

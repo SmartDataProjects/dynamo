@@ -334,12 +334,8 @@ if __name__ == '__main__':
     from dynamo.core.serverutils import BANNER
     from dynamo.utils.log import log_exception
     from dynamo.utils.interface.mysql import MySQL
-    
-    try:
-        config_path = os.environ['DYNAMO_SERVER_CONFIG']
-    except KeyError:
-        config_path = '/etc/dynamo/server_config.json'
-    
+
+    config_path = os.getenv('DYNAMO_SERVER_CONFIG', '/etc/dynamo/server_config.json')    
     config = Configuration(config_path)
     
     ## Set up logging (write to stderr unless path is given)
