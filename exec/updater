@@ -29,9 +29,9 @@ if read_only:
     rlfsm.set_read_only()
 
 ## Set up a handle to the registry
-from dynamo.utils.interface.mysql import MySQL
+from dynamo.registry.registry import RegistryDatabase
 
-registry = MySQL(config.registry)
+registry = RegistryDatabase()
 
 ## Run
 from dynamo.dataformat import File
@@ -39,12 +39,12 @@ from dynamo.dataformat import File
 LOG.info('Updating the inventory from injections.')
 
 if not read_only:
-    registry.lock_tables(write = ['data_injections'])
+    registry.db.lock_tables(write = ['data_injections'])
 
 n_injected = 0
 n_deleted = 0
 
-for cmd, objstr in registry.xquery('SELECT `cmd`, `obj` FROM `data_injections` ORDER BY `id`'):
+for cmd, objstr in registry.db.xquery('SELECT `cmd`, `obj` FROM `data_injections` ORDER BY `id`'):
     obj = inventory.make_object(objstr)
 
     if cmd == 'update':
@@ -61,10 +61,10 @@ for cmd, objstr in registry.xquery('SELECT `cmd`, `obj` FROM `data_injections` O
         n_deleted += 1
 
 if not read_only:
-    registry.query('DELETE FROM `data_injections`')
-    registry.query('ALTER TABLE `data_injections` AUTO_INCREMENT = 1')
+    registry.db.query('DELETE FROM `data_injections`')
+    registry.db.query('ALTER TABLE `data_injections` AUTO_INCREMENT = 1')
 
-    registry.unlock_tables()
+    registry.db.unlock_tables()
 
 LOG.info('Injected %d objects and deleted %d objects.', n_injected, n_deleted)
 

@@ -83,6 +83,20 @@
       }
     }
   },
+  "registry.registry:RegistryDatabase": {
+    "fullauth": {
+      "db_params": {
+        "db": "dynamohistory",
+        "user": "dynamo"
+      }
+    },
+    "readonly": {
+      "db_params": {
+        "db": "dynamohistory",
+        "user": "dynamoread"
+      }
+    }
+  },
   "request.common:RequestManager": {
     "fullauth": {
       "registry": {

@@ -2,6 +2,8 @@
 Classes representing copy and deletion requests. Not linked to the inventory.
 """
 
+import time
+
 from block import Block
 from exceptions import ObjectError
 
