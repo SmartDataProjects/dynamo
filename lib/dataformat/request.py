@@ -3,7 +3,7 @@ Classes representing copy and deletion requests. Not linked to the inventory.
 """
 
 from block import Block
-from exception import ObjectError
+from exceptions import ObjectError
 
 class Request(object):
     """

@@ -1,11 +1,9 @@
-import collections
 import logging
 import time
 
 from dynamo.dealer.plugins.base import BaseHandler, DealerRequest
-from dynamo.utils.interface.mysql import MySQL
 from dynamo.request.copy import CopyRequestManager
-from dynamo.dataformat import Configuration, Dataset, Block, DatasetReplica, BlockReplica
+from dynamo.dataformat import Configuration, Dataset, Block
 from dynamo.dataformat.request import Request, RequestAction
 from dynamo.dataformat.exceptions import ObjectError
 
@@ -19,10 +17,6 @@ class CopyRequestsHandler(BaseHandler):
 
         registry_config = Configuration(config.registry)
         registry_config['reuse_connection'] = True # need to work with table locks
-        
-        self.registry = MySQL(registry_config)
-        # we should introduce a RequestHistoryDatabase object, but for now use raw MySQL
-        self.history = MySQL(config.history)
 
         self.request_manager = CopyRequestManager(config.get('manager', None))
 
