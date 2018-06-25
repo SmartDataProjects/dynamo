@@ -199,7 +199,12 @@ class WebServer(object):
         with self.active_count.get_lock():
             self.active_count.value += 1
 
-        LOG.info('%s-%s %s (%s:%s %s)', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], environ['HTTP_USER_AGENT'])
+        try:
+            agent = environ['HTTP_USER_AGENT']
+        except KeyError:
+            agent = 'Unknown'
+
+        LOG.info('%s-%s %s (%s:%s %s)', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], agent)
 
         # Then immediately switch to logging to a buffer
         root_logger = logging.getLogger()

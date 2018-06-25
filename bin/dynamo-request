@@ -2,7 +2,9 @@
 
 import os
 import sys
+import socket
 import json
+import logging
 from argparse import ArgumentParser
 
 import dynamo.client.request as request
@@ -17,8 +19,8 @@ parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'datasets', n
 parser.add_argument('--block', '-b', metavar = 'BLOCK', dest = 'blocks', nargs = '+', default = [], help = 'Blocks to copy.')
 parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'sites', nargs = '+', help = 'Sites to copy to.')
 parser.add_argument('--num-copies', '-n', metavar = 'SITE', dest = 'n', type = int, default = 1, help = 'Sites to copy to.')
-parser.add_argument('--cancel', '-x', metavar = 'ID', dest = 'cancel', help = 'Cancel a copy request.')
-parser.add_argument('--poll', '-l', metavar = 'ID', dest = 'poll', nargs = '?', const = 0, help = 'Check the status of a copy request.')
+parser.add_argument('--cancel', '-x', metavar = 'ID', dest = 'cancel', type = int, help = 'Cancel a copy request.')
+parser.add_argument('--poll', '-l', metavar = 'ID', dest = 'poll', nargs = '?', type = int, const = 0, help = 'Check the status of a copy request.')
 parser.add_argument('--status', '-t', metavar = 'STATUS', dest = 'statuses', nargs = '+', help = 'Polling option. Limit to statuses new, activated, completed, rejected, or cancelled')
 parser.add_argument('--user', '-u', metavar = 'USER', dest = 'users', nargs = '+', help = 'Polling option. Limit to requests made by specified users.')
 parser.add_argument('--raw', '-A', action = 'store_true', dest = 'raw', help = 'Print the raw JSON response from the Dynamo REST API.')
@@ -28,6 +30,8 @@ parser.add_argument('--key', '-k', metavar = 'KEY', dest = 'key', default = PROX
 
 args = parser.parse_args()
 sys.argv = []
+
+logging.basicConfig(level = logging.INFO)
 
 ## Prepare the data to send
 
@@ -39,21 +43,11 @@ need_auth = True
 try:
     if args.delete:
         if args.poll is not None:
-            if args.poll == 0:
-                args.poll = None
-            if len(items) == 0:
-                items = None
-
             resource = 'polldelete'
             data = request.polldelete(args.poll, items, args.sites, args.statuses, args.users)
             need_auth = False
     
         else:
-            if len(items) == 0:
-                raise RuntimeError('Missing --dataset or --block.')
-            if args.sites is None:
-                raise RuntimeError('Missing --site')
-
             resource = 'delete'
             data = request.delete(items, args.sites)
 
@@ -63,21 +57,11 @@ try:
             data = request.cancelcopy(args.cancel)
 
         elif args.poll is not None:
-            if args.poll == 0:
-                args.poll = None
-            if len(items) == 0:
-                items = None
-    
             resource = 'pollcopy'
             data = request.pollcopy(args.poll, items, args.sites, args.statuses, args.users)
             need_auth = False
     
         else:
-            if len(items) == 0:
-                raise RuntimeError('Missing --dataset or --block.')
-            if args.sites is None:
-                raise RuntimeError('Missing --site')
-
             resource = 'copy'
             data = requestcopy(items, args.sites, args.n)
 
@@ -91,8 +75,13 @@ if not resource:
 
 ## Instantiate the request client and send th request
 
+if need_auth:
+    auth_config = Configuration(certfile = args.cert, keyfile = args.key)
+else:
+    auth_config = None
+
 # url_base will be replaced to http if need_auth = False
-config = Configuration(url_base = 'https://%s/data/request', need_auth = need_auth)
+config = Configuration(url_base = 'https://%s/data/request' % args.host, need_auth = need_auth, auth_handler_conf = auth_config)
 
 client = request.DynamoWebClient(config)
 
@@ -105,9 +94,39 @@ if args.raw:
     print json.dumps(response)
     sys.exit(0)
 
+class bcolors:
+    SUCCESS = '\033[32m'
+    WAIT = '\033[35m'
+    ERROR = '\033[31m'
+    ENDC = '\033[0m'
+
 if args.poll:
-    # list
-    print response
+    for request in response:
+        if request['status'] == 'completed':
+            col = bcolors.SUCCESS
+        elif request['status'] == 'failed':
+            col = bcolors.ERROR
+        else:
+            col = bcolors.WAIT
+
+        print '[REQUEST %d] %s%s%s' % (request['request_id'], col, request['status'].upper(), bcolors.ENDC)
+
+        if 'active' in request:
+            for action in request['active']:
+                if action['status'] == 'completed':
+                    col = bcolors.SUCCESS
+                elif action['status'] == 'failed':
+                    col = bcolors.ERROR
+                else:
+                    col = bcolors.WAIT
+
+                print '  %s %s %s%s%s' % (action['site'], action['item'], col, action['status'].upper(), bcolors.ENDC)
+
+        else:
+            for site in request['site']:
+                for item in request['item']:
+                    print '  %s %s' % (site, item)
+            
 elif args.cancel:
     # show
     print response

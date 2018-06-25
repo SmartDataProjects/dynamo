@@ -34,6 +34,12 @@ class RequestWatcher(object):
         self.event = threading.Event()
         self.name = name
 
+    def start(self):
+        self.thread = threading.Thread(target = watcher.wait, args = (timeout,))
+        self.thread.daemon = True
+        self.thread.name = 'Timeout watcher'
+        self.thread.start()
+
     def wait(self, timeout):
         self.event.clear()
         self.event.wait(timeout)
@@ -42,6 +48,7 @@ class RequestWatcher(object):
 
     def stop(self):
         self.event.set()
+        self.thread.join()
     
 
 class HTTPSCertKeyHandler(urllib2.HTTPSHandler):
@@ -206,6 +213,46 @@ class RESTService(object):
         @param timeout        If > 0, launch a monitoring thread and raise an exception when more than given number of seconds have elapsed.
         """
 
+        request = self._form_request(resource, options, method, format)
+
+        wait = 1.
+        exceptions = []
+        last_errorcode = 0
+        last_except = None
+        while len(exceptions) != self.num_attempts:
+            try:
+                result = self._request_one(request, timeout)
+                return result
+    
+            except urllib2.HTTPError as err:
+                self.last_errorcode = err.code
+                self.last_exception = (str(err)) + '\nBody:\n' + err.read()
+            except:
+                self.last_errorcode = 0
+                self.last_exception = sys.exc_info()[1]
+
+            exceptions.append((self.last_errorcode, self.last_exception))
+
+            if not retry_on_error or self.last_errorcode == 400:
+                break
+
+            LOG.info('Exception "%s" occurred in %s. Trying again in %.1f seconds.', str(self.last_exception), url, wait)
+
+            time.sleep(wait)
+            wait *= 1.5
+
+        # exhausted allowed attempts
+        LOG.error('Too many failed attempts in webservice')
+        LOG.error('Last error code %d', self.last_errorcode)
+        LOG.error('%s' % ' '.join(map(str, exceptions)))
+
+        raise RuntimeError('webservice too many attempts')
+
+    def _form_request(self, resource = '', options = [], method = GET, format = 'url'):
+        """
+        Form a urllib2.Request object from the given options.
+        """
+
         url = self.url_base
         if resource:
             url += '/' + resource
@@ -259,77 +306,48 @@ class RESTService(object):
 
             request.add_data(data)
 
-        wait = 1.
-        exceptions = []
-        last_errorcode = 0
-        last_except = None
-        while len(exceptions) != self.num_attempts:
-            try:
-                if self.auth_handler:
-                    opener = urllib2.build_opener(self.auth_handler(self.auth_handler_conf))
-                else:
-                    opener = urllib2.build_opener()
+        return request
 
-                if 'Accept' not in self.headers:
-                    opener.addheaders.append(('Accept', self.accept))
+    def _request_one(self, request, timeout):
+        """
+        Use urllib2 opener mechanism to make on HTTP(S) request.
+        """
 
-                opener.addheaders.extend(self.headers)
+        if self.auth_handler:
+            opener = urllib2.build_opener(self.auth_handler(self.auth_handler_conf))
+        else:
+            opener = urllib2.build_opener()
 
-                if timeout > 0:
-                    watcher = RequestWatcher('Webservice (%s)' % url)
-                    watcher_thread = threading.Thread(target = watcher.wait, args = (timeout,))
-                    watcher_thread.daemon = True
-                    watcher_thread.name = 'Timeout watcher'
-                    watcher_thread.start()
+        if 'Accept' not in self.headers:
+            opener.addheaders.append(('Accept', self.accept))
 
-                response = opener.open(request)
+        opener.addheaders.extend(self.headers)
 
-                if timeout > 0:
-                    watcher.stop()
-                    watcher_thread.join()
+        if timeout > 0:
+            watcher = RequestWatcher('Webservice (%s)' % request.get_full_url())
+            watcher.start()
 
-                # clean up - break reference cycle so python can free the memory up
-                for handler in opener.handlers:
-                    handler.parent = None
-                del opener
+        response = opener.open(request)
 
-                content = response.read()
-                del response
+        if timeout > 0:
+            watcher.stop()
 
-                if self.accept == 'application/json':
-                    result = json.loads(content)
-                    unicode2str(result)
+        # clean up - break reference cycle so python can free the memory up
+        for handler in opener.handlers:
+            handler.parent = None
+        del opener
 
-                elif self.accept == 'application/xml':
-                    # TODO implement xml -> dict
-                    result = content
+        content = response.read()
+        del response
 
-                del content
+        if self.accept == 'application/json':
+            result = json.loads(content)
+            unicode2str(result)
 
-                return result
-    
-            except urllib2.HTTPError as err:
-                self.last_errorcode = err.code
-                self.last_exception = (str(err)) + '\nBody:\n' + err.read()
-            except:
-                self.last_errorcode = 0
-                self.last_exception = sys.exc_info()[1]
+        elif self.accept == 'application/xml':
+            # TODO implement xml -> dict
+            result = content
 
-            exceptions.append((self.last_errorcode, self.last_exception))
+        del content
 
-            if not retry_on_error or self.last_errorcode == 400:
-                break
-
-            LOG.info('Exception "%s" occurred in %s. Trying again in %.1f seconds.', str(self.last_exception), url, wait)
-
-            time.sleep(wait)
-            wait *= 1.5
-
-        # exhausted allowed attempts
-        LOG.error('Too many failed attempts in webservice')
-        LOG.error('Last error code %d', self.last_errorcode)
-        LOG.error('%s' % ' '.join(map(str, exceptions)))
-
-        raise RuntimeError('webservice too many attempts')
-
-        
+        return result
