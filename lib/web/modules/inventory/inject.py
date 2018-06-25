@@ -63,12 +63,12 @@ class InjectDataBase(WebModule):
 
         for obj in objects:
             try:
-                name = obj.pop('name')
+                name = obj['name']
             except KeyError:
                 raise MissingParameter('name', context = 'dataset ' + str(obj))
 
             try:
-                blocks = obj.pop('blocks')
+                blocks = obj['blocks']
             except KeyError:
                 blocks = None
 
@@ -76,20 +76,27 @@ class InjectDataBase(WebModule):
                 dataset = inventory.datasets[name]
             except KeyError:
                 # new dataset
-                try:
-                    obj.pop('did')
-                except KeyError:
-                    pass
-    
+
+                if 'status' not in obj:
+                    obj['status'] = 'unknown'
+
+                if 'data_type' not in obj:
+                    obj['data_type'] = 'unknown'
+
                 try:
                     obj['software_version'] = df.Dataset.format_software_version(obj['software_version'])
                 except KeyError:
-                    pass
-    
+                    obj['software_version'] = None
+
                 try:
-                    new_dataset = df.Dataset(name, **obj)
+                    new_dataset = df.Dataset(
+                        name,
+                        status = obj['status'],
+                        data_type = obj['data_type'],
+                        software_version = obj['software_version'],
+                        last_update = int(time.time())
+                    )
                 except TypeError as exc:
-                    obj['name'] = name
                     raise IllFormedRequest('dataset', str(obj), hint = str(exc))
     
                 try:
@@ -109,21 +116,34 @@ class InjectDataBase(WebModule):
 
         for obj in objects:
             try:
-                name = obj.pop('name')
+                name = obj['name']
             except KeyError:
                 raise MissingParameter('name', context = 'site ' + str(obj))
 
             if name not in inventory.sites:
                 # new site
-                try:
-                    obj.pop('sid')
-                except KeyError:
-                    pass
+                
+                if 'host' not in obj:
+                    obj['host'] = ''
+
+                if 'storage_type' not in obj:
+                    obj['storage_type'] = 'unknown'
+
+                if 'backend' not in obj:
+                    obj['backend'] = ''
+
+                if 'status' not in obj:
+                    obj['status'] = 'unknown'
     
                 try:
-                    new_site = df.Site(name, **obj)
+                    new_site = df.Site(
+                        name,
+                        host = obj['host'],
+                        storage_type = obj['storage_type'],
+                        backend=  obj['backend'],
+                        status = obj['status']
+                    )
                 except TypeError as exc:
-                    obj['name'] = name
                     raise IllFormedRequest('site', str(obj), hint = str(exc))
     
                 try:
@@ -140,21 +160,22 @@ class InjectDataBase(WebModule):
 
         for obj in objects:
             try:
-                name = obj.pop('name')
+                name = obj['name']
             except KeyError:
                 raise MissingParameter('name', context = 'group ' + str(obj))
 
             if name not in inventory.groups:
                 # new group
-                try:
-                    obj.pop('gid')
-                except KeyError:
-                    pass
+
+                if 'olevel' not in obj:
+                    obj['olevel'] = 'Block'
     
                 try:
-                    new_group = df.Group(name, **obj)
+                    new_group = df.Group(
+                        name,
+                        obj['olevel']
+                    )
                 except TypeError as exc:
-                    obj['name'] = name
                     raise IllFormedRequest('group', str(obj), hint = str(exc))
     
                 try:
@@ -210,18 +231,22 @@ class InjectDataBase(WebModule):
                     except KeyError:
                         growing = True
 
-                try:
-                    group_name = obj['group']
-                except KeyError:
-                    group = df.Group.null_group
-                else:
+                if growing:
                     try:
-                        group = inventory.groups[group_name]
+                        group_name = obj['group']
                     except KeyError:
-                        raise InvalidRequest('Unknown group %s' % group_name)
+                        group = df.Group.null_group
+                    else:
+                        try:
+                            group = inventory.groups[group_name]
+                        except KeyError:
+                            raise InvalidRequest('Unknown group %s' % group_name)
+    
+                    if group is df.Group.null_group:
+                        raise InvalidRequest('Growing dataset replica %s:%s needs a group.' % (site.name, dataset.name))
 
-                if growing and group is df.Group.null_group:
-                    raise InvalidRequest('Growing dataset replica %s:%s needs a group.' % (site.name, dataset.name))
+                else:
+                    group = df.Group.null_group
                     
                 new_replica = df.DatasetReplica(dataset, site, growing = growing, group = group)
     
@@ -242,7 +267,7 @@ class InjectDataBase(WebModule):
 
         for obj in objects:
             try:
-                name = obj.pop('name')
+                name = obj['name']
             except KeyError:
                 raise MissingParameter('name', context = 'block ' + str(obj))
 
@@ -253,7 +278,7 @@ class InjectDataBase(WebModule):
                 raise IllFormedRequest('name', name, hint = 'Name does not match the format')
 
             try:
-                files = obj.pop('files')
+                files = obj['files']
             except KeyError:
                 files = None
 
@@ -261,20 +286,21 @@ class InjectDataBase(WebModule):
 
             if block is None:
                 # new block
-                new_block = True
-
-                # size and num_files to be set through make_files
-                obj['size'] = 0
-                obj['num_files'] = 0
 
                 try:
-                    new_block = df.Block(internal_name, dataset = dataset, **obj)
+                    # size and num_files to be set through make_files
+                    block = df.Block(
+                        internal_name,
+                        dataset,
+                        size = 0,
+                        num_files = 0,
+                        last_update = int(time.time())
+                    )
                 except TypeError as exc:
-                    obj['name'] = name
                     raise IllFormedRequest('block', str(obj), hint = str(exc))
 
                 try:
-                    block = self._update(inventory, new_block)
+                    block = self._update(inventory, block)
                 except:
                     raise RuntimeError('Inventory update failed')
     
@@ -284,30 +310,27 @@ class InjectDataBase(WebModule):
                     if replica.growing:
                         # For growing replicas, we automatically create new block replicas
                         # All new files will be subscribed to block replicas that don't have them yet
-                        blockreplica = {'block': block.real_name(), 'site': replica.site.name, 'group': replica.group.name, 'size': 0, 'last_update': time.time()}
+                        blockreplica = {'block': block.real_name(), 'site': replica.site.name, 'group': replica.group.name, 'size': 0}
                         self._make_blockreplicas([blockreplica], replica, inventory, counts)
 
                 num_blocks += 1
 
-            else:
-                new_block = False
-
             if files is not None:
-                self._make_files(files, block, new_block, inventory, counts)
+                self._make_files(files, block, inventory, counts)
 
         try:
             counts['blocks'] += num_blocks
         except KeyError:
             counts['blocks'] = num_blocks
 
-    def _make_files(self, objects, block, new_block, inventory, counts):
+    def _make_files(self, objects, block, inventory, counts):
         num_files = 0
 
         block_replicas = {}
 
         for obj in objects:
             try:
-                lfn = obj.pop('name')
+                lfn = obj['name']
             except KeyError:
                 raise MissingParameter('name', context = 'file ' + str(obj))
 
@@ -315,14 +338,23 @@ class InjectDataBase(WebModule):
 
             if lfile is None:
                 # new file
+
                 try:
-                    new_lfile = df.File(lfn, block = block, **obj)
+                    size = obj['size']
+                except KeyError:
+                    raise MissingParameter('size', context = 'file ' + str(obj))
+
+                try:
+                    new_lfile = df.File(
+                        lfn,
+                        block = block,
+                        size = size
+                    )
                 except TypeError as exc:
-                    obj['name'] = lfn
                     raise IllFormedRequest('file', str(obj), hint = str(exc))
 
-                if not new_block:
-                    # when adding a file to an existing block, we need to specify where the file can be found
+                if len(block.replicas) != 0:
+                    # when adding a file to a block with replicas, we need to specify where the file can be found
                     # otherwise subscriptions made for other replicas will never complete
                     try:
                         site_name = obj['site']
@@ -351,7 +383,7 @@ class InjectDataBase(WebModule):
                 except:
                     raise RuntimeError('Inventory update failed')
 
-                if not new_block:
+                if len(block.replicas) != 0:
                     block_replica.size += lfile.size
 
                     if block_replica.file_ids is None:
@@ -411,16 +443,12 @@ class InjectDataBase(WebModule):
                     except KeyError:
                         raise InvalidRequest('Unknown group %s' % group_name)
 
-                kwd = {}
-                
-                if 'is_custodial' in obj:
-                    kwd['is_custodial'] = obj['is_custodial']
-
-                if 'last_update' in obj:
-                    kwd['last_update'] = obj['last_update']
-
                 try:
-                    block_replica = df.BlockReplica(block, site, group, **kwd)
+                    block_replica = df.BlockReplica(
+                        block,
+                        site,
+                        group
+                    )
                 except TypeError as exc:
                     raise IllFormedRequest('blockreplica', str(obj), hint = str(exc))
 
@@ -442,9 +470,9 @@ class InjectDataBase(WebModule):
 
                     if df.BlockReplica._use_file_ids:
                         if lfile.id == 0:
-                            raise InvalidRequest('File %s is not fully registered in inventory yet.' % lfn)
-
-                        file_ids.append(lfile.id)
+                            file_ids.append(lfn)
+                        else:
+                            file_ids.append(lfile.id)
 
                 block_replica.size = size
 
