@@ -7,6 +7,7 @@ import logging
 import logging.handlers
 import socket
 import collections
+import warnings
 import multiprocessing
 import cStringIO
 from cgi import FieldStorage
@@ -161,6 +162,11 @@ class WebServer(object):
             log_handler = logging.handlers.RotatingFileHandler(self.log_path, maxBytes = 10000000, backupCount = 100)
             log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
             root_logger.addHandler(log_handler)
+
+        # Ignore one specific warning issued by accident when a web page crashes and dumps a stack trace
+        # cgitb scans all exception attributes with dir(exc) + getattr(exc, attr) which results in accessing
+        # exception.message, a deprecated attribute.
+        warnings.filterwarnings('ignore', 'BaseException.message.*', DeprecationWarning, '.*cgitb.*', 173)
 
         # Set up module defaults
         # Using the same piece of code as serverutils, but only picking up fullauth or all configurations
