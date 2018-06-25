@@ -366,13 +366,14 @@ class DetoxHistory(DetoxHistoryBase):
             else:
                 line.condition_id = ids[0]
 
-    def save_decisions(self, cycle_number, deleted_list, kept_list, protected_list):
+    def save_cycle_state(self, cycle_number, deleted_list, kept_list, protected_list, quotas):
         """
         Save decisions and their reasons for all replicas.
         @param cycle_number      Cycle number.
         @param deleted_list    {replica: [([block_replica], condition)]}
         @param kept_list       {replica: [([block_replica], condition)]}
         @param protected_list  {replica: [([block_replica], condition)]}
+        @param quotas          {site: quota in TB}
 
         Note that in case of block-level operations, one dataset replica can appear
         in multiple of deleted, kept, and protected.
@@ -380,19 +381,25 @@ class DetoxHistory(DetoxHistoryBase):
 
         if self._read_only:
             return
+
+        self.save_sites([s.name for s in quotas.iterkeys()])
+
+        datasets = set()
+        for replica, matches in deleted_list.iteritems():
+            datasets.add(replica.dataset.name)
+        for replica, matches in kept_list.iteritems():
+            datasets.add(replica.dataset.name)
+        for replica, matches in protected_list.iteritems():
+            datasets.add(replica.dataset.name)
+
+        self.save_datasets(datasets)
     
         reuse = self.db.reuse_connection
         self.db.reuse_connection = True
 
         self.db.use_db(self.cache_db)
 
-        # Make a snapshot table first and then fill the SQLite tables
-        table_name = 'replicas_%s' % cycle_number
-
-        if self.db.table_exists(table_name):
-            self.db.query('DROP TABLE `{0}`'.format(table_name))
-
-        self.db.query('CREATE TABLE `{0}` LIKE `replicas`'.format(table_name))
+        ## Replica state (deletion decisions)
 
         # Insert full data into a temporary table with site and dataset names
         tmp_table = 'replicas_tmp'
@@ -419,6 +426,14 @@ class DetoxHistory(DetoxHistoryBase):
         self.db.insert_many(tmp_table, fields, None, replica_entry(kept_list, 'keep'), do_update = False, db = self.db.scratch_db)
         self.db.insert_many(tmp_table, fields, None, replica_entry(protected_list, 'protect'), do_update = False, db = self.db.scratch_db)
 
+        # Make a snapshot table
+        table_name = 'replicas_%s' % cycle_number
+
+        if self.db.table_exists(table_name):
+            self.db.query('DROP TABLE `{0}`'.format(table_name))
+
+        self.db.query('CREATE TABLE `{0}` LIKE `replicas`'.format(table_name))
+
         # Then use insert select join to convert the names to ids
         sql = 'INSERT INTO `{0}` (`site_id`, `dataset_id`, `size`, `decision`, `condition`)'.format(table_name)
         sql += ' SELECT s.`id`, d.`id`, r.`size`, r.`decision`, r.`condition` FROM `{0}`.`{1}` AS r'.format(self.db.scratch_db, tmp_table)
@@ -428,15 +443,49 @@ class DetoxHistory(DetoxHistoryBase):
 
         self.db.drop_tmp_table(tmp_table)
 
-        # Now transfer data to an SQLite file
+        ## Site state (status and quotas)
+
+        # Insert full data into a temporary table with site info
+        tmp_table = 'sites_tmp'
+        columns = [
+            '`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL',
+            '`status` enum(\'ready\',\'waitroom\',\'morgue\',\'unknown\') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL',
+            '`quota` int(10) NOT NULL',
+            'KEY `site` (`site`)'
+        ]
+        self.db.create_tmp_table(tmp_table, columns)
+
+        fields = ('site', 'status', 'quota')
+        mapping = lambda (site, quota): (site.name, site.status, quota)
+        self.db.insert_many(tmp_table, fields, mapping, quotas.iteritems(), do_update = False, db = self.db.scratch_db)
+
+        # Make a snapshot table
+        table_name = 'sites_%s' % cycle_number
+
+        if self.db.table_exists(table_name):
+            self.db.query('DROP TABLE `{0}`'.format(table_name))
+
+        self.db.query('CREATE TABLE `{0}` LIKE `sites`'.format(table_name))
+
+        # Then use insert select join to convert the names to ids
+        sql = 'INSERT INTO `{0}` (`site_id`, `status`, `quota`)'.format(table_name)
+        sql += ' SELECT s.`id`, t.`status`, t.`quota` FROM `{0}`.`{1}` AS t'.format(self.db.scratch_db, tmp_table)
+        sql += ' INNER JOIN `{0}`.`sites` AS s ON s.`name` = t.`site`'.format(self.history_db)
+        self.db.query(sql)
+
+        self.db.drop_tmp_table(tmp_table)
+
+        ## Now transfer data to an SQLite file
         try:
             cycle_number += 0
         except TypeError:
-            # cycle_number is actually a partition name
+            # cycle_number is actually the partition name
             db_file_name = '%s/snapshot_%s.db' % (self.snapshots_spool_dir, cycle_number)
+            is_cycle = False
         else:
-            # Saving deletion decisions of a cycle
+            # Saving quotas during a cycle
             db_file_name = '%s/snapshot_%09d.db' % (self.snapshots_spool_dir, cycle_number)
+            is_cycle = True
 
         try:
             os.makedirs(self.snapshots_spool_dir)
@@ -449,18 +498,19 @@ class DetoxHistory(DetoxHistoryBase):
 
         LOG.info('Creating snapshot SQLite3 DB %s', db_file_name)
 
-        # get the decision value to name mapping
+        snapshot_db = sqlite3.connect(db_file_name)
+        snapshot_cursor = snapshot_db.cursor()
+
+        # Make enum mapping tables
+        # Get the decision value to name mapping from MySQL information_schema
+        # This is just a fancy way to arrive at a list [(1, 'delete'), (2, 'keep'), (3, 'protect')]
         enum = self.db.query('SELECT `COLUMN_TYPE` FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` = %s AND `TABLE_NAME` = \'replicas\' AND `COLUMN_NAME` = \'decision\'', self.cache_db)[0]
         # "enum('delete','keep','protect')" -> ['delete', 'keep', 'protect']
         values = map(lambda s: s.replace("'", '').replace('"', ''), enum[5:-1].split(','))
-
         decision_mapping = []
         for idec, decision in enumerate(values):
             # MySQL enum starts at 1
             decision_mapping.append((idec + 1, decision))
-
-        snapshot_db = sqlite3.connect(db_file_name)
-        snapshot_cursor = snapshot_db.cursor()
 
         sql = 'CREATE TABLE `decisions` ('
         sql += '`id` TINYINT PRIMARY KEY NOT NULL,'
@@ -470,6 +520,17 @@ class DetoxHistory(DetoxHistoryBase):
         for value, name in decision_mapping:
             snapshot_db.execute('INSERT INTO `decisions` VALUES (?, ?)', (value, name))
 
+        sql = 'CREATE TABLE `statuses` ('
+        sql += '`id` TINYINT PRIMARY KEY NOT NULL,'
+        sql += '`value` TEXT NOT NULL'
+        sql += ')'
+        snapshot_db.execute(sql)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'ready\')' % Site.STAT_READY)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'waitroom\')' % Site.STAT_WAITROOM)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'morgue\')' % Site.STAT_MORGUE)
+        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'unknown\')' % Site.STAT_UNKNOWN)
+
+        # Fill in the replica states
         sql = 'CREATE TABLE `replicas` ('
         sql += '`site_id` SMALLINT NOT NULL,'
         sql += '`dataset_id` INT NOT NULL,'
@@ -486,89 +547,8 @@ class DetoxHistory(DetoxHistoryBase):
             snapshot_cursor.execute(sql, entry)
 
         snapshot_db.commit()
-        
-        snapshot_cursor.close()
-        snapshot_db.close()
 
-        os.chmod(db_file_name, 0666)
-
-        # reset DB connection
-        self.db.use_db(self.history_db)
-
-        self.db.reuse_connection = reuse
-
-    def save_siteinfo(self, cycle_number, quotas):
-        """
-        Save the site partition quotas and site statuses for the cycle.
-        @param cycle_number   Cycle number.
-        @param quotas         {site: quota in TB}
-        """
-
-        if self._read_only:
-            return
-
-        reuse = self.db.reuse_connection
-        self.db.reuse_connection = True
-
-        self.db.use_db(self.cache_db)
-
-        # Make a snapshot table first and then fill the SQLite tables
-        table_name = 'sites_%s' % cycle_number
-
-        if self.db.table_exists(table_name):
-            self.db.query('DROP TABLE `{0}`'.format(table_name))
-
-        self.db.query('CREATE TABLE `{0}` LIKE `sites`'.format(table_name))
-
-        # Insert full data into a temporary table with site and dataset names
-        tmp_table = 'sites_tmp'
-        columns = [
-            '`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL',
-            '`status` enum(\'ready\',\'waitroom\',\'morgue\',\'unknown\') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL',
-            '`quota` int(10) NOT NULL',
-            'KEY `site` (`site`)'
-        ]
-        self.db.create_tmp_table(tmp_table, columns)
-
-        fields = ('site', 'status', 'quota')
-        mapping = lambda (site, quota): (site.name, site.status, quota)
-        self.db.insert_many(tmp_table, fields, mapping, quotas.iteritems(), do_update = False, db = self.db.scratch_db)
-
-        # Then use insert select join to convert the names to ids
-        sql = 'INSERT INTO `{0}` (`site_id`, `status`, `quota`)'.format(table_name)
-        sql += ' SELECT s.`id`, t.`status`, t.`quota` FROM `{0}`.`{1}` AS t'.format(self.db.scratch_db, tmp_table)
-        sql += ' INNER JOIN `{0}`.`sites` AS s ON s.`name` = t.`site`'.format(self.history_db)
-        self.db.query(sql)
-
-        self.db.drop_tmp_table(tmp_table)
-
-        # Now transfer data to an SQLite file
-        try:
-            cycle_number += 0
-        except TypeError:
-            # cycle_number is actually the partition name
-            db_file_name = '%s/snapshot_%s.db' % (self.snapshots_spool_dir, cycle_number)
-            is_cycle = False
-        else:
-            # Saving quotas during a cycle
-            db_file_name = '%s/snapshot_%09d.db' % (self.snapshots_spool_dir, cycle_number)
-            is_cycle = True
-
-        # DB file should exist already - this function is called after save_deletion_decisions
-
-        snapshot_db = sqlite3.connect(db_file_name)
-        snapshot_cursor = snapshot_db.cursor()
-
-        sql = 'CREATE TABLE `statuses` ('
-        sql += '`id` TINYINT PRIMARY KEY NOT NULL,'
-        sql += '`value` TEXT NOT NULL'
-        sql += ')'
-        snapshot_db.execute(sql)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'ready\')' % Site.STAT_READY)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'waitroom\')' % Site.STAT_WAITROOM)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'morgue\')' % Site.STAT_MORGUE)
-        snapshot_db.execute('INSERT INTO `statuses` VALUES (%d, \'unknown\')' % Site.STAT_UNKNOWN)
-
+        # Fill in the site states
         sql = 'CREATE TABLE `sites` ('
         sql += '`site_id` SMALLINT PRIMARY KEY NOT NULL,'
         sql += '`status_id` TINYINT NOT NULL REFERENCES `statuses`(`id`),'
@@ -583,13 +563,13 @@ class DetoxHistory(DetoxHistoryBase):
 
         snapshot_db.commit()
 
+        # Close the sqlite file
         snapshot_cursor.close()
         snapshot_db.close()
 
         if is_cycle:
             # This was a numbered cycle
             # Archive the sqlite3 file
-            # Relying on the fact save_quotas is called after save_deletion_decisions
     
             scycle = '%09d' % cycle_number
             archive_dir_name = '%s/%s/%s' % (self.snapshots_archive_dir, scycle[:3], scycle[3:6])
@@ -607,6 +587,7 @@ class DetoxHistory(DetoxHistoryBase):
             self._update_cache_usage('replicas', cycle_number)
             self._update_cache_usage('sites', cycle_number)
 
+        # Finally restore the history DB
         self.db.use_db(self.history_db)
 
         self.db.reuse_connection = reuse
