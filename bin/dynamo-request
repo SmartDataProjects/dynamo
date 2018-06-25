@@ -128,7 +128,12 @@ if args.poll:
                     print '  %s %s' % (site, item)
             
 elif args.cancel:
-    # show
-    print response
+    print '[REQUEST %d] %sCANCELLED%s' % (response['request_id'], bcolors.SUCCESS, bcolors.ENDC)
+
 else:
-    print response
+    # Response is a single-element list
+    request = response[0]
+    print '[REQUEST %d]' % request['request_id']
+    for site in request['site']:
+        for item in request['item']:
+            print '  %s %s' % (site, item)
