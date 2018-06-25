@@ -6,13 +6,12 @@ import requests
 import socket
 import json
 import time
+import warnings
 
 def inject(host, cert, key, jsondata, delete = False):
     session = requests.Session()
 
     headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
-
-    requests.packages.urllib3.disable_warnings()
 
     if delete:
         url = 'https://%s/data/inventory/delete' % host
@@ -20,10 +19,12 @@ def inject(host, cert, key, jsondata, delete = False):
         url = 'https://%s/data/inventory/inject' % host
 
     for attempt in xrange(5):
-        response = session.request(
-            method = 'POST', url = url,
-            data = jsondata, headers = headers, verify = False,
-            timeout = 600, cert = (cert, key))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            response = session.request(
+                method = 'POST', url = url,
+                data = jsondata, headers = headers, verify = False,
+                timeout = 600, cert = (cert, key))
 
         if response.status_code == 200:
             return json.loads(response.text)
@@ -52,7 +53,7 @@ if __name__ == '__main__':
     if args.json.strip() == '-':
         jsondata = ''
         while True:
-            line = sys.stdline()
+            line = sys.stdin.readline()
             if not line:
                 break
             jsondata += line

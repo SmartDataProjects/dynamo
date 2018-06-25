@@ -5,10 +5,9 @@ import sys
 import requests
 import socket
 import time
+import warnings
 
 def requestcopy(host, cert, key, items, sites, n = 1):
-    requests.packages.urllib3.disable_warnings()
-
     url = 'https://%s/data/request/copy' % host
 
     data = []
@@ -19,7 +18,9 @@ def requestcopy(host, cert, key, items, sites, n = 1):
     data.append(('n', n))
 
     for attempt in xrange(5):
-        response = requests.request('POST', url = url, data = data, verify = False, timeout = 600, cert = (cert, key))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            response = requests.request('POST', url = url, data = data, verify = False, timeout = 600, cert = (cert, key))
 
         if response.status_code == 200:
             return response.text
@@ -31,8 +32,6 @@ def requestcopy(host, cert, key, items, sites, n = 1):
             raise RuntimeError(response.text)
 
 def pollcopy(host, cert, key, rid = None, items = None, sites = None, statuses = None, users = None):
-    requests.packages.urllib3.disable_warnings()
-
     url = 'https://%s/data/request/pollcopy' % host
 
     data = []
@@ -51,7 +50,9 @@ def pollcopy(host, cert, key, rid = None, items = None, sites = None, statuses =
         raise RuntimeError('No selection specified')
 
     for attempt in xrange(5):
-        response = requests.request('POST', url, data = data, verify = False, timeout = 600, cert = (cert, key))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            response = requests.request('POST', url, data = data, verify = False, timeout = 600, cert = (cert, key))
 
         if response.status_code == 200:
             return response.text
@@ -63,14 +64,14 @@ def pollcopy(host, cert, key, rid = None, items = None, sites = None, statuses =
             raise RuntimeError(response.text)
 
 def cancelcopy(host, cert, key, rid):
-    requests.packages.urllib3.disable_warnings()
-
     url = 'https://%s/data/request/cancelcopy' % host
 
     data = {'request_id': rid}
 
     for attempt in xrange(5):
-        response = requests.request('POST', url, data = data, verify = False, timeout = 600, cert = (cert, key))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            response = requests.request('POST', url, data = data, verify = False, timeout = 600, cert = (cert, key))
 
         if response.status_code == 200:
             return response.text
@@ -82,8 +83,6 @@ def cancelcopy(host, cert, key, rid):
             raise RuntimeError(response.text)
 
 def requestdelete(host, cert, key, items, sites):
-    requests.packages.urllib3.disable_warnings()
-
     url = 'https://%s/data/request/delete' % host
 
     data = []
@@ -93,7 +92,9 @@ def requestdelete(host, cert, key, items, sites):
         data.append(('site[]', site))
 
     for attempt in xrange(5):
-        response = requests.request('POST', url = url, data = data, verify = False, timeout = 600, cert = (cert, key))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            response = requests.request('POST', url = url, data = data, verify = False, timeout = 600, cert = (cert, key))
 
         if response.status_code == 200:
             return response.text
@@ -105,8 +106,6 @@ def requestdelete(host, cert, key, items, sites):
             raise RuntimeError(response.text)
 
 def polldelete(host, cert, key, rid = None, items = None, sites = None, statuses = None, users = None):
-    requests.packages.urllib3.disable_warnings()
-
     url = 'https://%s/data/request/polldelete' % host
 
     data = []
@@ -125,7 +124,9 @@ def polldelete(host, cert, key, rid = None, items = None, sites = None, statuses
         raise RuntimeError('No selection specified')
 
     for attempt in xrange(5):
-        response = requests.request('POST', url, data = data, verify = False, timeout = 600, cert = (cert, key))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            response = requests.request('POST', url, data = data, verify = False, timeout = 600, cert = (cert, key))
 
         if response.status_code == 200:
             return response.text
