@@ -46,7 +46,8 @@ transfer_nonerrors = {
 }
 
 deletion_nonerrors = {
-    2: 'Target file already removed.'
+    2: 'Target file does not exist.',
+    70: 'Target file does not exist.'
 }
 
 def pre_exec():
@@ -148,13 +149,13 @@ def gfal_exec(method, args, nonerrors = {}):
         except gfal2.GError as err:
             exitcode, msg = err.code, str(err)
 
+            if err.code in nonerrors:
+                return 0, start_time, int(time.time()), nonerrors[err.code], ''
+
             if err.code == 70:
                 # port bind failure - seems to be an artefact of using multiple gfal-copy in parallel
                 # usually it finds a good port after a retry
                 continue
-
-            if err.code in nonerrors:
-                return 0, start_time, int(time.time()), nonerrors[err.code], ''
 
         except Exception as exc:
             exitcode, msg = -1, str(exc)
@@ -228,7 +229,7 @@ class PoolManager(object):
         async_result = self._pool.apply_async(self.task, proc_args)
         self._results.append((tid, async_result) + args)
 
-        if self._collector_thread is None:
+        if self._collector_thread is None or not self._collector_thread.is_alive():
             self.start_collector()
 
     def process_result(self, result_tuple):
@@ -270,6 +271,9 @@ class PoolManager(object):
         if self._closed:
             return True
 
+        if len(self._results) != 0:
+            return False
+
         if self._collector_thread is None:
             return True
 
@@ -290,6 +294,9 @@ class PoolManager(object):
         return True
 
     def start_collector(self):
+        if self._collector_thread is not None:
+            self._collector_thread.join()
+
         self._collector_thread = threading.Thread(target = self.collect_results, name = self.name)
         self._collector_thread.start()
 

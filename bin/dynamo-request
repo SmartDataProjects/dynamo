@@ -2,207 +2,114 @@
 
 import os
 import sys
-import requests
-import socket
-import time
-import warnings
+import json
+from argparse import ArgumentParser
 
-def requestcopy(host, cert, key, items, sites, n = 1):
-    url = 'https://%s/data/request/copy' % host
+import dynamo.client.request as request
+from dynamo.utils.interface.webservice import GET, POST
+from dynamo.dataformat import Configuration
 
-    data = []
-    for item in items:
-        data.append(('item[]', item))
-    for site in sites:
-        data.append(('site[]', site))
-    data.append(('n', n))
+PROXY = '/tmp/x509up_u%d' % os.getuid()
 
-    for attempt in xrange(5):
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            response = requests.request('POST', url = url, data = data, verify = False, timeout = 600, cert = (cert, key))
+parser = ArgumentParser(description = 'Request copy or deletion of datasets and blocks.')
+parser.add_argument('--delete', '-D', action = 'store_true', dest = 'delete', help = 'Request deletions.')
+parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'datasets', nargs = '+', default = [], help = 'Datasets to copy.')
+parser.add_argument('--block', '-b', metavar = 'BLOCK', dest = 'blocks', nargs = '+', default = [], help = 'Blocks to copy.')
+parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'sites', nargs = '+', help = 'Sites to copy to.')
+parser.add_argument('--num-copies', '-n', metavar = 'SITE', dest = 'n', type = int, default = 1, help = 'Sites to copy to.')
+parser.add_argument('--cancel', '-x', metavar = 'ID', dest = 'cancel', help = 'Cancel a copy request.')
+parser.add_argument('--poll', '-l', metavar = 'ID', dest = 'poll', nargs = '?', const = 0, help = 'Check the status of a copy request.')
+parser.add_argument('--status', '-t', metavar = 'STATUS', dest = 'statuses', nargs = '+', help = 'Polling option. Limit to statuses new, activated, completed, rejected, or cancelled')
+parser.add_argument('--user', '-u', metavar = 'USER', dest = 'users', nargs = '+', help = 'Polling option. Limit to requests made by specified users.')
+parser.add_argument('--raw', '-A', action = 'store_true', dest = 'raw', help = 'Print the raw JSON response from the Dynamo REST API.')
+parser.add_argument('--host', '-o', metavar = 'HOST', dest = 'host', default = socket.gethostname(), help = 'Host name of the dynamo server (ex. example.com).')
+parser.add_argument('--cert', '-c', metavar = 'CERT', dest = 'cert', default = PROXY, help = 'User certificate location.')
+parser.add_argument('--key', '-k', metavar = 'KEY', dest = 'key', default = PROXY, help = 'User certificate key location.')
 
-        if response.status_code == 200:
-            return response.text
-        elif response.status_code == 503:
-            print 'Server is unavailable:', response.text
-            time.sleep(2)
-            continue
-        else:
-            raise RuntimeError(response.text)
+args = parser.parse_args()
+sys.argv = []
 
-def pollcopy(host, cert, key, rid = None, items = None, sites = None, statuses = None, users = None):
-    url = 'https://%s/data/request/pollcopy' % host
+## Prepare the data to send
 
-    data = []
-    if rid is not None:
-        data.append(('request_id', rid))
-    if items is not None:
-        data.extend(('item[]', item) for item in items)
-    if sites is not None:
-        data.extend(('site[]', site) for site in sites)
-    if statuses is not None:
-        data.extend(('status[]', status) for status in statuses)
-    if users is not None:
-        data.extend(('user[]', user) for user in users)
+items = args.datasets + args.blocks
 
-    if len(data) == 0:
-        raise RuntimeError('No selection specified')
+resource = ''
+need_auth = True
 
-    for attempt in xrange(5):
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            response = requests.request('POST', url, data = data, verify = False, timeout = 600, cert = (cert, key))
+try:
+    if args.delete:
+        if args.poll is not None:
+            if args.poll == 0:
+                args.poll = None
+            if len(items) == 0:
+                items = None
 
-        if response.status_code == 200:
-            return response.text
-        elif response.status_code == 503:
-            print 'Server is unavailable:', response.text
-            time.sleep(2)
-            continue
-        else:
-            raise RuntimeError(response.text)
-
-def cancelcopy(host, cert, key, rid):
-    url = 'https://%s/data/request/cancelcopy' % host
-
-    data = {'request_id': rid}
-
-    for attempt in xrange(5):
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            response = requests.request('POST', url, data = data, verify = False, timeout = 600, cert = (cert, key))
-
-        if response.status_code == 200:
-            return response.text
-        elif response.status_code == 503:
-            print 'Server is unavailable:', response.text
-            time.sleep(2)
-            continue
-        else:
-            raise RuntimeError(response.text)
-
-def requestdelete(host, cert, key, items, sites):
-    url = 'https://%s/data/request/delete' % host
-
-    data = []
-    for item in items:
-        data.append(('item[]', item))
-    for site in sites:
-        data.append(('site[]', site))
-
-    for attempt in xrange(5):
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            response = requests.request('POST', url = url, data = data, verify = False, timeout = 600, cert = (cert, key))
-
-        if response.status_code == 200:
-            return response.text
-        elif response.status_code == 503:
-            print 'Server is unavailable:', response.text
-            time.sleep(2)
-            continue
-        else:
-            raise RuntimeError(response.text)
-
-def polldelete(host, cert, key, rid = None, items = None, sites = None, statuses = None, users = None):
-    url = 'https://%s/data/request/polldelete' % host
-
-    data = []
-    if rid is not None:
-        data.append(('request_id', rid))
-    if items is not None:
-        data.extend(('item[]', item) for item in items)
-    if sites is not None:
-        data.extend(('site[]', site) for site in sites)
-    if statuses is not None:
-        data.extend(('status[]', status) for status in statuses)
-    if users is not None:
-        data.extend(('user[]', user) for user in users)
-
-    if len(data) == 0:
-        raise RuntimeError('No selection specified')
-
-    for attempt in xrange(5):
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            response = requests.request('POST', url, data = data, verify = False, timeout = 600, cert = (cert, key))
-
-        if response.status_code == 200:
-            return response.text
-        elif response.status_code == 503:
-            print 'Server is unavailable:', response.text
-            time.sleep(2)
-            continue
-        else:
-            raise RuntimeError(response.text)
-
-
-if __name__ == '__main__':
-    from argparse import ArgumentParser
-
-    PROXY = '/tmp/x509up_u%d' % os.getuid()
+            resource = 'polldelete'
+            data = request.polldelete(args.poll, items, args.sites, args.statuses, args.users)
+            need_auth = False
     
-    parser = ArgumentParser(description = 'Request copy or deletion of datasets and blocks.')
-    parser.add_argument('--delete', '-D', action = 'store_true', dest = 'delete', help = 'Request deletions.')
-    parser.add_argument('--dataset', '-d', metavar = 'DATASET', dest = 'datasets', nargs = '+', default = [], help = 'Datasets to copy.')
-    parser.add_argument('--block', '-b', metavar = 'BLOCK', dest = 'blocks', nargs = '+', default = [], help = 'Blocks to copy.')
-    parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'sites', nargs = '+', help = 'Sites to copy to.')
-    parser.add_argument('--num-copies', '-n', metavar = 'SITE', dest = 'n', type = int, default = 1, help = 'Sites to copy to.')
-    parser.add_argument('--cancel', '-x', metavar = 'ID', dest = 'cancel', help = 'Cancel a copy request.')
-    parser.add_argument('--poll', '-l', metavar = 'ID', dest = 'poll', nargs = '?', const = 0, help = 'Check the status of a copy request.')
-    parser.add_argument('--status', '-t', metavar = 'STATUS', dest = 'statuses', nargs = '+', help = 'Polling option. Limit to statuses new, activated, completed, rejected, or cancelled')
-    parser.add_argument('--user', '-u', metavar = 'USER', dest = 'users', nargs = '+', help = 'Polling option. Limit to requests made by specified users.')
-    parser.add_argument('--host', '-o', metavar = 'HOST', dest = 'host', default = socket.gethostname(), help = 'Host name of the dynamo server (ex. example.com).')
-    parser.add_argument('--cert', '-c', metavar = 'CERT', dest = 'cert', default = PROXY, help = 'User certificate location.')
-    parser.add_argument('--key', '-k', metavar = 'KEY', dest = 'key', default = PROXY, help = 'User certificate key location.')
-
-    args = parser.parse_args()
-    sys.argv = []
-
-    items = args.datasets + args.blocks
-
-    try:
-        if args.delete:
-            if args.poll is not None:
-                if args.poll == 0:
-                    args.poll = None
-                if len(items) == 0:
-                    items = None
-        
-                print polldelete(args.host, args.cert, args.key, args.poll, items, args.sites, args.statuses, args.users)
-        
-            else:
-                if len(items) == 0:
-                    raise RuntimeError('Missing --dataset or --block.')
-
-                if args.sites is None:
-                    raise RuntimeError('Missing --site')
-
-                print requestdelete(args.host, args.cert, args.key, items, args.sites)
-
         else:
-            if args.cancel is not None:
-                print cancelcopy(args.host, args.cert, args.key, args.cancel)
-                sys.exit(0)
+            if len(items) == 0:
+                raise RuntimeError('Missing --dataset or --block.')
+            if args.sites is None:
+                raise RuntimeError('Missing --site')
 
-            if args.poll is not None:
-                if args.poll == 0:
-                    args.poll = None
-                if len(items) == 0:
-                    items = None
-        
-                print pollcopy(args.host, args.cert, args.key, args.poll, items, args.sites, args.statuses, args.users)
-        
-            else:
-                if len(items) == 0:
-                    raise RuntimeError('Missing --dataset or --block.')
+            resource = 'delete'
+            data = request.delete(items, args.sites)
 
-                if args.sites is None:
-                    raise RuntimeError('Missing --site')
+    else:
+        if args.cancel is not None:
+            resource = 'cancelcopy'
+            data = request.cancelcopy(args.cancel)
 
-                print requestcopy(args.host, args.cert, args.key, items, args.sites, args.n)
+        elif args.poll is not None:
+            if args.poll == 0:
+                args.poll = None
+            if len(items) == 0:
+                items = None
+    
+            resource = 'pollcopy'
+            data = request.pollcopy(args.poll, items, args.sites, args.statuses, args.users)
+            need_auth = False
+    
+        else:
+            if len(items) == 0:
+                raise RuntimeError('Missing --dataset or --block.')
+            if args.sites is None:
+                raise RuntimeError('Missing --site')
 
-    except Exception as ex:
-        sys.stderr.write(str(ex) + '\n')
-        sys.exit(1)
+            resource = 'copy'
+            data = requestcopy(items, args.sites, args.n)
+
+except Exception as ex:
+    sys.stderr.write(str(ex) + '\n')
+    sys.exit(1)
+
+if not resource:
+    sys.stderr.write('Invalid combination of options.')
+    sys.exit(1)
+
+## Instantiate the request client and send th request
+
+# url_base will be replaced to http if need_auth = False
+config = Configuration(url_base = 'https://%s/data/request', need_auth = need_auth)
+
+client = request.DynamoWebClient(config)
+
+response = client.make_request(resource, data, method = POST)
+
+if response is None:
+    sys.exit(1)
+
+if args.raw:
+    print json.dumps(response)
+    sys.exit(0)
+
+if args.poll:
+    # list
+    print response
+elif args.cancel:
+    # show
+    print response
+else:
+    print response
