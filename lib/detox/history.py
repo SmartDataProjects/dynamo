@@ -427,15 +427,15 @@ class DetoxHistory(DetoxHistoryBase):
         self.db.insert_many(tmp_table, fields, None, replica_entry(protected_list, 'protect'), do_update = False, db = self.db.scratch_db)
 
         # Make a snapshot table
-        table_name = 'replicas_%s' % cycle_number
+        replica_table_name = 'replicas_%s' % cycle_number
 
-        if self.db.table_exists(table_name):
-            self.db.query('DROP TABLE `{0}`'.format(table_name))
+        if self.db.table_exists(replica_table_name):
+            self.db.query('DROP TABLE `{0}`'.format(replica_table_name))
 
-        self.db.query('CREATE TABLE `{0}` LIKE `replicas`'.format(table_name))
+        self.db.query('CREATE TABLE `{0}` LIKE `replicas`'.format(replica_table_name))
 
         # Then use insert select join to convert the names to ids
-        sql = 'INSERT INTO `{0}` (`site_id`, `dataset_id`, `size`, `decision`, `condition`)'.format(table_name)
+        sql = 'INSERT INTO `{0}` (`site_id`, `dataset_id`, `size`, `decision`, `condition`)'.format(replica_table_name)
         sql += ' SELECT s.`id`, d.`id`, r.`size`, r.`decision`, r.`condition` FROM `{0}`.`{1}` AS r'.format(self.db.scratch_db, tmp_table)
         sql += ' INNER JOIN `{0}`.`sites` AS s ON s.`name` = r.`site`'.format(self.history_db)
         sql += ' INNER JOIN `{0}`.`datasets` AS d ON d.`name` = r.`dataset`'.format(self.history_db)
@@ -460,15 +460,15 @@ class DetoxHistory(DetoxHistoryBase):
         self.db.insert_many(tmp_table, fields, mapping, quotas.iteritems(), do_update = False, db = self.db.scratch_db)
 
         # Make a snapshot table
-        table_name = 'sites_%s' % cycle_number
+        site_table_name = 'sites_%s' % cycle_number
 
-        if self.db.table_exists(table_name):
-            self.db.query('DROP TABLE `{0}`'.format(table_name))
+        if self.db.table_exists(site_table_name):
+            self.db.query('DROP TABLE `{0}`'.format(site_table_name))
 
-        self.db.query('CREATE TABLE `{0}` LIKE `sites`'.format(table_name))
+        self.db.query('CREATE TABLE `{0}` LIKE `sites`'.format(site_table_name))
 
         # Then use insert select join to convert the names to ids
-        sql = 'INSERT INTO `{0}` (`site_id`, `status`, `quota`)'.format(table_name)
+        sql = 'INSERT INTO `{0}` (`site_id`, `status`, `quota`)'.format(site_table_name)
         sql += ' SELECT s.`id`, t.`status`, t.`quota` FROM `{0}`.`{1}` AS t'.format(self.db.scratch_db, tmp_table)
         sql += ' INNER JOIN `{0}`.`sites` AS s ON s.`name` = t.`site`'.format(self.history_db)
         self.db.query(sql)
@@ -543,7 +543,7 @@ class DetoxHistory(DetoxHistoryBase):
 
         sql = 'INSERT INTO `replicas` VALUES (?, ?, ?, ?, ?)'
 
-        for entry in self.db.xquery('SELECT `site_id`, `dataset_id`, `size`, 0+`decision`, `condition` FROM `{0}`'.format(table_name)):
+        for entry in self.db.xquery('SELECT `site_id`, `dataset_id`, `size`, 0+`decision`, `condition` FROM `{0}`'.format(replica_table_name)):
             snapshot_cursor.execute(sql, entry)
 
         snapshot_db.commit()
@@ -558,7 +558,7 @@ class DetoxHistory(DetoxHistoryBase):
 
         sql = 'INSERT INTO `sites` VALUES (?, ?, ?)'
 
-        for entry in self.db.xquery('SELECT `site_id`, 0+`status`, `quota` FROM `{0}`'.format(table_name)):
+        for entry in self.db.xquery('SELECT `site_id`, 0+`status`, `quota` FROM `{0}`'.format(site_table_name)):
             snapshot_cursor.execute(sql, entry)
 
         snapshot_db.commit()
