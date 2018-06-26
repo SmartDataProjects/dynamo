@@ -1,11 +1,15 @@
-#transferlist {
-    width: 800px;
+#transferList {
+    width: 100%;
     border-collapse: collapse;
     border: 1px solid black;
 }
 
+#transferList td, #transferList th {
+    border: 1px solid #ddd;
+}
+
 #taskid {
-    width: 6%;
+    width: 5%;
 }
 
 #from {
@@ -17,17 +21,21 @@
 }
 
 #lfn {
-    width: 26%;
+    width: 46%;
 }
 
 #size {
-    width: 10%;
+    width: 3%;
 }
 
 #status {
-    width: 8%;
+    width: 3%;
 }
 
 #start, #finish {
-    width: 16%;
+    width: 14%;
+}
+
+td.lfn {
+    font-size: 12px;
 }

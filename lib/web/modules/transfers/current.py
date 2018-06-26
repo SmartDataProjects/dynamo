@@ -2,6 +2,7 @@ import time
 
 from dynamo.web.modules._base import WebModule
 from dynamo.fileop.rlfsm import RLFSM
+from dynamo.fileop.base import FileQuery
 
 class CurrentFileTransfers(WebModule):
     def __init__(self, config):
@@ -37,7 +38,7 @@ class CurrentFileTransfers(WebModule):
                 start = ''
                 finish = ''
             else:
-                status = transfer[0]
+                status = FileQuery.status_name(transfer[0])
                 start = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(transfer[2]))
                 finish = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(transfer[3]))
 
