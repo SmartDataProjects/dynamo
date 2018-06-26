@@ -331,6 +331,7 @@ class CopyRequestsHandler(BaseHandler):
 
             # create actions and set request status to ACTIVATED
             request.activate(activation_list)
+            self.request_manager.update_request(request)
             
             self.activated_requests.append(request)
 

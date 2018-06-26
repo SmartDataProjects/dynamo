@@ -152,9 +152,12 @@ class CopyRequestManager(RequestManager):
             sql = 'UPDATE `copy_requests` SET `status` = %s, `group` = %s, `num_copies` = %s, `last_request_time` = FROM_UNIXTIME(%s), `request_count` = %s WHERE `id` = %s'
             self.registry.query(sql, request.status, request.group, request.n, request.last_request, request.request_count, request.request_id)
 
-            sql = 'UPDATE `active_copies` SET `status` = %s, `updated` = FROM_UNIXTIME(%s) WHERE `request_id` = %s AND `item` = %s AND site = %s'
+            # insert or update active copies
+            fields = ('request_id', 'item', 'site', 'status', 'created', 'updated')
             for a in request.actions:
-                self.registry.query(sql, a.status, a.last_update, request.request_id, a.item, a.site)
+                values = (request.request_id, a.item, a.site, a.status, MySQL.bare('NOW()'), MySQL.bare('NOW()'))
+                update_columns = ('status', 'updated')
+                self.registry.insert_update('active_copies', fields, *values, update_columns = update_columns)
 
         else:
             # terminal state
@@ -163,7 +166,7 @@ class CopyRequestManager(RequestManager):
             sql += ' LEFT JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
             sql += ' LEFT JOIN `copy_request_sites` AS s ON s.`request_id` = r.`id`'
             sql += ' WHERE r.`id` = %s'
-            self.registry.query(sql, request.request_id)
+            self.registry.query(sql, request.request_id)        
 
     def collect_updates(self, inventory):
         """

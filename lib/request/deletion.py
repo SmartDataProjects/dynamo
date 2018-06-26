@@ -150,9 +150,13 @@ class DeletionRequestManager(RequestManager):
             sql = 'UPDATE `deletion_requests` SET `status` = %s, `request_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'
             self.registry.query(sql, request.status, request.request_time, request.request_id)
 
-            sql = 'UPDATE `active_deletions` SET `status` = %s, `updated` = FROM_UNIXTIME(%s) WHERE `request_id` = %s AND `item` = %s AND site = %s'
+            # insert or update active copies
+            fields = ('request_id', 'item', 'site', 'status', 'created', 'updated')
             for a in request.actions:
-                self.registry.query(sql, a.status, a.last_update, request.request_id, a.item, a.site)
+                values = (request.request_id, a.item, a.site, a.status, MySQL.bare('NOW()'), MySQL.bare('NOW()'))
+                update_columns = ('status', 'updated')
+                self.registry.insert_update('active_deletions', fields, *values, update_columns = update_columns)
+
         else:
             # terminal state
             sql = 'DELETE FROM r, a, i, s USING `deletion_requests` AS r'

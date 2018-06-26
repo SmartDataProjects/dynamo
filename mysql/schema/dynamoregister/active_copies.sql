@@ -5,7 +5,5 @@ CREATE TABLE `active_copies` (
   `status` enum('new','queued','failed','completed') NOT NULL DEFAULT 'new',
   `created` datetime NOT NULL,
   `updated` datetime DEFAULT NULL,
-  KEY `request` (`request_id`),
-  KEY `item` (`item`),
-  KEY `site` (`site`)
+  UNIQUE KEY `request` (`request_id`,`item`,`site`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
