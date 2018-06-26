@@ -137,7 +137,7 @@ class DatasetReplica(object):
 
     def is_complete(self):
         for block_replica in self.block_replicas:
-            if not block_replica.is_complete:
+            if not block_replica.is_complete():
                 return False
 
         return True

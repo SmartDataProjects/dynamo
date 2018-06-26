@@ -232,7 +232,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                 start_time = None
                 finish_time = None
             else:
-                status = FileQuery.STAT_INPROGRESS
+                status = FileQuery.STAT_QUEUED
                 exitcode = None
                 start_time = None
                 finish_time = None

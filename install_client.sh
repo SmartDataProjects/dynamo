@@ -51,7 +51,7 @@ done
 mkdir -p $CLIENT_PATH
 for FILE in dynamo dynamo-inject dynamo-request
 do
-  cp $SOURCE/bin/$FILE $CLIENT_PATH/$FILE
+  sed "s|_PYTHON_|$(which python)|" $SOURCE/bin/$FILE > $CLIENT_PATH/$FILE
   chmod 755 $CLIENT_PATH/$FILE
 done
 

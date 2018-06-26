@@ -27,6 +27,16 @@
           "user": "dynamofod"
         },
         "history": "dynamohistory"
+      },
+      "transfer": {
+        "config": {
+          "db_params": {
+            "user": "dynamofod",
+            "db": "dynamo"
+          },
+          "batch_size": 200
+        },
+        "module": "standalone:StandaloneFileOperation"
       }
     },
     "readonly": {
