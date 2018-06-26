@@ -3,8 +3,8 @@ import logging
 
 from dynamo.web.exceptions import MissingParameter, IllFormedRequest, InvalidRequest, AuthorizationError
 from dynamo.web.modules._base import WebModule
-from dynamo.web.modules._mysqlregistry import MySQLRegistryMixin
 import dynamo.dataformat as df
+from dynamo.registry.registry import RegistryDatabase
 
 LOG = logging.getLogger(__name__)
 
@@ -499,7 +499,7 @@ class InjectDataBase(WebModule):
             counts['blockreplicas'] = num_blockreplicas
 
 
-class InjectData(InjectDataBase, MySQLRegistryMixin):
+class InjectData(InjectDataBase):
     """
     Asynchronous version of the injection. Injection instructions are queued in a registry table with the same format
     as the central inventory update table. The updater process will pick up the injection instructions asynchronously.
@@ -507,7 +507,8 @@ class InjectData(InjectDataBase, MySQLRegistryMixin):
 
     def __init__(self, config):
         InjectDataBase.__init__(self, config)
-        MySQLRegistryMixin.__init__(self, config)
+
+        self.registry = RegistryDatabase()
 
         self.inject_queue = []
 
@@ -523,14 +524,14 @@ class InjectData(InjectDataBase, MySQLRegistryMixin):
 
     def _initialize(self):
         # Lock will be release if this process crashes
-        self.registry.lock_tables(write = ['data_injections'])
+        self.registry.db.lock_tables(write = ['data_injections'])
 
     def _finalize(self):
         fields = ('cmd', 'obj')
         mapping = lambda obj: ('update', repr(obj))
 
-        self.registry.insert_many('data_injections', fields, mapping, self.inject_queue)
-        self.registry.unlock_tables()
+        self.registry.db.insert_many('data_injections', fields, mapping, self.inject_queue)
+        self.registry.db.unlock_tables()
 
         self.message = 'Data will be injected in the regular update cycle later.'
 

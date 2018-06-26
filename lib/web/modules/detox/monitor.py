@@ -1,14 +1,15 @@
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._html import HTMLMixin
-from dynamo.web.modules._mysqlhistory import MySQLHistoryMixin
 from dynamo.web.modules._common import yesno
 import dynamo.web.exceptions as exceptions
+from dynamo.history.history import HistoryDatabase
 
-class DetoxMonitor(WebModule, MySQLHistoryMixin, HTMLMixin):
+class DetoxMonitor(WebModule, HTMLMixin):
     def __init__(self, config):
         WebModule.__init__(self, config)
-        MySQLHistoryMixin.__init__(self, config)
         HTMLMixin.__init__(self, 'Detox deletion results', 'detox/monitor.html')
+
+        self.history = HistoryDatabase()
 
         self.stylesheets = ['/css/detox/monitor.css']
         self.scripts = ['/js/utils.js', '/js/detox/monitor.js']
@@ -29,7 +30,7 @@ class DetoxMonitor(WebModule, MySQLHistoryMixin, HTMLMixin):
         partition_id = 0
         if 'partition' in request:
             try:
-                partition_id = self.history.query('SELECT `id` FROM `partitions` WHERE `name` = %s', request['partition'])[0]
+                partition_id = self.history.db.query('SELECT `id` FROM `partitions` WHERE `name` = %s', request['partition'])[0]
             except IndexError:
                 pass
 
@@ -37,7 +38,7 @@ class DetoxMonitor(WebModule, MySQLHistoryMixin, HTMLMixin):
             partition_id = request['partition_id']
 
         if partition_id == 0:
-            partition_id = self.history.query('SELECT `id` FROM `partitions` WHERE `name` = %s', self.default_partition)[0]
+            partition_id = self.history.db.query('SELECT `id` FROM `partitions` WHERE `name` = %s', self.default_partition)[0]
 
         # HTML formatting
 
