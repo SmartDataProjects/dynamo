@@ -2,8 +2,6 @@ import socket
 import time
 import warnings
 
-from dynamo.client.client import DynamoWebClient
-
 def requestcopy(items, sites, n = 1):
     if len(items) == 0:
         raise RuntimeError('Missing --dataset or --block.')

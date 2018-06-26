@@ -8,6 +8,7 @@ import logging
 from argparse import ArgumentParser
 
 import dynamo.client.request as request
+from dynamo.client.client import DynamoWebClient
 from dynamo.utils.interface.webservice import GET, POST
 from dynamo.dataformat import Configuration
 
@@ -83,7 +84,7 @@ else:
 # url_base will be replaced to http if need_auth = False
 config = Configuration(url_base = 'https://%s/data/request' % args.host, need_auth = need_auth, auth_handler_conf = auth_config)
 
-client = request.DynamoWebClient(config)
+client = DynamoWebClient(config)
 
 response = client.make_request(resource, data, method = POST)
 
