@@ -1,12 +1,26 @@
 #!/bin/bash
 
-### EDIT THIS ###
-
-CLIENT_PATH=/usr/bin
-
 ### Where we are installing from (i.e. this directory) ###
 
 export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
+
+### Read the config ###
+
+INSTALL_CONF=$1
+[ -z "$INSTALL_CONF" ] && INSTALL_CONF=$SOURCE/dynamo.cfg
+
+if ! [ -e $INSTALL_CONF ]
+then
+  echo
+  echo "$INSTALL_CONF does not exist."
+  exit 1
+fi
+
+source $SOURCE/utilities/shellutils.sh
+
+READCONF="$SOURCE/utilities/readconf -I $INSTALL_CONF"
+
+CLIENT_PATH=$($READCONF paths.client_path)
 
 ### Install python libraries ###
 
@@ -27,6 +41,8 @@ do
     cp -r $SOURCE/lib/utils/* $PYPATH/dynamo/utils
     cp -r $SOURCE/lib/dataformat/* $PYPATH/dynamo/dataformat
     python -m compileall $PYPATH/dynamo > /dev/null
+
+    break
   fi
 done
 

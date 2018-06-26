@@ -2,7 +2,7 @@
 
 ### Where we are installing from (i.e. this directory) ###
 
-export SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
+SOURCE=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
 
 ### Read the config ###
 
@@ -142,6 +142,7 @@ do
     mkdir -p $PYPATH/dynamo
     cp -r $SOURCE/lib/* $PYPATH/dynamo/
     python -m compileall $PYPATH/dynamo > /dev/null
+    break
   fi
 done
 
