@@ -2,7 +2,7 @@ import socket
 import time
 import warnings
 
-def requestcopy(items, sites, n = 1):
+def copy(items, sites, n = 1):
     if len(items) == 0:
         raise RuntimeError('Missing --dataset or --block.')
     if sites is None:
@@ -38,7 +38,7 @@ def pollcopy(rid = None, items = None, sites = None, statuses = None, users = No
 def cancelcopy(rid):
     return {'request_id': rid}
 
-def requestdelete(items, sites):
+def delete(items, sites):
     if len(items) == 0:
         raise RuntimeError('Missing --dataset or --block.')
     if sites is None:

@@ -32,8 +32,11 @@ class DynamoWebClient(RESTService):
                     time.sleep(2)
 
                 else:
-                    print err.read()
-                    response = json.loads(err.read())
+                    error_body = err.read()
+                    try:
+                        response = json.loads(error_body)
+                    except ValueError:
+                        response = {'result': 'Error', 'message': error_body}
                     break
 
         if response['result'] != 'OK':

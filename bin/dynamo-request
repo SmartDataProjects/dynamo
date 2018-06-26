@@ -64,7 +64,7 @@ try:
     
         else:
             resource = 'copy'
-            data = requestcopy(items, args.sites, args.n)
+            data = request.copy(items, args.sites, args.n)
 
 except Exception as ex:
     sys.stderr.write(str(ex) + '\n')
@@ -101,7 +101,10 @@ class bcolors:
     ERROR = '\033[31m'
     ENDC = '\033[0m'
 
-if args.poll:
+if args.poll is not None:
+    if len(response) == 0:
+        print 'No request found'
+
     for request in response:
         if request['status'] == 'completed':
             col = bcolors.SUCCESS
@@ -128,7 +131,7 @@ if args.poll:
                 for item in request['item']:
                     print '  %s %s' % (site, item)
             
-elif args.cancel:
+elif args.cancel is not None:
     print '[REQUEST %d] %sCANCELLED%s' % (response['request_id'], bcolors.SUCCESS, bcolors.ENDC)
 
 else:

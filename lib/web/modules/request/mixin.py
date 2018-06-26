@@ -2,6 +2,7 @@ import re
 import fnmatch
 
 from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedRequest, InvalidRequest
+from dynamo.web.modules._common import yesno
 from dynamo.utils.interface.mysql import MySQL
 import dynamo.dataformat as df
 
@@ -51,6 +52,12 @@ class ParseInputMixin(object):
                 continue
 
             self.params[key] = request[key]
+
+        for key in ['all']:
+            if key not in request:
+                continue
+
+            self.params[key] = yesno(request[key])
 
         # Check value validity
         # We check the site, group, and item names but not use their ids in the table.
