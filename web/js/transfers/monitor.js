@@ -18,11 +18,12 @@ function displayTable(data)
     .enter()
     .append('tr').classed('transfer', true);
 
-  tableRow.append('td').each(function (d, i) { this.innerHTML = data.id; });
-  tableRow.append('td').each(function (d, i) { this.innerHTML = data.from; });
-  tableRow.append('td').each(function (d, i) { this.innerHTML = data.to; });
-  tableRow.append('td').each(function (d, i) { this.innerHTML = data.lfn; });
-  tableRow.append('td').each(function (d, i) { this.innerHTML = data.status; });
-  tableRow.append('td').each(function (d, i) { this.innerHTML = data.start; });
-  tableRow.append('td').each(function (d, i) { this.innerHTML = data.finish; });
+  tableRow.append('td').each(function (d, i) { this.innerHTML = d.id; });
+  tableRow.append('td').each(function (d, i) { this.innerHTML = d.from; });
+  tableRow.append('td').each(function (d, i) { this.innerHTML = d.to; });
+  tableRow.append('td').each(function (d, i) { this.innerHTML = d.lfn; });
+  tableRow.append('td').each(function (d, i) { var size = d.size * 1.e-9; this.innerHTML = size.toFixed(2); });
+  tableRow.append('td').each(function (d, i) { this.innerHTML = d.status; });
+  tableRow.append('td').each(function (d, i) { this.innerHTML = d.start; });
+  tableRow.append('td').each(function (d, i) { this.innerHTML = d.finish; });
 }

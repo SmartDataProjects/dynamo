@@ -1,5 +1,5 @@
 #transferlist {
-    width: 100%;
+    width: 800px;
     border-collapse: collapse;
     border: 1px solid black;
 }
@@ -17,7 +17,11 @@
 }
 
 #lfn {
-    width: 36%;
+    width: 26%;
+}
+
+#size {
+    width: 10%;
 }
 
 #status {
