@@ -1,3 +1,4 @@
+import time
 import logging
 
 from dynamo.web.exceptions import InvalidRequest
@@ -85,7 +86,7 @@ class MakeCopyRequest(CopyRequestBase):
 
             else:
                 existing.request_count += 1
-                existing.last_request = time.time()
+                existing.last_request = int(time.time())
 
                 if existing.status == Request.ST_NEW:
                     # allow update of values
@@ -94,7 +95,7 @@ class MakeCopyRequest(CopyRequestBase):
                     if 'n' in self.params:
                         existing.n = self.params['n']
 
-                self.update_request(existing)
+                self.manager.update_request(existing)
 
                 request = existing
 

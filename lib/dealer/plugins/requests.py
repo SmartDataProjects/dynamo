@@ -114,11 +114,6 @@ class CopyRequestsHandler(BaseHandler):
 
                     activation_list.append((block, site))
 
-            n_complete = sum(1 for a in request.actions if a.status in (RequestAction.ST_COMPLETED, RequestAction.ST_FAILED))
-            if n_complete == len(request.actions):
-                request.status = Request.ST_COMPLETED
-                updated = True
-
             if updated:
                 self.request_manager.update_request(request)
 
