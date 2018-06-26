@@ -14,8 +14,9 @@
 ### Task state machine:
 ### Tasks arrive at the queue in 'new' state. The possible transitions are
 ###  new -> queued       ... When the task is added to the operation pool
-###  queued -> done      ... When the task operation succeeded
-###  queued -> failed    ... When the task operation failed
+###  queued -> active    ... When the task operation started
+###  active -> done      ... When the task operation succeeded
+###  active -> failed    ... When the task operation failed
 ###  new -> cancelled    ... When the task is cancelled by the FOM
 ###  queued -> cancelled ... When the task is cancelled by the FOM
 #################################################################################
@@ -56,12 +57,10 @@ def pre_exec():
     signal_converter.unset(signal.SIGTERM)
     signal_converter.unset(signal.SIGHUP)
 
-def transfer(task_id, queued_ids, queued_ids_lock, src_pfn, dest_pfn, params_config):
+def transfer(task_id, src_pfn, dest_pfn, params_config):
     """
     Transfer task worker process
     @param task_id         Task id in the queue.
-    @param queued_ids      List (actually multiprocessing proxy for a shared-memory list) of active task ids.
-    @param queued_ids_lock Lock for the ids list
     @param src_pfn         Source PFN
     @param dest_pfn        Destination PFN
     @param params_config   Configuration parameters used to create GFAL2 transfer parameters.
@@ -69,10 +68,14 @@ def transfer(task_id, queued_ids, queued_ids_lock, src_pfn, dest_pfn, params_con
     @return  (exit code, start time, finish time, error message, log string)
     """
 
-    with queued_ids_lock:
-        if task_id not in queued_ids:
+    with TransferPoolManager.queued_ids_lock:
+        try:
+            TransferPoolManager.queued_ids.remove(task_id)
+        except ValueError:
             # task was cancelled
             return -1, 0, 0, '', ''
+
+        PoolManager.db.query('UPDATE `standalone_transfer_tasks` SET `status` = \'active\' WHERE `id` = %s', task_id)
 
     if not params_config['overwrite']:
         # At least for some sites, transfers with overwrite = False still overwrites the file. Try stat first
@@ -96,21 +99,23 @@ def transfer(task_id, queued_ids, queued_ids_lock, src_pfn, dest_pfn, params_con
 
     return gfal_exec('filecopy', (params, src_pfn, dest_pfn), transfer_nonerrors)
 
-def delete(task_id, queued_ids, queued_ids_lock, pfn):
+def delete(task_id, pfn):
     """
     Deletion task worker process
     @param task_id        Task id in the queue.
-    @param queued_ids     List (actually multiprocessing proxy for a shared-memory list) of active task ids.
-    @param queued_ids_lock Lock for the ids list
     @param pfn            Target PFN
 
     @return  (exit code, start time, finish time, error message, log string)
     """
 
-    with queued_ids_lock:
-        if task_id not in queued_ids:
+    with DeletionPoolManager.queued_ids_lock:
+        try:
+            DeletionPoolManager.queued_ids.remove(task_id)
+        except ValueError:
             # task was cancelled
             return -1, 0, 0, '', ''
+
+        PoolManager.db.query('UPDATE `standalone_deletion_tasks` SET `status` = \'active\' WHERE `id` = %s', task_id)
 
     return gfal_exec('unlink', (pfn,), deletion_nonerrors)
 
@@ -225,7 +230,7 @@ class PoolManager(object):
         opstring = self.opformat.format(*args)
         LOG.info('%s: %s %s', self.name, self.optype, opstring)
 
-        proc_args = (tid, self_cls.queued_ids, self_cls.queued_ids_lock) + args
+        proc_args = (tid,) + args
         async_result = self._pool.apply_async(self.task, proc_args)
         self._results.append((tid, async_result) + args)
 
@@ -445,9 +450,9 @@ if __name__ == '__main__':
     ## Start loop
     try:
         # If the previous cycle ended with a crash, there may be some dangling tasks in the queued state
-        sql = 'UPDATE `standalone_deletion_tasks` SET `status` = \'new\' WHERE `status` = \'queued\''
+        sql = 'UPDATE `standalone_deletion_tasks` SET `status` = \'new\' WHERE `status` IN (\'queued\', \'active\')'
         db.query(sql)
-        sql = 'UPDATE `standalone_transfer_tasks` SET `status` = \'new\' WHERE `status` = \'queued\''
+        sql = 'UPDATE `standalone_transfer_tasks` SET `status` = \'new\' WHERE `status` IN (\'queued\', \'active\')'
         db.query(sql)
 
         deletion_first_wait = True
@@ -539,9 +544,9 @@ if __name__ == '__main__':
 
         try:
             # try to clean up
-            sql = 'UPDATE `standalone_deletion_tasks` SET `status` = \'new\' WHERE `status` = \'queued\''
+            sql = 'UPDATE `standalone_deletion_tasks` SET `status` = \'new\' WHERE `status` IN (\'queued\', \'active\')'
             db.query(sql)
-            sql = 'UPDATE `standalone_transfer_tasks` SET `status` = \'new\' WHERE `status` = \'queued\''
+            sql = 'UPDATE `standalone_transfer_tasks` SET `status` = \'new\' WHERE `status` IN (\'queued\', \'active\')'
             db.query(sql)
         except:
             pass
