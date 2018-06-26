@@ -2,7 +2,7 @@ from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._html import HTMLMixin
 from dynamo.fileop.rlfsm import RLFSM
 
-class FileTransferMonitor(WebModule, HTMLMixin):
+class FileTransferList(WebModule, HTMLMixin):
     def __init__(self, config):
         WebModule.__init__(self, config)
         HTMLMixin.__init__(self, 'Current file transfers', 'transfers/monitor.html')
@@ -15,5 +15,5 @@ class FileTransferMonitor(WebModule, HTMLMixin):
         return self.form_html()
 
 export_web = {
-    '': FileTransferMonitor
+    'list': FileTransferList
 }

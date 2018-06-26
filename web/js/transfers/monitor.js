@@ -13,7 +13,7 @@ function initPage()
 
 function displayTable(data)
 {
-  var tableRow = d3.select('#contents').selectAll('.transfer')
+  var tableRow = d3.select('#transferList').selectAll('.transfer')
     .data(data)
     .enter()
     .append('tr').classed('transfer', true);
