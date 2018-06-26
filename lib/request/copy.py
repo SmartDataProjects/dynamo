@@ -39,10 +39,10 @@ class CopyRequestManager(RequestManager):
                 _rid = rid
                 request = all_requests[rid] = CopyRequest(rid, user, dn, group, n, int(status), first_request, last_request, count)
 
-            if a_item is not None:
-                if request.actions is None:
+                if request.status == CopyRequest.ST_ACTIVATED:
                     request.actions = []
 
+            if a_item is not None:
                 request.actions.append(RequestAction(a_item, a_site, int(a_status), a_update))
 
         if len(all_requests) != 0:
