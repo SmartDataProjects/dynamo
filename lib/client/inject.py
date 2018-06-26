@@ -41,7 +41,10 @@ def make_dataset_data(datasets, blocks = None, files = None):
                 specs = fentry.split(',')
 
                 name = specs[0]
-                size = int(specs[1])
+                try:
+                    size = int(specs[1])
+                except IndexError:
+                    raise RuntimeError('Size missing for file %s' % name)
                 file_data.append({'name': name, 'size': size})
                 if len(specs) > 2:
                     file_data[-1]['site'] = specs[2]

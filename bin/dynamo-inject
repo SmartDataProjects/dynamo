@@ -5,7 +5,7 @@ import sys
 import socket
 import json
 import logging
-from argparse import ArgumentParser
+from argparse import ArgumentParser, RawTextHelpFormatter
 
 import dynamo.client.inject as inject
 from dynamo.client.client import DynamoWebClient
@@ -14,16 +14,16 @@ from dynamo.dataformat import Configuration
 
 PROXY = '/tmp/x509up_u%d' % os.getuid()
 
-parser = ArgumentParser(description = 'Inject data to Dynamo inventory.')
+parser = ArgumentParser(description = 'Inject data to Dynamo inventory.', formatter_class = RawTextHelpFormatter)
 parser.add_argument('json', metavar = 'JSON', nargs = '?', help = 'JSON file describing the data to be injected. If the file name is "-", read from standard input.')
 parser.add_argument('--delete', '-X', action = 'store_true', dest = 'delete', help = 'Invalidate the data instead of injecting.')
-parser.add_argument('--dataset', '-d', metavar = 'SPEC', dest = 'datasets', nargs = '+', help = 'Optionally specify datasets to inject / delete if not using a JSON file.\nFormat: name[,status[,data_type]]\n  status: deleted, deprecated, invalid, production, valid, ignored, unknown\n  data_type: as defined in dataformat._namespace')
+parser.add_argument('--dataset', '-d', metavar = 'SPEC', dest = 'datasets', nargs = '+', help = 'Optionally specify datasets to inject / delete if not using a JSON file.\nSPEC = name[,status[,data_type]]\n  status: deleted, deprecated, invalid, production, valid, ignored, unknown\n  data_type: as defined in dataformat._namespace')
 parser.add_argument('--block', '-b', metavar = 'NAME', dest = 'blocks', nargs = '+', help = 'If injecting / deleting a dataset with --dataset, optionally add / specify blocks.')
-parser.add_argument('--file', '-f', metavar = 'SPEC', dest = 'files', nargs = '+', help = 'If injecting / deleting a block with --block, optionally add / specify files.\nFormat: name,size[,site]. Site is necessary if adding files to an existing block with replicas.')
-parser.add_argument('--site', '-s', metavar = 'SPEC', dest = 'sites', nargs = '+', help = 'Optionally specify sites to inject / delete if not using a JSON file.\nFormat: name[,host[,storage_type[,backend[,status]]]]\n  host: Host name of the storage element\n  storage_type: disk, mss, buffer, or unknown\n  backend: Storage element endpoint\n  status: ready, waitroom, morgue, or unknown')
+parser.add_argument('--file', '-f', metavar = 'SPEC', dest = 'files', nargs = '+', help = 'If injecting / deleting a block with --block, optionally add / specify files.\nSPEC = name,size[,site]. Site is necessary if adding files to an existing block with replicas.')
+parser.add_argument('--site', '-s', metavar = 'SPEC', dest = 'sites', nargs = '+', help = 'Optionally specify sites to inject / delete if not using a JSON file.\nSPEC = name[,host[,storage_type[,backend[,status]]]]\n  host: Host name of the storage element\n  storage_type: disk, mss, buffer, or unknown\n  backend: Storage element endpoint\n  status: ready, waitroom, morgue, or unknown')
 parser.add_argument('--group', '-g', metavar = 'NAME', dest = 'groups', nargs = '+', help = 'Optionally specify sites to inject / delete if not using a JSON file.')
-parser.add_argument('--dataset-replica', '-p', metavar = 'SPEC', dest = 'dataset_replicas', nargs = '+', help = 'Optionally specify dataset replicas to create / delete if not using a JSON file.\nFormat: site:dataset[,owner]\n  site: Site name\n  dataset: Dataset name\n  owner: Name of the owning group. If given, replica is made into a growing subscription.')
-parser.add_argument('--block-replica', '-o', metavar = 'SPEC', dest = 'block_replicas', nargs = '+', help = 'If creating / deleting a dataset replica with --dataset-replica, optionally add / specify block replicas.\nFormat: block_name,owner\n  block_name: Name of the block (without the dataset name)\n  owner: Name of the owning group')
+parser.add_argument('--dataset-replica', '-p', metavar = 'SPEC', dest = 'dataset_replicas', nargs = '+', help = 'Optionally specify dataset replicas to create / delete if not using a JSON file.\nSPEC = site:dataset[,owner]\n  site: Site name\n  dataset: Dataset name\n  owner: Name of the owning group. Group is required if this is not the first replica of the dataset.')
+parser.add_argument('--block-replica', '-r', metavar = 'SPEC', dest = 'block_replicas', nargs = '+', help = 'If creating / deleting a dataset replica with --dataset-replica, optionally add / specify block replicas.\nSPEC = block_name,owner\n  block_name: Name of the block (without the dataset name)\n  owner: Name of the owning group')
 parser.add_argument('--block-replica-file', '-e', metavar = 'NAME', dest = 'block_replica_files', nargs = '+', help = 'If creating / deleting a block replica with --block-replica, optionally add / specify files.')
 parser.add_argument('--raw', '-A', action = 'store_true', dest = 'raw', help = 'Print the raw JSON response from the Dynamo REST API.')
 parser.add_argument('--host', '-o', metavar = 'HOST', dest = 'host', default = socket.gethostname(), help = 'Host name of the dynamo server (ex. example.com).')
@@ -50,8 +50,7 @@ try:
             with open(args.json) as source:
                 jsondata = source.read()
     
-        # is this valid JSON?
-        json.loads(jsondata)
+        data = json.loads(jsondata)
     
     else:
         data = {}
@@ -67,9 +66,11 @@ try:
     
         if args.dataset_replicas is not None:
             data['datasetreplica'] = inject.make_dataset_replica_data(args.dataset_replicas, args.block_replicas, args.block_replica_files)
-    
-        jsondata = json.dumps(data)
 
+        if len(data) == 0:
+            parser.print_help()
+            sys.exit(0)
+    
 except Exception as ex:
     sys.stderr.write(str(ex) + '\n')
     sys.exit(1)
@@ -85,7 +86,7 @@ config = Configuration(url_base = 'https://%s/data/inventory' % args.host, need_
 
 client = DynamoWebClient(config)
 
-response = client.make_request(resource, jsondata, method = POST, format = 'json')
+response = client.make_request(resource, data, method = POST, format = 'json')
 
 if response is None:
     sys.exit(1)

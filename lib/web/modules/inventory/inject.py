@@ -243,7 +243,7 @@ class InjectDataBase(WebModule):
                             raise InvalidRequest('Unknown group %s' % group_name)
     
                     if group is df.Group.null_group:
-                        raise InvalidRequest('Growing dataset replica %s:%s needs a group.' % (site.name, dataset.name))
+                        raise InvalidRequest('Growing dataset replica %s:%s needs a group' % (site.name, dataset.name))
 
                 else:
                     group = df.Group.null_group
@@ -447,7 +447,8 @@ class InjectDataBase(WebModule):
                     block_replica = df.BlockReplica(
                         block,
                         site,
-                        group
+                        group,
+                        last_update = int(time.time())
                     )
                 except TypeError as exc:
                     raise IllFormedRequest('blockreplica', str(obj), hint = str(exc))

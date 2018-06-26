@@ -28,7 +28,7 @@ class DynamoWebClient(RESTService):
                 break
             except urllib2.HTTPError as err:
                 if err.code == 503:
-                    sys.stderr.write('Server is unavailable: %s\n' % response.text)
+                    sys.stderr.write('Server is unavailable: %s\n' % err.read())
                     time.sleep(2)
 
                 else:
