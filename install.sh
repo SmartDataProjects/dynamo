@@ -151,14 +151,14 @@ done
 mkdir -p $CLIENT_PATH
 for FILE in dynamo dynamo-inject dynamo-request
 do
-  cp $SOURCE/bin/$FILE $CLIENT_PATH/$FILE
+  sed "s|_PYTHON_|$(which python)|" $SOURCE/bin/$FILE > $CLIENT_PATH/$FILE
   chmod 755 $CLIENT_PATH/$FILE
 done
 
 mkdir -p $SYSBIN_PATH
 for FILE in dynamod dynamo-exec-auth dynamo-fileopd dynamo-user-auth
 do
-  cp $SOURCE/sbin/$FILE $SYSBIN_PATH/$FILE
+  sed "s|_PYTHON_|$(which python)|" $SOURCE/sbin/$FILE > $SYSBIN_PATH/$FILE
   chmod 744 $SYSBIN_PATH/$FILE
 done
 
