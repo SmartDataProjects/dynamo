@@ -1,14 +1,6 @@
 {
   "archive_path": "$(DYNAMO_ARCHIVE)",
   "spool_path": "$(DYNAMO_SPOOL)",
-  "history": {
-    "user": "dynamo",
-    "db": "dynamohistory"
-  },
-  "registry": {
-    "user": "dynamo",
-    "db": "dynamoregister"
-  },
   "inventory": {
     "stats": {
       "default_constraints": {}

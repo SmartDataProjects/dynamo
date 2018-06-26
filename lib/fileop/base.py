@@ -21,7 +21,7 @@ class FileOperation(object):
 
 class FileQuery(object):
     _statuses = ['new', 'queued', 'active', 'done', 'failed', 'cancelled']
-    STAT_NEW, STAT_QUEUED, STAT_ACTIVE, STAT_DONE, STAT_FAILED, STAT_CANCELLED = range(5)
+    STAT_NEW, STAT_QUEUED, STAT_ACTIVE, STAT_DONE, STAT_FAILED, STAT_CANCELLED = range(6)
 
     @staticmethod
     def status_name(val):
