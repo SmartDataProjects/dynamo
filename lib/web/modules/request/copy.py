@@ -115,6 +115,12 @@ class PollCopyRequest(CopyRequestBase):
         constraints = self.make_constraints(by_id = False)
         existing_requests = self.manager.get_requests(**constraints)
 
+        if 'item' in self.params and 'site' in self.params and \
+                ('all' not in self.params or not self.params['all']):
+            # this was a query by item and site - if show-all is not requested, default to showing the latest
+            max_id = max(existing_requests.iterkeys())
+            existing_requests = {max_id: existing_requests[max_id]}
+
         return [r.to_dict() for r in existing_requests.itervalues()]
 
 

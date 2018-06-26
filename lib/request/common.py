@@ -79,6 +79,30 @@ class RequestManager(object):
 
         return dataset_ids, block_ids
 
+    def _get_saved_item_ids(self, items):
+        """
+        Get the history dataset and block ids from the items list.
+        @param items          List of dataset and block names.
+
+        @return [dataset id], [block id]
+        """
+        dataset_names = []
+        block_names = []
+
+        for item in items:
+            # names are validated already
+            try:
+                dataset_name, block_name = df.Block.from_full_name(item)
+            except df.ObjectError:
+                dataset_names.append(item)
+            else:
+                block_names.append((dataset_name, df.Block.to_real_name(block_name)))
+
+        dataset_ids = self.history.db.select_many('datasets', 'id', 'name', dataset_names)
+        block_ids = self.history.db.select_many('blocks', 'id', 'name', block_names)
+
+        return dataset_ids, block_ids
+
     def _make_temp_registry_tables(self, items, sites):
         """
         Make temporary tables to be used to constrain request search.
@@ -181,18 +205,18 @@ class RequestManager(object):
 
     def _make_history_constraints(self, request_id, statuses, users, items, sites):
         if users is not None:
-            history_user_ids = self.history.save_users(users, get_ids = True)
+            history_user_ids = self.history.db.select_many('users', 'id', 'name', users)
         else:
             history_user_ids = None
 
         if items is not None:
-            history_dataset_ids, history_block_ids = self._save_items(items)
+            history_dataset_ids, history_block_ids = self._get_saved_item_ids(items)
         else:
             history_dataset_ids = None
             history_block_ids = None
 
         if sites is not None:
-            history_site_ids = self.history.save_sites(sites, get_ids = True)
+            history_site_ids = self.history.db.select_many('sites', 'id', 'name', sites)
         else:
             history_site_ids = None
 

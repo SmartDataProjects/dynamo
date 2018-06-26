@@ -53,6 +53,11 @@ function initPage(cycleNumber, partitionId)
         var partitionData = partitionResult[0].data;
 
         currentCycle = cycleData[0].cycle;
+        if (currentCycle == 0) {
+            $('#error').html('No Detox cycle has been recorded yet.');
+            return;
+        }
+
         if (cycleNumber == 0) {
             latestCycle = currentCycle;
 

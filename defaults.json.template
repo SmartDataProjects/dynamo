@@ -86,13 +86,13 @@
   "registry.registry:RegistryDatabase": {
     "fullauth": {
       "db_params": {
-        "db": "dynamohistory",
+        "db": "dynamoregister",
         "user": "dynamo"
       }
     },
     "readonly": {
       "db_params": {
-        "db": "dynamohistory",
+        "db": "dynamoregister",
         "user": "dynamoread"
       }
     }

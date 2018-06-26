@@ -6,9 +6,10 @@ LOG = logging.getLogger(__name__)
 try:
     from pop.engine import Engine
 except ImportError:
-    LOG.error('File popularity engine not found. Using a dummy class.')
-
     class Engine(object):
+        def __init__(self):
+            LOG.error('File popularity engine not found. Using a dummy class.')
+
         def get_namespace_usage_summary(self, namespace):
             return []
 

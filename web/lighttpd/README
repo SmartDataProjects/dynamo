@@ -1,0 +1,10 @@
+This directory contains minimal Lighttpd configuration templates to connect Dynamo with Lighttpd.
+Assuming a standard Lighttpd installation, the templates should go to:
+
+lighttpd.conf -> /etc/lighttpd/lighttpd.conf        (Edit server.bind to the IP address of the server)
+modules.conf  -> /etc/lighttpd/modules.conf         (No edits)
+fastcgi.conf  -> /etc/lighttpd/conf.d/fastcgi.conf  (Edit server socket, with default Dynamo configuration the path is /var/spool/dynamo/dynamoweb.sock)
+ssl.conf      -> /etc/lighttpd/conf.d/ssl.conf      (Edit pemfile, ca-file, and crl-file.
+                                                     crl-file may not be an available option in some lighttpd versions, in which case the line should be commented.
+                                                     pemfile must contain both the server key and certificate, and ca-file must be a full compilation of all CA certs
+                                                     in one file.)

@@ -7,6 +7,7 @@ import logging
 import logging.handlers
 import socket
 import collections
+import warnings
 import multiprocessing
 import cStringIO
 from cgi import FieldStorage
@@ -162,6 +163,11 @@ class WebServer(object):
             log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
             root_logger.addHandler(log_handler)
 
+        # Ignore one specific warning issued by accident when a web page crashes and dumps a stack trace
+        # cgitb scans all exception attributes with dir(exc) + getattr(exc, attr) which results in accessing
+        # exception.message, a deprecated attribute.
+        warnings.filterwarnings('ignore', 'BaseException.message.*', DeprecationWarning, '.*cgitb.*', 173)
+
         # Set up module defaults
         # Using the same piece of code as serverutils, but only picking up fullauth or all configurations
         for key, config in self.dynamo_server.defaults_config.items():
@@ -193,7 +199,12 @@ class WebServer(object):
         with self.active_count.get_lock():
             self.active_count.value += 1
 
-        LOG.info('%s-%s %s (%s:%s %s)', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], environ['HTTP_USER_AGENT'])
+        try:
+            agent = environ['HTTP_USER_AGENT']
+        except KeyError:
+            agent = 'Unknown'
+
+        LOG.info('%s-%s %s (%s:%s %s)', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], agent)
 
         # Then immediately switch to logging to a buffer
         root_logger = logging.getLogger()

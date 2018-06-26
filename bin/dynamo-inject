@@ -2,62 +2,103 @@
 
 import os
 import sys
-import requests
 import socket
 import json
-import time
+import logging
+from argparse import ArgumentParser, RawTextHelpFormatter
 
-def inject(host, cert, key, jsondata, delete = False):
-    session = requests.Session()
+import dynamo.client.inject as inject
+from dynamo.client.client import DynamoWebClient
+from dynamo.utils.interface.webservice import GET, POST
+from dynamo.dataformat import Configuration
 
-    headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
+PROXY = '/tmp/x509up_u%d' % os.getuid()
 
-    requests.packages.urllib3.disable_warnings()
+parser = ArgumentParser(description = 'Inject data to Dynamo inventory.', formatter_class = RawTextHelpFormatter)
+parser.add_argument('json', metavar = 'JSON', nargs = '?', help = 'JSON file describing the data to be injected. If the file name is "-", read from standard input.')
+parser.add_argument('--delete', '-X', action = 'store_true', dest = 'delete', help = 'Invalidate the data instead of injecting.')
+parser.add_argument('--dataset', '-d', metavar = 'SPEC', dest = 'datasets', nargs = '+', help = 'Optionally specify datasets to inject / delete if not using a JSON file.\nSPEC = name[,status[,data_type]]\n  status: deleted, deprecated, invalid, production, valid, ignored, unknown\n  data_type: as defined in dataformat._namespace')
+parser.add_argument('--block', '-b', metavar = 'NAME', dest = 'blocks', nargs = '+', help = 'If injecting / deleting a dataset with --dataset, optionally add / specify blocks.')
+parser.add_argument('--file', '-f', metavar = 'SPEC', dest = 'files', nargs = '+', help = 'If injecting / deleting a block with --block, optionally add / specify files.\nSPEC = name,size[,site]. Site is necessary if adding files to an existing block with replicas.')
+parser.add_argument('--site', '-s', metavar = 'SPEC', dest = 'sites', nargs = '+', help = 'Optionally specify sites to inject / delete if not using a JSON file.\nSPEC = name[,host[,storage_type[,backend[,status]]]]\n  host: Host name of the storage element\n  storage_type: disk, mss, buffer, or unknown\n  backend: Storage element endpoint\n  status: ready, waitroom, morgue, or unknown')
+parser.add_argument('--group', '-g', metavar = 'NAME', dest = 'groups', nargs = '+', help = 'Optionally specify sites to inject / delete if not using a JSON file.')
+parser.add_argument('--dataset-replica', '-p', metavar = 'SPEC', dest = 'dataset_replicas', nargs = '+', help = 'Optionally specify dataset replicas to create / delete if not using a JSON file.\nSPEC = site:dataset[,owner]\n  site: Site name\n  dataset: Dataset name\n  owner: Name of the owning group. Group is required if this is not the first replica of the dataset.')
+parser.add_argument('--block-replica', '-r', metavar = 'SPEC', dest = 'block_replicas', nargs = '+', help = 'If creating / deleting a dataset replica with --dataset-replica, optionally add / specify block replicas.\nSPEC = block_name,owner\n  block_name: Name of the block (without the dataset name)\n  owner: Name of the owning group')
+parser.add_argument('--block-replica-file', '-e', metavar = 'NAME', dest = 'block_replica_files', nargs = '+', help = 'If creating / deleting a block replica with --block-replica, optionally add / specify files.')
+parser.add_argument('--raw', '-A', action = 'store_true', dest = 'raw', help = 'Print the raw JSON response from the Dynamo REST API.')
+parser.add_argument('--host', '-o', metavar = 'HOST', dest = 'host', default = socket.gethostname(), help = 'Host name of the dynamo server (ex. example.com).')
+parser.add_argument('--cert', '-c', metavar = 'CERT', dest = 'cert', default = PROXY, help = 'User certificate location.')
+parser.add_argument('--key', '-k', metavar = 'KEY', dest = 'key', default = PROXY, help = 'User certificate key location.')
 
-    if delete:
-        url = 'https://%s/data/inventory/delete' % host
-    else:
-        url = 'https://%s/data/inventory/inject' % host
+args = parser.parse_args()
+sys.argv = []
 
-    for attempt in xrange(5):
-        response = session.request(
-            method = 'POST', url = url,
-            data = jsondata, headers = headers, verify = False,
-            timeout = 600, cert = (cert, key))
+logging.basicConfig(level = logging.INFO)
 
-        if response.status_code == 200:
-            return json.loads(response.text)
-        elif response.status_code == 503:
-            print 'Server is unavailable:', response.text
-            time.sleep(2)
-            continue
+## Prepare the data to send
+
+try:
+    if args.json is not None:
+        if args.json.strip() == '-':
+            jsondata = ''
+            while True:
+                line = sys.stdin.readline()
+                if not line:
+                    break
+                jsondata += line
         else:
-            raise RuntimeError(response.text)
-
-if __name__ == '__main__':
-    from argparse import ArgumentParser
-
-    PROXY = '/tmp/x509up_u%d' % os.getuid()
+            with open(args.json) as source:
+                jsondata = source.read()
     
-    parser = ArgumentParser(description = 'Inject data to Dynamo inventory.')
-    parser.add_argument('json', metavar = 'JSON', help = 'JSON file describing the data to be injected. If the file name is "-", read from standard input.')
-    parser.add_argument('--delete', '-d', action = 'store_true', dest = 'delete', help = 'Invalidate the data instead of injecting.')
-    parser.add_argument('--host', '-o', metavar = 'HOST', dest = 'host', default = socket.gethostname(), help = 'Host name of the dynamo server (ex. example.com).')
-    parser.add_argument('--cert', '-c', metavar = 'CERT', dest = 'cert', default = PROXY, help = 'User certificate location.')
-    parser.add_argument('--key', '-k', metavar = 'KEY', dest = 'key', default = PROXY, help = 'User certificate key location.')
-
-    args = parser.parse_args()
-    sys.argv = []
-
-    if args.json.strip() == '-':
-        jsondata = ''
-        while True:
-            line = sys.stdline()
-            if not line:
-                break
-            jsondata += line
+        data = json.loads(jsondata)
+    
     else:
-        with open(args.json) as source:
-            jsondata = source.read()
+        data = {}
+    
+        if args.datasets is not None:
+            data['dataset'] = inject.make_dataset_data(args.datasets, args.blocks, args.files)
+    
+        if args.sites is not None:
+            data['site'] = inject.make_site_data(args.sites)
+    
+        if args.groups is not None:
+            data['gruop'] = inject.make_group_data(args.groups)
+    
+        if args.dataset_replicas is not None:
+            data['datasetreplica'] = inject.make_dataset_replica_data(args.dataset_replicas, args.block_replicas, args.block_replica_files)
 
-    print inject(args.host, args.cert, args.key, jsondata, args.delete)
+        if len(data) == 0:
+            parser.print_help()
+            sys.exit(0)
+    
+except Exception as ex:
+    sys.stderr.write(str(ex) + '\n')
+    sys.exit(1)
+
+if args.delete:
+    resource = 'delete'
+else:
+    resource = 'inject'
+
+## Instantiate the request client and send the request
+auth_config = Configuration(certfile = args.cert, keyfile = args.key)
+config = Configuration(url_base = 'https://%s/data/inventory' % args.host, need_auth = True, auth_handler_conf = auth_config)
+
+client = DynamoWebClient(config)
+
+response = client.make_request(resource, data, method = POST, format = 'json')
+
+if response is None:
+    sys.exit(1)
+
+if args.raw:
+    print json.dumps(response)
+    sys.exit(0)
+
+if args.delete:
+    print 'Number of deleted objects:'
+else:
+    print 'Number of injected objects:'
+
+for key in sorted(response.iterkeys()):
+    print '  %s: %d' % (key, response[key])

@@ -65,10 +65,11 @@ class BlockReplica(object):
                 self.file_ids = 0
 
         elif file_ids is None:
-            if type(block) is Block:
+            if type(block) is not Block:
                 raise ObjectError('Cannot initialize a BlockReplica with finite size and file_ids = None without a valid block')
 
             if size == block.size:
+                self.size = size
                 if BlockReplica._use_file_ids:
                     self.file_ids = None
                 else:
@@ -233,15 +234,15 @@ class BlockReplica(object):
         store.delete_blockreplica(self)
 
     def is_complete(self):
-        size_match = (self.size == self.block.size)
+        size_match = (self.size == self._block.size)
         if BlockReplica._use_file_ids:
             if self.file_ids is None:
                 return True
             else:
                 # considering the case where we are missing zero-size files
-                return size_match and (len(self.file_ids) == self.block.num_files)
+                return size_match and (len(self.file_ids) == self._block.num_files)
         else:
-            return size_match and (self.file_ids == self.block.num_files)
+            return size_match and (self.file_ids == self._block.num_files)
 
     def files(self):
         if not BlockReplica._use_file_ids:

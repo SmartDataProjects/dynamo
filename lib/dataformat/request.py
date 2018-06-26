@@ -43,7 +43,7 @@ class Request(object):
         if self.status == Request.ST_REJECTED:
             d['reason'] = self.reject_reason
 
-        elif self.status in (Request.ST_ACTIVATED, Request.ST_COMPLETED):
+        elif self.status == Request.ST_ACTIVATED:
             actions = d['active'] = []
             # active_copies must be non-null
             for a in self.actions:

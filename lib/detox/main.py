@@ -70,13 +70,11 @@ class Detox(object):
         LOG.info('Applying policy to replicas.')
         deleted, kept, protected, reowned = self._execute_policy(partition_repository)
 
-        LOG.info('Saving deletion decisions.')
-        self.history.save_decisions(cycle_tag, deleted, kept, protected)
-
-        LOG.info('Saving quotas and site statuses.')
         partition = partition_repository.partitions[self.policy.partition_name]
         quotas = dict((s, s.partitions[partition].quota * 1.e-12) for s in partition_repository.sites.itervalues())
-        self.history.save_siteinfo(cycle_tag, quotas)
+
+        LOG.info('Saving deletion decisions and site states.')
+        self.history.save_cycle_state(cycle_tag, deleted, kept, protected, quotas)
 
         if create_cycle:
             LOG.info('Committing deletion.')
