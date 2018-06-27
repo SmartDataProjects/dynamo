@@ -51,7 +51,7 @@
   },
   "dynamofod": {
     "passwd": "",
-    "hosts": ["localhost"],
+    "hosts": ["localhost", "%"],
     "grants": [
       ["SELECT, LOCK TABLES", "dynamo"],
       ["ALL PRIVILEGES", "dynamo\\_tmp"],

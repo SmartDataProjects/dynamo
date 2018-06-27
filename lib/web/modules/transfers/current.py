@@ -39,8 +39,14 @@ class CurrentFileTransfers(WebModule):
                 finish = ''
             else:
                 status = FileQuery.status_name(transfer[0])
-                start = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(transfer[2]))
-                finish = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(transfer[3]))
+                if transfer[2] is None:
+                    start = ''
+                else:
+                    start = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(transfer[2]))
+                if transfer[3] is None:
+                    finish = ''
+                else:
+                    finish = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(transfer[3]))
 
             data.append({'id': task_id, 'from': source, 'to': destination, 'lfn': lfn, 'size': size, 'status': status, 'start': start, 'finish': finish})
 
