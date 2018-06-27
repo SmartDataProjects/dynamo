@@ -26,9 +26,9 @@ class FileQuery(object):
     @staticmethod
     def status_name(val):
         try:
-            return FileQuery._statuses[arg - 1]
+            return FileQuery._statuses[val - 1]
         except:
-            return arg
+            return val
 
     @staticmethod
     def status_val(arg):

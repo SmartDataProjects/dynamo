@@ -211,7 +211,7 @@ class RLFSM(object):
 
         LOG.debug('Clearing cancelled deletion tasks.')
         task_ids = self._get_cancelled_tasks('deletion')
-        self.deletion_operation.cancel_transfers(task_ids)
+        self.deletion_operation.cancel_deletions(task_ids)
 
         if self.cycle_stop.is_set():
             return
@@ -342,7 +342,8 @@ class RLFSM(object):
 
                 if replica is None:
                     # unexpected file! -> mark the subscription for deletion and move on
-                    done_ids.append(sub_id)
+                    if status == 'done':
+                        done_ids.append(sub_id)
                     continue
                     
                 if replica.file_ids is None:
@@ -358,14 +359,15 @@ class RLFSM(object):
             if optype == COPY:
                 if status == 'done':
                     file_ids.add(file_id)
-                else:
+                elif status != 'cancelled':
                     projected.add(file_id)
 
             elif optype == DELETE:
-                try:
-                    projected.remove(file_id)
-                except KeyError:
-                    pass
+                if status != 'cancelled':
+                    try:
+                        projected.remove(file_id)
+                    except KeyError:
+                        pass
 
                 if status == 'done':
                     try:
@@ -476,27 +478,24 @@ class RLFSM(object):
             site_values = 'hss.`id`, hsd.`id`'
             site_joins = ' INNER JOIN `sites` AS sd ON sd.`id` = u.`site_id` INNER JOIN `sites` AS ss ON ss.`id` = q.`source_id`'
             site_joins += ' INNER JOIN `{history}`.`sites` AS hsd ON hsd.`name` = sd.`name` INNER JOIN `{history}`.`sites` AS hss ON hss.`name` = ss.`name`'
-            delete_val = '0'
         else:
             table_name = 'file_deletions'
             site_fields = '`site_id`'
             site_values = 'hs.`id`'
             site_joins = ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
             site_joins += ' INNER JOIN `{history}`.`sites` AS hs ON hs.`name` = s.`name`'
-            delete_val = '1'
 
         insert_history = 'INSERT INTO `{history}`.`{table}`'
         insert_history += ' (`file_id`, ' + site_fields + ', `exitcode`, `batch_id`, `created`, `started`, `finished`, `completed`)'
         insert_history += ' SELECT hf.`id`, ' + site_values + ', %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s), FROM_UNIXTIME(%s), NOW()'
-        insert_history += ' FROM `transfer_tasks` AS q'
+        insert_history += ' FROM `{op}_tasks` AS q'
         insert_history += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         insert_history += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
         insert_history += ' INNER JOIN `{history}`.`files` AS hf ON hf.`name` = f.`name`'
         insert_history += site_joins
-        insert_history += ' WHERE u.`delete` = ' + delete_val + ' AND q.`id` = %s'
-        insert_history += ' ON DUPLICATE KEY UPDATE `id`=VALUES(`id`)'
+        insert_history += ' WHERE q.`id` = %s'
 
-        insert_history = insert_history.format(history = self.history_db, table = table_name)
+        insert_history = insert_history.format(history = self.history_db, table = table_name, op = optype)
 
         if optype == 'transfer':
             insert_failure = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
@@ -563,7 +562,7 @@ class RLFSM(object):
                         # A task without subscription - some sort of state corruption. Just ignore
                         if not self._read_only:
                             self.db.query(delete_task, task_id)
-                            continue
+                        continue
 
                     subscription_id, subscription_status = subscription[0]
     
@@ -817,8 +816,6 @@ class RLFSM(object):
         for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `transfer_tasks` WHERE `batch_id` = %s', batch_id):
             tasks_by_sub[subscription_id].id = task_id
 
-        self.transfer_operation.read_only = self._read_only
-        
         success = self.transfer_operation.start_transfers(batch_id, tasks)
 
         if success:
