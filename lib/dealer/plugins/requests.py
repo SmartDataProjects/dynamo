@@ -91,7 +91,18 @@ class CopyRequestsHandler(BaseHandler):
                         updated = True                        
                         continue
 
-                    activation_list.append((dataset, site))
+                    existing_replica = site.find_dataset_replica(dataset)
+
+                    if existing_replica is not None:
+                        if existing_replica.is_complete():
+                            action.status = RequestAction.ST_COMPLETED
+                        else:
+                            action.status = RequestAction.ST_QUEUED
+                        action.last_update = now
+                        updated = True
+
+                    else:
+                        activation_list.append((dataset, site))
     
                 else:
                     # action.item is a block name
@@ -112,7 +123,18 @@ class CopyRequestsHandler(BaseHandler):
                         updated = True                        
                         continue
 
-                    activation_list.append((block, site))
+                    existing_replica = block.find_replica(site)
+
+                    if existing_replica is not None:
+                        if existing_replica.is_complete():
+                            action.status = RequestAction.ST_COMPLETED
+                        else:
+                            action.status = RequestAction.ST_QUEUED
+                        action.last_update = now
+                        updated = True
+
+                    else:
+                        activation_list.append((block, site))
 
             if updated:
                 self.request_manager.update_request(request)
