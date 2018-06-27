@@ -21,7 +21,7 @@ class CopyRequestManager(RequestManager):
         ]
 
         if not self._read_only:
-            self.registry.lock_tables(write = tables)
+            self.registry.db.lock_tables(write = tables)
 
     def get_requests(self, request_id = None, statuses = None, users = None, items = None, sites = None):
         all_requests = {}
@@ -34,7 +34,7 @@ class CopyRequestManager(RequestManager):
         sql += ' ORDER BY r.`id`'
 
         _rid = 0
-        for rid, group, n, status, first_request, last_request, count, user, dn, a_item, a_site, a_status, a_update in self.registry.xquery(sql):
+        for rid, group, n, status, first_request, last_request, count, user, dn, a_item, a_site, a_status, a_update in self.registry.db.xquery(sql):
             if rid != _rid:
                 _rid = rid
                 request = all_requests[rid] = CopyRequest(rid, user, dn, group, n, int(status), first_request, last_request, count)
@@ -48,12 +48,12 @@ class CopyRequestManager(RequestManager):
         if len(all_requests) != 0:
             # get the sites
             sql = 'SELECT s.`request_id`, s.`site` FROM `copy_request_sites` AS s WHERE s.`request_id` IN (%s)' %  ','.join('%d' % d for d in all_requests.iterkeys())
-            for rid, site in self.registry.xquery(sql):
+            for rid, site in self.registry.db.xquery(sql):
                 all_requests[rid].sites.append(site)
     
             # get the items
             sql = 'SELECT i.`request_id`, i.`item` FROM `copy_request_items` AS i WHERE i.`request_id` IN (%s)' %  ','.join('%d' % d for d in all_requests.iterkeys())
-            for rid, item in self.registry.xquery(sql):
+            for rid, item in self.registry.db.xquery(sql):
                 all_requests[rid].items.append(item)
 
             if request_id is not None:
@@ -115,12 +115,12 @@ class CopyRequestManager(RequestManager):
         # Make an entry in registry
         columns = ('group', 'num_copies', 'user', 'dn', 'first_request_time', 'last_request_time')
         values = (group, ncopies, caller.name, caller.dn, MySQL.bare('FROM_UNIXTIME(%d)' % now), MySQL.bare('FROM_UNIXTIME(%d)' % now))
-        request_id = self.registry.insert_get_id('copy_requests', columns, values)
+        request_id = self.registry.db.insert_get_id('copy_requests', columns, values)
 
         mapping = lambda site: (request_id, site)
-        self.registry.insert_many('copy_request_sites', ('request_id', 'site'), mapping, sites)
+        self.registry.db.insert_many('copy_request_sites', ('request_id', 'site'), mapping, sites)
         mapping = lambda item: (request_id, item)
-        self.registry.insert_many('copy_request_items', ('request_id', 'item'), mapping, items)
+        self.registry.db.insert_many('copy_request_items', ('request_id', 'item'), mapping, items)
 
         # Make an entry in history
         history_user_ids = self.history.save_users([(caller.name, caller.dn)], get_ids = True)
@@ -150,14 +150,14 @@ class CopyRequestManager(RequestManager):
 
         if request.status in (Request.ST_NEW, Request.ST_ACTIVATED):
             sql = 'UPDATE `copy_requests` SET `status` = %s, `group` = %s, `num_copies` = %s, `last_request_time` = FROM_UNIXTIME(%s), `request_count` = %s WHERE `id` = %s'
-            self.registry.query(sql, request.status, request.group, request.n, request.last_request, request.request_count, request.request_id)
+            self.registry.db.query(sql, request.status, request.group, request.n, request.last_request, request.request_count, request.request_id)
 
             # insert or update active copies
             fields = ('request_id', 'item', 'site', 'status', 'created', 'updated')
             for a in request.actions:
                 values = (request.request_id, a.item, a.site, a.status, MySQL.bare('NOW()'), MySQL.bare('NOW()'))
                 update_columns = ('status', 'updated')
-                self.registry.insert_update('active_copies', fields, *values, update_columns = update_columns)
+                self.registry.db.insert_update('active_copies', fields, *values, update_columns = update_columns)
 
         else:
             # terminal state
@@ -166,7 +166,7 @@ class CopyRequestManager(RequestManager):
             sql += ' LEFT JOIN `copy_request_items` AS i ON i.`request_id` = r.`id`'
             sql += ' LEFT JOIN `copy_request_sites` AS s ON s.`request_id` = r.`id`'
             sql += ' WHERE r.`id` = %s'
-            self.registry.query(sql, request.request_id)        
+            self.registry.db.query(sql, request.request_id)        
 
     def collect_updates(self, inventory):
         """

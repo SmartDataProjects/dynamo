@@ -13,9 +13,7 @@ class DeletionRequestBase(WebModule, ParseInputMixin):
         WebModule.__init__(self, config)
         ParseInputMixin.__init__(self, config)
 
-        manager_config = df.Configuration(registry = config.registry, history = {'db_params': config.history})
-
-        self.manager = DeletionRequestManager(manager_config)
+        self.manager = DeletionRequestManager()
 
 
 class MakeDeletionRequest(DeletionRequestBase):
