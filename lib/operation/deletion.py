@@ -37,7 +37,7 @@ class DeletionInterface(object):
         @param operation_id  Deletion operation id in the history DB for logging.
         @param comments      Comments to be pased to the operation interface
 
-        @return  Clone [(DatasetReplica, [BlockReplica] or None)] for successfully scheduled replicas
+        @return  Clone [(DatasetReplica, [BlockReplica] or None)] for successfully scheduled replicas. DatasetReplica does not have BlockReplicas.
         """
 
         raise NotImplementedError('schedule_deletions')
