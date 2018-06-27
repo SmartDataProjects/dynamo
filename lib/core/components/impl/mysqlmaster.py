@@ -88,7 +88,7 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
 
         all_roles = remote_master.list_roles()
         fields = ('name',)
-        self._mysql.insert_many('roles', fields, None, all_roles, do_update = True)
+        self._mysql.insert_many('roles', fields, MySQL.make_tuple, all_roles, do_update = True)
 
         # List of authorizations
         self._mysql.query('DELETE FROM `user_authorizations`')
@@ -168,6 +168,9 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
             return None
 
         module, config_str = result[0]
+
+        if config_str is None:
+            return None
 
         return module, Configuration(json.loads(config_str))
 

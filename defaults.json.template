@@ -108,18 +108,8 @@
     }
   },
   "request.common:RequestManager": {
-    "fullauth": {
-      "registry": {
-        "db": "dynamoregister",
-        "user": "dynamo"
-      }
-    },
-    "readonly": {
-      "registry": {
-        "db": "dynamoregister",
-        "user": "dynamoread"
-      }
-    }
+    "fullauth": {},
+    "readonly": {}
   },
   "detox.history:DetoxHistoryBase": {
     "all": {
