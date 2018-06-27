@@ -34,6 +34,9 @@ generators = {}
 install_source_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 for mod in [persistency_mod, master_mod, shadow_mod, local_board_mod]:
+    if not mod:
+        continue
+
     if mod not in generators:
         generators[mod] = Namespace()
         conf_gen_script = install_source_path + '/' + mod + '/generate_conf.py'
@@ -66,7 +69,8 @@ server_conf = OD()
 server_conf['user'] = server_user
 
 server_conf['inventory'] = OD()
-server_conf['inventory']['persistency'] = generators[persistency_mod].generate_store_conf(persistency_conf_args)
+if persistency_mod:
+    server_conf['inventory']['persistency'] = generators[persistency_mod].generate_store_conf(persistency_conf_args)
 server_conf['inventory']['partition_def_path'] = source_conf.get('server', 'partition_def')
 
 server_conf['manager'] = OD()
