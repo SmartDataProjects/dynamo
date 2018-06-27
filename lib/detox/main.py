@@ -598,6 +598,8 @@ class Detox(object):
 
             LOG.info('Deleting %d replicas from %s.', len(site_deletion_list), site.name)
 
+            null_group = inventory.groups[None]
+
             # Block interruptions until deletion is executed and recorded
             with signal_blocker:
                 history_record = self.history.make_cycle_entry(cycle_number, site)
@@ -605,21 +607,27 @@ class Detox(object):
                 scheduled_replicas = self.deletion_op.schedule_deletions(site_deletion_list, history_record.operation_id, comments = comment)
 
                 for replica, block_replicas in scheduled_replicas:
-                    # replicas are clones -> use inventory.update instead of inventory.register_update
+                    deleted_size = 0
 
                     if block_replicas is None:
                         replica.growing = False
-                        replica.group = inventory.groups[None]
+                        replica.group = null_group
+                        # replica is a clone -> use inventory.update instead of inventory.register_update
                         inventory.update(replica)
-                        block_replicas = replica.block_replicas
 
-                    deleted_size = 0
+                        original_replica = replica.site.find_dataset_replica(replica.dataset)
+                        for block_replica in original_replica.block_replicas:
+                            block_replica.group = null_group
+                            inventory.register_update(block_replica)
 
-                    for block_replica in block_replicas:
-                        block_replica.group = inventory.groups[None]
-                        inventory.update(block_replica)
+                        deleted_size += original_replica.size()
 
-                        deleted_size += block_replica.size
+                    else:
+                        for block_replica in block_replicas:
+                            block_replica.group = null_group
+                            inventory.update(block_replica)
+    
+                            deleted_size += block_replica.size
 
                     history_record.replicas.append(DeletedReplica(replica.dataset.name, deleted_size))
 
