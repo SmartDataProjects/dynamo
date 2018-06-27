@@ -20,7 +20,7 @@ class DeletionRequestManager(RequestManager):
         ]
 
         if not self._read_only:
-            self.registry.lock_tables(write = tables)
+            self.registry.db.lock_tables(write = tables)
 
     def get_requests(self, request_id = None, statuses = None, users = None, items = None, sites = None):
         all_requests = {}
@@ -33,7 +33,7 @@ class DeletionRequestManager(RequestManager):
         sql += ' ORDER BY r.`id`'
 
         _rid = 0
-        for rid, status, request_time, user, dn, a_item, a_site, a_status, a_update in self.registry.xquery(sql):
+        for rid, status, request_time, user, dn, a_item, a_site, a_status, a_update in self.registry.db.xquery(sql):
             if rid != _rid:
                 _rid = rid
                 request = all_requests[rid] = DeletionRequest(rid, user, dn, int(status), request_time)
@@ -47,12 +47,12 @@ class DeletionRequestManager(RequestManager):
         if len(all_requests) != 0:
             # get the sites
             sql = 'SELECT s.`request_id`, s.`site` FROM `deletion_request_sites` AS s WHERE s.`request_id` IN (%s)' %  ','.join('%d' % d for d in all_requests.iterkeys())
-            for rid, site in self.registry.xquery(sql):
+            for rid, site in self.registry.db.xquery(sql):
                 all_requests[rid].sites.append(site)
     
             # get the items
             sql = 'SELECT i.`request_id`, i.`item` FROM `deletion_request_items` AS i WHERE i.`request_id` IN (%s)' %  ','.join('%d' % d for d in all_requests.iterkeys())
-            for rid, item in self.registry.xquery(sql):
+            for rid, item in self.registry.db.xquery(sql):
                 all_requests[rid].items.append(item)
 
             if request_id is not None:
@@ -113,12 +113,12 @@ class DeletionRequestManager(RequestManager):
         # Make an entry in registry
         columns = ('user', 'dn', 'request_time')
         values = (caller.name, caller.dn, MySQL.bare('FROM_UNIXTIME(%d)' % now))
-        request_id = self.registry.insert_get_id('deletion_requests', columns, values)
+        request_id = self.registry.db.insert_get_id('deletion_requests', columns, values)
 
         mapping = lambda site: (request_id, site)
-        self.registry.insert_many('deletion_request_sites', ('request_id', 'site'), mapping, sites)
+        self.registry.db.insert_many('deletion_request_sites', ('request_id', 'site'), mapping, sites)
         mapping = lambda item: (request_id, item)
-        self.registry.insert_many('deletion_request_items', ('request_id', 'item'), mapping, items)
+        self.registry.db.insert_many('deletion_request_items', ('request_id', 'item'), mapping, items)
 
         # Make an entry in history
         history_user_ids = self.history.save_users([(caller.name, caller.dn)], get_ids = True)
@@ -148,14 +148,14 @@ class DeletionRequestManager(RequestManager):
 
         if request.status in (Request.ST_NEW, Request.ST_ACTIVATED):
             sql = 'UPDATE `deletion_requests` SET `status` = %s, `request_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'
-            self.registry.query(sql, request.status, request.request_time, request.request_id)
+            self.registry.db.query(sql, request.status, request.request_time, request.request_id)
 
             # insert or update active copies
             fields = ('request_id', 'item', 'site', 'status', 'created', 'updated')
             for a in request.actions:
                 values = (request.request_id, a.item, a.site, a.status, MySQL.bare('NOW()'), MySQL.bare('NOW()'))
                 update_columns = ('status', 'updated')
-                self.registry.insert_update('active_deletions', fields, *values, update_columns = update_columns)
+                self.registry.db.insert_update('active_deletions', fields, *values, update_columns = update_columns)
 
         else:
             # terminal state
@@ -164,7 +164,7 @@ class DeletionRequestManager(RequestManager):
             sql += ' LEFT JOIN `deletion_request_items` AS i ON i.`request_id` = r.`id`'
             sql += ' LEFT JOIN `deletion_request_sites` AS s ON s.`request_id` = r.`id`'
             sql += ' WHERE r.`id` = %s'
-            self.registry.query(sql, request.request_id)
+            self.registry.db.query(sql, request.request_id)
 
     def collect_updates(self, inventory):
         """

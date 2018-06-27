@@ -2,6 +2,7 @@ import logging
 
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.history.history import HistoryDatabase
+from dynamo.registry.registry import RegistryDatabase
 import dynamo.dataformat as df
 from dynamo.dataformat.request import Request, RequestAction
 
@@ -30,11 +31,11 @@ class RequestManager(object):
         if config is None:
             config = RequestManager._config
 
-        self.registry = MySQL(config.registry)
+        self.registry = RegistryDatabase(config.get('registry', None))
         self.history = HistoryDatabase(config.get('history', None))
 
         # we'll be using temporary tables
-        self.registry.reuse_connection = True
+        self.registry.db.reuse_connection = True
         self.history.db.reuse_connection = True
 
         self.optype = optype
@@ -49,11 +50,11 @@ class RequestManager(object):
         Lock the registry table for lookup + update workflows.
         """
         if not self._read_only:
-            self.registry.lock_tables()
+            self.registry.db.lock_tables()
 
     def unlock(self):
         if not self._read_only:
-            self.registry.unlock_tables()
+            self.registry.db.unlock_tables()
 
     def _save_items(self, items):
         """
@@ -112,29 +113,29 @@ class RequestManager(object):
 
         # Make temporary tables and fill copy_ids_tmp with ids of requests whose item and site lists fully cover the provided list of items and sites.
         columns = ['`item` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL']
-        self.registry.create_tmp_table('items_tmp', columns)
+        self.registry.db.create_tmp_table('items_tmp', columns)
         columns = ['`site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL']
-        self.registry.create_tmp_table('sites_tmp', columns)
+        self.registry.db.create_tmp_table('sites_tmp', columns)
 
         if items is not None:
-            self.registry.insert_many('items_tmp', ('item',), MySQL.make_tuple, items, db = self.registry.scratch_db)
+            self.registry.db.insert_many('items_tmp', ('item',), MySQL.make_tuple, items, db = self.registry.db.scratch_db)
         if sites is not None:
-            self.registry.insert_many('sites_tmp', ('site',), MySQL.make_tuple, sites, db = self.registry.scratch_db)
+            self.registry.db.insert_many('sites_tmp', ('site',), MySQL.make_tuple, sites, db = self.registry.db.scratch_db)
 
         columns = [
             '`id` int(10) unsigned NOT NULL AUTO_INCREMENT',
             'PRIMARY KEY (`id`)'
         ]
-        self.registry.create_tmp_table('ids_tmp', columns)
+        self.registry.db.create_tmp_table('ids_tmp', columns)
 
         sql = 'INSERT INTO `{db}`.`ids_tmp`'
         sql += ' SELECT r.`id` FROM `{op}_requests` AS r WHERE'
         sql += ' 0 NOT IN (SELECT (`site` IN (SELECT `site` FROM `{op}_request_sites` AS s WHERE s.`request_id` = r.`id`)) FROM `{db}`.`sites_tmp`)'
         sql += ' AND '
         sql += ' 0 NOT IN (SELECT (`item` IN (SELECT `item` FROM `{op}_request_items` AS i WHERE i.`request_id` = r.`id`)) FROM `{db}`.`items_tmp`)'
-        self.registry.query(sql.format(db = self.registry.scratch_db, op = self.optype))
+        self.registry.db.query(sql.format(db = self.registry.db.scratch_db, op = self.optype))
 
-        return '`{db}`.`ids_tmp`'.format(db = self.registry.scratch_db)
+        return '`{db}`.`ids_tmp`'.format(db = self.registry.db.scratch_db)
 
     def _make_temp_history_tables(self, dataset_ids, block_ids, site_ids):
         """
