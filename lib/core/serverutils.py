@@ -8,7 +8,7 @@ from ctypes import cdll
 libc = cdll.LoadLibrary("/lib64/libc.so.6") # will use glibc mount()
 
 from dynamo.core.inventory import DynamoInventory
-from dynamo.utils.log import log_exception, reset_logger
+from dynamo.utils.log import log_exception
 from dynamo.utils.path import find_common_base
 
 BANNER = '''
