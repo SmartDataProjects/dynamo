@@ -214,15 +214,6 @@ class DynamoServer(object):
             # If there is no server to connect to, this method raises a RuntimeError
             self._setup_remote_store()
 
-    def get_subprocess_args(self):
-        # Create an inventory proxy with a fresh connection to the store backend to avoid the child closing the connection
-        inventory_proxy = self.inventory.create_proxy()
-
-        # Similarly pass a new Authorizer with a fresh connection
-        authorizer = self.manager.master.create_authorizer()
-
-        return inventory_proxy, authorizer
-
     def _run_application_cycles(self):
         """
         Infinite-loop main body of the daemon.
@@ -259,7 +250,8 @@ class DynamoServer(object):
                 LOG.debug('Collect processes')
                 self._collect_processes(child_processes)
 
-                self._collect_updates_from_web()
+                if self.webserver is not None:
+                    self._collect_updates_from_web()
 
                 ## Step 6 (easier to do here because we use "continue"s)
                 cleanup_timer += 1
@@ -382,7 +374,8 @@ class DynamoServer(object):
                 ## Step 1
                 self._read_updates()
 
-                self._collect_updates_from_web()
+                if self.webserver is not None:
+                    self._collect_updates_from_web()
     
                 ## Step 2
                 time.sleep(self.poll_interval)
@@ -448,7 +441,7 @@ class DynamoServer(object):
                 read_state, update_commands = self._collect_updates()
 
                 if status == AppManager.STAT_RUN:
-                    if read_state == 1:
+                    if read_state == 1 and len(update_commands) != 0:
                         self._update_inventory(update_commands)
     
                     elif read_state == 2:
@@ -544,7 +537,7 @@ class DynamoServer(object):
                 LOG.debug('Web process %d is still running.', pid)
                 return
 
-        elif read_state == 1:
+        elif read_state == 1 and len(update_commands) != 0:
             LOG.info('Updating the inventory with data sent from web.')
             self._update_inventory(update_commands)
 
@@ -590,30 +583,32 @@ class DynamoServer(object):
     def _read_updates(self):
         update_commands = self.manager.get_updates()
 
-        has_update = self._exec_updates(update_commands)
+        num_updates, num_deletes = self._exec_updates(update_commands)
 
-        # update_commands is an iterator - cannot just do len()
-        if has_update:
+        if num_updates + num_deletes != 0:
+            LOG.info('Received %d updates and %d deletes from a remote server.', num_updates, num_deletes)
             # The server which sent the updates has set this server's status to updating
             self.manager.set_status(ServerHost.STAT_ONLINE)
 
     def _exec_updates(self, update_commands):
-        has_update = False
+        num_updates = 0
+        num_deletes = 0
         for cmd, objstr in update_commands:
-            has_update = True
             # Create a python object from its representation string
             obj = self.inventory.make_object(objstr)
 
             if cmd == DynamoInventory.CMD_UPDATE:
+                num_updates += 1
                 embedded_object = self.inventory.update(obj)
                 CHANGELOG.info('Saved %s', str(embedded_object))
 
             elif cmd == DynamoInventory.CMD_DELETE:
+                num_deletes += 1
                 deleted_object = self.inventory.delete(obj)
                 if deleted_object is not None:
                     CHANGELOG.info('Deleting %s', str(deleted_object))
 
-        if has_update:
+        if num_updates + num_deletes != 0:
             if self.inventory.has_store:
                 self.manager.master.advertise_store_version(self.inventory.store_version())
 
@@ -621,7 +616,7 @@ class DynamoServer(object):
                 # Restart the web server so it gets the latest inventory image
                 self.webserver.restart()
 
-        return has_update
+        return num_updates, num_deletes
 
     def _start_subprocess(self, app, is_local):
         proc_args = (app['path'], app['args'], is_local, not app['write_request'])
@@ -649,18 +644,10 @@ class DynamoServer(object):
         sys.stdout = stdout
         sys.stderr = stderr
 
-        # These objects can be garbage-collected as soon as this function returns.
-        # That doesn't cause a problem only because no shared resource (e.g. database connections)
-        # are instantiated in the constructor of these objects.
-        # We probably should have a more explicit safeguard mechanism.
-        inventory, authorizer = self.get_subprocess_args()
+        # Create an inventory proxy object used as "the" inventory within the subprocess
+        inventory = self.inventory.create_proxy()
 
-        if read_only:
-            queue = None
-        else:
-            queue = self.inventory_update_queue
-
-        path = serverutils.pre_execution(path, is_local, read_only, self.defaults_config, inventory, authorizer)
+        path = self._pre_execution(path, is_local, read_only, inventory)
     
         # Set argv
         sys.argv = [path + '/exec.py']
@@ -678,7 +665,8 @@ class DynamoServer(object):
             if exc_type is SystemExit:
                 # sys.exit used in the script
                 if exc.code == 0:
-                    serverutils.send_updates(inventory, queue)
+                    if not read_only:
+                        self._send_updates(inventory)
                 else:
                     raise
     
@@ -697,12 +685,13 @@ class DynamoServer(object):
                 sys.exit(1)
     
         else:
-            serverutils.send_updates(inventory, queue)
-            # Queue stays available on the other end even if we terminate the process
+            if not read_only:
+                self._send_updates(inventory)
+                # Queue stays available on the other end even if we terminate the process
     
         finally:
             # cleanup
-            serverutils.post_execution(path, is_local)
+            self._post_execution(path, is_local)
     
             sys.stdout.close()
             sys.stderr.close()
@@ -716,22 +705,20 @@ class DynamoServer(object):
         For now we limit interactive sessions to read-only.
         @param path            Path to the work area.
         @param is_local        True if script is requested from localhost.
-        @param defaults_config A Configuration object specifying the global defaults for various tools
-        @param inventory       A DynamoInventoryProxy instance
-        @param authorizer      An Authorizer instance
         @param make_console    A callable which takes a dictionary of locals as an argument and returns a console
         @param stdout          File-like object for stdout
         @param stderr          File-like object for stderr
         """
     
-        inventory, authorizer = self.get_subprocess_args()
+        # Create an inventory proxy object used as "the" inventory within the subprocess
+        inventory = self.inventory.create_proxy()
     
         old_stdout = sys.stdout
         old_stderr = sys.stderr
         sys.stdout = stdout
         sys.stderr = stderr
     
-        serverutils.pre_execution(path, is_local, True, self.defaults_config, inventory, authorizer)
+        self._pre_execution(path, is_local, True, inventory)
     
         # use receive of oconn as input
         mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': inventory}
@@ -739,7 +726,136 @@ class DynamoServer(object):
         try:
             console.interact(serverutils.BANNER)
         finally:
-            serverutils.post_execution(path, is_local)
+            self._post_execution(path, is_local)
     
         sys.stdout = old_stdout
         sys.stderr = old_stderr
+
+    def _pre_execution(self, path, is_local, read_only, inventory):
+        uid = os.geteuid()
+        gid = os.getegid()
+    
+        # Set defaults
+        for key, config in self.defaults_config.items():
+            try:
+                if read_only:
+                    myconf = config['readonly']
+                else:
+                    myconf = config['fullauth']
+            except KeyError:
+                try:
+                    myconf = config['all']
+                except KeyError:
+                    continue
+            else:
+                try:
+                    # security measure
+                    del config['fullauth']
+                except KeyError:
+                    pass
+    
+            modname, clsname = key.split(':')
+            module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
+            cls = getattr(module, clsname)
+    
+            cls.set_default(myconf)
+    
+        if is_local:
+            os.chdir(path)
+        else:
+            # Confine in a chroot jail
+            # Allow access to directories in PYTHONPATH with bind mounts
+            for base in find_common_base(map(os.path.realpath, sys.path)):
+                try:
+                    os.makedirs(path + base)
+                except OSError:
+                    # shouldn't happen but who knows
+                    continue
+    
+                bindmount(base, path + base)
+    
+            os.mkdir(path + '/tmp')
+            os.chmod(path + '/tmp', 0777)
+    
+            os.seteuid(0)
+            os.setegid(0)
+            os.chroot(path)
+    
+            path = ''
+            os.chdir('/')
+    
+        # De-escalate privileges permanently
+        os.seteuid(0)
+        os.setegid(0)
+        os.setgid(gid)
+        os.setuid(uid)
+    
+        # We will react to SIGTERM by raising KeyboardInterrupt
+        from dynamo.utils.signaling import SignalConverter
+    
+        signal_converter = SignalConverter()
+        signal_converter.set(signal.SIGTERM)
+        # we won't call unset()
+    
+        # Ignore SIGINT
+        # If the main process was interrupted by Ctrl+C:
+        # Ctrl+C will pass SIGINT to all child processes (if this process is the head of the
+        # foreground process group). In this case calling terminate() will duplicate signals
+        # in the child. Child processes have to always ignore SIGINT and be killed only from
+        # SIGTERM sent by the line below.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    
+        # Reset logging
+        reset_logger()
+    
+        # Pass my inventory and authorizer to the executable through core.executable
+        import dynamo.core.executable as executable
+        executable.inventory = inventory
+        executable.authorizer = self.manager.master.create_authorizer()
+    
+        from dynamo.dataformat import Block
+        Block._inventory_store = inventory._store
+    
+        if not read_only:
+            executable.read_only = False
+            # create a list of updated and deleted objects the executable can fill
+            inventory._update_commands = []
+    
+        return path
+
+    def _post_execution(self, path, is_local):
+        if not is_local:
+            # jobs were confined in a chroot jail
+            serverutils.clean_remote_request(path)
+    
+    def _send_updates(self, inventory):
+        # Collect updates if write-enabled
+    
+        nobj = len(inventory._update_commands)
+
+        sys.stderr.write('Sending %d updated objects to the server process.\n' % nobj)
+        sys.stderr.flush()
+
+        wm = 0.
+        for iobj, (cmd, objstr) in enumerate(inventory._update_commands):
+            if float(iobj) / nobj * 100. > wm:
+                sys.stderr.write(' %.0f%%..' % (float(iobj) / nobj * 100.))
+                sys.stderr.flush()
+                wm += 5.
+    
+            try:
+                self.inventory_update_queue.put((cmd, objstr))
+            except:
+                sys.stderr.write('Exception while sending %s %s\n' % (DynamoInventory._cmd_str[cmd], objstr))
+                sys.stderr.flush()
+                raise
+    
+        if nobj != 0:
+            sys.stderr.write(' 100%.\n')
+            sys.stderr.flush()
+        
+        # Put end-of-message
+        self.inventory_update_queue.put((DynamoInventory.CMD_EOM, None))
+    
+        # Wait until all messages are received
+        self.inventory_update_queue.join()
