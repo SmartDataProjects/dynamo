@@ -19,7 +19,11 @@ class MySQLUpdateBoard(UpdateBoard):
         self._mysql.unlock_tables()
 
     def get_updates(self): #override
-        return self._mysql.xquery('SELECT `cmd`, `obj` FROM `inventory_updates` ORDER BY `id`')
+        for cmd, obj in self._mysql.xquery('SELECT `cmd`, `obj` FROM `inventory_updates` ORDER BY `id`'):
+            if cmd == 'update':
+                yield DynamoInventory.CMD_UPDATE, obj
+            elif cmd == 'delete':
+                yield DynamoInventory.CMD_DELETE, obj
 
     def flush(self): #override
         self._mysql.query('DELETE FROM `inventory_updates`')
