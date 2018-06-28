@@ -362,7 +362,7 @@ class ServerManager(object):
                         LOG.error('Error while sending updates to %s. Setting server state to OUTOFSYNC.', server.hostname)
                         self.set_status(ServerHost.STAT_OUTOFSYNC, server.hostname)
                     else:
-                        LOG.info('Sent %d update commands to %s.', server.hostname)
+                        LOG.info('Sent %d update commands to %s.', len(update_commands), server.hostname)
                         
 
                 elif server.status == ServerHost.STAT_UPDATING:

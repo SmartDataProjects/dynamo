@@ -20,7 +20,7 @@ from dynamo.core.components.host import ServerHost
 from dynamo.core.components.appmanager import AppManager
 from dynamo.web.server import WebServer
 from dynamo.fileop.rlfsm import RLFSM
-from dynamo.utils.log import log_exception
+from dynamo.utils.log import log_exception, reset_logger
 from dynamo.utils.signaling import SignalBlocker
 from dynamo.dataformat import Configuration
 
@@ -772,7 +772,7 @@ class DynamoServer(object):
                     # shouldn't happen but who knows
                     continue
     
-                bindmount(base, path + base)
+                serverutils.bindmount(base, path + base)
     
             os.mkdir(path + '/tmp')
             os.chmod(path + '/tmp', 0777)
