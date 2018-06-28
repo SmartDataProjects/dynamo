@@ -214,6 +214,12 @@ class WebServer(object):
         handler.setFormatter(logging.Formatter(fmt = '%(levelname)s:%(name)s: %(message)s'))
         root_logger.addHandler(handler)
 
+        stdout = sys.stdout
+        stderr = sys.stderr
+
+        sys.stdout = stream
+        sys.stderr = stream
+
         try:
             self.code = 200 # HTTP response code
             self.content_type = 'application/json' # content type string
@@ -253,6 +259,9 @@ class WebServer(object):
             return content + '\n'
 
         finally:
+            sys.stdout = stdout
+            sys.stderr = stderr
+
             root_logger.handlers.pop()
             root_logger.addHandler(original_handler)
 
@@ -422,8 +431,7 @@ class WebServer(object):
             content = provider.run(caller, request, inventory)
 
             if provider.write_enabled:
-                # TODO make web server log to a separate file
-                serverutils.send_updates(inventory, self.dynamo_server.inventory_update_queue, silent = True)
+                self.dynamo_server._send_updates(inventory)
             
         except (exceptions.AuthorizationError, exceptions.ResponseDenied, exceptions.MissingParameter,
                 exceptions.ExtraParameter, exceptions.IllFormedRequest, exceptions.InvalidRequest) as ex:
