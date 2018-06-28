@@ -250,7 +250,8 @@ class DynamoServer(object):
                 LOG.debug('Collect processes')
                 self._collect_processes(child_processes)
 
-                self._collect_updates_from_web()
+                if self.webserver is not None:
+                    self._collect_updates_from_web()
 
                 ## Step 6 (easier to do here because we use "continue"s)
                 cleanup_timer += 1
@@ -373,7 +374,8 @@ class DynamoServer(object):
                 ## Step 1
                 self._read_updates()
 
-                self._collect_updates_from_web()
+                if self.webserver is not None:
+                    self._collect_updates_from_web()
     
                 ## Step 2
                 time.sleep(self.poll_interval)
@@ -439,7 +441,7 @@ class DynamoServer(object):
                 read_state, update_commands = self._collect_updates()
 
                 if status == AppManager.STAT_RUN:
-                    if read_state == 1:
+                    if read_state == 1 and len(update_commands) != 0:
                         self._update_inventory(update_commands)
     
                     elif read_state == 2:
@@ -535,7 +537,7 @@ class DynamoServer(object):
                 LOG.debug('Web process %d is still running.', pid)
                 return
 
-        elif read_state == 1:
+        elif read_state == 1 and len(update_commands) != 0:
             LOG.info('Updating the inventory with data sent from web.')
             self._update_inventory(update_commands)
 
@@ -581,30 +583,32 @@ class DynamoServer(object):
     def _read_updates(self):
         update_commands = self.manager.get_updates()
 
-        has_update = self._exec_updates(update_commands)
+        num_updates, num_deletes = self._exec_updates(update_commands)
 
-        # update_commands is an iterator - cannot just do len()
-        if has_update:
+        if num_updates + num_deletes != 0:
+            LOG.info('Received %d updates and %d deletes from a remote server.', num_updates, num_deletes)
             # The server which sent the updates has set this server's status to updating
             self.manager.set_status(ServerHost.STAT_ONLINE)
 
     def _exec_updates(self, update_commands):
-        has_update = False
+        num_updates = 0
+        num_deletes = 0
         for cmd, objstr in update_commands:
-            has_update = True
             # Create a python object from its representation string
             obj = self.inventory.make_object(objstr)
 
             if cmd == DynamoInventory.CMD_UPDATE:
+                num_updates += 1
                 embedded_object = self.inventory.update(obj)
                 CHANGELOG.info('Saved %s', str(embedded_object))
 
             elif cmd == DynamoInventory.CMD_DELETE:
+                num_deletes += 1
                 deleted_object = self.inventory.delete(obj)
                 if deleted_object is not None:
                     CHANGELOG.info('Deleting %s', str(deleted_object))
 
-        if has_update:
+        if num_updates + num_deletes != 0:
             if self.inventory.has_store:
                 self.manager.master.advertise_store_version(self.inventory.store_version())
 
@@ -612,7 +616,7 @@ class DynamoServer(object):
                 # Restart the web server so it gets the latest inventory image
                 self.webserver.restart()
 
-        return has_update
+        return num_updates, num_deletes
 
     def _start_subprocess(self, app, is_local):
         proc_args = (app['path'], app['args'], is_local, not app['write_request'])

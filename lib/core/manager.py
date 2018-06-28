@@ -2,10 +2,13 @@ import time
 import threading
 import socket
 import hashlib
+import logging
 
 from dynamo.core.components.host import ServerHost
 from dynamo.core.components.master import MasterServer, AppManager
 from dynamo.core.components.board import UpdateBoard
+
+LOG = logging.getLogger(__name__)
 
 class OutOfSyncError(Exception):
     pass
@@ -356,7 +359,11 @@ class ServerManager(object):
                     try:
                         server.board.write_updates(update_commands)
                     except:
+                        LOG.error('Error while sending updates to %s. Setting server state to OUTOFSYNC.', server.hostname)
                         self.set_status(ServerHost.STAT_OUTOFSYNC, server.hostname)
+                    else:
+                        LOG.info('Sent %d update commands to %s.', server.hostname)
+                        
 
                 elif server.status == ServerHost.STAT_UPDATING:
                     # this server is still processing updates from the previous write process
