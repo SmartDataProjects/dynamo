@@ -1,5 +1,5 @@
 This directory contains minimal Lighttpd configuration templates to connect Dynamo with Lighttpd.
-Assuming a standard Lighttpd installation, the templates should go to:
+Assuming a standard Lighttpd installation (yum install lighttpd lighttpd-fastcgi), the templates should go to:
 
 lighttpd.conf -> /etc/lighttpd/lighttpd.conf        (Edit server.bind to the IP address of the server)
 modules.conf  -> /etc/lighttpd/modules.conf         (No edits)

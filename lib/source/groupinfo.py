@@ -6,8 +6,22 @@ class GroupInfoSource(object):
     """
 
     @staticmethod
-    def get_instance(module, config):
+    def get_instance(module = None, config = None):
+        if module is None:
+            module = GroupInfoSource._module
+        if config is None:
+            config = GroupInfoSource._config
+
         return get_instance(GroupInfoSource, module, config)
+
+    # defaults
+    _module = ''
+    _config = Configuration()
+
+    @staticmethod
+    def set_default(config):
+        GroupInfoSource._module = config.module
+        GroupInfoSource._config = config.config
 
     def __init__(self, config):
         include = config.get('include', None)
