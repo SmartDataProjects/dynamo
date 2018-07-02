@@ -3,6 +3,7 @@ import re
 import logging
 
 from dynamo.utils.classutil import get_instance
+from dynamo.dataformat import Configuration
 
 LOG = logging.getLogger(__name__)
 

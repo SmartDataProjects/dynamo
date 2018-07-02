@@ -1,4 +1,5 @@
 from dynamo.utils.classutil import get_instance
+from dynamo.dataformat import Configuration
 
 class UserInfoSource(object):
     """
