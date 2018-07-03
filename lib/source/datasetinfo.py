@@ -3,6 +3,7 @@ import re
 import logging
 
 from dynamo.utils.classutil import get_instance
+from dynamo.dataformat import Configuration
 
 LOG = logging.getLogger(__name__)
 
@@ -12,8 +13,22 @@ class DatasetInfoSource(object):
     """
 
     @staticmethod
-    def get_instance(module, config):
+    def get_instance(module = None, config = None):
+        if module is None:
+            module = DatasetInfoSource._module
+        if config is None:
+            config = DatasetInfoSource._config
+
         return get_instance(DatasetInfoSource, module, config)
+
+    # defaults
+    _module = ''
+    _config = Configuration()
+
+    @staticmethod
+    def set_default(config):
+        DatasetInfoSource._module = config.module
+        DatasetInfoSource._config = config.config
 
     def __init__(self, config):
         if hasattr(config, 'include'):
