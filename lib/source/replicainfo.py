@@ -13,8 +13,22 @@ class ReplicaInfoSource(object):
     """
 
     @staticmethod
-    def get_instance(module, config):
+    def get_instance(module = None, config = None):
+        if module is None:
+            module = ReplicaInfoSource._module
+        if config is None:
+            config = ReplicaInfoSource._config
+
         return get_instance(ReplicaInfoSource, module, config)
+
+    # defaults
+    _module = ''
+    _config = Configuration()
+
+    @staticmethod
+    def set_default(config):
+        ReplicaInfoSource._module = config.module
+        ReplicaInfoSource._config = config.config
 
     def __init__(self, config = None):
         config = Configuration(config)
