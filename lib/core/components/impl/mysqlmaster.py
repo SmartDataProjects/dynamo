@@ -1,9 +1,10 @@
 import time
 import json
 import socket
+import MySQLdb
 
 from dynamo.core.components.master import MasterServer
-from dynamo.core.components.host import ServerHost
+from dynamo.core.components.host import ServerHost, OutOfSyncError
 from .mysqlauthorizer import MySQLAuthorizer
 from .mysqlappmanager import MySQLAppManager
 from dynamo.utils.interface.mysql import MySQL
@@ -14,6 +15,8 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         MySQLAuthorizer.__init__(self, config)
         MySQLAppManager.__init__(self, config)
         MasterServer.__init__(self, config)
+
+        self._host = self._mysql.hostname()
 
         self._server_id = 0
         
@@ -37,8 +40,8 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
     def _do_unlock(self): #override
         self._mysql.unlock_tables()
 
-    def get_master_host(self): #override
-        return self._mysql.hostname()
+    def get_host(self): #override
+        return self._host
 
     def set_status(self, status, hostname): #override
         self._mysql.query('UPDATE `servers` SET `status` = %s WHERE `hostname` = %s', ServerHost.status_name(status), hostname)
@@ -65,7 +68,7 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
 
         return self._mysql.query(sql)
 
-    def copy(self, remote_master):
+    def copy(self, remote_master): #override
         # List of servers
         self._mysql.query('DELETE FROM `servers`')
         self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
@@ -280,3 +283,25 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
     def disconnect(self): #override
         self._mysql.query('DELETE FROM `servers` WHERE `id` = %s', self._server_id)
         self._mysql.close()
+
+    def _make_wrapper(self, method): #override
+        # Refine _make_wrapper of MasterServer by specifying that the "connection loss" error
+        # must be an OperationalError with code 2003.
+
+        def wrapper(*args, **kwd):
+            with self._master_server_lock:
+                try:
+                    return method(*args, **kwd)
+
+                except MySQLdb.OperationalError as ex:
+                    if ex.args[0] == 2003:
+                        # 2003: Can't connect to server
+                        if self._host == 'localhost' or self._host == socket.gethostname():
+                            raise
+
+                        self.connected = False
+                        raise OutOfSyncError('Lost connection to remote master MySQL')
+                    else:
+                        raise
+
+        return wrapper

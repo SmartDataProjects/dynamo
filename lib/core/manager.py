@@ -4,14 +4,11 @@ import socket
 import hashlib
 import logging
 
-from dynamo.core.components.host import ServerHost
+from dynamo.core.components.host import ServerHost, OutOfSyncError
 from dynamo.core.components.master import MasterServer, AppManager
 from dynamo.core.components.board import UpdateBoard
 
 LOG = logging.getLogger(__name__)
-
-class OutOfSyncError(Exception):
-    pass
 
 class ServerManager(object):
     """
@@ -23,7 +20,7 @@ class ServerManager(object):
         self.master = MasterServer.get_instance(config.master.module, config.master.config)
         self.master.readonly_config = config.master.readonly_config
         self.master.connect()
-        self.master_host = self.master.get_master_host()
+        self.master_host = self.master.get_host()
 
         if self.master_host != 'localhost' and self.master_host != socket.gethostname():
             # Interface to the master server local shadow
@@ -100,7 +97,7 @@ class ServerManager(object):
         """
 
         if not self.master.check_connection():
-            raise RuntimeError('Lost connection to master server')
+            raise OutOfSyncError('Lost connection to master server')
 
         self.get_status()
 
@@ -194,7 +191,7 @@ class ServerManager(object):
         
         self.master = MasterServer.get_instance(module, config)
         self.master.connect()
-        self.master_host = self.master.get_master_host()
+        self.master_host = self.master.get_host()
 
         if self.master_host == 'localhost' or self.master_host == socket.gethostname():
             self.shadow = None
