@@ -7,7 +7,7 @@ with open(sys.argv[1]) as source:
     combined = json.loads(source.read())
 
 for fname in sys.argv[2:]:
-    with open(sys.argv[1]) as source:
+    with open(fname) as source:
         combined.update(json.loads(source.read()))
 
 print json.dumps(combined)
