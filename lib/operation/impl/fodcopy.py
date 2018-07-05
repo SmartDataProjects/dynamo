@@ -7,14 +7,14 @@ from dynamo.fileop.rlfsm import RLFSM
 
 LOG = logging.getLogger(__name__)
 
-class FODCopyInterface(CopyInterface):
+class RLFSMCopyInterface(CopyInterface):
     """
-    CopyInterface using the Dynamo FOD.
+    CopyInterface using the Dynamo RLFSM.
     """
 
     def __init__(self, config = None):
         CopyInterface.__init__(self, config)
-        self.rlfsm = RLFSM(config.get('fod', None))
+        self.rlfsm = RLFSM(config.get('rlfsm', None))
 
     def set_read_only(self, value = True): #override
         self._read_only = value
