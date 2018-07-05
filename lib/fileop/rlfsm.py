@@ -393,7 +393,7 @@ class RLFSM(object):
 
         return subscriptions
 
-    def close_subscription(self, done_ids):
+    def close_subscriptions(self, done_ids):
         """
         Get subscription completion acknowledgments.
         """
