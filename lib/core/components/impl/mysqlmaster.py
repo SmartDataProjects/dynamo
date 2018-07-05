@@ -24,7 +24,7 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         self._mysql.reuse_connection = True
 
     def _connect(self): #override
-        if self.get_master_host() == 'localhost' or self.get_master_host() == socket.gethostname():
+        if self._host == 'localhost' or self._host == socket.gethostname():
             # This is the master server; wipe the table clean
             self._mysql.query('DELETE FROM `servers`')
             self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
