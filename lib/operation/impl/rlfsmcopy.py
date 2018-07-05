@@ -45,7 +45,8 @@ class RLFSMCopyInterface(CopyInterface):
                 all_files = block_replica.block.files
                 missing_files = all_files - block_replica.files()
 
-                self.rlfsm.subscribe_files(block_replica.site, missing_files)
+                for lfile in missing_files:
+                    self.rlfsm.subscribe_file(block_replica.site, lfile)
 
                 clone_block_replica = BlockReplica(block_replica.block, block_replica.site, block_replica.group)
                 clone_block_replica.copy(block_replica)

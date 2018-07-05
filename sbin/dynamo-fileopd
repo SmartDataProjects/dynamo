@@ -580,7 +580,7 @@ if __name__ == '__main__':
                 LOG.debug('Creating transfer tasks.')
 
             # First find batches with tape source
-            batch_sql = 'SELECT `id` FROM `standalone_transfer_batches` WHERE `mss_source` = 1 AND `stage_token` IS NULL'
+            batch_sql = 'SELECT `batch_id` FROM `standalone_transfer_batches` WHERE `mss_source` = 1 AND `stage_token` IS NULL'
             batch_update_sql = 'UPDATE `standalone_transfer_batches` SET `stage_token` = %s WHERE `batch_id` = %s'
 
             task_sql = 'SELECT a.`id`, a.`source` FROM `standalone_transfer_tasks` AS a'

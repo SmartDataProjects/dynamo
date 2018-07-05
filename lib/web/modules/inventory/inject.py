@@ -566,7 +566,8 @@ class InjectDataSync(InjectDataBase):
         for block in self.blocks_with_new_file:
             all_files = block.files
             for replica in block.replicas:
-                self.rlfsm.subscribe_files(replica.site, all_files - replica.files())
+                for lfile in (all_files - replica.files()):
+                    self.rlfsm.subscribe_file(replica.site, lfile)
 
         self.message = 'Data is injected.'
 

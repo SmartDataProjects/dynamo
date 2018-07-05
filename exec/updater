@@ -38,13 +38,13 @@ from dynamo.dataformat import File
 
 LOG.info('Updating the inventory from injections.')
 
-if not read_only:
-    registry.db.lock_tables(write = ['data_injections'])
-
+processed_injection_ids = []
 n_injected = 0
 n_deleted = 0
 
-for cmd, objstr in registry.db.xquery('SELECT `cmd`, `obj` FROM `data_injections` ORDER BY `id`'):
+for iid, cmd, objstr in registry.db.xquery('SELECT `id`, `cmd`, `obj` FROM `data_injections` ORDER BY `id`'):
+    processed_injection_ids.append(iid)
+
     obj = inventory.make_object(objstr)
 
     if cmd == 'update':
@@ -54,19 +54,17 @@ for cmd, objstr in registry.db.xquery('SELECT `cmd`, `obj` FROM `data_injections
         if type(obj) is File:
             block = embedded_obj.block
             for replica in block.replicas:
-                rlfsm.subscribe_files(replica.site, [embedded_obj])
+                rlfsm.subscribe_file(replica.site, embedded_obj)
 
     elif cmd == 'delete':
         inventory.delete(obj)
         n_deleted += 1
 
-if not read_only:
-    registry.db.query('DELETE FROM `data_injections`')
-    registry.db.query('ALTER TABLE `data_injections` AUTO_INCREMENT = 1')
-
-    registry.db.unlock_tables()
-
 LOG.info('Injected %d objects and deleted %d objects.', n_injected, n_deleted)
+
+LOG.info('Converting pre-subscriptions to subscriptions.')
+
+rlfsm.convert_pre_subscriptions(inventory)
 
 LOG.info('Updating the inventory from transfers and deletions.')
 
@@ -78,9 +76,9 @@ done_ids = []
 
 for sub in subscriptions:
     if type(sub) is RLFSM.Subscription:
-        optype == 'transfer'
+        optype = 'transfer'
     else:
-        optype == 'deletion'
+        optype = 'deletion'
 
     LOG.debug('Subscription entry: %d, %s, %s, %s, %s', sub.id, sub.status, optype, sub.file.lfn, sub.destination.name)
 
@@ -159,9 +157,19 @@ for replica in replicas_to_update:
                 replica.last_update = int(time.time())
                 inventory.register_update(replica)
 
-# Remove subscription entries with status 'done'
+# Remove injections and subscriptions
 # This is dangerous though - if inventory update fails on the server side for some reason,
 # we might not see the inconsistency for a while.
+
+if not read_only:
+    registry.db.lock_tables(write = ['data_injections'])
+    registry.db.delete_many('data_injections', 'id', processed_injection_ids)
+
+    if register.db.query('SELECT COUNT(*) FROM `data_injections`')[0] == 0:
+        registry.db.query('ALTER TABLE `data_injections` AUTO_INCREMENT = 1')
+
+    registry.db.unlock_tables()
+
 rlfsm.close_subscriptions(done_ids)
 
 LOG.info('Inventory update completed.')
