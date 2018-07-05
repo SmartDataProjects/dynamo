@@ -99,6 +99,19 @@ def transfer(task_id, src_pfn, dest_pfn, params_config):
 
     return gfal_exec('filecopy', (params, src_pfn, dest_pfn), transfer_nonerrors)
 
+def stage(task_id, pfn, token):
+    """
+    Staging task worker process
+    @param task_id        Task id in the queue.
+    @param pfn            PFN
+    @param token          Gfal2 staging token
+
+    @return  boolean (True if staged)
+    """
+
+    status = gfal_exec('bring_online_poll', (pfn, token), return_value = True)
+    return status == 1
+
 def delete(task_id, pfn):
     """
     Deletion task worker process
@@ -119,12 +132,13 @@ def delete(task_id, pfn):
 
     return gfal_exec('unlink', (pfn,), deletion_nonerrors)
 
-def gfal_exec(method, args, nonerrors = {}):
+def gfal_exec(method, args, nonerrors = {}, return_value = False):
     """
     GFAL2 execution function
-    @param method     Name of the Gfal2Context method to execute.
-    @param args       Tuple of arguments to pass to the method
-    @param nonerrors  Dictionary of error code translation for non-errors.
+    @param method       Name of the Gfal2Context method to execute.
+    @param args         Tuple of arguments to pass to the method
+    @param nonerrors    Dictionary of error code translation for non-errors.
+    @param return_value If True, simply return the return value of the function.
 
     @return  (exit code, start time, finish time, error message, log string)
     """
@@ -147,11 +161,14 @@ def gfal_exec(method, args, nonerrors = {}):
             gfal2.set_verbose(gfal2.verbose_level.verbose)
 
             context = gfal2.creat_context()
-            getattr(gfal2.Gfal2Context, method)(context, *args)
+            result = getattr(gfal2.Gfal2Context, method)(context, *args)
 
             finish_time = int(time.time())
         
         except gfal2.GError as err:
+            if return_value:
+                raise
+
             exitcode, msg = err.code, str(err)
 
             if err.code in nonerrors:
@@ -163,6 +180,9 @@ def gfal_exec(method, args, nonerrors = {}):
                 continue
 
         except Exception as exc:
+            if return_value:
+                raise
+
             exitcode, msg = -1, str(exc)
     
         else:
@@ -178,8 +198,11 @@ def gfal_exec(method, args, nonerrors = {}):
 
         break
 
-    # all three variables would be defined even when all attempts are exhausted
-    return exitcode, start_time, finish_time, msg, log
+    if return_value:
+        return result
+    else:
+        # all variables would be defined even when all attempts are exhausted
+        return exitcode, start_time, finish_time, msg, log
 
 
 class PoolManager(object):
@@ -218,14 +241,6 @@ class PoolManager(object):
 
         if self._closed:
             raise RuntimeError('PoolManager %s is closed' % self.name)
-
-        # TransferPoolManager or DeletionPoolManager
-        self_cls = type(self)
-
-        sql = 'UPDATE `standalone_{op}_tasks` SET `status` = \'queued\' WHERE `id` = %s'.format(op = self.optype)
-        with self_cls.queued_ids_lock:
-            PoolManager.db.query(sql, tid)
-            self_cls.queued_ids.append(tid)
 
         opstring = self.opformat.format(*args)
         LOG.info('%s: %s %s', self.name, self.optype, opstring)
@@ -322,7 +337,39 @@ class PoolManager(object):
             if is_set: # True if Python 2.7 + flag is set
                 return
 
-class TransferPoolManager(PoolManager):
+class QueueingPoolManager(PoolManager):
+    """
+    PoolManager with queued_ids and queued_ids_lock
+    """
+
+    def add_task(self, tid, *args):
+        """
+        Add a task to the pool and start the results collector.
+        """
+
+        if self._closed:
+            raise RuntimeError('PoolManager %s is closed' % self.name)
+
+        # TransferPoolManager or DeletionPoolManager
+        self_cls = type(self)
+
+        sql = 'UPDATE `standalone_{op}_tasks` SET `status` = \'queued\' WHERE `id` = %s'.format(op = self.optype)
+        with self_cls.queued_ids_lock:
+            PoolManager.db.query(sql, tid)
+            self_cls.queued_ids.append(tid)
+
+        opstring = self.opformat.format(*args)
+        LOG.info('%s: %s %s', self.name, self.optype, opstring)
+
+        proc_args = (tid,) + args
+        async_result = self._pool.apply_async(self.task, proc_args)
+        self._results.append((tid, async_result) + args)
+
+        if self._collector_thread is None or not self._collector_thread.is_alive():
+            self.start_collector()
+
+
+class TransferPoolManager(QueueingPoolManager):
     queued_ids = None
     queued_ids_lock = None
 
@@ -331,7 +378,31 @@ class TransferPoolManager(PoolManager):
         opformat = '{0} -> {1}'
         PoolManager.__init__(self, name, 'transfer', opformat, transfer, max_concurrent)
 
-class DeletionPoolManager(PoolManager):
+class StagingPoolManager(PoolManager):
+    def __init__(self, site, max_concurrent):
+        opformat = '{0}'
+        PoolManager.__init__(self, site, 'staging', opformat, stage, max_concurrent)
+
+    def process_result(self, result_tuple):
+        delim = '--------------'
+
+        tid, result = result_tuple[:2]
+        args = result_tuple[2:]
+
+        staged = result.get()
+
+        opstring = self.opformat.format(*args)
+
+        if not staged:
+            return
+
+        LOG.info('%s: staged %s', self.name, opstring)
+
+        sql = 'UPDATE `standalone_transfer_tasks` SET `status` = \'staged\' WHERE `id` = %s'
+
+        PoolManager.db.query(sql, tid)
+
+class DeletionPoolManager(QueueingPoolManager):
     queued_ids = None
     queued_ids_lock = None
 
@@ -423,7 +494,9 @@ if __name__ == '__main__':
     DeletionPoolManager.queued_ids_lock = deletion_ids_lock
 
     ## Collect PoolManagers
-    managers = {}
+    transfer_managers = {}
+    staging_managers = {}
+    deletion_managers = {}
 
     ## Flag to stop the managers
     stop_flag = threading.Event()
@@ -435,17 +508,24 @@ if __name__ == '__main__':
     ## Pool manager getters
     def get_transfer_manager(src, dest, max_concurrent):
         try:
-            return managers[(src, dest)]
+            return transfer_managers[(src, dest)]
         except KeyError:
-            managers[(src, dest)] = TransferPoolManager(src, dest, max_concurrent)
-            return managers[(src, dest)]
+            transfer_managers[(src, dest)] = TransferPoolManager(src, dest, max_concurrent)
+            return transfer_managers[(src, dest)]
+
+    def get_staging_manager(src, max_concurrent):
+        try:
+            return staging_managers[src]
+        except KeyError:
+            staging_managers[src] = StagingPoolManager(src, max_concurrent)
+            return staging_managers[src]
 
     def get_deletion_manager(site, max_concurrent):
         try:
-            return managers[site]
+            return deletion_managers[site]
         except KeyError:
-            managers[site] = DeletionPoolManager(site, max_concurrent)
-            return managers[site]
+            deletion_managers[site] = DeletionPoolManager(site, max_concurrent)
+            return deletion_managers[site]
 
     ## Start loop
     try:
@@ -499,10 +579,50 @@ if __name__ == '__main__':
             else:
                 LOG.debug('Creating transfer tasks.')
 
+            # First find batches with tape source
+            batch_sql = 'SELECT `id` FROM `standalone_transfer_batches` WHERE `mss_source` = 1 AND `stage_token` IS NULL'
+            batch_update_sql = 'UPDATE `standalone_transfer_batches` SET `stage_token` = %s WHERE `batch_id` = %s'
+
+            task_sql = 'SELECT a.`id`, a.`source` FROM `standalone_transfer_tasks` AS a'
+            task_sql += ' INNER JOIN `transfer_tasks` AS q ON q.`id` = a.`id`'
+            task_sql += ' WHERE q.`batch_id` = %s'
+            task_update_sql = 'UPDATE `standalone_transfer_tasks` SET `status` = %s WHERE `id` = %s'
+
+            for batch_id in db.query(batch_sql):
+                tasks = db.query(task_sql, batch_id)
+                pfns = [t[1] for t in tasks]
+
+                # PFNs, pintime, timeout, async; I have no idea what pintime and timeout values should be
+                bring_online_response = gfal_exec('bring_online', (pfns, 0, 0, True), return_value = True)
+
+                db.query(batch_update_sql, bring_online_response[1], batch_id)
+
+                for (tid, pfn), err in zip(tasks, bring_online_response[0]):
+                    if err is None:
+                        db.query(task_update_sql, 'staging', tid)
+                    else:
+                        db.query(task_update_sql, 'failed', tid)
+
+            # Next poll staging tasks
+            sql = 'SELECT q.`id`, a.`source`, b.`source_site`, b.`stage_token` FROM `standalone_transfer_tasks` AS a'
+            sql += ' INNER JOIN `transfer_tasks` AS q ON q.`id` = a.`id`'
+            sql += ' INNER JOIN `standalone_transfer_batches` AS b ON b.`batch_id` = q.`batch_id`'
+            sql += ' WHERE a.`status` = \'staging\''
+            sql += ' ORDER BY b.`source_site`, q.`id`'
+
+            _site = ''
+            for tid, src_pfn, ssite, token in db.query(sql):
+                if ssite != _site:
+                    _site = ssite
+                    pool_manager = get_staging_manager(ssite, max_concurrent)
+
+                pool_manager.add_task(tid, src_pfn, token)
+
+            # Finally start transfers for tasks in new and staged states
             sql = 'SELECT q.`id`, a.`source`, a.`destination`, b.`source_site`, b.`destination_site` FROM `standalone_transfer_tasks` AS a'
             sql += ' INNER JOIN `transfer_tasks` AS q ON q.`id` = a.`id`'
             sql += ' INNER JOIN `standalone_transfer_batches` AS b ON b.`batch_id` = q.`batch_id`'
-            sql += ' WHERE a.`status` = \'new\''
+            sql += ' WHERE (a.`status` = \'new\' AND b.`mss_source` = 0) OR a.`status` = \'staged\''
             sql += ' ORDER BY b.`source_site`, b.`destination_site`, q.`id`'
         
             _link = None
@@ -526,10 +646,11 @@ if __name__ == '__main__':
                     queued_transfer_ids.append(tid)
         
             ## Recycle threads
-            for key, manager in managers.items():
-                if manager.ready_for_recycle():
-                    LOG.info('Recycling pool manager %s', manager.name)
-                    managers.pop(key)
+            for managers in [transfer_managers, staging_managers, deletion_managers]:
+                for key, manager in transfer_managers.items():
+                    if manager.ready_for_recycle():
+                        LOG.info('Recycling pool manager %s', manager.name)
+                        managers.pop(key)
 
             time.sleep(30)
 
