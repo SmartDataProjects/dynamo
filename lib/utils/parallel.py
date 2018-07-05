@@ -37,7 +37,7 @@ class ThreadTimeout(RuntimeError):
 
 
 class ThreadController(object):
-    def __init__(self, function, num_threads):
+    def __init__(self, function, start_sem):
         self.print_progress = False
         self.timeout = 0
         self.repeat_on_exception = False
@@ -50,7 +50,7 @@ class ThreadController(object):
         self._ndone = 0
         self._watermark = 0
 
-        self._start_sem = threading.Semaphore(num_threads)
+        self._start_sem = start_sem
         self._done_sem = threading.Semaphore(0)
         self._target_function = function
 
@@ -200,13 +200,16 @@ class ThreadController(object):
 
 
 class AutoStarter(object):
-    def __init__(self, num_threads, task_per_thread):
+    def __init__(self, function, start_sem, task_per_thread):
         self.inputs = []
-        self.controller = ThreadController(function, self.num_threads)
+        self.controller = ThreadController(function, start_sem)
         self.controller.auto_start = True
         self.task_per_thread = task_per_thread
 
     def add_input(self, args):
+        if type(args) is not tuple:
+            args = (args,)
+
         self.inputs.append(args)
 
         if len(self.inputs) == self.task_per_thread:
@@ -229,7 +232,7 @@ class Map(object):
     """
 
     def __init__(self, config = Configuration()):
-        self.num_threads = max(config.get('num_threads', multiprocessing.cpu_count() - 1), 1)
+        self.start_sem = threading.Semaphore(min(config.get('num_threads', multiprocessing.cpu_count() - 1), 1))
         self.task_per_thread = config.get('task_per_thread', 1)
 
         self.print_progress = config.get('print_progress', False)
@@ -252,7 +255,7 @@ class Map(object):
         if len(arguments) == 0:
             return []
 
-        controller = ThreadController(function, self.num_threads)
+        controller = ThreadController(function, self.start_sem)
        
         controller.print_progress = self.print_progress
         controller.timeout = self.timeout
@@ -282,10 +285,9 @@ class Map(object):
             return controller.execute()
 
     def get_starter(self, function):
-        starter = AutoStarter(self.task_per_thread)
+        starter = AutoStarter(function, self.start_sem, self.task_per_thread)
         starter.controller.timeout = self.timeout
         starter.controller.repeat_on_exception = self.repeat_on_exception
         starter.controller.logger = self.logger
 
         return starter
-

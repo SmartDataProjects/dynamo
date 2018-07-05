@@ -54,7 +54,7 @@ for cmd, objstr in registry.db.xquery('SELECT `cmd`, `obj` FROM `data_injections
         if type(obj) is File:
             block = embedded_obj.block
             for replica in block.replicas:
-                rlfsm.subscribe_files(replica.site, embedded_obj)
+                rlfsm.subscribe_files(replica.site, [embedded_obj])
 
     elif cmd == 'delete':
         inventory.delete(obj)
@@ -70,6 +70,98 @@ LOG.info('Injected %d objects and deleted %d objects.', n_injected, n_deleted)
 
 LOG.info('Updating the inventory from transfers and deletions.')
 
-rlfsm.update_inventory(inventory)
+subscriptions = rlfsm.get_subscriptions(inventory)
+
+by_replica = {}
+replicas_to_update = set()
+done_ids = []
+
+for sub in subscriptions:
+    if type(sub) is RLFSM.Subscription:
+        optype == 'transfer'
+    else:
+        optype == 'deletion'
+
+    LOG.debug('Subscription entry: %d, %s, %s, %s, %s', sub.id, sub.status, optype, sub.file.lfn, sub.destination.name)
+
+    replica = sub.file.block.find_replica(sub.destination)
+
+    if replica is None:
+        # unexpected file! -> mark the subscription for deletion and move on
+        if status == 'done':
+            done_ids.append(sub.id)
+            continue
+
+    try:
+        file_ids, projected = by_replica[replica]
+    except KeyError:
+        file_ids, projected = by_replica[replica] = (set(), set())
+
+        if replica.file_ids is None:
+            # this replica is already full
+            file_ids = set(f.id for f in replica.block.files)
+        else:
+            file_ids = set(replica.file_ids)
+        
+    if type(sub) is RLFSM.Subscription:
+        if sub.status == 'done':
+            file_ids.add(sub.file.id)
+        elif sub.status != 'cancelled':
+            projected.add(sub.file.id)
+
+    else:
+        if sub.status != 'cancelled':
+            try:
+                projected.remove(sub.file.id)
+            except KeyError:
+                pass
+
+        if sub.status == 'done':
+            try:
+                file_ids.remove(sub.file.id)
+            except KeyError:
+                pass
+
+    if sub.status == 'done':
+        replicas_to_update.add(replica)
+        done_ids.append(sub.id)
+
+for replica in replicas_to_update:
+    file_ids, projected = by_replica[replica]
+
+    n_projected = len(projected)
+
+    LOG.debug('Updating replica %s with file_ids %s projected %d', replica, file_ids, n_projected)
+
+    if len(file_ids) == 0 and n_projected == 0:
+        LOG.debug('Deleting')
+        inventory.delete(replica)
+    else:
+        all_files = replica.block.files
+        full_file_ids = set(f.id for f in all_files)
+
+        if file_ids == full_file_ids:
+            LOG.debug('Replica is full. Updating')
+            replica.file_ids = None
+            replica.size = sum(f.size for f in all_files)
+            replica.last_update = int(time.time())
+            inventory.register_update(replica)
+        else:
+            if replica.file_ids is None:
+                existing_file_ids = full_file_ids
+            else:
+                existing_file_ids = set(replica.file_ids)
+
+            if file_ids != existing_file_ids:
+                LOG.debug('Replica content has changed: existing %s, new %s', existing_file_ids, file_ids)
+                replica.file_ids = tuple(file_ids)
+                replica.size = sum(f.size for f in all_files if f.id in file_ids)
+                replica.last_update = int(time.time())
+                inventory.register_update(replica)
+
+# Remove subscription entries with status 'done'
+# This is dangerous though - if inventory update fails on the server side for some reason,
+# we might not see the inconsistency for a while.
+rlfsm.close_subscriptions(done_ids)
 
 LOG.info('Inventory update completed.')

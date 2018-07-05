@@ -13,10 +13,10 @@ import traceback
 import shlex
 
 from dynamo.core.inventory import DynamoInventory
-from dynamo.core.manager import ServerManager, OutOfSyncError
+from dynamo.core.manager import ServerManager
 import dynamo.core.serverutils as serverutils
 from dynamo.core.components.appserver import AppServer
-from dynamo.core.components.host import ServerHost
+from dynamo.core.components.host import ServerHost, OutOfSyncError
 from dynamo.core.components.appmanager import AppManager
 from dynamo.web.server import WebServer
 from dynamo.fileop.rlfsm import RLFSM

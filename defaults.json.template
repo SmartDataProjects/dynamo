@@ -1,7 +1,7 @@
 {
   "operation.copy:CopyInterface": {
     "fullauth": {
-      "module": "fodcopy:FODCopyInterface",
+      "module": "rlfsmcopy:RLFSMCopyInterface",
       "config": {}
     },
     "readonly": {
@@ -11,7 +11,7 @@
   },
   "operation.deletion:DeletionInterface": {
     "fullauth": {
-      "module": "foddeletion:FODDeletionInterface",
+      "module": "rlfsmdeletion:RLFSMDeletionInterface",
       "config": {}
     },
     "readonly": {
