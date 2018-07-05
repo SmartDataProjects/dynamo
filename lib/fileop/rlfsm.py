@@ -455,7 +455,7 @@ class RLFSM(object):
 
         if lfile.id == 0 or site.id == 0:
             # file is not registered in inventory store yet; update the presubscription
-            fields = ('file_name', 'site_name', 'created', 'delete'),
+            fields = ('file_name', 'site_name', 'created', 'delete')
             self.db.insert_update('file_pre_subscriptions', fields, lfile.lfn, site.name, now, delete, update_columns = ('delete',))
             return
 

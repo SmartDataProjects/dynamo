@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update subscriptions.')
@@ -165,7 +166,7 @@ if not read_only:
     registry.db.lock_tables(write = ['data_injections'])
     registry.db.delete_many('data_injections', 'id', processed_injection_ids)
 
-    if register.db.query('SELECT COUNT(*) FROM `data_injections`')[0] == 0:
+    if registry.db.query('SELECT COUNT(*) FROM `data_injections`')[0] == 0:
         registry.db.query('ALTER TABLE `data_injections` AUTO_INCREMENT = 1')
 
     registry.db.unlock_tables()
