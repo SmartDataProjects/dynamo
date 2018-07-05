@@ -276,7 +276,8 @@ class RLFSM(object):
         self._subscribe(site, lfile, 1)
 
     def convert_pre_subscriptions(self, inventory):
-        sql = 'SELECT `file_name`, `site_name`, UNIX_TIMESTAMP(`created`), `delete`'
+        sql = 'SELECT `file_name`, `site_name`, UNIX_TIMESTAMP(`created`), `delete` FROM `file_pre_subscriptions`'
+
         for lfn, site_name, created, delete in self.db.query(sql):
             lfile = inventory.find_file(lfn)
             if lfile is None or lfile.id == 0:
