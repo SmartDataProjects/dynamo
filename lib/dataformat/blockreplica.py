@@ -84,7 +84,7 @@ class BlockReplica(object):
                 # some iterable
                 tmplist = []
                 for fid in file_ids:
-                    if type(fid) is str:
+                    if type(self._block) is not str and type(fid) is str:
                         tmplist.append(self._block.find_file(fid, must_find = True).id)
                     else:
                         tmplist.append(fid)
@@ -346,6 +346,14 @@ class BlockReplica(object):
             if other.file_ids is None:
                 self.file_ids = None
             else:
-                self.file_ids = tuple(other.file_ids)
+                tmplist = []
+                for fid in other.file_ids:
+                    if type(fid) is str:
+                        tmplist.append(self._block.find_file(fid, must_find = True).id)
+                    else:
+                        tmplist.append(fid)
+    
+                self.file_ids = tuple(tmplist)
+
         else:
             self.file_ids = other.file_ids
