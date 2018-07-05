@@ -255,21 +255,43 @@ class RLFSM(object):
         else:
             LOG.debug('Issued %d deletion tasks in %d batches.', num_tasks, num_batches)
 
-    def subscribe_files(self, site, files):
+    def subscribe_file(self, site, lfile):
         """
-        Make file subscriptions at a site.
+        Make a file subscription at a site.
+        @param site  Site object
+        @param lfile File object
         """
-        LOG.debug('Subscribing %d files to %s', len(files), str(site))
+        LOG.debug('Subscribing %s to %s', lfile.lfn, site.name)
 
-        self._subscribe(site, files, 0)
+        self._subscribe(site, lfile, 0)
 
-    def desubscribe_files(self, site, files):
+    def desubscribe_file(self, site, lfile):
         """
-        Book deletion of files at the site.
+        Book deletion of a file at a site.
+        @param site  Site object
+        @param lfile File object
         """
-        LOG.debug('Desubscribing %d files from %s', len(files), site.name)
+        LOG.debug('Desubscribing %s from %s', lfile.lfn, site.name)
 
-        self._subscribe(site, files, 1)
+        self._subscribe(site, lfile, 1)
+
+    def convert_pre_subscriptions(self, inventory):
+        sql = 'SELECT `file_name`, `site_name`, UNIX_TIMESTAMP(`created`), `delete` FROM `file_pre_subscriptions`'
+
+        for lfn, site_name, created, delete in self.db.query(sql):
+            lfile = inventory.find_file(lfn)
+            if lfile is None or lfile.id == 0:
+                continue
+
+            try:
+                site = inventory.sites[site_name]
+            except KeyError:
+                continue
+
+            if site.id == 0:
+                continue
+
+            self._subscribe(site, lfile, delete, created = created)
 
     def get_subscriptions(self, inventory, op = None, status = None):
         """
@@ -358,6 +380,9 @@ class RLFSM(object):
                         to_hold.append(sub_id)
                         # don't add this subscritpion to subscriptions list
                         continue
+                else:
+                    disk_sources = None
+                    tape_sources = None
     
                 if status == 'retry':
                     failed_sources = {}
@@ -419,25 +444,35 @@ class RLFSM(object):
             if is_set: # is true if in Python 2.7 and the flag is set
                 break
 
-    def _subscribe(self, site, files, delete):
+    def _subscribe(self, site, lfile, delete, created = None):
         opp_op = 0 if delete == 1 else 1
+        now = time.strftime('%Y-%m-%d %H:%M:%S')
+
+        if created is None:
+            created = now
+        else:
+            created = MySQL.bare('FROM_UNIXTIME(%d)' % created)
+
+        if lfile.id == 0 or site.id == 0:
+            # file is not registered in inventory store yet; update the presubscription
+            fields = ('file_name', 'site_name', 'created', 'delete')
+            self.db.insert_update('file_pre_subscriptions', fields, lfile.lfn, site.name, now, delete, update_columns = ('delete',))
+            return
 
         if not self._read_only:
             self.db.lock_tables(write = ['file_subscriptions'])
 
         try:
             sql = 'UPDATE `file_subscriptions` SET `status` = \'cancelled\''
+            sql += ' WHERE `file_id` = %s AND `site_id` = %s AND `delete` = %s'
+            sql += ' AND `status` IN (\'new\', \'inbatch\', \'retry\', \'held\')'
             if not self._read_only:
-                self.db.execute_many(sql, ('file_id', 'site_id'), [(f.id, site.id) for f in files], ['`delete` = %d' % opp_op, '`status` IN (\'new\', \'inbatch\', \'retry\', \'held\')'])
-    
-            # local time
-            now = time.strftime('%Y-%m-%d %H:%M:%S')
+                self.db.query(sql, lfile.id, site.id, opp_op)
     
             fields = ('file_id', 'site_id', 'status', 'delete', 'created', 'last_update')
-            mapping = lambda f: (f.id, site.id, 'new', delete, now, now)
-    
+
             if not self._read_only:
-                self.db.insert_many('file_subscriptions', fields, mapping, files, do_update = True, update_columns = ('status', 'last_update'))
+                self.db.insert_update('file_subscriptions', fields, lfile.id, site.id, 'new', delete, now, now, update_columns = ('status', 'last_update'))
 
         finally:
             if not self._read_only:

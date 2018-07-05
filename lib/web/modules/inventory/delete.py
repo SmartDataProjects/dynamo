@@ -7,10 +7,13 @@ import dynamo.dataformat as df
 
 LOG = logging.getLogger(__name__)
 
-class DeleteData(WebModule):
+class DeleteDataBase(WebModule):
+    """
+    Parse a JSON uploaded by the user and form deletion instructions.
+    """
+
     def __init__(self, config):
         WebModule.__init__(self, config)
-        self.write_enabled = True
 
     def run(self, caller, request, inventory):
         """
@@ -41,7 +44,12 @@ class DeleteData(WebModule):
         if 'datasetreplica' in request:
             self._delete_datasetreplicas(request['datasetreplica'], inventory, counts)
 
+        self._finalize()
+
         return counts
+
+    def _finalize(self):
+        pass
 
     def _delete_datasets(self, objects, inventory, counts):
         num_datasets = 0
@@ -60,9 +68,9 @@ class DeleteData(WebModule):
             if 'blocks' in obj:
                 # block-level deletion
                 self._delete_blocks(obj['blocks'], dataset, inventory, counts)
-            except KeyError:
+            else:
                 try:
-                    inventory.delete(dataset)
+                    self._delete(inventory, dataset)
                 except:
                     raise RuntimeError('Inventory update failed')
 
@@ -85,7 +93,7 @@ class DeleteData(WebModule):
                 raise InvalidRequest('Unknown site %s' % name)
 
             try:
-                inventory.delete(site)
+                self._delete(inventory, site)
             except:
                 raise RuntimeError('Inventory update failed')
         
@@ -108,7 +116,7 @@ class DeleteData(WebModule):
                 raise InvalidRequest('Unknown group %s' % name)
 
             try:
-                inventory.delete(group)
+                self._delete(inventory, group)
             except:
                 raise RuntimeError('Inventory update failed')
 
@@ -151,7 +159,7 @@ class DeleteData(WebModule):
             else:
                 # datasetreplica-level deletion
                 try:
-                    inventory.delete(replica)
+                    self._delete(inventory, replica)
                 except:
                     raise RuntimeError('Inventory update failed')
         
@@ -184,7 +192,7 @@ class DeleteData(WebModule):
             else:
                 # block-level deletion
                 try:
-                    inventory.delete(block)
+                    self._delete(inventory, block)
                 except:
                     raise RuntimeError('Inventory update failed')
 
@@ -225,7 +233,7 @@ class DeleteData(WebModule):
             block.num_files -= 1
 
             try:
-                inventory.delete(lfile)
+                self._delete(inventory, lfile)
             except:
                 raise RuntimeError('Inventory update failed')
 
@@ -267,7 +275,7 @@ class DeleteData(WebModule):
                 raise InvalidRequest('Replica of %s at %s does not exist' % (block.full_name(), site.name))
 
             try:
-                inventory.delete(block_replica)
+                self._delete(inventory, block_replica)
             except:
                 raise RuntimeError('Inventory update failed')
 
@@ -278,5 +286,51 @@ class DeleteData(WebModule):
         except KeyError:
             counts['blockreplicas'] = num_blockreplicas
 
+
+class DeleteData(DeleteDataBase):
+    """
+    Asynchronous version of data deletion. Deletion instructions are queued in a registry table with the same format
+    as the central inventory update table. The updater process will pick up the deletion instructions asynchronously.
+    """
+
+    def __init__(self, config):
+        DeleteDataBase.__init__(self, config)
+
+        self.registry = RegistryDatabase()
+
+        self.delete_queue = []
+
+    def _delete(self, inventory, obj):
+        self.delete_queue.append(obj)
+
+    def _finalize(self):
+        fields = ('cmd', 'obj')
+        mapping = lambda obj: ('delete', repr(obj))
+
+        self.registry.db.insert_many('data_injections', fields, mapping, self.delete_queue)
+
+        self.message = 'Data will be injected in the regular update cycle later.'
+
+
+class DeleteDataSync(DeleteDataBase):
+    """
+    Synchronous version of data deletion. The client is responsible for retrying when deletion fails due to
+    an ongoing inventory update.
+    """
+
+    def __init__(self, config):
+        DeleteDataBase.__init__(self, config)
+
+        self.write_enabled = True
+
+    def _delete(self, inventory, obj):
+        inventory.delete(obj)
+
+    def _finalize(self):
+        self.message = 'Data is deleted.'
+
 # exported to __init__.py
-export_data = {'delete': DeleteData}
+export_data = {
+    'delete': DeleteData,
+    'deletesync': DeleteDataSync
+}

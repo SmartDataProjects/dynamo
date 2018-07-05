@@ -38,7 +38,8 @@ class RLFSMDeletionInterface(DeletionInterface):
                 to_delete = block_replicas
 
             for block_replica in to_delete:
-                self.rlfsm.desubscribe_files(block_replica.site, block_replica.files())
+                for lfile in block_replica.files():
+                    self.rlfsm.desubscribe_file(block_replica.site, lfile)
 
             # No external dependency -> all operations are successful
 
