@@ -30,8 +30,6 @@ class InjectDataBase(WebModule):
         if type(request) is not dict:
             raise IllFormedRequest('request', type(request).__name__, hint = 'data must be a dict type')
 
-        self._initialize()
-
         counts = {}
 
         # blocks_with_new_file list used in the synchronous version of this class
@@ -51,9 +49,6 @@ class InjectDataBase(WebModule):
         self._finalize()
         
         return counts
-
-    def _initialize(self):
-        pass
 
     def _finalize(self):
         pass
@@ -522,16 +517,11 @@ class InjectData(InjectDataBase):
     def _register_update(self, inventory, obj):
         self.inject_queue.append(obj)
 
-    def _initialize(self):
-        # Lock will be release if this process crashes
-        self.registry.db.lock_tables(write = ['data_injections'])
-
     def _finalize(self):
         fields = ('cmd', 'obj')
         mapping = lambda obj: ('update', repr(obj))
 
         self.registry.db.insert_many('data_injections', fields, mapping, self.inject_queue)
-        self.registry.db.unlock_tables()
 
         self.message = 'Data will be injected in the regular update cycle later.'
 

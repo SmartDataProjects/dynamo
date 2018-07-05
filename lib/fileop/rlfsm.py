@@ -446,7 +446,7 @@ class RLFSM(object):
 
     def _subscribe(self, site, lfile, delete, created = None):
         opp_op = 0 if delete == 1 else 1
-        now = MySQL.bare('NOW()')
+        now = time.strftime('%Y-%m-%d %H:%M:%S')
 
         if created is None:
             created = now
