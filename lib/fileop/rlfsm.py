@@ -20,10 +20,11 @@ class RLFSM(object):
     """
 
     class Subscription(object):
-        __slots__ = ['id', 'file', 'destination', 'disk_sources', 'tape_sources', 'failed_sources']
+        __slots__ = ['id', 'status', 'file', 'destination', 'disk_sources', 'tape_sources', 'failed_sources']
 
-        def __init__(self, id, file, destination, disk_sources, tape_sources, failed_sources = None):
+        def __init__(self, id, status, file, destination, disk_sources, tape_sources, failed_sources = None):
             self.id = id
+            self.status = status
             self.file = file
             self.destination = destination
             self.disk_sources = disk_sources
@@ -39,10 +40,11 @@ class RLFSM(object):
             self.source = source
 
     class Desubscription(object):
-        __slots__ = ['id', 'file', 'site']
+        __slots__ = ['id', 'status', 'file', 'site']
 
-        def __init__(self, id, file, site):
+        def __init__(self, id, status, file, site):
             self.id = id
+            self.status = status
             self.file = file
             self.site = site
 
@@ -165,7 +167,7 @@ class RLFSM(object):
             return
 
         LOG.debug('Collecting new transfer subscriptions.')
-        subscriptions = self._get_subscriptions(inventory)
+        subscriptions = self.get_subscriptions(inventory, op = 'transfer', status = ['new', 'retry'])
 
         if self.cycle_stop.is_set():
             return
@@ -226,7 +228,7 @@ class RLFSM(object):
             return
 
         LOG.debug('Collecting new deletion subscriptions.')
-        desubscriptions = self._get_desubscriptions(inventory)
+        desubscriptions = self.get_subscriptions(inventory, op = 'deletion', status = ['new', 'retry'])
 
         if self.cycle_stop.is_set():
             return
@@ -253,142 +255,6 @@ class RLFSM(object):
         else:
             LOG.debug('Issued %d deletion tasks in %d batches.', num_tasks, num_batches)
 
-    def update_inventory(self, inventory):
-        if not BlockReplica._use_file_ids:
-            LOG.error('rlfsm.update_inventory cannot be used when BlockReplicas do not handle file ids.')
-            return
-
-        def update_replica(replica, file_ids, n_projected):
-            LOG.debug('Updating replica %s with file_ids %s projected %d', replica, file_ids, n_projected)
-
-            if len(file_ids) == 0 and n_projected == 0:
-                LOG.debug('Deleting')
-                inventory.delete(replica)
-            else:
-                all_files = replica.block.files
-                full_file_ids = set(f.id for f in all_files)
-
-                if file_ids == full_file_ids:
-                    LOG.debug('Replica is full. Updating')
-                    replica.file_ids = None
-                    replica.size = sum(f.size for f in all_files)
-                    replica.last_update = int(time.time())
-                    inventory.register_update(replica)
-                else:
-                    if replica.file_ids is None:
-                        existing_file_ids = full_file_ids
-                    else:
-                        existing_file_ids = set(replica.file_ids)
-
-                    if file_ids != existing_file_ids:
-                        LOG.debug('Replica content has changed: existing %s, new %s', existing_file_ids, file_ids)
-                        replica.file_ids = tuple(file_ids)
-                        replica.size = sum(f.size for f in all_files if f.id in file_ids)
-                        replica.last_update = int(time.time())
-                        inventory.register_update(replica)
-
-
-        ## List all subscriptions in block, site, time order
-        sql = 'SELECT u.`id`, u.`status`, u.`delete`, d.`name`, b.`name`, u.`file_id`, s.`name` FROM `file_subscriptions` AS u'
-        sql += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
-        sql += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
-        sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
-        sql += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
-        sql += ' WHERE u.`status` != \'held\''
-        sql += ' ORDER BY d.`id`, b.`id`, s.`id`, u.`last_update`'
-        
-        _dataset_name = ''
-        _block_name = ''
-        _site_name = ''
-        
-        dataset = None
-        block = None
-        site = None
-        replica = None
-        file_ids = None
-        projected = set()
-        
-        COPY = 0
-        DELETE = 1
-
-        done_ids = []
-        
-        for sub_id, status, optype, dataset_name, block_name, file_id, site_name in self.db.xquery(sql):
-            LOG.debug('Subscription entry: %d, %s, %d, %s, %s, %d, %s', sub_id, status, optype, dataset_name, block_name, file_id, site_name)
-
-            if dataset_name != _dataset_name:
-                _dataset_name = dataset_name
-                # dataset must exist
-                dataset = inventory.datasets[dataset_name]
-        
-                _block_name = ''
-        
-            if block_name != _block_name:
-                _block_name = block_name
-                # block must exist
-                block = dataset.find_block(Block.to_internal_name(block_name), must_find = True)
-        
-            if site_name != _site_name:
-                _site_name = site_name
-                # site must exist
-                site = inventory.sites[site_name]
-        
-            if replica is None or replica.block is not block or replica.site is not site:
-                if replica is not None and has_update:
-                    # check updates for previous replica
-                    update_replica(replica, file_ids, len(projected))
-
-                replica = block.find_replica(site)
-
-                if replica is None:
-                    # unexpected file! -> mark the subscription for deletion and move on
-                    if status == 'done':
-                        done_ids.append(sub_id)
-                    continue
-                    
-                if replica.file_ids is None:
-                    file_ids = set(f.id for f in block.files)
-                else:
-                    file_ids = set(replica.file_ids)
-
-                projected.clear()
-                has_update = False
-
-                LOG.debug('Handling new replica %s with file ids %s', replica, replica.file_ids)
-        
-            if optype == COPY:
-                if status == 'done':
-                    file_ids.add(file_id)
-                elif status != 'cancelled':
-                    projected.add(file_id)
-
-            elif optype == DELETE:
-                if status != 'cancelled':
-                    try:
-                        projected.remove(file_id)
-                    except KeyError:
-                        pass
-
-                if status == 'done':
-                    try:
-                        file_ids.remove(file_id)
-                    except KeyError:
-                        pass
-
-            if status == 'done':
-                has_update = True
-                done_ids.append(sub_id)
-
-        if replica is not None and has_update:
-            update_replica(replica, file_ids, len(projected))
-
-        LOG.debug('Done ids: %s', done_ids)
-
-        if not self._read_only:
-            # remove subscription entries with status 'done'
-            # this is dangerous - what if inventory fails to update on the server side?
-            self.db.delete_many('file_subscriptions', 'id', done_ids)
-
     def subscribe_files(self, site, files):
         """
         Make file subscriptions at a site.
@@ -404,6 +270,136 @@ class RLFSM(object):
         LOG.debug('Desubscribing %d files from %s', len(files), site.name)
 
         self._subscribe(site, files, 1)
+
+    def get_subscriptions(self, inventory, op = None, status = None):
+        """
+        Return a list containing Subscription and Desubscription objects ordered by the id.
+        @param inventory   Dynamo inventory
+        @param op          If set to 'transfer' or 'deletion', limit to the operation type.
+        @param status      If not None, set to list of status strings to limit the query.
+        """
+
+        subscriptions = []
+
+        get_all = 'SELECT u.`id`, u.`status`, u.`delete`, d.`name`, b.`name`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
+        get_all += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
+        get_all += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
+        get_all += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
+        get_all += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
+
+        constraints = []
+        if op == 'transfer':
+            constraints.append('`delete` = 0')
+        elif op == 'deletion':
+            constraints.append('`delete` = 1')
+        if status is not None:
+            constraints.append('u.`status` IN ' + MySQL.stringify_sequence(status))
+
+        if len(constraints) != 0:
+            get_all += ' WHERE ' + ' AND '.join(constraints)
+
+        get_all += ' ORDER BY d.`id`, b.`id`, s.`id`'
+
+        get_tried_sites = 'SELECT s.`name`, f.`exitcode` FROM `failed_transfers` AS f'
+        get_tried_sites += ' INNER JOIN `sites` AS s ON s.`id` = f.`source_id`'
+        get_tried_sites += ' WHERE f.`subscription_id` = %s'
+
+        _dataset_name = ''
+        _block_name = ''
+        _site_name = ''
+
+        dataset = None
+        block = None
+        destination = None
+
+        to_hold = []
+
+        COPY = 0
+        DELETE = 1
+
+        for row in self.db.query(get_all):
+            sub_id, status, optype, dataset_name, block_name, file_id, file_name, site_name = row
+
+            if dataset_name != _dataset_name:
+                _dataset_name = dataset_name
+                # dataset must exist
+                dataset = inventory.datasets[dataset_name]
+
+                _block_name = ''
+
+            if block_name != _block_name:
+                _block_name = block_name
+                # block must exist
+                block = dataset.find_block(Block.to_internal_name(block_name), must_find = True)
+
+            if site_name != _site_name:
+                _site_name = site_name
+                # site must exist
+                destination = inventory.sites[site_name]
+
+            lfile = block.find_file(file_name, must_find = True)
+
+            if optype == COPY:
+                if status not in ('done', 'held', 'cancelled'):
+                    disk_sources = []
+                    tape_sources = []
+                    for replica in block.replicas:
+                        if replica.site == destination or replica.site.status != Site.STAT_READY:
+                            continue
+        
+                        if replica.file_ids is None or file_id in replica.file_ids:
+                            if replica.site.storage_type == Site.TYPE_DISK:
+                                disk_sources.append(replica.site)
+                            elif replica.site.storage_type == Site.TYPE_MSS:
+                                tape_sources.append(replica.site)
+        
+                    if len(disk_sources) + len(tape_sources) == 0:
+                        LOG.warning('Transfer of %s to %s has no source.', file_name, site_name)
+                        to_hold.append(sub_id)
+                        # don't add this subscritpion to subscriptions list
+                        continue
+    
+                if status == 'retry':
+                    failed_sources = {}
+                    for source_name, exitcode in self.db.query(get_tried_sites, sub_id):
+                        source = inventory.sites[source_name]
+                        if source not in failed_sources:
+                            failed_sources[source] = [exitcode]
+                        else:
+                            failed_sources[source].append(exitcode)
+    
+                    if len(failed_sources) == len(disk_sources) + len(tape_sources):
+                        # transfers from all sites failed at least once
+                        for codes in failed_sources.itervalues():
+                            if codes[-1] != RLFSM.TR_NO_FILE:
+                                break
+                        else:
+                            # last failure from all sites due to missing file at source
+                            to_hold.append(sub_id)
+                            # don't add this subscritpion to subscriptions list
+                            continue
+                else:
+                    failed_sources = None
+    
+                subscription = RLFSM.Subscription(sub_id, status, lfile, destination, disk_sources, tape_sources, failed_sources)
+                subscriptions.append(subscription)
+
+            elif optype == DELETE:
+                desubscription = RLFSM.Desubscription(sub_id, status, lfile, destination)
+                subscriptions.append(desubscription)
+
+        if not self._read_only:
+            self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `last_update` = NOW()', 'id', to_hold)
+
+        return subscriptions
+
+    def close_subscription(self, done_ids):
+        """
+        Get subscription completion acknowledgments.
+        """
+
+        if not self._read_only:
+            self.db.delete_many('file_subscriptions', 'id', done_ids)
 
     def _run_cycle(self, inventory):
         while True:
@@ -616,148 +612,6 @@ class RLFSM(object):
             LOG.debug('Archived file %s: %d succeeded, %d failed, %d cancelled.', optype, num_success, num_failure, num_cancelled)
 
         return done_subscriptions
-
-    def _get_subscriptions(self, inventory):
-        subscriptions = []
-
-        get_all = 'SELECT u.`id`, u.`status`, d.`name`, b.`name`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
-        get_all += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
-        get_all += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
-        get_all += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
-        get_all += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
-        get_all += ' WHERE u.`delete` = 0 AND u.`status` IN (\'new\', \'retry\')'
-        get_all += ' ORDER BY d.`id`, b.`id`, s.`id`'
-
-        get_tried_sites = 'SELECT s.`name`, f.`exitcode` FROM `failed_transfers` AS f'
-        get_tried_sites += ' INNER JOIN `sites` AS s ON s.`id` = f.`source_id`'
-        get_tried_sites += ' WHERE f.`subscription_id` = %s'
-
-        _dataset_name = ''
-        _block_name = ''
-        _site_name = ''
-
-        dataset = None
-        block = None
-        destination = None
-
-        to_hold = []
-
-        for row in self.db.query(get_all):
-            sub_id, status, dataset_name, block_name, file_id, file_name, site_name = row
-
-            if dataset_name != _dataset_name:
-                _dataset_name = dataset_name
-                # dataset must exist
-                dataset = inventory.datasets[dataset_name]
-
-                _block_name = ''
-
-            if block_name != _block_name:
-                _block_name = block_name
-                # block must exist
-                block = dataset.find_block(Block.to_internal_name(block_name), must_find = True)
-
-            if site_name != _site_name:
-                _site_name = site_name
-                # site must exist
-                destination = inventory.sites[site_name]
-
-            lfile = block.find_file(file_name, must_find = True)
-
-            disk_sources = []
-            tape_sources = []
-            for replica in block.replicas:
-                if replica.site == destination or replica.site.status != Site.STAT_READY:
-                    continue
-
-                if replica.file_ids is None or file_id in replica.file_ids:
-                    if replica.site.storage_type == Site.TYPE_DISK:
-                        disk_sources.append(replica.site)
-                    elif replica.site.storage_type == Site.TYPE_MSS:
-                        tape_sources.append(replica.site)
-
-            if len(disk_sources) + len(tape_sources) == 0:
-                LOG.warning('Transfer of %s to %s has no source.', file_name, site_name)
-                to_hold.append(sub_id)
-                # don't add this subscritpion to subscriptions list
-                continue
-
-            if status == 'retry':
-                failed_sources = {}
-                for source_name, exitcode in self.db.query(get_tried_sites, sub_id):
-                    source = inventory.sites[source_name]
-                    if source not in failed_sources:
-                        failed_sources[source] = [exitcode]
-                    else:
-                        failed_sources[source].append(exitcode)
-
-                if len(failed_sources) == len(disk_sources) + len(tape_sources):
-                    # transfers from all sites failed at least once
-                    for codes in failed_sources.itervalues():
-                        if codes[-1] != RLFSM.TR_NO_FILE:
-                            break
-                    else:
-                        # last failure from all sites due to missing file at source
-                        to_hold.append(sub_id)
-                        # don't add this subscritpion to subscriptions list
-                        continue
-            else:
-                failed_sources = None
-
-            subscription = RLFSM.Subscription(sub_id, lfile, destination, disk_sources, tape_sources, failed_sources)
-            subscriptions.append(subscription)
-
-        if not self._read_only:
-            self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `last_update` = NOW()', 'id', to_hold)
-
-        return subscriptions
-
-    def _get_desubscriptions(self, inventory):
-        desubscriptions = []
-
-        get_all = 'SELECT u.`id`, u.`status`, d.`name`, b.`name`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
-        get_all += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
-        get_all += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
-        get_all += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
-        get_all += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
-        get_all += ' WHERE u.`delete` = 1 AND u.`status` IN (\'new\', \'retry\')'
-        get_all += ' ORDER BY d.`id`, b.`id`, s.`id`'
-
-        _dataset_name = ''
-        _block_name = ''
-        _site_name = ''
-
-        dataset = None
-        block = None
-        site = None
-
-        for row in self.db.query(get_all):
-            desub_id, status, dataset_name, block_name, file_id, file_name, site_name = row
-
-            if dataset_name != _dataset_name:
-                _dataset_name = dataset_name
-                # dataset must exist
-                dataset = inventory.datasets[dataset_name]
-
-                _block_name = ''
-
-            if block_name != _block_name:
-                _block_name = block_name
-                # block must exist
-                block = dataset.find_block(Block.to_internal_name(block_name), must_find = True)
-
-            if site_name != _site_name:
-                _site_name = site_name
-                # site must exist
-                site = inventory.sites[site_name]
-
-            lfile = block.find_file(file_name, must_find = True)
-
-            desubscription = RLFSM.Desubscription(desub_id, lfile, site)
-    
-            desubscriptions.append(desubscription)
-
-        return desubscriptions
 
     def _select_source(self, subscriptions):
         """
