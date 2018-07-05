@@ -207,6 +207,9 @@ class AutoStarter(object):
         self.task_per_thread = task_per_thread
 
     def add_input(self, args):
+        if type(args) is not tuple:
+            args = (args,)
+
         self.inputs.append(args)
 
         if len(self.inputs) == self.task_per_thread:
